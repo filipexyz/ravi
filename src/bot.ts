@@ -1,12 +1,10 @@
-import { exec, spawn } from "node:child_process";
-import { promisify } from "node:util";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { Notif } from "notif.sh";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
 
-const execAsync = promisify(exec);
 const log = logger.child("bot");
 
 /** Prompt message structure */
@@ -30,12 +28,13 @@ export interface RaviBotOptions {
 
 export class RaviBot {
   private config: Config;
+  private notif: Notif;
   private hasHistory = false;
-  private subscriptionProcess: ReturnType<typeof spawn> | null = null;
   private running = false;
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
+    this.notif = new Notif();
     logger.setLevel(options.config.logLevel);
   }
 
@@ -45,9 +44,8 @@ export class RaviBot {
   async start(): Promise<void> {
     log.info("Starting Ravi bot...");
 
-    // Subscribe to prompt topic
     this.running = true;
-    await this.subscribeToPrompts();
+    this.subscribeToPrompts();
 
     log.info("Ravi bot started successfully");
   }
@@ -58,52 +56,37 @@ export class RaviBot {
   async stop(): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
-
-    if (this.subscriptionProcess) {
-      this.subscriptionProcess.kill();
-      this.subscriptionProcess = null;
-    }
-
+    this.notif.close();
     closeDb();
     log.info("Ravi bot stopped");
   }
 
   /**
-   * Subscribe to ravi.*.prompt topic using notif CLI.
+   * Subscribe to ravi.*.prompt topic.
    */
   private async subscribeToPrompts(): Promise<void> {
     const topic = "ravi.*.prompt";
     log.info(`Subscribing to ${topic}`);
 
-    // Use notif subscribe command
-    this.subscriptionProcess = spawn("notif", ["subscribe", topic, "--json"], {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    try {
+      for await (const event of this.notif.subscribe(topic)) {
+        if (!this.running) break;
 
-    this.subscriptionProcess.stdout?.on("data", async (data: Buffer) => {
-      const lines = data.toString().split("\n").filter(Boolean);
-
-      for (const line of lines) {
         try {
-          const event = JSON.parse(line);
-          await this.handlePromptEvent(event);
+          await this.handlePromptEvent({
+            topic: event.topic,
+            data: event.data as unknown as PromptMessage,
+          });
         } catch (err) {
-          log.error("Failed to parse prompt event", { line, err });
+          log.error("Failed to handle prompt event", err);
         }
       }
-    });
-
-    this.subscriptionProcess.stderr?.on("data", (data: Buffer) => {
-      log.warn("notif stderr", { output: data.toString() });
-    });
-
-    this.subscriptionProcess.on("close", (code) => {
-      log.info(`notif subscribe process exited with code ${code}`);
+    } catch (err) {
+      log.error("Subscription error", err);
       if (this.running) {
-        // Reconnect after a delay
         setTimeout(() => this.subscribeToPrompts(), 1000);
       }
-    });
+    }
   }
 
   /**
@@ -120,19 +103,30 @@ export class RaviBot {
     const sessionId = topicParts[1] || "main";
 
     log.info(`Received prompt`, { sessionId, topic });
+    await this.debug(sessionId, "prompt_received", { prompt: prompt.prompt });
 
     // Save user message
     saveMessage(sessionId, "user", prompt.prompt);
 
     try {
-      const response = await this.processPrompt(prompt);
+      await this.debug(sessionId, "query_start");
+      const response = await this.processPrompt(prompt, sessionId);
+      await this.debug(sessionId, "query_complete", {
+        usage: response.usage,
+        responseLen: response.response?.length,
+      });
+
       // Save assistant response
       if (response.response) {
         saveMessage(sessionId, "assistant", response.response);
       }
+
       await this.emitResponse(sessionId, response);
     } catch (err) {
       log.error("Failed to process prompt", err);
+      await this.debug(sessionId, "query_error", {
+        error: err instanceof Error ? err.message : "Unknown",
+      });
       const errorResponse: ResponseMessage = {
         error: err instanceof Error ? err.message : "Unknown error",
       };
@@ -143,8 +137,10 @@ export class RaviBot {
   /**
    * Process a prompt using the Claude Agent SDK.
    */
-  private async processPrompt(prompt: PromptMessage): Promise<ResponseMessage> {
-    // Collect response
+  private async processPrompt(
+    prompt: PromptMessage,
+    sessionId: string
+  ): Promise<ResponseMessage> {
     let responseText = "";
     let inputTokens = 0;
     let outputTokens = 0;
@@ -159,13 +155,13 @@ export class RaviBot {
         },
       });
 
-      // Process streaming messages
       for await (const message of queryResult) {
+        await this.debug(sessionId, "sdk_message", { type: message.type });
+
         this.processMessage(message, (text) => {
           responseText += text;
         });
 
-        // Extract usage from result messages
         if (message.type === "result") {
           inputTokens = message.usage?.input_tokens ?? 0;
           outputTokens = message.usage?.output_tokens ?? 0;
@@ -195,7 +191,6 @@ export class RaviBot {
   ): void {
     switch (message.type) {
       case "assistant":
-        // Extract text from content blocks
         for (const block of message.message.content) {
           if (block.type === "text") {
             onText(block.text);
@@ -220,16 +215,28 @@ export class RaviBot {
     response: ResponseMessage
   ): Promise<void> {
     const topic = `ravi.${sessionId}.response`;
-    const payload = JSON.stringify(response);
+    await this.emit(topic, response);
+  }
 
-    log.debug(`Emitting response to ${topic}`);
-
+  /**
+   * Emit an event to a topic.
+   */
+  private async emit(topic: string, data: unknown): Promise<void> {
     try {
-      await execAsync(
-        `echo '${payload.replace(/'/g, "'\\''")}' | notif emit '${topic}'`
-      );
+      await this.notif.emit(topic, data as Record<string, unknown>);
     } catch (err) {
-      log.error("Failed to emit response", err);
+      log.error(`Failed to emit to ${topic}`, err);
     }
+  }
+
+  /**
+   * Emit a debug event.
+   */
+  private async debug(sessionId: string, event: string, data?: unknown): Promise<void> {
+    await this.emit(`ravi.${sessionId}.debug`, {
+      event,
+      data: data ?? null,
+      ts: Date.now(),
+    });
   }
 }

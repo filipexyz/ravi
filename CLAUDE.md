@@ -37,12 +37,11 @@ ravi.<session>.response   # Receive response
 ## Usage
 
 ```bash
-# Start bot
+# Terminal 1: Start bot
 npm run start
 
-# Send prompt
-notif emit 'ravi.main.prompt' '{"prompt":"Oi!"}' \
-  --reply-to 'ravi.main.response' --timeout 60s --raw
+# Terminal 2: Start TUI chat
+npm run tui
 ```
 
 ## Storage
@@ -63,7 +62,8 @@ SELECT * FROM messages WHERE session_id = 'main';
 
 ```bash
 npm install
-npm run dev      # watch mode
-npm run start    # production
+npm run start    # bot server
+npm run tui      # chat interface
+npm run dev      # bot watch mode
 npm run typecheck
 ```
