@@ -4,6 +4,7 @@ import { Notif } from "notif.sh";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
+import { buildDefaultPrompt } from "./prompt-builder.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
@@ -163,6 +164,12 @@ export class RaviBot {
         maxTurns: 1,
         cwd: agentCwd,
         resume: session.sdkSessionId,
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: buildDefaultPrompt(),
+        },
+        settingSources: ["project"],
       },
     });
 
