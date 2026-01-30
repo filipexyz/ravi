@@ -78,14 +78,19 @@ agent:main:whatsapp:group:123456   # Group session
 └── chat.db          # Message history
 ```
 
-## Usage
+## CLI
 
 ```bash
-npm run start      # Bot server
-npm run tui        # TUI (default: agent:main:main)
-npm run tui agent:jarvis:main  # Custom session
-npm run wa         # WhatsApp gateway
+ravi --help                # Show all commands
+ravi contacts list         # List contacts
+ravi contacts add <phone>  # Add contact
+ravi contacts pending      # Pending approvals
+ravi service start         # Start bot server
+ravi service tui           # Start TUI
+ravi service wa            # Start WhatsApp gateway
 ```
+
+Setup: `npm link` (once, to make `ravi` available globally)
 
 ## Environment
 
