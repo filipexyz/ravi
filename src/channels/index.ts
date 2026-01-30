@@ -39,5 +39,18 @@ export {
   shutdownAllPlugins,
 } from "./registry.js";
 
+// Channel Manager
+export {
+  ChannelManager,
+  createChannelManager,
+} from "./manager/index.js";
+export type {
+  ChannelAccountSnapshot,
+  ChannelRuntimeStore,
+  ChannelGatewayContext,
+  ChannelManagerConfig,
+  ChannelManagerEvents,
+} from "./manager/types.js";
+
 // WhatsApp plugin
 export * from "./whatsapp/index.js";

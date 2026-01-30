@@ -7,6 +7,7 @@
 import { Notif } from "notif.sh";
 import type { ChannelPlugin, InboundMessage, AccountState } from "./channels/types.js";
 import { registerPlugin, getAllPlugins, shutdownAllPlugins } from "./channels/registry.js";
+import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
   loadRouterConfig,
   resolveRoute,
@@ -27,6 +28,7 @@ export class Gateway {
   private running = false;
   private plugins: ChannelPlugin[] = [];
   private pluginsById = new Map<string, ChannelPlugin>();
+  private channelManager: ChannelManager | null = null;
   private responseSubscriptions = new Map<string, AbortController>();
   private activeTargets = new Map<string, MessageTarget>();
 
@@ -45,24 +47,22 @@ export class Gateway {
     return this;
   }
 
+  /**
+   * Get the ChannelManager instance.
+   */
+  getChannelManager(): ChannelManager | null {
+    return this.channelManager;
+  }
+
   async start(): Promise<void> {
     log.info("Starting gateway...");
     this.running = true;
 
-    // Initialize and start all plugins
-    for (const plugin of this.plugins) {
-      log.info(`Initializing plugin: ${plugin.id}`);
-      await plugin.init();
+    // Create ChannelManager from registered plugins
+    this.channelManager = createChannelManager(this.pluginsById);
 
-      const config = plugin.config.getConfig();
-      for (const accountId of plugin.config.listAccounts()) {
-        try {
-          await plugin.gateway.start(accountId, config);
-        } catch (err) {
-          log.error(`Failed to start ${plugin.id}:${accountId}`, err);
-        }
-      }
-    }
+    // Start all channels via ChannelManager
+    await this.channelManager.startChannels();
 
     // Subscribe to inbound topics for all plugins
     this.subscribeToInbound();
@@ -84,6 +84,11 @@ export class Gateway {
       controller.abort();
     }
     this.responseSubscriptions.clear();
+
+    // Stop via ChannelManager
+    if (this.channelManager) {
+      await this.channelManager.stopAll();
+    }
 
     await shutdownAllPlugins();
     this.notif.close();
