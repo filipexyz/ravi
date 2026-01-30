@@ -41,6 +41,7 @@ import {
   shouldProcess,
   debounceMessage,
   mergeMessages,
+  isMentioned,
 } from "./inbound.js";
 import {
   sendMessage,
@@ -61,6 +62,7 @@ import { normalizePhone, phoneToJid } from "./normalize.js";
 import {
   isAllowed as isContactAllowed,
   savePendingContact,
+  getContactReplyMode,
 } from "../../contacts.js";
 import { logger } from "../../utils/logger.js";
 
@@ -147,9 +149,11 @@ class WhatsAppSecurityAdapter implements SecurityAdapter<WhatsAppConfig> {
         return { allowed: false, reason: "groups_disabled" };
       }
       if (groupPolicy === "allowlist") {
-        // For groups, senderId is the group ID
-        if (!accountConfig.groupAllowFrom.includes(senderId)) {
-          return { allowed: false, reason: "group_not_allowed" };
+        // Check config allowlist or contacts database
+        const inConfigList = accountConfig.groupAllowFrom.includes(senderId);
+        const inContactsDb = isContactAllowed(senderId);
+        if (!inConfigList && !inContactsDb) {
+          return { allowed: false, pending: true, reason: "group_not_allowed" };
         }
       }
       // For group messages, we check the actual sender below
@@ -379,21 +383,33 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     heartbeat(accountId);
     recordReceived(accountId);
 
-    // Check security
+    // Check security - use chatId for groups, senderId for DMs
+    const checkId = message.isGroup ? message.chatId : message.senderId;
+    log.info("Security check", {
+      checkId,
+      isGroup: message.isGroup,
+      chatId: message.chatId,
+      senderId: message.senderId,
+    });
+
     const decision = this.securityAdapter.checkAccess(
       accountId,
-      message.senderId,
+      checkId,
       message.isGroup,
       config
     );
 
+    log.info("Security decision", decision);
+
     if (!decision.allowed) {
       if (decision.pending) {
-        // Save as pending contact
-        savePendingContact(message.senderId, message.senderName ?? null);
-        log.info("Saved pending contact", {
-          senderId: message.senderId,
-          senderName: message.senderName,
+        // Save as pending - use chatId for groups, senderId for DMs
+        const pendingId = message.isGroup ? message.chatId : message.senderId;
+        const pendingName = message.isGroup ? null : message.senderName ?? null;
+        savePendingContact(pendingId, pendingName);
+        log.info("Saved pending", {
+          id: pendingId,
+          isGroup: message.isGroup,
         });
       } else {
         log.debug(`Message blocked: ${decision.reason}`);
@@ -428,6 +444,30 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
           isMention,
           accountConfig.ackReaction
         );
+      }
+    }
+
+    // Check reply mode for groups
+    if (message.isGroup) {
+      const replyMode = getContactReplyMode(message.chatId);
+      if (replyMode === "mention") {
+        // Get bot JIDs (phone and lid) to check if mentioned
+        const socket = sessionManager.getSocket(accountId);
+        const botJid = socket?.user?.id;
+        const botLid = socket?.user?.lid;
+        const mentions = rawMessage.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
+
+        // Check if any of the bot's identifiers are mentioned
+        // Strip :XX suffix and @domain for comparison
+        const normalize = (id: string) => id.split("@")[0].split(":")[0];
+        const botIds = [botJid, botLid].filter(Boolean).map(id => normalize(id!));
+        const mentioned = mentions.some(m => botIds.includes(normalize(m)));
+
+        log.info("Mention check", { botJid, botLid, mentioned, mentions });
+        if (!mentioned) {
+          log.debug("Skipping group message (not mentioned)", { chatId: message.chatId });
+          return;
+        }
       }
     }
 

@@ -40,6 +40,26 @@ export function extractText(message: WAMessage): string | undefined {
 }
 
 /**
+ * Extract mentioned JIDs from a WhatsApp message
+ */
+export function extractMentions(message: WAMessage): string[] {
+  const m = message.message;
+  if (!m) return [];
+
+  return m.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
+}
+
+/**
+ * Check if a specific JID is mentioned in the message
+ */
+export function isMentioned(message: WAMessage, botJid: string): boolean {
+  const mentions = extractMentions(message);
+  // Compare without the resource part (everything after @)
+  const botUser = botJid.split("@")[0];
+  return mentions.some((jid) => jid.split("@")[0] === botUser);
+}
+
+/**
  * Extract media info from a WhatsApp message
  */
 export function extractMedia(message: WAMessage): InboundMedia | undefined {
@@ -199,19 +219,7 @@ export function shouldProcess(
     return { pass: false, reason: "broadcast" };
   }
 
-  // Check group policy
-  if (isGroup(jid)) {
-    if (config.groupPolicy === "closed") {
-      return { pass: false, reason: "groups_disabled" };
-    }
-
-    if (config.groupPolicy === "allowlist") {
-      const groupId = normalizePhone(jid);
-      if (!config.groupAllowFrom.includes(groupId)) {
-        return { pass: false, reason: "group_not_allowed" };
-      }
-    }
-  }
+  // Group policy is checked in securityAdapter.checkAccess
 
   // Has some content
   const hasText = !!extractText(message);

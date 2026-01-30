@@ -53,6 +53,8 @@ export {
   extractText,
   extractMedia,
   extractReplyTo,
+  extractMentions,
+  isMentioned,
   normalizeMessage,
   shouldProcess,
   debounceMessage,

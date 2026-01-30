@@ -30,25 +30,29 @@ db.exec(`
   );
 `);
 
-// Migrate old schema if needed (allowed INTEGER -> status TEXT)
+// Migrations
 try {
   db.exec(`ALTER TABLE contacts ADD COLUMN status TEXT DEFAULT 'allowed'`);
-} catch {
-  // Column already exists
-}
+} catch { /* exists */ }
 try {
-  // Migrate old data
   db.exec(`UPDATE contacts SET status = CASE WHEN allowed = 1 THEN 'allowed' ELSE 'blocked' END WHERE status IS NULL`);
-} catch {
-  // No migration needed
-}
+} catch { /* done */ }
+try {
+  db.exec(`ALTER TABLE contacts ADD COLUMN agent_id TEXT`);
+} catch { /* exists */ }
+try {
+  db.exec(`ALTER TABLE contacts ADD COLUMN reply_mode TEXT DEFAULT 'auto'`);
+} catch { /* exists */ }
 
 export type ContactStatus = "allowed" | "pending" | "blocked";
+export type ReplyMode = "auto" | "mention";
 
 export interface Contact {
   phone: string;
   name: string | null;
   status: ContactStatus;
+  agent_id: string | null;
+  reply_mode: ReplyMode;
   created_at: string;
   updated_at: string;
 }
@@ -88,7 +92,7 @@ const deleteContactStmt = db.prepare(
 );
 
 const setStatusStmt = db.prepare(
-  "UPDATE contacts SET status = ?, updated_at = datetime('now') WHERE phone = ?"
+  "UPDATE contacts SET status = ?, agent_id = ?, updated_at = datetime('now') WHERE phone = ?"
 );
 
 /**
@@ -160,23 +164,52 @@ export function deleteContact(phone: string): boolean {
 }
 
 /**
- * Set contact status
+ * Set contact status and optionally agent
  */
-export function setContactStatus(phone: string, status: ContactStatus): void {
+export function setContactStatus(phone: string, status: ContactStatus, agentId?: string): void {
   const normalizedPhone = normalizePhone(phone);
   const contact = getContact(normalizedPhone);
   if (!contact) {
     upsertContact(normalizedPhone, null, status);
+    if (agentId) {
+      setStatusStmt.run(status, agentId, normalizedPhone);
+    }
   } else {
-    setStatusStmt.run(status, normalizedPhone);
+    setStatusStmt.run(status, agentId ?? contact.agent_id, normalizedPhone);
   }
 }
 
 /**
- * Allow a contact
+ * Allow a contact with optional agent
  */
-export function allowContact(phone: string): void {
-  setContactStatus(phone, "allowed");
+export function allowContact(phone: string, agentId?: string): void {
+  setContactStatus(phone, "allowed", agentId);
+}
+
+/**
+ * Get agent for a contact
+ */
+export function getContactAgent(phone: string): string | null {
+  const contact = getContact(phone);
+  return contact?.agent_id ?? null;
+}
+
+/**
+ * Get reply mode for a contact
+ */
+export function getContactReplyMode(phone: string): ReplyMode {
+  const contact = getContact(phone);
+  return contact?.reply_mode ?? "auto";
+}
+
+/**
+ * Set reply mode for a contact
+ */
+export function setContactReplyMode(phone: string, mode: ReplyMode): void {
+  const normalizedPhone = normalizePhone(phone);
+  db.prepare(
+    "UPDATE contacts SET reply_mode = ?, updated_at = datetime('now') WHERE phone = ?"
+  ).run(mode, normalizedPhone);
 }
 
 /**

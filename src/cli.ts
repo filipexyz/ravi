@@ -17,7 +17,9 @@ import {
   isAllowed,
   normalizePhone,
   formatPhone,
+  setContactReplyMode,
   type ContactStatus,
+  type ReplyMode,
 } from "./contacts.js";
 
 const [, , command, ...args] = process.argv;
@@ -33,7 +35,8 @@ Commands:
   list                    List all contacts
   pending                 List pending contacts (awaiting approval)
   add <phone> [name]      Add/allow a contact
-  approve <phone>         Approve a pending contact
+  approve <phone> [agent] [mode]  Approve with agent and mode (auto|mention)
+  set <phone> <key> <value>       Set contact property (agent, mode)
   remove <phone>          Remove a contact
   allow <phone>           Allow a contact
   block <phone>           Block a contact
@@ -124,8 +127,15 @@ switch (command) {
 
   case "approve": {
     const phone = args[0];
+    const agentId = args[1];
+    const replyMode = args[2] as ReplyMode | undefined;
     if (!phone) {
       console.error("Error: Phone number required");
+      console.log("Usage: npm run cli -- approve <phone> [agent] [auto|mention]");
+      process.exit(1);
+    }
+    if (replyMode && replyMode !== "auto" && replyMode !== "mention") {
+      console.error("Error: Reply mode must be 'auto' or 'mention'");
       process.exit(1);
     }
     const normalized = normalizePhone(phone);
@@ -134,8 +144,13 @@ switch (command) {
       console.log(`Contact not found: ${formatPhone(normalized)}`);
       process.exit(1);
     }
-    allowContact(normalized);
-    console.log(`✓ Contact approved: ${formatPhone(normalized)}${contact.name ? ` (${contact.name})` : ""}`);
+    allowContact(normalized, agentId);
+    if (replyMode) {
+      setContactReplyMode(normalized, replyMode);
+    }
+    const agentInfo = agentId ? ` → agent:${agentId}` : "";
+    const modeInfo = replyMode ? ` (${replyMode})` : "";
+    console.log(`✓ Contact approved: ${formatPhone(normalized)}${contact.name ? ` (${contact.name})` : ""}${agentInfo}${modeInfo}`);
     break;
   }
 
@@ -176,6 +191,39 @@ switch (command) {
     const normalized = normalizePhone(phone);
     blockContact(normalized);
     console.log(`✗ Contact blocked: ${formatPhone(normalized)}`);
+    break;
+  }
+
+  case "set": {
+    const phone = args[0];
+    const key = args[1];
+    const value = args[2];
+    if (!phone || !key || !value) {
+      console.error("Usage: npm run cli -- set <phone> <key> <value>");
+      console.log("Keys: agent, mode");
+      process.exit(1);
+    }
+    const normalized = normalizePhone(phone);
+    const contact = getContact(normalized);
+    if (!contact) {
+      console.log(`Contact not found: ${formatPhone(normalized)}`);
+      process.exit(1);
+    }
+    if (key === "agent") {
+      allowContact(normalized, value);
+      console.log(`✓ Agent set: ${formatPhone(normalized)} → ${value}`);
+    } else if (key === "mode") {
+      if (value !== "auto" && value !== "mention") {
+        console.error("Error: Mode must be 'auto' or 'mention'");
+        process.exit(1);
+      }
+      setContactReplyMode(normalized, value as ReplyMode);
+      console.log(`✓ Mode set: ${formatPhone(normalized)} → ${value}`);
+    } else {
+      console.error(`Unknown key: ${key}`);
+      console.log("Keys: agent, mode");
+      process.exit(1);
+    }
     break;
   }
 

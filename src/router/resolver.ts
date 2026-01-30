@@ -13,6 +13,7 @@ import type {
 } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { logger } from "../utils/logger.js";
+import { getContactAgent } from "../contacts.js";
 
 const log = logger.child("router");
 
@@ -80,11 +81,14 @@ export function resolveRoute(
 ): ResolvedRoute {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
-  // Find matching route
+  // Check contacts DB for agent assignment
+  const contactAgentId = getContactAgent(isGroup ? groupId ?? phone : phone);
+
+  // Find matching route (fallback)
   const route = findRoute(phone, config.routes);
 
-  // Get agent (from route or default)
-  const agentId = route?.agent ?? config.defaultAgent;
+  // Get agent: contacts DB > route > default
+  const agentId = contactAgentId ?? route?.agent ?? config.defaultAgent;
   const agent = config.agents[agentId];
 
   if (!agent) {

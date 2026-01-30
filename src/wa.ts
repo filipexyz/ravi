@@ -38,7 +38,7 @@ async function main() {
         name: "Ravi WhatsApp",
         enabled: true,
         dmPolicy: "pairing",
-        groupPolicy: "closed",
+        groupPolicy: "allowlist",
         sendReadReceipts: true,
         debounceMs: 500,
       },
