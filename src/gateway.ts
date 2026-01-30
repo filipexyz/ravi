@@ -1,86 +1,59 @@
 /**
  * Channel Gateway
  *
- * Orchestrates multiple channel plugins and bridges them to the bot via notif.sh.
+ * Orchestrates channel plugins and routes messages to the bot.
  */
 
 import { Notif } from "notif.sh";
 import type { ChannelPlugin, InboundMessage, AccountState } from "./channels/types.js";
 import { registerPlugin, getAllPlugins, shutdownAllPlugins } from "./channels/registry.js";
-import { jidToSessionId } from "./channels/whatsapp/normalize.js";
+import {
+  loadRouterConfig,
+  resolveRoute,
+  type RouterConfig,
+} from "./router/index.js";
 import { logger } from "./utils/logger.js";
-import type { ResponseMessage } from "./bot.js";
+import type { ResponseMessage, MessageTarget } from "./bot.js";
 
 const log = logger.child("gateway");
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
 }
 
-export interface GatewayEvents {
-  message: (message: InboundMessage) => void;
-  stateChange: (channelId: string, accountId: string, state: AccountState) => void;
-}
-
-// ============================================================================
-// Gateway Class
-// ============================================================================
-
-/**
- * Channel Gateway
- *
- * Manages channel plugins and routes messages between channels and the bot.
- */
 export class Gateway {
   private notif: Notif;
+  private routerConfig: RouterConfig;
   private running = false;
   private plugins: ChannelPlugin[] = [];
+  private pluginsById = new Map<string, ChannelPlugin>();
   private responseSubscriptions = new Map<string, AbortController>();
-  private listeners = new Map<keyof GatewayEvents, Set<GatewayEvents[keyof GatewayEvents]>>();
+  private replyContexts = new Map<string, MessageTarget>();
 
   constructor(options: GatewayOptions = {}) {
     this.notif = new Notif();
+    this.routerConfig = loadRouterConfig();
     if (options.logLevel) {
       logger.setLevel(options.logLevel);
     }
   }
 
-  /**
-   * Register a channel plugin
-   */
   use(plugin: ChannelPlugin): this {
     registerPlugin(plugin);
     this.plugins.push(plugin);
+    this.pluginsById.set(plugin.id, plugin);
     return this;
   }
 
-  /**
-   * Start the gateway and all plugins
-   */
   async start(): Promise<void> {
     log.info("Starting gateway...");
     this.running = true;
 
-    // Initialize all plugins
+    // Initialize and start all plugins
     for (const plugin of this.plugins) {
       log.info(`Initializing plugin: ${plugin.id}`);
       await plugin.init();
 
-      // Subscribe to plugin messages
-      plugin.gateway.onMessage((message) => {
-        this.handleInboundMessage(plugin, message);
-      });
-
-      // Subscribe to state changes
-      plugin.gateway.onStateChange((accountId, state) => {
-        this.emit("stateChange", plugin.id, accountId, state);
-      });
-
-      // Start all configured accounts
       const config = plugin.config.getConfig();
       for (const accountId of plugin.config.listAccounts()) {
         try {
@@ -91,204 +64,168 @@ export class Gateway {
       }
     }
 
+    // Subscribe to inbound topics for all plugins
+    this.subscribeToInbound();
+
+    // Subscribe to all responses
+    this.subscribeToResponses();
+
     log.info("Gateway started");
   }
 
-  /**
-   * Stop the gateway and all plugins
-   */
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
 
-    // Cancel all response subscriptions
     for (const [, controller] of this.responseSubscriptions) {
       controller.abort();
     }
     this.responseSubscriptions.clear();
 
-    // Shutdown all plugins
     await shutdownAllPlugins();
-
     this.notif.close();
     log.info("Gateway stopped");
   }
 
   /**
-   * Subscribe to gateway events
+   * Subscribe to inbound topics for all registered plugins.
+   * Pattern: {channelId}.*.inbound
    */
-  on<K extends keyof GatewayEvents>(
-    event: K,
-    callback: GatewayEvents[K]
-  ): () => void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, new Set());
-    }
-    this.listeners.get(event)!.add(callback as GatewayEvents[keyof GatewayEvents]);
+  private subscribeToInbound(): void {
+    const topics = this.plugins.map((p) => `${p.id}.*.inbound`);
+    log.info("Subscribing to inbound topics", { topics });
 
-    return () => {
-      this.listeners.get(event)?.delete(callback as GatewayEvents[keyof GatewayEvents]);
-    };
-  }
+    (async () => {
+      try {
+        for await (const event of this.notif.subscribe(...topics)) {
+          if (!this.running) break;
 
-  /**
-   * Get a registered plugin
-   */
-  getPlugin(id: string): ChannelPlugin | undefined {
-    return this.plugins.find((p) => p.id === id);
-  }
+          // Parse topic: {channelId}.{accountId}.inbound
+          const parts = event.topic.split(".");
+          const channelId = parts[0];
+          const plugin = this.pluginsById.get(channelId);
 
-  /**
-   * Get all registered plugins
-   */
-  getPlugins(): ChannelPlugin[] {
-    return [...this.plugins];
-  }
+          if (!plugin) {
+            log.warn("No plugin for channel", { channelId });
+            continue;
+          }
 
-  // ===========================================================================
-  // Private Methods
-  // ===========================================================================
-
-  private emit<K extends keyof GatewayEvents>(
-    event: K,
-    ...args: Parameters<GatewayEvents[K]>
-  ): void {
-    const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      for (const callback of callbacks) {
-        try {
-          (callback as (...args: unknown[]) => void)(...args);
-        } catch (err) {
-          log.error(`Error in ${event} listener`, err);
+          const message = event.data as unknown as InboundMessage;
+          await this.handleInboundMessage(plugin, message);
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Inbound subscription error", err);
+          // Reconnect after delay
+          setTimeout(() => this.subscribeToInbound(), 1000);
         }
       }
-    }
+    })();
+  }
+
+  /**
+   * Subscribe to all bot responses and route based on target.
+   */
+  private subscribeToResponses(): void {
+    log.info("Subscribing to responses");
+
+    (async () => {
+      try {
+        for await (const event of this.notif.subscribe("ravi.*.response")) {
+          if (!this.running) break;
+
+          // Parse topic: ravi.{sessionKey}.response
+          const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+          const response = event.data as unknown as ResponseMessage;
+
+          // Get target from response or fall back to stored context
+          const target = response.target ?? this.replyContexts.get(sessionKey);
+          if (!target) {
+            log.debug("No target for response", { sessionKey });
+            continue;
+          }
+
+          const { channel, accountId, chatId } = target;
+
+          // Get plugin for this channel
+          const plugin = this.pluginsById.get(channel);
+          if (!plugin) {
+            log.warn("No plugin for channel", { channel });
+            continue;
+          }
+
+          // Stop typing and send
+          await plugin.outbound.sendTyping(accountId, chatId, false);
+
+          const text = response.error
+            ? `Error: ${response.error}`
+            : response.response;
+
+          if (text) {
+            await plugin.outbound.send(accountId, chatId, { text });
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Response subscription error", err);
+          // Reconnect after delay
+          setTimeout(() => this.subscribeToResponses(), 1000);
+        }
+      }
+    })();
   }
 
   private async handleInboundMessage(
     plugin: ChannelPlugin,
     message: InboundMessage
   ): Promise<void> {
+    // Resolve route to get session key
+    const resolved = resolveRoute(this.routerConfig, {
+      phone: message.senderId,
+      channel: plugin.id,
+      accountId: message.accountId,
+      isGroup: message.isGroup,
+      groupId: message.isGroup ? message.chatId : undefined,
+    });
+
+    const sessionKey = resolved.sessionKey;
+
     log.info("Inbound message", {
       channel: plugin.id,
-      account: message.accountId,
       sender: message.senderId,
-      textLen: message.text?.length,
+      sessionKey,
+      agentId: resolved.agent.id,
     });
 
-    // Emit to listeners
-    this.emit("message", message);
+    // Build source/target info
+    const source: MessageTarget = {
+      channel: plugin.id,
+      accountId: message.accountId,
+      chatId: message.chatId,
+    };
 
-    // Generate session ID
-    const sessionId = this.messageToSessionId(plugin, message);
+    // Store reply context
+    this.replyContexts.set(sessionKey, source);
 
-    // Show typing indicator
-    await plugin.outbound.sendTyping(
-      message.accountId,
-      message.chatId,
-      true
-    );
+    // Typing indicator
+    await plugin.outbound.sendTyping(message.accountId, message.chatId, true);
 
-    // Subscribe to response for this session
-    this.subscribeToResponse(plugin, message, sessionId);
-
-    // Emit prompt to notif.sh
+    // Emit prompt with source
     try {
-      await this.notif.emit(`ravi.${sessionId}.prompt`, {
+      await this.notif.emit(`ravi.${sessionKey}.prompt`, {
         prompt: message.text ?? "[media]",
+        source,
       });
-      log.debug("Emitted prompt", { sessionId });
     } catch (err) {
       log.error("Failed to emit prompt", err);
-      await this.sendErrorResponse(plugin, message, "Something went wrong. Please try again.");
+      await plugin.outbound.sendTyping(message.accountId, message.chatId, false);
+      await plugin.outbound.send(message.accountId, message.chatId, {
+        text: "Something went wrong. Please try again.",
+      });
     }
-  }
-
-  private subscribeToResponse(
-    plugin: ChannelPlugin,
-    message: InboundMessage,
-    sessionId: string
-  ): void {
-    // Skip if already subscribed
-    if (this.responseSubscriptions.has(sessionId)) return;
-
-    const controller = new AbortController();
-    this.responseSubscriptions.set(sessionId, controller);
-
-    const topic = `ravi.${sessionId}.response`;
-
-    (async () => {
-      try {
-        for await (const event of this.notif.subscribe(topic)) {
-          if (controller.signal.aborted) break;
-
-          const response = event.data as unknown as ResponseMessage;
-
-          // Stop typing indicator
-          await plugin.outbound.sendTyping(
-            message.accountId,
-            message.chatId,
-            false
-          );
-
-          // Send response
-          if (response.error) {
-            await plugin.outbound.send(message.accountId, message.chatId, {
-              text: `Error: ${response.error}`,
-            });
-          } else if (response.response) {
-            await plugin.outbound.send(message.accountId, message.chatId, {
-              text: response.response,
-            });
-          }
-
-          log.debug("Sent response via channel", {
-            channel: plugin.id,
-            sessionId,
-            hasError: !!response.error,
-          });
-        }
-      } catch (err) {
-        if (!controller.signal.aborted) {
-          log.error("Response subscription error", err);
-        }
-      }
-    })();
-  }
-
-  private async sendErrorResponse(
-    plugin: ChannelPlugin,
-    message: InboundMessage,
-    errorText: string
-  ): Promise<void> {
-    await plugin.outbound.sendTyping(message.accountId, message.chatId, false);
-    await plugin.outbound.send(message.accountId, message.chatId, {
-      text: errorText,
-    });
-  }
-
-  private messageToSessionId(
-    plugin: ChannelPlugin,
-    message: InboundMessage
-  ): string {
-    // For WhatsApp, use the existing JID-based session ID format
-    if (plugin.id === "whatsapp") {
-      const waMessage = message as import("./channels/types.js").WhatsAppInbound;
-      return jidToSessionId(waMessage.jid);
-    }
-
-    // Generic format for other channels
-    return `${plugin.id}-${message.chatId}`;
   }
 }
 
-// ============================================================================
-// Factory Function
-// ============================================================================
-
-/**
- * Create a new gateway instance
- */
 export function createGateway(options?: GatewayOptions): Gateway {
   return new Gateway(options);
 }

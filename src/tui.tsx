@@ -3,59 +3,61 @@ import { render, Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { Notif } from "notif.sh";
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
+interface MessageTarget {
+  channel: string;
+  accountId: string;
+  chatId: string;
 }
 
-const SESSION = process.argv[2] || "main";
+interface Message {
+  sessionKey: string;
+  role: "user" | "assistant";
+  content: string;
+  source?: MessageTarget;
+}
+
+// Session to send messages to (default: agent:main:main)
+const SEND_TO = process.argv[2] || "agent:main:main";
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
   const [notif] = useState(() => new Notif());
   const { exit } = useApp();
 
   useEffect(() => {
-    // Subscribe to prompts and responses
     const subscribe = async () => {
       try {
-        for await (const event of notif.subscribe(
-          `ravi.${SESSION}.prompt`,
-          `ravi.${SESSION}.response`
-        )) {
-          if (event.topic.endsWith(".prompt")) {
-            const data = event.data as { prompt?: string };
-            const content = data.prompt;
-            if (content) {
-              setMessages((prev) => [
-                ...prev,
-                { role: "user" as const, content },
-              ]);
-              setLoading(true);
+        // Subscribe to ALL sessions
+        for await (const event of notif.subscribe("ravi.*.prompt", "ravi.*.response")) {
+          // Extract session key from topic: ravi.{sessionKey}.prompt
+          const parts = event.topic.split(".");
+          const sessionKey = parts.slice(1, -1).join(".");
+          const eventType = parts[parts.length - 1];
+
+          if (eventType === "prompt") {
+            const data = event.data as { prompt?: string; source?: MessageTarget };
+            const prompt = data.prompt;
+            if (prompt) {
+              setMessages((prev) => [...prev, { sessionKey, role: "user" as const, content: prompt, source: data.source }]);
+              setLoading(sessionKey);
             }
-          } else if (event.topic.endsWith(".response")) {
+          } else if (eventType === "response") {
             const data = event.data as { response?: string; error?: string };
             const content = data.response || (data.error ? `Error: ${data.error}` : null);
             if (content) {
-              setMessages((prev) => [
-                ...prev,
-                { role: "assistant" as const, content },
-              ]);
+              setMessages((prev) => [...prev, { sessionKey, role: "assistant" as const, content }]);
             }
-            setLoading(false);
+            setLoading(null);
           }
         }
-      } catch (err) {
+      } catch {
         // Subscription closed
       }
     };
     subscribe();
-
-    return () => {
-      notif.close();
-    };
+    return () => notif.close();
   }, [notif]);
 
   useInput((_, key) => {
@@ -68,41 +70,49 @@ function App() {
   const sendMessage = async (prompt: string) => {
     if (!prompt.trim() || loading) return;
     setInput("");
-
     try {
-      await notif.emit(`ravi.${SESSION}.prompt`, { prompt });
+      await notif.emit(`ravi.${SEND_TO}.prompt`, { prompt });
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { role: "assistant" as const, content: `Error: ${err instanceof Error ? err.message : "Unknown"}` },
+        { sessionKey: SEND_TO, role: "assistant", content: `Error: ${err instanceof Error ? err.message : "Unknown"}` },
       ]);
     }
+  };
+
+  // Format session key for display (shorter)
+  const formatSession = (key: string) => {
+    const parts = key.split(":");
+    if (parts[0] === "agent" && parts.length >= 3) {
+      // agent:main:main -> main:main
+      // agent:main:dm:123 -> main:dm:123
+      return parts.slice(1).join(":");
+    }
+    return key;
   };
 
   return (
     <Box flexDirection="column" padding={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Ravi
-        </Text>
-        <Text color="gray"> session:{SESSION} (ESC to quit)</Text>
+        <Text bold color="cyan">Ravi</Text>
+        <Text color="gray"> → {SEND_TO} (ESC to quit)</Text>
       </Box>
 
       <Box flexDirection="column" marginBottom={1}>
         {messages.map((msg, i) => (
           <Box key={i} marginBottom={1}>
             <Text>
+              <Text color="gray">[{formatSession(msg.sessionKey)}]</Text>
+              {msg.source && <Text color="magenta"> ({msg.source.channel})</Text>}
               <Text bold color={msg.role === "user" ? "green" : "blue"}>
-                {msg.role === "user" ? "You" : "Ravi"}:{" "}
+                {" "}{msg.role === "user" ? ">" : "<"}
               </Text>
-              <Text>{msg.content}</Text>
+              <Text> {msg.content}</Text>
             </Text>
           </Box>
         ))}
         {loading && (
-          <Box>
-            <Text color="gray">...</Text>
-          </Box>
+          <Text color="gray">[{formatSession(loading)}] ...</Text>
         )}
       </Box>
 
@@ -112,7 +122,7 @@ function App() {
           value={input}
           onChange={setInput}
           onSubmit={sendMessage}
-          placeholder={loading ? "" : "Type a message"}
+          placeholder={loading ? "" : `Send to ${formatSession(SEND_TO)}`}
         />
       </Box>
     </Box>
