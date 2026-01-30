@@ -16,6 +16,8 @@ import {
   type SessionEntry,
   type AgentConfig,
 } from "./router/index.js";
+import { createCliMcpServer, initCliTools } from "./cli/exports.js";
+import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 
 const log = logger.child("bot");
 
@@ -104,6 +106,7 @@ export class RaviBot {
 
   async start(): Promise<void> {
     log.info("Starting Ravi bot...");
+    initCliTools();
     this.running = true;
     this.subscribeToPrompts();
     log.info("Ravi bot started", {
@@ -362,6 +365,25 @@ export class RaviBot {
 
     log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
 
+    // Create MCP server with CLI tools filtered by agent permissions
+    // MCP tool naming: mcp__{server}__{tool}
+    // Example: mcp__ravi-cli__agents_list
+
+    // Filter allowed tools to only MCP tools for our server
+    const mcpToolsWhitelist = agent.allowedTools?.filter(t => t.startsWith(MCP_PREFIX));
+    const cliMcpServer = createCliMcpServer({
+      name: MCP_SERVER,
+      // Strip MCP prefix to get internal tool names
+      allowedTools: mcpToolsWhitelist?.length
+        ? mcpToolsWhitelist.map(t => t.replace(MCP_PREFIX, ""))
+        : undefined,
+    });
+
+    log.debug("CLI MCP Server created", {
+      agentId: agent.id,
+      serverName: cliMcpServer.name,
+    });
+
     const queryResult = query({
       prompt: prompt.prompt,
       options: {
@@ -369,6 +391,9 @@ export class RaviBot {
         cwd: agentCwd,
         resume: session.sdkSessionId,
         ...permissionOptions,
+        mcpServers: {
+          "ravi-cli": cliMcpServer,
+        },
         systemPrompt: {
           type: "preset",
           preset: "claude_code",

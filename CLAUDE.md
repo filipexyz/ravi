@@ -156,6 +156,48 @@ ravi contacts add <phone>
 ravi contacts pending    # Pending approvals
 ```
 
+## Testing Agents
+
+Use the CLI to interact with agents directly (daemon must be running):
+
+```bash
+# Send a single prompt
+ravi agents run test "lista os agentes"
+ravi agents run main "oi, tudo bem?"
+
+# Interactive chat mode
+ravi agents chat test
+# Commands: /reset, /session, /exit
+
+# Check session status
+ravi agents session test
+
+# Reset session (clear context)
+ravi agents reset test
+```
+
+The `test` agent is pre-configured with all tools enabled (SDK + MCP CLI tools).
+
+### MCP CLI Tools
+
+Agents can use CLI commands as MCP tools. Tool naming convention:
+
+```
+mcp__ravi-cli__agents_list      # ravi agents list
+mcp__ravi-cli__agents_show      # ravi agents show <id>
+mcp__ravi-cli__contacts_list    # ravi contacts list
+```
+
+Manage agent tools:
+
+```bash
+ravi agents tools test              # List tools with status
+ravi agents tools test init all     # Enable all tools
+ravi agents tools test allow Bash   # Enable specific tool
+ravi agents tools test deny Bash    # Disable specific tool
+ravi agents tools test clear        # Bypass mode (all allowed)
+```
+
 ## Message Formatting
 
 ### Reply Context

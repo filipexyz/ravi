@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { Notif } from "notif.sh";
 import { Group, Command, Arg } from "../decorators.js";
 import {
   getAgent,
@@ -17,6 +18,33 @@ import {
   ensureAgentDirs,
   loadRouterConfig,
 } from "../../router/config.js";
+import {
+  getSession,
+  deleteSession,
+  getSessionsByAgent,
+} from "../../router/sessions.js";
+import {
+  SDK_TOOLS,
+  MCP_PREFIX,
+  getCliToolNames,
+  getCliToolsFullNames,
+  getAllToolsFullNames,
+  toFullToolName,
+} from "../tool-registry.js";
+import type { PromptMessage, ResponseMessage } from "../../bot.js";
+
+const PROMPT_TIMEOUT_MS = 120000; // 2 minutes
+
+/**
+ * Check if a tool is enabled for an agent
+ */
+function isToolEnabled(
+  toolFullName: string,
+  allowedTools: string[] | undefined
+): boolean {
+  if (!allowedTools) return true; // bypass mode
+  return allowedTools.includes(toolFullName);
+}
 
 @Group({
   name: "agents",
@@ -162,8 +190,8 @@ export class AgentsCommands {
   @Command({ name: "tools", description: "Manage agent tools" })
   tools(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("action", { required: false, description: "Action: allow, deny, clear" }) action?: string,
-    @Arg("tool", { required: false, description: "Tool name" }) tool?: string
+    @Arg("action", { required: false, description: "Action: allow, deny, clear, init" }) action?: string,
+    @Arg("tool", { required: false, description: "Tool name or category (sdk, cli, all)" }) tool?: string
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -171,24 +199,45 @@ export class AgentsCommands {
       process.exit(1);
     }
 
-    // No action = list tools
+    // Get tools from registry
+    const CLI_TOOL_NAMES = getCliToolNames();
+    const CLI_TOOLS_FULL = getCliToolsFullNames();
+    const ALL_TOOLS_FULL = getAllToolsFullNames();
+
+    // No action = list all tools with status
     if (!action) {
-      console.log(`\nTools for agent: ${id}`);
-      if (agent.allowedTools) {
-        console.log(`  Mode: whitelist (${agent.allowedTools.length} tools)\n`);
-        for (const t of agent.allowedTools) {
-          console.log(`    - ${t}`);
-        }
-        if (agent.allowedTools.length === 0) {
-          console.log("    (none)");
-        }
-      } else {
-        console.log("  Mode: bypass (all tools allowed)");
+      const allowed = agent.allowedTools;
+      const isBypass = !allowed;
+
+      console.log(`\n🔧 Tools for agent: ${id}`);
+      console.log(`   Mode: ${isBypass ? "bypass (all allowed)" : `whitelist (${allowed!.length} enabled)`}\n`);
+
+      // SDK Tools
+      console.log("SDK Tools:");
+      for (const t of SDK_TOOLS) {
+        const enabled = isToolEnabled(t, allowed);
+        const icon = enabled ? "✓" : "✗";
+        const color = enabled ? "\x1b[32m" : "\x1b[90m";
+        console.log(`  ${color}${icon}\x1b[0m ${t}`);
       }
+
+      // CLI Tools (auto-discovered)
+      console.log("\nCLI Tools:");
+      for (const shortName of CLI_TOOL_NAMES) {
+        const fullName = `${MCP_PREFIX}${shortName}`;
+        const enabled = isToolEnabled(fullName, allowed);
+        const icon = enabled ? "✓" : "✗";
+        const color = enabled ? "\x1b[32m" : "\x1b[90m";
+        console.log(`  ${color}${icon}\x1b[0m ${shortName}`);
+      }
+
       console.log("\nUsage:");
-      console.log("  ravi agents tools <id> allow <tool>  # Add tool to whitelist");
-      console.log("  ravi agents tools <id> deny <tool>   # Remove tool from whitelist");
-      console.log("  ravi agents tools <id> clear         # Clear whitelist (bypass mode)");
+      console.log("  ravi agents tools <id> allow <tool>   # Enable a tool");
+      console.log("  ravi agents tools <id> deny <tool>    # Disable a tool");
+      console.log("  ravi agents tools <id> init           # Init whitelist with SDK tools");
+      console.log("  ravi agents tools <id> init all       # Init with all tools");
+      console.log("  ravi agents tools <id> init cli       # Init with CLI tools only");
+      console.log("  ravi agents tools <id> clear          # Clear whitelist (bypass mode)");
       return;
     }
 
@@ -201,8 +250,10 @@ export class AgentsCommands {
           process.exit(1);
         }
         try {
-          addAgentTool(id, tool);
-          console.log(`\u2713 Tool allowed: ${tool}`);
+          // Convert short name to full name if needed
+          const fullName = toFullToolName(tool);
+          addAgentTool(id, fullName);
+          console.log(`✓ Tool enabled: ${tool}`);
         } catch (err) {
           console.error(`Error: ${err instanceof Error ? err.message : err}`);
           process.exit(1);
@@ -216,18 +267,43 @@ export class AgentsCommands {
           process.exit(1);
         }
         try {
-          removeAgentTool(id, tool);
-          console.log(`\u2713 Tool denied: ${tool}`);
+          // Convert short name to full name if needed
+          const fullName = toFullToolName(tool);
+          removeAgentTool(id, fullName);
+          console.log(`✓ Tool disabled: ${tool}`);
         } catch (err) {
           console.error(`Error: ${err instanceof Error ? err.message : err}`);
           process.exit(1);
         }
         break;
 
+      case "init": {
+        // Initialize whitelist with specific category
+        let toolsToAdd: string[];
+        if (tool === "all") {
+          toolsToAdd = ALL_TOOLS_FULL;
+        } else if (tool === "cli") {
+          toolsToAdd = CLI_TOOLS_FULL;
+        } else {
+          // Default: SDK tools only
+          toolsToAdd = SDK_TOOLS;
+        }
+
+        try {
+          setAgentTools(id, toolsToAdd);
+          console.log(`✓ Whitelist initialized with ${toolsToAdd.length} tools`);
+          console.log(`  Category: ${tool || "sdk"}`);
+        } catch (err) {
+          console.error(`Error: ${err instanceof Error ? err.message : err}`);
+          process.exit(1);
+        }
+        break;
+      }
+
       case "clear":
         try {
           setAgentTools(id, null);
-          console.log(`\u2713 Tools cleared: ${id} (bypass mode)`);
+          console.log(`✓ Whitelist cleared: ${id} (bypass mode)`);
         } catch (err) {
           console.error(`Error: ${err instanceof Error ? err.message : err}`);
           process.exit(1);
@@ -236,7 +312,7 @@ export class AgentsCommands {
 
       default:
         console.error(`Unknown action: ${action}`);
-        console.log("Actions: allow, deny, clear");
+        console.log("Actions: allow, deny, init, clear");
         process.exit(1);
     }
   }
@@ -289,6 +365,209 @@ export class AgentsCommands {
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
       process.exit(1);
+    }
+  }
+
+  // ============================================================================
+  // Agent Interaction Commands
+  // ============================================================================
+
+  @Command({ name: "run", description: "Send a prompt to an agent" })
+  async run(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("prompt", { description: "Prompt to send" }) prompt: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      console.error(`Agent not found: ${id}`);
+      process.exit(1);
+    }
+
+    const sessionKey = `agent:${id}:main`;
+
+    console.log(`\n📤 Sending to ${sessionKey}\n`);
+    console.log(`Prompt: ${prompt}\n`);
+    console.log("─".repeat(50));
+
+    const chars = await this.sendPrompt(sessionKey, prompt);
+
+    console.log("\n" + "─".repeat(50));
+    console.log(`\n✅ Done (${chars} chars)`);
+  }
+
+  @Command({ name: "chat", description: "Interactive chat with an agent" })
+  async chat(@Arg("id", { description: "Agent ID" }) id: string) {
+    const agent = getAgent(id);
+    if (!agent) {
+      console.error(`Agent not found: ${id}`);
+      process.exit(1);
+    }
+
+    const sessionKey = `agent:${id}:main`;
+
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    console.log(`\n🤖 Interactive Chat`);
+    console.log(`   Agent: ${id}`);
+    console.log(`   Session: ${sessionKey}`);
+    console.log(`   Commands: /reset, /session, /exit\n`);
+
+    const ask = () => {
+      rl.question(`\x1b[36m${id}>\x1b[0m `, async (input) => {
+        const trimmed = input.trim();
+
+        if (!trimmed) {
+          ask();
+          return;
+        }
+
+        if (trimmed === "/exit" || trimmed === "/quit") {
+          console.log("\nBye!");
+          rl.close();
+          process.exit(0);
+        }
+
+        if (trimmed === "/reset") {
+          deleteSession(sessionKey);
+          console.log("Session reset.\n");
+          ask();
+          return;
+        }
+
+        if (trimmed === "/session") {
+          const session = getSession(sessionKey);
+          if (session) {
+            console.log(`SDK Session: ${session.sdkSessionId || "(none)"}`);
+            console.log(`Tokens: ${(session.inputTokens || 0) + (session.outputTokens || 0)}\n`);
+          } else {
+            console.log("No active session.\n");
+          }
+          ask();
+          return;
+        }
+
+        // Send prompt
+        console.log();
+        await this.sendPrompt(sessionKey, trimmed);
+        console.log("\n");
+        ask();
+      });
+    };
+
+    ask();
+  }
+
+  /**
+   * Send a prompt to an agent session and stream the response.
+   * Returns the number of characters received.
+   */
+  private async sendPrompt(sessionKey: string, prompt: string): Promise<number> {
+    const notif = new Notif();
+    let done = false;
+    let responseLength = 0;
+
+    const timer = setTimeout(() => {
+      if (!done) {
+        console.log("\n⏱️  Timeout");
+        done = true;
+        notif.close();
+      }
+    }, PROMPT_TIMEOUT_MS);
+
+    // Wait for completion (claude result event)
+    const claudeSub = (async () => {
+      try {
+        for await (const event of notif.subscribe(`ravi.${sessionKey}.claude`)) {
+          if (done) break;
+          if ((event.data as Record<string, unknown>).type === "result") {
+            done = true;
+            break;
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+
+    // Stream responses
+    const responseSub = (async () => {
+      try {
+        for await (const event of notif.subscribe(`ravi.${sessionKey}.response`)) {
+          if (done) break;
+          const data = event.data as ResponseMessage;
+          if (data.error) {
+            console.log(`\n❌ ${data.error}`);
+            done = true;
+            break;
+          }
+          if (data.response) {
+            process.stdout.write(data.response);
+            responseLength += data.response.length;
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+
+    // Send prompt
+    await notif.emit(`ravi.${sessionKey}.prompt`, { prompt } as unknown as Record<string, unknown>);
+
+    await Promise.race([claudeSub, responseSub]);
+    clearTimeout(timer);
+    notif.close();
+
+    return responseLength;
+  }
+
+  @Command({ name: "session", description: "Show agent session status" })
+  session(@Arg("id", { description: "Agent ID" }) id: string) {
+    const agent = getAgent(id);
+    if (!agent) {
+      console.error(`Agent not found: ${id}`);
+      process.exit(1);
+    }
+
+    const sessions = getSessionsByAgent(id);
+
+    console.log(`\n📋 Sessions for agent: ${id}\n`);
+
+    if (sessions.length === 0) {
+      console.log("  No active sessions");
+      console.log(`\n  Start a session with: ravi agents run ${id} "hello"`);
+      return;
+    }
+
+    for (const session of sessions) {
+      const tokens = (session.inputTokens || 0) + (session.outputTokens || 0);
+      const updated = new Date(session.updatedAt).toLocaleString();
+
+      console.log(`  ${session.sessionKey}`);
+      console.log(`    SDK: ${session.sdkSessionId || "(none)"}`);
+      console.log(`    Tokens: ${tokens}`);
+      console.log(`    Updated: ${updated}`);
+      console.log();
+    }
+  }
+
+  @Command({ name: "reset", description: "Reset agent session" })
+  reset(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("sessionKey", { required: false, description: "Specific session key (default: agent:ID:main)" }) sessionKey?: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      console.error(`Agent not found: ${id}`);
+      process.exit(1);
+    }
+
+    const key = sessionKey || `agent:${id}:main`;
+    const deleted = deleteSession(key);
+
+    if (deleted) {
+      console.log(`✅ Session reset: ${key}`);
+    } else {
+      console.log(`ℹ️  No session to reset: ${key}`);
     }
   }
 }

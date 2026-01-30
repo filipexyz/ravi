@@ -3,6 +3,9 @@
  * Ravi Bot CLI - Unified command-line interface
  *
  * Uses Commander.js + custom decorators for declarative command definition.
+ *
+ * For programmatic access to CLI tools (without running the CLI),
+ * import from "./cli/exports.js" instead.
  */
 
 import "reflect-metadata";
@@ -15,6 +18,7 @@ import { ChannelsCommands } from "./commands/channels.js";
 import { ContactsCommands } from "./commands/contacts.js";
 import { ServiceCommands } from "./commands/service.js";
 import { DaemonCommands } from "./commands/daemon.js";
+import { ToolsCommands } from "./commands/tools.js";
 
 const program = new Command();
 
@@ -24,7 +28,14 @@ program
   .version("0.1.0");
 
 // Register all command groups
-registerCommands(program, [AgentsCommands, ChannelsCommands, ContactsCommands, ServiceCommands, DaemonCommands]);
+registerCommands(program, [
+  AgentsCommands,
+  ChannelsCommands,
+  ContactsCommands,
+  ServiceCommands,
+  DaemonCommands,
+  ToolsCommands,
+]);
 
 // Parse and execute
 program.parse();
