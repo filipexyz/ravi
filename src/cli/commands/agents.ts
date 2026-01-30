@@ -13,6 +13,7 @@ import {
   setAgentTools,
   addAgentTool,
   removeAgentTool,
+  setAgentDebounce,
   ensureAgentDirs,
   loadRouterConfig,
 } from "../../router/config.js";
@@ -68,6 +69,7 @@ export class AgentsCommands {
     console.log(`  CWD:           ${agent.cwd}`);
     console.log(`  Model:         ${agent.model || "-"}`);
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
+    console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
 
     if (agent.allowedTools) {
       console.log(`  Allowed Tools: [${agent.allowedTools.length}]`);
@@ -236,6 +238,57 @@ export class AgentsCommands {
         console.error(`Unknown action: ${action}`);
         console.log("Actions: allow, deny, clear");
         process.exit(1);
+    }
+  }
+
+  @Command({ name: "debounce", description: "Set message debounce time" })
+  debounce(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      console.error(`Agent not found: ${id}`);
+      process.exit(1);
+    }
+
+    // No ms = show current debounce
+    if (ms === undefined) {
+      const current = agent.debounceMs;
+      if (current && current > 0) {
+        console.log(`\nDebounce for agent: ${id}`);
+        console.log(`  Time: ${current}ms`);
+        console.log(`\nMessages arriving within ${current}ms will be grouped.`);
+      } else {
+        console.log(`\nDebounce for agent: ${id}`);
+        console.log("  Status: disabled");
+      }
+      console.log("\nUsage:");
+      console.log("  ravi agents debounce <id> <ms>   # Set debounce time");
+      console.log("  ravi agents debounce <id> 0      # Disable debounce");
+      console.log("\nExamples:");
+      console.log("  ravi agents debounce main 2000   # Group messages within 2 seconds");
+      console.log("  ravi agents debounce main 500    # Group messages within 500ms");
+      return;
+    }
+
+    const debounceMs = parseInt(ms, 10);
+    if (isNaN(debounceMs) || debounceMs < 0) {
+      console.error(`Invalid debounce time: ${ms}`);
+      console.log("Must be a positive integer (milliseconds) or 0 to disable");
+      process.exit(1);
+    }
+
+    try {
+      setAgentDebounce(id, debounceMs);
+      if (debounceMs === 0) {
+        console.log(`✓ Debounce disabled: ${id}`);
+      } else {
+        console.log(`✓ Debounce set: ${id} -> ${debounceMs}ms`);
+      }
+    } catch (err) {
+      console.error(`Error: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
     }
   }
 }

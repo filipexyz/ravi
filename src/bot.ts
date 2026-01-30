@@ -1,4 +1,4 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { Notif } from "notif.sh";
 import { logger } from "./utils/logger.js";
@@ -18,6 +18,28 @@ import {
 } from "./router/index.js";
 
 const log = logger.child("bot");
+
+/** Queued message waiting to be processed */
+interface QueuedMessage {
+  prompt: PromptMessage;
+  source?: MessageTarget;
+}
+
+/** Active session state for interrupt handling */
+interface ActiveSession {
+  query: Query;
+  toolRunning: boolean;
+  currentToolId?: string;
+  messageQueue: QueuedMessage[];
+  interrupted: boolean;
+}
+
+/** Debounce state for grouping messages */
+interface DebounceState {
+  messages: QueuedMessage[];
+  timer: ReturnType<typeof setTimeout>;
+  debounceMs: number;
+}
 
 /** Message routing target */
 export interface MessageTarget {
@@ -52,6 +74,8 @@ export class RaviBot {
   private routerConfig: RouterConfig;
   private notif: Notif;
   private running = false;
+  private activeSessions = new Map<string, ActiveSession>();
+  private debounceStates = new Map<string, DebounceState>();
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
@@ -86,15 +110,14 @@ export class RaviBot {
       for await (const event of this.notif.subscribe(topic)) {
         if (!this.running) break;
 
-        try {
-          // Extract session key from topic: ravi.{sessionKey}.prompt
-          const sessionKey = event.topic.split(".").slice(1, -1).join(".");
-          const prompt = event.data as unknown as PromptMessage;
+        // Extract session key from topic: ravi.{sessionKey}.prompt
+        const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+        const prompt = event.data as unknown as PromptMessage;
 
-          await this.handlePrompt(sessionKey, prompt);
-        } catch (err) {
+        // Don't await - handle concurrently to allow interrupts
+        this.handlePrompt(sessionKey, prompt).catch(err => {
           log.error("Failed to handle prompt", err);
-        }
+        });
       }
     } catch (err) {
       log.error("Subscription error", err);
@@ -105,6 +128,116 @@ export class RaviBot {
   }
 
   private async handlePrompt(sessionKey: string, prompt: PromptMessage): Promise<void> {
+    // Reload config to get latest settings
+    this.routerConfig = loadRouterConfig();
+
+    // Get agent config for debounce setting
+    const parts = sessionKey.split(":");
+    const agentId = parts[0] === "agent" ? parts[1] : this.routerConfig.defaultAgent;
+    const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
+    const debounceMs = agent?.debounceMs;
+
+    log.info("handlePrompt debounce check", { sessionKey, agentId, debounceMs });
+
+    // If debounce is configured, use debounce flow
+    if (debounceMs && debounceMs > 0) {
+      this.handlePromptWithDebounce(sessionKey, prompt, debounceMs);
+      return;
+    }
+
+    // No debounce - use immediate flow
+    await this.handlePromptImmediate(sessionKey, prompt);
+  }
+
+  private handlePromptWithDebounce(sessionKey: string, prompt: PromptMessage, debounceMs: number): void {
+    const existing = this.debounceStates.get(sessionKey);
+
+    if (existing) {
+      // Add to existing debounce, reset timer
+      log.info("Debounce: adding message", {
+        sessionKey,
+        debounceMs,
+        messageCount: existing.messages.length + 1
+      });
+      clearTimeout(existing.timer);
+      existing.messages.push({ prompt, source: prompt.source });
+      existing.timer = setTimeout(() => this.flushDebounce(sessionKey), debounceMs);
+    } else {
+      // Start new debounce
+      log.info("Debounce: starting", { sessionKey, debounceMs });
+      const state: DebounceState = {
+        messages: [{ prompt, source: prompt.source }],
+        timer: setTimeout(() => this.flushDebounce(sessionKey), debounceMs),
+        debounceMs,
+      };
+      this.debounceStates.set(sessionKey, state);
+    }
+  }
+
+  private async flushDebounce(sessionKey: string): Promise<void> {
+    const state = this.debounceStates.get(sessionKey);
+    if (!state) return;
+
+    this.debounceStates.delete(sessionKey);
+
+    // Combine all messages into one
+    const combinedPrompt = state.messages.map(m => m.prompt.prompt).join("\n\n");
+    const lastSource = state.messages[state.messages.length - 1].source;
+
+    log.info("Debounce: flushing", {
+      sessionKey,
+      messageCount: state.messages.length,
+      combinedLength: combinedPrompt.length
+    });
+
+    // Process the combined message
+    await this.handlePromptImmediate(sessionKey, {
+      prompt: combinedPrompt,
+      source: lastSource,
+    });
+  }
+
+  private async handlePromptImmediate(sessionKey: string, prompt: PromptMessage): Promise<void> {
+    const active = this.activeSessions.get(sessionKey);
+    log.info("handlePrompt called", {
+      sessionKey,
+      hasActiveSession: !!active,
+      toolRunning: active?.toolRunning,
+      queueSize: active?.messageQueue.length
+    });
+
+    if (active) {
+      // Session already active - queue or interrupt
+      if (active.toolRunning) {
+        // Tool running - queue message and wait for it to finish
+        log.info("Tool running, queueing message", {
+          sessionKey,
+          queueSize: active.messageQueue.length + 1
+        });
+        active.messageQueue.push({ prompt, source: prompt.source });
+        return;
+      } else {
+        // No tool running - interrupt immediately
+        log.info("Interrupting session for new message (no tool running)", { sessionKey });
+        active.messageQueue.push({ prompt, source: prompt.source });
+        if (!active.interrupted) {
+          active.interrupted = true;
+          try {
+            await active.query.interrupt();
+            log.info("Interrupt sent successfully", { sessionKey });
+          } catch (err) {
+            log.error("Interrupt failed", { sessionKey, error: err });
+          }
+        }
+        return;
+      }
+    }
+
+    // No active session - process normally
+    await this.processNewPrompt(sessionKey, prompt);
+  }
+
+  private async processNewPrompt(sessionKey: string, prompt: PromptMessage): Promise<void> {
     // Parse session key to get agent ID: "agent:main:..." -> "main"
     const parts = sessionKey.split(":");
     const agentId = parts[0] === "agent" ? parts[1] : this.routerConfig.defaultAgent;
@@ -118,7 +251,7 @@ export class RaviBot {
     const agentCwd = expandHome(agent.cwd);
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
 
-    log.info("Received prompt", { sessionKey, agentId, agentCwd });
+    log.info("Processing prompt", { sessionKey, agentId, cwd: agentCwd });
 
     // Save message
     saveMessage(sessionKey, "user", prompt.prompt);
@@ -146,10 +279,10 @@ export class RaviBot {
 
       // Final response with usage (not sent to channel, just for tracking)
       if (response.usage) {
-        log.info("Final usage", response.usage);
+        log.info("Completed", { sessionKey, tokens: response.usage.input_tokens + response.usage.output_tokens });
       }
     } catch (err) {
-      log.error("Query failed", err);
+      log.error("Query failed", { sessionKey, error: err });
       const errorResponse: ResponseMessage = {
         error: err instanceof Error ? err.message : "Unknown error",
         target: prompt.source,
@@ -220,41 +353,126 @@ export class RaviBot {
       },
     });
 
-    for await (const message of queryResult) {
-      log.debug("SDK message", { type: message.type });
+    // Register active session for interrupt handling
+    const activeSession: ActiveSession = {
+      query: queryResult,
+      toolRunning: false,
+      messageQueue: [],
+      interrupted: false,
+    };
+    this.activeSessions.set(session.sessionKey, activeSession);
 
-      // Emit all SDK events
-      if (onSdkEvent) {
-        await onSdkEvent(message as unknown as Record<string, unknown>);
-      }
+    try {
+      for await (const message of queryResult) {
+        log.debug("SDK message", {
+        type: message.type,
+        toolRunning: activeSession.toolRunning,
+        queueSize: activeSession.messageQueue.length
+      });
 
-      if (message.type === "assistant") {
-        const blocks = message.message.content;
-        let messageText = "";
-        for (const block of blocks) {
-          if (block.type === "text") {
-            messageText += block.text;
+        // Emit all SDK events
+        if (onSdkEvent) {
+          await onSdkEvent(message as unknown as Record<string, unknown>);
+        }
+
+        // Detect tool start (assistant message with tool_use blocks)
+        if (message.type === "assistant") {
+          const blocks = message.message.content;
+          let messageText = "";
+          for (const block of blocks) {
+            if (block.type === "text") {
+              messageText += block.text;
+            }
+            if (block.type === "tool_use") {
+              activeSession.toolRunning = true;
+              activeSession.currentToolId = block.id;
+              log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name, toolId: block.id });
+            }
+          }
+          if (messageText) {
+            log.info("Assistant message", { text: messageText.slice(0, 100) });
+            responseText += messageText;
+            if (onMessage) {
+              await onMessage(messageText);
+            }
           }
         }
-        if (messageText) {
-          log.info("Assistant message", { text: messageText.slice(0, 100) });
-          responseText += messageText;
-          if (onMessage) {
-            await onMessage(messageText);
+
+        // Detect tool end (user message with tool_result)
+        if (message.type === "user") {
+          // Log full message structure for debugging
+          log.debug("User message received", {
+            sessionKey: session.sessionKey,
+            messageKeys: Object.keys(message),
+            hasMessage: !!(message as any).message,
+            hasToolUseResult: !!(message as any).tool_use_result
+          });
+
+          const content = (message as any).message?.content;
+          if (Array.isArray(content)) {
+            const hasToolResult = content.some((b: any) => b.type === "tool_result");
+            if (hasToolResult) {
+              activeSession.toolRunning = false;
+              activeSession.currentToolId = undefined;
+              log.info("Tool finished", { sessionKey: session.sessionKey });
+
+              // Check if there are pending messages - interrupt to process them
+              if (activeSession.messageQueue.length > 0 && !activeSession.interrupted) {
+                log.info("Tool finished, interrupting for pending messages", {
+                  sessionKey: session.sessionKey,
+                  queueSize: activeSession.messageQueue.length
+                });
+                activeSession.interrupted = true;
+                await queryResult.interrupt();
+                log.info("Interrupt completed, breaking loop", { sessionKey: session.sessionKey });
+                break;
+              } else if (activeSession.messageQueue.length > 0 && activeSession.interrupted) {
+                log.info("Already interrupted, waiting for loop to end", { sessionKey: session.sessionKey });
+              }
+            }
           }
         }
-      }
 
-      if (message.type === "result") {
-        inputTokens = message.usage?.input_tokens ?? 0;
-        outputTokens = message.usage?.output_tokens ?? 0;
-        log.info("Result", { inputTokens, outputTokens, sessionId: message.session_id });
+        if (message.type === "result") {
+          inputTokens = message.usage?.input_tokens ?? 0;
+          outputTokens = message.usage?.output_tokens ?? 0;
+          log.info("Result", { inputTokens, outputTokens, sessionId: message.session_id });
 
-        if ("session_id" in message && message.session_id) {
-          updateSdkSessionId(session.sessionKey, message.session_id);
+          if ("session_id" in message && message.session_id) {
+            updateSdkSessionId(session.sessionKey, message.session_id);
+          }
+
+          updateTokens(session.sessionKey, inputTokens, outputTokens);
         }
+      }
+    } finally {
+      log.info("processPrompt finally block", { sessionKey: session.sessionKey });
 
-        updateTokens(session.sessionKey, inputTokens, outputTokens);
+      // Get pending messages before cleaning up
+      const pendingMessages = [...activeSession.messageQueue];
+      this.activeSessions.delete(session.sessionKey);
+
+      // Process all pending messages in order
+      if (pendingMessages.length > 0) {
+        log.info("Processing pending messages", {
+          sessionKey: session.sessionKey,
+          count: pendingMessages.length
+        });
+
+        for (const queued of pendingMessages) {
+          log.info("Processing queued message", {
+            sessionKey: session.sessionKey,
+            prompt: queued.prompt.prompt.slice(0, 50)
+          });
+          try {
+            await this.processNewPrompt(session.sessionKey, {
+              prompt: queued.prompt.prompt,
+              source: queued.source
+            });
+          } catch (err) {
+            log.error("Failed to process queued message", { sessionKey: session.sessionKey, error: err });
+          }
+        }
       }
     }
 

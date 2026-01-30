@@ -30,6 +30,8 @@ const AgentConfigSchema = z.object({
   dmScope: DmScopeSchema.optional(),
   systemPromptAppend: z.string().optional(),
   allowedTools: z.array(z.string()).optional(),
+  /** Debounce time in ms - groups messages arriving within this window */
+  debounceMs: z.number().optional(),
 });
 
 const RouteConfigSchema = z.object({
@@ -309,4 +311,28 @@ export function removeAgentTool(id: string, tool: string): void {
   agent.allowedTools = agent.allowedTools.filter(t => t !== tool);
   saveRouterConfig(config);
   log.info("Removed tool from agent", { id, tool });
+}
+
+// ============================================================================
+// Debounce Management
+// ============================================================================
+
+/**
+ * Set debounce time for an agent (null or 0 = disable)
+ */
+export function setAgentDebounce(id: string, debounceMs: number | null): void {
+  const config = loadRouterConfig();
+
+  if (!config.agents[id]) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (debounceMs === null || debounceMs === 0) {
+    delete config.agents[id].debounceMs;
+  } else {
+    config.agents[id].debounceMs = debounceMs;
+  }
+
+  saveRouterConfig(config);
+  log.info("Set agent debounce", { id, debounceMs });
 }

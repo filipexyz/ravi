@@ -1,0 +1,119 @@
+/**
+ * Ravi Daemon
+ *
+ * Runs both the bot server and WhatsApp gateway in a single process.
+ */
+
+import { mkdirSync, existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { RaviBot } from "./bot.js";
+import { createGateway } from "./gateway.js";
+import { createWhatsAppPlugin } from "./channels/whatsapp/index.js";
+import { loadConfig } from "./utils/config.js";
+import { logger } from "./utils/logger.js";
+
+const log = logger.child("daemon");
+
+// Load environment from ~/.ravi/.env
+function loadEnvFile() {
+  const envFile = join(homedir(), ".ravi", ".env");
+  if (!existsSync(envFile)) {
+    return;
+  }
+
+  const content = readFileSync(envFile, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    let value = trimmed.slice(eqIndex + 1).trim();
+
+    // Remove quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+
+  log.info("Loaded environment from ~/.ravi/.env");
+}
+
+loadEnvFile();
+
+// Ensure log directory exists
+const LOG_DIR = join(homedir(), ".ravi", "logs");
+mkdirSync(LOG_DIR, { recursive: true });
+
+// Handle signals
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+let bot: RaviBot | null = null;
+let gateway: ReturnType<typeof createGateway> | null = null;
+let shuttingDown = false;
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  log.info(`Received ${signal}, shutting down...`);
+
+  try {
+    if (gateway) {
+      await gateway.stop();
+    }
+    if (bot) {
+      await bot.stop();
+    }
+  } catch (err) {
+    log.error("Error during shutdown", err);
+  }
+
+  log.info("Daemon stopped");
+  process.exit(0);
+}
+
+async function main() {
+  const config = loadConfig();
+  logger.setLevel(config.logLevel);
+
+  log.info("Starting Ravi daemon...");
+
+  // Start bot
+  bot = new RaviBot({ config });
+  await bot.start();
+  log.info("Bot started");
+
+  // Start gateway with WhatsApp plugin
+  const whatsappPlugin = createWhatsAppPlugin({
+    accounts: {
+      default: {
+        name: "Ravi WhatsApp",
+        enabled: true,
+        dmPolicy: "pairing",
+        groupPolicy: "allowlist",
+        sendReadReceipts: true,
+        debounceMs: 500,
+      },
+    },
+  });
+
+  gateway = createGateway({ logLevel: config.logLevel });
+  gateway.use(whatsappPlugin);
+  await gateway.start();
+  log.info("Gateway started");
+
+  log.info("Daemon ready");
+}
+
+main().catch((err) => {
+  log.error("Fatal error", err);
+  process.exit(1);
+});

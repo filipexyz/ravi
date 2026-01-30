@@ -38,6 +38,9 @@ export interface AgentConfig {
 
   /** Whitelist of allowed tools (undefined = bypass mode, all tools allowed) */
   allowedTools?: string[];
+
+  /** Debounce time in ms - groups messages arriving within this window */
+  debounceMs?: number;
 }
 
 // ============================================================================
