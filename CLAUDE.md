@@ -156,6 +156,41 @@ ravi contacts add <phone>
 ravi contacts pending    # Pending approvals
 ```
 
+## Message Formatting
+
+### Reply Context
+
+When a message replies to another, the quoted message is included:
+
+```
+[Replying to João id:ABC123]
+Texto da mensagem original
+[/Replying]
+
+[WhatsApp Grupo id:123@g.us 30/01/2026, 14:30] Maria: Minha resposta
+```
+
+### Audio Transcription
+
+Voice messages and audio files are automatically transcribed using OpenAI Whisper:
+
+```
+[WhatsApp +5511999 30/01/2026, 14:30]
+[Audio]
+Transcript:
+O texto transcrito do áudio aparece aqui
+```
+
+For audio files sent as documents:
+
+```
+[Audio: gravacao.mp3]
+Transcript:
+O texto transcrito do arquivo
+```
+
+Requires `OPENAI_API_KEY` in environment.
+
 ## Environment (~/.ravi/.env)
 
 ```bash
@@ -164,8 +199,9 @@ NOTIF_API_KEY=nsh_xxx
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
 
 # Optional
+OPENAI_API_KEY=sk-xxx   # For audio transcription
 RAVI_MODEL=sonnet
-RAVI_LOG_LEVEL=info   # debug | info | warn | error
+RAVI_LOG_LEVEL=info     # debug | info | warn | error
 ```
 
 ## Development
