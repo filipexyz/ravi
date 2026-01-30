@@ -1,0 +1,50 @@
+/**
+ * WhatsApp Bridge Entry Point
+ *
+ * Connects WhatsApp messages to RaviBot via notif.sh.
+ * Run alongside the main bot server.
+ *
+ * Usage:
+ *   npm run wa
+ */
+
+import { WhatsAppBridge } from "./whatsapp.js";
+import { loadConfig } from "./utils/config.js";
+import { logger } from "./utils/logger.js";
+
+const log = logger.child("wa");
+
+// Capture Ctrl+C via stdin (in case SIGINT is blocked)
+if (process.stdin.isTTY) {
+  process.stdin.setRawMode(true);
+  process.stdin.resume();
+  process.stdin.on("data", (data) => {
+    // Ctrl+C = 0x03, Ctrl+D = 0x04, ESC = 0x1b
+    if (data[0] === 0x03 || data[0] === 0x04 || data[0] === 0x1b) {
+      console.log("\nBye!");
+      process.exit(0);
+    }
+  });
+}
+
+// Also handle SIGINT/SIGTERM as backup
+process.on("SIGINT", () => process.exit(0));
+process.on("SIGTERM", () => process.exit(0));
+
+async function main() {
+  const config = loadConfig();
+  logger.setLevel(config.logLevel);
+
+  log.info("Starting WhatsApp bridge...");
+
+  const bridge = new WhatsAppBridge({
+    logLevel: config.logLevel,
+  });
+
+  await bridge.start();
+}
+
+main().catch((err) => {
+  log.error("Fatal error", err);
+  process.exit(1);
+});

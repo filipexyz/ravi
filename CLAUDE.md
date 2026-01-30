@@ -5,9 +5,22 @@ Claude-powered bot integrated with notif.sh using the Claude Agent SDK.
 ## Architecture
 
 ```
-Client → notif.sh (ravi.*.prompt) → RaviBot → Claude Agent SDK
-                                       ↓
-Client ← notif.sh (ravi.*.response) ←──┘
+┌─────────────┐
+│    TUI      │──────────────────────────────────────┐
+└─────────────┘                                      │
+                                                     ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
+│  WhatsApp   │────▶│   Bridge    │────▶│      notif.sh       │
+└─────────────┘     └─────────────┘     │  ravi.*.prompt      │
+                                        └──────────┬──────────┘
+                                                   │
+                                                   ▼
+┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
+│  WhatsApp   │◀────│   Bridge    │◀────│      RaviBot        │
+└─────────────┘     └─────────────┘     │  Claude Agent SDK   │
+                          ▲             └─────────────────────┘
+                          │
+                    notif.sh (ravi.*.response)
 ```
 
 ## Topics
@@ -15,7 +28,12 @@ Client ← notif.sh (ravi.*.response) ←──┘
 ```
 ravi.<session>.prompt     # Send prompt
 ravi.<session>.response   # Receive response
+ravi.<session>.debug      # Debug events
 ```
+
+**Session IDs:**
+- `main` - Default TUI session
+- `wa-<phone>` - WhatsApp sessions (e.g., `wa-5511999999999`)
 
 ## Messages
 
@@ -37,19 +55,45 @@ ravi.<session>.response   # Receive response
 ## Usage
 
 ```bash
-# Terminal 1: Start bot
+# Terminal 1: Start bot server
 npm run start
 
 # Terminal 2: Start TUI chat
 npm run tui
+
+# Terminal 3: Start WhatsApp bridge (optional)
+npm run wa
 ```
+
+## WhatsApp Integration
+
+The WhatsApp bridge connects WhatsApp to RaviBot via notif.sh using Baileys.
+
+**First run:**
+1. Run `npm run wa`
+2. Scan the QR code with WhatsApp (Settings > Linked Devices)
+3. Auth credentials saved to `~/.ravi/whatsapp-auth/`
+
+**Features:**
+- Real-time message handling
+- Typing indicators
+- Auto-reconnection with exponential backoff
+- Session persistence
+
+**Session mapping:**
+- WhatsApp JID `5511999999999@s.whatsapp.net` → Session `wa-5511999999999`
+- Group JID `123456789@g.us` → Session `wa-123456789`
 
 ## Storage
 
 Chat history saved to `~/.ravi/chat.db` (SQLite).
 
 ```sql
+-- TUI messages
 SELECT * FROM messages WHERE session_id = 'main';
+
+-- WhatsApp messages
+SELECT * FROM messages WHERE session_id LIKE 'wa-%';
 ```
 
 ## Environment
@@ -62,8 +106,10 @@ SELECT * FROM messages WHERE session_id = 'main';
 
 ```bash
 npm install
-npm run start    # bot server
-npm run tui      # chat interface
-npm run dev      # bot watch mode
+npm run start      # bot server
+npm run tui        # TUI chat interface
+npm run wa         # WhatsApp bridge
+npm run dev        # bot watch mode
+npm run wa:dev     # WhatsApp watch mode
 npm run typecheck
 ```
