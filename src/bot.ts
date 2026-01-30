@@ -123,18 +123,25 @@ export class RaviBot {
     saveMessage(sessionKey, "user", prompt.prompt);
 
     try {
-      const response = await this.processPrompt(prompt, session, agent, agentCwd);
+      // Emit partial messages as they arrive
+      const onMessage = async (text: string) => {
+        const partialResponse: ResponseMessage = {
+          response: text,
+          target: prompt.source,
+        };
+        await this.notif.emit(`ravi.${sessionKey}.response`, partialResponse as Record<string, unknown>);
+      };
+
+      const response = await this.processPrompt(prompt, session, agent, agentCwd, onMessage);
 
       if (response.response) {
         saveMessage(sessionKey, "assistant", response.response);
       }
 
-      // Echo source as target so Gateway knows where to route
-      if (prompt.source) {
-        response.target = prompt.source;
+      // Final response with usage (not sent to channel, just for tracking)
+      if (response.usage) {
+        log.info("Final usage", response.usage);
       }
-
-      await this.notif.emit(`ravi.${sessionKey}.response`, response as Record<string, unknown>);
     } catch (err) {
       log.error("Query failed", err);
       const errorResponse: ResponseMessage = {
@@ -149,7 +156,8 @@ export class RaviBot {
     prompt: PromptMessage,
     session: SessionEntry,
     agent: { model?: string },
-    agentCwd: string
+    agentCwd: string,
+    onMessage?: (text: string) => Promise<void>
   ): Promise<ResponseMessage> {
     let responseText = "";
     let inputTokens = 0;
@@ -161,9 +169,10 @@ export class RaviBot {
       prompt: prompt.prompt,
       options: {
         model,
-        maxTurns: 1,
         cwd: agentCwd,
         resume: session.sdkSessionId,
+        permissionMode: "bypassPermissions",
+        allowDangerouslySkipPermissions: true,
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
@@ -174,10 +183,21 @@ export class RaviBot {
     });
 
     for await (const message of queryResult) {
+      log.info("SDK message", { type: message.type });
+
       if (message.type === "assistant") {
-        for (const block of message.message.content) {
+        const blocks = message.message.content;
+        let messageText = "";
+        for (const block of blocks) {
           if (block.type === "text") {
-            responseText += block.text;
+            messageText += block.text;
+          }
+        }
+        if (messageText) {
+          log.info("Assistant message", { text: messageText.slice(0, 100) });
+          responseText += messageText;
+          if (onMessage) {
+            await onMessage(messageText);
           }
         }
       }
@@ -185,6 +205,7 @@ export class RaviBot {
       if (message.type === "result") {
         inputTokens = message.usage?.input_tokens ?? 0;
         outputTokens = message.usage?.output_tokens ?? 0;
+        log.info("Result", { inputTokens, outputTokens, sessionId: message.session_id });
 
         if ("session_id" in message && message.session_id) {
           updateSdkSessionId(session.sessionKey, message.session_id);
