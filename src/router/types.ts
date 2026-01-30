@@ -35,6 +35,9 @@ export interface AgentConfig {
 
   /** System prompt append */
   systemPromptAppend?: string;
+
+  /** Whitelist of allowed tools (undefined = bypass mode, all tools allowed) */
+  allowedTools?: string[];
 }
 
 // ============================================================================

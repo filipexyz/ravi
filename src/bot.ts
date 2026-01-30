@@ -14,6 +14,7 @@ import {
   expandHome,
   type RouterConfig,
   type SessionEntry,
+  type AgentConfig,
 } from "./router/index.js";
 
 const log = logger.child("bot");
@@ -160,7 +161,7 @@ export class RaviBot {
   private async processPrompt(
     prompt: PromptMessage,
     session: SessionEntry,
-    agent: { model?: string },
+    agent: AgentConfig,
     agentCwd: string,
     onMessage?: (text: string) => Promise<void>,
     onSdkEvent?: (event: Record<string, unknown>) => Promise<void>
@@ -171,14 +172,18 @@ export class RaviBot {
 
     const model = agent.model ?? this.config.model;
 
+    // Build permission options: use allowedTools whitelist if defined, otherwise bypass mode
+    const permissionOptions = agent.allowedTools
+      ? { allowedTools: agent.allowedTools }
+      : { permissionMode: "bypassPermissions" as const, allowDangerouslySkipPermissions: true };
+
     const queryResult = query({
       prompt: prompt.prompt,
       options: {
         model,
         cwd: agentCwd,
         resume: session.sdkSessionId,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
+        ...permissionOptions,
         systemPrompt: {
           type: "preset",
           preset: "claude_code",

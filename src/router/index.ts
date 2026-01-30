@@ -39,6 +39,16 @@ export {
   validateConfig,
   checkAgentDirs,
   ensureAgentDirs,
+  // Agent CRUD
+  getAgent,
+  getAllAgents,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  // Tool Management
+  setAgentTools,
+  addAgentTool,
+  removeAgentTool,
 } from "./config.js";
 
 // Sessions
