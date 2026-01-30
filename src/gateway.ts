@@ -14,9 +14,65 @@ import {
   type RouterConfig,
 } from "./router/index.js";
 import { logger } from "./utils/logger.js";
-import type { ResponseMessage, MessageTarget } from "./bot.js";
+import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
 
 const log = logger.child("gateway");
+
+/** Silent reply token - when response contains this, don't send to channel */
+export const SILENT_TOKEN = "@@SILENT@@";
+
+/**
+ * Format message envelope with metadata for structured prompts.
+ */
+function formatEnvelope(
+  plugin: ChannelPlugin,
+  message: InboundMessage
+): string {
+  const channel = plugin.meta.name;
+  const timestamp = new Date(message.timestamp).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  if (message.isGroup) {
+    // [WhatsApp Família id:123@g.us 2024-01-30 14:30] João: texto
+    const groupLabel = message.groupName ?? message.chatId;
+    const sender = message.senderName ?? message.senderId;
+    return `[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${message.text ?? "[media]"}`;
+  } else {
+    // [WhatsApp +5511999 2024-01-30 14:30] texto
+    const from = message.senderPhone ?? message.senderId;
+    return `[${channel} ${from} ${timestamp}] ${message.text ?? "[media]"}`;
+  }
+}
+
+/**
+ * Build MessageContext from an inbound message.
+ */
+function buildMessageContext(
+  plugin: ChannelPlugin,
+  message: InboundMessage
+): MessageContext {
+  return {
+    channelId: plugin.id,
+    channelName: plugin.meta.name,
+    accountId: message.accountId,
+    chatId: message.chatId,
+    messageId: message.id,
+    senderId: message.senderId,
+    senderName: message.senderName,
+    senderPhone: message.senderPhone,
+    isGroup: message.isGroup,
+    groupName: message.groupName,
+    groupId: message.isGroup ? message.chatId : undefined,
+    groupMembers: message.groupMembers,
+    timestamp: message.timestamp,
+  };
+}
 
 export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
@@ -165,6 +221,12 @@ export class Gateway {
             ? `Error: ${response.error}`
             : response.response;
 
+          // Skip silent responses
+          if (text && text.trim() === SILENT_TOKEN) {
+            log.debug("Silent response, not sending to channel", { sessionKey });
+            continue;
+          }
+
           if (text) {
             await plugin.outbound.send(accountId, chatId, { text });
           }
@@ -253,17 +315,22 @@ export class Gateway {
       chatId: message.chatId,
     };
 
+    // Build context and formatted envelope
+    const context = buildMessageContext(plugin, message);
+    const envelope = formatEnvelope(plugin, message);
+
     // Store target for typing heartbeat
     this.activeTargets.set(sessionKey, source);
 
     // Typing indicator
     await plugin.outbound.sendTyping(message.accountId, message.chatId, true);
 
-    // Emit prompt with source
+    // Emit prompt with source and context
     try {
       await this.notif.emit(`ravi.${sessionKey}.prompt`, {
-        prompt: message.text ?? "[media]",
+        prompt: envelope,
         source,
+        context,
       });
     } catch (err) {
       log.error("Failed to emit prompt", err);

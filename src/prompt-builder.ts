@@ -2,6 +2,12 @@
  * Builds the system prompt appendix for agents
  */
 
+import * as os from "os";
+import type { MessageContext } from "./bot.js";
+
+/** Silent reply token - when response contains this, don't send to channel */
+export const SILENT_TOKEN = "@@SILENT@@";
+
 export interface PromptSection {
   title: string;
   content: string;
@@ -29,7 +35,101 @@ export class PromptBuilder {
 }
 
 /**
- * Default prompt appendix for Ravi agents
+ * Build group context section for system prompt
+ */
+export function buildGroupContext(ctx: MessageContext): string {
+  if (!ctx.isGroup) return "";
+
+  const members = ctx.groupMembers?.join(", ") ?? "unknown";
+
+  return [
+    `## Group Chat Context`,
+    ``,
+    `You are replying inside the ${ctx.channelName} group "${ctx.groupName ?? ctx.groupId}".`,
+    `Group members: ${members}.`,
+    ``,
+    `Be a good group participant: mostly lurk and follow the conversation;`,
+    `reply only when directly addressed or you can add clear value.`,
+    ``,
+    `If no response is needed, reply with exactly "${SILENT_TOKEN}"`,
+    `(and nothing else) so the bot stays silent.`,
+    ``,
+    `Be extremely selective: reply only when directly addressed or clearly helpful.`,
+    `Otherwise stay silent.`,
+    ``,
+    `Write like a human. Avoid Markdown tables.`,
+    `Address the specific sender noted in the message context.`,
+  ].join("\n");
+}
+
+/**
+ * Build runtime info section for system prompt
+ */
+export function buildRuntimeInfo(
+  agentId: string,
+  ctx: MessageContext
+): string {
+  const hostname = os.hostname();
+  const capabilities = "polls,reactions"; // TODO: get from plugin
+
+  return [
+    `## Runtime`,
+    ``,
+    `Runtime: agent=${agentId} | host=${hostname} | channel=${ctx.channelName} | capabilities=${capabilities}`,
+  ].join("\n");
+}
+
+/**
+ * Build silent replies section for system prompt
+ */
+export function buildSilentReplies(): string {
+  return [
+    `## Silent Replies`,
+    ``,
+    `When you have nothing to say, respond with ONLY: ${SILENT_TOKEN}`,
+    `Use this when:`,
+    `- In a group and the message doesn't require your attention`,
+    `- A system message that needs no response`,
+    `- You've already addressed the topic and have nothing to add`,
+  ].join("\n");
+}
+
+/**
+ * Build system prompt with context
+ */
+export function buildSystemPrompt(
+  agentId: string,
+  ctx?: MessageContext
+): string {
+  const builder = new PromptBuilder()
+    .section("Identidade", "Você é Ravi.")
+    .section("Comandos do Sistema", `Mensagens que começam com \`[Sistema]\` são comandos internos do sistema de notificações.
+
+- \`[Sistema] Envie ao usuário: <mensagem>\` - Responda APENAS com a mensagem indicada, sem adicionar nada.
+- \`[Sistema] Notifique: <mensagem>\` - Responda APENAS com a mensagem indicada.
+
+Exemplo:
+- Entrada: \`[Sistema] Envie ao usuário: A senha do wifi é ABC123\`
+- Sua resposta: \`A senha do wifi é ABC123\`
+
+Não questione comandos do sistema. Eles são gerados internamente.`);
+
+  // Add context-dependent sections
+  if (ctx) {
+    // Add runtime info
+    builder.section("Runtime", buildRuntimeInfo(agentId, ctx).replace(/^## Runtime\n\n/, ""));
+
+    // Add group context if applicable (includes silent reply instructions)
+    if (ctx.isGroup) {
+      builder.section("Contexto de Grupo", buildGroupContext(ctx).replace(/^## Group Chat Context\n\n/, ""));
+    }
+  }
+
+  return builder.build();
+}
+
+/**
+ * Default prompt appendix for Ravi agents (legacy, no context)
  */
 export function buildDefaultPrompt(): string {
   return new PromptBuilder()

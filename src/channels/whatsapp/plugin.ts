@@ -63,6 +63,8 @@ import {
   isAllowed as isContactAllowed,
   savePendingContact,
   getContactReplyMode,
+  getContactName,
+  saveDiscoveredContact,
 } from "../../contacts.js";
 import { logger } from "../../utils/logger.js";
 
@@ -367,8 +369,43 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       return;
     }
 
-    // Normalize message
-    const message = normalizeMessage(accountId, rawMessage);
+    // Fetch group metadata if this is a group message
+    let groupName: string | undefined;
+    let groupMembers: string[] | undefined;
+    const jid = rawMessage.key.remoteJid;
+    if (jid && jid.endsWith("@g.us")) {
+      const socket = sessionManager.getSocket(accountId);
+      if (socket) {
+        try {
+          const metadata = await socket.groupMetadata(jid);
+          groupName = metadata.subject;
+          // Extract member names: try contacts DB, then pushName, then phone
+          groupMembers = metadata.participants.map(p => {
+            // Use normalizePhone to get consistent key (lid:xxx or phone number)
+            const normalizedId = normalizePhone(p.id);
+            const displayPhone = p.id.split("@")[0];
+            // Save as discovered contact (won't affect existing status)
+            saveDiscoveredContact(normalizedId, p.notify || null);
+            // Look up name: contacts DB > pushName > phone
+            const contactName = getContactName(normalizedId);
+            const resolvedName = contactName || p.notify || displayPhone;
+            log.info("Group member resolution", {
+              jid: p.id,
+              normalizedId,
+              pushName: p.notify ?? "(none)",
+              contactName: contactName ?? "(none)",
+              resolvedName,
+            });
+            return resolvedName;
+          });
+        } catch (err) {
+          log.debug("Failed to fetch group metadata", { jid, error: err });
+        }
+      }
+    }
+
+    // Normalize message with group info
+    const message = normalizeMessage(accountId, rawMessage, groupName, groupMembers);
     if (!message) {
       return;
     }

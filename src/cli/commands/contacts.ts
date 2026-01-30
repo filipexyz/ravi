@@ -27,6 +27,8 @@ function statusIcon(status: ContactStatus): string {
       return "\x1b[33m?\x1b[0m";
     case "blocked":
       return "\x1b[31m✗\x1b[0m";
+    case "discovered":
+      return "\x1b[36m○\x1b[0m";
   }
 }
 
@@ -38,6 +40,8 @@ function statusText(status: ContactStatus): string {
       return "\x1b[33mpending\x1b[0m";
     case "blocked":
       return "\x1b[31mblocked\x1b[0m";
+    case "discovered":
+      return "\x1b[36mdiscovered\x1b[0m";
   }
 }
 

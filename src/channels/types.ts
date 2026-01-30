@@ -53,12 +53,15 @@ export interface InboundMessage {
   accountId: string;
   senderId: string;
   senderName?: string;
+  senderPhone?: string;
   chatId: string;
   text?: string;
   media?: InboundMedia;
   replyTo?: string;
   timestamp: number;
   isGroup: boolean;
+  groupName?: string;
+  groupMembers?: string[];
   raw: unknown;
 }
 

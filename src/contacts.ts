@@ -24,7 +24,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT PRIMARY KEY,
     name TEXT,
-    status TEXT DEFAULT 'allowed' CHECK(status IN ('allowed', 'pending', 'blocked')),
+    status TEXT DEFAULT 'allowed' CHECK(status IN ('allowed', 'pending', 'blocked', 'discovered')),
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -44,7 +44,7 @@ try {
   db.exec(`ALTER TABLE contacts ADD COLUMN reply_mode TEXT DEFAULT 'auto'`);
 } catch { /* exists */ }
 
-export type ContactStatus = "allowed" | "pending" | "blocked";
+export type ContactStatus = "allowed" | "pending" | "blocked" | "discovered";
 export type ReplyMode = "auto" | "mention";
 
 export interface Contact {
@@ -217,6 +217,29 @@ export function setContactReplyMode(phone: string, mode: ReplyMode): void {
  */
 export function blockContact(phone: string): void {
   setContactStatus(phone, "blocked");
+}
+
+/**
+ * Get contact name by phone (returns null if not found or no name)
+ */
+export function getContactName(phone: string): string | null {
+  const contact = getContact(phone);
+  return contact?.name ?? null;
+}
+
+/**
+ * Save a discovered contact (from group membership).
+ * Creates as 'discovered' if new, updates name if exists but has no name.
+ */
+export function saveDiscoveredContact(phone: string, name?: string | null): void {
+  const normalizedPhone = normalizePhone(phone);
+  db.prepare(`
+    INSERT INTO contacts (phone, name, status, updated_at)
+    VALUES (?, ?, 'discovered', datetime('now'))
+    ON CONFLICT(phone) DO UPDATE SET
+      name = COALESCE(contacts.name, excluded.name),
+      updated_at = datetime('now')
+  `).run(normalizedPhone, name ?? null);
 }
 
 export function closeContacts(): void {

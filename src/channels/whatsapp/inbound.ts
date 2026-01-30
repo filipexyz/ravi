@@ -135,7 +135,9 @@ export function extractReplyTo(message: WAMessage): string | undefined {
  */
 export function normalizeMessage(
   accountId: string,
-  message: WAMessage
+  message: WAMessage,
+  groupName?: string,
+  groupMembers?: string[]
 ): WhatsAppInbound | null {
   const jid = message.key.remoteJid;
   if (!jid) {
@@ -169,18 +171,24 @@ export function normalizeMessage(
   const media = extractMedia(message);
   const replyTo = extractReplyTo(message);
 
+  // Extract phone number from sender JID (format: 5511999999999@s.whatsapp.net)
+  const senderPhone = senderJid.split("@")[0].replace(/^lid:/, "");
+
   return {
     id: messageId,
     channelId: "whatsapp",
     accountId,
     senderId,
     senderName: message.pushName ?? undefined,
+    senderPhone: isLidJid ? undefined : senderPhone,
     chatId,
     text,
     media,
     replyTo,
     timestamp: (message.messageTimestamp as number) * 1000 || Date.now(),
     isGroup: isGroupChat,
+    groupName: isGroupChat ? groupName : undefined,
+    groupMembers: isGroupChat ? groupMembers : undefined,
     raw: message,
     jid,
     isLid: isLidJid,

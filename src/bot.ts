@@ -4,7 +4,7 @@ import { Notif } from "notif.sh";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
-import { buildDefaultPrompt } from "./prompt-builder.js";
+import { buildDefaultPrompt, buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
@@ -18,6 +18,23 @@ import {
 } from "./router/index.js";
 
 const log = logger.child("bot");
+
+/** Message context for structured prompts */
+export interface MessageContext {
+  channelId: string;
+  channelName: string;
+  accountId: string;
+  chatId: string;
+  messageId: string;
+  senderId: string;
+  senderName?: string;
+  senderPhone?: string;
+  isGroup: boolean;
+  groupName?: string;
+  groupId?: string;
+  groupMembers?: string[];
+  timestamp: number;
+}
 
 /** Queued message waiting to be processed */
 interface QueuedMessage {
@@ -52,6 +69,7 @@ export interface MessageTarget {
 export interface PromptMessage {
   prompt: string;
   source?: MessageTarget;
+  context?: MessageContext;
 }
 
 /** Response message structure */
@@ -337,6 +355,13 @@ export class RaviBot {
       };
     }
 
+    // Build system prompt with context if available
+    const systemPromptAppend = prompt.context
+      ? buildSystemPrompt(agent.id, prompt.context)
+      : buildDefaultPrompt();
+
+    log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
+
     const queryResult = query({
       prompt: prompt.prompt,
       options: {
@@ -347,7 +372,7 @@ export class RaviBot {
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: buildDefaultPrompt(),
+          append: systemPromptAppend,
         },
         settingSources: ["project"],
       },
@@ -392,7 +417,11 @@ export class RaviBot {
           if (messageText) {
             log.info("Assistant message", { text: messageText.slice(0, 100) });
             responseText += messageText;
-            if (onMessage) {
+
+            // Skip silent responses - don't emit to channel
+            if (messageText.trim() === SILENT_TOKEN) {
+              log.info("Silent response detected, not emitting", { sessionKey: session.sessionKey });
+            } else if (onMessage) {
               await onMessage(messageText);
             }
           }
