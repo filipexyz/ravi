@@ -28,7 +28,6 @@ export class Gateway {
   private plugins: ChannelPlugin[] = [];
   private pluginsById = new Map<string, ChannelPlugin>();
   private responseSubscriptions = new Map<string, AbortController>();
-  private replyContexts = new Map<string, MessageTarget>();
 
   constructor(options: GatewayOptions = {}) {
     this.notif = new Notif();
@@ -138,10 +137,9 @@ export class Gateway {
           const sessionKey = event.topic.split(".").slice(1, -1).join(".");
           const response = event.data as unknown as ResponseMessage;
 
-          // Get target from response or fall back to stored context
-          const target = response.target ?? this.replyContexts.get(sessionKey);
+          // Target is required to route to a channel
+          const target = response.target;
           if (!target) {
-            log.debug("No target for response", { sessionKey });
             continue;
           }
 
@@ -197,15 +195,12 @@ export class Gateway {
       agentId: resolved.agent.id,
     });
 
-    // Build source/target info
+    // Build source info for prompt
     const source: MessageTarget = {
       channel: plugin.id,
       accountId: message.accountId,
       chatId: message.chatId,
     };
-
-    // Store reply context
-    this.replyContexts.set(sessionKey, source);
 
     // Typing indicator
     await plugin.outbound.sendTyping(message.accountId, message.chatId, true);

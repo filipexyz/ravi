@@ -128,12 +128,19 @@ export class RaviBot {
         saveMessage(sessionKey, "assistant", response.response);
       }
 
+      // Echo source as target so Gateway knows where to route
+      if (prompt.source) {
+        response.target = prompt.source;
+      }
+
       await this.notif.emit(`ravi.${sessionKey}.response`, response as Record<string, unknown>);
     } catch (err) {
       log.error("Query failed", err);
-      await this.notif.emit(`ravi.${sessionKey}.response`, {
+      const errorResponse: ResponseMessage = {
         error: err instanceof Error ? err.message : "Unknown error",
-      });
+        target: prompt.source,
+      };
+      await this.notif.emit(`ravi.${sessionKey}.response`, errorResponse as Record<string, unknown>);
     }
   }
 
