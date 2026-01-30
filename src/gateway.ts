@@ -28,6 +28,7 @@ export class Gateway {
   private plugins: ChannelPlugin[] = [];
   private pluginsById = new Map<string, ChannelPlugin>();
   private responseSubscriptions = new Map<string, AbortController>();
+  private activeTargets = new Map<string, MessageTarget>();
 
   constructor(options: GatewayOptions = {}) {
     this.notif = new Notif();
@@ -68,6 +69,9 @@ export class Gateway {
 
     // Subscribe to all responses
     this.subscribeToResponses();
+
+    // Subscribe to Claude events for typing heartbeat
+    this.subscribeToClaudeEvents();
 
     log.info("Gateway started");
   }
@@ -152,9 +156,6 @@ export class Gateway {
             continue;
           }
 
-          // Stop typing and send
-          await plugin.outbound.sendTyping(accountId, chatId, false);
-
           const text = response.error
             ? `Error: ${response.error}`
             : response.response;
@@ -168,6 +169,51 @@ export class Gateway {
           log.error("Response subscription error", err);
           // Reconnect after delay
           setTimeout(() => this.subscribeToResponses(), 1000);
+        }
+      }
+    })();
+  }
+
+  /**
+   * Subscribe to Claude SDK events for typing heartbeat.
+   */
+  private subscribeToClaudeEvents(): void {
+    log.info("Subscribing to Claude events");
+
+    (async () => {
+      try {
+        for await (const event of this.notif.subscribe("ravi.*.claude")) {
+          if (!this.running) break;
+
+          const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+          const data = event.data as { type?: string };
+
+          // On result, stop typing and clear target
+          if (data.type === "result") {
+            const target = this.activeTargets.get(sessionKey);
+            if (target) {
+              const plugin = this.pluginsById.get(target.channel);
+              if (plugin) {
+                await plugin.outbound.sendTyping(target.accountId, target.chatId, false);
+              }
+              this.activeTargets.delete(sessionKey);
+            }
+            continue;
+          }
+
+          // Send typing heartbeat if we have a target
+          const target = this.activeTargets.get(sessionKey);
+          if (target) {
+            const plugin = this.pluginsById.get(target.channel);
+            if (plugin) {
+              await plugin.outbound.sendTyping(target.accountId, target.chatId, true);
+            }
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Claude events subscription error", err);
+          setTimeout(() => this.subscribeToClaudeEvents(), 1000);
         }
       }
     })();
@@ -201,6 +247,9 @@ export class Gateway {
       accountId: message.accountId,
       chatId: message.chatId,
     };
+
+    // Store target for typing heartbeat
+    this.activeTargets.set(sessionKey, source);
 
     // Typing indicator
     await plugin.outbound.sendTyping(message.accountId, message.chatId, true);

@@ -132,7 +132,12 @@ export class RaviBot {
         await this.notif.emit(`ravi.${sessionKey}.response`, partialResponse as Record<string, unknown>);
       };
 
-      const response = await this.processPrompt(prompt, session, agent, agentCwd, onMessage);
+      // Emit all SDK events
+      const onSdkEvent = async (event: Record<string, unknown>) => {
+        await this.notif.emit(`ravi.${sessionKey}.claude`, event);
+      };
+
+      const response = await this.processPrompt(prompt, session, agent, agentCwd, onMessage, onSdkEvent);
 
       if (response.response) {
         saveMessage(sessionKey, "assistant", response.response);
@@ -157,7 +162,8 @@ export class RaviBot {
     session: SessionEntry,
     agent: { model?: string },
     agentCwd: string,
-    onMessage?: (text: string) => Promise<void>
+    onMessage?: (text: string) => Promise<void>,
+    onSdkEvent?: (event: Record<string, unknown>) => Promise<void>
   ): Promise<ResponseMessage> {
     let responseText = "";
     let inputTokens = 0;
@@ -183,7 +189,12 @@ export class RaviBot {
     });
 
     for await (const message of queryResult) {
-      log.info("SDK message", { type: message.type });
+      log.debug("SDK message", { type: message.type });
+
+      // Emit all SDK events
+      if (onSdkEvent) {
+        await onSdkEvent(message as unknown as Record<string, unknown>);
+      }
 
       if (message.type === "assistant") {
         const blocks = message.message.content;
