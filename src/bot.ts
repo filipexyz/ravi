@@ -172,10 +172,37 @@ export class RaviBot {
 
     const model = agent.model ?? this.config.model;
 
-    // Build permission options: use allowedTools whitelist if defined, otherwise bypass mode
-    const permissionOptions = agent.allowedTools
-      ? { allowedTools: agent.allowedTools }
-      : { permissionMode: "bypassPermissions" as const, allowDangerouslySkipPermissions: true };
+    // All built-in tools (used to compute disallowedTools)
+    const ALL_BUILTIN_TOOLS = [
+      // Core tools
+      "Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write",
+      "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
+      "ExitPlanMode", "EnterPlanMode", "AskUserQuestion", "Skill",
+      // Additional tools
+      "TaskOutput", "KillShell", "TaskStop", "LSP",
+    ];
+
+    // Build permission options: use disallowedTools if whitelist defined, otherwise bypass mode
+    let permissionOptions: Record<string, unknown>;
+    if (agent.allowedTools) {
+      const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
+      log.info("Tool restriction", {
+        agentId: agent.id,
+        allowedTools: agent.allowedTools,
+        disallowedTools: disallowed
+      });
+      permissionOptions = {
+        disallowedTools: disallowed,
+        // Use allowedTools to auto-approve the allowed tools
+        allowedTools: agent.allowedTools,
+      };
+    } else {
+      log.info("Bypass mode (no tool restriction)", { agentId: agent.id });
+      permissionOptions = {
+        permissionMode: "bypassPermissions" as const,
+        allowDangerouslySkipPermissions: true
+      };
+    }
 
     const queryResult = query({
       prompt: prompt.prompt,

@@ -219,6 +219,21 @@ export function getOrCreateSession(
   const existing = getByKeyStmt.get(sessionKey) as SessionRow | undefined;
 
   if (existing) {
+    // Update agent_id/cwd if changed (e.g., routing config updated)
+    if (existing.agent_id !== agentId || existing.agent_cwd !== agentCwd) {
+      log.info("Updating session agent", {
+        sessionKey,
+        oldAgent: existing.agent_id,
+        newAgent: agentId,
+      });
+      // Clear sdk_session_id too - old session was created with different agent settings
+      db.prepare(
+        "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
+      ).run(agentId, agentCwd, Date.now(), sessionKey);
+      existing.agent_id = agentId;
+      existing.agent_cwd = agentCwd;
+      existing.sdk_session_id = null;
+    }
     return rowToEntry(existing);
   }
 
