@@ -3,6 +3,15 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 
+// Re-export normalize functions from channel module for backwards compatibility
+export {
+  normalizePhone,
+  isGroup,
+  formatPhone,
+} from "./channels/whatsapp/normalize.js";
+
+import { normalizePhone } from "./channels/whatsapp/normalize.js";
+
 const DATA_DIR = join(homedir(), ".ravi");
 const DB_PATH = join(DATA_DIR, "chat.db");
 
@@ -81,58 +90,6 @@ const deleteContactStmt = db.prepare(
 const setStatusStmt = db.prepare(
   "UPDATE contacts SET status = ?, updated_at = datetime('now') WHERE phone = ?"
 );
-
-// Regex patterns for JID formats
-const WHATSAPP_USER_JID_RE = /^(\d+)(?::\d+)?@s\.whatsapp\.net$/i;
-const WHATSAPP_LID_RE = /^(\d+)@lid$/i;
-const WHATSAPP_GROUP_RE = /@g\.us$/i;
-
-/**
- * Normalize phone number from various formats
- *
- * Handles:
- * - 5511999999999@s.whatsapp.net
- * - 5511999999999:0@s.whatsapp.net (with device suffix)
- * - 123456789@lid (LID format)
- * - lid:123456789 (already normalized LID)
- * - +5511999999999
- * - 5511999999999
- */
-export function normalizePhone(input: string): string {
-  const trimmed = input.trim();
-
-  // Already normalized LID - preserve it
-  if (trimmed.startsWith("lid:")) {
-    return trimmed;
-  }
-
-  // Check if it's a user JID with optional device suffix
-  const userMatch = trimmed.match(WHATSAPP_USER_JID_RE);
-  if (userMatch) {
-    return userMatch[1]; // Return just the phone number
-  }
-
-  // Check if it's a LID (keep as-is with lid: prefix for distinction)
-  const lidMatch = trimmed.match(WHATSAPP_LID_RE);
-  if (lidMatch) {
-    return `lid:${lidMatch[1]}`;
-  }
-
-  // Check if it's a group (keep as-is)
-  if (WHATSAPP_GROUP_RE.test(trimmed)) {
-    return trimmed.replace(/@g\.us$/, "");
-  }
-
-  // Otherwise, extract just digits (remove +, spaces, dashes, etc.)
-  return trimmed.replace(/\D/g, "");
-}
-
-/**
- * Check if a JID is a group
- */
-export function isGroup(jid: string): boolean {
-  return WHATSAPP_GROUP_RE.test(jid);
-}
 
 /**
  * Add or update a contact with explicit status

@@ -1,14 +1,15 @@
 /**
  * WhatsApp Bridge Entry Point
  *
- * Connects WhatsApp messages to RaviBot via notif.sh.
+ * Connects WhatsApp messages to RaviBot via notif.sh using the channel plugin architecture.
  * Run alongside the main bot server.
  *
  * Usage:
  *   npm run wa
  */
 
-import { WhatsAppBridge } from "./whatsapp.js";
+import { createGateway } from "./gateway.js";
+import { createWhatsAppPlugin } from "./channels/whatsapp/index.js";
 import { loadConfig } from "./utils/config.js";
 import { logger } from "./utils/logger.js";
 
@@ -37,11 +38,44 @@ async function main() {
 
   log.info("Starting WhatsApp bridge...");
 
-  const bridge = new WhatsAppBridge({
+  // Create WhatsApp plugin with default account
+  const whatsappPlugin = createWhatsAppPlugin({
+    accounts: {
+      default: {
+        name: "Ravi WhatsApp",
+        enabled: true,
+        dmPolicy: "pairing",
+        groupPolicy: "closed",
+        sendReadReceipts: true,
+        debounceMs: 500,
+      },
+    },
+  });
+
+  // Create and configure gateway
+  const gateway = createGateway({
     logLevel: config.logLevel,
   });
 
-  await bridge.start();
+  gateway.use(whatsappPlugin);
+
+  // Log events
+  gateway.on("message", (message) => {
+    log.info("Message routed", {
+      channel: message.channelId,
+      sender: message.senderId,
+      isGroup: message.isGroup,
+    });
+  });
+
+  gateway.on("stateChange", (channelId, accountId, state) => {
+    log.info("Channel state changed", { channelId, accountId, state });
+  });
+
+  // Start gateway
+  await gateway.start();
+
+  log.info("WhatsApp bridge started successfully");
 }
 
 main().catch((err) => {
