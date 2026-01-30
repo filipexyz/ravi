@@ -52,13 +52,14 @@ export type { SessionEvents, ActiveSession } from "./session.js";
 export {
   extractText,
   extractMedia,
-  extractReplyTo,
+  extractQuotedMessage,
   extractMentions,
   isMentioned,
   normalizeMessage,
   shouldProcess,
   debounceMessage,
   mergeMessages,
+  downloadMedia,
 } from "./inbound.js";
 export type { FilterResult } from "./inbound.js";
 

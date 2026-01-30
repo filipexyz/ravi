@@ -42,7 +42,9 @@ import {
   debounceMessage,
   mergeMessages,
   isMentioned,
+  downloadMedia,
 } from "./inbound.js";
+import { transcribeAudio } from "../../transcribe/openai.js";
 import {
   sendMessage,
   sendTyping,
@@ -410,6 +412,29 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       return;
     }
 
+    // Download and transcribe audio (voice messages or audio files)
+    const isAudio = message.media?.type === "audio" ||
+      (message.media?.type === "document" && message.media.mimetype.startsWith("audio/"));
+
+    if (isAudio && message.media) {
+      try {
+        const buffer = await downloadMedia(rawMessage);
+        if (buffer) {
+          message.media.data = buffer;
+          log.debug("Audio downloaded", { size: buffer.length, mimetype: message.media.mimetype });
+
+          // Transcribe with Whisper
+          if (process.env.OPENAI_API_KEY) {
+            const result = await transcribeAudio(buffer, message.media.mimetype);
+            message.transcription = result.text;
+            log.info("Audio transcribed", { textLength: result.text.length });
+          }
+        }
+      } catch (err) {
+        log.warn("Failed to process audio", { error: err });
+      }
+    }
+
     log.info("Message received", {
       accountId,
       senderId: message.senderId,
@@ -520,8 +545,15 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   }
 
   private emitMessage(message: InboundMessage): void {
+    // Strip media.data buffer before emitting (notif.sh has 64KB limit)
+    const emitPayload = {
+      ...message,
+      media: message.media ? { ...message.media, data: undefined } : undefined,
+      raw: undefined, // Also strip raw WAMessage
+    };
+
     // Emit to channel-specific inbound topic
-    this.notif.emit(`whatsapp.${message.accountId}.inbound`, message as unknown as Record<string, unknown>)
+    this.notif.emit(`whatsapp.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
       .catch((err) => log.error("Failed to emit inbound message", err));
 
     // Also call local callbacks for backwards compatibility

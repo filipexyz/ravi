@@ -5,7 +5,7 @@
  */
 
 import type { WAMessage, proto } from "@whiskeysockets/baileys";
-import type { WhatsAppInbound, InboundMedia } from "../types.js";
+import type { WhatsAppInbound, InboundMedia, QuotedMessage } from "../types.js";
 import type { AccountConfig } from "./config.js";
 import {
   normalizePhone,
@@ -114,16 +114,71 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
 }
 
 /**
- * Extract quoted message ID if this is a reply
+ * Detect media type from a quoted message
  */
-export function extractReplyTo(message: WAMessage): string | undefined {
+function detectQuotedMediaType(
+  quoted: proto.IMessage | null | undefined
+): QuotedMessage["mediaType"] | undefined {
+  if (!quoted) return undefined;
+  if (quoted.imageMessage) return "image";
+  if (quoted.videoMessage) return "video";
+  if (quoted.audioMessage) return "audio";
+  if (quoted.documentMessage) return "document";
+  if (quoted.stickerMessage) return "sticker";
+  return undefined;
+}
+
+/**
+ * Extract quoted message info if this is a reply
+ */
+export function extractQuotedMessage(message: WAMessage): QuotedMessage | undefined {
   const contextInfo =
     message.message?.extendedTextMessage?.contextInfo ??
     message.message?.imageMessage?.contextInfo ??
     message.message?.videoMessage?.contextInfo ??
-    message.message?.documentMessage?.contextInfo;
+    message.message?.documentMessage?.contextInfo ??
+    message.message?.audioMessage?.contextInfo ??
+    message.message?.stickerMessage?.contextInfo;
 
-  return contextInfo?.stanzaId ?? undefined;
+  if (!contextInfo?.stanzaId) return undefined;
+
+  const quoted = contextInfo.quotedMessage;
+
+  // Extract text from quoted message
+  const text =
+    quoted?.conversation ??
+    quoted?.extendedTextMessage?.text ??
+    quoted?.imageMessage?.caption ??
+    quoted?.videoMessage?.caption ??
+    quoted?.documentMessage?.caption ??
+    undefined;
+
+  return {
+    id: contextInfo.stanzaId,
+    senderId: contextInfo.participant ?? "",
+    text,
+    mediaType: detectQuotedMediaType(quoted),
+  };
+}
+
+// ============================================================================
+// Media Download
+// ============================================================================
+
+/**
+ * Download media from a WhatsApp message
+ */
+export async function downloadMedia(
+  message: WAMessage
+): Promise<Buffer | undefined> {
+  try {
+    const { downloadMediaMessage } = await import("@whiskeysockets/baileys");
+    const buffer = await downloadMediaMessage(message, "buffer", {});
+    return buffer as Buffer;
+  } catch (err) {
+    log.warn("Failed to download media", { error: err });
+    return undefined;
+  }
 }
 
 // ============================================================================
@@ -169,7 +224,7 @@ export function normalizeMessage(
   const chatId = normalizePhone(jid);
   const text = extractText(message);
   const media = extractMedia(message);
-  const replyTo = extractReplyTo(message);
+  const replyTo = extractQuotedMessage(message);
 
   // Extract phone number from sender JID (format: 5511999999999@s.whatsapp.net)
   const senderPhone = senderJid.split("@")[0].replace(/^lid:/, "");

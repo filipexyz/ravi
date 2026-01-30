@@ -57,7 +57,8 @@ export interface InboundMessage {
   chatId: string;
   text?: string;
   media?: InboundMedia;
-  replyTo?: string;
+  replyTo?: QuotedMessage;
+  transcription?: string;
   timestamp: number;
   isGroup: boolean;
   groupName?: string;
@@ -73,6 +74,15 @@ export interface InboundMedia {
   caption?: string;
   data?: Buffer;
   url?: string;
+}
+
+/** Quoted message info (for replies) */
+export interface QuotedMessage {
+  id: string;
+  senderId: string;
+  senderName?: string;
+  text?: string;
+  mediaType?: "image" | "video" | "audio" | "document" | "sticker";
 }
 
 /** Outbound message options */

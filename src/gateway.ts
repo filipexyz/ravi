@@ -5,7 +5,7 @@
  */
 
 import { Notif } from "notif.sh";
-import type { ChannelPlugin, InboundMessage, AccountState } from "./channels/types.js";
+import type { ChannelPlugin, InboundMessage, AccountState, QuotedMessage } from "./channels/types.js";
 import { registerPlugin, getAllPlugins, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
@@ -20,6 +20,38 @@ const log = logger.child("gateway");
 
 /** Silent reply token - when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
+
+/**
+ * Format reply context block for quoted messages.
+ */
+function formatReplyContext(replyTo: QuotedMessage): string {
+  const sender = replyTo.senderName ?? replyTo.senderId;
+  const idPart = ` id:${replyTo.id}`;
+  const content = replyTo.text ?? (replyTo.mediaType ? `[${replyTo.mediaType}]` : "[media]");
+  return `[Replying to ${sender}${idPart}]\n${content}\n[/Replying]\n\n`;
+}
+
+/**
+ * Format message content including media and transcriptions.
+ */
+function formatMessageContent(message: InboundMessage): string {
+  // Audio with transcription (voice message or audio file)
+  if (message.transcription) {
+    const label = message.media?.type === "audio" ? "Audio" : `Audio: ${message.media?.filename ?? "file"}`;
+    return `[${label}]\nTranscript:\n${message.transcription}`;
+  }
+
+  // Other media without text
+  if (message.media && !message.text) {
+    const mediaLabel = message.media.caption
+      ? `[${message.media.type}] ${message.media.caption}`
+      : `[${message.media.type}]`;
+    return mediaLabel;
+  }
+
+  // Text (possibly with media caption already included)
+  return message.text ?? "[media]";
+}
 
 /**
  * Format message envelope with metadata for structured prompts.
@@ -38,15 +70,21 @@ function formatEnvelope(
     minute: "2-digit",
   });
 
+  // Build reply context prefix
+  const replyPrefix = message.replyTo ? formatReplyContext(message.replyTo) : "";
+
+  // Format the message content
+  const content = formatMessageContent(message);
+
   if (message.isGroup) {
     // [WhatsApp Família id:123@g.us 2024-01-30 14:30] João: texto
     const groupLabel = message.groupName ?? message.chatId;
     const sender = message.senderName ?? message.senderId;
-    return `[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${message.text ?? "[media]"}`;
+    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${content}`;
   } else {
     // [WhatsApp +5511999 2024-01-30 14:30] texto
     const from = message.senderPhone ?? message.senderId;
-    return `[${channel} ${from} ${timestamp}] ${message.text ?? "[media]"}`;
+    return `${replyPrefix}[${channel} ${from} ${timestamp}] ${content}`;
   }
 }
 
