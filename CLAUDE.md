@@ -20,9 +20,19 @@ Claude-powered bot with session routing via notif.sh.
                                              └───────────────────────┘
 ```
 
-## Session Keys
+## Topics
 
-Topic format: `ravi.{sessionKey}.prompt` / `ravi.{sessionKey}.response`
+```
+ravi.{sessionKey}.prompt    # User message (with source)
+ravi.{sessionKey}.response  # Bot response (with target) - streamed
+ravi.{sessionKey}.claude    # SDK events (system, assistant, result)
+```
+
+- **prompt**: `{ prompt, source: { channel, accountId, chatId } }`
+- **response**: `{ response, target: { channel, accountId, chatId } }`
+- **claude**: Raw SDK events (used for typing heartbeat)
+
+## Session Keys
 
 ```
 agent:main:main                    # Shared session (TUI + WA)
