@@ -36,6 +36,7 @@ export interface SessionEvents {
   connected: (accountId: string, user: string) => void;
   disconnected: (accountId: string, reason: string) => void;
   error: (accountId: string, error: Error) => void;
+  socketReady: (accountId: string, socket: WASocket) => void;
 }
 
 /** Active session info */
@@ -120,6 +121,9 @@ export class SessionManager {
 
     // Handle credential updates
     socket.ev.on("creds.update", saveCreds);
+
+    // Emit socketReady so listeners can subscribe to message events
+    this.emit("socketReady", accountId, socket);
 
     return socket;
   }

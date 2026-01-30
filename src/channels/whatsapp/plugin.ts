@@ -310,6 +310,20 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         cb(accountId, qr);
       }
     });
+
+    // Subscribe to message events on new/reconnected sockets
+    sessionManager.on("socketReady", (accountId, socket) => {
+      const config = this.configAdapter.getConfig();
+      log.info(`Socket ready for ${accountId}, subscribing to messages`);
+
+      socket.ev.on("messages.upsert", async ({ messages, type }) => {
+        if (type !== "notify") return;
+
+        for (const message of messages) {
+          await this.handleMessage(accountId, message, config);
+        }
+      });
+    });
   }
 
   async start(accountId: string, config: WhatsAppConfig): Promise<void> {
@@ -320,16 +334,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       return;
     }
 
-    const socket = await sessionManager.start(accountId, accountConfig);
-
-    // Subscribe to messages
-    socket.ev.on("messages.upsert", async ({ messages, type }) => {
-      if (type !== "notify") return;
-
-      for (const message of messages) {
-        await this.handleMessage(accountId, message, config);
-      }
-    });
+    await sessionManager.start(accountId, accountConfig);
   }
 
   async stop(accountId: string): Promise<void> {
