@@ -11,4 +11,4 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-exec bun "$PROJECT_DIR/dist/cli/index.js" "$@"
+exec bun "$PROJECT_DIR/dist/bundle/index.js" "$@"

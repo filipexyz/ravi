@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "description": "Claude-powered bot with WhatsApp and Matrix integration via notif.sh",
   "type": "module",
-  "main": "dist/index.js",
+  "main": "dist/bundle/index.js",
   "bin": {
     "ravi": "./bin/ravi"
   },
   "files": [
     "bin/",
-    "dist/",
+    "dist/bundle/",
     "README.md"
   ],
   "repository": {
@@ -25,7 +25,7 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
-    "build": "bun tsc",
+    "build": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --external '@matrix-org/*' --external '@whiskeysockets/*' --external '@vector-im/*' --external ink --external react --external '@anthropic-ai/*' --external openai",
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
     "tui": "bun src/tui.tsx",
