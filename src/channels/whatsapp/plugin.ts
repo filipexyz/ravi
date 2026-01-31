@@ -29,11 +29,9 @@ import type {
 import {
   type WhatsAppConfig,
   type WhatsAppConfigInput,
-  type AccountConfig,
   getAccountConfig,
   parseConfig,
   DEFAULT_CONFIG,
-  DEFAULT_ACCOUNT_CONFIG,
 } from "./config.js";
 import { sessionManager } from "./session.js";
 import {
@@ -41,7 +39,6 @@ import {
   shouldProcess,
   debounceMessage,
   mergeMessages,
-  isMentioned,
   downloadMedia,
 } from "./inbound.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
@@ -60,7 +57,7 @@ import {
   getHealth,
   heartbeat,
 } from "./status.js";
-import { normalizePhone, phoneToJid } from "./normalize.js";
+import { normalizePhone } from "./normalize.js";
 import {
   isAllowed as isContactAllowed,
   savePendingContact,

@@ -4,7 +4,7 @@
  * Builds hierarchical session keys for routing conversations.
  */
 
-import type { SessionKeyParams, DmScope } from "./types.js";
+import type { SessionKeyParams } from "./types.js";
 
 /**
  * Build a session key from parameters

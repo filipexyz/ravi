@@ -13,8 +13,9 @@ import {
   RustSdkCryptoStorageProvider,
   LogService,
   LogLevel,
+  type IStorageProvider,
+  type ICryptoStorageProvider,
 } from "@vector-im/matrix-bot-sdk";
-import type { IStorageProvider, ICryptoStorageProvider } from "@vector-im/matrix-bot-sdk";
 import { EventEmitter } from "node:events";
 import type { MatrixAccountConfig, MatrixStoragePaths } from "./types.js";
 import type { AccountState } from "../types.js";

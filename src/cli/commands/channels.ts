@@ -25,23 +25,6 @@ function parseChannelSpec(spec: string): { channelId: string; accountId?: string
 }
 
 /**
- * Format uptime duration
- */
-function formatUptime(startAt: number | undefined): string {
-  if (!startAt) return "-";
-  const ms = Date.now() - startAt;
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) return `${days}d ${hours % 24}h`;
-  if (hours > 0) return `${hours}h ${minutes % 60}m`;
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-  return `${seconds}s`;
-}
-
-/**
  * Format account status indicator
  */
 function formatStatus(snapshot: ChannelAccountSnapshot): { icon: string; status: string } {
@@ -104,7 +87,6 @@ export class ChannelsCommands {
     @Arg("channel", { required: false, description: "Channel ID (e.g., whatsapp)" }) channel?: string
   ) {
     const plugins = loadPlugins();
-    const manager = createChannelManager(plugins, { autoStart: false });
 
     // Initialize plugins to get account info
     for (const plugin of plugins.values()) {

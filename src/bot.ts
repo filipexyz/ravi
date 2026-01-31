@@ -1,5 +1,4 @@
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";

@@ -4,7 +4,7 @@
  * Monitors connection health and message metrics.
  */
 
-import type { AccountState, AccountSnapshot, ChannelHealth } from "../types.js";
+import type { AccountSnapshot, ChannelHealth } from "../types.js";
 import { sessionManager } from "./session.js";
 import { logger } from "../../utils/logger.js";
 
@@ -170,7 +170,6 @@ interface WatchdogConfig {
 }
 
 let watchdogTimer: NodeJS.Timeout | null = null;
-let watchdogConfig: WatchdogConfig | null = null;
 const lastActivityMap = new Map<string, number>();
 
 /**
@@ -180,8 +179,6 @@ export function startWatchdog(config: WatchdogConfig): void {
   if (watchdogTimer) {
     clearInterval(watchdogTimer);
   }
-
-  watchdogConfig = config;
 
   watchdogTimer = setInterval(() => {
     const now = Date.now();
@@ -215,7 +212,6 @@ export function stopWatchdog(): void {
     clearInterval(watchdogTimer);
     watchdogTimer = null;
   }
-  watchdogConfig = null;
   lastActivityMap.clear();
   log.info("Watchdog stopped");
 }

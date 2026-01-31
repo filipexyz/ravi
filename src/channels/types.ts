@@ -4,7 +4,7 @@
  * Provides a unified interface for messaging channels (WhatsApp, Telegram, etc.)
  */
 
-import type { WAMessage, proto } from "@whiskeysockets/baileys";
+import type { WAMessage } from "@whiskeysockets/baileys";
 
 // ============================================================================
 // Core Types
@@ -196,7 +196,7 @@ export interface SecurityAdapter<T = unknown> {
 /**
  * Outbound Adapter - Message sending
  */
-export interface OutboundAdapter<T = unknown> {
+export interface OutboundAdapter<_T = unknown> {
   /** Send a message */
   send(
     accountId: string,
@@ -251,7 +251,7 @@ export interface GatewayAdapter<T = unknown> {
 /**
  * Status Adapter - Health monitoring
  */
-export interface StatusAdapter<T = unknown> {
+export interface StatusAdapter<_T = unknown> {
   /** Get health status */
   getHealth(): ChannelHealth;
 

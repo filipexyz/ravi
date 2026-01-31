@@ -5,8 +5,8 @@
  */
 
 import { notif } from "./notif.js";
-import type { ChannelPlugin, InboundMessage, AccountState, QuotedMessage } from "./channels/types.js";
-import { registerPlugin, getAllPlugins, shutdownAllPlugins } from "./channels/registry.js";
+import type { ChannelPlugin, InboundMessage, QuotedMessage } from "./channels/types.js";
+import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
   loadRouterConfig,

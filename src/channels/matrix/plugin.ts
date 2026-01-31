@@ -26,8 +26,7 @@ import type {
   DmPolicy,
   GroupPolicy,
 } from "../types.js";
-import type { MatrixConfig, MatrixAccountConfig, MatrixRawEvent, MatrixInbound } from "./types.js";
-import { EventType } from "./types.js";
+import type { MatrixConfig, MatrixRawEvent, MatrixInbound } from "./types.js";
 import {
   type MatrixConfigInput,
   getAccountConfig,
@@ -379,7 +378,7 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
       });
 
       // Subscribe to room join events (auto-accept invites)
-      client.on("room.invite", async (roomId: string, event: MatrixRawEvent) => {
+      client.on("room.invite", async (roomId: string, _event: MatrixRawEvent) => {
         log.info(`Received invite to room ${roomId}`);
         try {
           await client.joinRoom(roomId);

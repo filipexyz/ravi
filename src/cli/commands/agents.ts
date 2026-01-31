@@ -32,7 +32,7 @@ import {
   getAllToolsFullNames,
   toFullToolName,
 } from "../tool-registry.js";
-import type { PromptMessage, ResponseMessage } from "../../bot.js";
+import type { ResponseMessage } from "../../bot.js";
 
 const PROMPT_TIMEOUT_MS = 120000; // 2 minutes
 

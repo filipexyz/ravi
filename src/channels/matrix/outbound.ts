@@ -241,7 +241,7 @@ function buildThreadRelation(
  */
 function markdownToHtml(text: string): string {
   // Basic markdown conversions for Matrix
-  let html = text
+  const html = text
     // Bold
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     // Italic

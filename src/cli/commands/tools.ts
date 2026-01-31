@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
-import { extractTools, generateManifest, manifestToJSON } from "../tools-export.js";
+import { extractTools, manifestToJSON } from "../tools-export.js";
 import {
   ALL_COMMAND_CLASSES,
   getCliToolsByGroup,
@@ -25,7 +25,7 @@ export class ToolsCommands {
     console.log("These tools can be injected into agents via allowedTools.\n");
     console.log("─".repeat(50));
 
-    for (const [group, tools] of Object.entries(groups)) {
+    for (const group of Object.keys(groups)) {
       console.log(`\n${group.toUpperCase()}:`);
       const sdkTools = createSdkTools(ALL_COMMAND_CLASSES, {
         filter: new RegExp(`^${group}_`),
@@ -39,9 +39,8 @@ export class ToolsCommands {
         const params = Object.entries(tool.inputSchema.properties);
         if (params.length > 0) {
           const paramStr = params
-            .map(([name, schema]) => {
+            .map(([name]) => {
               const required = tool.inputSchema.required.includes(name);
-              const s = schema as { type: string; description?: string };
               return required ? `<${name}>` : `[${name}]`;
             })
             .join(" ");

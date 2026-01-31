@@ -6,14 +6,14 @@
  */
 
 import type { ChannelPlugin, AccountState } from "../types.js";
-import type {
-  ChannelAccountSnapshot,
-  ChannelRuntimeStore,
-  ChannelGatewayContext,
-  ChannelManagerConfig,
-  ChannelManagerEvents,
+import {
+  DEFAULT_MANAGER_CONFIG,
+  type ChannelAccountSnapshot,
+  type ChannelRuntimeStore,
+  type ChannelGatewayContext,
+  type ChannelManagerConfig,
+  type ChannelManagerEvents,
 } from "./types.js";
-import { DEFAULT_MANAGER_CONFIG } from "./types.js";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child("channel-manager");
@@ -294,8 +294,8 @@ export class ChannelManager {
 
     accountLog.info("Starting account");
 
-    // Create context for the gateway
-    const ctx = this.createGatewayContext(channelId, accountId, abortController);
+    // Create context for the gateway (reserved for future use)
+    this.createGatewayContext(channelId, accountId, abortController);
 
     // Subscribe to state changes from the plugin
     const unsubscribe = plugin.gateway.onStateChange((accId, state) => {

@@ -9,7 +9,6 @@ import type { WhatsAppInbound, InboundMedia, QuotedMessage } from "../types.js";
 import type { AccountConfig } from "./config.js";
 import {
   normalizePhone,
-  jidToSessionId,
   isGroup,
   isLid,
   isBroadcast,
@@ -265,7 +264,7 @@ export interface FilterResult {
  */
 export function shouldProcess(
   message: WAMessage,
-  config: AccountConfig
+  _config: AccountConfig
 ): FilterResult {
   // Skip own messages
   if (message.key.fromMe) {

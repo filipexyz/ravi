@@ -28,6 +28,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@hapi/boom": "^10.0.1",
+    "@vector-im/matrix-bot-sdk": "^0.8.0-element.3",
     "@whiskeysockets/baileys": "^6.7.16",
     "better-sqlite3": "^12.6.2",
     "commander": "^14.0.2",
@@ -42,11 +43,14 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/react": "^19.2.10",
+    "globals": "^17.2.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.54.0"
   }
 }

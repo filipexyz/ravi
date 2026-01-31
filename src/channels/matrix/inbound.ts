@@ -6,17 +6,15 @@
  */
 
 import type { MatrixClient, EncryptedFile as SdkEncryptedFile } from "@vector-im/matrix-bot-sdk";
-import type { InboundMessage, InboundMedia, QuotedMessage } from "../types.js";
-import type {
-  MatrixRawEvent,
-  RoomMessageEventContent,
-  MatrixInbound,
-  EncryptedFile,
+import type { InboundMedia, QuotedMessage } from "../types.js";
+import {
+  EventType,
+  RelationType,
+  type MatrixRawEvent,
+  type RoomMessageEventContent,
+  type MatrixInbound,
+  type EncryptedFile,
 } from "./types.js";
-import { EventType, MsgType, RelationType } from "./types.js";
-import { logger } from "../../utils/logger.js";
-
-const log = logger.child("matrix:inbound");
 
 // ============================================================================
 // Message Filtering

@@ -5,7 +5,6 @@
  */
 
 import type { Logger } from "../../utils/logger.js";
-import type { ChannelPlugin } from "../types.js";
 
 // ============================================================================
 // Channel Account Snapshot

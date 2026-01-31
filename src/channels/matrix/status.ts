@@ -4,7 +4,7 @@
  * Metrics, health checks, and status monitoring for Matrix connections.
  */
 
-import type { AccountSnapshot, ChannelHealth, AccountState } from "../types.js";
+import type { AccountSnapshot, ChannelHealth } from "../types.js";
 import { sessionManager } from "./session.js";
 
 // ============================================================================
@@ -22,7 +22,6 @@ interface AccountMetrics {
 }
 
 const metrics = new Map<string, AccountMetrics>();
-const startTime = Date.now();
 
 function getOrCreateMetrics(accountId: string): AccountMetrics {
   let m = metrics.get(accountId);

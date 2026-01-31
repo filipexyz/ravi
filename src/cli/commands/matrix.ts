@@ -19,7 +19,7 @@ import {
   isMatrixConfigured,
 } from "../../channels/matrix/config.js";
 import { sessionManager } from "../../channels/matrix/session.js";
-import { getAgent, getAllAgents, getDefaultAgentId } from "../../router/index.js";
+import { getAgent, getAllAgents } from "../../router/index.js";
 import {
   dbGetMatrixAccount,
   dbListMatrixAccounts,
