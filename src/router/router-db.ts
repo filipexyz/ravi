@@ -22,7 +22,7 @@ const log = logger.child("router:db");
 // ============================================================================
 
 const RAVI_DIR = join(homedir(), "ravi");
-const DB_PATH = join(RAVI_DIR, "router.db");
+const DB_PATH = join(RAVI_DIR, "ravi.db");
 
 // ============================================================================
 // Schemas (safe to access at import time - no I/O)
@@ -140,8 +140,41 @@ function getDb(): Database.Database {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_key TEXT PRIMARY KEY,
+      sdk_session_id TEXT,
+      agent_id TEXT NOT NULL,
+      agent_cwd TEXT NOT NULL,
+      chat_type TEXT,
+      channel TEXT,
+      account_id TEXT,
+      group_id TEXT,
+      subject TEXT,
+      display_name TEXT,
+      last_channel TEXT,
+      last_to TEXT,
+      last_account_id TEXT,
+      last_thread_id TEXT,
+      model_override TEXT,
+      thinking_level TEXT,
+      queue_mode TEXT,
+      queue_debounce_ms INTEGER,
+      queue_cap INTEGER,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      context_tokens INTEGER DEFAULT 0,
+      system_sent INTEGER DEFAULT 0,
+      aborted_last_run INTEGER DEFAULT 0,
+      compaction_count INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_routes_priority ON routes(priority DESC);
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
   `);
 
   // Create default agent if none exist
@@ -649,9 +682,14 @@ export function closeRouterDb(): void {
 }
 
 /**
+ * Get the shared database connection (for sessions.ts)
+ */
+export { getDb };
+
+/**
  * Get the database path
  */
-export function getRouterDbPath(): string {
+export function getRaviDbPath(): string {
   return DB_PATH;
 }
 

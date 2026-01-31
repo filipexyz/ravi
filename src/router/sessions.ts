@@ -2,141 +2,18 @@
  * Session Store
  *
  * Manages session entries and SDK session mappings.
+ * Uses shared database from router-db.ts.
  */
 
-import Database from "better-sqlite3";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import type Database from "better-sqlite3";
 import type { SessionEntry } from "./types.js";
-import { getRaviDir } from "./config.js";
+import { getDb } from "./router-db.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
 
 // ============================================================================
-// Database Setup
-// ============================================================================
-
-const DB_PATH = join(getRaviDir(), "sessions.db");
-mkdirSync(getRaviDir(), { recursive: true });
-
-const db = new Database(DB_PATH);
-
-// Initialize schema
-db.exec(`
-  CREATE TABLE IF NOT EXISTS sessions (
-    session_key TEXT PRIMARY KEY,
-    sdk_session_id TEXT,
-    agent_id TEXT NOT NULL,
-    agent_cwd TEXT NOT NULL,
-    chat_type TEXT,
-    channel TEXT,
-    account_id TEXT,
-    group_id TEXT,
-    subject TEXT,
-    display_name TEXT,
-    last_channel TEXT,
-    last_to TEXT,
-    last_account_id TEXT,
-    last_thread_id TEXT,
-    model_override TEXT,
-    thinking_level TEXT,
-    queue_mode TEXT,
-    queue_debounce_ms INTEGER,
-    queue_cap INTEGER,
-    input_tokens INTEGER DEFAULT 0,
-    output_tokens INTEGER DEFAULT 0,
-    total_tokens INTEGER DEFAULT 0,
-    context_tokens INTEGER DEFAULT 0,
-    system_sent INTEGER DEFAULT 0,
-    aborted_last_run INTEGER DEFAULT 0,
-    compaction_count INTEGER DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
-  CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
-`);
-
-// ============================================================================
-// Prepared Statements
-// ============================================================================
-
-const upsertStmt = db.prepare(`
-  INSERT INTO sessions (
-    session_key, sdk_session_id, agent_id, agent_cwd,
-    chat_type, channel, account_id, group_id, subject, display_name,
-    last_channel, last_to, last_account_id, last_thread_id,
-    model_override, thinking_level,
-    queue_mode, queue_debounce_ms, queue_cap,
-    input_tokens, output_tokens, total_tokens, context_tokens,
-    system_sent, aborted_last_run, compaction_count,
-    created_at, updated_at
-  ) VALUES (
-    ?, ?, ?, ?,
-    ?, ?, ?, ?, ?, ?,
-    ?, ?, ?, ?,
-    ?, ?,
-    ?, ?, ?,
-    ?, ?, ?, ?,
-    ?, ?, ?,
-    ?, ?
-  )
-  ON CONFLICT(session_key) DO UPDATE SET
-    sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
-    chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
-    channel = COALESCE(excluded.channel, sessions.channel),
-    account_id = COALESCE(excluded.account_id, sessions.account_id),
-    subject = COALESCE(excluded.subject, sessions.subject),
-    display_name = COALESCE(excluded.display_name, sessions.display_name),
-    last_channel = COALESCE(excluded.last_channel, sessions.last_channel),
-    last_to = COALESCE(excluded.last_to, sessions.last_to),
-    last_account_id = COALESCE(excluded.last_account_id, sessions.last_account_id),
-    last_thread_id = COALESCE(excluded.last_thread_id, sessions.last_thread_id),
-    model_override = COALESCE(excluded.model_override, sessions.model_override),
-    thinking_level = COALESCE(excluded.thinking_level, sessions.thinking_level),
-    input_tokens = sessions.input_tokens + excluded.input_tokens,
-    output_tokens = sessions.output_tokens + excluded.output_tokens,
-    total_tokens = sessions.total_tokens + excluded.total_tokens,
-    updated_at = excluded.updated_at
-`);
-
-const getByKeyStmt = db.prepare(
-  "SELECT * FROM sessions WHERE session_key = ?"
-);
-
-const getBySdkIdStmt = db.prepare(
-  "SELECT * FROM sessions WHERE sdk_session_id = ?"
-);
-
-const getByAgentStmt = db.prepare(
-  "SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"
-);
-
-const updateSdkIdStmt = db.prepare(
-  "UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"
-);
-
-const updateTokensStmt = db.prepare(`
-  UPDATE sessions SET
-    input_tokens = input_tokens + ?,
-    output_tokens = output_tokens + ?,
-    total_tokens = total_tokens + ?,
-    context_tokens = ?,
-    updated_at = ?
-  WHERE session_key = ?
-`);
-
-const deleteStmt = db.prepare(
-  "DELETE FROM sessions WHERE session_key = ?"
-);
-
-const listAllStmt = db.prepare(
-  "SELECT * FROM sessions ORDER BY updated_at DESC"
-);
-
-// ============================================================================
-// Row Mapping
+// Row Type
 // ============================================================================
 
 interface SessionRow {
@@ -204,6 +81,91 @@ function rowToEntry(row: SessionRow): SessionEntry {
 }
 
 // ============================================================================
+// Prepared Statements (lazy init)
+// ============================================================================
+
+interface SessionStatements {
+  upsert: Database.Statement;
+  getByKey: Database.Statement;
+  getBySdkId: Database.Statement;
+  getByAgent: Database.Statement;
+  updateSdkId: Database.Statement;
+  updateTokens: Database.Statement;
+  delete: Database.Statement;
+  listAll: Database.Statement;
+  updateAgent: Database.Statement;
+}
+
+let stmts: SessionStatements | null = null;
+
+function getStatements(): SessionStatements {
+  if (stmts !== null) return stmts;
+
+  const db = getDb();
+
+  stmts = {
+    upsert: db.prepare(`
+      INSERT INTO sessions (
+        session_key, sdk_session_id, agent_id, agent_cwd,
+        chat_type, channel, account_id, group_id, subject, display_name,
+        last_channel, last_to, last_account_id, last_thread_id,
+        model_override, thinking_level,
+        queue_mode, queue_debounce_ms, queue_cap,
+        input_tokens, output_tokens, total_tokens, context_tokens,
+        system_sent, aborted_last_run, compaction_count,
+        created_at, updated_at
+      ) VALUES (
+        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?,
+        ?, ?, ?,
+        ?, ?, ?, ?,
+        ?, ?, ?,
+        ?, ?
+      )
+      ON CONFLICT(session_key) DO UPDATE SET
+        sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
+        chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
+        channel = COALESCE(excluded.channel, sessions.channel),
+        account_id = COALESCE(excluded.account_id, sessions.account_id),
+        subject = COALESCE(excluded.subject, sessions.subject),
+        display_name = COALESCE(excluded.display_name, sessions.display_name),
+        last_channel = COALESCE(excluded.last_channel, sessions.last_channel),
+        last_to = COALESCE(excluded.last_to, sessions.last_to),
+        last_account_id = COALESCE(excluded.last_account_id, sessions.last_account_id),
+        last_thread_id = COALESCE(excluded.last_thread_id, sessions.last_thread_id),
+        model_override = COALESCE(excluded.model_override, sessions.model_override),
+        thinking_level = COALESCE(excluded.thinking_level, sessions.thinking_level),
+        input_tokens = sessions.input_tokens + excluded.input_tokens,
+        output_tokens = sessions.output_tokens + excluded.output_tokens,
+        total_tokens = sessions.total_tokens + excluded.total_tokens,
+        updated_at = excluded.updated_at
+    `),
+    getByKey: db.prepare("SELECT * FROM sessions WHERE session_key = ?"),
+    getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ?"),
+    getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"),
+    updateSdkId: db.prepare("UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"),
+    updateTokens: db.prepare(`
+      UPDATE sessions SET
+        input_tokens = input_tokens + ?,
+        output_tokens = output_tokens + ?,
+        total_tokens = total_tokens + ?,
+        context_tokens = ?,
+        updated_at = ?
+      WHERE session_key = ?
+    `),
+    delete: db.prepare("DELETE FROM sessions WHERE session_key = ?"),
+    listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
+    updateAgent: db.prepare(
+      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
+    ),
+  };
+
+  return stmts;
+}
+
+// ============================================================================
 // Session Store API
 // ============================================================================
 
@@ -216,7 +178,8 @@ export function getOrCreateSession(
   agentCwd: string,
   defaults?: Partial<SessionEntry>
 ): SessionEntry {
-  const existing = getByKeyStmt.get(sessionKey) as SessionRow | undefined;
+  const s = getStatements();
+  const existing = s.getByKey.get(sessionKey) as SessionRow | undefined;
 
   if (existing) {
     // Update agent_id/cwd if changed (e.g., routing config updated)
@@ -226,10 +189,7 @@ export function getOrCreateSession(
         oldAgent: existing.agent_id,
         newAgent: agentId,
       });
-      // Clear sdk_session_id too - old session was created with different agent settings
-      db.prepare(
-        "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
-      ).run(agentId, agentCwd, Date.now(), sessionKey);
+      s.updateAgent.run(agentId, agentCwd, Date.now(), sessionKey);
       existing.agent_id = agentId;
       existing.agent_cwd = agentCwd;
       existing.sdk_session_id = null;
@@ -238,7 +198,7 @@ export function getOrCreateSession(
   }
 
   const now = Date.now();
-  upsertStmt.run(
+  s.upsert.run(
     sessionKey,
     defaults?.sdkSessionId ?? null,
     agentId,
@@ -272,7 +232,8 @@ export function getOrCreateSession(
  * Get session by key
  */
 export function getSession(sessionKey: string): SessionEntry | null {
-  const row = getByKeyStmt.get(sessionKey) as SessionRow | undefined;
+  const s = getStatements();
+  const row = s.getByKey.get(sessionKey) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -280,7 +241,8 @@ export function getSession(sessionKey: string): SessionEntry | null {
  * Get session by SDK session ID
  */
 export function getSessionBySdkId(sdkSessionId: string): SessionEntry | null {
-  const row = getBySdkIdStmt.get(sdkSessionId) as SessionRow | undefined;
+  const s = getStatements();
+  const row = s.getBySdkId.get(sdkSessionId) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -288,7 +250,8 @@ export function getSessionBySdkId(sdkSessionId: string): SessionEntry | null {
  * Get all sessions for an agent
  */
 export function getSessionsByAgent(agentId: string): SessionEntry[] {
-  const rows = getByAgentStmt.all(agentId) as SessionRow[];
+  const s = getStatements();
+  const rows = s.getByAgent.all(agentId) as SessionRow[];
   return rows.map(rowToEntry);
 }
 
@@ -299,7 +262,8 @@ export function updateSdkSessionId(
   sessionKey: string,
   sdkSessionId: string
 ): void {
-  updateSdkIdStmt.run(sdkSessionId, Date.now(), sessionKey);
+  const s = getStatements();
+  s.updateSdkId.run(sdkSessionId, Date.now(), sessionKey);
   log.debug("Updated SDK session ID", { sessionKey, sdkSessionId });
 }
 
@@ -312,7 +276,8 @@ export function updateTokens(
   output: number,
   context?: number
 ): void {
-  updateTokensStmt.run(
+  const s = getStatements();
+  s.updateTokens.run(
     input,
     output,
     input + output,
@@ -326,7 +291,8 @@ export function updateTokens(
  * Delete a session
  */
 export function deleteSession(sessionKey: string): boolean {
-  const result = deleteStmt.run(sessionKey);
+  const s = getStatements();
+  const result = s.delete.run(sessionKey);
   return result.changes > 0;
 }
 
@@ -334,13 +300,7 @@ export function deleteSession(sessionKey: string): boolean {
  * List all sessions
  */
 export function listSessions(): SessionEntry[] {
-  const rows = listAllStmt.all() as SessionRow[];
+  const s = getStatements();
+  const rows = s.listAll.all() as SessionRow[];
   return rows.map(rowToEntry);
-}
-
-/**
- * Close the database
- */
-export function closeSessions(): void {
-  db.close();
 }

@@ -10,7 +10,7 @@ import {
   getOrCreateSession,
   updateSdkSessionId,
   updateTokens,
-  closeSessions,
+  closeRouterDb,
   expandHome,
   type RouterConfig,
   type SessionEntry,
@@ -119,7 +119,7 @@ export class RaviBot {
     this.running = false;
     this.notif.close();
     closeDb();
-    closeSessions();
+    closeRouterDb();
     log.info("Ravi bot stopped");
   }
 

@@ -78,7 +78,7 @@ ravi agents debounce main 0      # Disable
 
 Messages within the window are combined with `\n\n` before processing.
 
-## Router (`~/ravi/router.db`)
+## Router (`~/ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
 
@@ -114,8 +114,7 @@ ravi settings set defaultDmScope per-peer
 
 ```
 ~/ravi/
-├── router.db        # Routing config (SQLite)
-├── sessions.db      # Session → SDK session mapping
+├── ravi.db          # Config and sessions (SQLite)
 └── main/            # Agent CWD (CLAUDE.md, tools, etc)
 
 ~/.ravi/

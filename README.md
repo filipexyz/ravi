@@ -92,7 +92,7 @@ ravi contacts pending    # Show pending requests
 
 ## Configuration
 
-### Router (`~/ravi/router.db`)
+### Router (`~/ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
 
@@ -169,8 +169,7 @@ When messages arrive while processing:
 
 ```
 ~/ravi/                    # Ravi data directory
-├── router.db             # Routing configuration (SQLite)
-├── sessions.db           # Session state
+├── ravi.db               # Configuration and session state (SQLite)
 └── main/                 # Agent working directory
     ├── CLAUDE.md         # Agent instructions
     └── ...               # Agent-specific files

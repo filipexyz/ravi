@@ -80,5 +80,4 @@ export {
   updateTokens,
   deleteSession,
   listSessions,
-  closeSessions,
 } from "./sessions.js";
