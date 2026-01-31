@@ -14,6 +14,55 @@ import {
   dbListAgents,
   DmScopeSchema,
 } from "../../router/router-db.js";
+import { listSessions, deleteSession } from "../../router/sessions.js";
+
+/**
+ * Delete sessions that conflict with a new route.
+ * When a route is added/changed, existing sessions with different agents need to be reset.
+ */
+function deleteConflictingSessions(pattern: string, targetAgent: string): number {
+  const sessions = listSessions();
+  let deleted = 0;
+
+  for (const session of sessions) {
+    // Check if session key contains the pattern
+    // Pattern examples: "group:123456", "5511*", "lid:123"
+    // Session key examples: "agent:main:whatsapp:default:group:123456"
+
+    // For group patterns, check if session contains the group ID
+    if (pattern.startsWith("group:")) {
+      const groupId = pattern.replace("group:", "");
+      if (session.sessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    }
+    // For lid patterns
+    else if (pattern.startsWith("lid:")) {
+      const lid = pattern.replace("lid:", "");
+      if (session.sessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    }
+    // For phone patterns (with wildcards)
+    else if (pattern.includes("*")) {
+      // Convert pattern to regex
+      const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+      // Extract phone/peer from session key (last segment after dm: or similar)
+      const match = session.sessionKey.match(/dm:(\d+)/);
+      if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    }
+  }
+
+  return deleted;
+}
 
 @Group({
   name: "routes",
@@ -78,7 +127,13 @@ export class RoutesCommands {
 
     try {
       dbCreateRoute({ pattern, agent, priority: 0 });
-      console.log(`\u2713 Route added: ${pattern} -> ${agent}`);
+      console.log(`✓ Route added: ${pattern} -> ${agent}`);
+
+      // Delete any sessions that were created with a different agent
+      const deleted = deleteConflictingSessions(pattern, agent);
+      if (deleted > 0) {
+        console.log(`✓ Cleaned ${deleted} conflicting session(s)`);
+      }
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
       process.exit(1);
@@ -149,7 +204,15 @@ export class RoutesCommands {
         updates[key] = value;
       }
       dbUpdateRoute(pattern, updates);
-      console.log(`\u2713 ${key} set: ${pattern} -> ${value}`);
+      console.log(`✓ ${key} set: ${pattern} -> ${value}`);
+
+      // If agent changed, clean up conflicting sessions
+      if (key === "agent") {
+        const deleted = deleteConflictingSessions(pattern, value);
+        if (deleted > 0) {
+          console.log(`✓ Cleaned ${deleted} conflicting session(s)`);
+        }
+      }
     } catch (err) {
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
       process.exit(1);
