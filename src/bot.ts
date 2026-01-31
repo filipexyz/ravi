@@ -71,6 +71,7 @@ interface ActiveSession {
   toolStartTime?: number;
   messageQueue: QueuedMessage[];
   interrupted: boolean;
+  lastActivity: number;
 }
 
 /** Debounce state for grouping messages */
@@ -441,11 +442,28 @@ export class RaviBot {
       toolRunning: false,
       messageQueue: [],
       interrupted: false,
+      lastActivity: Date.now(),
     };
     this.activeSessions.set(session.sessionKey, activeSession);
 
+    // Timeout watchdog - detect stuck sessions
+    const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const watchdog = setInterval(() => {
+      const elapsed = Date.now() - activeSession.lastActivity;
+      if (elapsed > SESSION_TIMEOUT_MS) {
+        log.error("Session timed out - SDK may have died", {
+          sessionKey: session.sessionKey,
+          elapsedMs: elapsed,
+        });
+        // Force cleanup
+        this.activeSessions.delete(session.sessionKey);
+        clearInterval(watchdog);
+      }
+    }, 30000); // Check every 30s
+
     try {
       for await (const message of queryResult) {
+        activeSession.lastActivity = Date.now(); // Reset watchdog
         log.debug("SDK message", {
         type: message.type,
         toolRunning: activeSession.toolRunning,
@@ -564,6 +582,7 @@ export class RaviBot {
       }
     } finally {
       log.info("processPrompt finally block", { sessionKey: session.sessionKey });
+      clearInterval(watchdog);
 
       // Get pending messages before cleaning up
       const pendingMessages = [...activeSession.messageQueue];
