@@ -22,6 +22,7 @@ import { ToolsCommands } from "./commands/tools.js";
 import { RoutesCommands } from "./commands/routes.js";
 import { SettingsCommands } from "./commands/settings.js";
 import { CrossCommands } from "./commands/cross.js";
+import { MatrixCommands } from "./commands/matrix.js";
 
 const program = new Command();
 
@@ -41,6 +42,7 @@ registerCommands(program, [
   RoutesCommands,
   SettingsCommands,
   CrossCommands,
+  MatrixCommands,
 ]);
 
 // Parse and execute

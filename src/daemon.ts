@@ -10,6 +10,9 @@ import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
 import { createWhatsAppPlugin } from "./channels/whatsapp/index.js";
+import { createMatrixPlugin } from "./channels/matrix/index.js";
+import { isMatrixConfigured } from "./channels/matrix/config.js";
+import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
 import { loadConfig } from "./utils/config.js";
 import { logger } from "./utils/logger.js";
 
@@ -91,7 +94,10 @@ async function main() {
   await bot.start();
   log.info("Bot started");
 
-  // Start gateway with WhatsApp plugin
+  // Start gateway with channel plugins
+  gateway = createGateway({ logLevel: config.logLevel });
+
+  // WhatsApp plugin
   const whatsappPlugin = createWhatsAppPlugin({
     accounts: {
       default: {
@@ -104,9 +110,19 @@ async function main() {
       },
     },
   });
-
-  gateway = createGateway({ logLevel: config.logLevel });
   gateway.use(whatsappPlugin);
+  log.info("WhatsApp plugin registered");
+
+  // Matrix plugin (only if configured via env or credentials)
+  const matrixCredentials = loadMatrixCredentials();
+  if (isMatrixConfigured() || matrixCredentials) {
+    const matrixPlugin = createMatrixPlugin();
+    gateway.use(matrixPlugin);
+    log.info("Matrix plugin registered");
+  } else {
+    log.info("Matrix not configured, skipping");
+  }
+
   await gateway.start();
   log.info("Gateway started");
 

@@ -7,6 +7,9 @@
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
 import { createWhatsAppPlugin } from "../../channels/whatsapp/plugin.js";
+import { createMatrixPlugin } from "../../channels/matrix/plugin.js";
+import { isMatrixConfigured } from "../../channels/matrix/config.js";
+import { loadAllCredentials as loadMatrixCredentials } from "../../channels/matrix/credentials.js";
 import { createChannelManager, type ChannelAccountSnapshot } from "../../channels/manager/index.js";
 import type { ChannelPlugin } from "../../channels/types.js";
 
@@ -80,6 +83,13 @@ function loadPlugins(): Map<string, ChannelPlugin> {
     },
   });
   plugins.set(wa.id, wa);
+
+  // Matrix plugin (only if configured via env or credentials)
+  const matrixCredentials = loadMatrixCredentials();
+  if (isMatrixConfigured() || matrixCredentials) {
+    const matrix = createMatrixPlugin();
+    plugins.set(matrix.id, matrix);
+  }
 
   return plugins;
 }

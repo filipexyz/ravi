@@ -44,6 +44,7 @@ export const AgentInputSchema = z.object({
   systemPromptAppend: z.string().optional(),
   allowedTools: z.array(z.string()).optional(),
   debounceMs: z.number().int().min(0).optional(),
+  matrixAccount: z.string().optional(),
 });
 
 export const RouteInputSchema = z.object({
@@ -66,6 +67,7 @@ interface AgentRow {
   system_prompt_append: string | null;
   allowed_tools: string | null;
   debounce_ms: number | null;
+  matrix_account: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -84,6 +86,26 @@ interface SettingRow {
   key: string;
   value: string;
   updated_at: number;
+}
+
+interface MatrixAccountRow {
+  username: string;
+  user_id: string;
+  homeserver: string;
+  access_token: string;
+  device_id: string | null;
+  created_at: number;
+  last_used_at: number | null;
+}
+
+export interface MatrixAccount {
+  username: string;
+  userId: string;
+  homeserver: string;
+  accessToken: string;
+  deviceId?: string;
+  createdAt: number;
+  lastUsedAt?: number;
 }
 
 // ============================================================================
@@ -175,7 +197,25 @@ function getDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
+
+    -- Matrix accounts (all users - both regular users and agents)
+    CREATE TABLE IF NOT EXISTS matrix_accounts (
+      username TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      homeserver TEXT NOT NULL,
+      access_token TEXT NOT NULL,
+      device_id TEXT,
+      created_at INTEGER NOT NULL,
+      last_used_at INTEGER
+    );
   `);
+
+  // Migration: add matrix_account column to agents if not exists
+  const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{ name: string }>;
+  if (!agentColumns.some(c => c.name === "matrix_account")) {
+    db.exec("ALTER TABLE agents ADD COLUMN matrix_account TEXT REFERENCES matrix_accounts(username)");
+    log.info("Added matrix_account column to agents table");
+  }
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
@@ -211,6 +251,12 @@ interface PreparedStatements {
   getSetting: Database.Statement;
   deleteSetting: Database.Statement;
   listSettings: Database.Statement;
+  // Matrix accounts
+  upsertMatrixAccount: Database.Statement;
+  getMatrixAccount: Database.Statement;
+  deleteMatrixAccount: Database.Statement;
+  listMatrixAccounts: Database.Statement;
+  touchMatrixAccount: Database.Statement;
 }
 
 let stmts: PreparedStatements | null = null;
@@ -228,8 +274,8 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -240,6 +286,7 @@ function getStatements(): PreparedStatements {
         system_prompt_append = ?,
         allowed_tools = ?,
         debounce_ms = ?,
+        matrix_account = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -273,6 +320,22 @@ function getStatements(): PreparedStatements {
     getSetting: database.prepare("SELECT * FROM settings WHERE key = ?"),
     deleteSetting: database.prepare("DELETE FROM settings WHERE key = ?"),
     listSettings: database.prepare("SELECT * FROM settings ORDER BY key"),
+
+    // Matrix accounts
+    upsertMatrixAccount: database.prepare(`
+      INSERT INTO matrix_accounts (username, user_id, homeserver, access_token, device_id, created_at, last_used_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(username) DO UPDATE SET
+        user_id = excluded.user_id,
+        homeserver = excluded.homeserver,
+        access_token = excluded.access_token,
+        device_id = excluded.device_id,
+        last_used_at = excluded.last_used_at
+    `),
+    getMatrixAccount: database.prepare("SELECT * FROM matrix_accounts WHERE username = ?"),
+    deleteMatrixAccount: database.prepare("DELETE FROM matrix_accounts WHERE username = ?"),
+    listMatrixAccounts: database.prepare("SELECT * FROM matrix_accounts ORDER BY username"),
+    touchMatrixAccount: database.prepare("UPDATE matrix_accounts SET last_used_at = ? WHERE username = ?"),
   };
 
   return stmts;
@@ -306,6 +369,7 @@ function rowToAgent(row: AgentRow): AgentConfig {
     }
   }
   if (row.debounce_ms !== null) result.debounceMs = row.debounce_ms;
+  if (row.matrix_account !== null) result.matrixAccount = row.matrix_account;
 
   return result;
 }
@@ -340,6 +404,14 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
   const now = Date.now();
   const s = getStatements();
 
+  // Verify matrix account exists if specified
+  if (validated.matrixAccount) {
+    const account = dbGetMatrixAccount(validated.matrixAccount);
+    if (!account) {
+      throw new Error(`Matrix account not found: ${validated.matrixAccount}`);
+    }
+  }
+
   try {
     s.insertAgent.run(
       validated.id,
@@ -350,6 +422,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.systemPromptAppend ?? null,
       validated.allowedTools ? JSON.stringify(validated.allowedTools) : null,
       validated.debounceMs ?? null,
+      validated.matrixAccount ?? null,
       now,
       now
     );
@@ -398,6 +471,14 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     DmScopeSchema.parse(updates.dmScope);
   }
 
+  // Verify matrix account exists if specified
+  if (updates.matrixAccount !== undefined && updates.matrixAccount !== null) {
+    const account = dbGetMatrixAccount(updates.matrixAccount);
+    if (!account) {
+      throw new Error(`Matrix account not found: ${updates.matrixAccount}`);
+    }
+  }
+
   const now = Date.now();
   s.updateAgent.run(
     updates.name !== undefined ? updates.name ?? null : row.name,
@@ -409,6 +490,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
       ? updates.allowedTools ? JSON.stringify(updates.allowedTools) : null
       : row.allowed_tools,
     updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
+    updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
     now,
     id
   );
@@ -698,4 +780,98 @@ export function getRaviDbPath(): string {
  */
 export function getRaviDir(): string {
   return RAVI_DIR;
+}
+
+// ============================================================================
+// Matrix Accounts (all Matrix users - both regular users and agents)
+// ============================================================================
+
+function rowToMatrixAccount(row: MatrixAccountRow): MatrixAccount {
+  const result: MatrixAccount = {
+    username: row.username,
+    userId: row.user_id,
+    homeserver: row.homeserver,
+    accessToken: row.access_token,
+    createdAt: row.created_at,
+  };
+  if (row.device_id) result.deviceId = row.device_id;
+  if (row.last_used_at) result.lastUsedAt = row.last_used_at;
+  return result;
+}
+
+/**
+ * Add or update a Matrix account
+ */
+export function dbUpsertMatrixAccount(account: Omit<MatrixAccount, "createdAt" | "lastUsedAt">): MatrixAccount {
+  const s = getStatements();
+  const existing = s.getMatrixAccount.get(account.username) as MatrixAccountRow | undefined;
+  const now = Date.now();
+
+  s.upsertMatrixAccount.run(
+    account.username,
+    account.userId,
+    account.homeserver,
+    account.accessToken,
+    account.deviceId ?? null,
+    existing?.created_at ?? now,
+    now
+  );
+
+  log.info("Upserted matrix account", { username: account.username, userId: account.userId });
+  return dbGetMatrixAccount(account.username)!;
+}
+
+/**
+ * Get a Matrix account by username
+ */
+export function dbGetMatrixAccount(username: string): MatrixAccount | null {
+  const s = getStatements();
+  const row = s.getMatrixAccount.get(username) as MatrixAccountRow | undefined;
+  return row ? rowToMatrixAccount(row) : null;
+}
+
+/**
+ * List all Matrix accounts
+ */
+export function dbListMatrixAccounts(): MatrixAccount[] {
+  const s = getStatements();
+  const rows = s.listMatrixAccounts.all() as MatrixAccountRow[];
+  return rows.map(rowToMatrixAccount);
+}
+
+/**
+ * Delete a Matrix account
+ */
+export function dbDeleteMatrixAccount(username: string): boolean {
+  // Check if any agent references this account
+  const agents = dbListAgents();
+  const referencingAgent = agents.find(a => a.matrixAccount === username);
+  if (referencingAgent) {
+    throw new Error(`Cannot delete: account is used by agent "${referencingAgent.id}"`);
+  }
+
+  const s = getStatements();
+  const result = s.deleteMatrixAccount.run(username);
+  if (result.changes > 0) {
+    log.info("Deleted matrix account", { username });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Touch a Matrix account (update last_used_at)
+ */
+export function dbTouchMatrixAccount(username: string): void {
+  const s = getStatements();
+  s.touchMatrixAccount.run(Date.now(), username);
+}
+
+/**
+ * Get Matrix account for an agent
+ */
+export function dbGetAgentMatrixAccount(agentId: string): MatrixAccount | null {
+  const agent = dbGetAgent(agentId);
+  if (!agent?.matrixAccount) return null;
+  return dbGetMatrixAccount(agent.matrixAccount);
 }

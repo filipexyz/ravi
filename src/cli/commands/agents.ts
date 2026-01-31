@@ -99,6 +99,7 @@ export class AgentsCommands {
     console.log(`  Model:         ${agent.model || "-"}`);
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
+    console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
     if (agent.allowedTools) {
       console.log(`  Allowed Tools: [${agent.allowedTools.length}]`);
@@ -151,7 +152,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "set", description: "Set agent property" })
-  set(
+  async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
     @Arg("value", { description: "Property value" }) value: string
@@ -162,7 +163,7 @@ export class AgentsCommands {
       process.exit(1);
     }
 
-    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend"];
+    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount"];
     if (!validKeys.includes(key)) {
       console.error(`Invalid key: ${key}`);
       console.log(`Valid keys: ${validKeys.join(", ")}`);
@@ -175,6 +176,17 @@ export class AgentsCommands {
       if (!result.success) {
         console.error(`Invalid dmScope: ${value}`);
         console.log(`Valid scopes: ${DmScopeSchema.options.join(", ")}`);
+        process.exit(1);
+      }
+    }
+
+    // Validate matrixAccount (will be validated in updateAgent, but give better error)
+    if (key === "matrixAccount" && value !== "null" && value !== "") {
+      const { dbGetMatrixAccount } = await import("../../router/router-db.js");
+      const account = dbGetMatrixAccount(value);
+      if (!account) {
+        console.error(`Matrix account not found: ${value}`);
+        console.log("Available accounts: ravi matrix users-list");
         process.exit(1);
       }
     }

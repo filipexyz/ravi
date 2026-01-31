@@ -89,8 +89,15 @@ export function resolveRoute(
   const routeTarget = isGroup ? groupId ?? phone : phone;
   const route = findRoute(routeTarget, config.routes);
 
-  // Get agent: contacts DB > route > default
-  const agentId = contactAgentId ?? route?.agent ?? config.defaultAgent;
+  // Check if accountId matches an agent (for Matrix multi-account)
+  // If accountId is not "default" and matches an agent, use it
+  const accountAgentId =
+    accountId && accountId !== "default" && config.agents[accountId]
+      ? accountId
+      : undefined;
+
+  // Get agent: contacts DB > route > accountId-as-agent > default
+  const agentId = contactAgentId ?? route?.agent ?? accountAgentId ?? config.defaultAgent;
   const agent = config.agents[agentId];
 
   if (!agent) {

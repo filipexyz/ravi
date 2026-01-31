@@ -12,8 +12,11 @@ Claude-powered bot with session routing via notif.sh.
 ┌─────────────┐     ┌─────────────┐                      │
 │  WhatsApp   │────▶│   Gateway   │──────────────────────┤
 │   Plugin    │     │  (router)   │                      │
-└─────────────┘     └─────────────┘                      ▼
-                                             ┌───────────────────────┐
+└─────────────┘     └─────────────┘                      │
+┌─────────────┐            │                             │
+│   Matrix    │────────────┘                             │
+│   Plugin    │                                          ▼
+└─────────────┘                              ┌───────────────────────┐
                                              │       RaviBot         │
                                              │   Claude Agent SDK    │
                                              │   cwd: ~/ravi/{agent} │
@@ -54,10 +57,12 @@ ravi.{sessionKey}.tool      # Tool execution events (start/end)
 ## Session Keys
 
 ```
-agent:main:main                    # Shared session (TUI + WA)
-agent:main:dm:5511999999999        # Per-peer session
-agent:jarvis:main                  # Different agent
-agent:main:whatsapp:group:123456   # Group session
+agent:main:main                          # Shared session (TUI + WA + Matrix)
+agent:main:dm:5511999999999              # Per-peer session (WhatsApp)
+agent:main:matrix:dm:@user:server        # Per-peer session (Matrix)
+agent:jarvis:main                        # Different agent
+agent:main:whatsapp:group:123456         # WhatsApp group session
+agent:main:matrix:room:!roomid:server    # Matrix room session
 ```
 
 ## Message Queue
@@ -105,12 +110,23 @@ ravi settings set defaultDmScope per-peer
 - `dmScope` - Session grouping for DMs
 - `debounceMs` - Message grouping window
 - `allowedTools` - Tool whitelist (undefined = all tools)
+- `matrixAccount` - Matrix account username (for multi-account)
 
 **DM Scopes:**
 - `main` - All DMs share one session
 - `per-peer` - Isolated by contact
 - `per-channel-peer` - Isolated by channel+contact
 - `per-account-channel-peer` - Full isolation
+
+**Agent Resolution:**
+
+Messages are routed to agents in this priority order:
+1. Contact's assigned agent (from contacts DB)
+2. Route match (from routes table)
+3. AccountId-as-agent (if accountId matches an existing agent ID)
+4. Default agent
+
+The accountId-as-agent feature allows Matrix multi-account setups where each Matrix account maps directly to an agent with the same ID.
 
 ## Storage
 
@@ -122,6 +138,7 @@ ravi settings set defaultDmScope per-peer
 ~/.ravi/
 ├── .env             # Environment variables (loaded by daemon)
 ├── chat.db          # Message history
+├── matrix/          # Matrix SDK storage (sync, crypto)
 └── logs/
     └── daemon.log   # Daemon logs
 ```
@@ -157,6 +174,13 @@ ravi agents tools <id>              # Manage tools
 ravi contacts list       # List contacts
 ravi contacts add <phone>
 ravi contacts pending    # Pending approvals
+
+# Matrix
+ravi matrix login        # Interactive login
+ravi matrix status       # Show connection status
+ravi matrix logout       # Clear credentials
+ravi matrix rooms        # List joined rooms
+ravi matrix whoami       # Show current identity
 
 # Cross-session messaging
 ravi cross send <session> <message>  # Send message to another session
@@ -251,6 +275,14 @@ CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
 OPENAI_API_KEY=sk-xxx   # For audio transcription
 RAVI_MODEL=sonnet
 RAVI_LOG_LEVEL=info     # debug | info | warn | error
+
+# Matrix (optional)
+MATRIX_HOMESERVER=https://matrix.org
+MATRIX_ACCESS_TOKEN=syt_xxx   # Or use ravi matrix login
+MATRIX_ENCRYPTION=false       # Enable E2EE (requires native deps)
+MATRIX_DM_POLICY=open         # open | closed | pairing
+MATRIX_ROOM_POLICY=closed     # open | closed | allowlist
+MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
 ```
 
 ## Cross-Session Messaging
@@ -279,6 +311,81 @@ for await (const event of notif.subscribe("topic.*")) { ... }
 ```
 
 Connection is shared across bot, gateway, plugins, and CLI. Closes automatically when process exits.
+
+## Matrix Integration
+
+### Setup
+
+```bash
+# Option 1: Interactive login
+ravi matrix login
+
+# Option 2: Environment variables
+export MATRIX_HOMESERVER=https://matrix.org
+export MATRIX_ACCESS_TOKEN=syt_xxx
+
+# Restart daemon to pick up changes
+ravi daemon restart
+```
+
+### Configuration
+
+Matrix is configured via environment variables in `~/.ravi/.env`:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MATRIX_HOMESERVER` | Homeserver URL | (required) |
+| `MATRIX_ACCESS_TOKEN` | Access token | (from login) |
+| `MATRIX_USER_ID` | User ID (optional with token) | - |
+| `MATRIX_PASSWORD` | Password (if using password auth) | - |
+| `MATRIX_ENCRYPTION` | Enable E2EE | `false` |
+| `MATRIX_DM_POLICY` | DM policy: `open`, `closed`, `pairing` | `open` |
+| `MATRIX_ROOM_POLICY` | Room policy: `open`, `closed`, `allowlist` | `closed` |
+| `MATRIX_ROOM_ALLOWLIST` | Comma-separated room IDs/aliases | - |
+
+### Policies
+
+**DM Policy:**
+- `open` - Accept messages from anyone
+- `closed` - Reject all DMs
+- `pairing` - Save as pending for approval
+
+**Room Policy:**
+- `open` - Accept messages from all rooms
+- `closed` - Reject all room messages
+- `allowlist` - Only accept from rooms in allowlist
+
+### E2EE (Optional)
+
+End-to-end encryption requires the native `@matrix-org/matrix-sdk-crypto-nodejs` module:
+
+```bash
+npm install @matrix-org/matrix-sdk-crypto-nodejs
+```
+
+Then set `MATRIX_ENCRYPTION=true` in environment.
+
+### Message Flow
+
+```
+Matrix Room → room.message event
+    ↓
+MatrixGatewayAdapter.handleMessage
+    ↓ (normalize → InboundMessage)
+notif.emit("matrix.default.inbound")
+    ↓
+Gateway → format envelope, resolve session
+    ↓
+notif.emit("ravi.{sessionKey}.prompt")
+    ↓
+RaviBot → Claude
+    ↓
+notif.emit("ravi.{sessionKey}.response")
+    ↓
+Gateway → MatrixOutboundAdapter.send
+    ↓
+MatrixClient.sendMessage
+```
 
 ## Development
 

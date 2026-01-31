@@ -41,6 +41,9 @@ export interface AgentConfig {
 
   /** Debounce time in ms - groups messages arriving within this window */
   debounceMs?: number;
+
+  /** Matrix account username (references matrix_accounts table) */
+  matrixAccount?: string;
 }
 
 // ============================================================================
