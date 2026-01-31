@@ -23,6 +23,23 @@ import { runWithContext } from "./cli/context.js";
 
 const log = logger.child("bot");
 
+const MAX_OUTPUT_LENGTH = 10000;
+
+function truncateOutput(output: unknown): unknown {
+  if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
+    return output.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]`;
+  }
+  if (Array.isArray(output)) {
+    return output.map(item => {
+      if (item?.type === "text" && typeof item?.text === "string" && item.text.length > MAX_OUTPUT_LENGTH) {
+        return { ...item, text: item.text.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]` };
+      }
+      return item;
+    });
+  }
+  return output;
+}
+
 /** Message context for structured prompts */
 export interface MessageContext {
   channelId: string;
@@ -51,6 +68,8 @@ interface ActiveSession {
   query: Query;
   toolRunning: boolean;
   currentToolId?: string;
+  currentToolName?: string;
+  toolStartTime?: number;
   messageQueue: QueuedMessage[];
   interrupted: boolean;
 }
@@ -450,7 +469,20 @@ export class RaviBot {
             if (block.type === "tool_use") {
               activeSession.toolRunning = true;
               activeSession.currentToolId = block.id;
+              activeSession.currentToolName = block.name;
+              activeSession.toolStartTime = Date.now();
               log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name, toolId: block.id });
+
+              // Emit tool start event
+              notif.emit(`ravi.${session.sessionKey}.tool`, {
+                event: "start",
+                toolId: block.id,
+                toolName: block.name,
+                input: block.input,
+                timestamp: new Date().toISOString(),
+                sessionKey: session.sessionKey,
+                agentId: agent.id,
+              }).catch(err => log.warn("Failed to emit tool start", { error: err }));
             }
           }
           if (messageText) {
@@ -480,8 +512,26 @@ export class RaviBot {
           if (Array.isArray(content)) {
             const hasToolResult = content.some((b: any) => b.type === "tool_result");
             if (hasToolResult) {
+              const toolResult = content.find((b: any) => b.type === "tool_result");
+              const durationMs = activeSession.toolStartTime ? Date.now() - activeSession.toolStartTime : undefined;
+
+              // Emit tool end event
+              notif.emit(`ravi.${session.sessionKey}.tool`, {
+                event: "end",
+                toolId: activeSession.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
+                toolName: activeSession.currentToolName ?? "unknown",
+                output: truncateOutput(toolResult?.content),
+                isError: toolResult?.is_error ?? false,
+                durationMs,
+                timestamp: new Date().toISOString(),
+                sessionKey: session.sessionKey,
+                agentId: agent.id,
+              }).catch(err => log.warn("Failed to emit tool end", { error: err }));
+
               activeSession.toolRunning = false;
               activeSession.currentToolId = undefined;
+              activeSession.currentToolName = undefined;
+              activeSession.toolStartTime = undefined;
               log.info("Tool finished", { sessionKey: session.sessionKey });
 
               // Check if there are pending messages - interrupt to process them

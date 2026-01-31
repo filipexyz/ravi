@@ -467,38 +467,48 @@ export class AgentsCommands {
    * Returns the number of characters received.
    */
   private async sendPrompt(sessionKey: string, prompt: string): Promise<number> {
-    let done = false;
     let responseLength = 0;
 
-    const timer = setTimeout(() => {
-      if (!done) {
+    // Get subscription streams so we can close them
+    const claudeStream = notif.subscribe(`ravi.${sessionKey}.claude`);
+    const responseStream = notif.subscribe(`ravi.${sessionKey}.response`);
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      // Close streams to stop the for-await loops
+      claudeStream.close();
+      responseStream.close();
+    };
+
+    // Promise that resolves on completion or timeout
+    const completion = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
         console.log("\n⏱️  Timeout");
-        done = true;
-      }
-    }, PROMPT_TIMEOUT_MS);
+        resolve();
+      }, PROMPT_TIMEOUT_MS);
 
-    // Wait for completion (claude result event)
-    const claudeSub = (async () => {
-      try {
-        for await (const event of notif.subscribe(`ravi.${sessionKey}.claude`)) {
-          if (done) break;
-          if ((event.data as Record<string, unknown>).type === "result") {
-            done = true;
-            break;
+      // Wait for result event
+      (async () => {
+        try {
+          for await (const event of claudeStream) {
+            if ((event.data as Record<string, unknown>).type === "result") {
+              resolve();
+              break;
+            }
           }
-        }
-      } catch { /* ignore */ }
-    })();
+        } catch { /* ignore */ }
+      })();
+    });
 
-    // Stream responses
-    const responseSub = (async () => {
+    // Stream responses (runs until completion resolves)
+    const streaming = (async () => {
       try {
-        for await (const event of notif.subscribe(`ravi.${sessionKey}.response`)) {
-          if (done) break;
+        for await (const event of responseStream) {
           const data = event.data as ResponseMessage;
           if (data.error) {
             console.log(`\n❌ ${data.error}`);
-            done = true;
             break;
           }
           if (data.response) {
@@ -512,8 +522,12 @@ export class AgentsCommands {
     // Send prompt
     await notif.emit(`ravi.${sessionKey}.prompt`, { prompt } as unknown as Record<string, unknown>);
 
-    await Promise.race([claudeSub, responseSub]);
-    clearTimeout(timer);
+    // Wait for completion, then cleanup
+    await completion;
+    cleanup();
+
+    // Give streaming a moment to finish any pending writes
+    await Promise.race([streaming, new Promise(r => setTimeout(r, 100))]);
 
     return responseLength;
   }

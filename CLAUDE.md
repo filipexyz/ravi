@@ -43,11 +43,13 @@ ravi daemon logs
 ravi.{sessionKey}.prompt    # User message (with source)
 ravi.{sessionKey}.response  # Bot response (with target) - streamed
 ravi.{sessionKey}.claude    # SDK events (system, assistant, result)
+ravi.{sessionKey}.tool      # Tool execution events (start/end)
 ```
 
 - **prompt**: `{ prompt, source: { channel, accountId, chatId } }`
 - **response**: `{ response, target: { channel, accountId, chatId } }`
 - **claude**: Raw SDK events (used for typing heartbeat)
+- **tool**: `{ event: "start"|"end", toolId, toolName, input?, output?, isError?, durationMs?, timestamp, sessionKey, agentId }`
 
 ## Session Keys
 
