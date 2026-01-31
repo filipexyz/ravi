@@ -370,6 +370,8 @@ export class RaviBot {
     ];
 
     // Build permission options: use disallowedTools if whitelist defined, otherwise bypass mode
+    // Note: bypassPermissions doesn't work when running as root
+    const isRoot = process.getuid?.() === 0;
     let permissionOptions: Record<string, unknown>;
     if (agent.allowedTools) {
       const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
@@ -382,6 +384,12 @@ export class RaviBot {
         disallowedTools: disallowed,
         // Use allowedTools to auto-approve the allowed tools
         allowedTools: agent.allowedTools,
+      };
+    } else if (isRoot) {
+      // Running as root - can't use bypassPermissions, use acceptEdits instead
+      log.warn("Running as root - using acceptEdits mode instead of bypassPermissions", { agentId: agent.id });
+      permissionOptions = {
+        permissionMode: "acceptEdits" as const,
       };
     } else {
       log.info("Bypass mode (no tool restriction)", { agentId: agent.id });
