@@ -214,6 +214,9 @@ ANTHROPIC_API_KEY=
   private installMacOS() {
     const raviBin = this.findRaviBin();
 
+    // Ensure logs directory exists
+    mkdirSync(join(RAVI_DIR, "logs"), { recursive: true });
+
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -296,6 +299,15 @@ ANTHROPIC_API_KEY=
     // Find the ravi binary
     const raviBin = this.findRaviBin();
 
+    // Ensure logs directory exists
+    mkdirSync(join(RAVI_DIR, "logs"), { recursive: true });
+
+    // Use a clean PATH (filter out Windows paths and invalid entries)
+    const cleanPath = (process.env.PATH || "")
+      .split(":")
+      .filter(p => p.startsWith("/") && !p.includes("\\"))
+      .join(":") || "/usr/local/bin:/usr/bin:/bin";
+
     const unit = `[Unit]
 Description=Ravi Bot Daemon
 After=network.target
@@ -309,7 +321,7 @@ RestartSec=10
 StandardOutput=append:${LOG_FILE}
 StandardError=append:${LOG_FILE}
 Environment=HOME=${homedir()}
-Environment=PATH=${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}
+Environment=PATH=${cleanPath}
 
 [Install]
 WantedBy=default.target
