@@ -78,24 +78,23 @@ ravi agents debounce main 0      # Disable
 
 Messages within the window are combined with `\n\n` before processing.
 
-## Router (`~/ravi/router.json`)
+## Router (`~/ravi/router.db`)
 
-```json
-{
-  "agents": {
-    "main": {
-      "id": "main",
-      "cwd": "~/ravi/main",
-      "dmScope": "main",
-      "debounceMs": 2000
-    }
-  },
-  "routes": [
-    { "pattern": "lid:178035101794451", "agent": "main", "dmScope": "main" }
-  ],
-  "defaultAgent": "main",
-  "defaultDmScope": "per-peer"
-}
+Configuration is stored in SQLite and managed via CLI:
+
+```bash
+# Agents
+ravi agents list
+ravi agents set main dmScope main
+ravi agents debounce main 2000
+
+# Routes
+ravi routes list
+ravi routes add "lid:178035101794451" main
+
+# Settings
+ravi settings set defaultAgent main
+ravi settings set defaultDmScope per-peer
 ```
 
 **Agent Config:**
@@ -115,7 +114,7 @@ Messages within the window are combined with `\n\n` before processing.
 
 ```
 ~/ravi/
-├── router.json      # Routing config
+├── router.db        # Routing config (SQLite)
 ├── sessions.db      # Session → SDK session mapping
 └── main/            # Agent CWD (CLAUDE.md, tools, etc)
 

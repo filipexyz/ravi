@@ -92,31 +92,27 @@ ravi contacts pending    # Show pending requests
 
 ## Configuration
 
-### Router (`~/ravi/router.json`)
+### Router (`~/ravi/router.db`)
 
-```json
-{
-  "agents": {
-    "main": {
-      "id": "main",
-      "name": "Ravi",
-      "cwd": "~/ravi/main",
-      "model": "sonnet",
-      "dmScope": "main",
-      "debounceMs": 2000
-    },
-    "assistant": {
-      "id": "assistant",
-      "cwd": "~/ravi/assistant",
-      "allowedTools": ["WebSearch", "Read"]
-    }
-  },
-  "routes": [
-    { "pattern": "+5511*", "agent": "assistant" }
-  ],
-  "defaultAgent": "main",
-  "defaultDmScope": "per-peer"
-}
+Configuration is stored in SQLite and managed via CLI:
+
+```bash
+# Agents
+ravi agents list
+ravi agents create assistant ~/ravi/assistant
+ravi agents set main model sonnet
+ravi agents set main dmScope main
+ravi agents debounce main 2000
+
+# Routes
+ravi routes list
+ravi routes add "+5511*" assistant
+ravi routes set "+5511*" priority 10
+
+# Settings
+ravi settings list
+ravi settings set defaultAgent main
+ravi settings set defaultDmScope per-peer
 ```
 
 ### Agent Options
@@ -173,7 +169,7 @@ When messages arrive while processing:
 
 ```
 ~/ravi/                    # Ravi data directory
-├── router.json           # Routing configuration
+├── router.db             # Routing configuration (SQLite)
 ├── sessions.db           # Session state
 └── main/                 # Agent working directory
     ├── CLAUDE.md         # Agent instructions
