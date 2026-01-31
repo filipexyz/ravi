@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
@@ -159,8 +159,8 @@ export function getPendingContacts(): Contact[] {
  */
 export function deleteContact(phone: string): boolean {
   const normalizedPhone = normalizePhone(phone);
-  const result = deleteContactStmt.run(normalizedPhone);
-  return result.changes > 0;
+  deleteContactStmt.run(normalizedPhone);
+  return (db as unknown as { changes: number }).changes > 0;
 }
 
 /**

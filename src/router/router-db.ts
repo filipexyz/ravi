@@ -7,7 +7,7 @@
  * Uses lazy initialization - database is only created when first accessed.
  */
 
-import Database from "better-sqlite3";
+import { Database, type Statement } from "bun:sqlite";
 import { z } from "zod";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -112,13 +112,13 @@ export interface MatrixAccount {
 // Lazy Database Initialization
 // ============================================================================
 
-let db: Database.Database | null = null;
+let db: Database | null = null;
 
 /**
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
-function getDb(): Database.Database {
+function getDb(): Database {
   if (db !== null) {
     return db;
   }
@@ -129,7 +129,7 @@ function getDb(): Database.Database {
   db = new Database(DB_PATH);
 
   // Enable foreign keys before schema creation
-  db.pragma("foreign_keys = ON");
+  db.exec("PRAGMA foreign_keys = ON");
 
   // Initialize schema
   db.exec(`
@@ -232,31 +232,39 @@ function getDb(): Database.Database {
   return db;
 }
 
+/**
+ * Get the number of rows changed by the last INSERT/UPDATE/DELETE.
+ * bun:sqlite tracks this on the database instance.
+ */
+function getDbChanges(): number {
+  return (getDb() as unknown as { changes: number }).changes;
+}
+
 // ============================================================================
 // Prepared Statement Cache
 // ============================================================================
 
 interface PreparedStatements {
-  insertAgent: Database.Statement;
-  updateAgent: Database.Statement;
-  deleteAgent: Database.Statement;
-  getAgent: Database.Statement;
-  listAgents: Database.Statement;
-  insertRoute: Database.Statement;
-  updateRoute: Database.Statement;
-  deleteRoute: Database.Statement;
-  getRoute: Database.Statement;
-  listRoutes: Database.Statement;
-  upsertSetting: Database.Statement;
-  getSetting: Database.Statement;
-  deleteSetting: Database.Statement;
-  listSettings: Database.Statement;
+  insertAgent: Statement;
+  updateAgent: Statement;
+  deleteAgent: Statement;
+  getAgent: Statement;
+  listAgents: Statement;
+  insertRoute: Statement;
+  updateRoute: Statement;
+  deleteRoute: Statement;
+  getRoute: Statement;
+  listRoutes: Statement;
+  upsertSetting: Statement;
+  getSetting: Statement;
+  deleteSetting: Statement;
+  listSettings: Statement;
   // Matrix accounts
-  upsertMatrixAccount: Database.Statement;
-  getMatrixAccount: Database.Statement;
-  deleteMatrixAccount: Database.Statement;
-  listMatrixAccounts: Database.Statement;
-  touchMatrixAccount: Database.Statement;
+  upsertMatrixAccount: Statement;
+  getMatrixAccount: Statement;
+  deleteMatrixAccount: Statement;
+  listMatrixAccounts: Statement;
+  touchMatrixAccount: Statement;
 }
 
 let stmts: PreparedStatements | null = null;
@@ -510,8 +518,8 @@ export function dbDeleteAgent(id: string): boolean {
   }
 
   const s = getStatements();
-  const result = s.deleteAgent.run(id);
-  if (result.changes > 0) {
+  s.deleteAgent.run(id);
+  if (getDbChanges() > 0) {
     log.info("Deleted agent", { id });
     return true;
   }
@@ -662,8 +670,8 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>): R
  */
 export function dbDeleteRoute(pattern: string): boolean {
   const s = getStatements();
-  const result = s.deleteRoute.run(pattern);
-  if (result.changes > 0) {
+  s.deleteRoute.run(pattern);
+  if (getDbChanges() > 0) {
     log.info("Deleted route", { pattern });
     return true;
   }
@@ -708,8 +716,8 @@ export function dbSetSetting(key: string, value: string): void {
  */
 export function dbDeleteSetting(key: string): boolean {
   const s = getStatements();
-  const result = s.deleteSetting.run(key);
-  return result.changes > 0;
+  s.deleteSetting.run(key);
+  return getDbChanges() > 0;
 }
 
 /**
@@ -766,7 +774,7 @@ export function closeRouterDb(): void {
 /**
  * Get the shared database connection (for sessions.ts)
  */
-export { getDb };
+export { getDb, getDbChanges };
 
 /**
  * Get the database path
@@ -851,8 +859,8 @@ export function dbDeleteMatrixAccount(username: string): boolean {
   }
 
   const s = getStatements();
-  const result = s.deleteMatrixAccount.run(username);
-  if (result.changes > 0) {
+  s.deleteMatrixAccount.run(username);
+  if (getDbChanges() > 0) {
     log.info("Deleted matrix account", { username });
     return true;
   }

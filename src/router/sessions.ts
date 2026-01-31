@@ -5,9 +5,9 @@
  * Uses shared database from router-db.ts.
  */
 
-import type Database from "better-sqlite3";
+import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
-import { getDb } from "./router-db.js";
+import { getDb, getDbChanges } from "./router-db.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -85,16 +85,16 @@ function rowToEntry(row: SessionRow): SessionEntry {
 // ============================================================================
 
 interface SessionStatements {
-  upsert: Database.Statement;
-  getByKey: Database.Statement;
-  getBySdkId: Database.Statement;
-  getByAgent: Database.Statement;
-  updateSdkId: Database.Statement;
-  updateTokens: Database.Statement;
-  delete: Database.Statement;
-  listAll: Database.Statement;
-  updateAgent: Database.Statement;
-  updateSource: Database.Statement;
+  upsert: Statement;
+  getByKey: Statement;
+  getBySdkId: Statement;
+  getByAgent: Statement;
+  updateSdkId: Statement;
+  updateTokens: Statement;
+  delete: Statement;
+  listAll: Statement;
+  updateAgent: Statement;
+  updateSource: Statement;
 }
 
 let stmts: SessionStatements | null = null;
@@ -296,8 +296,8 @@ export function updateTokens(
  */
 export function deleteSession(sessionKey: string): boolean {
   const s = getStatements();
-  const result = s.delete.run(sessionKey);
-  return result.changes > 0;
+  s.delete.run(sessionKey);
+  return getDbChanges() > 0;
 }
 
 /**

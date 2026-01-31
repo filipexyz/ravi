@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ravi CLI wrapper - runs the TypeScript CLI with tsx
+# Ravi CLI wrapper - runs the TypeScript CLI with bun
 
 # Resolve the actual script location (following symlinks)
 SOURCE="${BASH_SOURCE[0]}"
@@ -11,4 +11,4 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-exec "$PROJECT_DIR/node_modules/.bin/tsx" "$PROJECT_DIR/src/cli/index.ts" "$@"
+exec bun "$PROJECT_DIR/src/cli/index.ts" "$@"

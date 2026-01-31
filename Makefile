@@ -7,17 +7,17 @@ quality: lint typecheck
 # Lint with eslint (report only, no fix)
 lint:
 	@echo "Running eslint..."
-	@npx eslint src/ --max-warnings=0
+	@bun eslint src/ --max-warnings=0
 
 # TypeScript type checking
 typecheck:
 	@echo "Running typecheck..."
-	@npx tsc --noEmit
+	@bun tsc --noEmit
 
 # Build
 build:
 	@echo "Building..."
-	@npm run build
+	@bun run build
 
 # Clean build artifacts
 clean:
@@ -26,15 +26,15 @@ clean:
 
 # Install dependencies
 install:
-	@npm install
+	@bun install
 
 # Dev mode
 dev:
-	@npm run dev
+	@bun run dev
 
 # Run daemon
 daemon:
-	@npm run cli -- daemon start
+	@bun run cli -- daemon start
 
 # Help
 help:
@@ -44,6 +44,6 @@ help:
 	@echo "  typecheck - Run tsc --noEmit only"
 	@echo "  build     - Compile TypeScript"
 	@echo "  clean     - Remove dist/"
-	@echo "  install   - Install npm dependencies"
+	@echo "  install   - Install dependencies"
 	@echo "  dev       - Run in dev mode"
 	@echo "  daemon    - Start ravi daemon"

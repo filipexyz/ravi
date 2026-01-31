@@ -1,11 +1,11 @@
 # Ravi Bot
 
-A Claude-powered conversational bot with WhatsApp integration, session routing, and message queuing.
+A Claude-powered conversational bot with WhatsApp and Matrix integration, session routing, and message queuing.
 
 ## Features
 
-- **Claude Agent SDK** - Full Claude Code capabilities via the official SDK
 - **WhatsApp Integration** - Connect via Baileys (no API keys needed)
+- **Matrix Integration** - Connect to any Matrix homeserver
 - **Session Routing** - Route conversations to different agents based on rules
 - **Message Queue** - Smart interruption handling when tools are running
 - **Debounce** - Group rapid messages before processing
@@ -17,9 +17,9 @@ A Claude-powered conversational bot with WhatsApp integration, session routing, 
 ```bash
 git clone https://github.com/filipelabs/ravi.bot
 cd ravi.bot
-npm install
-npm run build
-npm link   # Makes `ravi` command available globally
+bun install
+bun run build
+bun link   # Makes `ravi` command available globally
 ```
 
 ## Quick Start
@@ -169,14 +169,14 @@ When messages arrive while processing:
 
 ```
 ~/ravi/                    # Ravi data directory
-├── ravi.db               # Configuration and session state (SQLite)
+├── ravi.db               # All config: agents, routes, sessions, contacts (SQLite)
 └── main/                 # Agent working directory
     ├── CLAUDE.md         # Agent instructions
     └── ...               # Agent-specific files
 
 ~/.ravi/                  # Ravi config directory
 ├── .env                  # Environment variables
-├── chat.db               # Message history
+├── matrix/               # Matrix SDK storage
 └── logs/
     └── daemon.log        # Daemon logs
 ```
@@ -184,9 +184,9 @@ When messages arrive while processing:
 ## Development
 
 ```bash
-npm run build    # Compile TypeScript
-npm run dev      # Watch mode
-npm test         # Run tests
+bun run build    # Compile TypeScript
+bun run dev      # Watch mode
+make quality     # Run lint + typecheck
 ```
 
 ## Troubleshooting
