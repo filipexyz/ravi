@@ -1,11 +1,28 @@
 {
   "name": "ravi.bot",
   "version": "0.1.0",
-  "description": "Claude-powered bot integrated with notif.sh",
+  "description": "Claude-powered bot with WhatsApp and Matrix integration via notif.sh",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
     "ravi": "./bin/ravi"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/filipexyz/ravi.git"
+  },
+  "homepage": "https://github.com/filipexyz/ravi#readme",
+  "bugs": {
+    "url": "https://github.com/filipexyz/ravi/issues"
+  },
+  "author": "Filipe Labs",
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "scripts": {
     "build": "bun tsc",
@@ -20,11 +37,14 @@
   },
   "keywords": [
     "claude",
+    "anthropic",
+    "ai",
     "bot",
-    "notif",
-    "whatsapp"
+    "chatbot",
+    "whatsapp",
+    "matrix",
+    "notif"
   ],
-  "author": "",
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
