@@ -19,6 +19,8 @@ import { ContactsCommands } from "./commands/contacts.js";
 import { ServiceCommands } from "./commands/service.js";
 import { DaemonCommands } from "./commands/daemon.js";
 import { ToolsCommands } from "./commands/tools.js";
+import { RoutesCommands } from "./commands/routes.js";
+import { SettingsCommands } from "./commands/settings.js";
 
 const program = new Command();
 
@@ -35,6 +37,8 @@ registerCommands(program, [
   ServiceCommands,
   DaemonCommands,
   ToolsCommands,
+  RoutesCommands,
+  SettingsCommands,
 ]);
 
 // Parse and execute

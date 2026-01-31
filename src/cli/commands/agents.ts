@@ -18,6 +18,7 @@ import {
   ensureAgentDirs,
   loadRouterConfig,
 } from "../../router/config.js";
+import { DmScopeSchema } from "../../router/router-db.js";
 import {
   getSession,
   deleteSession,
@@ -170,10 +171,10 @@ export class AgentsCommands {
 
     // Validate dmScope values
     if (key === "dmScope") {
-      const validScopes = ["main", "per-peer", "per-channel-peer", "per-account-channel-peer"];
-      if (!validScopes.includes(value)) {
+      const result = DmScopeSchema.safeParse(value);
+      if (!result.success) {
         console.error(`Invalid dmScope: ${value}`);
-        console.log(`Valid scopes: ${validScopes.join(", ")}`);
+        console.log(`Valid scopes: ${DmScopeSchema.options.join(", ")}`);
         process.exit(1);
       }
     }

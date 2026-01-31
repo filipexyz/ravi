@@ -85,7 +85,9 @@ export function resolveRoute(
   const contactAgentId = getContactAgent(isGroup ? groupId ?? phone : phone);
 
   // Find matching route (fallback)
-  const route = findRoute(phone, config.routes);
+  // For groups, match against groupId; for DMs, match against phone
+  const routeTarget = isGroup ? groupId ?? phone : phone;
+  const route = findRoute(routeTarget, config.routes);
 
   // Get agent: contacts DB > route > default
   const agentId = contactAgentId ?? route?.agent ?? config.defaultAgent;

@@ -60,7 +60,14 @@ export function buildSessionKey(params: SessionKeyParams): string {
     // Groups and channels are always isolated
     if (channel) parts.push(channel);
     if (accountId) parts.push(accountId);
-    parts.push(peerKind, peerId ?? "unknown");
+    // Normalize peerId to avoid duplication like "group:group:123"
+    // Input may be "group:123" (from normalizePhone) or just "123" (raw ID)
+    // We strip the prefix if present since we add peerKind separately
+    let cleanPeerId = peerId ?? "unknown";
+    if (cleanPeerId.toLowerCase().startsWith(`${peerKind}:`)) {
+      cleanPeerId = cleanPeerId.slice(peerKind.length + 1);
+    }
+    parts.push(peerKind, cleanPeerId);
 
     // Add thread if present
     if (threadId) {

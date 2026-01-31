@@ -13,6 +13,8 @@ import { DaemonCommands } from "./commands/daemon.js";
 import { ServiceCommands } from "./commands/service.js";
 import { ContactsCommands } from "./commands/contacts.js";
 import { ChannelsCommands } from "./commands/channels.js";
+import { RoutesCommands } from "./commands/routes.js";
+import { SettingsCommands } from "./commands/settings.js";
 
 // ============================================================================
 // Types
@@ -53,6 +55,8 @@ export const ALL_COMMAND_CLASSES: CommandClass[] = [
   ServiceCommands,
   ContactsCommands,
   ChannelsCommands,
+  RoutesCommands,
+  SettingsCommands,
 ];
 
 // Cache extracted tools - they don't change at runtime

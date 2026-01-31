@@ -33,10 +33,7 @@ export {
 // Config
 export {
   loadRouterConfig,
-  saveRouterConfig,
   getRaviDir,
-  getConfigPath,
-  validateConfig,
   checkAgentDirs,
   ensureAgentDirs,
   // Agent CRUD
@@ -49,7 +46,29 @@ export {
   setAgentTools,
   addAgentTool,
   removeAgentTool,
+  setAgentDebounce,
 } from "./config.js";
+
+// Router Database (direct access for CLI commands)
+export {
+  // Route operations
+  dbCreateRoute,
+  dbGetRoute,
+  dbListRoutes,
+  dbUpdateRoute,
+  dbDeleteRoute,
+  // Settings
+  dbGetSetting,
+  dbSetSetting,
+  dbDeleteSetting,
+  dbListSettings,
+  getDefaultAgentId,
+  getDefaultDmScope,
+  // Schema (for validation)
+  DmScopeSchema,
+  // Database management
+  closeRouterDb,
+} from "./router-db.js";
 
 // Sessions
 export {

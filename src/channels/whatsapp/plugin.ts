@@ -312,13 +312,21 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     });
 
     // Subscribe to message events on new/reconnected sockets
+    // Track subscribed sockets to avoid duplicate handlers on reconnection
+    const subscribedSockets = new WeakSet<object>();
     sessionManager.on("socketReady", (accountId, socket) => {
-      const config = this.configAdapter.getConfig();
+      if (subscribedSockets.has(socket)) {
+        log.debug(`Socket already subscribed for ${accountId}, skipping`);
+        return;
+      }
+      subscribedSockets.add(socket);
       log.info(`Socket ready for ${accountId}, subscribing to messages`);
 
       socket.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
 
+        // Get fresh config per batch to pick up settings changes
+        const config = this.configAdapter.getConfig();
         for (const message of messages) {
           await this.handleMessage(accountId, message, config);
         }

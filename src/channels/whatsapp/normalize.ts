@@ -107,9 +107,9 @@ export function buildJid(components: JidComponents): string {
 export function normalizePhone(input: string): string {
   const trimmed = input.trim();
 
-  // Already normalized LID - preserve it
-  if (trimmed.startsWith("lid:")) {
-    return trimmed;
+  // Already normalized LID - accept any case for prefix
+  if (trimmed.toLowerCase().startsWith("lid:")) {
+    return `lid:${trimmed.slice(4)}`;
   }
 
   // Check if it's a JID
@@ -124,9 +124,9 @@ export function normalizePhone(input: string): string {
     return parsed.user;
   }
 
-  // Already normalized group
-  if (trimmed.startsWith("group:")) {
-    return trimmed;
+  // Already normalized group - accept any case for prefix
+  if (trimmed.toLowerCase().startsWith("group:")) {
+    return `group:${trimmed.slice(6)}`;
   }
 
   // Extract just digits (remove +, spaces, dashes, etc.)
