@@ -1,6 +1,6 @@
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { Notif } from "notif.sh";
+import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
@@ -10,6 +10,7 @@ import {
   getOrCreateSession,
   updateSdkSessionId,
   updateTokens,
+  updateSessionSource,
   closeRouterDb,
   expandHome,
   type RouterConfig,
@@ -18,6 +19,7 @@ import {
 } from "./router/index.js";
 import { createCliMcpServer, initCliTools } from "./cli/exports.js";
 import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
+import { runWithContext } from "./cli/context.js";
 
 const log = logger.child("bot");
 
@@ -92,7 +94,6 @@ export interface RaviBotOptions {
 export class RaviBot {
   private config: Config;
   private routerConfig: RouterConfig;
-  private notif: Notif;
   private running = false;
   private activeSessions = new Map<string, ActiveSession>();
   private debounceStates = new Map<string, DebounceState>();
@@ -100,7 +101,6 @@ export class RaviBot {
   constructor(options: RaviBotOptions) {
     this.config = options.config;
     this.routerConfig = loadRouterConfig();
-    this.notif = new Notif();
     logger.setLevel(options.config.logLevel);
   }
 
@@ -117,7 +117,6 @@ export class RaviBot {
   async stop(): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
-    this.notif.close();
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
@@ -128,7 +127,7 @@ export class RaviBot {
     log.info(`Subscribing to ${topic}`);
 
     try {
-      for await (const event of this.notif.subscribe(topic)) {
+      for await (const event of notif.subscribe(topic)) {
         if (!this.running) break;
 
         // Extract session key from topic: ravi.{sessionKey}.prompt
@@ -272,10 +271,22 @@ export class RaviBot {
     const agentCwd = expandHome(agent.cwd);
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
 
+    // Update source for response routing (cross-session messages need this)
+    if (prompt.source) {
+      updateSessionSource(sessionKey, prompt.source);
+    }
+
     log.info("Processing prompt", { sessionKey, agentId, cwd: agentCwd });
 
     // Save message
     saveMessage(sessionKey, "user", prompt.prompt);
+
+    // Build tool context for CLI tools
+    const toolContext = {
+      sessionKey,
+      agentId: agent.id,
+      source: prompt.source,
+    };
 
     try {
       // Emit partial messages as they arrive
@@ -284,15 +295,18 @@ export class RaviBot {
           response: text,
           target: prompt.source,
         };
-        await this.notif.emit(`ravi.${sessionKey}.response`, partialResponse as Record<string, unknown>);
+        await notif.emit(`ravi.${sessionKey}.response`, partialResponse as Record<string, unknown>);
       };
 
       // Emit all SDK events
       const onSdkEvent = async (event: Record<string, unknown>) => {
-        await this.notif.emit(`ravi.${sessionKey}.claude`, event);
+        await notif.emit(`ravi.${sessionKey}.claude`, event);
       };
 
-      const response = await this.processPrompt(prompt, session, agent, agentCwd, onMessage, onSdkEvent);
+      // Run with context so CLI tools can access session info
+      const response = await runWithContext(toolContext, () =>
+        this.processPrompt(prompt, session, agent, agentCwd, onMessage, onSdkEvent)
+      );
 
       if (response.response) {
         saveMessage(sessionKey, "assistant", response.response);
@@ -308,7 +322,7 @@ export class RaviBot {
         error: err instanceof Error ? err.message : "Unknown error",
         target: prompt.source,
       };
-      await this.notif.emit(`ravi.${sessionKey}.response`, errorResponse as Record<string, unknown>);
+      await notif.emit(`ravi.${sessionKey}.response`, errorResponse as Record<string, unknown>);
     }
   }
 

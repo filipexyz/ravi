@@ -21,6 +21,7 @@ import { DaemonCommands } from "./commands/daemon.js";
 import { ToolsCommands } from "./commands/tools.js";
 import { RoutesCommands } from "./commands/routes.js";
 import { SettingsCommands } from "./commands/settings.js";
+import { CrossCommands } from "./commands/cross.js";
 
 const program = new Command();
 
@@ -39,6 +40,7 @@ registerCommands(program, [
   ToolsCommands,
   RoutesCommands,
   SettingsCommands,
+  CrossCommands,
 ]);
 
 // Parse and execute

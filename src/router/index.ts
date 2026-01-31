@@ -78,6 +78,7 @@ export {
   getSessionsByAgent,
   updateSdkSessionId,
   updateTokens,
+  updateSessionSource,
   deleteSession,
   listSessions,
 } from "./sessions.js";

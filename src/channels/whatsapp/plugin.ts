@@ -5,7 +5,7 @@
  */
 
 import qrcode from "qrcode-terminal";
-import { Notif } from "notif.sh";
+import { notif } from "../../notif.js";
 import type {
   ChannelPlugin,
   ChannelMeta,
@@ -285,7 +285,6 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
 class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   private configAdapter: WhatsAppConfigAdapter;
   private securityAdapter: WhatsAppSecurityAdapter;
-  private notif: Notif;
   private stateCallbacks = new Set<(accountId: string, state: AccountState) => void>();
   private qrCallbacks = new Set<(accountId: string, qr: string) => void>();
   private messageCallbacks = new Set<(message: InboundMessage) => void>();
@@ -296,7 +295,6 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   ) {
     this.configAdapter = configAdapter;
     this.securityAdapter = securityAdapter;
-    this.notif = new Notif();
 
     // Subscribe to session events
     sessionManager.on("stateChange", (accountId, state) => {
@@ -566,7 +564,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     };
 
     // Emit to channel-specific inbound topic
-    this.notif.emit(`whatsapp.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
+    notif.emit(`whatsapp.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
       .catch((err) => log.error("Failed to emit inbound message", err));
 
     // Also call local callbacks for backwards compatibility

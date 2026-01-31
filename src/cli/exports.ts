@@ -38,3 +38,11 @@ export {
   isCliTool,
   isSdkTool,
 } from "./tool-registry.js";
+
+export {
+  runWithContext,
+  getContext,
+  getContextValue,
+  hasContext,
+  type ToolContext,
+} from "./context.js";

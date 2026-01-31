@@ -15,6 +15,7 @@ import { ContactsCommands } from "./commands/contacts.js";
 import { ChannelsCommands } from "./commands/channels.js";
 import { RoutesCommands } from "./commands/routes.js";
 import { SettingsCommands } from "./commands/settings.js";
+import { CrossCommands } from "./commands/cross.js";
 
 // ============================================================================
 // Types
@@ -57,6 +58,7 @@ export const ALL_COMMAND_CLASSES: CommandClass[] = [
   ChannelsCommands,
   RoutesCommands,
   SettingsCommands,
+  CrossCommands,
 ];
 
 // Cache extracted tools - they don't change at runtime

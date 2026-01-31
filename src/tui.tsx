@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { render, Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
-import { Notif } from "notif.sh";
+import { notif } from "./notif.js";
 
 interface MessageTarget {
   channel: string;
@@ -23,7 +23,6 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState<string | null>(null);
-  const [notif] = useState(() => new Notif());
   const { exit } = useApp();
 
   useEffect(() => {
@@ -57,12 +56,11 @@ function App() {
       }
     };
     subscribe();
-    return () => notif.close();
-  }, [notif]);
+    return () => {};
+  }, []);
 
   useInput((_, key) => {
     if (key.escape) {
-      notif.close();
       exit();
     }
   });

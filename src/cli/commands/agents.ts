@@ -3,8 +3,8 @@
  */
 
 import "reflect-metadata";
-import { Notif } from "notif.sh";
 import { Group, Command, Arg } from "../decorators.js";
+import { notif } from "../../notif.js";
 import {
   getAgent,
   getAllAgents,
@@ -467,7 +467,6 @@ export class AgentsCommands {
    * Returns the number of characters received.
    */
   private async sendPrompt(sessionKey: string, prompt: string): Promise<number> {
-    const notif = new Notif();
     let done = false;
     let responseLength = 0;
 
@@ -475,7 +474,6 @@ export class AgentsCommands {
       if (!done) {
         console.log("\n⏱️  Timeout");
         done = true;
-        notif.close();
       }
     }, PROMPT_TIMEOUT_MS);
 
@@ -516,7 +514,6 @@ export class AgentsCommands {
 
     await Promise.race([claudeSub, responseSub]);
     clearTimeout(timer);
-    notif.close();
 
     return responseLength;
   }

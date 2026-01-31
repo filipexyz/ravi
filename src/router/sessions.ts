@@ -94,6 +94,7 @@ interface SessionStatements {
   delete: Database.Statement;
   listAll: Database.Statement;
   updateAgent: Database.Statement;
+  updateSource: Database.Statement;
 }
 
 let stmts: SessionStatements | null = null;
@@ -159,6 +160,9 @@ function getStatements(): SessionStatements {
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
     updateAgent: db.prepare(
       "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
+    ),
+    updateSource: db.prepare(
+      "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?"
     ),
   };
 
@@ -303,4 +307,22 @@ export function listSessions(): SessionEntry[] {
   const s = getStatements();
   const rows = s.listAll.all() as SessionRow[];
   return rows.map(rowToEntry);
+}
+
+/**
+ * Update session source (last channel/account/chat for response routing)
+ */
+export function updateSessionSource(
+  sessionKey: string,
+  source: { channel?: string; accountId?: string; chatId?: string }
+): void {
+  if (!source.channel && !source.accountId && !source.chatId) return;
+  const s = getStatements();
+  s.updateSource.run(
+    source.channel ?? null,
+    source.accountId ?? null,
+    source.chatId ?? null,
+    Date.now(),
+    sessionKey
+  );
 }

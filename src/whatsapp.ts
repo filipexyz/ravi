@@ -9,7 +9,7 @@ import makeWASocket, {
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
-import { Notif } from "notif.sh";
+import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import { isAllowed, savePendingContact, normalizePhone, isGroup } from "./contacts.js";
 import type { ResponseMessage } from "./bot.js";
@@ -30,7 +30,6 @@ export interface WhatsAppBridgeOptions {
  * WhatsApp Reply ← Bridge ← notif.sh (ravi.wa-{jid}.response) ←────┘
  */
 export class WhatsAppBridge {
-  private notif: Notif;
   private sock: ReturnType<typeof makeWASocket> | null = null;
   private authDir: string;
   private running = false;
@@ -40,7 +39,6 @@ export class WhatsAppBridge {
 
   constructor(options: WhatsAppBridgeOptions = {}) {
     this.authDir = options.authDir || "~/.ravi/whatsapp-auth".replace("~", process.env.HOME || "");
-    this.notif = new Notif();
     if (options.logLevel) {
       logger.setLevel(options.logLevel);
     }
@@ -73,7 +71,6 @@ export class WhatsAppBridge {
       this.sock = null;
     }
 
-    this.notif.close();
     log.info("WhatsApp bridge stopped");
   }
 
@@ -211,7 +208,7 @@ export class WhatsAppBridge {
 
     // Emit prompt to notif.sh
     try {
-      await this.notif.emit(`ravi.${sessionId}.prompt`, { prompt: text });
+      await notif.emit(`ravi.${sessionId}.prompt`, { prompt: text });
       log.debug("Emitted prompt", { sessionId });
     } catch (err) {
       log.error("Failed to emit prompt", err);
@@ -234,7 +231,7 @@ export class WhatsAppBridge {
 
     (async () => {
       try {
-        for await (const event of this.notif.subscribe(topic)) {
+        for await (const event of notif.subscribe(topic)) {
           if (controller.signal.aborted) break;
 
           const response = event.data as unknown as ResponseMessage;

@@ -4,7 +4,7 @@
  * Orchestrates channel plugins and routes messages to the bot.
  */
 
-import { Notif } from "notif.sh";
+import { notif } from "./notif.js";
 import type { ChannelPlugin, InboundMessage, AccountState, QuotedMessage } from "./channels/types.js";
 import { registerPlugin, getAllPlugins, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
@@ -117,7 +117,6 @@ export interface GatewayOptions {
 }
 
 export class Gateway {
-  private notif: Notif;
   private routerConfig: RouterConfig;
   private running = false;
   private plugins: ChannelPlugin[] = [];
@@ -127,7 +126,6 @@ export class Gateway {
   private activeTargets = new Map<string, MessageTarget>();
 
   constructor(options: GatewayOptions = {}) {
-    this.notif = new Notif();
     this.routerConfig = loadRouterConfig();
     if (options.logLevel) {
       logger.setLevel(options.logLevel);
@@ -185,7 +183,6 @@ export class Gateway {
     }
 
     await shutdownAllPlugins();
-    this.notif.close();
     log.info("Gateway stopped");
   }
 
@@ -199,7 +196,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of this.notif.subscribe(...topics)) {
+        for await (const event of notif.subscribe(...topics)) {
           if (!this.running) break;
 
           // Parse topic: {channelId}.{accountId}.inbound
@@ -233,7 +230,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of this.notif.subscribe("ravi.*.response")) {
+        for await (const event of notif.subscribe("ravi.*.response")) {
           if (!this.running) break;
 
           // Parse topic: ravi.{sessionKey}.response
@@ -287,7 +284,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of this.notif.subscribe("ravi.*.claude")) {
+        for await (const event of notif.subscribe("ravi.*.claude")) {
           if (!this.running) break;
 
           const sessionKey = event.topic.split(".").slice(1, -1).join(".");
@@ -365,7 +362,7 @@ export class Gateway {
 
     // Emit prompt with source and context
     try {
-      await this.notif.emit(`ravi.${sessionKey}.prompt`, {
+      await notif.emit(`ravi.${sessionKey}.prompt`, {
         prompt: envelope,
         source,
         context,
