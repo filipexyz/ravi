@@ -58,6 +58,17 @@ mkdirSync(LOG_DIR, { recursive: true });
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
+// Handle uncaught errors - log but don't crash for transient errors
+process.on("uncaughtException", (err) => {
+  log.error("Uncaught exception", err);
+  // Don't exit - let the daemon continue running
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  log.error("Unhandled rejection", { reason, promise });
+  // Don't exit - let the daemon continue running
+});
+
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let shuttingDown = false;
