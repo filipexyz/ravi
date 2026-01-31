@@ -169,6 +169,12 @@ export class DaemonCommands {
     }
   }
 
+  @Command({ name: "run", description: "Run daemon in foreground (used by system services)" })
+  async run() {
+    const { startDaemon } = await import("../../daemon.js");
+    await startDaemon();
+  }
+
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
   env() {
     // Ensure directory exists
@@ -206,8 +212,7 @@ ANTHROPIC_API_KEY=
   // ──────────────────────────────────────────────────────────────────────────
 
   private installMacOS() {
-    const cwd = process.cwd();
-    const nodePath = process.execPath;
+    const raviBin = this.findRaviBin();
 
     const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -217,11 +222,12 @@ ANTHROPIC_API_KEY=
   <string>sh.ravi.daemon</string>
   <key>ProgramArguments</key>
   <array>
-    <string>${nodePath}</string>
-    <string>${cwd}/dist/daemon.js</string>
+    <string>${raviBin}</string>
+    <string>daemon</string>
+    <string>run</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>${cwd}</string>
+  <string>${homedir()}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -287,8 +293,8 @@ ANTHROPIC_API_KEY=
   // ──────────────────────────────────────────────────────────────────────────
 
   private installLinux() {
-    const cwd = process.cwd();
-    const nodePath = process.execPath;
+    // Find the ravi binary
+    const raviBin = this.findRaviBin();
 
     const unit = `[Unit]
 Description=Ravi Bot Daemon
@@ -296,8 +302,8 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${nodePath} ${cwd}/dist/daemon.js
-WorkingDirectory=${cwd}
+ExecStart=${raviBin} daemon run
+WorkingDirectory=${homedir()}
 Restart=always
 RestartSec=10
 StandardOutput=append:${LOG_FILE}
@@ -368,10 +374,11 @@ WantedBy=default.target
   // ──────────────────────────────────────────────────────────────────────────
 
   private startDirect() {
-    const child = spawn("node", ["dist/daemon.js"], {
+    const raviBin = this.findRaviBin();
+    const child = spawn(raviBin, ["daemon", "run"], {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      cwd: process.cwd(),
+      cwd: homedir(),
     });
 
     // Write PID
@@ -380,6 +387,35 @@ WantedBy=default.target
     child.unref();
     console.log(`✓ Daemon started (PID: ${child.pid})`);
     console.log(`  Logs: ${LOG_FILE}`);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ──────────────────────────────────────────────────────────────────────────
+
+  private findRaviBin(): string {
+    // Try to find ravi in PATH
+    try {
+      const which = execSync("which ravi", { encoding: "utf-8" }).trim();
+      if (which) return which;
+    } catch {
+      // Not in PATH
+    }
+
+    // Try common locations
+    const locations = [
+      join(homedir(), ".bun/bin/ravi"),
+      join(homedir(), ".local/bin/ravi"),
+      "/usr/local/bin/ravi",
+      "/usr/bin/ravi",
+    ];
+
+    for (const loc of locations) {
+      if (existsSync(loc)) return loc;
+    }
+
+    // Fallback to assuming it's in PATH
+    return "ravi";
   }
 
   private stopDirect() {

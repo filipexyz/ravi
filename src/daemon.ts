@@ -83,7 +83,7 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
-async function main() {
+export async function startDaemon() {
   const config = loadConfig();
   logger.setLevel(config.logLevel);
 
@@ -129,7 +129,14 @@ async function main() {
   log.info("Daemon ready");
 }
 
-main().catch((err) => {
-  log.error("Fatal error", err);
-  process.exit(1);
-});
+// Run if executed directly
+const isMainModule = import.meta.url === `file://${process.argv[1]}` ||
+  process.argv[1]?.endsWith("daemon.ts") ||
+  process.argv[1]?.endsWith("daemon.js");
+
+if (isMainModule) {
+  startDaemon().catch((err) => {
+    log.error("Fatal error", err);
+    process.exit(1);
+  });
+}
