@@ -315,13 +315,13 @@ export class SessionManager {
 
     session.reconnectAttempts++;
 
+    // Reset attempts counter after max reached (keep trying forever with max delay)
     if (session.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      log.error(`Session ${accountId} max reconnection attempts reached`);
-      this.emit("error", accountId, new Error("Max reconnection attempts reached"));
-      return;
+      log.warn(`Session ${accountId} max reconnection attempts reached, will keep trying`);
+      session.reconnectAttempts = MAX_RECONNECT_ATTEMPTS; // Cap at max for delay calculation
     }
 
-    // Exponential backoff
+    // Exponential backoff (capped at MAX_RECONNECT_DELAY)
     const delay = Math.min(
       BASE_RECONNECT_DELAY * Math.pow(2, session.reconnectAttempts),
       MAX_RECONNECT_DELAY
@@ -335,6 +335,8 @@ export class SessionManager {
       } catch (err) {
         log.error(`Reconnection failed for ${accountId}`, err);
         this.emit("error", accountId, err as Error);
+        // Keep trying to reconnect
+        this.handleReconnect(accountId, config);
       }
     }, delay);
   }
