@@ -7,7 +7,7 @@ import { execSync, spawn } from "node:child_process";
 import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
-import { Group, Command } from "../decorators.js";
+import { Group, Command, Option } from "../decorators.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const PID_FILE = join(RAVI_DIR, "daemon.pid");
@@ -93,23 +93,57 @@ export class DaemonCommands {
     }
   }
 
-  @Command({ name: "logs", description: "Show daemon logs (follow mode)" })
-  logs() {
+  @Command({ name: "logs", description: "Show daemon logs" })
+  logs(
+    @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
+    @Option({ flags: "-t, --tail <lines>", description: "Number of lines to show", defaultValue: "50" }) tail?: string,
+    @Option({ flags: "--clear", description: "Clear log file" }) clear?: boolean,
+    @Option({ flags: "--path", description: "Print log file path only" }) path?: boolean
+  ) {
+    // Just print path
+    if (path) {
+      console.log(LOG_FILE);
+      return;
+    }
+
+    // Clear logs
+    if (clear) {
+      if (existsSync(LOG_FILE)) {
+        writeFileSync(LOG_FILE, "");
+        console.log("✓ Logs cleared");
+      } else {
+        console.log("No logs to clear");
+      }
+      return;
+    }
+
     if (!existsSync(LOG_FILE)) {
       console.log("No logs yet. Start the daemon first.");
       return;
     }
 
-    console.log(`Following ${LOG_FILE} (Ctrl+C to stop)\n`);
+    const lines = parseInt(tail || "50", 10);
 
-    const tail = spawn("tail", ["-f", LOG_FILE], {
-      stdio: "inherit",
-    });
+    if (follow) {
+      console.log(`Following ${LOG_FILE} (Ctrl+C to stop)\n`);
+      const child = spawn("tail", ["-n", String(lines), "-f", LOG_FILE], {
+        stdio: "inherit",
+      });
 
-    process.on("SIGINT", () => {
-      tail.kill();
-      process.exit(0);
-    });
+      process.on("SIGINT", () => {
+        child.kill();
+        process.exit(0);
+      });
+    } else {
+      // Just show last N lines
+      const child = spawn("tail", ["-n", String(lines), LOG_FILE], {
+        stdio: "inherit",
+      });
+
+      child.on("close", (code) => {
+        process.exit(code || 0);
+      });
+    }
   }
 
   @Command({ name: "install", description: "Install system service (launchd/systemd)" })
