@@ -62,6 +62,13 @@
     "reflect-metadata": "^0.2.2",
     "zod": "^4.3.6"
   },
+  "optionalDependencies": {
+    "@matrix-org/matrix-sdk-crypto-nodejs-linux-x64-gnu": "*",
+    "@matrix-org/matrix-sdk-crypto-nodejs-linux-arm64-gnu": "*",
+    "@matrix-org/matrix-sdk-crypto-nodejs-darwin-arm64": "*",
+    "@matrix-org/matrix-sdk-crypto-nodejs-darwin-x64": "*",
+    "@matrix-org/matrix-sdk-crypto-nodejs-win32-x64-msvc": "*"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/node": "^22.0.0",
