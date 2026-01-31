@@ -132,7 +132,10 @@ ravi daemon start      # Start bot + gateway as service
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
-ravi daemon logs       # Tail logs
+ravi daemon logs       # Show last 50 lines
+ravi daemon logs -f    # Follow mode (tail -f)
+ravi daemon logs -t 100  # Show last 100 lines
+ravi daemon logs --clear # Clear log file
 ravi daemon env        # Edit ~/.ravi/.env
 
 # Service (manual)
@@ -152,6 +155,10 @@ ravi agents tools <id>              # Manage tools
 ravi contacts list       # List contacts
 ravi contacts add <phone>
 ravi contacts pending    # Pending approvals
+
+# Cross-session messaging
+ravi cross send <session> <message>  # Send message to another session
+ravi cross list                      # List sessions with channel info
 ```
 
 ## Testing Agents
@@ -243,6 +250,33 @@ OPENAI_API_KEY=sk-xxx   # For audio transcription
 RAVI_MODEL=sonnet
 RAVI_LOG_LEVEL=info     # debug | info | warn | error
 ```
+
+## Cross-Session Messaging
+
+Agents can send messages to other sessions using CLI tools:
+
+```bash
+# From CLI
+ravi cross send agent:main:dm:5511999 "Lembrete: reunião em 10 minutos"
+
+# From agent (via MCP tool)
+mcp__ravi-cli__cross_send agent:main:dm:5511999 "Mensagem do agente"
+```
+
+The message is formatted as `[Sistema] Notifique: <message>` which instructs the target agent to relay the message to its channel.
+
+## Notif Singleton
+
+All components share a single notif.sh WebSocket connection via `src/notif.ts`:
+
+```typescript
+import { notif } from "./notif.js";
+
+await notif.emit("topic", { data });
+for await (const event of notif.subscribe("topic.*")) { ... }
+```
+
+Connection is shared across bot, gateway, plugins, and CLI. Closes automatically when process exits.
 
 ## Development
 
