@@ -140,14 +140,5 @@ export async function startDaemon() {
   log.info("Daemon ready");
 }
 
-// Run if executed directly
-const isMainModule = import.meta.url === `file://${process.argv[1]}` ||
-  process.argv[1]?.endsWith("daemon.ts") ||
-  process.argv[1]?.endsWith("daemon.js");
-
-if (isMainModule) {
-  startDaemon().catch((err) => {
-    log.error("Fatal error", err);
-    process.exit(1);
-  });
-}
+// Note: startDaemon() is called by CLI's "daemon run" command
+// Do not auto-execute here to avoid double initialization
