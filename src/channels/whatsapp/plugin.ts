@@ -279,11 +279,17 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
   }
 }
 
+// Global state for singleton listener registration
+let sessionListenersRegistered = false;
+const globalStateCallbacks = new Set<(accountId: string, state: AccountState) => void>();
+const globalQrCallbacks = new Set<(accountId: string, qr: string) => void>();
+const globalSubscribedSockets = new WeakSet<object>();
+
 class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   private configAdapter: WhatsAppConfigAdapter;
   private securityAdapter: WhatsAppSecurityAdapter;
-  private stateCallbacks = new Set<(accountId: string, state: AccountState) => void>();
-  private qrCallbacks = new Set<(accountId: string, qr: string) => void>();
+  private stateCallbacks = globalStateCallbacks;
+  private qrCallbacks = globalQrCallbacks;
   private messageCallbacks = new Set<(message: InboundMessage) => void>();
 
   constructor(
@@ -293,28 +299,32 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     this.configAdapter = configAdapter;
     this.securityAdapter = securityAdapter;
 
+    // Only register session listeners once (singleton pattern)
+    if (sessionListenersRegistered) {
+      return;
+    }
+    sessionListenersRegistered = true;
+
     // Subscribe to session events
     sessionManager.on("stateChange", (accountId, state) => {
-      for (const cb of this.stateCallbacks) {
+      for (const cb of globalStateCallbacks) {
         cb(accountId, state);
       }
     });
 
     sessionManager.on("qrCode", (accountId, qr) => {
-      for (const cb of this.qrCallbacks) {
+      for (const cb of globalQrCallbacks) {
         cb(accountId, qr);
       }
     });
 
     // Subscribe to message events on new/reconnected sockets
-    // Track subscribed sockets to avoid duplicate handlers on reconnection
-    const subscribedSockets = new WeakSet<object>();
     sessionManager.on("socketReady", (accountId, socket) => {
-      if (subscribedSockets.has(socket)) {
+      if (globalSubscribedSockets.has(socket)) {
         log.debug(`Socket already subscribed for ${accountId}, skipping`);
         return;
       }
-      subscribedSockets.add(socket);
+      globalSubscribedSockets.add(socket);
       log.info(`Socket ready for ${accountId}, subscribing to messages`);
 
       socket.ev.on("messages.upsert", async ({ messages, type }) => {
