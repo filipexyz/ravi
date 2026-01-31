@@ -10,7 +10,6 @@ import crypto from "node:crypto";
 import {
   MatrixClient,
   SimpleFsStorageProvider,
-  RustSdkCryptoStorageProvider,
   LogService,
   LogLevel,
   type IStorageProvider,
@@ -405,6 +404,7 @@ class MatrixSessionManager extends EventEmitter {
 
       try {
         const { StoreType } = await import("@matrix-org/matrix-sdk-crypto-nodejs");
+        const { RustSdkCryptoStorageProvider } = await import("@vector-im/matrix-bot-sdk");
         cryptoStorage = new RustSdkCryptoStorageProvider(
           storagePaths.cryptoPath,
           StoreType.Sqlite
