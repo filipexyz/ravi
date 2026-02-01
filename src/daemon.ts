@@ -17,6 +17,7 @@ import { loadConfig } from "./utils/config.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
+import { startCronRunner, stopCronRunner } from "./cron/index.js";
 
 const log = logger.child("daemon");
 
@@ -82,8 +83,9 @@ async function shutdown(signal: string) {
   log.info(`Received ${signal}, shutting down...`);
 
   try {
-    // Stop heartbeat runner first
+    // Stop runners first
     await stopHeartbeatRunner();
+    await stopCronRunner();
 
     if (gateway) {
       await gateway.stop();
@@ -150,6 +152,10 @@ export async function startDaemon() {
   // Start heartbeat runner
   await startHeartbeatRunner();
   log.info("Heartbeat runner started");
+
+  // Start cron runner
+  await startCronRunner();
+  log.info("Cron runner started");
 
   log.info("Daemon ready");
 }

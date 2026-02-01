@@ -259,6 +259,42 @@ function getDb(): Database {
     log.info("Added heartbeat columns to sessions table");
   }
 
+  // Migration: create cron_jobs table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cron_jobs (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT,
+      enabled INTEGER DEFAULT 1,
+      delete_after_run INTEGER DEFAULT 0,
+
+      -- Schedule (one of these is set based on schedule_type)
+      schedule_type TEXT NOT NULL,
+      schedule_at INTEGER,
+      schedule_every INTEGER,
+      schedule_cron TEXT,
+      schedule_timezone TEXT,
+
+      -- Execution config
+      session_target TEXT DEFAULT 'main',
+      payload_text TEXT NOT NULL,
+
+      -- State
+      next_run_at INTEGER,
+      last_run_at INTEGER,
+      last_status TEXT,
+      last_error TEXT,
+      last_duration_ms INTEGER,
+
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
+    CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+  `);
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {
@@ -839,6 +875,13 @@ export function getDefaultDmScope(): DmScope {
   }
   const parsed = DmScopeSchema.safeParse(value);
   return parsed.success ? parsed.data : "per-peer";
+}
+
+/**
+ * Get default timezone for cron jobs
+ */
+export function getDefaultTimezone(): string | undefined {
+  return dbGetSetting("defaultTimezone") ?? undefined;
 }
 
 // ============================================================================

@@ -129,6 +129,71 @@ ravi heartbeat show main
 - `tool-complete` - After agent finishes using a tool (with 30s cooldown)
 - `manual` - Via `ravi heartbeat trigger`
 
+## Cron Jobs
+
+Scheduled jobs that send prompts to agents at specified times:
+
+```bash
+# List all jobs
+ravi cron list
+
+# Add job with cron expression (runs daily at 9am)
+ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate daily summary"
+
+# Add job with interval (runs every 30 minutes)
+ravi cron add "Check emails" --every 30m --message "Check for new emails"
+
+# Add one-shot job (runs once at specific time)
+ravi cron add "Reminder" --at "2025-02-01T15:00" --message "Meeting in 10 min"
+
+# Show job details
+ravi cron show <id>
+
+# Enable/disable
+ravi cron enable <id>
+ravi cron disable <id>
+
+# Edit job properties
+ravi cron set <id> name "New Name"
+ravi cron set <id> message "New message"
+ravi cron set <id> cron "0 10 * * *"
+ravi cron set <id> every 1h
+ravi cron set <id> tz America/Sao_Paulo
+ravi cron set <id> agent jarvis
+ravi cron set <id> session isolated
+ravi cron set <id> delete-after true
+
+# Manual run (ignores schedule)
+ravi cron run <id>
+
+# Delete
+ravi cron rm <id>
+```
+
+**Schedule Types:**
+- `--cron "0 9 * * *"` - Standard cron expression (with optional `--tz` for timezone)
+- `--every 30m` - Interval (supports: `30s`, `5m`, `1h`, `2d`)
+- `--at "2025-02-01T15:00"` - One-shot at specific ISO datetime
+
+**Options:**
+- `--message <text>` - Prompt to send (required)
+- `--agent <id>` - Target agent (default: default agent)
+- `--isolated` - Run in isolated session instead of main
+- `--delete-after` - Delete job after first successful run
+- `--description <text>` - Job description
+- `--tz <timezone>` - Timezone for cron expressions (default: from settings)
+
+**Session Targets:**
+- `main` - Shared session with TUI/WhatsApp/Matrix (default)
+- `isolated` - Dedicated session per job (`agent:{agentId}:cron:{jobId}`)
+
+**How it works:**
+1. Daemon arms a timer for the next due job
+2. When timer fires, job's message is emitted to the agent session
+3. For isolated sessions, agent can use `cross_send` to deliver responses
+4. Next run time is calculated (with anti-drift for intervals)
+5. One-shot jobs (`--at`) are deleted after execution
+
 ## Router (`~/ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
@@ -146,6 +211,7 @@ ravi routes add "lid:178035101794451" main
 # Settings
 ravi settings set defaultAgent main
 ravi settings set defaultDmScope per-peer
+ravi settings set defaultTimezone America/Sao_Paulo
 ```
 
 **Agent Config:**
@@ -161,6 +227,13 @@ ravi settings set defaultDmScope per-peer
 - `per-peer` - Isolated by contact
 - `per-channel-peer` - Isolated by channel+contact
 - `per-account-channel-peer` - Full isolation
+
+**Global Settings:**
+- `defaultAgent` - Default agent when no route matches
+- `defaultDmScope` - Default DM scope for new agents
+- `defaultTimezone` - Default timezone for cron jobs (e.g., `America/Sao_Paulo`)
+- `whatsapp.groupPolicy` - Group policy: `open`, `allowlist`, `closed`
+- `whatsapp.dmPolicy` - DM policy: `open`, `pairing`, `closed`
 
 **Agent Resolution:**
 
@@ -239,6 +312,16 @@ ravi heartbeat enable <id> [interval]  # Enable (e.g., 30m, 1h)
 ravi heartbeat disable <id>          # Disable
 ravi heartbeat set <id> <key> <value>  # Set property
 ravi heartbeat trigger <id>          # Manual trigger
+
+# Cron jobs
+ravi cron list                       # List all jobs
+ravi cron show <id>                  # Show job details
+ravi cron add <name> [options]       # Add new job
+ravi cron enable <id>                # Enable job
+ravi cron disable <id>               # Disable job
+ravi cron set <id> <key> <value>     # Set property
+ravi cron run <id>                   # Manual trigger
+ravi cron rm <id>                    # Delete job
 ```
 
 ## Testing Agents

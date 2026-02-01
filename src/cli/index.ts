@@ -27,6 +27,7 @@ import { SettingsCommands } from "./commands/settings.js";
 import { CrossCommands } from "./commands/cross.js";
 import { MatrixCommands } from "./commands/matrix.js";
 import { HeartbeatCommands } from "./commands/heartbeat.js";
+import { CronCommands } from "./commands/cron.js";
 
 const program = new Command();
 
@@ -48,6 +49,7 @@ registerCommands(program, [
   CrossCommands,
   MatrixCommands,
   HeartbeatCommands,
+  CronCommands,
 ]);
 
 // Parse and execute

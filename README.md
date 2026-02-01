@@ -10,6 +10,7 @@ A Claude-powered conversational bot with WhatsApp and Matrix integration, sessio
 - **Message Queue** - Smart interruption handling when tools are running
 - **Debounce** - Group rapid messages before processing
 - **Heartbeat** - Proactive agent runs on schedule to check pending tasks
+- **Cron Jobs** - Schedule prompts with cron expressions, intervals, or one-shot times
 - **Multi-Agent** - Configure multiple agents with different capabilities
 - **Daemon Mode** - Run as a system service (launchd/systemd)
 
@@ -96,6 +97,28 @@ ravi heartbeat trigger main           # Manual trigger
 
 Create `~/ravi/main/HEARTBEAT.md` with pending tasks. Agent runs periodically and executes them. If nothing to do, agent responds with `HEARTBEAT_OK` (suppressed).
 
+### Cron Jobs (Scheduled Prompts)
+
+```bash
+ravi cron list                       # List all jobs
+ravi cron add "Report" --cron "0 9 * * *" --message "Daily report"
+ravi cron add "Check" --every 30m --message "Check status"
+ravi cron add "Remind" --at "2025-02-01T15:00" --message "Meeting soon"
+ravi cron show <id>                  # Show job details
+ravi cron enable <id>                # Enable job
+ravi cron disable <id>               # Disable job
+ravi cron set <id> <key> <value>     # Edit property
+ravi cron run <id>                   # Manual trigger
+ravi cron rm <id>                    # Delete job
+```
+
+**Schedule types:**
+- `--cron "0 9 * * *"` - Cron expression (with `--tz` for timezone)
+- `--every 30m` - Interval (`30s`, `5m`, `1h`, `2d`)
+- `--at "2025-02-01T15:00"` - One-shot at specific time
+
+**Options:** `--agent`, `--isolated`, `--delete-after`, `--description`
+
 ### Contacts (WhatsApp)
 
 ```bash
@@ -127,6 +150,7 @@ ravi routes set "+5511*" priority 10
 ravi settings list
 ravi settings set defaultAgent main
 ravi settings set defaultDmScope per-peer
+ravi settings set defaultTimezone America/Sao_Paulo
 ```
 
 ### Agent Options

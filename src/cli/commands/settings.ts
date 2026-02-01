@@ -18,6 +18,16 @@ import {
 const GROUP_POLICIES = ["open", "allowlist", "closed"] as const;
 const DM_POLICIES = ["open", "pairing", "closed"] as const;
 
+// Validate timezone by trying to use it with Intl
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: string) => void }> = {
   defaultAgent: {
     description: "Default agent when no route matches",
@@ -33,6 +43,14 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       const result = DmScopeSchema.safeParse(value);
       if (!result.success) {
         throw new Error(`Invalid value: ${value}`);
+      }
+    },
+  },
+  defaultTimezone: {
+    description: "Default timezone for cron jobs (e.g., America/Sao_Paulo)",
+    validate: (value: string) => {
+      if (!isValidTimezone(value)) {
+        throw new Error(`Invalid timezone: ${value}`);
       }
     },
   },

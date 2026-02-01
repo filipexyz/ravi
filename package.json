@@ -53,6 +53,7 @@
     "@vector-im/matrix-bot-sdk": "^0.8.0-element.3",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "commander": "^14.0.2",
+    "croner": "^10.0.1",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
     "notif.sh": "^0.2.1",
