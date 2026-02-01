@@ -57,6 +57,15 @@ export async function sendMessage(
       };
     }
 
+    // For groups, ensure we have the encryption session by fetching metadata first
+    if (jid.endsWith("@g.us")) {
+      try {
+        await socket.groupMetadata(jid);
+      } catch (err) {
+        log.debug("Failed to fetch group metadata before send", { jid, error: err });
+      }
+    }
+
     const result = await socket.sendMessage(jid, content);
 
     log.debug("Message sent", { jid, messageId: result?.key?.id });

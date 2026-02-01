@@ -146,6 +146,7 @@ class WhatsAppSecurityAdapter implements SecurityAdapter<WhatsAppConfig> {
     // Check group policy
     if (isGroup) {
       const groupPolicy = accountConfig.groupPolicy;
+      log.debug("Group policy check", { accountId, groupPolicy, configAccounts: Object.keys(config.accounts) });
       if (groupPolicy === "closed") {
         return { allowed: false, reason: "groups_disabled" };
       }
@@ -285,6 +286,10 @@ const globalStateCallbacks = new Set<(accountId: string, state: AccountState) =>
 const globalQrCallbacks = new Set<(accountId: string, qr: string) => void>();
 const globalSubscribedSockets = new WeakSet<object>();
 
+// Global adapters - shared across restarts within same process
+let globalConfigAdapter: WhatsAppConfigAdapter | null = null;
+let globalSecurityAdapter: WhatsAppSecurityAdapter | null = null;
+
 class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   private configAdapter: WhatsAppConfigAdapter;
   private securityAdapter: WhatsAppSecurityAdapter;
@@ -298,6 +303,10 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   ) {
     this.configAdapter = configAdapter;
     this.securityAdapter = securityAdapter;
+
+    // Update global references so existing listeners use new config
+    globalConfigAdapter = configAdapter;
+    globalSecurityAdapter = securityAdapter;
 
     // Only register session listeners once (singleton pattern)
     if (sessionListenersRegistered) {
@@ -330,8 +339,8 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       socket.ev.on("messages.upsert", async ({ messages, type }) => {
         if (type !== "notify") return;
 
-        // Get fresh config per batch to pick up settings changes
-        const config = this.configAdapter.getConfig();
+        // Get fresh config from global adapter (handles restarts within same process)
+        const config = globalConfigAdapter?.getConfig() ?? this.configAdapter.getConfig();
         for (const message of messages) {
           await this.handleMessage(accountId, message, config);
         }
