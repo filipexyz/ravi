@@ -67,6 +67,10 @@ export class SessionManager {
   private listeners = new Map<keyof SessionEvents, Set<SessionEvents[keyof SessionEvents]>>();
   private baileysLogger = pino({ level: "silent" });
 
+  // Group metadata cache - critical for avoiding "No sessions" error
+  private groupMetadataCache = new Map<string, { metadata: unknown; timestamp: number }>();
+  private readonly GROUP_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   /**
    * Start a session for an account
    */
@@ -91,7 +95,7 @@ export class SessionManager {
 
     log.debug(`Using Baileys version`, { version });
 
-    // Create socket
+    // Create socket with cachedGroupMetadata to avoid "No sessions" error
     const socket = makeWASocket({
       version,
       auth: {
@@ -102,6 +106,15 @@ export class SessionManager {
       logger: this.baileysLogger,
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      // Critical for group messaging - caches participant info to avoid rate limits
+      // and "No sessions" errors when encrypting messages for group members
+      cachedGroupMetadata: async (jid) => {
+        const cached = this.groupMetadataCache.get(jid);
+        if (cached && Date.now() - cached.timestamp < this.GROUP_CACHE_TTL) {
+          return cached.metadata as Awaited<ReturnType<WASocket["groupMetadata"]>>;
+        }
+        return undefined;
+      },
     });
 
     // Create session record
@@ -121,6 +134,31 @@ export class SessionManager {
 
     // Handle credential updates
     socket.ev.on("creds.update", saveCreds);
+
+    // Update group metadata cache on group events
+    socket.ev.on("groups.update", async (updates) => {
+      for (const update of updates) {
+        if (update.id) {
+          try {
+            const metadata = await socket.groupMetadata(update.id);
+            this.groupMetadataCache.set(update.id, { metadata, timestamp: Date.now() });
+            log.debug("Group metadata cached", { jid: update.id });
+          } catch (err) {
+            log.debug("Failed to cache group metadata", { jid: update.id, error: err });
+          }
+        }
+      }
+    });
+
+    socket.ev.on("group-participants.update", async (update) => {
+      try {
+        const metadata = await socket.groupMetadata(update.id);
+        this.groupMetadataCache.set(update.id, { metadata, timestamp: Date.now() });
+        log.debug("Group metadata refreshed after participant update", { jid: update.id });
+      } catch (err) {
+        log.debug("Failed to refresh group metadata", { jid: update.id, error: err });
+      }
+    });
 
     // Emit socketReady so listeners can subscribe to message events
     this.emit("socketReady", accountId, socket);
@@ -218,6 +256,29 @@ export class SessionManager {
     const session = this.sessions.get(accountId);
     if (session) {
       session.lastActivity = Date.now();
+    }
+  }
+
+  /**
+   * Cache group metadata (called after successful fetch)
+   */
+  cacheGroupMetadata(jid: string, metadata: unknown): void {
+    this.groupMetadataCache.set(jid, { metadata, timestamp: Date.now() });
+  }
+
+  /**
+   * Pre-fetch and cache group metadata for a JID
+   */
+  async prefetchGroupMetadata(accountId: string, jid: string): Promise<void> {
+    const session = this.sessions.get(accountId);
+    if (!session) return;
+
+    try {
+      const metadata = await session.socket.groupMetadata(jid);
+      this.groupMetadataCache.set(jid, { metadata, timestamp: Date.now() });
+      log.debug("Group metadata prefetched", { jid, participants: (metadata as { participants?: unknown[] }).participants?.length });
+    } catch (err) {
+      log.debug("Failed to prefetch group metadata", { jid, error: err });
     }
   }
 

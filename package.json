@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "0.1.21",
+  "version": "0.1.24",
   "description": "Claude-powered bot with WhatsApp and Matrix integration via notif.sh",
   "type": "module",
   "main": "dist/bundle/index.js",
@@ -51,7 +51,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@hapi/boom": "^10.0.1",
     "@vector-im/matrix-bot-sdk": "^0.8.0-element.3",
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "commander": "^14.0.2",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",

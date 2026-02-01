@@ -9,6 +9,7 @@ import type { SendResult, OutboundOptions, OutboundMedia } from "../types.js";
 import type { AckReactionConfig } from "./config.js";
 import { phoneToJid } from "./normalize.js";
 import { logger } from "../../utils/logger.js";
+import { sessionManager } from "./session.js";
 
 const log = logger.child("wa:outbound");
 
@@ -60,23 +61,57 @@ export async function sendMessage(
     // For groups, ensure we have the encryption session by fetching metadata first
     if (jid.endsWith("@g.us")) {
       try {
-        await socket.groupMetadata(jid);
+        const metadata = await socket.groupMetadata(jid);
+        // Cache the metadata for future use by cachedGroupMetadata
+        sessionManager.cacheGroupMetadata(jid, metadata);
+        log.debug("Group metadata fetched and cached", { jid, participants: metadata.participants?.length });
       } catch (err) {
         log.debug("Failed to fetch group metadata before send", { jid, error: err });
       }
     }
 
-    const result = await socket.sendMessage(jid, content);
+    // Retry up to 3 times for "No sessions" error (encryption session sync issue)
+    let result;
+    let lastError: Error | null = null;
 
-    log.debug("Message sent", { jid, messageId: result?.key?.id });
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        result = await socket.sendMessage(jid, content);
+        log.debug("Message sent", { jid, messageId: result?.key?.id, attempt });
+        return {
+          success: true,
+          messageId: result?.key?.id ?? undefined,
+        };
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
 
+        // Only retry for "No sessions" error
+        if (lastError.message.includes("No sessions") && attempt < 3) {
+          log.warn("No sessions error, retrying", { jid, attempt });
+          // Refresh group metadata before retry
+          if (jid.endsWith("@g.us")) {
+            try {
+              const metadata = await socket.groupMetadata(jid);
+              sessionManager.cacheGroupMetadata(jid, metadata);
+            } catch {
+              // Ignore
+            }
+          }
+          continue;
+        }
+        break;
+      }
+    }
+
+    const error = lastError?.message ?? "Unknown error";
+    log.error("Failed to send message", { jid, error });
     return {
-      success: true,
-      messageId: result?.key?.id ?? undefined,
+      success: false,
+      error,
     };
   } catch (err) {
     const error = err instanceof Error ? err.message : "Unknown error";
-    log.error("Failed to send message", { jid, error });
+    log.error("Failed to send message (outer)", { jid, error });
     return {
       success: false,
       error,

@@ -407,6 +407,8 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       if (socket) {
         try {
           const metadata = await socket.groupMetadata(jid);
+          // Cache metadata for cachedGroupMetadata (critical for avoiding "No sessions" error)
+          sessionManager.cacheGroupMetadata(jid, metadata);
           groupName = metadata.subject;
           // Extract member names: try contacts DB, then pushName, then phone
           groupMembers = metadata.participants.map(p => {
