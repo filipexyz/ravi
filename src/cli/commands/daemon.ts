@@ -17,8 +17,8 @@ const ENV_FILE = join(RAVI_DIR, ".env");
 // launchd plist path (macOS)
 const PLIST_PATH = join(homedir(), "Library/LaunchAgents/sh.ravi.daemon.plist");
 
-// systemd service path (Linux)
-const SYSTEMD_PATH = join(homedir(), ".config/systemd/user/ravi.service");
+// systemd service path (Linux) - system-level, not user
+const SYSTEMD_PATH = "/etc/systemd/system/ravi.service";
 
 const IS_MACOS = platform() === "darwin";
 const IS_LINUX = platform() === "linux";
@@ -86,7 +86,7 @@ export class DaemonCommands {
       console.log(`  Type:   launchd`);
       console.log(`  Plist:  ${PLIST_PATH}`);
     } else if (IS_LINUX) {
-      console.log(`  Type:   systemd`);
+      console.log(`  Type:   systemd (system)`);
       console.log(`  Unit:   ${SYSTEMD_PATH}`);
     } else {
       console.log(`  Type:   direct (no service manager)`);
@@ -298,6 +298,7 @@ ANTHROPIC_API_KEY=
   private installLinux() {
     // Find the ravi binary
     const raviBin = this.findRaviBin();
+    const currentUser = process.env.USER || process.env.LOGNAME || "ravi";
 
     // Ensure logs directory exists
     mkdirSync(join(RAVI_DIR, "logs"), { recursive: true });
@@ -314,6 +315,8 @@ After=network.target
 
 [Service]
 Type=simple
+User=${currentUser}
+Group=${currentUser}
 ExecStart=${raviBin} daemon run
 WorkingDirectory=${homedir()}
 Restart=always
@@ -324,18 +327,25 @@ Environment=HOME=${homedir()}
 Environment=PATH=${cleanPath}
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 `;
 
-    // Ensure directory exists
-    execSync(`mkdir -p ${join(homedir(), ".config/systemd/user")}`);
+    // Write to temp file then move with sudo
+    const tmpFile = join(RAVI_DIR, "ravi.service.tmp");
+    writeFileSync(tmpFile, unit);
 
-    writeFileSync(SYSTEMD_PATH, unit);
-    execSync("systemctl --user daemon-reload");
-    console.log(`✓ Installed systemd service: ${SYSTEMD_PATH}`);
-    console.log(`\nEnvironment loaded from: ~/.ravi/.env`);
-    console.log("To start: ravi daemon start");
-    console.log("To enable on boot: systemctl --user enable ravi");
+    try {
+      execSync(`sudo mv ${tmpFile} ${SYSTEMD_PATH}`, { stdio: "inherit" });
+      execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
+      console.log(`✓ Installed systemd service: ${SYSTEMD_PATH}`);
+      console.log(`\nEnvironment loaded from: ~/.ravi/.env`);
+      console.log("To start: ravi daemon start");
+      console.log("To enable on boot: sudo systemctl enable ravi");
+    } catch {
+      // Clean up temp file
+      if (existsSync(tmpFile)) unlinkSync(tmpFile);
+      throw new Error("Failed to install service. Make sure you have sudo access.");
+    }
   }
 
   private uninstallLinux() {
@@ -344,14 +354,14 @@ WantedBy=default.target
     }
 
     try {
-      execSync("systemctl --user disable ravi", { stdio: "pipe" });
+      execSync("sudo systemctl disable ravi", { stdio: "pipe" });
     } catch {
       // Ignore if not enabled
     }
 
     if (existsSync(SYSTEMD_PATH)) {
-      unlinkSync(SYSTEMD_PATH);
-      execSync("systemctl --user daemon-reload");
+      execSync(`sudo rm ${SYSTEMD_PATH}`, { stdio: "inherit" });
+      execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
       console.log(`✓ Uninstalled systemd service`);
     } else {
       console.log("Service not installed.");
@@ -365,7 +375,7 @@ WantedBy=default.target
     }
 
     try {
-      execSync("systemctl --user start ravi", { stdio: "inherit" });
+      execSync("sudo systemctl start ravi", { stdio: "inherit" });
       console.log("✓ Daemon started");
     } catch {
       console.error("Failed to start daemon");
@@ -374,7 +384,7 @@ WantedBy=default.target
 
   private stopLinux() {
     try {
-      execSync("systemctl --user stop ravi", { stdio: "inherit" });
+      execSync("sudo systemctl stop ravi", { stdio: "inherit" });
       console.log("✓ Daemon stopped");
     } catch {
       console.error("Failed to stop daemon");
@@ -464,7 +474,7 @@ WantedBy=default.target
 
     if (IS_LINUX) {
       try {
-        execSync("systemctl --user is-active ravi", { stdio: "pipe" });
+        execSync("systemctl is-active ravi", { stdio: "pipe" });
         return true;
       } catch {
         return false;
@@ -500,7 +510,7 @@ WantedBy=default.target
 
     if (IS_LINUX) {
       try {
-        const result = execSync("systemctl --user show ravi --property=MainPID", {
+        const result = execSync("systemctl show ravi --property=MainPID", {
           encoding: "utf-8",
         });
         const pid = parseInt(result.replace("MainPID=", "").trim(), 10);
