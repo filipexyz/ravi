@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import {
   getAllContacts,
   getContact,
@@ -117,15 +118,13 @@ export class ContactsCommands {
     replyMode?: string
   ) {
     if (replyMode && replyMode !== "auto" && replyMode !== "mention") {
-      console.error("Error: Reply mode must be 'auto' or 'mention'");
-      process.exit(1);
+      fail("Reply mode must be 'auto' or 'mention'");
     }
 
     const normalized = normalizePhone(phone);
     const contact = getContact(normalized);
     if (!contact) {
-      console.log(`Contact not found: ${formatPhone(normalized)}`);
-      process.exit(1);
+      fail(`Contact not found: ${formatPhone(normalized)}`);
     }
 
     allowContact(normalized, agentId);
@@ -174,8 +173,7 @@ export class ContactsCommands {
     const normalized = normalizePhone(phone);
     const contact = getContact(normalized);
     if (!contact) {
-      console.log(`Contact not found: ${formatPhone(normalized)}`);
-      process.exit(1);
+      fail(`Contact not found: ${formatPhone(normalized)}`);
     }
 
     if (key === "agent") {
@@ -183,15 +181,12 @@ export class ContactsCommands {
       console.log(`✓ Agent set: ${formatPhone(normalized)} → ${value}`);
     } else if (key === "mode") {
       if (value !== "auto" && value !== "mention") {
-        console.error("Error: Mode must be 'auto' or 'mention'");
-        process.exit(1);
+        fail("Mode must be 'auto' or 'mention'");
       }
       setContactReplyMode(normalized, value as ReplyMode);
       console.log(`✓ Mode set: ${formatPhone(normalized)} → ${value}`);
     } else {
-      console.error(`Unknown key: ${key}`);
-      console.log("Keys: agent, mode");
-      process.exit(1);
+      fail(`Unknown key: ${key}. Keys: agent, mode`);
     }
   }
 

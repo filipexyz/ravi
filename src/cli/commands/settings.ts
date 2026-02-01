@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import {
   dbGetSetting,
   dbSetSetting,
@@ -112,27 +113,20 @@ export class SettingsCommands {
       try {
         meta.validate(value);
       } catch (err) {
-        console.error(`Invalid value for ${key}: ${err instanceof Error ? err.message : err}`);
-
-        // Show helpful hints
-        if (key === "defaultAgent") {
-          console.log("\nAvailable agents:");
-          for (const a of dbListAgents()) {
-            console.log(`  - ${a.id}`);
-          }
-        } else if (key === "defaultDmScope") {
-          console.log(`\nValid scopes: ${DmScopeSchema.options.join(", ")}`);
-        }
-        process.exit(1);
+        const hint = key === "defaultAgent"
+          ? `. Available: ${dbListAgents().map(a => a.id).join(", ")}`
+          : key === "defaultDmScope"
+            ? `. Valid scopes: ${DmScopeSchema.options.join(", ")}`
+            : "";
+        fail(`Invalid value for ${key}: ${err instanceof Error ? err.message : err}${hint}`);
       }
     }
 
     try {
       dbSetSetting(key, value);
-      console.log(`\u2713 ${key} set: ${value}`);
+      console.log(`✓ ${key} set: ${value}`);
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 

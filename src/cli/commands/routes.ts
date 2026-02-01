@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import {
   dbGetRoute,
   dbListRoutes,
@@ -100,8 +101,7 @@ export class RoutesCommands {
     const route = dbGetRoute(pattern);
 
     if (!route) {
-      console.error(`Route not found: ${pattern}`);
-      process.exit(1);
+      fail(`Route not found: ${pattern}`);
     }
 
     console.log(`\nRoute: ${route.pattern}`);
@@ -117,12 +117,7 @@ export class RoutesCommands {
   ) {
     // Verify agent exists
     if (!dbGetAgent(agent)) {
-      console.error(`Agent not found: ${agent}`);
-      console.log("\nAvailable agents:");
-      for (const a of dbListAgents()) {
-        console.log(`  - ${a.id}`);
-      }
-      process.exit(1);
+      fail(`Agent not found: ${agent}. Available: ${dbListAgents().map(a => a.id).join(", ")}`);
     }
 
     try {
@@ -135,8 +130,7 @@ export class RoutesCommands {
         console.log(`✓ Cleaned ${deleted} conflicting session(s)`);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -144,10 +138,9 @@ export class RoutesCommands {
   remove(@Arg("pattern", { description: "Route pattern" }) pattern: string) {
     const deleted = dbDeleteRoute(pattern);
     if (deleted) {
-      console.log(`\u2713 Route removed: ${pattern}`);
+      console.log(`✓ Route removed: ${pattern}`);
     } else {
-      console.log(`Route not found: ${pattern}`);
-      process.exit(1);
+      fail(`Route not found: ${pattern}`);
     }
   }
 
@@ -159,40 +152,32 @@ export class RoutesCommands {
   ) {
     const route = dbGetRoute(pattern);
     if (!route) {
-      console.error(`Route not found: ${pattern}`);
-      process.exit(1);
+      fail(`Route not found: ${pattern}`);
     }
 
     const validKeys = ["agent", "priority", "dmScope"];
     if (!validKeys.includes(key)) {
-      console.error(`Invalid key: ${key}`);
-      console.log(`Valid keys: ${validKeys.join(", ")}`);
-      process.exit(1);
+      fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
 
     // Validate values
     if (key === "agent") {
       if (!dbGetAgent(value)) {
-        console.error(`Agent not found: ${value}`);
-        process.exit(1);
+        fail(`Agent not found: ${value}`);
       }
     }
 
     if (key === "dmScope") {
       const result = DmScopeSchema.safeParse(value);
       if (!result.success) {
-        console.error(`Invalid dmScope: ${value}`);
-        console.log(`Valid scopes: ${DmScopeSchema.options.join(", ")}`);
-        process.exit(1);
+        fail(`Invalid dmScope: ${value}. Valid scopes: ${DmScopeSchema.options.join(", ")}`);
       }
     }
 
     if (key === "priority") {
       const priority = parseInt(value, 10);
       if (isNaN(priority)) {
-        console.error(`Invalid priority: ${value}`);
-        console.log("Priority must be an integer");
-        process.exit(1);
+        fail(`Invalid priority: ${value}. Priority must be an integer`);
       }
     }
 
@@ -214,8 +199,7 @@ export class RoutesCommands {
         }
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 }

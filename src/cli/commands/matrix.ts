@@ -8,6 +8,7 @@
 import "reflect-metadata";
 import readline from "node:readline";
 import { Group, Command, Arg, Option } from "../decorators.js";
+import { fail } from "../context.js";
 import {
   loadCredentials,
   saveCredentials,
@@ -36,14 +37,7 @@ import { fetchWithTimeout } from "../../utils/paths.js";
 function validateAgent(agentId: string): void {
   const agent = getAgent(agentId);
   if (!agent) {
-    console.error(`Error: Agent "${agentId}" not found`);
-    console.log("\nAvailable agents:");
-    const agents = getAllAgents();
-    for (const a of agents) {
-      console.log(`  ${a.id}`);
-    }
-    console.log("\nCreate an agent first: ravi agents create <id> <cwd>");
-    process.exit(1);
+    fail(`Agent "${agentId}" not found. Run 'ravi agents list' or create one with 'ravi agents create <id> <cwd>'`);
   }
 }
 
@@ -309,8 +303,7 @@ export class MatrixCommands {
     }
     resolvedHomeserver = resolvedHomeserver.trim();
     if (!resolvedHomeserver) {
-      console.error("Error: Homeserver URL is required");
-      process.exit(1);
+      fail("Error: Homeserver URL is required");
     }
 
     // Use agent ID as default username
@@ -322,8 +315,7 @@ export class MatrixCommands {
       resolvedPassword = await prompt(`Password for @${resolvedUsername}: `, true);
     }
     if (!resolvedPassword) {
-      console.error("Error: Password is required");
-      process.exit(1);
+      fail("Error: Password is required");
     }
 
     console.log(`\nRegistering @${resolvedUsername} on ${resolvedHomeserver}...`);
@@ -375,12 +367,10 @@ export class MatrixCommands {
           console.log(`  Credentials saved for agent: ${agentId}`);
           console.log(`\nRestart the daemon to activate: ravi daemon restart`);
         } catch (loginErr) {
-          console.error(`\nLogin failed: ${loginErr instanceof Error ? loginErr.message : loginErr}`);
-          process.exit(1);
+          fail(`Login failed: ${loginErr instanceof Error ? loginErr.message : loginErr}`);
         }
       } else {
-        console.error(`\nRegistration failed: ${errorMsg}`);
-        process.exit(1);
+        fail(`Registration failed: ${errorMsg}`);
       }
     }
   }
@@ -424,8 +414,7 @@ export class MatrixCommands {
     }
     resolvedHomeserver = resolvedHomeserver.trim();
     if (!resolvedHomeserver) {
-      console.error("Error: Homeserver URL is required");
-      process.exit(1);
+      fail("Error: Homeserver URL is required");
     }
 
     // Ensure https (unless localhost)
@@ -440,8 +429,7 @@ export class MatrixCommands {
     }
     resolvedUsername = resolvedUsername.trim();
     if (!resolvedUsername) {
-      console.error("Error: Username is required");
-      process.exit(1);
+      fail("Error: Username is required");
     }
 
     // Format as full user ID if needed
@@ -452,16 +440,14 @@ export class MatrixCommands {
         const url = new URL(resolvedHomeserver);
         userId = `@${userId}:${url.host}`;
       } catch {
-        console.error("Error: Invalid homeserver URL");
-        process.exit(1);
+        fail("Error: Invalid homeserver URL");
       }
     }
 
     // Get password
     const password = await prompt("Password: ", true);
     if (!password) {
-      console.error("Error: Password is required");
-      process.exit(1);
+      fail("Error: Password is required");
     }
 
     console.log("\nLogging in...");
@@ -482,8 +468,7 @@ export class MatrixCommands {
       console.log(`  Device ID: ${result.deviceId || "unknown"}`);
       console.log("\nRestart the daemon to activate: ravi daemon restart");
     } catch (err) {
-      console.error(`\nLogin failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Login failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -670,9 +655,7 @@ export class MatrixCommands {
   ) {
     const credentials = getAccountCredentials(accountName);
     if (!credentials) {
-      console.error(`No Matrix account found: ${accountName}`);
-      console.log(`\nAdd account: ravi matrix users-add ${accountName} -p <password>`);
-      process.exit(1);
+      fail(`No Matrix account found: ${accountName}. Add with: ravi matrix users-add ${accountName} -p <password>`);
     }
 
     try {
@@ -735,8 +718,7 @@ export class MatrixCommands {
       console.log(`✓ Sent from ${credentials.userId}`);
       console.log(`  Event ID: ${result.event_id}`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -748,9 +730,7 @@ export class MatrixCommands {
   ) {
     const credentials = getAccountCredentials(accountName);
     if (!credentials) {
-      console.error(`No Matrix account found: ${accountName}`);
-      console.log(`\nAdd account: ravi matrix users-add ${accountName} -p <password>`);
-      process.exit(1);
+      fail(`No Matrix account found: ${accountName}. Add with: ravi matrix users-add ${accountName} -p <password>`);
     }
 
     try {
@@ -800,8 +780,7 @@ export class MatrixCommands {
 
       console.log(`\nTotal: ${messages.length} message(s)`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -812,16 +791,12 @@ export class MatrixCommands {
     @Option({ flags: "--from <account>", description: "Account to send invite from (required)" }) fromAccount?: string
   ) {
     if (!fromAccount) {
-      console.error("Error: --from <account> is required");
-      console.log("\nUsage: ravi matrix invite <target> <room> --from <account>");
-      process.exit(1);
+      fail("Error: --from <account> is required. Usage: ravi matrix invite <target> <room> --from <account>");
     }
 
     const fromCreds = getAccountCredentials(fromAccount);
     if (!fromCreds) {
-      console.error(`No Matrix account found: ${fromAccount}`);
-      console.log(`\nAdd account: ravi matrix users-add ${fromAccount} -p <password>`);
-      process.exit(1);
+      fail(`No Matrix account found: ${fromAccount}. Add with: ravi matrix users-add ${fromAccount} -p <password>`);
     }
 
     // Resolve target user ID
@@ -829,9 +804,7 @@ export class MatrixCommands {
     if (!target.startsWith("@")) {
       const targetCreds = getAccountCredentials(target);
       if (!targetCreds) {
-        console.error(`No Matrix account found: ${target}`);
-        console.log(`\nAdd account: ravi matrix users-add ${target} -p <password>`);
-        process.exit(1);
+        fail(`No Matrix account found: ${target}. Add with: ravi matrix users-add ${target} -p <password>`);
       }
       targetUserId = targetCreds.userId;
     }
@@ -859,8 +832,7 @@ export class MatrixCommands {
 
       console.log(`✓ Invited ${targetUserId} to ${roomId}`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -871,9 +843,7 @@ export class MatrixCommands {
   ) {
     const credentials = getAccountCredentials(accountName);
     if (!credentials) {
-      console.error(`No Matrix account found: ${accountName}`);
-      console.log(`\nAdd account: ravi matrix users-add ${accountName} -p <password>`);
-      process.exit(1);
+      fail(`No Matrix account found: ${accountName}. Add with: ravi matrix users-add ${accountName} -p <password>`);
     }
 
     try {
@@ -897,8 +867,7 @@ export class MatrixCommands {
       const data = (await response.json()) as { room_id: string };
       console.log(`✓ Joined ${data.room_id} as ${credentials.userId}`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -909,9 +878,7 @@ export class MatrixCommands {
   ) {
     const fromCreds = getAccountCredentials(fromAccount);
     if (!fromCreds) {
-      console.error(`No Matrix account found: ${fromAccount}`);
-      console.log(`\nAdd account: ravi matrix users-add ${fromAccount} -p <password>`);
-      process.exit(1);
+      fail(`No Matrix account found: ${fromAccount}. Add with: ravi matrix users-add ${fromAccount} -p <password>`);
     }
 
     // Resolve target user ID
@@ -920,9 +887,7 @@ export class MatrixCommands {
       // It's an account username, get credentials
       const toCreds = getAccountCredentials(toTarget);
       if (!toCreds) {
-        console.error(`No Matrix account found: ${toTarget}`);
-        console.log(`\nAdd account: ravi matrix users-add ${toTarget} -p <password>`);
-        process.exit(1);
+        fail(`No Matrix account found: ${toTarget}. Add with: ravi matrix users-add ${toTarget} -p <password>`);
       }
       targetUserId = toCreds.userId;
     }
@@ -955,8 +920,7 @@ export class MatrixCommands {
       console.log(`  From: ${fromCreds.userId}`);
       console.log(`  To: ${targetUserId}`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -994,8 +958,7 @@ export class MatrixCommands {
     @Option({ flags: "-h, --homeserver <url>", description: "Homeserver URL" }) homeserver?: string
   ) {
     if (!password) {
-      console.error("Error: Password is required (-p <password>)");
-      process.exit(1);
+      fail("Error: Password is required (-p <password>)");
     }
 
     // Get homeserver from existing accounts or use default
@@ -1051,12 +1014,10 @@ export class MatrixCommands {
           console.log(`  User ID: ${result.userId}`);
           console.log(`  Device ID: ${result.deviceId || "unknown"}`);
         } catch (regErr) {
-          console.error(`\nFailed to register: ${regErr instanceof Error ? regErr.message : regErr}`);
-          process.exit(1);
+          fail(`Failed to register: ${regErr instanceof Error ? regErr.message : regErr}`);
         }
       } else {
-        console.error(`\nFailed to login: ${loginErrMsg}`);
-        process.exit(1);
+        fail(`Failed to login: ${loginErrMsg}`);
       }
     }
   }
@@ -1067,16 +1028,14 @@ export class MatrixCommands {
   ) {
     const account = dbGetMatrixAccount(username);
     if (!account) {
-      console.error(`Account not found: ${username}`);
-      process.exit(1);
+      fail(`Account not found: ${username}`);
     }
 
     try {
       dbDeleteMatrixAccount(username);
       console.log(`✓ Removed account: ${username} (${account.userId})`);
     } catch (err) {
-      console.error(`Failed: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -1141,8 +1100,7 @@ export class MatrixCommands {
       }
       console.log(`  Created by: ${credentials.userId}`);
     } catch (err) {
-      console.error(`Failed to create room: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Failed to create room: ${err instanceof Error ? err.message : err}`);
     }
   }
 

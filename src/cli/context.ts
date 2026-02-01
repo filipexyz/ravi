@@ -75,3 +75,15 @@ export function getContextValue<K extends keyof ToolContext>(
 export function hasContext(): boolean {
   return contextStorage.getStore() !== undefined;
 }
+
+/**
+ * Fail with error. Throws if running as MCP tool (to avoid killing daemon),
+ * otherwise logs error and exits.
+ */
+export function fail(message: string): never {
+  if (hasContext()) {
+    throw new Error(message);
+  }
+  console.error(message);
+  process.exit(1);
+}

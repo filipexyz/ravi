@@ -6,6 +6,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import { createWhatsAppPlugin } from "../../channels/whatsapp/plugin.js";
 import { createMatrixPlugin } from "../../channels/matrix/plugin.js";
 import { isMatrixConfigured } from "../../channels/matrix/config.js";
@@ -173,8 +174,7 @@ export class ChannelsCommands {
         await manager.startChannel(channelId);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -201,8 +201,7 @@ export class ChannelsCommands {
         await manager.stopChannel(channelId);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -241,8 +240,7 @@ export class ChannelsCommands {
         console.log(`✓ Restarted ${channelId}`);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 

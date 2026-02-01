@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import {
   getAgent,
@@ -87,8 +88,7 @@ export class AgentsCommands {
     const config = loadRouterConfig();
 
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const isDefault = agent.id === config.defaultAgent;
@@ -130,8 +130,7 @@ export class AgentsCommands {
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -142,12 +141,10 @@ export class AgentsCommands {
       if (deleted) {
         console.log(`\u2713 Agent deleted: ${id}`);
       } else {
-        console.log(`Agent not found: ${id}`);
-        process.exit(1);
+        fail(`Agent not found: ${id}`);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -159,24 +156,19 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount"];
     if (!validKeys.includes(key)) {
-      console.error(`Invalid key: ${key}`);
-      console.log(`Valid keys: ${validKeys.join(", ")}`);
-      process.exit(1);
+      fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
 
     // Validate dmScope values
     if (key === "dmScope") {
       const result = DmScopeSchema.safeParse(value);
       if (!result.success) {
-        console.error(`Invalid dmScope: ${value}`);
-        console.log(`Valid scopes: ${DmScopeSchema.options.join(", ")}`);
-        process.exit(1);
+        fail(`Invalid dmScope: ${value}. Valid scopes: ${DmScopeSchema.options.join(", ")}`);
       }
     }
 
@@ -185,9 +177,7 @@ export class AgentsCommands {
       const { dbGetMatrixAccount } = await import("../../router/router-db.js");
       const account = dbGetMatrixAccount(value);
       if (!account) {
-        console.error(`Matrix account not found: ${value}`);
-        console.log("Available accounts: ravi matrix users-list");
-        process.exit(1);
+        fail(`Matrix account not found: ${value}. Run: ravi matrix users-list`);
       }
     }
 
@@ -195,8 +185,7 @@ export class AgentsCommands {
       updateAgent(id, { [key]: value });
       console.log(`\u2713 ${key} set: ${id} -> ${value}`);
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -208,8 +197,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     // Get tools from registry
@@ -258,9 +246,7 @@ export class AgentsCommands {
     switch (action) {
       case "allow":
         if (!tool) {
-          console.error("Tool name required");
-          console.log("Usage: ravi agents tools <id> allow <tool>");
-          process.exit(1);
+          fail("Tool name required. Usage: ravi agents tools <id> allow <tool>");
         }
         try {
           // Convert short name to full name if needed
@@ -268,16 +254,13 @@ export class AgentsCommands {
           addAgentTool(id, fullName);
           console.log(`✓ Tool enabled: ${tool}`);
         } catch (err) {
-          console.error(`Error: ${err instanceof Error ? err.message : err}`);
-          process.exit(1);
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
         }
         break;
 
       case "deny":
         if (!tool) {
-          console.error("Tool name required");
-          console.log("Usage: ravi agents tools <id> deny <tool>");
-          process.exit(1);
+          fail("Tool name required. Usage: ravi agents tools <id> deny <tool>");
         }
         try {
           // Convert short name to full name if needed
@@ -285,8 +268,7 @@ export class AgentsCommands {
           removeAgentTool(id, fullName);
           console.log(`✓ Tool disabled: ${tool}`);
         } catch (err) {
-          console.error(`Error: ${err instanceof Error ? err.message : err}`);
-          process.exit(1);
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
         }
         break;
 
@@ -307,8 +289,7 @@ export class AgentsCommands {
           console.log(`✓ Whitelist initialized with ${toolsToAdd.length} tools`);
           console.log(`  Category: ${tool || "sdk"}`);
         } catch (err) {
-          console.error(`Error: ${err instanceof Error ? err.message : err}`);
-          process.exit(1);
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
         }
         break;
       }
@@ -318,15 +299,12 @@ export class AgentsCommands {
           setAgentTools(id, null);
           console.log(`✓ Whitelist cleared: ${id} (bypass mode)`);
         } catch (err) {
-          console.error(`Error: ${err instanceof Error ? err.message : err}`);
-          process.exit(1);
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
         }
         break;
 
       default:
-        console.error(`Unknown action: ${action}`);
-        console.log("Actions: allow, deny, init, clear");
-        process.exit(1);
+        fail(`Unknown action: ${action}. Actions: allow, deny, init, clear`);
     }
   }
 
@@ -337,8 +315,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     // No ms = show current debounce
@@ -363,9 +340,7 @@ export class AgentsCommands {
 
     const debounceMs = parseInt(ms, 10);
     if (isNaN(debounceMs) || debounceMs < 0) {
-      console.error(`Invalid debounce time: ${ms}`);
-      console.log("Must be a positive integer (milliseconds) or 0 to disable");
-      process.exit(1);
+      fail(`Invalid debounce time: ${ms}. Must be a positive integer (ms) or 0 to disable`);
     }
 
     try {
@@ -376,8 +351,7 @@ export class AgentsCommands {
         console.log(`✓ Debounce set: ${id} -> ${debounceMs}ms`);
       }
     } catch (err) {
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
-      process.exit(1);
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -392,8 +366,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const sessionKey = `agent:${id}:main`;
@@ -412,8 +385,7 @@ export class AgentsCommands {
   async chat(@Arg("id", { description: "Agent ID" }) id: string) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const sessionKey = `agent:${id}:main`;
@@ -548,8 +520,7 @@ export class AgentsCommands {
   session(@Arg("id", { description: "Agent ID" }) id: string) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const sessions = getSessionsByAgent(id);
@@ -581,8 +552,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      console.error(`Agent not found: ${id}`);
-      process.exit(1);
+      fail(`Agent not found: ${id}`);
     }
 
     const key = sessionKey || `agent:${id}:main`;

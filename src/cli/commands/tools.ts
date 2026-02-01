@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
+import { fail } from "../context.js";
 import { extractTools, manifestToJSON } from "../tools-export.js";
 import {
   ALL_COMMAND_CLASSES,
@@ -65,15 +66,7 @@ export class ToolsCommands {
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {
-      console.error(`Tool not found: ${name}`);
-      console.log("\nAvailable tools:");
-      for (const t of tools.slice(0, 10)) {
-        console.log(`  - ${t.name}`);
-      }
-      if (tools.length > 10) {
-        console.log(`  ... and ${tools.length - 10} more`);
-      }
-      process.exit(1);
+      fail(`Tool not found: ${name}. Run 'ravi tools list' to see available tools`);
     }
 
     console.log(`\n📋 Tool: ${tool.name}\n`);
@@ -137,8 +130,7 @@ export class ToolsCommands {
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {
-      console.error(`Tool not found: ${name}`);
-      process.exit(1);
+      fail(`Tool not found: ${name}`);
     }
 
     let args: Record<string, unknown> = {};
@@ -146,8 +138,7 @@ export class ToolsCommands {
       try {
         args = JSON.parse(argsJson);
       } catch {
-        console.error("Invalid JSON args");
-        process.exit(1);
+        fail("Invalid JSON args");
       }
     }
 
