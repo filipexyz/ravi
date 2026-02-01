@@ -15,6 +15,7 @@ import { isMatrixConfigured } from "./channels/matrix/config.js";
 import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
 import { loadConfig } from "./utils/config.js";
 import { logger } from "./utils/logger.js";
+import { dbGetSetting } from "./router/router-db.js";
 
 const log = logger.child("daemon");
 
@@ -108,14 +109,19 @@ export async function startDaemon() {
   // Start gateway with channel plugins
   gateway = createGateway({ logLevel: config.logLevel });
 
-  // WhatsApp plugin
+  // WhatsApp plugin - read policies from settings
+  const waDmPolicy = (dbGetSetting("whatsapp.dmPolicy") || "pairing") as "open" | "pairing" | "closed";
+  const waGroupPolicy = (dbGetSetting("whatsapp.groupPolicy") || "allowlist") as "open" | "allowlist" | "closed";
+
+  log.info("WhatsApp policies", { dmPolicy: waDmPolicy, groupPolicy: waGroupPolicy });
+
   const whatsappPlugin = createWhatsAppPlugin({
     accounts: {
       default: {
         name: "Ravi WhatsApp",
         enabled: true,
-        dmPolicy: "pairing",
-        groupPolicy: "allowlist",
+        dmPolicy: waDmPolicy,
+        groupPolicy: waGroupPolicy,
         sendReadReceipts: true,
         debounceMs: 500,
       },

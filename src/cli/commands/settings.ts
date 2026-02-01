@@ -14,6 +14,9 @@ import {
   DmScopeSchema,
 } from "../../router/router-db.js";
 
+const GROUP_POLICIES = ["open", "allowlist", "closed"] as const;
+const DM_POLICIES = ["open", "pairing", "closed"] as const;
+
 const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: string) => void }> = {
   defaultAgent: {
     description: "Default agent when no route matches",
@@ -29,6 +32,22 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       const result = DmScopeSchema.safeParse(value);
       if (!result.success) {
         throw new Error(`Invalid value: ${value}`);
+      }
+    },
+  },
+  "whatsapp.groupPolicy": {
+    description: `WhatsApp group policy (${GROUP_POLICIES.join(", ")})`,
+    validate: (value: string) => {
+      if (!GROUP_POLICIES.includes(value as typeof GROUP_POLICIES[number])) {
+        throw new Error(`Invalid value. Must be one of: ${GROUP_POLICIES.join(", ")}`);
+      }
+    },
+  },
+  "whatsapp.dmPolicy": {
+    description: `WhatsApp DM policy (${DM_POLICIES.join(", ")})`,
+    validate: (value: string) => {
+      if (!DM_POLICIES.includes(value as typeof DM_POLICIES[number])) {
+        throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
       }
     },
   },
