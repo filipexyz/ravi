@@ -18,7 +18,7 @@ export {
   getCliToolsByGroup,
   createSdkTools,
   generateToolsJsonSchema,
-  ALL_COMMAND_CLASSES,
+  getAllCommandClasses,
   type McpServer,
   type CreateMcpServerOptions,
   type SdkToolDefinition,

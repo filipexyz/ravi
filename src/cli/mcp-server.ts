@@ -5,17 +5,8 @@
 import { createSdkMcpServer as sdkCreateMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { extractTools, type ExportedTool } from "./tools-export.js";
-import { registerCliTools } from "./tool-registry.js";
+import { registerCliTools, setCliToolsInitializer } from "./tool-registry.js";
 import { extractOptionName, isBooleanOption } from "./utils.js";
-
-import { AgentsCommands } from "./commands/agents.js";
-import { DaemonCommands } from "./commands/daemon.js";
-import { ServiceCommands } from "./commands/service.js";
-import { ContactsCommands } from "./commands/contacts.js";
-import { ChannelsCommands } from "./commands/channels.js";
-import { RoutesCommands } from "./commands/routes.js";
-import { SettingsCommands } from "./commands/settings.js";
-import { CrossCommands } from "./commands/cross.js";
 
 // ============================================================================
 // Types
@@ -50,26 +41,34 @@ export interface CreateSdkToolsOptions {
 // Command Classes & Cache
 // ============================================================================
 
-export const ALL_COMMAND_CLASSES: CommandClass[] = [
-  AgentsCommands,
-  DaemonCommands,
-  ServiceCommands,
-  ContactsCommands,
-  ChannelsCommands,
-  RoutesCommands,
-  SettingsCommands,
-  CrossCommands,
-];
+// Lazy-loaded command classes (avoids circular dependency)
+let _commandClasses: CommandClass[] | null = null;
+
+/**
+ * Get all command classes (lazy loaded).
+ */
+export function getAllCommandClasses(): CommandClass[] {
+  if (!_commandClasses) {
+    // Dynamic import to avoid circular dependency at load time
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const allCommands = require("./commands/index.js");
+    _commandClasses = Object.values(allCommands) as CommandClass[];
+  }
+  return _commandClasses;
+}
 
 // Cache extracted tools - they don't change at runtime
 let _cachedTools: ExportedTool[] | null = null;
 
 function getCachedTools(): ExportedTool[] {
   if (!_cachedTools) {
-    _cachedTools = extractTools(ALL_COMMAND_CLASSES);
+    _cachedTools = extractTools(getAllCommandClasses());
   }
   return _cachedTools;
 }
+
+// Set lazy initializer for tool registry (avoids circular dependency)
+setCliToolsInitializer(() => getCachedTools().map(t => t.name));
 
 // ============================================================================
 // Public API
@@ -136,8 +135,10 @@ export function createSdkTools(
 ): SdkToolDefinition[] {
   const { filter, allowedTools } = options;
 
-  // Use cache if using default classes, otherwise extract fresh
-  let tools = classes === ALL_COMMAND_CLASSES ? getCachedTools() : extractTools(classes);
+  // Use cache if using all classes, otherwise extract fresh
+  let tools = classes === COMMAND_CLASSES
+    ? getCachedTools()
+    : extractTools(classes);
 
   if (filter) {
     const regex = typeof filter === "string" ? new RegExp(filter) : filter;

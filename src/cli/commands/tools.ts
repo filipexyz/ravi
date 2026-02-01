@@ -7,7 +7,7 @@ import { Group, Command, Arg } from "../decorators.js";
 import { fail } from "../context.js";
 import { extractTools, manifestToJSON } from "../tools-export.js";
 import {
-  ALL_COMMAND_CLASSES,
+  getAllCommandClasses,
   getCliToolsByGroup,
   createSdkTools,
   generateToolsJsonSchema,
@@ -28,7 +28,7 @@ export class ToolsCommands {
 
     for (const group of Object.keys(groups)) {
       console.log(`\n${group.toUpperCase()}:`);
-      const sdkTools = createSdkTools(ALL_COMMAND_CLASSES, {
+      const sdkTools = createSdkTools(getAllCommandClasses(), {
         filter: new RegExp(`^${group}_`),
       });
 
@@ -62,7 +62,7 @@ export class ToolsCommands {
 
   @Command({ name: "show", description: "Show details for a specific tool" })
   show(@Arg("name", { description: "Tool name (e.g., agents_list)" }) name: string) {
-    const tools = extractTools(ALL_COMMAND_CLASSES);
+    const tools = extractTools(getAllCommandClasses());
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {
@@ -103,7 +103,7 @@ export class ToolsCommands {
     }
 
     console.log("\nJSON Schema:");
-    const sdkTool = createSdkTools(ALL_COMMAND_CLASSES, { allowedTools: [name] })[0];
+    const sdkTool = createSdkTools(getAllCommandClasses(), { allowedTools: [name] })[0];
     if (sdkTool) {
       console.log(JSON.stringify(sdkTool.inputSchema, null, 2));
     }
@@ -111,13 +111,13 @@ export class ToolsCommands {
 
   @Command({ name: "manifest", description: "Export tools as JSON manifest" })
   manifest() {
-    const tools = extractTools(ALL_COMMAND_CLASSES);
+    const tools = extractTools(getAllCommandClasses());
     console.log(manifestToJSON(tools));
   }
 
   @Command({ name: "schema", description: "Export tools as JSON Schema" })
   schema() {
-    const schema = generateToolsJsonSchema(ALL_COMMAND_CLASSES);
+    const schema = generateToolsJsonSchema(getAllCommandClasses());
     console.log(JSON.stringify(schema, null, 2));
   }
 
@@ -126,7 +126,7 @@ export class ToolsCommands {
     @Arg("name", { description: "Tool name" }) name: string,
     @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string
   ) {
-    const tools = extractTools(ALL_COMMAND_CLASSES);
+    const tools = extractTools(getAllCommandClasses());
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {

@@ -17,8 +17,17 @@ export const SDK_TOOLS = [
   "TaskOutput", "KillShell", "TaskStop", "LSP",
 ];
 
-// CLI tool names registry (populated by extractTools)
-let cliToolNames: string[] = [];
+// CLI tool names registry (populated lazily or by registerCliTools)
+let cliToolNames: string[] | null = null;
+let lazyInitializer: (() => string[]) | null = null;
+
+/**
+ * Set a lazy initializer for CLI tool names.
+ * Called when getCliToolNames() is invoked and registry is empty.
+ */
+export function setCliToolsInitializer(init: () => string[]): void {
+  lazyInitializer = init;
+}
 
 /**
  * Register CLI tool names (called during initialization)
@@ -28,10 +37,13 @@ export function registerCliTools(names: string[]): void {
 }
 
 /**
- * Get all registered CLI tool names
+ * Get all registered CLI tool names (lazy init if needed)
  */
 export function getCliToolNames(): string[] {
-  return cliToolNames;
+  if (cliToolNames === null && lazyInitializer) {
+    cliToolNames = lazyInitializer();
+  }
+  return cliToolNames ?? [];
 }
 
 /**

@@ -28,10 +28,10 @@ import {
 import {
   SDK_TOOLS,
   MCP_PREFIX,
+  toFullToolName,
   getCliToolNames,
   getCliToolsFullNames,
   getAllToolsFullNames,
-  toFullToolName,
 } from "../tool-registry.js";
 import type { ResponseMessage } from "../../bot.js";
 
@@ -200,7 +200,7 @@ export class AgentsCommands {
       fail(`Agent not found: ${id}`);
     }
 
-    // Get tools from registry
+    // Get CLI tools from registry (lazy init)
     const CLI_TOOL_NAMES = getCliToolNames();
     const CLI_TOOLS_FULL = getCliToolsFullNames();
     const ALL_TOOLS_FULL = getAllToolsFullNames();

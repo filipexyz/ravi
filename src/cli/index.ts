@@ -14,20 +14,7 @@ import "./env.js";
 import "reflect-metadata";
 import { Command } from "commander";
 import { registerCommands } from "./registry.js";
-
-// Import command classes
-import { AgentsCommands } from "./commands/agents.js";
-import { ChannelsCommands } from "./commands/channels.js";
-import { ContactsCommands } from "./commands/contacts.js";
-import { ServiceCommands } from "./commands/service.js";
-import { DaemonCommands } from "./commands/daemon.js";
-import { ToolsCommands } from "./commands/tools.js";
-import { RoutesCommands } from "./commands/routes.js";
-import { SettingsCommands } from "./commands/settings.js";
-import { CrossCommands } from "./commands/cross.js";
-import { MatrixCommands } from "./commands/matrix.js";
-import { HeartbeatCommands } from "./commands/heartbeat.js";
-import { CronCommands } from "./commands/cron.js";
+import * as allCommands from "./commands/index.js";
 
 const program = new Command();
 
@@ -36,21 +23,8 @@ program
   .description("Ravi Bot CLI - Claude-powered bot management")
   .version("0.1.0");
 
-// Register all command groups
-registerCommands(program, [
-  AgentsCommands,
-  ChannelsCommands,
-  ContactsCommands,
-  ServiceCommands,
-  DaemonCommands,
-  ToolsCommands,
-  RoutesCommands,
-  SettingsCommands,
-  CrossCommands,
-  MatrixCommands,
-  HeartbeatCommands,
-  CronCommands,
-]);
+// Register all command groups (auto-discovered from barrel)
+registerCommands(program, Object.values(allCommands));
 
 // Parse and execute
 program.parse();
