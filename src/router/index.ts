@@ -5,6 +5,7 @@
 // Types
 export type {
   DmScope,
+  HeartbeatConfig,
   AgentConfig,
   RouteConfig,
   RouterConfig,
@@ -79,6 +80,7 @@ export {
   updateSdkSessionId,
   updateTokens,
   updateSessionSource,
+  updateSessionHeartbeat,
   deleteSession,
   listSessions,
 } from "./sessions.js";

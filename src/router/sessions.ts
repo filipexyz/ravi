@@ -43,6 +43,9 @@ interface SessionRow {
   system_sent: number;
   aborted_last_run: number;
   compaction_count: number;
+  // Heartbeat columns
+  last_heartbeat_text: string | null;
+  last_heartbeat_sent_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -75,6 +78,9 @@ function rowToEntry(row: SessionRow): SessionEntry {
     systemSent: row.system_sent === 1,
     abortedLastRun: row.aborted_last_run === 1,
     compactionCount: row.compaction_count,
+    // Heartbeat fields
+    lastHeartbeatText: row.last_heartbeat_text ?? undefined,
+    lastHeartbeatSentAt: row.last_heartbeat_sent_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -325,4 +331,23 @@ export function updateSessionSource(
     Date.now(),
     sessionKey
   );
+}
+
+/**
+ * Update session heartbeat info
+ */
+export function updateSessionHeartbeat(
+  sessionKey: string,
+  text: string
+): void {
+  const db = getDb();
+  const stmt = db.prepare(`
+    UPDATE sessions SET
+      last_heartbeat_text = ?,
+      last_heartbeat_sent_at = ?,
+      updated_at = ?
+    WHERE session_key = ?
+  `);
+  const now = Date.now();
+  stmt.run(text, now, now, sessionKey);
 }

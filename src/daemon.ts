@@ -16,6 +16,7 @@ import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/c
 import { loadConfig } from "./utils/config.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
+import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 
 const log = logger.child("daemon");
 
@@ -81,6 +82,9 @@ async function shutdown(signal: string) {
   log.info(`Received ${signal}, shutting down...`);
 
   try {
+    // Stop heartbeat runner first
+    await stopHeartbeatRunner();
+
     if (gateway) {
       await gateway.stop();
     }
@@ -142,6 +146,10 @@ export async function startDaemon() {
 
   await gateway.start();
   log.info("Gateway started");
+
+  // Start heartbeat runner
+  await startHeartbeatRunner();
+  log.info("Heartbeat runner started");
 
   log.info("Daemon ready");
 }

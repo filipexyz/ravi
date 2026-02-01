@@ -85,6 +85,50 @@ ravi agents debounce main 0      # Disable
 
 Messages within the window are combined with `\n\n` before processing.
 
+## Heartbeat
+
+Proactive agent runs that check pending tasks in `HEARTBEAT.md`:
+
+```bash
+# Enable heartbeat (runs every 30 minutes)
+ravi heartbeat enable main 30m
+
+# Disable
+ravi heartbeat disable main
+
+# Configure
+ravi heartbeat set main interval 1h           # Change interval
+ravi heartbeat set main model haiku           # Use cheaper model
+ravi heartbeat set main active-hours 09:00-22:00  # Only run during these hours
+
+# Manual trigger
+ravi heartbeat trigger main
+
+# Status
+ravi heartbeat status   # All agents
+ravi heartbeat show main
+```
+
+**How it works:**
+1. Timer fires at configured interval
+2. Reads `~/ravi/{agent}/HEARTBEAT.md`
+3. Sends prompt to agent session
+4. If agent responds with only `HEARTBEAT_OK`, message is suppressed
+5. Otherwise, response is routed to the channel
+
+**HEARTBEAT.md example:**
+```markdown
+# Tarefas Pendentes
+
+- Lembre o Luis sobre a reunião às 15h
+- Verifique o status do deploy
+```
+
+**Triggers:**
+- `interval` - Timer-based (configurable)
+- `tool-complete` - After agent finishes using a tool (with 30s cooldown)
+- `manual` - Via `ravi heartbeat trigger`
+
 ## Router (`~/ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
@@ -133,7 +177,9 @@ The accountId-as-agent feature allows Matrix multi-account setups where each Mat
 ```
 ~/ravi/
 ├── ravi.db          # Config and sessions (SQLite)
-└── main/            # Agent CWD (CLAUDE.md, tools, etc)
+└── main/            # Agent CWD
+    ├── CLAUDE.md    # Agent instructions
+    └── HEARTBEAT.md # Pending tasks for heartbeat (optional)
 
 ~/.ravi/
 ├── .env             # Environment variables (loaded by daemon)
@@ -185,6 +231,14 @@ ravi matrix whoami       # Show current identity
 # Cross-session messaging
 ravi cross send <session> <message>  # Send message to another session
 ravi cross list                      # List sessions with channel info
+
+# Heartbeat
+ravi heartbeat status                # Show all agents
+ravi heartbeat show <id>             # Show config
+ravi heartbeat enable <id> [interval]  # Enable (e.g., 30m, 1h)
+ravi heartbeat disable <id>          # Disable
+ravi heartbeat set <id> <key> <value>  # Set property
+ravi heartbeat trigger <id>          # Manual trigger
 ```
 
 ## Testing Agents

@@ -14,6 +14,30 @@ export type DmScope =
   | "per-account-channel-peer"; // Full isolation: agent:X:whatsapp:default:dm:PHONE
 
 // ============================================================================
+// Heartbeat Configuration
+// ============================================================================
+
+export interface HeartbeatConfig {
+  /** Whether heartbeat is enabled for this agent */
+  enabled: boolean;
+
+  /** Interval between heartbeats in milliseconds (default: 30 minutes) */
+  intervalMs: number;
+
+  /** Model to use for heartbeat (null = use agent's model) */
+  model?: string;
+
+  /** Active hours start time (HH:MM format) */
+  activeStart?: string;
+
+  /** Active hours end time (HH:MM format) */
+  activeEnd?: string;
+
+  /** Timestamp of last heartbeat run */
+  lastRunAt?: number;
+}
+
+// ============================================================================
 // Agent Configuration
 // ============================================================================
 
@@ -44,6 +68,9 @@ export interface AgentConfig {
 
   /** Matrix account username (references matrix_accounts table) */
   matrixAccount?: string;
+
+  /** Heartbeat configuration */
+  heartbeat?: HeartbeatConfig;
 }
 
 // ============================================================================

@@ -68,6 +68,13 @@ interface AgentRow {
   allowed_tools: string | null;
   debounce_ms: number | null;
   matrix_account: string | null;
+  // Heartbeat columns
+  heartbeat_enabled: number;
+  heartbeat_interval_ms: number;
+  heartbeat_model: string | null;
+  heartbeat_active_start: string | null;
+  heartbeat_active_end: string | null;
+  heartbeat_last_run_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -217,6 +224,41 @@ function getDb(): Database {
     log.info("Added matrix_account column to agents table");
   }
 
+  // Migration: add heartbeat columns to agents if not exists
+  if (!agentColumns.some(c => c.name === "heartbeat_enabled")) {
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0;
+    `);
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_interval_ms INTEGER DEFAULT 1800000;
+    `);
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_model TEXT;
+    `);
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_active_start TEXT;
+    `);
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_active_end TEXT;
+    `);
+    db.exec(`
+      ALTER TABLE agents ADD COLUMN heartbeat_last_run_at INTEGER;
+    `);
+    log.info("Added heartbeat columns to agents table");
+  }
+
+  // Migration: add heartbeat columns to sessions if not exists
+  const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  if (!sessionColumns.some(c => c.name === "last_heartbeat_text")) {
+    db.exec(`
+      ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT;
+    `);
+    db.exec(`
+      ALTER TABLE sessions ADD COLUMN last_heartbeat_sent_at INTEGER;
+    `);
+    log.info("Added heartbeat columns to sessions table");
+  }
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {
@@ -247,6 +289,7 @@ function getDbChanges(): number {
 interface PreparedStatements {
   insertAgent: Statement;
   updateAgent: Statement;
+  updateAgentHeartbeatLastRun: Statement;
   deleteAgent: Statement;
   getAgent: Statement;
   listAgents: Statement;
@@ -282,8 +325,10 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account,
+        heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
+        created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -295,8 +340,16 @@ function getStatements(): PreparedStatements {
         allowed_tools = ?,
         debounce_ms = ?,
         matrix_account = ?,
+        heartbeat_enabled = ?,
+        heartbeat_interval_ms = ?,
+        heartbeat_model = ?,
+        heartbeat_active_start = ?,
+        heartbeat_active_end = ?,
         updated_at = ?
       WHERE id = ?
+    `),
+    updateAgentHeartbeatLastRun: database.prepare(`
+      UPDATE agents SET heartbeat_last_run_at = ?, updated_at = ? WHERE id = ?
     `),
     deleteAgent: database.prepare("DELETE FROM agents WHERE id = ?"),
     getAgent: database.prepare("SELECT * FROM agents WHERE id = ?"),
@@ -379,6 +432,16 @@ function rowToAgent(row: AgentRow): AgentConfig {
   if (row.debounce_ms !== null) result.debounceMs = row.debounce_ms;
   if (row.matrix_account !== null) result.matrixAccount = row.matrix_account;
 
+  // Heartbeat fields
+  result.heartbeat = {
+    enabled: row.heartbeat_enabled === 1,
+    intervalMs: row.heartbeat_interval_ms ?? 1800000,
+    model: row.heartbeat_model ?? undefined,
+    activeStart: row.heartbeat_active_start ?? undefined,
+    activeEnd: row.heartbeat_active_end ?? undefined,
+    lastRunAt: row.heartbeat_last_run_at ?? undefined,
+  };
+
   return result;
 }
 
@@ -431,6 +494,12 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.allowedTools ? JSON.stringify(validated.allowedTools) : null,
       validated.debounceMs ?? null,
       validated.matrixAccount ?? null,
+      // Heartbeat fields (defaults)
+      0, // heartbeat_enabled
+      1800000, // heartbeat_interval_ms (30 min)
+      null, // heartbeat_model
+      null, // heartbeat_active_start
+      null, // heartbeat_active_end
       now,
       now
     );
@@ -488,6 +557,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
   }
 
   const now = Date.now();
+  const hb = updates.heartbeat;
   s.updateAgent.run(
     updates.name !== undefined ? updates.name ?? null : row.name,
     updates.cwd ?? row.cwd,
@@ -499,12 +569,27 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
       : row.allowed_tools,
     updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
     updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
+    // Heartbeat fields
+    hb?.enabled !== undefined ? (hb.enabled ? 1 : 0) : row.heartbeat_enabled,
+    hb?.intervalMs !== undefined ? hb.intervalMs : row.heartbeat_interval_ms,
+    hb?.model !== undefined ? hb.model ?? null : row.heartbeat_model,
+    hb?.activeStart !== undefined ? hb.activeStart ?? null : row.heartbeat_active_start,
+    hb?.activeEnd !== undefined ? hb.activeEnd ?? null : row.heartbeat_active_end,
     now,
     id
   );
 
   log.info("Updated agent", { id });
   return dbGetAgent(id)!;
+}
+
+/**
+ * Update agent's heartbeat last run timestamp
+ */
+export function dbUpdateAgentHeartbeatLastRun(id: string): void {
+  const s = getStatements();
+  const now = Date.now();
+  s.updateAgentHeartbeatLastRun.run(now, now, id);
 }
 
 /**

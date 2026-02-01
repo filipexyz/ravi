@@ -19,6 +19,7 @@ import {
 import { createCliMcpServer, initCliTools } from "./cli/exports.js";
 import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 import { runWithContext } from "./cli/context.js";
+import { HEARTBEAT_OK } from "./heartbeat/index.js";
 
 const log = logger.child("bot");
 
@@ -509,6 +510,9 @@ export class RaviBot {
             // Skip silent responses - don't emit to channel
             if (messageText.trim() === SILENT_TOKEN) {
               log.info("Silent response detected, not emitting", { sessionKey: session.sessionKey });
+            } else if (messageText.trim() === HEARTBEAT_OK) {
+              // Heartbeat OK - nothing to report, suppress output
+              log.info("Heartbeat OK - nothing to report", { sessionKey: session.sessionKey });
             } else if (onMessage) {
               await onMessage(messageText);
             }

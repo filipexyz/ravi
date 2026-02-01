@@ -9,6 +9,7 @@ A Claude-powered conversational bot with WhatsApp and Matrix integration, sessio
 - **Session Routing** - Route conversations to different agents based on rules
 - **Message Queue** - Smart interruption handling when tools are running
 - **Debounce** - Group rapid messages before processing
+- **Heartbeat** - Proactive agent runs on schedule to check pending tasks
 - **Multi-Agent** - Configure multiple agents with different capabilities
 - **Daemon Mode** - Run as a system service (launchd/systemd)
 
@@ -81,6 +82,19 @@ ravi agents set main model opus       # Set model
 ravi agents debounce main 2000        # Set 2s debounce
 ravi agents tools main                # Manage tool whitelist
 ```
+
+### Heartbeat (Scheduled Tasks)
+
+```bash
+ravi heartbeat status                 # Show all agents
+ravi heartbeat enable main 30m        # Run every 30 minutes
+ravi heartbeat disable main           # Disable
+ravi heartbeat set main interval 1h   # Change interval
+ravi heartbeat set main active-hours 09:00-22:00  # Limit hours
+ravi heartbeat trigger main           # Manual trigger
+```
+
+Create `~/ravi/main/HEARTBEAT.md` with pending tasks. Agent runs periodically and executes them. If nothing to do, agent responds with `HEARTBEAT_OK` (suppressed).
 
 ### Contacts (WhatsApp)
 
@@ -172,6 +186,7 @@ When messages arrive while processing:
 ├── ravi.db               # All config: agents, routes, sessions, contacts (SQLite)
 └── main/                 # Agent working directory
     ├── CLAUDE.md         # Agent instructions
+    ├── HEARTBEAT.md      # Pending tasks for heartbeat (optional)
     └── ...               # Agent-specific files
 
 ~/.ravi/                  # Ravi config directory
