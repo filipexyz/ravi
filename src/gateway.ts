@@ -325,6 +325,9 @@ export class Gateway {
     plugin: ChannelPlugin,
     message: InboundMessage
   ): Promise<void> {
+    // Reload config to pick up route changes (routes may be added via CLI)
+    this.routerConfig = loadRouterConfig();
+
     // Resolve route to get session key
     const resolved = resolveRoute(this.routerConfig, {
       phone: message.senderId,
