@@ -4,6 +4,9 @@ node_modules/
 # Build output
 dist/
 
+# Generated files
+src/cli/commands/index.ts
+
 # Environment
 .env
 .env.local

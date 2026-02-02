@@ -50,7 +50,7 @@ export function getCliToolNames(): string[] {
  * Get all CLI tools with full MCP names
  */
 export function getCliToolsFullNames(): string[] {
-  return cliToolNames.map(t => `${MCP_PREFIX}${t}`);
+  return getCliToolNames().map(t => `${MCP_PREFIX}${t}`);
 }
 
 /**
@@ -64,7 +64,7 @@ export function getAllToolsFullNames(): string[] {
  * Convert short tool name to full name (with MCP prefix if CLI tool)
  */
 export function toFullToolName(shortName: string): string {
-  if (cliToolNames.includes(shortName)) {
+  if (getCliToolNames().includes(shortName)) {
     return `${MCP_PREFIX}${shortName}`;
   }
   return shortName;
@@ -85,7 +85,7 @@ export function toShortToolName(fullName: string): string {
  */
 export function isCliTool(name: string): boolean {
   const shortName = toShortToolName(name);
-  return cliToolNames.includes(shortName);
+  return getCliToolNames().includes(shortName);
 }
 
 /**
