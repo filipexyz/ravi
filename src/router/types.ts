@@ -71,6 +71,9 @@ export interface AgentConfig {
 
   /** Heartbeat configuration */
   heartbeat?: HeartbeatConfig;
+
+  /** Setting sources for Claude SDK (default: ["project"]) */
+  settingSources?: ("user" | "project")[];
 }
 
 // ============================================================================

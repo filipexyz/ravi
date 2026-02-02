@@ -433,7 +433,7 @@ export class RaviBot {
           preset: "claude_code",
           append: systemPromptAppend,
         },
-        settingSources: ["project"],
+        settingSources: agent.settingSources ?? ["project"],
       },
     });
 

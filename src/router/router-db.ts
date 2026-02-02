@@ -68,6 +68,7 @@ interface AgentRow {
   allowed_tools: string | null;
   debounce_ms: number | null;
   matrix_account: string | null;
+  setting_sources: string | null;
   // Heartbeat columns
   heartbeat_enabled: number;
   heartbeat_interval_ms: number;
@@ -247,6 +248,12 @@ function getDb(): Database {
     log.info("Added heartbeat columns to agents table");
   }
 
+  // Migration: add setting_sources column to agents if not exists
+  if (!agentColumns.some(c => c.name === "setting_sources")) {
+    db.exec("ALTER TABLE agents ADD COLUMN setting_sources TEXT");
+    log.info("Added setting_sources column to agents table");
+  }
+
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
   if (!sessionColumns.some(c => c.name === "last_heartbeat_text")) {
@@ -361,10 +368,10 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account,
+      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -376,6 +383,7 @@ function getStatements(): PreparedStatements {
         allowed_tools = ?,
         debounce_ms = ?,
         matrix_account = ?,
+        setting_sources = ?,
         heartbeat_enabled = ?,
         heartbeat_interval_ms = ?,
         heartbeat_model = ?,
@@ -467,6 +475,13 @@ function rowToAgent(row: AgentRow): AgentConfig {
   }
   if (row.debounce_ms !== null) result.debounceMs = row.debounce_ms;
   if (row.matrix_account !== null) result.matrixAccount = row.matrix_account;
+  if (row.setting_sources !== null) {
+    try {
+      result.settingSources = JSON.parse(row.setting_sources);
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
 
   // Heartbeat fields
   result.heartbeat = {
@@ -530,6 +545,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.allowedTools ? JSON.stringify(validated.allowedTools) : null,
       validated.debounceMs ?? null,
       validated.matrixAccount ?? null,
+      validated.settingSources ? JSON.stringify(validated.settingSources) : null,
       // Heartbeat fields (defaults)
       0, // heartbeat_enabled
       1800000, // heartbeat_interval_ms (30 min)
@@ -605,6 +621,9 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
       : row.allowed_tools,
     updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
     updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
+    updates.settingSources !== undefined
+      ? updates.settingSources ? JSON.stringify(updates.settingSources) : null
+      : row.setting_sources,
     // Heartbeat fields
     hb?.enabled !== undefined ? (hb.enabled ? 1 : 0) : row.heartbeat_enabled,
     hb?.intervalMs !== undefined ? hb.intervalMs : row.heartbeat_interval_ms,

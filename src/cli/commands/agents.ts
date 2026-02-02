@@ -159,7 +159,7 @@ export class AgentsCommands {
       fail(`Agent not found: ${id}`);
     }
 
-    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount"];
+    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources"];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
@@ -181,9 +181,28 @@ export class AgentsCommands {
       }
     }
 
+    // Parse settingSources as JSON array
+    let parsedValue: unknown = value;
+    if (key === "settingSources") {
+      try {
+        parsedValue = JSON.parse(value);
+        if (!Array.isArray(parsedValue)) {
+          fail(`settingSources must be an array, e.g. '["user", "project"]'`);
+        }
+        const valid = ["user", "project"];
+        for (const s of parsedValue) {
+          if (!valid.includes(s)) {
+            fail(`Invalid settingSource: ${s}. Valid values: ${valid.join(", ")}`);
+          }
+        }
+      } catch {
+        fail(`settingSources must be valid JSON array, e.g. '["user", "project"]'`);
+      }
+    }
+
     try {
-      updateAgent(id, { [key]: value });
-      console.log(`\u2713 ${key} set: ${id} -> ${value}`);
+      updateAgent(id, { [key]: parsedValue });
+      console.log(`\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
