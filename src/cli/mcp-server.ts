@@ -136,7 +136,8 @@ export function createSdkTools(
   const { filter, allowedTools } = options;
 
   // Use cache if using all classes, otherwise extract fresh
-  let tools = classes === COMMAND_CLASSES
+  const allClasses = getAllCommandClasses();
+  let tools = classes === allClasses
     ? getCachedTools()
     : extractTools(classes);
 
