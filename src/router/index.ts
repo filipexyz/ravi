@@ -20,6 +20,7 @@ export {
   parseSessionKey,
   getAgentFromKey,
   matchSessionKey,
+  deriveSourceFromSessionKey,
 } from "./session-key.js";
 
 // Resolver

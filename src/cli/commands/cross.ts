@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
 import { getSession, listSessions } from "../../router/sessions.js";
+import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { getContext } from "../context.js";
 import { notif } from "../../notif.js";
 
@@ -36,30 +37,27 @@ export class CrossCommands {
       return { success: false, error: "Invalid type" };
     }
 
-    // Get target session to find its source (channel/account/chat)
+    // Resolve source: existing session > derive from key > none
+    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    let sourceOrigin: string;
+
     const targetSession = getSession(target);
-    if (!targetSession) {
-      console.error(`Session not found: ${target}`);
-      console.log("\nAvailable sessions:");
-      for (const s of listSessions()) {
-        console.log(`  - ${s.sessionKey}`);
+    if (targetSession?.lastChannel && targetSession.lastTo) {
+      source = {
+        channel: targetSession.lastChannel,
+        accountId: targetSession.lastAccountId ?? "default",
+        chatId: targetSession.lastTo,
+      };
+      sourceOrigin = "session";
+    } else {
+      const derived = deriveSourceFromSessionKey(target);
+      if (derived) {
+        source = derived;
+        sourceOrigin = "derived";
+      } else {
+        sourceOrigin = "none";
       }
-      return { success: false, error: "Session not found" };
     }
-
-    // Check if target has channel info
-    if (!targetSession.lastChannel || !targetSession.lastTo) {
-      console.error(`Session has no channel info: ${target}`);
-      console.log("The target session must have received at least one message from a channel.");
-      return { success: false, error: "No channel info" };
-    }
-
-    // Build source from target session's last source
-    const source = {
-      channel: targetSession.lastChannel,
-      accountId: targetSession.lastAccountId ?? "default",
-      chatId: targetSession.lastTo,
-    };
 
     const crossType = type as CrossType;
     let prompt: string;
@@ -74,7 +72,13 @@ export class CrossCommands {
     }
 
     await notif.emit(`ravi.${target}.prompt`, { prompt, source } as Record<string, unknown>);
-    console.log(`✓ [${type}] sent to ${target}`);
+
+    if (source) {
+      console.log(`✓ [${type}] sent to ${target} (routing: ${source.channel}, src: ${sourceOrigin})`);
+    } else {
+      console.log(`✓ [${type}] sent to ${target} (no routing — response won't reach a channel)`);
+    }
+
     return { success: true, target, type, source };
   }
 

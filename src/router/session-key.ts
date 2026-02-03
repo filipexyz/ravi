@@ -111,25 +111,37 @@ export function parseSessionKey(key: string): Partial<SessionKeyParams> | null {
     const peerKind = parts[3] as "dm" | "group" | "channel";
 
     if (peerKind === "dm" || peerKind === "group" || peerKind === "channel") {
+      // Join remaining parts to handle IDs with colons (e.g. Matrix !room:server)
+      const peerIdParts = parts.slice(4);
+      const threadIdx = peerIdParts.indexOf("thread");
+      const peerId = (threadIdx !== -1 ? peerIdParts.slice(0, threadIdx) : peerIdParts).join(":") || undefined;
+      const threadId = threadIdx !== -1 ? peerIdParts.slice(threadIdx + 1).join(":") : undefined;
       return {
         agentId,
         channel,
         peerKind,
-        peerId: parts[4],
+        peerId,
+        threadId,
         dmScope: "per-channel-peer",
       };
     }
 
-    // agent:X:channel:account:dm:PHONE
+    // agent:X:channel:account:dm:PHONE or agent:X:channel:account:group:ID
     if (parts.length >= 6) {
       const accountId = parts[3];
       const pk = parts[4] as "dm" | "group" | "channel";
+      // Join remaining parts to handle IDs with colons
+      const peerIdParts = parts.slice(5);
+      const threadIdx = peerIdParts.indexOf("thread");
+      const peerId = (threadIdx !== -1 ? peerIdParts.slice(0, threadIdx) : peerIdParts).join(":") || undefined;
+      const threadId = threadIdx !== -1 ? peerIdParts.slice(threadIdx + 1).join(":") : undefined;
       return {
         agentId,
         channel,
         accountId,
         peerKind: pk,
-        peerId: parts[5],
+        peerId,
+        threadId,
         dmScope: "per-account-channel-peer",
       };
     }
@@ -160,4 +172,43 @@ export function matchSessionKey(key: string, pattern: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * Derive message source (channel routing info) from a session key.
+ *
+ * Used by cross_send to reconstruct routing when the target session
+ * doesn't exist yet or has no channel info stored.
+ *
+ * Returns null for keys that don't contain channel info (e.g. "agent:X:main").
+ */
+export function deriveSourceFromSessionKey(
+  key: string
+): { channel: string; accountId: string; chatId: string } | null {
+  const parsed = parseSessionKey(key);
+  if (!parsed?.channel || !parsed.peerKind || !parsed.peerId) return null;
+
+  const chatId = reconstructChatId(parsed.channel, parsed.peerKind, parsed.peerId);
+
+  return {
+    channel: parsed.channel,
+    accountId: parsed.accountId ?? "default",
+    chatId,
+  };
+}
+
+/**
+ * Reconstruct the chatId (normalized phone / room ID) from session key components.
+ *
+ * WhatsApp uses normalizePhone format: "group:123" for groups, "5511999" for DMs.
+ * Matrix uses room IDs directly: "!roomid:server".
+ */
+function reconstructChatId(channel: string, peerKind: string, peerId: string): string {
+  // WhatsApp groups: buildSessionKey strips "group:" prefix, add it back
+  if (peerKind === "group" && channel !== "matrix") {
+    return `group:${peerId}`;
+  }
+
+  // Everything else: peerId is the chatId as-is
+  return peerId;
 }
