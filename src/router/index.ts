@@ -80,6 +80,7 @@ export {
   updateSdkSessionId,
   updateTokens,
   updateSessionSource,
+  updateSessionDisplayName,
   updateSessionHeartbeat,
   deleteSession,
   listSessions,

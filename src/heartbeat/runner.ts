@@ -19,15 +19,8 @@ import {
 
 const log = logger.child("heartbeat");
 
-// Debounce time for rapid tool events
-const COALESCE_DEBOUNCE_MS = 250;
-
-// Minimum time between heartbeat triggers (prevent loops)
-const MIN_TRIGGER_INTERVAL_MS = 30000; // 30 seconds
-
 interface AgentTimer {
   intervalTimer?: ReturnType<typeof setInterval>;
-  coalesceTimer?: ReturnType<typeof setTimeout>;
   lastTrigger: number;
   intervalMs: number; // Track interval to detect changes
 }
@@ -41,7 +34,7 @@ export class HeartbeatRunner {
 
   /**
    * Start the heartbeat runner.
-   * Subscribes to tool events and starts interval timers for enabled agents.
+   * Starts interval timers for enabled agents.
    */
   async start(): Promise<void> {
     if (this.running) return;
@@ -51,9 +44,6 @@ export class HeartbeatRunner {
 
     // Start interval timers for enabled agents
     this.refreshTimers();
-
-    // Subscribe to tool completion events for triggering heartbeats
-    this.subscribeToToolEvents();
 
     // Subscribe to config refresh signals
     this.subscribeToConfigRefresh();
@@ -75,9 +65,6 @@ export class HeartbeatRunner {
     for (const [agentId, timer] of this.timers) {
       if (timer.intervalTimer) {
         clearInterval(timer.intervalTimer);
-      }
-      if (timer.coalesceTimer) {
-        clearTimeout(timer.coalesceTimer);
       }
       log.debug("Cleared timer for agent", { agentId });
     }
@@ -167,50 +154,11 @@ export class HeartbeatRunner {
   }
 
   /**
-   * Subscribe to tool completion events.
-   * Tool completions can trigger heartbeats with coalescing.
-   */
-  private async subscribeToToolEvents(): Promise<void> {
-    const topic = "ravi.*.tool";
-    log.debug("Subscribing to tool events", { topic });
-
-    try {
-      for await (const event of notif.subscribe(topic)) {
-        if (!this.running) break;
-
-        const data = event.data as { event: string; agentId?: string };
-
-        // Only trigger on tool end events
-        if (data.event !== "end") continue;
-        if (!data.agentId) continue;
-
-        // Check if agent has heartbeat enabled
-        const timer = this.timers.get(data.agentId);
-        if (!timer) continue;
-
-        // Coalesce rapid events
-        if (timer.coalesceTimer) {
-          clearTimeout(timer.coalesceTimer);
-        }
-
-        timer.coalesceTimer = setTimeout(() => {
-          this.triggerHeartbeat(data.agentId!, "tool-complete");
-        }, COALESCE_DEBOUNCE_MS);
-      }
-    } catch (err) {
-      log.error("Tool event subscription error", { error: err });
-      // Retry after a delay if still running
-      if (this.running) {
-        setTimeout(() => this.subscribeToToolEvents(), 5000);
-      }
-    }
-  }
-
   /**
    * Trigger a heartbeat for an agent.
    * Performs pre-checks and sends the heartbeat prompt.
    */
-  async triggerHeartbeat(agentId: string, trigger: "interval" | "tool-complete" | "manual"): Promise<boolean> {
+  async triggerHeartbeat(agentId: string, trigger: "interval" | "manual"): Promise<boolean> {
     const agents = dbListAgents();
     const agent = agents.find(a => a.id === agentId);
 
@@ -223,16 +171,6 @@ export class HeartbeatRunner {
     if (!agent.heartbeat?.enabled && trigger !== "manual") {
       log.debug("Heartbeat disabled for agent", { agentId });
       return false;
-    }
-
-    // Check cooldown (prevent rapid re-triggering from tool events)
-    const timer = this.timers.get(agentId);
-    if (trigger !== "manual" && timer?.lastTrigger) {
-      const elapsed = Date.now() - timer.lastTrigger;
-      if (elapsed < MIN_TRIGGER_INTERVAL_MS) {
-        log.debug("Heartbeat cooldown active", { agentId, elapsed, minInterval: MIN_TRIGGER_INTERVAL_MS });
-        return false;
-      }
     }
 
     // Check active hours

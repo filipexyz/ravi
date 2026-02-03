@@ -170,6 +170,9 @@ function getStatements(): SessionStatements {
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?"
     ),
+    updateDisplayName: db.prepare(
+      "UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"
+    ),
   };
 
   return stmts;
@@ -331,6 +334,14 @@ export function updateSessionSource(
     Date.now(),
     sessionKey
   );
+}
+
+export function updateSessionDisplayName(
+  sessionKey: string,
+  displayName: string
+): void {
+  const s = getStatements();
+  s.updateDisplayName.run(displayName, Date.now(), sessionKey);
 }
 
 /**

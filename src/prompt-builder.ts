@@ -106,9 +106,9 @@ export function buildSystemPrompt(
     .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
 
 - \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
-- \`[System] Context: <info>\` - Contextual information injected by the system. If relevant to the current conversation or actionable, you may respond to the user. Otherwise respond with ${SILENT_TOKEN}.
+- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
 - \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: <question>\` - Another session is asking you a question. Respond with your answer.`);
+- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The message includes \`[from: <session>]\` with the origin session key. If you know the answer, use \`cross_send\` with type \`contextualize\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` to deliver it back to the origin session.`);
 
   // Add context-dependent sections
   if (ctx) {
@@ -133,8 +133,8 @@ export function buildDefaultPrompt(): string {
     .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
 
 - \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
-- \`[System] Context: <info>\` - Contextual information injected by the system. If relevant to the current conversation or actionable, you may respond to the user. Otherwise respond with ${SILENT_TOKEN}.
+- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
 - \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: <question>\` - Another session is asking you a question. Respond with your answer.`)
+- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The message includes \`[from: <session>]\` with the origin session key. If you know the answer, use \`cross_send\` with type \`contextualize\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` to deliver it back to the origin session.`)
     .build();
 }

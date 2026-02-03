@@ -10,6 +10,7 @@ import {
   updateSdkSessionId,
   updateTokens,
   updateSessionSource,
+  updateSessionDisplayName,
   closeRouterDb,
   expandHome,
   type RouterConfig,
@@ -124,7 +125,6 @@ export interface PromptMessage {
   prompt: string;
   source?: MessageTarget;
   context?: MessageContext;
-  replyTo?: string; // origin session key for ask-type cross-send
 }
 
 /** Response message structure */
@@ -327,6 +327,11 @@ export class RaviBot {
       updateSessionSource(sessionKey, prompt.source);
     }
 
+    // Persist group name from context
+    if (prompt.context?.groupName) {
+      updateSessionDisplayName(sessionKey, prompt.context.groupName);
+    }
+
     log.info("Processing prompt", { sessionKey, agentId, cwd: agentCwd });
 
     // Save message
@@ -361,13 +366,6 @@ export class RaviBot {
 
       if (response.response) {
         saveMessage(sessionKey, "assistant", response.response);
-      }
-
-      // Forward response back to origin session for ask-type cross-send
-      if (prompt.replyTo && response.response) {
-        const replyPrompt = `[System] Context: Response from ${sessionKey}: ${response.response}`;
-        await notif.emit(`ravi.${prompt.replyTo}.prompt`, { prompt: replyPrompt });
-        log.info("Ask reply forwarded", { from: sessionKey, to: prompt.replyTo });
       }
 
       // Final response with usage (not sent to channel, just for tracking)

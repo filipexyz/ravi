@@ -62,19 +62,18 @@ export class CrossCommands {
     };
 
     const crossType = type as CrossType;
-    const prompt = `${PREFIX_MAP[crossType]} ${message}`;
+    let prompt: string;
 
-    const payload: Record<string, unknown> = { prompt, source };
-
-    // For ask type, inject origin session key so bot can forward the response back
     if (crossType === "ask") {
+      // Include origin session so the agent knows where to send the answer
       const ctx = getContext();
-      if (ctx?.sessionKey) {
-        payload.replyTo = ctx.sessionKey;
-      }
+      const origin = ctx?.sessionKey ?? "unknown";
+      prompt = `${PREFIX_MAP[crossType]} [from: ${origin}] ${message}`;
+    } else {
+      prompt = `${PREFIX_MAP[crossType]} ${message}`;
     }
 
-    await notif.emit(`ravi.${target}.prompt`, payload);
+    await notif.emit(`ravi.${target}.prompt`, { prompt, source } as Record<string, unknown>);
     console.log(`✓ [${type}] sent to ${target}`);
     return { success: true, target, type, source };
   }
@@ -84,14 +83,14 @@ export class CrossCommands {
     const sessions = listSessions();
 
     console.log("\nSessions with channel routing:\n");
-    console.log("  SESSION KEY                                          CHANNEL    CHAT");
+    console.log("  SESSION KEY                                          CHANNEL    NAME");
     console.log("  ---------------------------------------------------  ---------  ----");
 
     for (const s of sessions) {
       const key = s.sessionKey.padEnd(51);
       const channel = (s.lastChannel ?? "-").padEnd(9);
-      const chat = s.lastTo ?? "-";
-      console.log(`  ${key}  ${channel}  ${chat}`);
+      const name = s.displayName ?? s.lastTo ?? "-";
+      console.log(`  ${key}  ${channel}  ${name}`);
     }
 
     console.log(`\n  Total: ${sessions.length} sessions`);
