@@ -14,7 +14,7 @@ export class ServiceCommands {
   @Command({ name: "start", description: "Start the bot server" })
   start() {
     console.log("Starting Ravi bot server...");
-    const child = spawn("tsx", ["src/index.ts"], {
+    const child = spawn("bun", ["src/index.ts"], {
       stdio: "inherit",
       cwd: process.cwd(),
     });
@@ -36,7 +36,7 @@ export class ServiceCommands {
     if (session) args.push(session);
 
     console.log(`Starting TUI${session ? ` with session: ${session}` : ""}...`);
-    const child = spawn("tsx", args, {
+    const child = spawn("bun", args, {
       stdio: "inherit",
       cwd: process.cwd(),
     });
@@ -49,7 +49,7 @@ export class ServiceCommands {
   @Command({ name: "wa", description: "Start WhatsApp gateway" })
   wa() {
     console.log("Starting WhatsApp gateway...");
-    const child = spawn("tsx", ["src/wa.ts"], {
+    const child = spawn("bun", ["src/wa.ts"], {
       stdio: "inherit",
       cwd: process.cwd(),
     });
