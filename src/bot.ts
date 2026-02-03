@@ -23,7 +23,8 @@ import { HEARTBEAT_OK } from "./heartbeat/index.js";
 
 const log = logger.child("bot");
 
-const MAX_OUTPUT_LENGTH = 10000;
+const MAX_OUTPUT_LENGTH = 1000;
+const MAX_NOTIF_BYTES = 60000; // leave margin for notif 64KB limit
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -38,6 +39,35 @@ function truncateOutput(output: unknown): unknown {
     });
   }
   return output;
+}
+
+/** Emit to notif, truncating payload if it exceeds the size limit */
+async function safeEmit(topic: string, data: Record<string, unknown>): Promise<void> {
+  let json = JSON.stringify(data);
+  if (json.length <= MAX_NOTIF_BYTES) {
+    await notif.emit(topic, data);
+    return;
+  }
+  // Truncate the largest string values until it fits
+  const truncated = { ...data, _truncated: true };
+  for (const key of Object.keys(truncated)) {
+    const val = truncated[key];
+    if (typeof val === "string" && val.length > MAX_OUTPUT_LENGTH) {
+      truncated[key] = val.slice(0, MAX_OUTPUT_LENGTH) + "... [truncated]";
+    } else if (typeof val === "object" && val !== null) {
+      const s = JSON.stringify(val);
+      if (s.length > MAX_OUTPUT_LENGTH) {
+        truncated[key] = s.slice(0, MAX_OUTPUT_LENGTH) + "... [truncated]";
+      }
+    }
+  }
+  json = JSON.stringify(truncated);
+  if (json.length > MAX_NOTIF_BYTES) {
+    // Still too big - emit minimal event
+    await notif.emit(topic, { _truncated: true, type: (data as any).type ?? (data as any).event ?? "unknown" });
+    return;
+  }
+  await notif.emit(topic, truncated);
 }
 
 /** Message context for structured prompts */
@@ -320,7 +350,7 @@ export class RaviBot {
 
       // Emit all SDK events
       const onSdkEvent = async (event: Record<string, unknown>) => {
-        await notif.emit(`ravi.${sessionKey}.claude`, event);
+        await safeEmit(`ravi.${sessionKey}.claude`, event);
       };
 
       // Run with context so CLI tools can access session info
@@ -492,11 +522,11 @@ export class RaviBot {
               log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name, toolId: block.id });
 
               // Emit tool start event
-              notif.emit(`ravi.${session.sessionKey}.tool`, {
+              safeEmit(`ravi.${session.sessionKey}.tool`, {
                 event: "start",
                 toolId: block.id,
                 toolName: block.name,
-                input: block.input,
+                input: truncateOutput(block.input),
                 timestamp: new Date().toISOString(),
                 sessionKey: session.sessionKey,
                 agentId: agent.id,
@@ -537,7 +567,7 @@ export class RaviBot {
               const durationMs = activeSession.toolStartTime ? Date.now() - activeSession.toolStartTime : undefined;
 
               // Emit tool end event
-              notif.emit(`ravi.${session.sessionKey}.tool`, {
+              safeEmit(`ravi.${session.sessionKey}.tool`, {
                 event: "end",
                 toolId: activeSession.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
                 toolName: activeSession.currentToolName ?? "unknown",

@@ -494,8 +494,8 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
           message.media.data = buffer;
           log.debug("Audio downloaded", { size: buffer.length, mimetype: message.media.mimetype });
 
-          // Transcribe with Whisper
-          if (process.env.OPENAI_API_KEY) {
+          // Transcribe audio
+          if (process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) {
             const result = await transcribeAudio(buffer, message.media.mimetype);
             message.transcription = result.text;
             log.info("Audio transcribed", { textLength: result.text.length });
