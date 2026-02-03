@@ -124,6 +124,7 @@ export interface PromptMessage {
   prompt: string;
   source?: MessageTarget;
   context?: MessageContext;
+  replyTo?: string; // origin session key for ask-type cross-send
 }
 
 /** Response message structure */
@@ -360,6 +361,13 @@ export class RaviBot {
 
       if (response.response) {
         saveMessage(sessionKey, "assistant", response.response);
+      }
+
+      // Forward response back to origin session for ask-type cross-send
+      if (prompt.replyTo && response.response) {
+        const replyPrompt = `[System] Context: Response from ${sessionKey}: ${response.response}`;
+        await notif.emit(`ravi.${prompt.replyTo}.prompt`, { prompt: replyPrompt });
+        log.info("Ask reply forwarded", { from: sessionKey, to: prompt.replyTo });
       }
 
       // Final response with usage (not sent to channel, just for tracking)

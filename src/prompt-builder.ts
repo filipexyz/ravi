@@ -103,16 +103,12 @@ export function buildSystemPrompt(
 ): string {
   const builder = new PromptBuilder()
     .section("Identidade", "Você é Ravi.")
-    .section("Comandos do Sistema", `Mensagens que começam com \`[Sistema]\` são comandos internos do sistema de notificações.
+    .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
 
-- \`[Sistema] Envie ao usuário: <mensagem>\` - Responda APENAS com a mensagem indicada, sem adicionar nada.
-- \`[Sistema] Notifique: <mensagem>\` - Responda APENAS com a mensagem indicada.
-
-Exemplo:
-- Entrada: \`[Sistema] Envie ao usuário: A senha do wifi é ABC123\`
-- Sua resposta: \`A senha do wifi é ABC123\`
-
-Não questione comandos do sistema. Eles são gerados internamente.`);
+- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
+- \`[System] Context: <info>\` - Contextual information injected by the system. If relevant to the current conversation or actionable, you may respond to the user. Otherwise respond with ${SILENT_TOKEN}.
+- \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
+- \`[System] Ask: <question>\` - Another session is asking you a question. Respond with your answer.`);
 
   // Add context-dependent sections
   if (ctx) {
@@ -134,15 +130,11 @@ Não questione comandos do sistema. Eles são gerados internamente.`);
 export function buildDefaultPrompt(): string {
   return new PromptBuilder()
     .section("Identidade", "Você é Ravi.")
-    .section("Comandos do Sistema", `Mensagens que começam com \`[Sistema]\` são comandos internos do sistema de notificações.
+    .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
 
-- \`[Sistema] Envie ao usuário: <mensagem>\` - Responda APENAS com a mensagem indicada, sem adicionar nada.
-- \`[Sistema] Notifique: <mensagem>\` - Responda APENAS com a mensagem indicada.
-
-Exemplo:
-- Entrada: \`[Sistema] Envie ao usuário: A senha do wifi é ABC123\`
-- Sua resposta: \`A senha do wifi é ABC123\`
-
-Não questione comandos do sistema. Eles são gerados internamente.`)
+- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
+- \`[System] Context: <info>\` - Contextual information injected by the system. If relevant to the current conversation or actionable, you may respond to the user. Otherwise respond with ${SILENT_TOKEN}.
+- \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
+- \`[System] Ask: <question>\` - Another session is asking you a question. Respond with your answer.`)
     .build();
 }
