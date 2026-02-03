@@ -108,7 +108,8 @@ export function buildSystemPrompt(
 - \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
 - \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
 - \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The message includes \`[from: <session>]\` with the origin session key. If you know the answer, use \`cross_send\` with type \`contextualize\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` to deliver it back to the origin session.`);
+- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The \`[from: <session>]\` tag identifies who asked. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back.
+- \`[System] Answer: [from: <session>] <response>\` - Another agent answered a question you previously asked via \`ask\`. Use this information to continue what you were doing. You may use tools and respond to the user normally.`);
 
   // Add context-dependent sections
   if (ctx) {
@@ -135,6 +136,7 @@ export function buildDefaultPrompt(): string {
 - \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
 - \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
 - \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The message includes \`[from: <session>]\` with the origin session key. If you know the answer, use \`cross_send\` with type \`contextualize\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` to deliver it back to the origin session.`)
+- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The \`[from: <session>]\` tag identifies who asked. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back.
+- \`[System] Answer: [from: <session>] <response>\` - Another agent answered a question you previously asked via \`ask\`. Use this information to continue what you were doing. You may use tools and respond to the user normally.`)
     .build();
 }

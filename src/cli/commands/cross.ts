@@ -9,7 +9,7 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { getContext } from "../context.js";
 import { notif } from "../../notif.js";
 
-const VALID_TYPES = ["send", "contextualize", "execute", "ask"] as const;
+const VALID_TYPES = ["send", "contextualize", "execute", "ask", "answer"] as const;
 type CrossType = (typeof VALID_TYPES)[number];
 
 const PREFIX_MAP: Record<CrossType, string> = {
@@ -17,6 +17,7 @@ const PREFIX_MAP: Record<CrossType, string> = {
   contextualize: "[System] Context:",
   execute: "[System] Execute:",
   ask: "[System] Ask:",
+  answer: "[System] Answer:",
 };
 
 @Group({
@@ -27,7 +28,7 @@ export class CrossCommands {
   @Command({ name: "send", description: "Send a typed message to another session" })
   async send(
     @Arg("target", { description: "Target session key" }) target: string,
-    @Arg("type", { description: "Message type: send | contextualize | execute | ask" }) type: string,
+    @Arg("type", { description: "Message type: send | contextualize | execute | ask | answer" }) type: string,
     @Arg("message", { description: "Message to send" }) message: string
   ) {
     // Validate type
@@ -62,8 +63,8 @@ export class CrossCommands {
     const crossType = type as CrossType;
     let prompt: string;
 
-    if (crossType === "ask") {
-      // Include origin session so the agent knows where to send the answer
+    if (crossType === "ask" || crossType === "answer") {
+      // Include origin session so the agent knows where to reply / who answered
       const ctx = getContext();
       const origin = ctx?.sessionKey ?? "unknown";
       prompt = `${PREFIX_MAP[crossType]} [from: ${origin}] ${message}`;

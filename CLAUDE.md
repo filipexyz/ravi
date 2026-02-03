@@ -424,17 +424,31 @@ MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
 
 ## Cross-Session Messaging
 
-Agents can send messages to other sessions using CLI tools:
+Agents can send typed messages to other sessions using CLI tools:
 
 ```bash
 # From CLI
-ravi cross send agent:main:dm:5511999 "Lembrete: reunião em 10 minutos"
+ravi cross send agent:main:dm:5511999 send "Lembrete: reunião em 10 minutos"
 
 # From agent (via MCP tool)
-mcp__ravi-cli__cross_send agent:main:dm:5511999 "Mensagem do agente"
+mcp__ravi-cli__cross_send agent:main:dm:5511999 send "Mensagem do agente"
 ```
 
-The message is formatted as `[Sistema] Notifique: <message>` which instructs the target agent to relay the message to its channel.
+**Message Types:**
+
+| Type | Prefix | Behavior |
+|------|--------|----------|
+| `send` | `[System] Send:` | Agent responds with ONLY the message, adding nothing |
+| `contextualize` | `[System] Context:` | Agent remembers the info, no tools. Replies with short text or `@@SILENT@@` |
+| `execute` | `[System] Execute:` | Agent performs the task using tools, responds with result |
+| `ask` | `[System] Ask:` | Asks another agent a question. Includes `[from: <session>]` |
+| `answer` | `[System] Answer:` | Delivers a response to a previous `ask`. Includes `[from: <session>]` |
+
+**Ask/Answer flow:**
+1. Agent A: `cross_send(sessionB, "ask", "qual o status do deploy?")`
+2. Agent B receives `[System] Ask: [from: sessionA] qual o status do deploy?`
+3. Agent B: `cross_send(sessionA, "answer", "deploy concluído com sucesso")`
+4. Agent A receives `[System] Answer: [from: sessionB] deploy concluído com sucesso` — can use tools and respond normally
 
 ## Notif Singleton
 
