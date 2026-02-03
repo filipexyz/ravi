@@ -31,6 +31,7 @@ interface SessionRow {
   last_to: string | null;
   last_account_id: string | null;
   last_thread_id: string | null;
+  last_context: string | null;
   model_override: string | null;
   thinking_level: string | null;
   queue_mode: string | null;
@@ -66,6 +67,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     lastTo: row.last_to ?? undefined,
     lastAccountId: row.last_account_id ?? undefined,
     lastThreadId: row.last_thread_id ?? undefined,
+    lastContext: row.last_context ?? undefined,
     modelOverride: row.model_override ?? undefined,
     thinkingLevel: row.thinking_level as SessionEntry["thinkingLevel"],
     queueMode: row.queue_mode as SessionEntry["queueMode"],
@@ -101,6 +103,8 @@ interface SessionStatements {
   listAll: Statement;
   updateAgent: Statement;
   updateSource: Statement;
+  updateDisplayName: Statement;
+  updateContext: Statement;
 }
 
 let stmts: SessionStatements | null = null;
@@ -172,6 +176,9 @@ function getStatements(): SessionStatements {
     ),
     updateDisplayName: db.prepare(
       "UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"
+    ),
+    updateContext: db.prepare(
+      "UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"
     ),
   };
 
@@ -342,6 +349,17 @@ export function updateSessionDisplayName(
 ): void {
   const s = getStatements();
   s.updateDisplayName.run(displayName, Date.now(), sessionKey);
+}
+
+/**
+ * Update session's channel context (stable group/channel metadata as JSON)
+ */
+export function updateSessionContext(
+  sessionKey: string,
+  contextJson: string
+): void {
+  const s = getStatements();
+  s.updateContext.run(contextJson, Date.now(), sessionKey);
 }
 
 /**

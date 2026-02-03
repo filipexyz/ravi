@@ -8,6 +8,7 @@ import { getSession, listSessions } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { getContext } from "../context.js";
 import { notif } from "../../notif.js";
+import type { ChannelContext } from "../../bot.js";
 
 const VALID_TYPES = ["send", "contextualize", "execute", "ask", "answer"] as const;
 type CrossType = (typeof VALID_TYPES)[number];
@@ -29,7 +30,8 @@ export class CrossCommands {
   async send(
     @Arg("target", { description: "Target session key" }) target: string,
     @Arg("type", { description: "Message type: send | contextualize | execute | ask | answer" }) type: string,
-    @Arg("message", { description: "Message to send" }) message: string
+    @Arg("message", { description: "Message to send" }) message: string,
+    @Arg("sender", { required: false, description: "Who originally requested this (for ask/answer attribution)" }) sender?: string
   ) {
     // Validate type
     if (!VALID_TYPES.includes(type as CrossType)) {
@@ -64,15 +66,26 @@ export class CrossCommands {
     let prompt: string;
 
     if (crossType === "ask" || crossType === "answer") {
-      // Include origin session so the agent knows where to reply / who answered
+      // Include origin session and optional sender for attribution
       const ctx = getContext();
       const origin = ctx?.sessionKey ?? "unknown";
-      prompt = `${PREFIX_MAP[crossType]} [from: ${origin}] ${message}`;
+      const senderTag = sender ? `, sender: ${sender}` : "";
+      prompt = `${PREFIX_MAP[crossType]} [from: ${origin}${senderTag}] ${message}`;
     } else {
       prompt = `${PREFIX_MAP[crossType]} ${message}`;
     }
 
-    await notif.emit(`ravi.${target}.prompt`, { prompt, source } as Record<string, unknown>);
+    // Recover stored channel context from target session (group info, etc.)
+    let context: ChannelContext | undefined;
+    if (targetSession?.lastContext) {
+      try {
+        context = JSON.parse(targetSession.lastContext) as ChannelContext;
+      } catch {
+        // ignore parse errors
+      }
+    }
+
+    await notif.emit(`ravi.${target}.prompt`, { prompt, source, context } as Record<string, unknown>);
 
     if (source) {
       console.log(`✓ [${type}] sent to ${target} (routing: ${source.channel}, src: ${sourceOrigin})`);

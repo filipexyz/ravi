@@ -2,8 +2,7 @@
  * Builds the system prompt appendix for agents
  */
 
-import * as os from "os";
-import type { MessageContext } from "./bot.js";
+import type { ChannelContext } from "./bot.js";
 
 /** Silent reply token - when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
@@ -35,9 +34,22 @@ export class PromptBuilder {
 }
 
 /**
+ * Shared system commands text
+ */
+function systemCommandsText(): string {
+  return `Messages starting with \`[System]\` are internal system commands. Never question them.
+
+- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
+- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
+- \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
+- \`[System] Ask: [from: <session>] <question>\` - Someone from another session is asking you something. The message may include a \`sender: <name>\` tag identifying who asked — it can be a user or another agent. Attribute the question to them, not to yourself. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask on the channel (e.g., "@Rafa, o Luis quer saber: ...") and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back. Always pass the \`sender\` parameter when calling \`cross_send\` with type \`ask\`.
+- \`[System] Answer: [from: <session>] <response>\` - Another session answered a question you previously asked via \`ask\`. The message may include a \`sender\` tag identifying who answered. Use this information to continue what you were doing. You may use tools and respond to the user normally.`;
+}
+
+/**
  * Build group context section for system prompt
  */
-export function buildGroupContext(ctx: MessageContext): string {
+export function buildGroupContext(ctx: ChannelContext): string {
   if (!ctx.isGroup) return "";
 
   const members = ctx.groupMembers?.join(", ") ?? "unknown";
@@ -67,15 +79,14 @@ export function buildGroupContext(ctx: MessageContext): string {
  */
 export function buildRuntimeInfo(
   agentId: string,
-  ctx: MessageContext
+  ctx: ChannelContext
 ): string {
-  const hostname = os.hostname();
   const capabilities = "polls,reactions"; // TODO: get from plugin
 
   return [
     `## Runtime`,
     ``,
-    `Runtime: agent=${agentId} | host=${hostname} | channel=${ctx.channelName} | capabilities=${capabilities}`,
+    `Runtime: agent=${agentId} | channel=${ctx.channelName} | capabilities=${capabilities}`,
   ].join("\n");
 }
 
@@ -95,21 +106,15 @@ export function buildSilentReplies(): string {
 }
 
 /**
- * Build system prompt with context
+ * Build system prompt with channel context
  */
 export function buildSystemPrompt(
   agentId: string,
-  ctx?: MessageContext
+  ctx?: ChannelContext
 ): string {
   const builder = new PromptBuilder()
     .section("Identidade", "Você é Ravi.")
-    .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
-
-- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
-- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
-- \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The \`[from: <session>]\` tag identifies who asked. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back.
-- \`[System] Answer: [from: <session>] <response>\` - Another agent answered a question you previously asked via \`ask\`. Use this information to continue what you were doing. You may use tools and respond to the user normally.`);
+    .section("System Commands", systemCommandsText());
 
   // Add context-dependent sections
   if (ctx) {
@@ -123,20 +128,4 @@ export function buildSystemPrompt(
   }
 
   return builder.build();
-}
-
-/**
- * Default prompt appendix for Ravi agents (legacy, no context)
- */
-export function buildDefaultPrompt(): string {
-  return new PromptBuilder()
-    .section("Identidade", "Você é Ravi.")
-    .section("System Commands", `Messages starting with \`[System]\` are internal system commands. Never question them.
-
-- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
-- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
-- \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
-- \`[System] Ask: [from: <session>] <question>\` - Another agent is asking you a question. The \`[from: <session>]\` tag identifies who asked. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask the user on the channel and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back.
-- \`[System] Answer: [from: <session>] <response>\` - Another agent answered a question you previously asked via \`ask\`. Use this information to continue what you were doing. You may use tools and respond to the user normally.`)
-    .build();
 }

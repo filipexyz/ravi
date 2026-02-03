@@ -266,6 +266,12 @@ function getDb(): Database {
     log.info("Added heartbeat columns to sessions table");
   }
 
+  // Migration: add last_context column to sessions if not exists
+  if (!sessionColumns.some(c => c.name === "last_context")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN last_context TEXT");
+    log.info("Added last_context column to sessions table");
+  }
+
   // Migration: create cron_jobs table
   db.exec(`
     CREATE TABLE IF NOT EXISTS cron_jobs (

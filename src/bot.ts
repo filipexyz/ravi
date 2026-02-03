@@ -3,13 +3,14 @@ import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
-import { buildDefaultPrompt, buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
+import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
   updateSdkSessionId,
   updateTokens,
   updateSessionSource,
+  updateSessionContext,
   updateSessionDisplayName,
   closeRouterDb,
   expandHome,
@@ -86,6 +87,16 @@ export interface MessageContext {
   groupId?: string;
   groupMembers?: string[];
   timestamp: number;
+}
+
+/** Stable channel/group metadata persisted in session for cross-send reuse */
+export interface ChannelContext {
+  channelId: string;
+  channelName: string;
+  isGroup: boolean;
+  groupName?: string;
+  groupId?: string;
+  groupMembers?: string[];
 }
 
 /** Queued message waiting to be processed */
@@ -327,9 +338,21 @@ export class RaviBot {
       updateSessionSource(sessionKey, prompt.source);
     }
 
-    // Persist group name from context
-    if (prompt.context?.groupName) {
-      updateSessionDisplayName(sessionKey, prompt.context.groupName);
+    // Persist stable channel/group metadata for cross-send reuse
+    // Only store from gateway messages (have senderId), not from recovered cross-send context
+    if (prompt.context?.senderId) {
+      const channelCtx: ChannelContext = {
+        channelId: prompt.context.channelId,
+        channelName: prompt.context.channelName,
+        isGroup: prompt.context.isGroup,
+        groupName: prompt.context.groupName,
+        groupId: prompt.context.groupId,
+        groupMembers: prompt.context.groupMembers,
+      };
+      updateSessionContext(sessionKey, JSON.stringify(channelCtx));
+      if (prompt.context.groupName) {
+        updateSessionDisplayName(sessionKey, prompt.context.groupName);
+      }
     }
 
     log.info("Processing prompt", { sessionKey, agentId, cwd: agentCwd });
@@ -428,10 +451,8 @@ export class RaviBot {
       };
     }
 
-    // Build system prompt with context if available
-    const systemPromptAppend = prompt.context
-      ? buildSystemPrompt(agent.id, prompt.context)
-      : buildDefaultPrompt();
+    // Build system prompt with channel context if available
+    const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
 
     log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
 
