@@ -540,6 +540,8 @@ export class RaviBot {
             }
           }
           if (messageText) {
+            // Strip leading whitespace the model sometimes produces
+            messageText = messageText.trimStart();
             log.info("Assistant message", { text: messageText.slice(0, 100) });
             responseText += messageText;
 
