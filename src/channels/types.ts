@@ -74,6 +74,8 @@ export interface InboundMedia {
   caption?: string;
   data?: Buffer;
   url?: string;
+  localPath?: string;
+  sizeBytes?: number;
 }
 
 /** Quoted message info (for replies) */

@@ -41,15 +41,33 @@ function formatMessageContent(message: InboundMessage): string {
     return `[${label}]\nTranscript:\n${message.transcription}`;
   }
 
-  // Other media without text
-  if (message.media && !message.text) {
+  // Other media
+  if (message.media) {
+    const parts: string[] = [];
+
+    // Media label with optional caption
     const mediaLabel = message.media.caption
       ? `[${message.media.type}] ${message.media.caption}`
       : `[${message.media.type}]`;
-    return mediaLabel;
+    parts.push(mediaLabel);
+
+    // File path if downloaded, or size note if too large
+    if (message.media.localPath) {
+      parts.push(`[file: ${message.media.localPath}]`);
+    } else if (message.media.sizeBytes) {
+      const mb = (message.media.sizeBytes / 1024 / 1024).toFixed(1);
+      parts.push(`[file too large: ${mb}MB, not downloaded]`);
+    }
+
+    // Append text if present
+    if (message.text) {
+      parts.push(message.text);
+    }
+
+    return parts.join("\n");
   }
 
-  // Text (possibly with media caption already included)
+  // Text only
   return message.text ?? "[media]";
 }
 

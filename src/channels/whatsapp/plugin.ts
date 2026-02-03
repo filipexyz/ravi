@@ -42,6 +42,7 @@ import {
   downloadMedia,
 } from "./inbound.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
+import { saveMediaToTmp, MAX_MEDIA_BYTES } from "../../utils/media.js";
 import {
   sendMessage,
   sendTyping,
@@ -461,6 +462,34 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         }
       } catch (err) {
         log.warn("Failed to process audio", { error: err });
+      }
+    }
+
+    // Download non-audio media to /tmp for agent access
+    if (message.media && !isAudio) {
+      const knownSize = message.media.sizeBytes;
+      if (knownSize && knownSize > MAX_MEDIA_BYTES) {
+        log.info("Media too large, skipping download", { size: knownSize, limit: MAX_MEDIA_BYTES, type: message.media.type });
+      } else {
+        try {
+          const buffer = await downloadMedia(rawMessage);
+          if (buffer) {
+            if (buffer.length > MAX_MEDIA_BYTES) {
+              log.info("Downloaded media too large, discarding", { size: buffer.length, limit: MAX_MEDIA_BYTES });
+            } else {
+              const localPath = await saveMediaToTmp(
+                buffer,
+                message.id,
+                message.media.mimetype,
+                message.media.filename,
+              );
+              message.media.localPath = localPath;
+              log.debug("Media saved to tmp", { localPath, type: message.media.type, size: buffer.length });
+            }
+          }
+        } catch (err) {
+          log.warn("Failed to download media to tmp", { error: err });
+        }
       }
     }
 

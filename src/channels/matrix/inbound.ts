@@ -190,6 +190,7 @@ function extractMediaInfo(content: RoomMessageEventContent): InboundMedia | null
     mimetype,
     filename: content.body,
     url: mediaUrl,
+    sizeBytes: info?.size ?? undefined,
   };
 }
 

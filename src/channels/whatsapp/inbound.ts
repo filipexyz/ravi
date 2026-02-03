@@ -71,6 +71,7 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
       type: "image",
       mimetype: m.imageMessage.mimetype ?? "image/jpeg",
       caption: m.imageMessage.caption ?? undefined,
+      sizeBytes: Number(m.imageMessage.fileLength) || undefined,
     };
   }
 
@@ -80,6 +81,7 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
       type: "video",
       mimetype: m.videoMessage.mimetype ?? "video/mp4",
       caption: m.videoMessage.caption ?? undefined,
+      sizeBytes: Number(m.videoMessage.fileLength) || undefined,
     };
   }
 
@@ -88,6 +90,7 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
     return {
       type: "audio",
       mimetype: m.audioMessage.mimetype ?? "audio/ogg",
+      sizeBytes: Number(m.audioMessage.fileLength) || undefined,
     };
   }
 
@@ -98,6 +101,7 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
       mimetype: m.documentMessage.mimetype ?? "application/octet-stream",
       filename: m.documentMessage.fileName ?? undefined,
       caption: m.documentMessage.caption ?? undefined,
+      sizeBytes: Number(m.documentMessage.fileLength) || undefined,
     };
   }
 
@@ -106,6 +110,7 @@ export function extractMedia(message: WAMessage): InboundMedia | undefined {
     return {
       type: "sticker",
       mimetype: m.stickerMessage.mimetype ?? "image/webp",
+      sizeBytes: Number(m.stickerMessage.fileLength) || undefined,
     };
   }
 

@@ -62,6 +62,7 @@ import {
   getHealth,
 } from "./status.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
+import { saveMediaToTmp, MAX_MEDIA_BYTES } from "../../utils/media.js";
 import {
   isAllowed as isContactAllowed,
   savePendingContact,
@@ -503,6 +504,39 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
         }
       } catch (err) {
         log.warn("Failed to process audio:", err);
+      }
+    }
+
+    // Download non-audio media to /tmp for agent access
+    if (message.media && message.media.type !== "audio" && message.media.url) {
+      const knownSize = message.media.sizeBytes;
+      if (knownSize && knownSize > MAX_MEDIA_BYTES) {
+        log.info("Media too large, skipping download", { size: knownSize, limit: MAX_MEDIA_BYTES, type: message.media.type });
+      } else {
+        try {
+          const content = event.content as { file?: unknown; info?: { size?: number } };
+          const buffer = await downloadMatrixMedia({
+            client,
+            mxcUrl: message.media.url,
+            contentType: message.media.mimetype,
+            sizeBytes: content.info?.size,
+            maxBytes: MAX_MEDIA_BYTES,
+            file: content.file as import("./types.js").EncryptedFile | undefined,
+          });
+
+          if (buffer) {
+            const localPath = await saveMediaToTmp(
+              buffer,
+              message.id,
+              message.media.mimetype,
+              message.media.filename,
+            );
+            message.media.localPath = localPath;
+            log.debug("Media saved to tmp", { localPath, type: message.media.type, size: buffer.length });
+          }
+        } catch (err) {
+          log.warn("Failed to download media to tmp:", err);
+        }
       }
     }
 
