@@ -284,6 +284,14 @@ export class Gateway {
           const sessionKey = event.topic.split(".").slice(1, -1).join(".");
           const response = event.data as unknown as ResponseMessage;
 
+          log.debug("Response event received", {
+            sessionKey,
+            eventId: event.id,
+            keys: Object.keys(response),
+            hasEmitId: !!(response as any)._emitId,
+            emitId: (response as any)._emitId ?? "NONE",
+          });
+
           // Target is required to route to a channel
           const target = response.target;
           if (!target) {
@@ -312,12 +320,29 @@ export class Gateway {
           if (text) {
             // Validate _emitId to prevent ghost/duplicate responses from orphaned SDK subprocesses
             if (!(response as any)._emitId) {
-              log.warn("Dropping response without _emitId (ghost/orphan)", {
-                sessionKey, textPreview: text.slice(0, 120),
+              log.warn("GHOST RESPONSE DROPPED", {
+                sessionKey,
+                textPreview: text.slice(0, 200),
+                hasInstanceId: !!(response as any)._instanceId,
+                instanceId: (response as any)._instanceId ?? "NONE",
+                pid: (response as any)._pid ?? "NONE",
+                version: (response as any)._v ?? "NONE",
+                keys: Object.keys(response),
+                fullPayload: JSON.stringify(response).slice(0, 500),
+                // Full notif event tracing
+                eventId: event.id,
+                eventTimestamp: event.timestamp,
+                eventAttempt: event.attempt,
+                eventMaxAttempts: (event as any).maxAttempts,
+                eventTopic: event.topic,
               });
               continue;
             }
-            log.info("Sending response", { sessionKey, channel, chatId, textLen: text.length });
+            log.info("Sending response", {
+              sessionKey, channel, chatId, textLen: text.length,
+              emitId: (response as any)._emitId,
+              instanceId: (response as any)._instanceId ?? "?",
+            });
             await plugin.outbound.send(accountId, chatId, { text });
           }
         }

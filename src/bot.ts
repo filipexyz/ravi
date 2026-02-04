@@ -164,6 +164,8 @@ export class RaviBot {
   private processingNewPrompts = new Set<string>();
   /** Track abort controllers per session to kill orphaned SDK subprocesses */
   private sessionAbortControllers = new Map<string, AbortController>();
+  /** Unique instance ID to trace responses back to this daemon instance */
+  readonly instanceId = Math.random().toString(36).slice(2, 8);
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
@@ -172,12 +174,13 @@ export class RaviBot {
   }
 
   async start(): Promise<void> {
-    log.info("Starting Ravi bot...", { pid: process.pid });
+    log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
     initCliTools();
     this.running = true;
     this.subscribeToPrompts();
     log.info("Ravi bot started", {
       pid: process.pid,
+      instanceId: this.instanceId,
       agents: Object.keys(this.routerConfig.agents),
     });
   }
@@ -185,6 +188,26 @@ export class RaviBot {
   async stop(): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
+
+    // Abort ALL active SDK subprocesses to prevent orphans after daemon restart
+    if (this.sessionAbortControllers.size > 0) {
+      log.info("Aborting active SDK subprocesses", {
+        count: this.sessionAbortControllers.size,
+        sessions: [...this.sessionAbortControllers.keys()],
+      });
+      for (const [sessionKey, controller] of this.sessionAbortControllers) {
+        log.info("Aborting SDK subprocess", { sessionKey });
+        controller.abort();
+      }
+      this.sessionAbortControllers.clear();
+    }
+
+    // Clear active sessions
+    if (this.activeSessions.size > 0) {
+      log.info("Clearing active sessions", { count: this.activeSessions.size });
+      this.activeSessions.clear();
+    }
+
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
@@ -377,14 +400,22 @@ export class RaviBot {
     };
 
     try {
-      // Emit partial messages as they arrive (tagged with _emitId for ghost detection)
+      // Emit partial messages as they arrive (tagged for ghost detection + tracing)
       const onMessage = async (text: string) => {
         const emitId = Math.random().toString(36).slice(2, 8);
         log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
-        await notif.emit(`ravi.${sessionKey}.response`, {
+        const emitResult = await notif.emit(`ravi.${sessionKey}.response`, {
           response: text,
           target: prompt.source,
           _emitId: emitId,
+          _instanceId: this.instanceId,
+          _pid: process.pid,
+          _v: 2,
+        });
+        log.debug("Response emitted to notif", {
+          sessionKey, emitId,
+          notifEventId: emitResult.id,
+          notifTopic: emitResult.topic,
         });
       };
 
@@ -412,6 +443,9 @@ export class RaviBot {
         error: err instanceof Error ? err.message : "Unknown error",
         target: prompt.source,
         _emitId: emitId,
+        _instanceId: this.instanceId,
+        _pid: process.pid,
+        _v: 2,
       });
     }
   }
@@ -425,7 +459,17 @@ export class RaviBot {
     onSdkEvent?: (event: Record<string, unknown>) => Promise<void>
   ): Promise<ResponseMessage> {
     const runId = Math.random().toString(36).slice(2, 8);
-    log.info("processPrompt START", { runId, sessionKey: session.sessionKey, agentId: agent.id });
+    log.info("processPrompt START", {
+      runId,
+      sessionKey: session.sessionKey,
+      agentId: agent.id,
+      instanceId: this.instanceId,
+      pid: process.pid,
+      sdkSessionId: session.sdkSessionId ?? null,
+      resuming: !!session.sdkSessionId,
+      activeControllers: this.sessionAbortControllers.size,
+      activeSessions: this.activeSessions.size,
+    });
 
     // Abort any previous SDK subprocess for this session (prevents orphaned processes)
     const previousAbort = this.sessionAbortControllers.get(session.sessionKey);
@@ -544,10 +588,30 @@ export class RaviBot {
       }
     }, 30000); // Check every 30s
 
+    let sdkEventCount = 0;
+
     try {
       for await (const message of queryResult) {
+        sdkEventCount++;
         activeSession.lastActivity = Date.now();
-        log.debug("SDK event", { runId, type: message.type, sessionKey: session.sessionKey });
+
+        // Log EVERY SDK event with sequence number for tracing ghost sources
+        log.info("SDK event", {
+          runId,
+          seq: sdkEventCount,
+          type: message.type,
+          sessionKey: session.sessionKey,
+          ...(message.type === "assistant" ? {
+            contentTypes: message.message.content.map((b: any) => b.type),
+            textPreview: message.message.content
+              .filter((b: any) => b.type === "text")
+              .map((b: any) => b.text?.slice(0, 80))
+              .join("") || undefined,
+          } : {}),
+          ...(message.type === "result" ? {
+            sessionId: (message as any).session_id,
+          } : {}),
+        });
 
         // Emit all SDK events
         if (onSdkEvent) {

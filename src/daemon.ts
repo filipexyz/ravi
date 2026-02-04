@@ -81,10 +81,17 @@ async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
 
-  log.info(`Received ${signal}, shutting down...`);
+  log.info(`Received ${signal}, shutting down...`, { pid: process.pid });
 
   try {
-    // Stop runners first
+    // Stop bot FIRST to abort SDK subprocesses before anything else
+    if (bot) {
+      log.info("Stopping bot (aborting SDK subprocesses)...");
+      await bot.stop();
+      log.info("Bot stopped");
+    }
+
+    // Then stop runners
     await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
@@ -92,14 +99,11 @@ async function shutdown(signal: string) {
     if (gateway) {
       await gateway.stop();
     }
-    if (bot) {
-      await bot.stop();
-    }
   } catch (err) {
     log.error("Error during shutdown", err);
   }
 
-  log.info("Daemon stopped");
+  log.info("Daemon stopped", { pid: process.pid });
   process.exit(0);
 }
 
