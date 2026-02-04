@@ -480,10 +480,11 @@ export class OutboundCommands {
     const queue = dbGetQueue(entry.queueId);
     const agentId = queue?.agentId ?? getDefaultAgentId();
 
-    // Reset entry state
+    // Reset entry state (including context)
     dbUpdateEntry(id, {
       status: "pending",
       roundsCompleted: 0,
+      context: {},
       lastProcessedAt: undefined,
       lastSentAt: undefined,
       lastResponseAt: undefined,
