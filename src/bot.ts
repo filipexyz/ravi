@@ -159,6 +159,8 @@ export class RaviBot {
   private running = false;
   private activeSessions = new Map<string, ActiveSession>();
   private debounceStates = new Map<string, DebounceState>();
+  private promptSubscriptionActive = false;
+  private processingNewPrompts = new Set<string>();
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
@@ -185,6 +187,12 @@ export class RaviBot {
   }
 
   private async subscribeToPrompts(): Promise<void> {
+    if (this.promptSubscriptionActive) {
+      log.warn("Prompt subscription already active, skipping duplicate");
+      return;
+    }
+    this.promptSubscriptionActive = true;
+
     const topic = "ravi.*.prompt";
     log.info(`Subscribing to ${topic}`);
 
@@ -203,6 +211,8 @@ export class RaviBot {
       }
     } catch (err) {
       log.error("Subscription error", err);
+    } finally {
+      this.promptSubscriptionActive = false;
       if (this.running) {
         setTimeout(() => this.subscribeToPrompts(), 1000);
       }
@@ -315,8 +325,19 @@ export class RaviBot {
       }
     }
 
-    // No active session - process normally
-    await this.processNewPrompt(sessionKey, prompt);
+    // Guard: prevent duplicate processNewPrompt for the same session
+    // (can happen if notif delivers the same event twice via duplicate subscriptions)
+    if (this.processingNewPrompts.has(sessionKey)) {
+      log.warn("Duplicate prompt while initializing session, skipping", { sessionKey });
+      return;
+    }
+    this.processingNewPrompts.add(sessionKey);
+
+    try {
+      await this.processNewPrompt(sessionKey, prompt);
+    } finally {
+      this.processingNewPrompts.delete(sessionKey);
+    }
   }
 
   private async processNewPrompt(sessionKey: string, prompt: PromptMessage): Promise<void> {

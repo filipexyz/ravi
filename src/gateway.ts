@@ -143,6 +143,7 @@ export class Gateway {
   private channelManager: ChannelManager | null = null;
   private responseSubscriptions = new Map<string, AbortController>();
   private activeTargets = new Map<string, MessageTarget>();
+  private activeSubscriptions = new Set<string>();
 
   constructor(options: GatewayOptions = {}) {
     this.routerConfig = loadRouterConfig();
@@ -217,6 +218,12 @@ export class Gateway {
    * Pattern: {channelId}.*.inbound
    */
   private subscribeToInbound(): void {
+    if (this.activeSubscriptions.has("inbound")) {
+      log.warn("Inbound subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("inbound");
+
     const topics = this.plugins.map((p) => `${p.id}.*.inbound`);
     log.info("Subscribing to inbound topics", { topics });
 
@@ -241,7 +248,10 @@ export class Gateway {
       } catch (err) {
         if (this.running) {
           log.error("Inbound subscription error", err);
-          // Reconnect after delay
+        }
+      } finally {
+        this.activeSubscriptions.delete("inbound");
+        if (this.running) {
           setTimeout(() => this.subscribeToInbound(), 1000);
         }
       }
@@ -252,6 +262,12 @@ export class Gateway {
    * Subscribe to all bot responses and route based on target.
    */
   private subscribeToResponses(): void {
+    if (this.activeSubscriptions.has("responses")) {
+      log.warn("Response subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("responses");
+
     log.info("Subscribing to responses");
 
     (async () => {
@@ -295,7 +311,10 @@ export class Gateway {
       } catch (err) {
         if (this.running) {
           log.error("Response subscription error", err);
-          // Reconnect after delay
+        }
+      } finally {
+        this.activeSubscriptions.delete("responses");
+        if (this.running) {
           setTimeout(() => this.subscribeToResponses(), 1000);
         }
       }
@@ -306,6 +325,12 @@ export class Gateway {
    * Subscribe to Claude SDK events for typing heartbeat.
    */
   private subscribeToClaudeEvents(): void {
+    if (this.activeSubscriptions.has("claude")) {
+      log.warn("Claude events subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("claude");
+
     log.info("Subscribing to Claude events");
 
     (async () => {
@@ -341,6 +366,10 @@ export class Gateway {
       } catch (err) {
         if (this.running) {
           log.error("Claude events subscription error", err);
+        }
+      } finally {
+        this.activeSubscriptions.delete("claude");
+        if (this.running) {
           setTimeout(() => this.subscribeToClaudeEvents(), 1000);
         }
       }
@@ -351,6 +380,12 @@ export class Gateway {
    * Subscribe to direct send events from the outbound module.
    */
   private subscribeToDirectSend(): void {
+    if (this.activeSubscriptions.has("directSend")) {
+      log.warn("Direct send subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("directSend");
+
     log.info("Subscribing to outbound direct send");
 
     (async () => {
@@ -410,6 +445,10 @@ export class Gateway {
       } catch (err) {
         if (this.running) {
           log.error("Direct send subscription error", err);
+        }
+      } finally {
+        this.activeSubscriptions.delete("directSend");
+        if (this.running) {
           setTimeout(() => this.subscribeToDirectSend(), 1000);
         }
       }
@@ -421,6 +460,12 @@ export class Gateway {
    * When the runner processes an entry with a pending receipt, it emits here.
    */
   private subscribeToOutboundReceipts(): void {
+    if (this.activeSubscriptions.has("receipts")) {
+      log.warn("Receipts subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("receipts");
+
     log.info("Subscribing to outbound receipts");
 
     (async () => {
@@ -452,6 +497,10 @@ export class Gateway {
       } catch (err) {
         if (this.running) {
           log.error("Outbound receipt subscription error", err);
+        }
+      } finally {
+        this.activeSubscriptions.delete("receipts");
+        if (this.running) {
           setTimeout(() => this.subscribeToOutboundReceipts(), 1000);
         }
       }

@@ -63,9 +63,24 @@ export class DaemonCommands {
 
   @Command({ name: "restart", description: "Restart the daemon" })
   restart() {
-    this.stop();
-    // Wait a bit for cleanup
-    setTimeout(() => this.start(), 1000);
+    if (this.isRunning()) {
+      this.stop();
+      // Wait for the old process to fully die before starting new one
+      const deadline = Date.now() + 15000;
+      process.stdout.write("Waiting for daemon to stop");
+      while (Date.now() < deadline) {
+        if (!this.isRunning()) {
+          console.log(" done");
+          break;
+        }
+        process.stdout.write(".");
+        try { execSync("sleep 0.5", { stdio: "pipe" }); } catch {}
+      }
+      if (this.isRunning()) {
+        console.warn("\nWarning: old daemon still running, forcing start anyway");
+      }
+    }
+    this.start();
   }
 
   @Command({ name: "status", description: "Show daemon status" })

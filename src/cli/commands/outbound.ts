@@ -501,6 +501,85 @@ export class OutboundCommands {
     console.log(`  Created:        ${new Date(entry.createdAt).toLocaleString()}`);
   }
 
+  @Command({ name: "report", description: "Full outbound report with all entries and context" })
+  report(@Arg("queueId", { description: "Queue ID (optional, all queues if omitted)", required: false }) queueId?: string) {
+    const queues = queueId ? [dbGetQueue(queueId)].filter(Boolean) as import("../outbound/types.js").OutboundQueue[] : dbListQueues();
+
+    if (queues.length === 0) {
+      console.log("No queues found.");
+      return;
+    }
+
+    for (const queue of queues) {
+      const entries = dbListEntries(queue.id);
+      console.log(`# ${queue.name} (${queue.status})`);
+      console.log(`Interval: ${formatDurationMs(queue.intervalMs)} | Agent: ${queue.agentId}`);
+      if (queue.followUp) console.log(`Follow-up: ${JSON.stringify(queue.followUp)} | Max rounds: ${queue.maxRounds ?? "-"}`);
+      console.log(`Entries: ${entries.length}\n`);
+
+      for (const entry of entries) {
+        const name = (entry.context.name as string) ?? "-";
+        console.log(`## ${name} (${formatPhone(entry.contactPhone)})`);
+        console.log(`ID: ${entry.id} | Status: ${entry.status} | Qual: ${entry.qualification ?? "-"} | Rounds: ${entry.roundsCompleted}`);
+
+        const { name: _n, ...ctx } = entry.context;
+        if (Object.keys(ctx).length > 0) {
+          console.log(`Context: ${JSON.stringify(ctx)}`);
+        }
+
+        if (entry.lastResponseText) {
+          console.log(`Last response: ${entry.lastResponseText}`);
+        }
+        if (entry.lastResponseAt) {
+          console.log(`Last response at: ${new Date(entry.lastResponseAt).toLocaleString()}`);
+        }
+        if (entry.lastSentAt) {
+          console.log(`Last sent at: ${new Date(entry.lastSentAt).toLocaleString()}`);
+        }
+        console.log("");
+      }
+    }
+  }
+
+  @Command({ name: "chat", description: "Show chat history for an outbound entry" })
+  chat(
+    @Arg("id", { description: "Entry ID" }) id: string,
+    @Option({ flags: "--limit <n>", description: "Number of messages (default: all)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Skip first N messages" }) offset?: string,
+  ) {
+    const entry = dbGetEntry(id);
+    if (!entry) fail(`Entry not found: ${id}`);
+
+    const queue = dbGetQueue(entry.queueId);
+    const agentId = queue?.agentId ?? "filipe";
+    const sessionId = `agent:${agentId}:outbound:${queue?.id}:${entry.contactPhone}`;
+
+    const { getHistory } = require("../../db.js") as typeof import("../../db.js");
+    let messages = getHistory(sessionId);
+
+    const off = offset ? parseInt(offset, 10) : 0;
+    const lim = limit ? parseInt(limit, 10) : undefined;
+
+    if (off > 0) messages = messages.slice(off);
+    if (lim) messages = messages.slice(0, lim);
+
+    const name = (entry.context.name as string) ?? formatPhone(entry.contactPhone);
+    console.log(`\nChat: ${name} (${formatPhone(entry.contactPhone)})`);
+    console.log(`Session: ${sessionId}`);
+    console.log(`Messages: ${messages.length}${off ? ` (offset: ${off})` : ""}${lim ? ` (limit: ${lim})` : ""}\n`);
+
+    for (const msg of messages) {
+      const time = new Date(msg.created_at + "Z").toLocaleString("pt-BR", {
+        timeZone: "America/Sao_Paulo",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const role = msg.role === "user" ? "SYSTEM" : "AGENT";
+      console.log(`[${time}] ${role}:`);
+      console.log(`${msg.content}\n`);
+    }
+  }
+
   // ========================================================================
   // Agent tool commands (used within outbound sessions)
   // ========================================================================
