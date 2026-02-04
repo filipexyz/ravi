@@ -343,7 +343,7 @@ function getDb(): Database {
       contact_phone TEXT NOT NULL,
       contact_email TEXT,
       position INTEGER NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error')),
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
       context TEXT DEFAULT '{}',
       rounds_completed INTEGER DEFAULT 0,
       last_processed_at INTEGER,
@@ -384,6 +384,47 @@ function getDb(): Database {
   if (!queueColumns.some(c => c.name === "max_rounds")) {
     db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
     log.info("Added max_rounds column to outbound_queues table");
+  }
+
+  // Migration: add 'agent' to outbound_entries status CHECK constraint
+  // SQLite requires table recreation to modify CHECK constraints
+  const entrySql = (db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='outbound_entries'"
+  ).get() as { sql: string } | undefined)?.sql ?? "";
+  if (entrySql && !entrySql.includes("'agent'")) {
+    db.exec("PRAGMA foreign_keys=OFF");
+    db.exec(`
+      CREATE TABLE outbound_entries_new (
+        id TEXT PRIMARY KEY,
+        queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
+        contact_phone TEXT NOT NULL,
+        contact_email TEXT,
+        position INTEGER NOT NULL,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
+        context TEXT DEFAULT '{}',
+        qualification TEXT,
+        rounds_completed INTEGER DEFAULT 0,
+        last_processed_at INTEGER,
+        last_sent_at INTEGER,
+        last_response_at INTEGER,
+        last_response_text TEXT,
+        pending_receipt TEXT,
+        sender_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO outbound_entries_new SELECT
+        id, queue_id, contact_phone, contact_email, position, status, context, qualification,
+        rounds_completed, last_processed_at, last_sent_at, last_response_at, last_response_text,
+        pending_receipt, sender_id, created_at, updated_at
+      FROM outbound_entries;
+      DROP TABLE outbound_entries;
+      ALTER TABLE outbound_entries_new RENAME TO outbound_entries;
+      CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
+      CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
+    `);
+    db.exec("PRAGMA foreign_keys=ON");
+    log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
   }
 
   // Create default agent if none exist

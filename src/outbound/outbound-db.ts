@@ -649,6 +649,16 @@ export function dbRecordEntryResponse(id: string, text: string): void {
     WHERE id = ?
   `).run(now, combined, now, id);
   log.debug("Recorded entry response", { id });
+
+  // Reactivate completed queue so runner picks up the response
+  if (entry) {
+    const queue = dbGetQueue(entry.queueId);
+    if (queue && queue.status === "completed") {
+      dbUpdateQueue(queue.id, { status: "active" });
+      dbUpdateQueueState(queue.id, { lastRunAt: now, lastStatus: "reactivated", nextRunAt: now });
+      log.info("Reactivated completed queue after new response", { queueId: queue.id });
+    }
+  }
 }
 
 /**
@@ -751,7 +761,8 @@ export function dbSetEntrySenderId(entryId: string, senderId: string): void {
 
 /**
  * Find outbound entry by sender ID (e.g., LID).
- * Only matches entries in active queues with pending/active status.
+ * Matches any contacted entry (including done) so security bypass works
+ * and the lead can always reach the agent.
  */
 export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | null {
   const db = getDb();
@@ -759,8 +770,7 @@ export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | n
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id = ?
-      AND q.status = 'active'
-      AND e.status IN ('pending', 'active')
+      AND e.status != 'agent'
     ORDER BY e.created_at ASC
     LIMIT 1
   `).get(senderId) as EntryRow | undefined;
@@ -770,7 +780,6 @@ export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | n
 /**
  * Find outbound entry that has been sent to but has no sender_id yet.
  * Used as a fallback for LID contacts on first interaction.
- * Only matches entries in active queues with pending/active status.
  */
 export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
   const db = getDb();
@@ -779,8 +788,7 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id IS NULL
       AND e.last_sent_at IS NOT NULL
-      AND q.status = 'active'
-      AND e.status IN ('pending', 'active')
+      AND e.status != 'agent'
     ORDER BY e.last_sent_at DESC
     LIMIT 1
   `).get() as EntryRow | undefined;
@@ -789,7 +797,7 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
 
 /**
  * Find outbound entry for a contact phone.
- * Only matches entries in active queues with pending/active status.
+ * Matches any contacted entry (including done) for security bypass.
  */
 export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
   const db = getDb();
@@ -797,8 +805,7 @@ export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.contact_phone = ?
-      AND q.status = 'active'
-      AND e.status IN ('pending', 'active')
+      AND e.status != 'agent'
     ORDER BY e.created_at ASC
     LIMIT 1
   `).get(phone) as EntryRow | undefined;

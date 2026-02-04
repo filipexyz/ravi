@@ -460,13 +460,13 @@ export class Gateway {
     if (!message.isGroup && message.outboundEntryId) {
       const outboundEntry = dbGetEntry(message.outboundEntryId);
 
-      if (outboundEntry && ['pending', 'active'].includes(outboundEntry.status)) {
+      if (outboundEntry && outboundEntry.status !== 'agent') {
         log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
           senderId: message.senderId,
           entryId: outboundEntry.id,
         });
 
-        // Record the response text on the entry
+        // Record the response text on the entry (reactivates completed queues)
         const content = formatMessageContent(message);
         dbRecordEntryResponse(outboundEntry.id, content);
 
@@ -474,6 +474,9 @@ export class Gateway {
         if (!outboundEntry.senderId) {
           dbSetEntrySenderId(outboundEntry.id, message.senderId);
         }
+
+        // Notify runner to re-arm timer (queue may have been reactivated)
+        notif.emit("ravi.outbound.refresh", {}).catch(() => {});
 
         return;
       }

@@ -7,7 +7,7 @@
  */
 
 export type QueueStatus = "active" | "paused" | "completed";
-export type EntryStatus = "pending" | "active" | "done" | "skipped" | "error";
+export type EntryStatus = "pending" | "active" | "done" | "skipped" | "error" | "agent";
 export type QualificationStatus = "cold" | "warm" | "interested" | "qualified" | "rejected";
 
 /**

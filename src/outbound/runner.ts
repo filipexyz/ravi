@@ -333,7 +333,8 @@ export class OutboundRunner {
     parts.push("");
     parts.push("## Available Actions");
     parts.push(`- \`mcp__ravi-cli__outbound_send ${entry.contactPhone} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
-    parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Mark entry as done`);
+    parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Lead qualificado, encerrar`);
+    parts.push(`- \`mcp__ravi-cli__outbound_complete ${entry.id}\` — Re-encerrar entry (quando contato já processado manda nova mensagem)`);
     parts.push(`- \`mcp__ravi-cli__outbound_skip ${entry.id}\` — Skip for now`);
     parts.push(`- \`mcp__ravi-cli__outbound_context ${entry.id} <json>\` — Save context for next round`);
     parts.push(`- \`mcp__ravi-cli__outbound_qualify ${entry.id} <status>\` — Set qualification (cold/warm/interested/qualified/rejected)`);
@@ -491,7 +492,7 @@ export class OutboundRunner {
     }
 
     parts.push("");
-    parts.push("Decida se vale mandar um follow-up ou não.");
+    parts.push("Decida se vale mandar um follow-up ou não. Se não quiser mais tentar, use outbound_skip para pular.");
 
     return parts.join("\n");
   }

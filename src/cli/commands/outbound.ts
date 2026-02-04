@@ -7,7 +7,6 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
-import { loadRouterConfig, resolveRoute } from "../../router/index.js";
 import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -39,6 +38,7 @@ function statusColor(status: string): string {
     case "completed": return "\x1b[36m";
     case "pending": return "\x1b[37m";
     case "done": return "\x1b[32m";
+    case "agent": return "\x1b[35m";
     case "skipped": return "\x1b[90m";
     case "error": return "\x1b[31m";
     default: return "\x1b[0m";
@@ -530,38 +530,22 @@ export class OutboundCommands {
     }
   }
 
-  @Command({ name: "done", description: "Mark an entry as done and notify main agent" })
-  async done(@Arg("id", { description: "Entry ID" }) id: string) {
+  @Command({ name: "done", description: "Mark entry as done" })
+  done(@Arg("id", { description: "Entry ID" }) id: string) {
     const entry = dbGetEntry(id);
     if (!entry) fail(`Entry not found: ${id}`);
 
-    const queue = dbGetQueue(entry.queueId);
+    dbUpdateEntry(id, { status: "done" });
+    console.log(`✓ Entry marked as done: ${id}`);
+  }
 
-    dbMarkEntryDone(id);
+  @Command({ name: "complete", description: "Complete entry (no more follow-ups)" })
+  complete(@Arg("id", { description: "Entry ID" }) id: string) {
+    const entry = dbGetEntry(id);
+    if (!entry) fail(`Entry not found: ${id}`);
 
-    // Build qualification summary from entry context
-    const ctx = entry.context;
-    const parts: string[] = [];
-    parts.push(`Lead qualificado pelo outbound (${queue?.name ?? "queue"}):`);
-    parts.push(`Telefone: ${entry.contactPhone}`);
-    if (ctx.name) parts.push(`Nome: ${ctx.name}`);
-    if (entry.contactEmail) parts.push(`Email: ${entry.contactEmail}`);
-    for (const [key, value] of Object.entries(ctx)) {
-      if (key === "name") continue;
-      parts.push(`${key}: ${value}`);
-    }
-
-    // Resolve target session for the contact on the default/routed agent
-    const routerConfig = loadRouterConfig();
-    const resolved = resolveRoute(routerConfig, { phone: entry.contactPhone });
-    const targetSession = resolved.sessionKey;
-
-    // Send contextualize to the main agent so it has the lead info (fire and forget)
-    const prompt = `[System] Context: ${parts.join("\n")}`;
-    notif.emit(`ravi.${targetSession}.prompt`, { prompt }).catch(() => {});
-
-    console.log(`✓ Entry marked done: ${id}`);
-    console.log(`  Notified ${targetSession}`);
+    dbUpdateEntry(id, { status: "done" });
+    console.log(`✓ Entry completed: ${id}`);
   }
 
   @Command({ name: "skip", description: "Skip an entry" })
