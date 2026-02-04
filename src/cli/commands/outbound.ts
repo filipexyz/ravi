@@ -7,8 +7,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
-import { getDefaultTimezone, getDefaultAgentId } from "../../router/router-db.js";
-import { deleteSession } from "../../router/index.js";
+import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
 import { normalizePhone, formatPhone, findContactsByTag } from "../../contacts.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/index.js";
 import {
@@ -490,14 +489,14 @@ export class OutboundCommands {
       pendingReceipt: undefined,
     });
 
-    // Delete the SDK session so conversation starts fresh
+    // Delete the SDK session directly so conversation starts fresh
     const sessionKey = `agent:${agentId}:outbound:${entry.queueId}:${entry.contactPhone}`;
-    const deleted = deleteSession(sessionKey);
+    const db = getDb();
+    const result = db.run("DELETE FROM sessions WHERE session_key = ?", sessionKey);
+    const deleted = result.changes > 0;
 
     console.log(`✓ Entry reset: ${id} (${formatPhone(entry.contactPhone)})`);
-    if (deleted) {
-      console.log(`  Session cleared: ${sessionKey}`);
-    }
+    console.log(`  Session ${deleted ? "cleared" : "not found"}: ${sessionKey}`);
   }
 
   @Command({ name: "run", description: "Manually trigger a queue", aliases: ["trigger"] })
