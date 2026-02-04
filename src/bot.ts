@@ -355,7 +355,13 @@ export class RaviBot {
       }
     }
 
-    log.info("Processing prompt", { sessionKey, agentId, cwd: agentCwd });
+    log.info("Processing prompt", {
+      sessionKey,
+      agentId,
+      cwd: agentCwd,
+      sdkSessionId: session.sdkSessionId ?? null,
+      resuming: !!session.sdkSessionId,
+    });
 
     // Save message
     saveMessage(sessionKey, "user", prompt.prompt);

@@ -239,12 +239,23 @@ export class OutboundRunner {
     }
 
     // Build prompt: full context for outreach, concise for follow-up
-    const prompt = entry.lastResponseText
+    const isFollowUp = !!entry.lastResponseText;
+    const prompt = isFollowUp
       ? this.buildFollowUpPrompt(queue, entry)
       : this.buildOutreachPrompt(queue, entry);
 
     // Session key: agent:{agentId}:outbound:{queueId}:{phone}
     const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+
+    log.info("Sending prompt to agent", {
+      entryId: entry.id,
+      phone: entry.contactPhone,
+      isFollowUp,
+      roundsCompleted: entry.roundsCompleted,
+      lastResponseText: entry.lastResponseText ?? null,
+      sessionKey,
+      prompt,
+    });
 
     // Emit prompt
     await notif.emit(`ravi.${sessionKey}.prompt`, {
