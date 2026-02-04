@@ -444,10 +444,11 @@ function getDb(): Database {
 
 /**
  * Get the number of rows changed by the last INSERT/UPDATE/DELETE.
- * bun:sqlite tracks this on the database instance.
+ * Uses SQLite's changes() function since bun:sqlite doesn't expose db.changes.
  */
 function getDbChanges(): number {
-  return (getDb() as unknown as { changes: number }).changes;
+  const row = getDb().prepare("SELECT changes() AS c").get() as { c: number } | null;
+  return row?.c ?? 0;
 }
 
 // ============================================================================

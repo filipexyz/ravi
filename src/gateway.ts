@@ -305,6 +305,14 @@ export class Gateway {
           }
 
           if (text) {
+            // Validate _emitId to prevent ghost/duplicate responses from orphaned SDK subprocesses
+            if (!(response as any)._emitId) {
+              log.warn("Dropping response without _emitId (ghost/orphan)", {
+                sessionKey, textPreview: text.slice(0, 120),
+              });
+              continue;
+            }
+            log.info("Sending response", { sessionKey, channel, chatId, textLen: text.length });
             await plugin.outbound.send(accountId, chatId, { text });
           }
         }

@@ -108,6 +108,7 @@ interface QueuedMessage {
 /** Active session state for interrupt handling */
 interface ActiveSession {
   query: Query;
+  abortController: AbortController;
   toolRunning: boolean;
   currentToolId?: string;
   currentToolName?: string;
@@ -161,6 +162,8 @@ export class RaviBot {
   private debounceStates = new Map<string, DebounceState>();
   private promptSubscriptionActive = false;
   private processingNewPrompts = new Set<string>();
+  /** Track abort controllers per session to kill orphaned SDK subprocesses */
+  private sessionAbortControllers = new Map<string, AbortController>();
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
@@ -169,11 +172,12 @@ export class RaviBot {
   }
 
   async start(): Promise<void> {
-    log.info("Starting Ravi bot...");
+    log.info("Starting Ravi bot...", { pid: process.pid });
     initCliTools();
     this.running = true;
     this.subscribeToPrompts();
     log.info("Ravi bot started", {
+      pid: process.pid,
       agents: Object.keys(this.routerConfig.agents),
     });
   }
@@ -229,7 +233,7 @@ export class RaviBot {
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
     const debounceMs = agent?.debounceMs;
 
-    log.info("handlePrompt debounce check", { sessionKey, agentId, debounceMs });
+    log.debug("handlePrompt", { sessionKey, agentId, debounceMs });
 
     // If debounce is configured, use debounce flow
     if (debounceMs && debounceMs > 0) {
@@ -245,18 +249,12 @@ export class RaviBot {
     const existing = this.debounceStates.get(sessionKey);
 
     if (existing) {
-      // Add to existing debounce, reset timer
-      log.info("Debounce: adding message", {
-        sessionKey,
-        debounceMs,
-        messageCount: existing.messages.length + 1
-      });
+      log.debug("Debounce: adding message", { sessionKey, count: existing.messages.length + 1 });
       clearTimeout(existing.timer);
       existing.messages.push({ prompt, source: prompt.source });
       existing.timer = setTimeout(() => this.flushDebounce(sessionKey), debounceMs);
     } else {
-      // Start new debounce
-      log.info("Debounce: starting", { sessionKey, debounceMs });
+      log.debug("Debounce: starting", { sessionKey, debounceMs });
       const state: DebounceState = {
         messages: [{ prompt, source: prompt.source }],
         timer: setTimeout(() => this.flushDebounce(sessionKey), debounceMs),
@@ -276,11 +274,7 @@ export class RaviBot {
     const combinedPrompt = state.messages.map(m => m.prompt.prompt).join("\n\n");
     const lastSource = state.messages[state.messages.length - 1].source;
 
-    log.info("Debounce: flushing", {
-      sessionKey,
-      messageCount: state.messages.length,
-      combinedLength: combinedPrompt.length
-    });
+    log.info("Debounce: flushing", { sessionKey, messageCount: state.messages.length });
 
     // Process the combined message
     await this.handlePromptImmediate(sessionKey, {
@@ -291,32 +285,20 @@ export class RaviBot {
 
   private async handlePromptImmediate(sessionKey: string, prompt: PromptMessage): Promise<void> {
     const active = this.activeSessions.get(sessionKey);
-    log.info("handlePrompt called", {
-      sessionKey,
-      hasActiveSession: !!active,
-      toolRunning: active?.toolRunning,
-      queueSize: active?.messageQueue.length
-    });
 
     if (active) {
       // Session already active - queue or interrupt
       if (active.toolRunning) {
-        // Tool running - queue message and wait for it to finish
-        log.info("Tool running, queueing message", {
-          sessionKey,
-          queueSize: active.messageQueue.length + 1
-        });
+        log.info("Tool running, queueing message", { sessionKey, queueSize: active.messageQueue.length + 1 });
         active.messageQueue.push({ prompt, source: prompt.source });
         return;
       } else {
-        // No tool running - interrupt immediately
-        log.info("Interrupting session for new message (no tool running)", { sessionKey });
+        log.info("Interrupting for new message", { sessionKey });
         active.messageQueue.push({ prompt, source: prompt.source });
         if (!active.interrupted) {
           active.interrupted = true;
           try {
             await active.query.interrupt();
-            log.info("Interrupt sent successfully", { sessionKey });
           } catch (err) {
             log.error("Interrupt failed", { sessionKey, error: err });
           }
@@ -395,13 +377,15 @@ export class RaviBot {
     };
 
     try {
-      // Emit partial messages as they arrive
+      // Emit partial messages as they arrive (tagged with _emitId for ghost detection)
       const onMessage = async (text: string) => {
-        const partialResponse: ResponseMessage = {
+        const emitId = Math.random().toString(36).slice(2, 8);
+        log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
+        await notif.emit(`ravi.${sessionKey}.response`, {
           response: text,
           target: prompt.source,
-        };
-        await notif.emit(`ravi.${sessionKey}.response`, partialResponse as Record<string, unknown>);
+          _emitId: emitId,
+        });
       };
 
       // Emit all SDK events
@@ -418,17 +402,17 @@ export class RaviBot {
         saveMessage(sessionKey, "assistant", response.response);
       }
 
-      // Final response with usage (not sent to channel, just for tracking)
       if (response.usage) {
         log.info("Completed", { sessionKey, tokens: response.usage.input_tokens + response.usage.output_tokens });
       }
     } catch (err) {
       log.error("Query failed", { sessionKey, error: err });
-      const errorResponse: ResponseMessage = {
+      const emitId = Math.random().toString(36).slice(2, 8);
+      await notif.emit(`ravi.${sessionKey}.response`, {
         error: err instanceof Error ? err.message : "Unknown error",
         target: prompt.source,
-      };
-      await notif.emit(`ravi.${sessionKey}.response`, errorResponse as Record<string, unknown>);
+        _emitId: emitId,
+      });
     }
   }
 
@@ -440,6 +424,18 @@ export class RaviBot {
     onMessage?: (text: string) => Promise<void>,
     onSdkEvent?: (event: Record<string, unknown>) => Promise<void>
   ): Promise<ResponseMessage> {
+    const runId = Math.random().toString(36).slice(2, 8);
+    log.info("processPrompt START", { runId, sessionKey: session.sessionKey, agentId: agent.id });
+
+    // Abort any previous SDK subprocess for this session (prevents orphaned processes)
+    const previousAbort = this.sessionAbortControllers.get(session.sessionKey);
+    if (previousAbort) {
+      log.warn("Aborting previous SDK subprocess", { runId, sessionKey: session.sessionKey });
+      previousAbort.abort();
+    }
+    const abortController = new AbortController();
+    this.sessionAbortControllers.set(session.sessionKey, abortController);
+
     let responseText = "";
     let inputTokens = 0;
     let outputTokens = 0;
@@ -460,18 +456,13 @@ export class RaviBot {
     let permissionOptions: Record<string, unknown>;
     if (agent.allowedTools) {
       const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
-      log.info("Tool restriction", {
-        agentId: agent.id,
-        allowedTools: agent.allowedTools,
-        disallowedTools: disallowed
-      });
+      log.debug("Tool restriction", { agentId: agent.id, disallowedTools: disallowed });
       permissionOptions = {
         disallowedTools: disallowed,
-        // Use allowedTools to auto-approve the allowed tools
         allowedTools: agent.allowedTools,
       };
     } else {
-      log.info("Bypass mode (no tool restriction)", { agentId: agent.id });
+      log.debug("Bypass mode", { agentId: agent.id });
       permissionOptions = {
         permissionMode: "bypassPermissions" as const,
         allowDangerouslySkipPermissions: true
@@ -513,6 +504,7 @@ export class RaviBot {
         model,
         cwd: agentCwd,
         resume: session.sdkSessionId,
+        abortController,
         ...permissionOptions,
         mcpServers: {
           "ravi-cli": cliMcpServer,
@@ -529,6 +521,7 @@ export class RaviBot {
     // Register active session for interrupt handling
     const activeSession: ActiveSession = {
       query: queryResult,
+      abortController,
       toolRunning: false,
       messageQueue: [],
       interrupted: false,
@@ -553,12 +546,8 @@ export class RaviBot {
 
     try {
       for await (const message of queryResult) {
-        activeSession.lastActivity = Date.now(); // Reset watchdog
-        log.debug("SDK message", {
-        type: message.type,
-        toolRunning: activeSession.toolRunning,
-        queueSize: activeSession.messageQueue.length
-      });
+        activeSession.lastActivity = Date.now();
+        log.debug("SDK event", { runId, type: message.type, sessionKey: session.sessionKey });
 
         // Emit all SDK events
         if (onSdkEvent) {
@@ -578,9 +567,8 @@ export class RaviBot {
               activeSession.currentToolId = block.id;
               activeSession.currentToolName = block.name;
               activeSession.toolStartTime = Date.now();
-              log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name, toolId: block.id });
+              log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name });
 
-              // Emit tool start event
               safeEmit(`ravi.${session.sessionKey}.tool`, {
                 event: "start",
                 toolId: block.id,
@@ -593,17 +581,14 @@ export class RaviBot {
             }
           }
           if (messageText) {
-            // Strip leading whitespace the model sometimes produces
             messageText = messageText.trimStart();
-            log.info("Assistant message", { text: messageText.slice(0, 100) });
+            log.info("Assistant message", { runId, text: messageText.slice(0, 100) });
             responseText += messageText;
 
-            // Skip silent responses - don't emit to channel
             if (messageText.trim() === SILENT_TOKEN) {
-              log.info("Silent response detected, not emitting", { sessionKey: session.sessionKey });
+              log.info("Silent response, not emitting", { sessionKey: session.sessionKey });
             } else if (messageText.trim() === HEARTBEAT_OK) {
-              // Heartbeat OK - nothing to report, suppress output
-              log.info("Heartbeat OK - nothing to report", { sessionKey: session.sessionKey });
+              log.info("Heartbeat OK", { sessionKey: session.sessionKey });
             } else if (onMessage) {
               await onMessage(messageText);
             }
@@ -612,14 +597,6 @@ export class RaviBot {
 
         // Detect tool end (user message with tool_result)
         if (message.type === "user") {
-          // Log full message structure for debugging
-          log.debug("User message received", {
-            sessionKey: session.sessionKey,
-            messageKeys: Object.keys(message),
-            hasMessage: !!(message as any).message,
-            hasToolUseResult: !!(message as any).tool_use_result
-          });
-
           const content = (message as any).message?.content;
           if (Array.isArray(content)) {
             const hasToolResult = content.some((b: any) => b.type === "tool_result");
@@ -627,7 +604,6 @@ export class RaviBot {
               const toolResult = content.find((b: any) => b.type === "tool_result");
               const durationMs = activeSession.toolStartTime ? Date.now() - activeSession.toolStartTime : undefined;
 
-              // Emit tool end event
               safeEmit(`ravi.${session.sessionKey}.tool`, {
                 event: "end",
                 toolId: activeSession.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
@@ -644,20 +620,19 @@ export class RaviBot {
               activeSession.currentToolId = undefined;
               activeSession.currentToolName = undefined;
               activeSession.toolStartTime = undefined;
-              log.info("Tool finished", { sessionKey: session.sessionKey });
+              log.debug("Tool finished", { sessionKey: session.sessionKey });
 
               // Check if there are pending messages - interrupt to process them
               if (activeSession.messageQueue.length > 0 && !activeSession.interrupted) {
-                log.info("Tool finished, interrupting for pending messages", {
+                log.info("Interrupting for pending messages", {
                   sessionKey: session.sessionKey,
                   queueSize: activeSession.messageQueue.length
                 });
                 activeSession.interrupted = true;
                 await queryResult.interrupt();
-                log.info("Interrupt completed, breaking loop", { sessionKey: session.sessionKey });
                 break;
               } else if (activeSession.messageQueue.length > 0 && activeSession.interrupted) {
-                log.info("Already interrupted, waiting for loop to end", { sessionKey: session.sessionKey });
+                log.debug("Already interrupted, waiting for loop to end", { sessionKey: session.sessionKey });
               }
             }
           }
@@ -666,7 +641,7 @@ export class RaviBot {
         if (message.type === "result") {
           inputTokens = message.usage?.input_tokens ?? 0;
           outputTokens = message.usage?.output_tokens ?? 0;
-          log.info("Result", { inputTokens, outputTokens, sessionId: message.session_id });
+          log.info("Result", { runId, inputTokens, outputTokens, sessionId: message.session_id });
 
           if ("session_id" in message && message.session_id) {
             updateSdkSessionId(session.sessionKey, message.session_id);
@@ -676,8 +651,19 @@ export class RaviBot {
         }
       }
     } finally {
-      log.info("processPrompt finally block", { sessionKey: session.sessionKey });
+      log.info("processPrompt END", { runId, sessionKey: session.sessionKey });
       clearInterval(watchdog);
+
+      // Abort the SDK subprocess immediately to prevent orphaned processes
+      // This is critical: after interrupt+break, the subprocess may still be alive
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+
+      // Clean up abort controller only if it's still ours (not replaced by a newer run)
+      if (this.sessionAbortControllers.get(session.sessionKey) === abortController) {
+        this.sessionAbortControllers.delete(session.sessionKey);
+      }
 
       // Get pending messages before cleaning up
       const pendingMessages = [...activeSession.messageQueue];

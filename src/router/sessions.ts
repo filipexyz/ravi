@@ -155,7 +155,7 @@ function getStatements(): SessionStatements {
     `),
     getByKey: db.prepare("SELECT * FROM sessions WHERE session_key = ?"),
     getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ?"),
-    getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"),
+    getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? OR session_key LIKE 'agent:' || ? || ':%' ORDER BY updated_at DESC"),
     updateSdkId: db.prepare("UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"),
     updateTokens: db.prepare(`
       UPDATE sessions SET
@@ -271,7 +271,7 @@ export function getSessionBySdkId(sdkSessionId: string): SessionEntry | null {
  */
 export function getSessionsByAgent(agentId: string): SessionEntry[] {
   const s = getStatements();
-  const rows = s.getByAgent.all(agentId) as SessionRow[];
+  const rows = s.getByAgent.all(agentId, agentId) as SessionRow[];
   return rows.map(rowToEntry);
 }
 
