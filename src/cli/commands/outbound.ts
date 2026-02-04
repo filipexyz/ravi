@@ -7,7 +7,8 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
-import { getDefaultTimezone } from "../../router/router-db.js";
+import { getDefaultTimezone, getDefaultAgentId } from "../../router/router-db.js";
+import { deleteSession } from "../../router/index.js";
 import { normalizePhone, formatPhone, findContactsByTag } from "../../contacts.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/index.js";
 import {
@@ -469,11 +470,15 @@ export class OutboundCommands {
     }
   }
 
-  @Command({ name: "reset", description: "Reset an entry to pending (clear rounds, responses, receipts)" })
+  @Command({ name: "reset", description: "Reset an entry to pending (clear rounds, responses, session)" })
   reset(@Arg("id", { description: "Entry ID" }) id: string) {
     const entry = dbGetEntry(id);
     if (!entry) fail(`Entry not found: ${id}`);
 
+    const queue = dbGetQueue(entry.queueId);
+    const agentId = queue?.agentId ?? getDefaultAgentId();
+
+    // Reset entry state
     dbUpdateEntry(id, {
       status: "pending",
       roundsCompleted: 0,
@@ -484,7 +489,15 @@ export class OutboundCommands {
       senderId: undefined,
       pendingReceipt: undefined,
     });
+
+    // Delete the SDK session so conversation starts fresh
+    const sessionKey = `agent:${agentId}:outbound:${entry.queueId}:${entry.contactPhone}`;
+    const deleted = deleteSession(sessionKey);
+
     console.log(`✓ Entry reset: ${id} (${formatPhone(entry.contactPhone)})`);
+    if (deleted) {
+      console.log(`  Session cleared: ${sessionKey}`);
+    }
   }
 
   @Command({ name: "run", description: "Manually trigger a queue", aliases: ["trigger"] })
