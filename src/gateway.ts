@@ -363,6 +363,7 @@ export class Gateway {
             to: string;
             text: string;
             typingDelayMs?: number;
+            pauseMs?: number;
           };
 
           const plugin = this.pluginsById.get(data.channel);
@@ -372,6 +373,11 @@ export class Gateway {
           }
 
           try {
+            // Pause before typing (simulates reading/thinking)
+            if (data.pauseMs && data.pauseMs > 0) {
+              await new Promise(resolve => setTimeout(resolve, data.pauseMs));
+            }
+
             if (data.typingDelayMs && data.typingDelayMs > 0) {
               await plugin.outbound.sendTyping(data.accountId, data.to, true);
               await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));

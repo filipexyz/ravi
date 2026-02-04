@@ -18,6 +18,7 @@ export interface DirectSendInput {
   accountId?: string;
   sessionKey?: string;
   typingDelayMs?: number;
+  pauseMs?: number;
 }
 
 export interface DirectSendResult {
@@ -58,6 +59,7 @@ export async function directSend(input: DirectSendInput): Promise<DirectSendResu
       to,
       text,
       typingDelayMs: input.typingDelayMs,
+      pauseMs: input.pauseMs,
     });
 
     // Record outbound activity

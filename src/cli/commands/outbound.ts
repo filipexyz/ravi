@@ -420,6 +420,7 @@ export class OutboundCommands {
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--typing-delay <ms>", description: "Typing indicator delay in ms before sending" }) typingDelay?: string,
+    @Option({ flags: "--pause <ms>", description: "Pause in ms before typing (simulates reading/thinking)" }) pause?: string,
   ) {
     const normalized = normalizePhone(to);
 
@@ -428,6 +429,7 @@ export class OutboundCommands {
       text: message,
       accountId: account,
       typingDelayMs: typingDelay ? parseInt(typingDelay, 10) : undefined,
+      pauseMs: pause ? parseInt(pause, 10) : undefined,
     });
 
     if (result.success) {
