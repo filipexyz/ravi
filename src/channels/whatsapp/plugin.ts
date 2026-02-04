@@ -59,7 +59,7 @@ import {
   getHealth,
   heartbeat,
 } from "./status.js";
-import { normalizePhone } from "./normalize.js";
+import { normalizePhone, phoneToJid } from "./normalize.js";
 import {
   isAllowed as isContactAllowed,
   savePendingContact,
@@ -67,7 +67,7 @@ import {
   getContactName,
   saveDiscoveredContact,
 } from "../../contacts.js";
-import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindUnmappedActiveEntry, dbSetPendingReceipt } from "../../outbound/index.js";
+import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindEntriesWithoutSenderId, dbSetEntrySenderId, dbSetPendingReceipt } from "../../outbound/index.js";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child("wa:plugin");
@@ -280,6 +280,31 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
     }
 
     await sendReaction(socket, chatId, messageId, emoji);
+  }
+
+  async resolveJid(accountId: string, phone: string): Promise<string | null> {
+    const socket = sessionManager.getSocket(accountId);
+    if (!socket) return null;
+
+    try {
+      const jid = phoneToJid(phone);
+      if (!jid) return null;
+
+      // Use local LID mapping store (no network request)
+      const lidMapping = socket.signalRepository?.lidMapping;
+      if (lidMapping?.getLIDForPN) {
+        const lid = await lidMapping.getLIDForPN(jid);
+        log.info("getLIDForPN result", { phone, jid, lid });
+        if (lid) {
+          return normalizePhone(lid);
+        }
+      }
+
+      return null;
+    } catch (err) {
+      log.warn("Failed to resolve JID", { phone, error: err });
+      return null;
+    }
   }
 }
 
@@ -517,9 +542,46 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     // Check if sender is in an active outbound queue (bypass security + defer read receipt)
     let outboundMatch: import("../../outbound/types.js").OutboundEntry | null = null;
     if (!message.isGroup) {
-      outboundMatch = message.senderPhone
-        ? dbFindActiveEntryByPhone(message.senderPhone)
-        : (dbFindActiveEntryBySenderId(message.senderId) ?? dbFindUnmappedActiveEntry());
+      if (message.senderPhone) {
+        // Phone-based lookup (direct match)
+        outboundMatch = dbFindActiveEntryByPhone(message.senderPhone);
+      } else {
+        // LID-based lookup: first try direct senderId match
+        outboundMatch = dbFindActiveEntryBySenderId(message.senderId);
+
+        // If no direct match, iterate all entries without senderId and resolve via getLIDForPN
+        if (!outboundMatch) {
+          const socket = sessionManager.getSocket(accountId);
+          const lidMapping = socket?.signalRepository?.lidMapping;
+          if (lidMapping?.getLIDForPN) {
+            const unmappedEntries = dbFindEntriesWithoutSenderId();
+            for (const entry of unmappedEntries) {
+              const entryJid = phoneToJid(entry.contactPhone);
+              if (!entryJid) continue;
+              try {
+                const resolvedLid = await lidMapping.getLIDForPN(entryJid);
+                if (resolvedLid) {
+                  const normalizedLid = normalizePhone(resolvedLid);
+                  if (normalizedLid === message.senderId) {
+                    // Found the match — persist the senderId mapping
+                    dbSetEntrySenderId(entry.id, message.senderId);
+                    outboundMatch = entry;
+                    log.info("LID matched via getLIDForPN iteration", {
+                      entryId: entry.id,
+                      phone: entry.contactPhone,
+                      lid: message.senderId,
+                    });
+                    break;
+                  }
+                }
+              } catch (err) {
+                log.debug("getLIDForPN failed for entry", { entryId: entry.id, error: err });
+              }
+            }
+          }
+        }
+      }
+
       if (outboundMatch) {
         message.outboundEntryId = outboundMatch.id;
         log.info("Outbound contact detected, bypassing security", {

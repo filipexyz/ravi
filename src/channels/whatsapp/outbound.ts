@@ -77,7 +77,7 @@ export async function sendMessage(
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         result = await socket.sendMessage(jid, content);
-        log.debug("Message sent", { jid, messageId: result?.key?.id, attempt });
+        log.info("Message sent", { jid, key: JSON.stringify(result?.key), attempt });
         return {
           success: true,
           messageId: result?.key?.id ?? undefined,

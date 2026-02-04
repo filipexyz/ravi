@@ -224,6 +224,9 @@ export interface OutboundAdapter<_T = unknown> {
     messageId: string,
     emoji: string
   ): Promise<void>;
+
+  /** Resolve a phone number to its actual JID/LID (optional) */
+  resolveJid?(accountId: string, phone: string): Promise<string | null>;
 }
 
 /**

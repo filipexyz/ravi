@@ -796,6 +796,22 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
 }
 
 /**
+ * Find all outbound entries that have been sent to but have no sender_id yet.
+ * Used for LID resolution: we check each entry's phone against the LID mapping.
+ */
+export function dbFindEntriesWithoutSenderId(): OutboundEntry[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT e.* FROM outbound_entries e
+    WHERE e.sender_id IS NULL
+      AND e.last_sent_at IS NOT NULL
+      AND e.status != 'agent'
+    ORDER BY e.last_sent_at DESC
+  `).all() as EntryRow[];
+  return rows.map(rowToEntry);
+}
+
+/**
  * Find outbound entry for a contact phone.
  * Matches any contacted entry (including done) for security bypass.
  */

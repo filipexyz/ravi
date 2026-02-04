@@ -190,6 +190,7 @@ export class Gateway {
     // Subscribe to deferred outbound read receipts
     this.subscribeToOutboundReceipts();
 
+
     log.info("Gateway started");
   }
 
@@ -392,6 +393,15 @@ export class Gateway {
             const entry = dbFindActiveEntryByPhone(data.to);
             if (entry) {
               dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
+
+              // Resolve LID from local mapping store
+              if (!entry.senderId && plugin.outbound.resolveJid) {
+                const resolved = await plugin.outbound.resolveJid(data.accountId, data.to);
+                if (resolved && resolved !== data.to) {
+                  dbSetEntrySenderId(entry.id, resolved);
+                  log.info("LID resolved from mapping store", { entryId: entry.id, phone: data.to, lid: resolved });
+                }
+              }
             }
           } catch (err) {
             log.error("Direct send delivery failed", { to: data.to, error: err });

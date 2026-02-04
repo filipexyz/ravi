@@ -505,18 +505,19 @@ export class OutboundCommands {
   // Agent tool commands (used within outbound sessions)
   // ========================================================================
 
-  @Command({ name: "send", description: "Send a message directly to a contact" })
+  @Command({ name: "send", description: "Send a message to an outbound entry's contact" })
   async send(
-    @Arg("to", { description: "Phone number" }) to: string,
+    @Arg("entryId", { description: "Entry ID" }) entryId: string,
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--typing-delay <ms>", description: "Typing indicator delay in ms before sending" }) typingDelay?: string,
     @Option({ flags: "--pause <ms>", description: "Pause in ms before typing (simulates reading/thinking)" }) pause?: string,
   ) {
-    const normalized = normalizePhone(to);
+    const entry = dbGetEntry(entryId);
+    if (!entry) fail(`Entry not found: ${entryId}`);
 
     const result = await directSend({
-      to: normalized,
+      to: entry.contactPhone,
       text: message,
       accountId: account,
       typingDelayMs: typingDelay ? parseInt(typingDelay, 10) : undefined,
@@ -524,7 +525,7 @@ export class OutboundCommands {
     });
 
     if (result.success) {
-      console.log(`✓ Message sent to ${formatPhone(normalized)}`);
+      console.log(`✓ Message sent to ${formatPhone(entry.contactPhone)}`);
     } else {
       fail(`Send failed: ${result.error}`);
     }

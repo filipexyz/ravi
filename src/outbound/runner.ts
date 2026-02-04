@@ -332,7 +332,7 @@ export class OutboundRunner {
     parts.push(queue.instructions);
     parts.push("");
     parts.push("## Available Actions");
-    parts.push(`- \`mcp__ravi-cli__outbound_send ${entry.contactPhone} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
+    parts.push(`- \`mcp__ravi-cli__outbound_send ${entry.id} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
     parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Lead qualificado, encerrar`);
     parts.push(`- \`mcp__ravi-cli__outbound_complete ${entry.id}\` — Re-encerrar entry (quando contato já processado manda nova mensagem)`);
     parts.push(`- \`mcp__ravi-cli__outbound_skip ${entry.id}\` — Skip for now`);

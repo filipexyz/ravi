@@ -42,6 +42,7 @@ export {
   dbFindActiveEntryByPhone,
   dbFindActiveEntryBySenderId,
   dbFindUnmappedActiveEntry,
+  dbFindEntriesWithoutSenderId,
   dbSetPendingReceipt,
   dbClearPendingReceipt,
   dbClearResponseText,
