@@ -556,9 +556,9 @@ export class OutboundCommands {
     const resolved = resolveRoute(routerConfig, { phone: entry.contactPhone });
     const targetSession = resolved.sessionKey;
 
-    // Send contextualize to the main agent so it has the lead info
+    // Send contextualize to the main agent so it has the lead info (fire and forget)
     const prompt = `[System] Context: ${parts.join("\n")}`;
-    await notif.emit(`ravi.${targetSession}.prompt`, { prompt });
+    notif.emit(`ravi.${targetSession}.prompt`, { prompt }).catch(() => {});
 
     console.log(`✓ Entry marked done: ${id}`);
     console.log(`  Notified ${targetSession}`);
