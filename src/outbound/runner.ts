@@ -317,23 +317,31 @@ export class OutboundRunner {
 
     // Contact info
     const contact = getContact(entry.contactPhone);
+    const contextName = entry.context.name as string | undefined;
+
+    parts.push(`Telefone: ${entry.contactPhone}`);
+
+    // Name: prefer contacts DB, fallback to entry context
+    const name = contact?.name ?? contextName;
+    if (name) parts.push(`Nome: ${name}`);
+
+    // Email: prefer contacts DB, fallback to entry field
+    const email = contact?.email ?? entry.contactEmail;
+    if (email) parts.push(`Email: ${email}`);
+
+    // Contact-level metadata
     if (contact) {
-      parts.push(`Telefone: ${entry.contactPhone}`);
-      if (contact.name) parts.push(`Nome: ${contact.name}`);
-      if (contact.email) parts.push(`Email: ${contact.email}`);
       if (contact.tags.length > 0) parts.push(`Tags: ${contact.tags.join(", ")}`);
       if (Object.keys(contact.notes).length > 0) {
         parts.push(`Notas: ${JSON.stringify(contact.notes)}`);
       }
-    } else {
-      parts.push(`Telefone: ${entry.contactPhone}`);
-      if (entry.contactEmail) parts.push(`Email: ${entry.contactEmail}`);
     }
 
-    // Entry context
-    if (Object.keys(entry.context).length > 0) {
+    // Entry context (exclude 'name' since it's shown above)
+    const { name: _name, ...restContext } = entry.context;
+    if (Object.keys(restContext).length > 0) {
       parts.push("");
-      parts.push(`Contexto: ${JSON.stringify(entry.context)}`);
+      parts.push(`Contexto: ${JSON.stringify(restContext)}`);
     }
 
     return parts.join("\n");

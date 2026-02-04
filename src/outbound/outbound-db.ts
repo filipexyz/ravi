@@ -551,6 +551,10 @@ export function dbUpdateEntryContext(id: string, ctx: Record<string, unknown>): 
   }
 
   const merged = { ...entry.context, ...ctx };
+  // Remove keys set to null
+  for (const key of Object.keys(merged)) {
+    if (merged[key] === null) delete merged[key];
+  }
   const now = Date.now();
   db.prepare(
     "UPDATE outbound_entries SET context = ?, updated_at = ? WHERE id = ?"

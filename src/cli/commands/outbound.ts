@@ -98,8 +98,10 @@ export class OutboundCommands {
       console.log(`  Name:      ${queue.name}`);
       console.log(`  Interval:  ${formatDurationMs(queue.intervalMs)}`);
       console.log(`  Status:    paused`);
-      console.log(`\nAdd entries: ravi outbound add ${queue.id} <phone>`);
-      console.log(`Start:       ravi outbound start ${queue.id}`);
+      console.log(`\nAdd entries:`);
+      console.log(`  ravi outbound add ${queue.id} <phone> --name "João Silva"`);
+      console.log(`  ravi outbound add ${queue.id} <phone> --name "Maria" --context '{"company":"Acme","role":"CTO"}'`);
+      console.log(`\nStart: ravi outbound start ${queue.id}`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -312,8 +314,10 @@ export class OutboundCommands {
   add(
     @Arg("queueId", { description: "Queue ID" }) queueId: string,
     @Arg("phone", { description: "Phone number" }) phone: string,
+    @Option({ flags: "--name <name>", description: "Contact name (required)" }) name?: string,
     @Option({ flags: "--email <email>", description: "Contact email" }) email?: string,
     @Option({ flags: "--tag <tag>", description: "Add all contacts with this tag" }) tag?: string,
+    @Option({ flags: "--context <json>", description: "Extra context as JSON (e.g., '{\"company\":\"Acme\"}')" }) contextJson?: string,
   ) {
     const queue = dbGetQueue(queueId);
     if (!queue) fail(`Queue not found: ${queueId}`);
@@ -332,16 +336,46 @@ export class OutboundCommands {
 
     const normalized = normalizePhone(phone);
 
+    // Build context with name + any extra JSON
+    const context: Record<string, unknown> = {};
+    if (name) context.name = name;
+    if (contextJson) {
+      try {
+        const extra = JSON.parse(contextJson);
+        Object.assign(context, extra);
+      } catch {
+        fail("Invalid --context JSON");
+      }
+    }
+
     try {
       const entry = dbAddEntry({
         queueId,
         contactPhone: normalized,
         contactEmail: email,
+        context,
       });
 
       console.log(`✓ Added entry: ${entry.id}`);
       console.log(`  Phone:    ${formatPhone(normalized)}`);
+      if (name) console.log(`  Name:     ${name}`);
       console.log(`  Position: ${entry.position}`);
+      if (Object.keys(context).length > (name ? 1 : 0)) {
+        console.log(`  Context:  ${JSON.stringify(context)}`);
+      }
+
+      // Hint about missing info
+      if (!name || !contextJson) {
+        console.log("");
+        if (!name) {
+          console.log(`  Warning: no name. Add with:`);
+          console.log(`    ravi outbound context ${entry.id} '{"name":"Contact Name"}'`);
+        }
+        if (!contextJson) {
+          console.log(`  Tip: add context so the agent can personalize the approach:`);
+          console.log(`    ravi outbound context ${entry.id} '{"company":"Acme","role":"CTO"}'`);
+        }
+      }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -361,20 +395,21 @@ export class OutboundCommands {
     }
 
     console.log(`\nEntries for "${queue.name}":\n`);
-    console.log("  ID        POS  PHONE                  STATUS    ROUNDS  LAST RESPONSE");
-    console.log("  --------  ---  --------------------   --------  ------  ----------------");
+    console.log("  ID        POS  PHONE                  NAME                 STATUS    ROUNDS  LAST RESPONSE");
+    console.log("  --------  ---  --------------------   -------------------  --------  ------  ----------------");
 
     for (const entry of entries) {
       const id = entry.id.padEnd(8);
       const pos = String(entry.position).padEnd(3);
       const phone = formatPhone(entry.contactPhone).padEnd(20);
+      const entryName = ((entry.context.name as string) ?? "-").slice(0, 19).padEnd(19);
       const status = `${statusColor(entry.status)}${entry.status.padEnd(8)}${RESET}`;
       const rounds = String(entry.roundsCompleted).padEnd(6);
       const lastResp = entry.lastResponseText
         ? entry.lastResponseText.slice(0, 16) + (entry.lastResponseText.length > 16 ? "..." : "")
         : "-";
 
-      console.log(`  ${id}  ${pos}  ${phone}   ${status}  ${rounds}  ${lastResp}`);
+      console.log(`  ${id}  ${pos}  ${phone}   ${entryName}  ${status}  ${rounds}  ${lastResp}`);
     }
 
     console.log(`\n  Total: ${entries.length} entries`);
@@ -390,6 +425,7 @@ export class OutboundCommands {
     console.log(`\nOutbound Entry: ${id}\n`);
     console.log(`  Queue:          ${queue?.name ?? entry.queueId}`);
     console.log(`  Phone:          ${formatPhone(entry.contactPhone)}`);
+    if (entry.context.name) console.log(`  Name:           ${entry.context.name}`);
     if (entry.contactEmail) console.log(`  Email:          ${entry.contactEmail}`);
     console.log(`  Position:       ${entry.position}`);
     console.log(`  Status:         ${statusColor(entry.status)}${entry.status}${RESET}`);
@@ -468,7 +504,9 @@ export class OutboundCommands {
     try {
       const ctx = JSON.parse(json);
       dbUpdateEntryContext(id, ctx);
+      const updated = dbGetEntry(id)!;
       console.log(`✓ Context updated: ${id}`);
+      console.log(`  ${JSON.stringify(updated.context)}`);
     } catch {
       fail("Invalid JSON");
     }
