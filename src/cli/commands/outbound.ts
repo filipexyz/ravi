@@ -469,7 +469,25 @@ export class OutboundCommands {
     }
   }
 
-  @Command({ name: "run", description: "Manually trigger a queue" })
+  @Command({ name: "reset", description: "Reset an entry to pending (clear rounds, responses, receipts)" })
+  reset(@Arg("id", { description: "Entry ID" }) id: string) {
+    const entry = dbGetEntry(id);
+    if (!entry) fail(`Entry not found: ${id}`);
+
+    dbUpdateEntry(id, {
+      status: "pending",
+      roundsCompleted: 0,
+      lastProcessedAt: undefined,
+      lastSentAt: undefined,
+      lastResponseAt: undefined,
+      lastResponseText: undefined,
+      senderId: undefined,
+      pendingReceipt: undefined,
+    });
+    console.log(`✓ Entry reset: ${id} (${formatPhone(entry.contactPhone)})`);
+  }
+
+  @Command({ name: "run", description: "Manually trigger a queue", aliases: ["trigger"] })
   async run(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
     if (!queue) fail(`Queue not found: ${id}`);

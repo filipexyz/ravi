@@ -471,9 +471,21 @@ export function dbUpdateEntry(id: string, updates: Partial<OutboundEntry>): Outb
     fields.push("contact_email = ?");
     values.push(updates.contactEmail ?? null);
   }
+  if (updates.lastResponseAt !== undefined) {
+    fields.push("last_response_at = ?");
+    values.push(updates.lastResponseAt ?? null);
+  }
   if (updates.lastResponseText !== undefined) {
     fields.push("last_response_text = ?");
     values.push(updates.lastResponseText ?? null);
+  }
+  if (updates.senderId !== undefined) {
+    fields.push("sender_id = ?");
+    values.push(updates.senderId ?? null);
+  }
+  if (updates.pendingReceipt !== undefined) {
+    fields.push("pending_receipt = ?");
+    values.push(updates.pendingReceipt ? JSON.stringify(updates.pendingReceipt) : null);
   }
 
   if (fields.length === 0) return existing;
