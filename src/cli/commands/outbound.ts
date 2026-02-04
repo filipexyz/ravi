@@ -8,6 +8,9 @@ import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
+import { Database } from "bun:sqlite";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { normalizePhone, formatPhone, findContactsByTag } from "../../contacts.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/index.js";
 import {
@@ -489,14 +492,19 @@ export class OutboundCommands {
       pendingReceipt: undefined,
     });
 
-    // Delete the SDK session directly so conversation starts fresh
+    // Delete the SDK session so conversation starts fresh
     const sessionKey = `agent:${agentId}:outbound:${entry.queueId}:${entry.contactPhone}`;
-    const db = getDb();
-    const result = db.run("DELETE FROM sessions WHERE session_key = ?", sessionKey);
-    const deleted = result.changes > 0;
+    const routerDb = getDb();
+    const sessionResult = routerDb.run("DELETE FROM sessions WHERE session_key = ?", sessionKey);
+
+    // Delete chat history from chat.db
+    const chatDb = new Database(join(homedir(), ".ravi", "chat.db"));
+    const chatResult = chatDb.run("DELETE FROM messages WHERE session_id = ?", sessionKey);
+    chatDb.close();
 
     console.log(`✓ Entry reset: ${id} (${formatPhone(entry.contactPhone)})`);
-    console.log(`  Session ${deleted ? "cleared" : "not found"}: ${sessionKey}`);
+    if (sessionResult.changes > 0) console.log(`  Session cleared`);
+    if (chatResult.changes > 0) console.log(`  Chat history cleared (${chatResult.changes} messages)`);
   }
 
   @Command({ name: "run", description: "Manually trigger a queue", aliases: ["trigger"] })
