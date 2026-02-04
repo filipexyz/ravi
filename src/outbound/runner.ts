@@ -238,7 +238,10 @@ export class OutboundRunner {
       log.debug("Sent deferred read receipt", { entryId: entry.id });
     }
 
-    // Build prompt: full context for outreach, concise for follow-up
+    // Build system context (injected into system prompt, not user-visible)
+    const systemContext = this.buildSystemContext(queue, entry);
+
+    // Build user prompt: just the actionable part
     const isFollowUp = !!entry.lastResponseText;
     const prompt = isFollowUp
       ? this.buildFollowUpPrompt(queue, entry)
@@ -252,7 +255,6 @@ export class OutboundRunner {
       phone: entry.contactPhone,
       isFollowUp,
       roundsCompleted: entry.roundsCompleted,
-      lastResponseText: entry.lastResponseText ?? null,
       sessionKey,
       prompt,
     });
@@ -261,6 +263,7 @@ export class OutboundRunner {
     await notif.emit(`ravi.${sessionKey}.prompt`, {
       prompt,
       _outbound: true,
+      _outboundSystemContext: systemContext,
       _queueId: queue.id,
       _entryId: entry.id,
     });
@@ -279,75 +282,72 @@ export class OutboundRunner {
   }
 
   /**
-   * Build the prompt for initial outreach (round 0 → 1).
-   * Full context: instructions, contact info, metadata, available actions.
+   * Build system context (injected into system prompt, invisible to user).
+   * Contains instructions, available tools, and metadata.
    */
-  private buildOutreachPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
+  private buildSystemContext(queue: OutboundQueue, entry: OutboundEntry): string {
     const parts: string[] = [];
 
-    parts.push(`[Outbound: ${queue.name}]`);
+    parts.push(`[Outbound Session: ${queue.name}]`);
     parts.push("");
-    parts.push("## Instructions");
+    parts.push("## Queue Instructions");
     parts.push(queue.instructions);
     parts.push("");
-
-    // Contact info
-    parts.push("## Contact");
-    const contact = getContact(entry.contactPhone);
-    if (contact) {
-      parts.push(`- Phone: ${entry.contactPhone}`);
-      if (contact.name) parts.push(`- Name: ${contact.name}`);
-      if (contact.email) parts.push(`- Email: ${contact.email}`);
-      if (contact.tags.length > 0) parts.push(`- Tags: ${contact.tags.join(", ")}`);
-      if (Object.keys(contact.notes).length > 0) {
-        parts.push(`- Notes: ${JSON.stringify(contact.notes)}`);
-      }
-    } else {
-      parts.push(`- Phone: ${entry.contactPhone}`);
-      if (entry.contactEmail) parts.push(`- Email: ${entry.contactEmail}`);
-    }
-    parts.push("");
-
-    // Entry context
-    if (Object.keys(entry.context).length > 0) {
-      parts.push("## Context");
-      parts.push(JSON.stringify(entry.context, null, 2));
-      parts.push("");
-    }
-
-    // Metadata
-    parts.push("## Metadata");
-    parts.push(`- Entry ID: ${entry.id}`);
-    parts.push(`- Queue ID: ${queue.id}`);
-    parts.push(`- Round: ${entry.roundsCompleted + 1}`);
-    parts.push(`- Current time: ${new Date().toISOString()}`);
-    parts.push("");
-
-    // Available tools hint
     parts.push("## Available Actions");
-    parts.push("Use the following CLI tools to interact with this outbound session:");
-    parts.push("- `mcp__ravi-cli__outbound_send <phone> <message>` - Send message to the contact via WhatsApp");
-    parts.push("- `mcp__ravi-cli__outbound_done <entryId>` - Mark this entry as done (won't be processed again)");
-    parts.push("- `mcp__ravi-cli__outbound_skip <entryId>` - Skip this entry for now");
-    parts.push("- `mcp__ravi-cli__outbound_context <entryId> <json>` - Update context for next round");
+    parts.push(`- \`mcp__ravi-cli__outbound_send ${entry.contactPhone} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
+    parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Mark entry as done`);
+    parts.push(`- \`mcp__ravi-cli__outbound_skip ${entry.id}\` — Skip for now`);
+    parts.push(`- \`mcp__ravi-cli__outbound_context ${entry.id} <json>\` — Save context for next round`);
+    parts.push("");
+    parts.push("## Metadata");
+    parts.push(`Entry ID: ${entry.id} | Queue ID: ${queue.id} | Round: ${entry.roundsCompleted + 1}`);
 
     return parts.join("\n");
   }
 
   /**
-   * Build the prompt for a follow-up round (contact responded).
-   * Concise: just the response text so the agent knows it's a new interaction.
+   * Build user prompt for initial outreach.
+   * Just the contact info — instructions are in system prompt.
+   */
+  private buildOutreachPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
+    const parts: string[] = [];
+
+    parts.push(`[Outbound: ${queue.name} — Contato novo]`);
+    parts.push("");
+
+    // Contact info
+    const contact = getContact(entry.contactPhone);
+    if (contact) {
+      parts.push(`Telefone: ${entry.contactPhone}`);
+      if (contact.name) parts.push(`Nome: ${contact.name}`);
+      if (contact.email) parts.push(`Email: ${contact.email}`);
+      if (contact.tags.length > 0) parts.push(`Tags: ${contact.tags.join(", ")}`);
+      if (Object.keys(contact.notes).length > 0) {
+        parts.push(`Notas: ${JSON.stringify(contact.notes)}`);
+      }
+    } else {
+      parts.push(`Telefone: ${entry.contactPhone}`);
+      if (entry.contactEmail) parts.push(`Email: ${entry.contactEmail}`);
+    }
+
+    // Entry context
+    if (Object.keys(entry.context).length > 0) {
+      parts.push("");
+      parts.push(`Contexto: ${JSON.stringify(entry.context)}`);
+    }
+
+    return parts.join("\n");
+  }
+
+  /**
+   * Build user prompt for follow-up (contact responded).
    */
   private buildFollowUpPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
     const parts: string[] = [];
 
-    parts.push(`[Outbound: ${queue.name} — Round ${entry.roundsCompleted + 1}]`);
-    parts.push("");
-    parts.push("The contact replied:");
+    parts.push(`[Outbound: ${queue.name} — O contato respondeu]`);
     parts.push("");
     parts.push(entry.lastResponseText!);
-    parts.push("");
-    parts.push(`Respond using outbound_send. Entry ID: ${entry.id}, Phone: ${entry.contactPhone}.`);
 
     return parts.join("\n");
   }

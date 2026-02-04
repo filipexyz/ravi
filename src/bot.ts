@@ -458,7 +458,12 @@ export class RaviBot {
     }
 
     // Build system prompt with channel context if available
-    const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
+    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
+
+    // Inject outbound system context if present
+    if (prompt._outboundSystemContext) {
+      systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
+    }
 
     log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
 
