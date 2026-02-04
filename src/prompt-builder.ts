@@ -106,6 +106,24 @@ export function buildSilentReplies(): string {
 }
 
 /**
+ * Build reactions section for system prompt
+ */
+function reactionsText(): string {
+  return `Mensagens incluem um tag \`[mid:ID]\` no final com o ID da mensagem original.
+Use o tool \`react_send\` para enviar reações com emoji.
+
+Quando reagir:
+- Prefira reagir com emoji em vez de responder "ok", "entendi", "beleza", etc.
+- Reaja quando uma mensagem merece reconhecimento mas não precisa de resposta textual.
+- Use emoji que faça sentido: 👍 para confirmação, ❤️ para algo legal, 😂 para humor, etc.
+
+Quando NÃO reagir:
+- Não reaja E responda com o mesmo sentimento (escolha um ou outro).
+- Não reaja em toda mensagem — só quando agrega valor.
+- Não reaja em mensagens do sistema ou quando já vai responder com texto.`;
+}
+
+/**
  * Build system prompt with channel context
  */
 export function buildSystemPrompt(
@@ -120,6 +138,9 @@ export function buildSystemPrompt(
   if (ctx) {
     // Add runtime info
     builder.section("Runtime", buildRuntimeInfo(agentId, ctx).replace(/^## Runtime\n\n/, ""));
+
+    // Add reactions section
+    builder.section("Reactions", reactionsText());
 
     // Add group context if applicable (includes silent reply instructions)
     if (ctx.isGroup) {

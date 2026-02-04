@@ -95,15 +95,18 @@ function formatEnvelope(
   // Format the message content
   const content = formatMessageContent(message);
 
+  // Message ID suffix for reaction targeting
+  const midTag = message.id ? ` [mid:${message.id}]` : "";
+
   if (message.isGroup) {
-    // [WhatsApp Família id:123@g.us 2024-01-30 14:30] João: texto
+    // [WhatsApp Família id:123@g.us 2024-01-30 14:30] João: texto [mid:XXX]
     const groupLabel = message.groupName ?? message.chatId;
     const sender = message.senderName ?? message.senderId;
-    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${content}`;
+    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${content}${midTag}`;
   } else {
-    // [WhatsApp +5511999 2024-01-30 14:30] texto
+    // [WhatsApp +5511999 2024-01-30 14:30] texto [mid:XXX]
     const from = message.senderPhone ?? message.senderId;
-    return `${replyPrefix}[${channel} ${from} ${timestamp}] ${content}`;
+    return `${replyPrefix}[${channel} ${from} ${timestamp}] ${content}${midTag}`;
   }
 }
 
@@ -191,6 +194,8 @@ export class Gateway {
     // Subscribe to deferred outbound read receipts
     this.subscribeToOutboundReceipts();
 
+    // Subscribe to emoji reactions from agents
+    this.subscribeToReactions();
 
     log.info("Gateway started");
   }
@@ -510,6 +515,58 @@ export class Gateway {
         this.activeSubscriptions.delete("receipts");
         if (this.running) {
           setTimeout(() => this.subscribeToOutboundReceipts(), 1000);
+        }
+      }
+    })();
+  }
+
+  /**
+   * Subscribe to emoji reaction events from agents.
+   * Pattern: ravi.outbound.reaction → plugin.outbound.sendReaction()
+   */
+  private subscribeToReactions(): void {
+    if (this.activeSubscriptions.has("reactions")) {
+      log.warn("Reactions subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("reactions");
+
+    log.info("Subscribing to outbound reactions");
+
+    (async () => {
+      try {
+        for await (const event of notif.subscribe("ravi.outbound.reaction")) {
+          if (!this.running) break;
+
+          const data = event.data as {
+            channel: string;
+            accountId: string;
+            chatId: string;
+            messageId: string;
+            emoji: string;
+          };
+
+          const plugin = this.pluginsById.get(data.channel);
+          if (!plugin) {
+            log.warn("No plugin for reaction channel", { channel: data.channel });
+            continue;
+          }
+
+          try {
+            await plugin.outbound.sendReaction(data.accountId, data.chatId, data.messageId, data.emoji);
+            log.info("Reaction sent", { chatId: data.chatId, messageId: data.messageId, emoji: data.emoji });
+          } catch (err) {
+            log.error("Failed to send reaction", { error: err });
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Reactions subscription error", err);
+        }
+      } finally {
+        this.activeSubscriptions.delete("reactions");
+        if (this.running) {
+          setTimeout(() => this.subscribeToReactions(), 1000);
         }
       }
     })();

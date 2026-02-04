@@ -14,6 +14,7 @@ export * from "./daemon.js";
 export * from "./heartbeat.js";
 export * from "./matrix.js";
 export * from "./outbound.js";
+export * from "./react.js";
 export * from "./routes.js";
 export * from "./service.js";
 export * from "./settings.js";
