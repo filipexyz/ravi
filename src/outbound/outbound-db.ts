@@ -63,6 +63,7 @@ interface EntryRow {
   last_response_at: number | null;
   last_response_text: string | null;
   pending_receipt: string | null;
+  sender_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -120,9 +121,16 @@ function rowToEntry(row: EntryRow): OutboundEntry {
   if (row.last_response_text !== null) entry.lastResponseText = row.last_response_text;
   if (row.pending_receipt !== null) {
     try {
-      entry.pendingReceipt = JSON.parse(row.pending_receipt) as PendingReceipt;
+      const parsed = JSON.parse(row.pending_receipt);
+      // Backward compat: migrate messageId (string) to messageIds (array)
+      if (parsed.messageId && !parsed.messageIds) {
+        parsed.messageIds = [parsed.messageId];
+        delete parsed.messageId;
+      }
+      entry.pendingReceipt = parsed as PendingReceipt;
     } catch { /* ignore invalid JSON */ }
   }
+  if (row.sender_id !== null) entry.senderId = row.sender_id;
 
   return entry;
 }
@@ -459,6 +467,10 @@ export function dbUpdateEntry(id: string, updates: Partial<OutboundEntry>): Outb
     fields.push("contact_email = ?");
     values.push(updates.contactEmail ?? null);
   }
+  if (updates.lastResponseText !== undefined) {
+    fields.push("last_response_text = ?");
+    values.push(updates.lastResponseText ?? null);
+  }
 
   if (fields.length === 0) return existing;
 
@@ -542,17 +554,22 @@ export function dbUpdateEntryContext(id: string, ctx: Record<string, unknown>): 
 
 /**
  * Record a response from a contact for an entry.
+ * Appends to existing response text so multiple messages are preserved.
  */
 export function dbRecordEntryResponse(id: string, text: string): void {
   const db = getDb();
   const now = Date.now();
+  const entry = dbGetEntry(id);
+  const combined = entry?.lastResponseText
+    ? entry.lastResponseText + "\n\n" + text
+    : text;
   db.prepare(`
     UPDATE outbound_entries SET
       last_response_at = ?,
       last_response_text = ?,
       updated_at = ?
     WHERE id = ?
-  `).run(now, text, now, id);
+  `).run(now, combined, now, id);
   log.debug("Recorded entry response", { id });
 }
 
@@ -592,16 +609,30 @@ export function dbAddEntriesFromContacts(
 }
 
 /**
- * Set a pending read receipt on an outbound entry.
- * Stored as JSON so it can be sent later when the runner processes the entry.
+ * Set or append a pending read receipt on an outbound entry.
+ * Accumulates messageIds so all messages get read receipts when processed.
  */
 export function dbSetPendingReceipt(entryId: string, receipt: PendingReceipt): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?"
-  ).run(JSON.stringify(receipt), now, entryId);
-  log.debug("Set pending receipt on entry", { entryId });
+
+  // Check existing receipt to accumulate messageIds
+  const entry = dbGetEntry(entryId);
+  if (entry?.pendingReceipt) {
+    const existing = entry.pendingReceipt;
+    const merged: PendingReceipt = {
+      ...existing,
+      messageIds: [...existing.messageIds, ...receipt.messageIds],
+    };
+    db.prepare(
+      "UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?"
+    ).run(JSON.stringify(merged), now, entryId);
+  } else {
+    db.prepare(
+      "UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?"
+    ).run(JSON.stringify(receipt), now, entryId);
+  }
+  log.debug("Set pending receipt on entry", { entryId, messageIds: receipt.messageIds });
 }
 
 /**
@@ -617,14 +648,60 @@ export function dbClearPendingReceipt(entryId: string): void {
 }
 
 /**
- * Find active outbound entry for a contact phone across active queues.
+ * Set the sender ID on an outbound entry (maps channel-specific ID to entry).
+ */
+export function dbSetEntrySenderId(entryId: string, senderId: string): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    "UPDATE outbound_entries SET sender_id = ?, updated_at = ? WHERE id = ?"
+  ).run(senderId, now, entryId);
+  log.debug("Set sender_id on entry", { entryId, senderId });
+}
+
+/**
+ * Find outbound entry by sender ID (e.g., LID).
+ * Matches any entry in a non-deleted queue regardless of entry/queue status.
+ */
+export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT e.* FROM outbound_entries e
+    JOIN outbound_queues q ON q.id = e.queue_id
+    WHERE e.sender_id = ?
+    ORDER BY e.updated_at DESC
+    LIMIT 1
+  `).get(senderId) as EntryRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Find outbound entry that has been sent to but has no sender_id yet.
+ * Used as a fallback for LID contacts on first interaction.
+ */
+export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT e.* FROM outbound_entries e
+    JOIN outbound_queues q ON q.id = e.queue_id
+    WHERE e.sender_id IS NULL
+      AND e.last_sent_at IS NOT NULL
+    ORDER BY e.last_sent_at DESC
+    LIMIT 1
+  `).get() as EntryRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Find outbound entry for a contact phone.
+ * Matches any entry regardless of entry/queue status (for security bypass + prompt suppression).
  */
 export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
   const db = getDb();
   const row = db.prepare(`
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
-    WHERE e.contact_phone = ? AND q.status = 'active' AND e.status IN ('pending', 'active')
+    WHERE e.contact_phone = ?
     ORDER BY e.updated_at DESC
     LIMIT 1
   `).get(phone) as EntryRow | undefined;

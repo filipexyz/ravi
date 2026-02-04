@@ -192,6 +192,36 @@ export async function sendTyping(
 // ============================================================================
 
 /**
+ * Send delivery receipt (2 gray checks) without marking as read.
+ */
+export async function sendDeliveryReceipt(
+  socket: WASocket,
+  chatId: string,
+  senderId: string,
+  messageIds: string[]
+): Promise<void> {
+  const chatJid = phoneToJid(chatId);
+  const senderJid = phoneToJid(senderId);
+
+  if (!chatJid) {
+    log.warn("Cannot send delivery receipt - invalid chat", { chatId });
+    return;
+  }
+
+  try {
+    await socket.sendReceipt(
+      chatJid,
+      chatJid !== senderJid ? senderJid ?? undefined : undefined,
+      messageIds,
+      undefined // undefined = delivery receipt
+    );
+    log.debug("Delivery receipt sent", { chatJid, messageIds });
+  } catch (err) {
+    log.error("Failed to send delivery receipt", err);
+  }
+}
+
+/**
  * Send read receipt
  */
 export async function sendReadReceipt(
@@ -209,14 +239,15 @@ export async function sendReadReceipt(
   }
 
   try {
-    await socket.readMessages([
-      {
+    const participant = chatJid !== senderJid ? senderJid ?? undefined : undefined;
+    await socket.readMessages(
+      messageIds.map(id => ({
         remoteJid: chatJid,
-        id: messageIds[0],
-        participant: chatJid !== senderJid ? senderJid ?? undefined : undefined,
-      },
-    ]);
-    log.debug("Read receipt sent", { chatJid, messageIds });
+        id,
+        participant,
+      }))
+    );
+    log.debug("Read receipt sent", { chatJid, count: messageIds.length });
   } catch (err) {
     log.error("Failed to send read receipt", err);
   }

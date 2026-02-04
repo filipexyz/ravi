@@ -355,11 +355,15 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
   `);
 
-  // Migration: add pending_receipt column to outbound_entries
+  // Migrations for outbound_entries
   const entryColumns = db.prepare("PRAGMA table_info(outbound_entries)").all() as Array<{ name: string }>;
   if (!entryColumns.some(c => c.name === "pending_receipt")) {
     db.exec("ALTER TABLE outbound_entries ADD COLUMN pending_receipt TEXT");
     log.info("Added pending_receipt column to outbound_entries table");
+  }
+  if (!entryColumns.some(c => c.name === "sender_id")) {
+    db.exec("ALTER TABLE outbound_entries ADD COLUMN sender_id TEXT");
+    log.info("Added sender_id column to outbound_entries table");
   }
 
   // Create default agent if none exist

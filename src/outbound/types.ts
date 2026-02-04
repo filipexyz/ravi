@@ -17,7 +17,7 @@ export type EntryStatus = "pending" | "active" | "done" | "skipped" | "error";
 export interface PendingReceipt {
   chatId: string;
   senderId: string;
-  messageId: string;
+  messageIds: string[];
   accountId: string;
   channel: string;
 }
@@ -85,6 +85,7 @@ export interface OutboundEntry {
   lastResponseAt?: number;
   lastResponseText?: string;
   pendingReceipt?: PendingReceipt;
+  senderId?: string;
   createdAt: number;
   updatedAt: number;
 }

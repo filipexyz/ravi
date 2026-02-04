@@ -142,6 +142,16 @@ export class OutboundRunner {
         return;
       }
 
+      // Flush all pending read receipts across all entries in this queue
+      const allQueueEntries = dbListEntries(queue.id);
+      for (const e of allQueueEntries) {
+        if (e.pendingReceipt) {
+          await notif.emit("ravi.outbound.receipt", { ...e.pendingReceipt });
+          dbClearPendingReceipt(e.id);
+          log.debug("Sent deferred read receipt", { entryId: e.id });
+        }
+      }
+
       // Get next entry (round-robin)
       const entry = dbGetNextEntry(queue.id, queue.currentIndex);
 
@@ -189,6 +199,11 @@ export class OutboundRunner {
         _queueId: queue.id,
         _entryId: entry.id,
       });
+
+      // Clear response text so it's not repeated in the next round
+      if (entry.lastResponseText) {
+        dbUpdateEntry(entry.id, { lastResponseText: undefined });
+      }
 
       // Requeue entry (move to end of queue)
       dbRequeueEntry(entry.id);

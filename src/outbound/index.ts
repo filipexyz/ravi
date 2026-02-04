@@ -38,8 +38,11 @@ export {
   dbRecordEntryResponse,
   dbAddEntriesFromContacts,
   dbFindActiveEntryByPhone,
+  dbFindActiveEntryBySenderId,
+  dbFindUnmappedActiveEntry,
   dbSetPendingReceipt,
   dbClearPendingReceipt,
+  dbSetEntrySenderId,
 } from "./outbound-db.js";
 
 // Direct send

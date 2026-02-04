@@ -15,7 +15,7 @@ import {
 } from "./router/index.js";
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
-import { dbFindActiveEntryByPhone, dbRecordEntryResponse } from "./outbound/index.js";
+import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindUnmappedActiveEntry, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
 
 const log = logger.child("gateway");
 
@@ -381,6 +381,12 @@ export class Gateway {
               await plugin.outbound.send(data.accountId, data.to, { text: data.text });
             }
             log.info("Direct send delivered", { to: data.to, channel: data.channel, typingDelayMs: data.typingDelayMs });
+
+            // Mark last_sent_at on outbound entry so we can match LID replies
+            const entry = dbFindActiveEntryByPhone(data.to);
+            if (entry) {
+              dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
+            }
           } catch (err) {
             log.error("Direct send delivery failed", { to: data.to, error: err });
           }
@@ -411,7 +417,7 @@ export class Gateway {
             accountId: string;
             chatId: string;
             senderId: string;
-            messageId: string;
+            messageIds: string[];
           };
 
           const plugin = this.pluginsById.get(data.channel);
@@ -421,8 +427,8 @@ export class Gateway {
           }
 
           try {
-            await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, [data.messageId]);
-            log.info("Deferred read receipt sent", { chatId: data.chatId, messageId: data.messageId });
+            await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, data.messageIds);
+            log.info("Deferred read receipt sent", { chatId: data.chatId, count: data.messageIds.length });
           } catch (err) {
             log.error("Failed to send deferred read receipt", { error: err });
           }
@@ -444,12 +450,15 @@ export class Gateway {
     this.routerConfig = loadRouterConfig();
 
     // Check if sender has an active outbound entry
-    // If so, record the response and route to the outbound session
-    if (!message.isGroup && message.senderPhone) {
-      const outboundEntry = dbFindActiveEntryByPhone(message.senderPhone);
+    // If so, record the response and DON'T emit prompt (let the runner handle it)
+    if (!message.isGroup) {
+      const outboundEntry = message.senderPhone
+        ? dbFindActiveEntryByPhone(message.senderPhone)
+        : (dbFindActiveEntryBySenderId(message.senderId) ?? dbFindUnmappedActiveEntry());
+
       if (outboundEntry) {
-        log.info("Inbound from outbound contact, recording response", {
-          phone: message.senderPhone,
+        log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
+          senderId: message.senderId,
           entryId: outboundEntry.id,
         });
 
@@ -457,8 +466,13 @@ export class Gateway {
         const content = formatMessageContent(message);
         dbRecordEntryResponse(outboundEntry.id, content);
 
-        // Still route normally so the outbound session can see the response
-        // But we don't override the session key - let normal routing handle it
+        // Store sender ID for future LID-based lookups
+        if (!outboundEntry.senderId) {
+          dbSetEntrySenderId(outboundEntry.id, message.senderId);
+        }
+
+        // Do NOT emit prompt — the outbound runner will handle this on next cycle
+        return;
       }
     }
 

@@ -47,6 +47,7 @@ import {
   sendMessage,
   sendTyping,
   sendReadReceipt,
+  sendDeliveryReceipt,
   sendReaction,
   sendAckReaction,
 } from "./outbound.js";
@@ -66,7 +67,7 @@ import {
   getContactName,
   saveDiscoveredContact,
 } from "../../contacts.js";
-import { dbFindActiveEntryByPhone, dbSetPendingReceipt } from "../../outbound/index.js";
+import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindUnmappedActiveEntry, dbSetPendingReceipt } from "../../outbound/index.js";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child("wa:plugin");
@@ -513,52 +514,69 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       senderId: message.senderId,
     });
 
-    const decision = this.securityAdapter.checkAccess(
-      accountId,
-      checkId,
-      message.isGroup,
-      config
-    );
-
-    log.info("Security decision", decision);
-
-    if (!decision.allowed) {
-      if (decision.pending) {
-        // Save as pending - use chatId for groups, senderId for DMs
-        const pendingId = message.isGroup ? message.chatId : message.senderId;
-        const pendingName = message.isGroup ? null : message.senderName ?? null;
-        savePendingContact(pendingId, pendingName);
-        log.info("Saved pending", {
-          id: pendingId,
-          isGroup: message.isGroup,
-        });
-      } else {
-        log.debug(`Message blocked: ${decision.reason}`);
-      }
-      return;
-    }
-
-    // Send read receipt if enabled (defer for outbound contacts)
-    let skipReadReceipt = false;
-    if (!message.isGroup && message.senderPhone) {
-      const outboundEntry = dbFindActiveEntryByPhone(message.senderPhone);
-      if (outboundEntry) {
-        dbSetPendingReceipt(outboundEntry.id, {
-          chatId: message.chatId,
+    // Check if sender is in an active outbound queue (bypass security + defer read receipt)
+    let outboundMatch: import("../../outbound/types.js").OutboundEntry | null = null;
+    if (!message.isGroup) {
+      outboundMatch = message.senderPhone
+        ? dbFindActiveEntryByPhone(message.senderPhone)
+        : (dbFindActiveEntryBySenderId(message.senderId) ?? dbFindUnmappedActiveEntry());
+      if (outboundMatch) {
+        log.info("Outbound contact detected, bypassing security", {
           senderId: message.senderId,
-          messageId: message.id,
-          accountId,
-          channel: "whatsapp",
-        });
-        skipReadReceipt = true;
-        log.debug("Deferred read receipt for outbound contact", {
-          phone: message.senderPhone,
-          entryId: outboundEntry.id,
+          entryId: outboundMatch.id,
         });
       }
     }
 
-    if (accountConfig.sendReadReceipts && !skipReadReceipt) {
+    if (!outboundMatch) {
+      const decision = this.securityAdapter.checkAccess(
+        accountId,
+        checkId,
+        message.isGroup,
+        config
+      );
+
+      log.info("Security decision", decision);
+
+      if (!decision.allowed) {
+        if (decision.pending) {
+          // Save as pending - use chatId for groups, senderId for DMs
+          const pendingId = message.isGroup ? message.chatId : message.senderId;
+          const pendingName = message.isGroup ? null : message.senderName ?? null;
+          savePendingContact(pendingId, pendingName);
+          log.info("Saved pending", {
+            id: pendingId,
+            isGroup: message.isGroup,
+          });
+        } else {
+          log.debug(`Message blocked: ${decision.reason}`);
+        }
+        return;
+      }
+    }
+
+    // Defer read receipt for outbound contacts (send delivery receipt immediately)
+    if (outboundMatch) {
+      // Send delivery receipt (2 gray checks) immediately
+      const socket = sessionManager.getSocket(accountId);
+      if (socket) {
+        await sendDeliveryReceipt(socket, message.chatId, message.senderId, [message.id]);
+      }
+      // Defer read receipt (blue ticks) for later
+      dbSetPendingReceipt(outboundMatch.id, {
+        chatId: message.chatId,
+        senderId: message.senderId,
+        messageIds: [message.id],
+        accountId,
+        channel: "whatsapp",
+      });
+      log.debug("Deferred read receipt for outbound contact (delivery receipt sent)", {
+        senderId: message.senderId,
+        entryId: outboundMatch.id,
+      });
+    }
+
+    if (accountConfig.sendReadReceipts && !outboundMatch) {
       const socket = sessionManager.getSocket(accountId);
       if (socket) {
         await sendReadReceipt(
