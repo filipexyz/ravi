@@ -66,6 +66,7 @@ import {
   getContactName,
   saveDiscoveredContact,
 } from "../../contacts.js";
+import { dbFindActiveEntryByPhone, dbSetPendingReceipt } from "../../outbound/index.js";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child("wa:plugin");
@@ -537,8 +538,27 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       return;
     }
 
-    // Send read receipt if enabled
-    if (accountConfig.sendReadReceipts) {
+    // Send read receipt if enabled (defer for outbound contacts)
+    let skipReadReceipt = false;
+    if (!message.isGroup && message.senderPhone) {
+      const outboundEntry = dbFindActiveEntryByPhone(message.senderPhone);
+      if (outboundEntry) {
+        dbSetPendingReceipt(outboundEntry.id, {
+          chatId: message.chatId,
+          senderId: message.senderId,
+          messageId: message.id,
+          accountId,
+          channel: "whatsapp",
+        });
+        skipReadReceipt = true;
+        log.debug("Deferred read receipt for outbound contact", {
+          phone: message.senderPhone,
+          entryId: outboundEntry.id,
+        });
+      }
+    }
+
+    if (accountConfig.sendReadReceipts && !skipReadReceipt) {
       const socket = sessionManager.getSocket(accountId);
       if (socket) {
         await sendReadReceipt(

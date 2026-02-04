@@ -15,6 +15,7 @@ import {
 } from "./router/index.js";
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
+import { dbFindActiveEntryByPhone, dbRecordEntryResponse } from "./outbound/index.js";
 
 const log = logger.child("gateway");
 
@@ -183,6 +184,12 @@ export class Gateway {
     // Subscribe to Claude events for typing heartbeat
     this.subscribeToClaudeEvents();
 
+    // Subscribe to direct send events from outbound module
+    this.subscribeToDirectSend();
+
+    // Subscribe to deferred outbound read receipts
+    this.subscribeToOutboundReceipts();
+
     log.info("Gateway started");
   }
 
@@ -339,12 +346,121 @@ export class Gateway {
     })();
   }
 
+  /**
+   * Subscribe to direct send events from the outbound module.
+   */
+  private subscribeToDirectSend(): void {
+    log.info("Subscribing to outbound direct send");
+
+    (async () => {
+      try {
+        for await (const event of notif.subscribe("ravi.outbound.deliver")) {
+          if (!this.running) break;
+
+          const data = event.data as {
+            channel: string;
+            accountId: string;
+            to: string;
+            text: string;
+            typingDelayMs?: number;
+          };
+
+          const plugin = this.pluginsById.get(data.channel);
+          if (!plugin) {
+            log.warn("No plugin for direct send channel", { channel: data.channel });
+            continue;
+          }
+
+          try {
+            if (data.typingDelayMs && data.typingDelayMs > 0) {
+              await plugin.outbound.sendTyping(data.accountId, data.to, true);
+              await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
+              await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+              await plugin.outbound.sendTyping(data.accountId, data.to, false);
+            } else {
+              await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+            }
+            log.info("Direct send delivered", { to: data.to, channel: data.channel, typingDelayMs: data.typingDelayMs });
+          } catch (err) {
+            log.error("Direct send delivery failed", { to: data.to, error: err });
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Direct send subscription error", err);
+          setTimeout(() => this.subscribeToDirectSend(), 1000);
+        }
+      }
+    })();
+  }
+
+  /**
+   * Subscribe to deferred outbound read receipt events.
+   * When the runner processes an entry with a pending receipt, it emits here.
+   */
+  private subscribeToOutboundReceipts(): void {
+    log.info("Subscribing to outbound receipts");
+
+    (async () => {
+      try {
+        for await (const event of notif.subscribe("ravi.outbound.receipt")) {
+          if (!this.running) break;
+
+          const data = event.data as {
+            channel: string;
+            accountId: string;
+            chatId: string;
+            senderId: string;
+            messageId: string;
+          };
+
+          const plugin = this.pluginsById.get(data.channel);
+          if (!plugin) {
+            log.warn("No plugin for outbound receipt channel", { channel: data.channel });
+            continue;
+          }
+
+          try {
+            await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, [data.messageId]);
+            log.info("Deferred read receipt sent", { chatId: data.chatId, messageId: data.messageId });
+          } catch (err) {
+            log.error("Failed to send deferred read receipt", { error: err });
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Outbound receipt subscription error", err);
+          setTimeout(() => this.subscribeToOutboundReceipts(), 1000);
+        }
+      }
+    })();
+  }
+
   private async handleInboundMessage(
     plugin: ChannelPlugin,
     message: InboundMessage
   ): Promise<void> {
     // Reload config to pick up route changes (routes may be added via CLI)
     this.routerConfig = loadRouterConfig();
+
+    // Check if sender has an active outbound entry
+    // If so, record the response and route to the outbound session
+    if (!message.isGroup && message.senderPhone) {
+      const outboundEntry = dbFindActiveEntryByPhone(message.senderPhone);
+      if (outboundEntry) {
+        log.info("Inbound from outbound contact, recording response", {
+          phone: message.senderPhone,
+          entryId: outboundEntry.id,
+        });
+
+        // Record the response text on the entry
+        const content = formatMessageContent(message);
+        dbRecordEntryResponse(outboundEntry.id, content);
+
+        // Still route normally so the outbound session can see the response
+        // But we don't override the session key - let normal routing handle it
+      }
+    }
 
     // Resolve route to get session key
     const resolved = resolveRoute(this.routerConfig, {

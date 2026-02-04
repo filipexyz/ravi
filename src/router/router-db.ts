@@ -306,7 +306,61 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+
+    -- Outbound queues
+    CREATE TABLE IF NOT EXISTS outbound_queues (
+      id TEXT PRIMARY KEY,
+      agent_id TEXT,
+      name TEXT NOT NULL,
+      description TEXT,
+      instructions TEXT NOT NULL,
+      status TEXT DEFAULT 'paused' CHECK(status IN ('active','paused','completed')),
+      interval_ms INTEGER NOT NULL,
+      active_start TEXT,
+      active_end TEXT,
+      timezone TEXT,
+      current_index INTEGER DEFAULT 0,
+      next_run_at INTEGER,
+      last_run_at INTEGER,
+      last_status TEXT,
+      last_error TEXT,
+      last_duration_ms INTEGER,
+      total_processed INTEGER DEFAULT 0,
+      total_sent INTEGER DEFAULT 0,
+      total_skipped INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS outbound_entries (
+      id TEXT PRIMARY KEY,
+      queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
+      contact_phone TEXT NOT NULL,
+      contact_email TEXT,
+      position INTEGER NOT NULL,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error')),
+      context TEXT DEFAULT '{}',
+      rounds_completed INTEGER DEFAULT 0,
+      last_processed_at INTEGER,
+      last_sent_at INTEGER,
+      last_response_at INTEGER,
+      last_response_text TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_outbound_queues_status ON outbound_queues(status);
+    CREATE INDEX IF NOT EXISTS idx_outbound_queues_next_run ON outbound_queues(next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
+    CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
   `);
+
+  // Migration: add pending_receipt column to outbound_entries
+  const entryColumns = db.prepare("PRAGMA table_info(outbound_entries)").all() as Array<{ name: string }>;
+  if (!entryColumns.some(c => c.name === "pending_receipt")) {
+    db.exec("ALTER TABLE outbound_entries ADD COLUMN pending_receipt TEXT");
+    log.info("Added pending_receipt column to outbound_entries table");
+  }
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
