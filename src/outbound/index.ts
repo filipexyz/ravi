@@ -30,9 +30,9 @@ export {
   dbGetEntry,
   dbListEntries,
   dbGetNextEntry,
+  dbGetNextEntryWithResponse,
   dbUpdateEntry,
   dbDeleteEntry,
-  dbRequeueEntry,
   dbMarkEntryDone,
   dbUpdateEntryContext,
   dbRecordEntryResponse,
@@ -42,6 +42,7 @@ export {
   dbFindUnmappedActiveEntry,
   dbSetPendingReceipt,
   dbClearPendingReceipt,
+  dbClearResponseText,
   dbSetEntrySenderId,
 } from "./outbound-db.js";
 

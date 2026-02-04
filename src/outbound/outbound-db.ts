@@ -401,8 +401,8 @@ export function dbListEntries(queueId: string): OutboundEntry[] {
 }
 
 /**
- * Get next entry to process (round-robin).
- * Returns the entry at or after the given position that is still pending or active.
+ * Get next entry for initial outreach (timer-driven).
+ * Only returns pending entries with rounds_completed = 0 (not yet contacted).
  */
 export function dbGetNextEntry(queueId: string, afterPosition: number): OutboundEntry | null {
   const db = getDb();
@@ -410,7 +410,9 @@ export function dbGetNextEntry(queueId: string, afterPosition: number): Outbound
   // First try entries at or after current position
   let row = db.prepare(`
     SELECT * FROM outbound_entries
-    WHERE queue_id = ? AND position >= ? AND status IN ('pending', 'active')
+    WHERE queue_id = ? AND position >= ?
+      AND status = 'pending'
+      AND rounds_completed = 0
     ORDER BY position ASC
     LIMIT 1
   `).get(queueId, afterPosition) as EntryRow | undefined;
@@ -419,7 +421,9 @@ export function dbGetNextEntry(queueId: string, afterPosition: number): Outbound
   if (!row) {
     row = db.prepare(`
       SELECT * FROM outbound_entries
-      WHERE queue_id = ? AND status IN ('pending', 'active')
+      WHERE queue_id = ?
+        AND status = 'pending'
+        AND rounds_completed = 0
       ORDER BY position ASC
       LIMIT 1
     `).get(queueId) as EntryRow | undefined;
@@ -496,31 +500,20 @@ export function dbDeleteEntry(id: string): boolean {
 }
 
 /**
- * Requeue an entry to the end of the queue.
+ * Get the next entry with a pending response (contact replied, waiting for timer).
+ * Used by the timer to process responses before doing new outreach.
  */
-export function dbRequeueEntry(id: string): void {
+export function dbGetNextEntryWithResponse(queueId: string): OutboundEntry | null {
   const db = getDb();
-  const entry = dbGetEntry(id);
-  if (!entry) {
-    throw new Error(`Outbound entry not found: ${id}`);
-  }
-
-  const maxRow = db.prepare(
-    "SELECT COALESCE(MAX(position), -1) as max_pos FROM outbound_entries WHERE queue_id = ?"
-  ).get(entry.queueId) as { max_pos: number };
-
-  const now = Date.now();
-  db.prepare(`
-    UPDATE outbound_entries SET
-      position = ?,
-      status = 'pending',
-      rounds_completed = rounds_completed + 1,
-      last_processed_at = ?,
-      updated_at = ?
-    WHERE id = ?
-  `).run(maxRow.max_pos + 1, now, now, id);
-
-  log.debug("Requeued entry", { id, newPosition: maxRow.max_pos + 1 });
+  const row = db.prepare(`
+    SELECT * FROM outbound_entries
+    WHERE queue_id = ?
+      AND last_response_text IS NOT NULL
+      AND status IN ('pending', 'active')
+    ORDER BY last_response_at ASC
+    LIMIT 1
+  `).get(queueId) as EntryRow | undefined;
+  return row ? rowToEntry(row) : null;
 }
 
 /**
@@ -565,6 +558,7 @@ export function dbRecordEntryResponse(id: string, text: string): void {
     : text;
   db.prepare(`
     UPDATE outbound_entries SET
+      status = 'pending',
       last_response_at = ?,
       last_response_text = ?,
       updated_at = ?
@@ -636,6 +630,18 @@ export function dbSetPendingReceipt(entryId: string, receipt: PendingReceipt): v
 }
 
 /**
+ * Clear the last response text from an outbound entry.
+ */
+export function dbClearResponseText(entryId: string): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    "UPDATE outbound_entries SET last_response_text = NULL, updated_at = ? WHERE id = ?"
+  ).run(now, entryId);
+  log.debug("Cleared response text from entry", { entryId });
+}
+
+/**
  * Clear the pending read receipt from an outbound entry.
  */
 export function dbClearPendingReceipt(entryId: string): void {
@@ -661,7 +667,7 @@ export function dbSetEntrySenderId(entryId: string, senderId: string): void {
 
 /**
  * Find outbound entry by sender ID (e.g., LID).
- * Matches any entry in a non-deleted queue regardless of entry/queue status.
+ * Only matches entries in active queues with pending/active status.
  */
 export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | null {
   const db = getDb();
@@ -669,7 +675,9 @@ export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | n
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id = ?
-    ORDER BY e.updated_at DESC
+      AND q.status = 'active'
+      AND e.status IN ('pending', 'active')
+    ORDER BY e.created_at ASC
     LIMIT 1
   `).get(senderId) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
@@ -678,6 +686,7 @@ export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | n
 /**
  * Find outbound entry that has been sent to but has no sender_id yet.
  * Used as a fallback for LID contacts on first interaction.
+ * Only matches entries in active queues with pending/active status.
  */
 export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
   const db = getDb();
@@ -686,6 +695,8 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id IS NULL
       AND e.last_sent_at IS NOT NULL
+      AND q.status = 'active'
+      AND e.status IN ('pending', 'active')
     ORDER BY e.last_sent_at DESC
     LIMIT 1
   `).get() as EntryRow | undefined;
@@ -694,7 +705,7 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
 
 /**
  * Find outbound entry for a contact phone.
- * Matches any entry regardless of entry/queue status (for security bypass + prompt suppression).
+ * Only matches entries in active queues with pending/active status.
  */
 export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
   const db = getDb();
@@ -702,7 +713,9 @@ export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.contact_phone = ?
-    ORDER BY e.updated_at DESC
+      AND q.status = 'active'
+      AND e.status IN ('pending', 'active')
+    ORDER BY e.created_at ASC
     LIMIT 1
   `).get(phone) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;

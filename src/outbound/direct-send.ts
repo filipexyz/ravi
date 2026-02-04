@@ -50,14 +50,13 @@ export async function directSend(input: DirectSendInput): Promise<DirectSendResu
   }
 
   try {
-    // Emit to the outbound send topic
+    // Emit directly to the deliver topic
     // The gateway subscribes to this and routes to the correct plugin
-    await notif.emit("ravi.outbound.send", {
+    await notif.emit("ravi.outbound.deliver", {
       channel,
       accountId,
       to,
       text,
-      sessionKey: input.sessionKey,
       typingDelayMs: input.typingDelayMs,
     });
 

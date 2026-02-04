@@ -11,6 +11,10 @@ mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(DB_PATH);
 
+// WAL mode for concurrent read/write access (CLI + daemon)
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA busy_timeout = 5000");
+
 // Initialize schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (

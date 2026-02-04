@@ -136,6 +136,11 @@ function getDb(): Database {
 
   db = new Database(DB_PATH);
 
+  // WAL mode for concurrent read/write access (CLI + daemon)
+  db.exec("PRAGMA journal_mode = WAL");
+  // Wait up to 5s for locks to clear instead of failing immediately
+  db.exec("PRAGMA busy_timeout = 5000");
+
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
 

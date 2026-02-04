@@ -16,10 +16,11 @@ import {
   dbUpdateQueueState,
   dbUpdateQueue,
   dbGetNextEntry,
-  dbRequeueEntry,
+  dbGetNextEntryWithResponse,
   dbUpdateEntry,
   dbListEntries,
   dbClearPendingReceipt,
+  dbClearResponseText,
 } from "./outbound-db.js";
 import type { OutboundQueue, OutboundEntry } from "./types.js";
 
@@ -45,7 +46,7 @@ export class OutboundRunner {
     this.armTimer();
     this.subscribeToConfigRefresh();
     this.subscribeToTriggerEvents();
-    this.subscribeToDirectSend();
+    this.subscribeToResponseEvents();
 
     log.info("Outbound runner started");
   }
@@ -142,26 +143,33 @@ export class OutboundRunner {
         return;
       }
 
-      // Flush all pending read receipts across all entries in this queue
-      const allQueueEntries = dbListEntries(queue.id);
-      for (const e of allQueueEntries) {
-        if (e.pendingReceipt) {
-          await notif.emit("ravi.outbound.receipt", { ...e.pendingReceipt });
-          dbClearPendingReceipt(e.id);
-          log.debug("Sent deferred read receipt", { entryId: e.id });
-        }
+      // Priority 1: Process entries with pending responses (contact replied)
+      const responseEntry = dbGetNextEntryWithResponse(queue.id);
+      if (responseEntry) {
+        log.info("Processing response entry", { entryId: responseEntry.id, phone: responseEntry.contactPhone });
+        await this.processEntry(queue, responseEntry, agentId, startTime);
+
+        // Event path: only lastRunAt + totalProcessed, no currentIndex change
+        dbUpdateQueueState(queue.id, {
+          lastRunAt: startTime,
+          lastStatus: "ok",
+          lastDurationMs: Date.now() - startTime,
+          nextRunAt: startTime + queue.intervalMs,
+          totalProcessed: queue.totalProcessed + 1,
+        });
+        return;
       }
 
-      // Get next entry (round-robin)
+      // Priority 2: Initial outreach (only pending + round 0)
       const entry = dbGetNextEntry(queue.id, queue.currentIndex);
 
       if (!entry) {
-        // No pending entries - check if all are done
+        // No pending entries - check if all are done (permanently finished)
         const allEntries = dbListEntries(queue.id);
-        const pendingCount = allEntries.filter(e => e.status === "pending" || e.status === "active").length;
+        const notDoneCount = allEntries.filter(e => e.status !== "done").length;
 
-        if (pendingCount === 0 && allEntries.length > 0) {
-          log.info("Queue completed - all entries processed", { queueId: queue.id });
+        if (notDoneCount === 0 && allEntries.length > 0) {
+          log.info("Queue completed - all entries done", { queueId: queue.id });
           dbUpdateQueue(queue.id, { status: "completed" });
           dbUpdateQueueState(queue.id, {
             lastRunAt: startTime,
@@ -171,44 +179,15 @@ export class OutboundRunner {
           return;
         }
 
-        log.debug("No entries to process", { queueId: queue.id });
+        log.debug("No entries ready for initial outreach", { queueId: queue.id });
         this.scheduleNext(queue, startTime);
         return;
       }
 
-      // Mark entry as active
-      dbUpdateEntry(entry.id, { status: "active", lastProcessedAt: startTime });
+      // Process initial outreach
+      await this.processEntry(queue, entry, agentId, startTime);
 
-      // Send deferred read receipt if pending
-      if (entry.pendingReceipt) {
-        await notif.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
-        dbClearPendingReceipt(entry.id);
-        log.debug("Sent deferred read receipt", { entryId: entry.id });
-      }
-
-      // Build prompt for the agent
-      const prompt = this.buildPrompt(queue, entry);
-
-      // Session key: agent:{agentId}:outbound:{queueId}:{phone}
-      const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
-
-      // Emit prompt
-      await notif.emit(`ravi.${sessionKey}.prompt`, {
-        prompt,
-        _outbound: true,
-        _queueId: queue.id,
-        _entryId: entry.id,
-      });
-
-      // Clear response text so it's not repeated in the next round
-      if (entry.lastResponseText) {
-        dbUpdateEntry(entry.id, { lastResponseText: undefined });
-      }
-
-      // Requeue entry (move to end of queue)
-      dbRequeueEntry(entry.id);
-
-      // Update queue state
+      // Timer path: advance currentIndex + schedule next
       const nextIndex = entry.position + 1;
       dbUpdateQueueState(queue.id, {
         lastRunAt: startTime,
@@ -217,13 +196,6 @@ export class OutboundRunner {
         nextRunAt: startTime + queue.intervalMs,
         currentIndex: nextIndex,
         totalProcessed: queue.totalProcessed + 1,
-      });
-
-      log.info("Queue entry processed", {
-        queueId: queue.id,
-        entryId: entry.id,
-        phone: entry.contactPhone,
-        nextRunIn: queue.intervalMs,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -244,9 +216,63 @@ export class OutboundRunner {
   }
 
   /**
-   * Build the prompt for the agent with queue context.
+   * Process a specific entry (initial outreach or contact response).
+   * Does NOT update queue state — caller is responsible for that.
    */
-  private buildPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
+  private async processEntry(
+    queue: OutboundQueue,
+    entry: OutboundEntry,
+    agentId: string,
+    startTime: number,
+  ): Promise<void> {
+    // Mark active + increment round
+    dbUpdateEntry(entry.id, {
+      status: "active",
+      lastProcessedAt: startTime,
+      roundsCompleted: entry.roundsCompleted + 1,
+    });
+
+    // Send deferred read receipt if pending (only for THIS entry)
+    if (entry.pendingReceipt) {
+      await notif.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
+      dbClearPendingReceipt(entry.id);
+      log.debug("Sent deferred read receipt", { entryId: entry.id });
+    }
+
+    // Build prompt: full context for outreach, concise for follow-up
+    const prompt = entry.lastResponseText
+      ? this.buildFollowUpPrompt(queue, entry)
+      : this.buildOutreachPrompt(queue, entry);
+
+    // Session key: agent:{agentId}:outbound:{queueId}:{phone}
+    const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+
+    // Emit prompt
+    await notif.emit(`ravi.${sessionKey}.prompt`, {
+      prompt,
+      _outbound: true,
+      _queueId: queue.id,
+      _entryId: entry.id,
+    });
+
+    // Clear response text so it's not repeated
+    if (entry.lastResponseText) {
+      dbClearResponseText(entry.id);
+    }
+
+    log.info("Entry processed", {
+      queueId: queue.id,
+      entryId: entry.id,
+      phone: entry.contactPhone,
+      round: entry.roundsCompleted + 1,
+    });
+  }
+
+  /**
+   * Build the prompt for initial outreach (round 0 → 1).
+   * Full context: instructions, contact info, metadata, available actions.
+   */
+  private buildOutreachPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
     const parts: string[] = [];
 
     parts.push(`[Outbound: ${queue.name}]`);
@@ -279,13 +305,6 @@ export class OutboundRunner {
       parts.push("");
     }
 
-    // Last response from contact
-    if (entry.lastResponseText) {
-      parts.push("## Last Response from Contact");
-      parts.push(entry.lastResponseText);
-      parts.push("");
-    }
-
     // Metadata
     parts.push("## Metadata");
     parts.push(`- Entry ID: ${entry.id}`);
@@ -301,6 +320,24 @@ export class OutboundRunner {
     parts.push("- `mcp__ravi-cli__outbound_done <entryId>` - Mark this entry as done (won't be processed again)");
     parts.push("- `mcp__ravi-cli__outbound_skip <entryId>` - Skip this entry for now");
     parts.push("- `mcp__ravi-cli__outbound_context <entryId> <json>` - Update context for next round");
+
+    return parts.join("\n");
+  }
+
+  /**
+   * Build the prompt for a follow-up round (contact responded).
+   * Concise: just the response text so the agent knows it's a new interaction.
+   */
+  private buildFollowUpPrompt(queue: OutboundQueue, entry: OutboundEntry): string {
+    const parts: string[] = [];
+
+    parts.push(`[Outbound: ${queue.name} — Round ${entry.roundsCompleted + 1}]`);
+    parts.push("");
+    parts.push("The contact replied:");
+    parts.push("");
+    parts.push(entry.lastResponseText!);
+    parts.push("");
+    parts.push(`Respond using outbound_send. Entry ID: ${entry.id}, Phone: ${entry.contactPhone}.`);
 
     return parts.join("\n");
   }
@@ -355,6 +392,7 @@ export class OutboundRunner {
 
     log.info("Manually triggering queue", { queueId: id, queueName: queue.name });
     await this.processQueue(queue);
+    this.armTimer();
     return true;
   }
 
@@ -405,42 +443,30 @@ export class OutboundRunner {
   }
 
   /**
-   * Subscribe to direct send events.
-   * Handles outbound.send events from directSend() function.
+   * Subscribe to contact response events.
+   * Response is already recorded in DB by the gateway.
+   * Timer-driven processQueue will pick it up on next run.
    */
-  private async subscribeToDirectSend(): Promise<void> {
-    const topic = "ravi.outbound.send";
-    log.debug("Subscribing to direct send events", { topic });
+  private async subscribeToResponseEvents(): Promise<void> {
+    const topic = "ravi.outbound.response";
+    log.debug("Subscribing to response events", { topic });
 
     try {
       for await (const event of notif.subscribe(topic)) {
         if (!this.running) break;
 
-        const data = event.data as {
-          channel: string;
-          accountId: string;
-          to: string;
-          text: string;
-          typingDelayMs?: number;
-        };
+        const data = event.data as { queueId?: string; entryId?: string };
+        if (!data.queueId || !data.entryId) continue;
 
-        log.info("Direct send event", { to: data.to, channel: data.channel });
-
-        // Re-emit to the channel plugin's outbound topic
-        // The gateway's response handler picks this up
-        // We use a special topic that gateway subscribes to
-        await notif.emit(`ravi.outbound.deliver`, {
-          channel: data.channel,
-          accountId: data.accountId,
-          to: data.to,
-          text: data.text,
-          typingDelayMs: data.typingDelayMs,
+        log.info("Contact responded, will process on next timer run", {
+          queueId: data.queueId,
+          entryId: data.entryId,
         });
       }
     } catch (err) {
-      log.error("Direct send subscription error", { error: err });
+      log.error("Response event subscription error", { error: err });
       if (this.running) {
-        setTimeout(() => this.subscribeToDirectSend(), 5000);
+        setTimeout(() => this.subscribeToResponseEvents(), 5000);
       }
     }
   }

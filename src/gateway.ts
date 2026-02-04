@@ -471,7 +471,12 @@ export class Gateway {
           dbSetEntrySenderId(outboundEntry.id, message.senderId);
         }
 
-        // Do NOT emit prompt — the outbound runner will handle this on next cycle
+        // Trigger the runner to process this entry (event-driven, not timer-based)
+        await notif.emit("ravi.outbound.response", {
+          queueId: outboundEntry.queueId,
+          entryId: outboundEntry.id,
+        });
+
         return;
       }
     }
