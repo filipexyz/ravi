@@ -567,11 +567,26 @@ export class AgentsCommands {
   @Command({ name: "reset", description: "Reset agent session" })
   reset(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("sessionKey", { required: false, description: "Specific session key (default: agent:ID:main)" }) sessionKey?: string
+    @Arg("sessionKey", { required: false, description: "Specific session key, 'all' to reset all, or omit for agent:ID:main" }) sessionKey?: string
   ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
+    }
+
+    // Reset all sessions for this agent
+    if (sessionKey === "all") {
+      const sessions = getSessionsByAgent(id);
+      if (sessions.length === 0) {
+        console.log(`ℹ️  No sessions to reset for agent: ${id}`);
+        return;
+      }
+      let count = 0;
+      for (const s of sessions) {
+        if (deleteSession(s.sessionKey)) count++;
+      }
+      console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
+      return;
     }
 
     const key = sessionKey || `agent:${id}:main`;
@@ -580,7 +595,20 @@ export class AgentsCommands {
     if (deleted) {
       console.log(`✅ Session reset: ${key}`);
     } else {
-      console.log(`ℹ️  No session to reset: ${key}`);
+      // Show available sessions as hint
+      const sessions = getSessionsByAgent(id);
+      if (sessions.length > 0) {
+        console.log(`ℹ️  No session found: ${key}`);
+        console.log(`\n  Available sessions for ${id}:`);
+        for (const s of sessions) {
+          console.log(`    ${s.sessionKey}`);
+        }
+        console.log(`\n  Usage:`);
+        console.log(`    ravi agents reset ${id} <sessionKey>   Reset specific session`);
+        console.log(`    ravi agents reset ${id} all            Reset all sessions`);
+      } else {
+        console.log(`ℹ️  No sessions to reset for agent: ${id}`);
+      }
     }
   }
 }
