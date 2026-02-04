@@ -186,8 +186,49 @@ export class DaemonCommands {
 
   @Command({ name: "run", description: "Run daemon in foreground (used by system services)" })
   async run() {
+    // Kill any orphaned daemon processes before starting
+    // This prevents ghost responses from duplicate daemons
+    this.killOrphanedDaemons();
+
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
+  }
+
+  /**
+   * Kill any existing daemon processes (except ourselves).
+   * Prevents duplicate daemons which cause ghost responses.
+   */
+  private killOrphanedDaemons() {
+    const myPid = process.pid;
+
+    try {
+      // Find all "daemon run" processes
+      const result = execSync('pgrep -f "daemon run"', {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+
+      const pids = result
+        .trim()
+        .split("\n")
+        .map(p => parseInt(p, 10))
+        .filter(p => !isNaN(p) && p !== myPid);
+
+      if (pids.length > 0) {
+        console.log(`[daemon] Killing ${pids.length} orphaned daemon(s): ${pids.join(", ")}`);
+        for (const pid of pids) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {
+            // Process may have already exited
+          }
+        }
+        // Give them a moment to die
+        execSync("sleep 1", { stdio: "pipe" });
+      }
+    } catch {
+      // No other daemons found (pgrep returns non-zero)
+    }
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
