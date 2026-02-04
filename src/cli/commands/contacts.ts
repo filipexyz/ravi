@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import {
   getAllContacts,
@@ -16,6 +16,12 @@ import {
   normalizePhone,
   formatPhone,
   setContactReplyMode,
+  updateContact,
+  findContactsByTag,
+  searchContacts,
+  addContactTag,
+  removeContactTag,
+  setOptOut,
   type ContactStatus,
   type ReplyMode,
 } from "../../contacts.js";
@@ -185,8 +191,36 @@ export class ContactsCommands {
       }
       setContactReplyMode(normalized, value as ReplyMode);
       console.log(`✓ Mode set: ${formatPhone(normalized)} → ${value}`);
+    } else if (key === "email") {
+      updateContact(normalized, { email: value === "-" ? null : value });
+      console.log(`✓ Email set: ${formatPhone(normalized)} → ${value}`);
+    } else if (key === "name") {
+      updateContact(normalized, { name: value === "-" ? null : value });
+      console.log(`✓ Name set: ${formatPhone(normalized)} → ${value}`);
+    } else if (key === "tags") {
+      try {
+        const tags = JSON.parse(value);
+        if (!Array.isArray(tags)) fail("Tags must be a JSON array");
+        updateContact(normalized, { tags });
+        console.log(`✓ Tags set: ${formatPhone(normalized)} → ${value}`);
+      } catch {
+        fail("Tags must be a valid JSON array, e.g. '[\"lead\",\"vip\"]'");
+      }
+    } else if (key === "notes") {
+      try {
+        const notes = JSON.parse(value);
+        if (typeof notes !== "object" || Array.isArray(notes)) fail("Notes must be a JSON object");
+        updateContact(normalized, { notes });
+        console.log(`✓ Notes set: ${formatPhone(normalized)}`);
+      } catch {
+        fail("Notes must be a valid JSON object, e.g. '{\"empresa\":\"Acme\"}'");
+      }
+    } else if (key === "opt-out" || key === "optout") {
+      const boolValue = value === "true" || value === "yes" || value === "1";
+      setOptOut(normalized, boolValue);
+      console.log(`✓ Opt-out set: ${formatPhone(normalized)} → ${boolValue ? "yes" : "no"}`);
     } else {
-      fail(`Unknown key: ${key}. Keys: agent, mode`);
+      fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out`);
     }
   }
 
@@ -198,14 +232,75 @@ export class ContactsCommands {
     if (contact) {
       console.log(`\nContact: ${formatPhone(normalized)}`);
       console.log(`  Name:    ${contact.name || "-"}`);
+      console.log(`  Email:   ${contact.email || "-"}`);
       console.log(`  Status:  ${statusText(contact.status)}`);
       console.log(`  Agent:   ${contact.agent_id || "-"}`);
       console.log(`  Mode:    ${contact.reply_mode || "auto"}`);
+      console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
+      console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);
+      console.log(`  Opt-out: ${contact.opt_out ? "yes" : "no"}`);
+      console.log(`  Interactions: ${contact.interaction_count}`);
+      if (contact.last_inbound_at) console.log(`  Last inbound:  ${contact.last_inbound_at}`);
+      if (contact.last_outbound_at) console.log(`  Last outbound: ${contact.last_outbound_at}`);
       console.log(`  Created: ${contact.created_at}`);
       console.log(`  Updated: ${contact.updated_at}`);
     } else {
       console.log(`\nContact not found: ${formatPhone(normalized)}`);
       console.log(`  Status: \x1b[31m✗ Not allowed\x1b[0m (unknown)`);
     }
+  }
+
+  @Command({ name: "find", description: "Find contacts by tag or search query" })
+  find(
+    @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
+    @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean
+  ) {
+    const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
+
+    if (contacts.length === 0) {
+      console.log(`No contacts found for: ${query}`);
+      return;
+    }
+
+    console.log(`\nFound ${contacts.length} contact(s):\n`);
+    console.log("  ST  PHONE                  NAME                 TAGS");
+    console.log("  --  --------------------   ----------------     ----");
+    for (const contact of contacts) {
+      const icon = statusIcon(contact.status);
+      const phone = formatPhone(contact.phone).padEnd(20);
+      const name = (contact.name || "-").padEnd(16);
+      const tags = contact.tags.length > 0 ? contact.tags.join(", ") : "-";
+      console.log(`  ${icon}   ${phone}   ${name}     ${tags}`);
+    }
+  }
+
+  @Command({ name: "tag", description: "Add a tag to a contact" })
+  tag(
+    @Arg("phone", { description: "Phone number" }) phone: string,
+    @Arg("tag", { description: "Tag to add" }) tag: string
+  ) {
+    const normalized = normalizePhone(phone);
+    const contact = getContact(normalized);
+    if (!contact) {
+      fail(`Contact not found: ${formatPhone(normalized)}`);
+    }
+
+    addContactTag(normalized, tag);
+    console.log(`✓ Tag added: ${formatPhone(normalized)} +${tag}`);
+  }
+
+  @Command({ name: "untag", description: "Remove a tag from a contact" })
+  untag(
+    @Arg("phone", { description: "Phone number" }) phone: string,
+    @Arg("tag", { description: "Tag to remove" }) tag: string
+  ) {
+    const normalized = normalizePhone(phone);
+    const contact = getContact(normalized);
+    if (!contact) {
+      fail(`Contact not found: ${formatPhone(normalized)}`);
+    }
+
+    removeContactTag(normalized, tag);
+    console.log(`✓ Tag removed: ${formatPhone(normalized)} -${tag}`);
   }
 }

@@ -36,7 +36,8 @@
     "wa:dev": "bun --watch src/wa.ts",
     "cli": "bun src/cli/index.ts",
     "typecheck": "bun tsc --noEmit",
-    "lint": "bun eslint src/"
+    "lint": "bun eslint src/",
+    "test": "bun test"
   },
   "keywords": [
     "claude",
