@@ -8,6 +8,7 @@
 export type {
   QueueStatus,
   EntryStatus,
+  QualificationStatus,
   OutboundQueue,
   OutboundQueueInput,
   OutboundEntry,
@@ -31,6 +32,7 @@ export {
   dbListEntries,
   dbGetNextEntry,
   dbGetNextEntryWithResponse,
+  dbGetNextFollowUpEntry,
   dbUpdateEntry,
   dbDeleteEntry,
   dbMarkEntryDone,

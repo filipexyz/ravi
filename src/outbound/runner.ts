@@ -17,6 +17,7 @@ import {
   dbUpdateQueue,
   dbGetNextEntry,
   dbGetNextEntryWithResponse,
+  dbGetNextFollowUpEntry,
   dbUpdateEntry,
   dbListEntries,
   dbClearPendingReceipt,
@@ -159,13 +160,46 @@ export class OutboundRunner {
         return;
       }
 
-      // Priority 2: Initial outreach (only pending + round 0)
+      // Priority 2: Follow-up for entries without response (if followUp configured)
+      if (queue.followUp && Object.keys(queue.followUp).length > 0) {
+        const followUpEntry = dbGetNextFollowUpEntry(queue.id, queue.followUp, queue.maxRounds);
+        if (followUpEntry) {
+          log.info("Processing follow-up entry (no response)", {
+            entryId: followUpEntry.id,
+            phone: followUpEntry.contactPhone,
+            qualification: followUpEntry.qualification ?? "cold",
+            rounds: followUpEntry.roundsCompleted,
+          });
+          await this.processFollowUpEntry(queue, followUpEntry, agentId, startTime);
+
+          // Same as response path: no currentIndex change
+          dbUpdateQueueState(queue.id, {
+            lastRunAt: startTime,
+            lastStatus: "ok",
+            lastDurationMs: Date.now() - startTime,
+            nextRunAt: startTime + queue.intervalMs,
+            totalProcessed: queue.totalProcessed + 1,
+          });
+          return;
+        }
+      }
+
+      // Priority 3: Initial outreach (only pending + round 0)
       const entry = dbGetNextEntry(queue.id, queue.currentIndex);
 
       if (!entry) {
-        // No pending entries - check if all are done (permanently finished)
+        // No pending entries for initial outreach
         const allEntries = dbListEntries(queue.id);
-        const notDoneCount = allEntries.filter(e => e.status !== "done").length;
+        const notDoneCount = allEntries.filter(e => e.status !== "done" && e.status !== "skipped").length;
+
+        // Don't mark completed if there are entries that could still get follow-ups
+        const hasFollowUpCandidates = queue.followUp && Object.keys(queue.followUp).length > 0 &&
+          allEntries.some(e =>
+            e.roundsCompleted > 0 &&
+            !e.lastResponseText &&
+            (e.status === "pending" || e.status === "active") &&
+            (queue.maxRounds === undefined || e.roundsCompleted < queue.maxRounds)
+          );
 
         if (notDoneCount === 0 && allEntries.length > 0) {
           log.info("Queue completed - all entries done", { queueId: queue.id });
@@ -178,7 +212,11 @@ export class OutboundRunner {
           return;
         }
 
-        log.debug("No entries ready for initial outreach", { queueId: queue.id });
+        if (hasFollowUpCandidates) {
+          log.debug("No initial outreach but follow-up candidates exist, scheduling next", { queueId: queue.id });
+        } else {
+          log.debug("No entries ready for initial outreach", { queueId: queue.id });
+        }
         this.scheduleNext(queue, startTime);
         return;
       }
@@ -298,9 +336,11 @@ export class OutboundRunner {
     parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Mark entry as done`);
     parts.push(`- \`mcp__ravi-cli__outbound_skip ${entry.id}\` — Skip for now`);
     parts.push(`- \`mcp__ravi-cli__outbound_context ${entry.id} <json>\` — Save context for next round`);
+    parts.push(`- \`mcp__ravi-cli__outbound_qualify ${entry.id} <status>\` — Set qualification (cold/warm/interested/qualified/rejected)`);
     parts.push("");
     parts.push("## Metadata");
-    parts.push(`Entry ID: ${entry.id} | Queue ID: ${queue.id} | Round: ${entry.roundsCompleted + 1}`);
+    const qual = entry.qualification ?? "cold";
+    parts.push(`Entry ID: ${entry.id} | Queue ID: ${queue.id} | Round: ${entry.roundsCompleted + 1} | Qualification: ${qual}`);
 
     return parts.join("\n");
   }
@@ -356,6 +396,102 @@ export class OutboundRunner {
     parts.push(`[Outbound: ${queue.name} — O contato respondeu]`);
     parts.push("");
     parts.push(entry.lastResponseText!);
+
+    return parts.join("\n");
+  }
+
+  /**
+   * Process a follow-up entry (contacted but no response).
+   * Similar to processEntry but uses buildNoResponsePrompt.
+   */
+  private async processFollowUpEntry(
+    queue: OutboundQueue,
+    entry: OutboundEntry,
+    agentId: string,
+    startTime: number,
+  ): Promise<void> {
+    // Mark active + increment round
+    dbUpdateEntry(entry.id, {
+      status: "active",
+      lastProcessedAt: startTime,
+      roundsCompleted: entry.roundsCompleted + 1,
+    });
+
+    // Send deferred read receipt if pending
+    if (entry.pendingReceipt) {
+      await notif.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
+      dbClearPendingReceipt(entry.id);
+      log.debug("Sent deferred read receipt", { entryId: entry.id });
+    }
+
+    const systemContext = this.buildSystemContext(queue, entry);
+    const prompt = this.buildNoResponsePrompt(queue, entry);
+
+    const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+
+    log.info("Sending no-response follow-up to agent", {
+      entryId: entry.id,
+      phone: entry.contactPhone,
+      qualification: entry.qualification ?? "cold",
+      roundsCompleted: entry.roundsCompleted,
+      sessionKey,
+    });
+
+    await notif.emit(`ravi.${sessionKey}.prompt`, {
+      prompt,
+      _outbound: true,
+      _outboundSystemContext: systemContext,
+      _queueId: queue.id,
+      _entryId: entry.id,
+    });
+
+    log.info("Follow-up entry processed", {
+      queueId: queue.id,
+      entryId: entry.id,
+      phone: entry.contactPhone,
+      round: entry.roundsCompleted + 1,
+    });
+  }
+
+  /**
+   * Build user prompt for follow-up when contact hasn't responded.
+   */
+  private buildNoResponsePrompt(queue: OutboundQueue, entry: OutboundEntry): string {
+    const elapsed = Date.now() - (entry.lastSentAt ?? 0);
+    const minutes = Math.round(elapsed / 60000);
+    const qual = entry.qualification ?? "cold";
+
+    const parts: string[] = [];
+    parts.push(`[Outbound: ${queue.name} — Sem resposta há ${minutes} min | Status: ${qual}]`);
+    parts.push("");
+
+    // Contact info (same as outreach prompt)
+    const contact = getContact(entry.contactPhone);
+    const contextName = entry.context.name as string | undefined;
+
+    parts.push(`Telefone: ${entry.contactPhone}`);
+
+    const name = contact?.name ?? contextName;
+    if (name) parts.push(`Nome: ${name}`);
+
+    const email = contact?.email ?? entry.contactEmail;
+    if (email) parts.push(`Email: ${email}`);
+
+    if (contact) {
+      if (contact.tags.length > 0) parts.push(`Tags: ${contact.tags.join(", ")}`);
+      if (Object.keys(contact.notes).length > 0) {
+        parts.push(`Notas: ${JSON.stringify(contact.notes)}`);
+      }
+    }
+
+    const { name: _name, ...restContext } = entry.context;
+    if (Object.keys(restContext).length > 0) {
+      parts.push("");
+      parts.push(`Contexto: ${JSON.stringify(restContext)}`);
+    }
+
+    parts.push("");
+    parts.push("Decida se vale mandar um follow-up ou não.");
 
     return parts.join("\n");
   }

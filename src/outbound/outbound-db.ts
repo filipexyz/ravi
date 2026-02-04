@@ -15,6 +15,7 @@ import type {
   OutboundEntryInput,
   QueueStatus,
   EntryStatus,
+  QualificationStatus,
   QueueStateUpdate,
   PendingReceipt,
 } from "./types.js";
@@ -37,6 +38,8 @@ interface QueueRow {
   active_end: string | null;
   timezone: string | null;
   current_index: number;
+  follow_up: string | null;
+  max_rounds: number | null;
   next_run_at: number | null;
   last_run_at: number | null;
   last_status: string | null;
@@ -57,6 +60,7 @@ interface EntryRow {
   position: number;
   status: string;
   context: string;
+  qualification: string | null;
   rounds_completed: number;
   last_processed_at: number | null;
   last_sent_at: number | null;
@@ -92,6 +96,10 @@ function rowToQueue(row: QueueRow): OutboundQueue {
   if (row.active_start !== null) queue.activeStart = row.active_start;
   if (row.active_end !== null) queue.activeEnd = row.active_end;
   if (row.timezone !== null) queue.timezone = row.timezone;
+  if (row.follow_up !== null) {
+    try { queue.followUp = JSON.parse(row.follow_up); } catch { /* ignore */ }
+  }
+  if (row.max_rounds !== null) queue.maxRounds = row.max_rounds;
   if (row.next_run_at !== null) queue.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) queue.lastRunAt = row.last_run_at;
   if (row.last_status !== null) queue.lastStatus = row.last_status;
@@ -115,6 +123,7 @@ function rowToEntry(row: EntryRow): OutboundEntry {
   };
 
   if (row.contact_email !== null) entry.contactEmail = row.contact_email;
+  if (row.qualification !== null) entry.qualification = row.qualification as QualificationStatus;
   if (row.last_processed_at !== null) entry.lastProcessedAt = row.last_processed_at;
   if (row.last_sent_at !== null) entry.lastSentAt = row.last_sent_at;
   if (row.last_response_at !== null) entry.lastResponseAt = row.last_response_at;
@@ -151,10 +160,11 @@ export function dbCreateQueue(input: OutboundQueueInput): OutboundQueue {
     INSERT INTO outbound_queues (
       id, agent_id, name, description, instructions,
       status, interval_ms, active_start, active_end, timezone,
+      follow_up, max_rounds,
       current_index, next_run_at,
       total_processed, total_sent, total_skipped,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 'paused', ?, ?, ?, ?, 0, NULL, 0, 0, 0, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, 'paused', ?, ?, ?, ?, ?, ?, 0, NULL, 0, 0, 0, ?, ?)
   `).run(
     id,
     input.agentId ?? null,
@@ -165,6 +175,8 @@ export function dbCreateQueue(input: OutboundQueueInput): OutboundQueue {
     input.activeStart ?? null,
     input.activeEnd ?? null,
     input.timezone ?? null,
+    input.followUp ? JSON.stringify(input.followUp) : null,
+    input.maxRounds ?? null,
     now,
     now,
   );
@@ -241,6 +253,14 @@ export function dbUpdateQueue(id: string, updates: Partial<OutboundQueue>): Outb
   if (updates.timezone !== undefined) {
     fields.push("timezone = ?");
     values.push(updates.timezone ?? null);
+  }
+  if (updates.followUp !== undefined) {
+    fields.push("follow_up = ?");
+    values.push(updates.followUp ? JSON.stringify(updates.followUp) : null);
+  }
+  if (updates.maxRounds !== undefined) {
+    fields.push("max_rounds = ?");
+    values.push(updates.maxRounds ?? null);
   }
 
   if (fields.length === 0) return existing;
@@ -455,6 +475,10 @@ export function dbUpdateEntry(id: string, updates: Partial<OutboundEntry>): Outb
     fields.push("context = ?");
     values.push(JSON.stringify(updates.context));
   }
+  if (updates.qualification !== undefined) {
+    fields.push("qualification = ?");
+    values.push(updates.qualification ?? null);
+  }
   if (updates.roundsCompleted !== undefined) {
     fields.push("rounds_completed = ?");
     values.push(updates.roundsCompleted);
@@ -526,6 +550,50 @@ export function dbGetNextEntryWithResponse(queueId: string): OutboundEntry | nul
     LIMIT 1
   `).get(queueId) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Get the next entry eligible for follow-up (contacted but no response).
+ * Uses the queue's followUp config to determine delay per qualification status.
+ */
+export function dbGetNextFollowUpEntry(
+  queueId: string,
+  followUp: Record<string, number>,
+  maxRounds?: number,
+): OutboundEntry | null {
+  const db = getDb();
+  const now = Date.now();
+
+  // Get all candidates: contacted (rounds > 0), has been sent, no pending response, not done/skipped
+  const rows = db.prepare(`
+    SELECT * FROM outbound_entries
+    WHERE queue_id = ?
+      AND rounds_completed > 0
+      AND last_sent_at IS NOT NULL
+      AND last_response_text IS NULL
+      AND status IN ('pending', 'active')
+    ORDER BY last_sent_at ASC
+  `).all(queueId) as EntryRow[];
+
+  for (const row of rows) {
+    const entry = rowToEntry(row);
+    const qual = entry.qualification ?? "cold";
+    const delayMinutes = followUp[qual];
+
+    // No delay configured for this status → skip (no follow-up)
+    if (delayMinutes === undefined) continue;
+
+    // Respect maxRounds
+    if (maxRounds !== undefined && entry.roundsCompleted >= maxRounds) continue;
+
+    // Check if enough time has passed
+    const lastSent = entry.lastSentAt ?? 0;
+    if (now - lastSent >= delayMinutes * 60000) {
+      return entry;
+    }
+  }
+
+  return null;
 }
 
 /**

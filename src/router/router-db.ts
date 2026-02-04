@@ -370,6 +370,21 @@ function getDb(): Database {
     db.exec("ALTER TABLE outbound_entries ADD COLUMN sender_id TEXT");
     log.info("Added sender_id column to outbound_entries table");
   }
+  if (!entryColumns.some(c => c.name === "qualification")) {
+    db.exec("ALTER TABLE outbound_entries ADD COLUMN qualification TEXT");
+    log.info("Added qualification column to outbound_entries table");
+  }
+
+  // Migrations for outbound_queues
+  const queueColumns = db.prepare("PRAGMA table_info(outbound_queues)").all() as Array<{ name: string }>;
+  if (!queueColumns.some(c => c.name === "follow_up")) {
+    db.exec("ALTER TABLE outbound_queues ADD COLUMN follow_up TEXT");
+    log.info("Added follow_up column to outbound_queues table");
+  }
+  if (!queueColumns.some(c => c.name === "max_rounds")) {
+    db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
+    log.info("Added max_rounds column to outbound_queues table");
+  }
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };

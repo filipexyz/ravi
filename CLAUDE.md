@@ -545,3 +545,9 @@ npm run build     # Compile TypeScript
 npm run dev       # Watch mode
 npm link          # Make `ravi` available globally
 ```
+
+### When to restart the daemon
+
+- **Restart required**: After `bun run build` (code changes need the new bundle)
+- **NO restart needed**: After `ravi outbound reset`, `ravi outbound set`, `ravi outbound start/pause`, or any other CLI config command. The CLI writes directly to SQLite and emits refresh signals — the running daemon picks up changes automatically.
+- **NO manual trigger needed**: Active queues process on their interval timer. `ravi outbound run` is only for one-off testing, not needed after reset/start.

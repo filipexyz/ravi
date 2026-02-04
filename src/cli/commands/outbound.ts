@@ -7,6 +7,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
+import { loadRouterConfig, resolveRoute } from "../../router/index.js";
 import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
@@ -65,6 +66,8 @@ export class OutboundCommands {
     @Option({ flags: "--active-start <time>", description: "Active hours start (e.g., 09:00)" }) activeStart?: string,
     @Option({ flags: "--active-end <time>", description: "Active hours end (e.g., 22:00)" }) activeEnd?: string,
     @Option({ flags: "--tz <timezone>", description: "Timezone" }) tz?: string,
+    @Option({ flags: "--follow-up <json>", description: 'Follow-up delays per qualification in minutes, e.g. \'{"cold":120,"warm":30}\'' }) followUpJson?: string,
+    @Option({ flags: "--max-rounds <n>", description: "Maximum rounds per entry" }) maxRoundsStr?: string,
   ) {
     if (!instructions) {
       fail("--instructions is required");
@@ -82,6 +85,17 @@ export class OutboundCommands {
 
     const timezone = tz ?? getDefaultTimezone();
 
+    let followUp: Record<string, number> | undefined;
+    if (followUpJson) {
+      try {
+        followUp = JSON.parse(followUpJson);
+      } catch {
+        fail("Invalid --follow-up JSON");
+      }
+    }
+
+    const maxRounds = maxRoundsStr ? parseInt(maxRoundsStr, 10) : undefined;
+
     try {
       const queue = dbCreateQueue({
         name,
@@ -92,6 +106,8 @@ export class OutboundCommands {
         activeStart,
         activeEnd,
         timezone,
+        followUp,
+        maxRounds,
       });
 
       console.log(`\n✓ Created queue: ${queue.id}`);
@@ -161,6 +177,12 @@ export class OutboundCommands {
     }
     if (queue.timezone) {
       console.log(`  Timezone:     ${queue.timezone}`);
+    }
+    if (queue.followUp) {
+      console.log(`  Follow-up:    ${JSON.stringify(queue.followUp)}`);
+    }
+    if (queue.maxRounds !== undefined) {
+      console.log(`  Max rounds:   ${queue.maxRounds}`);
     }
 
     console.log("");
@@ -285,8 +307,39 @@ export class OutboundCommands {
           console.log(`✓ Timezone set: ${id} -> ${value}`);
           break;
 
+        case "follow-up":
+        case "followUp": {
+          if (value === "null" || value === "-") {
+            dbUpdateQueue(id, { followUp: undefined });
+            console.log(`✓ Follow-up disabled: ${id}`);
+          } else {
+            try {
+              const parsed = JSON.parse(value);
+              dbUpdateQueue(id, { followUp: parsed });
+              console.log(`✓ Follow-up set: ${id} -> ${JSON.stringify(parsed)}`);
+            } catch {
+              fail("Invalid JSON for follow-up");
+            }
+          }
+          break;
+        }
+
+        case "max-rounds":
+        case "maxRounds": {
+          if (value === "null" || value === "-") {
+            dbUpdateQueue(id, { maxRounds: undefined });
+            console.log(`✓ Max rounds cleared: ${id}`);
+          } else {
+            const n = parseInt(value, 10);
+            if (isNaN(n) || n < 1) fail("max-rounds must be a positive integer");
+            dbUpdateQueue(id, { maxRounds: n });
+            console.log(`✓ Max rounds set: ${id} -> ${n}`);
+          }
+          break;
+        }
+
         default:
-          fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz`);
+          fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, follow-up, max-rounds`);
       }
 
       await notif.emit("ravi.outbound.refresh", {});
@@ -395,8 +448,8 @@ export class OutboundCommands {
     }
 
     console.log(`\nEntries for "${queue.name}":\n`);
-    console.log("  ID        POS  PHONE                  NAME                 STATUS    ROUNDS  LAST RESPONSE");
-    console.log("  --------  ---  --------------------   -------------------  --------  ------  ----------------");
+    console.log("  ID        POS  PHONE                  NAME                 STATUS    QUAL        ROUNDS  LAST RESPONSE");
+    console.log("  --------  ---  --------------------   -------------------  --------  ----------  ------  ----------------");
 
     for (const entry of entries) {
       const id = entry.id.padEnd(8);
@@ -404,12 +457,13 @@ export class OutboundCommands {
       const phone = formatPhone(entry.contactPhone).padEnd(20);
       const entryName = ((entry.context.name as string) ?? "-").slice(0, 19).padEnd(19);
       const status = `${statusColor(entry.status)}${entry.status.padEnd(8)}${RESET}`;
+      const qual = (entry.qualification ?? "-").padEnd(10);
       const rounds = String(entry.roundsCompleted).padEnd(6);
       const lastResp = entry.lastResponseText
         ? entry.lastResponseText.slice(0, 16) + (entry.lastResponseText.length > 16 ? "..." : "")
         : "-";
 
-      console.log(`  ${id}  ${pos}  ${phone}   ${entryName}  ${status}  ${rounds}  ${lastResp}`);
+      console.log(`  ${id}  ${pos}  ${phone}   ${entryName}  ${status}  ${qual}  ${rounds}  ${lastResp}`);
     }
 
     console.log(`\n  Total: ${entries.length} entries`);
@@ -429,6 +483,7 @@ export class OutboundCommands {
     if (entry.contactEmail) console.log(`  Email:          ${entry.contactEmail}`);
     console.log(`  Position:       ${entry.position}`);
     console.log(`  Status:         ${statusColor(entry.status)}${entry.status}${RESET}`);
+    console.log(`  Qualification:  ${entry.qualification ?? "-"}`);
     console.log(`  Rounds:         ${entry.roundsCompleted}`);
 
     if (Object.keys(entry.context).length > 0) {
@@ -475,13 +530,38 @@ export class OutboundCommands {
     }
   }
 
-  @Command({ name: "done", description: "Mark an entry as done" })
-  done(@Arg("id", { description: "Entry ID" }) id: string) {
+  @Command({ name: "done", description: "Mark an entry as done and notify main agent" })
+  async done(@Arg("id", { description: "Entry ID" }) id: string) {
     const entry = dbGetEntry(id);
     if (!entry) fail(`Entry not found: ${id}`);
 
+    const queue = dbGetQueue(entry.queueId);
+
     dbMarkEntryDone(id);
+
+    // Build qualification summary from entry context
+    const ctx = entry.context;
+    const parts: string[] = [];
+    parts.push(`Lead qualificado pelo outbound (${queue?.name ?? "queue"}):`);
+    parts.push(`Telefone: ${entry.contactPhone}`);
+    if (ctx.name) parts.push(`Nome: ${ctx.name}`);
+    if (entry.contactEmail) parts.push(`Email: ${entry.contactEmail}`);
+    for (const [key, value] of Object.entries(ctx)) {
+      if (key === "name") continue;
+      parts.push(`${key}: ${value}`);
+    }
+
+    // Resolve target session for the contact on the default/routed agent
+    const routerConfig = loadRouterConfig();
+    const resolved = resolveRoute(routerConfig, { phone: entry.contactPhone });
+    const targetSession = resolved.sessionKey;
+
+    // Send contextualize to the main agent so it has the lead info
+    const prompt = `[System] Context: ${parts.join("\n")}`;
+    await notif.emit(`ravi.${targetSession}.prompt`, { prompt });
+
     console.log(`✓ Entry marked done: ${id}`);
+    console.log(`  Notified ${targetSession}`);
   }
 
   @Command({ name: "skip", description: "Skip an entry" })
@@ -512,26 +592,56 @@ export class OutboundCommands {
     }
   }
 
+  @Command({ name: "qualify", description: "Set qualification status on an entry" })
+  qualify(
+    @Arg("id", { description: "Entry ID" }) id: string,
+    @Arg("status", { description: "Qualification: cold, warm, interested, qualified, rejected" }) status: string,
+  ) {
+    const entry = dbGetEntry(id);
+    if (!entry) fail(`Entry not found: ${id}`);
+
+    const valid = ["cold", "warm", "interested", "qualified", "rejected"];
+    if (!valid.includes(status)) {
+      fail(`Invalid status: ${status}. Valid: ${valid.join(", ")}`);
+    }
+
+    dbUpdateEntry(id, { qualification: status as any });
+    console.log(`✓ Qualification set: ${id} -> ${status}`);
+  }
+
   @Command({ name: "reset", description: "Reset an entry to pending (clear rounds, responses, session)" })
-  reset(@Arg("id", { description: "Entry ID" }) id: string) {
+  reset(
+    @Arg("id", { description: "Entry ID" }) id: string,
+    @Option({ flags: "--full", description: "Also clear context (preserves name)" }) full?: boolean,
+  ) {
     const entry = dbGetEntry(id);
     if (!entry) fail(`Entry not found: ${id}`);
 
     const queue = dbGetQueue(entry.queueId);
     const agentId = queue?.agentId ?? getDefaultAgentId();
 
-    // Reset entry state (including context)
-    dbUpdateEntry(id, {
+    // Reset entry state
+    // Use null cast to clear optional fields (undefined = "don't update" in dbUpdateEntry)
+    const updates: Partial<any> = {
       status: "pending",
       roundsCompleted: 0,
-      context: {},
-      lastProcessedAt: undefined,
-      lastSentAt: undefined,
-      lastResponseAt: undefined,
-      lastResponseText: undefined,
-      senderId: undefined,
-      pendingReceipt: undefined,
-    });
+      qualification: null,
+      lastProcessedAt: null,
+      lastSentAt: null,
+      lastResponseAt: null,
+      lastResponseText: null,
+      senderId: null,
+      pendingReceipt: null,
+    };
+
+    if (full) {
+      // Clear context but keep name
+      const cleanContext: Record<string, unknown> = {};
+      if (entry.context.name) cleanContext.name = entry.context.name;
+      updates.context = cleanContext;
+    }
+
+    dbUpdateEntry(id, updates);
 
     // Delete the SDK session so conversation starts fresh
     const sessionKey = `agent:${agentId}:outbound:${entry.queueId}:${entry.contactPhone}`;
@@ -544,6 +654,7 @@ export class OutboundCommands {
     chatDb.close();
 
     console.log(`✓ Entry reset: ${id} (${formatPhone(entry.contactPhone)})`);
+    if (full) console.log(`  Context cleared (name preserved)`);
     if (sessionResult.changes > 0) console.log(`  Session cleared`);
     if (chatResult.changes > 0) console.log(`  Chat history cleared (${chatResult.changes} messages)`);
   }

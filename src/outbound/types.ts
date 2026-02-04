@@ -8,6 +8,7 @@
 
 export type QueueStatus = "active" | "paused" | "completed";
 export type EntryStatus = "pending" | "active" | "done" | "skipped" | "error";
+export type QualificationStatus = "cold" | "warm" | "interested" | "qualified" | "rejected";
 
 /**
  * Pending read receipt stored on an outbound entry.
@@ -38,6 +39,10 @@ export interface OutboundQueue {
   timezone?: string;
   currentIndex: number;
 
+  // Follow-up config
+  followUp?: Record<string, number>; // qualification status → delay in minutes
+  maxRounds?: number;
+
   // State
   nextRunAt?: number;
   lastRunAt?: number;
@@ -66,6 +71,8 @@ export interface OutboundQueueInput {
   activeStart?: string;
   activeEnd?: string;
   timezone?: string;
+  followUp?: Record<string, number>;
+  maxRounds?: number;
 }
 
 /**
@@ -79,6 +86,7 @@ export interface OutboundEntry {
   position: number;
   status: EntryStatus;
   context: Record<string, unknown>;
+  qualification?: QualificationStatus;
   roundsCompleted: number;
   lastProcessedAt?: number;
   lastSentAt?: number;
