@@ -15,7 +15,7 @@ import {
 } from "./router/index.js";
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
-import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindUnmappedActiveEntry, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
+import { dbGetEntry, dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
 
 const log = logger.child("gateway");
 
@@ -449,14 +449,12 @@ export class Gateway {
     // Reload config to pick up route changes (routes may be added via CLI)
     this.routerConfig = loadRouterConfig();
 
-    // Check if sender has an active outbound entry
+    // Check if sender has an active outbound entry (plugin already resolved the ID)
     // If so, record the response and DON'T emit prompt (let the runner handle it)
-    if (!message.isGroup) {
-      const outboundEntry = message.senderPhone
-        ? dbFindActiveEntryByPhone(message.senderPhone)
-        : (dbFindActiveEntryBySenderId(message.senderId) ?? dbFindUnmappedActiveEntry());
+    if (!message.isGroup && message.outboundEntryId) {
+      const outboundEntry = dbGetEntry(message.outboundEntryId);
 
-      if (outboundEntry) {
+      if (outboundEntry && ['pending', 'active'].includes(outboundEntry.status)) {
         log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
           senderId: message.senderId,
           entryId: outboundEntry.id,
@@ -470,12 +468,6 @@ export class Gateway {
         if (!outboundEntry.senderId) {
           dbSetEntrySenderId(outboundEntry.id, message.senderId);
         }
-
-        // Trigger the runner to process this entry (event-driven, not timer-based)
-        await notif.emit("ravi.outbound.response", {
-          queueId: outboundEntry.queueId,
-          entryId: outboundEntry.id,
-        });
 
         return;
       }

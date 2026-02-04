@@ -63,6 +63,7 @@ export interface InboundMessage {
   isGroup: boolean;
   groupName?: string;
   groupMembers?: string[];
+  outboundEntryId?: string;
   raw: unknown;
 }
 

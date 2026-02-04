@@ -46,7 +46,6 @@ export class OutboundRunner {
     this.armTimer();
     this.subscribeToConfigRefresh();
     this.subscribeToTriggerEvents();
-    this.subscribeToResponseEvents();
 
     log.info("Outbound runner started");
   }
@@ -442,34 +441,6 @@ export class OutboundRunner {
     }
   }
 
-  /**
-   * Subscribe to contact response events.
-   * Response is already recorded in DB by the gateway.
-   * Timer-driven processQueue will pick it up on next run.
-   */
-  private async subscribeToResponseEvents(): Promise<void> {
-    const topic = "ravi.outbound.response";
-    log.debug("Subscribing to response events", { topic });
-
-    try {
-      for await (const event of notif.subscribe(topic)) {
-        if (!this.running) break;
-
-        const data = event.data as { queueId?: string; entryId?: string };
-        if (!data.queueId || !data.entryId) continue;
-
-        log.info("Contact responded, will process on next timer run", {
-          queueId: data.queueId,
-          entryId: data.entryId,
-        });
-      }
-    } catch (err) {
-      log.error("Response event subscription error", { error: err });
-      if (this.running) {
-        setTimeout(() => this.subscribeToResponseEvents(), 5000);
-      }
-    }
-  }
 }
 
 // Singleton instance

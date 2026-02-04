@@ -521,6 +521,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         ? dbFindActiveEntryByPhone(message.senderPhone)
         : (dbFindActiveEntryBySenderId(message.senderId) ?? dbFindUnmappedActiveEntry());
       if (outboundMatch) {
+        message.outboundEntryId = outboundMatch.id;
         log.info("Outbound contact detected, bypassing security", {
           senderId: message.senderId,
           entryId: outboundMatch.id,
