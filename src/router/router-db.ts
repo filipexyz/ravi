@@ -14,6 +14,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
+import type { BashConfig, BashMode } from "../bash/types.js";
 
 const log = logger.child("router:db");
 
@@ -33,6 +34,12 @@ export const DmScopeSchema = z.enum([
   "per-peer",
   "per-channel-peer",
   "per-account-channel-peer",
+]);
+
+export const BashModeSchema = z.enum([
+  "bypass",
+  "allowlist",
+  "denylist",
 ]);
 
 export const AgentInputSchema = z.object({
@@ -76,6 +83,10 @@ interface AgentRow {
   heartbeat_active_start: string | null;
   heartbeat_active_end: string | null;
   heartbeat_last_run_at: number | null;
+  // Bash permission columns
+  bash_mode: string | null;
+  bash_allowlist: string | null;
+  bash_denylist: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -257,6 +268,14 @@ function getDb(): Database {
   if (!agentColumns.some(c => c.name === "setting_sources")) {
     db.exec("ALTER TABLE agents ADD COLUMN setting_sources TEXT");
     log.info("Added setting_sources column to agents table");
+  }
+
+  // Migration: add bash permission columns to agents if not exists
+  if (!agentColumns.some(c => c.name === "bash_mode")) {
+    db.exec("ALTER TABLE agents ADD COLUMN bash_mode TEXT CHECK(bash_mode IS NULL OR bash_mode IN ('bypass','allowlist','denylist'))");
+    db.exec("ALTER TABLE agents ADD COLUMN bash_allowlist TEXT");
+    db.exec("ALTER TABLE agents ADD COLUMN bash_denylist TEXT");
+    log.info("Added bash permission columns to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -496,8 +515,9 @@ function getStatements(): PreparedStatements {
     insertAgent: database.prepare(`
       INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
+        bash_mode, bash_allowlist, bash_denylist,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -515,6 +535,9 @@ function getStatements(): PreparedStatements {
         heartbeat_model = ?,
         heartbeat_active_start = ?,
         heartbeat_active_end = ?,
+        bash_mode = ?,
+        bash_allowlist = ?,
+        bash_denylist = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -619,6 +642,31 @@ function rowToAgent(row: AgentRow): AgentConfig {
     lastRunAt: row.heartbeat_last_run_at ?? undefined,
   };
 
+  // Bash config fields
+  if (row.bash_mode !== null) {
+    const parsed = BashModeSchema.safeParse(row.bash_mode);
+    if (parsed.success) {
+      const bashConfig: BashConfig = {
+        mode: parsed.data,
+      };
+      if (row.bash_allowlist !== null) {
+        try {
+          bashConfig.allowlist = JSON.parse(row.bash_allowlist);
+        } catch {
+          // Ignore invalid JSON
+        }
+      }
+      if (row.bash_denylist !== null) {
+        try {
+          bashConfig.denylist = JSON.parse(row.bash_denylist);
+        } catch {
+          // Ignore invalid JSON
+        }
+      }
+      result.bashConfig = bashConfig;
+    }
+  }
+
   return result;
 }
 
@@ -678,6 +726,10 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // heartbeat_model
       null, // heartbeat_active_start
       null, // heartbeat_active_end
+      // Bash fields (defaults)
+      null, // bash_mode
+      null, // bash_allowlist
+      null, // bash_denylist
       now,
       now
     );
@@ -736,6 +788,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
 
   const now = Date.now();
   const hb = updates.heartbeat;
+  const bash = updates.bashConfig;
   s.updateAgent.run(
     updates.name !== undefined ? updates.name ?? null : row.name,
     updates.cwd ?? row.cwd,
@@ -756,6 +809,14 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     hb?.model !== undefined ? hb.model ?? null : row.heartbeat_model,
     hb?.activeStart !== undefined ? hb.activeStart ?? null : row.heartbeat_active_start,
     hb?.activeEnd !== undefined ? hb.activeEnd ?? null : row.heartbeat_active_end,
+    // Bash fields
+    bash !== undefined ? bash?.mode ?? null : row.bash_mode,
+    bash !== undefined
+      ? bash?.allowlist ? JSON.stringify(bash.allowlist) : null
+      : row.bash_allowlist,
+    bash !== undefined
+      ? bash?.denylist ? JSON.stringify(bash.denylist) : null
+      : row.bash_denylist,
     now,
     id
   );
@@ -839,6 +900,121 @@ export function dbRemoveAgentTool(id: string, tool: string): void {
 export function dbSetAgentDebounce(id: string, debounceMs: number | null): void {
   dbUpdateAgent(id, { debounceMs: debounceMs as number | undefined });
   log.info("Set agent debounce", { id, debounceMs });
+}
+
+// ============================================================================
+// Agent Bash Config
+// ============================================================================
+
+/**
+ * Set bash mode for an agent
+ */
+export function dbSetAgentBashMode(id: string, mode: BashMode | null): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (mode === null) {
+    // Clear bash config entirely (bypass mode)
+    dbUpdateAgent(id, { bashConfig: undefined });
+    log.info("Cleared bash config for agent", { id });
+  } else {
+    const bashConfig: BashConfig = {
+      mode,
+      allowlist: existing.bashConfig?.allowlist,
+      denylist: existing.bashConfig?.denylist,
+    };
+    dbUpdateAgent(id, { bashConfig });
+    log.info("Set bash mode for agent", { id, mode });
+  }
+}
+
+/**
+ * Set the complete bash config for an agent
+ */
+export function dbSetAgentBashConfig(id: string, config: BashConfig | null): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  dbUpdateAgent(id, { bashConfig: config ?? undefined });
+  log.info("Set bash config for agent", { id, mode: config?.mode ?? "bypass" });
+}
+
+/**
+ * Add a CLI to the agent's bash allowlist
+ */
+export function dbAddAgentBashAllowlist(id: string, cli: string): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  const bashConfig = existing.bashConfig ?? { mode: "allowlist" as const };
+  const allowlist = bashConfig.allowlist ?? [];
+
+  if (!allowlist.includes(cli)) {
+    allowlist.push(cli);
+    bashConfig.allowlist = allowlist;
+    dbUpdateAgent(id, { bashConfig });
+    log.info("Added CLI to agent bash allowlist", { id, cli });
+  }
+}
+
+/**
+ * Remove a CLI from the agent's bash allowlist
+ */
+export function dbRemoveAgentBashAllowlist(id: string, cli: string): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (!existing.bashConfig?.allowlist) return;
+
+  const allowlist = existing.bashConfig.allowlist.filter(c => c !== cli);
+  const bashConfig = { ...existing.bashConfig, allowlist };
+  dbUpdateAgent(id, { bashConfig });
+  log.info("Removed CLI from agent bash allowlist", { id, cli });
+}
+
+/**
+ * Add a CLI to the agent's bash denylist
+ */
+export function dbAddAgentBashDenylist(id: string, cli: string): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  const bashConfig = existing.bashConfig ?? { mode: "denylist" as const };
+  const denylist = bashConfig.denylist ?? [];
+
+  if (!denylist.includes(cli)) {
+    denylist.push(cli);
+    bashConfig.denylist = denylist;
+    dbUpdateAgent(id, { bashConfig });
+    log.info("Added CLI to agent bash denylist", { id, cli });
+  }
+}
+
+/**
+ * Remove a CLI from the agent's bash denylist
+ */
+export function dbRemoveAgentBashDenylist(id: string, cli: string): void {
+  const existing = dbGetAgent(id);
+  if (!existing) {
+    throw new Error(`Agent not found: ${id}`);
+  }
+
+  if (!existing.bashConfig?.denylist) return;
+
+  const denylist = existing.bashConfig.denylist.filter(c => c !== cli);
+  const bashConfig = { ...existing.bashConfig, denylist };
+  dbUpdateAgent(id, { bashConfig });
+  log.info("Removed CLI from agent bash denylist", { id, cli });
 }
 
 // ============================================================================

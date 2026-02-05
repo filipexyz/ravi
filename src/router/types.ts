@@ -2,6 +2,8 @@
  * Session Router Types
  */
 
+import type { BashConfig } from "../bash/types.js";
+
 // ============================================================================
 // DM Scope
 // ============================================================================
@@ -74,6 +76,9 @@ export interface AgentConfig {
 
   /** Setting sources for Claude SDK (default: ["project"]) */
   settingSources?: ("user" | "project")[];
+
+  /** Bash CLI permission configuration */
+  bashConfig?: BashConfig;
 }
 
 // ============================================================================

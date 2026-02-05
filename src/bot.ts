@@ -22,6 +22,7 @@ import { createCliMcpServer, initCliTools } from "./cli/exports.js";
 import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
+import { createBashPermissionHook } from "./bash/index.js";
 
 const log = logger.child("bot");
 
@@ -542,6 +543,14 @@ export class RaviBot {
       serverName: cliMcpServer.name,
     });
 
+    // Build hooks array
+    const hooks: Record<string, unknown[]> = {};
+
+    // Add bash permission hook if agent has bash config
+    if (agent.bashConfig) {
+      hooks.PreToolUse = [createBashPermissionHook(() => agent.bashConfig)];
+    }
+
     const queryResult = query({
       prompt: prompt.prompt,
       options: {
@@ -559,6 +568,7 @@ export class RaviBot {
           append: systemPromptAppend,
         },
         settingSources: agent.settingSources ?? ["project"],
+        ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
       },
     });
 

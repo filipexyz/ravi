@@ -20,6 +20,12 @@ import {
   dbAddAgentTool,
   dbRemoveAgentTool,
   dbSetAgentDebounce,
+  dbSetAgentBashMode,
+  dbSetAgentBashConfig,
+  dbAddAgentBashAllowlist,
+  dbRemoveAgentBashAllowlist,
+  dbAddAgentBashDenylist,
+  dbRemoveAgentBashDenylist,
   getDefaultAgentId,
   getDefaultDmScope,
   getRaviDir,
@@ -40,6 +46,13 @@ export {
   dbSetAgentTools as setAgentTools,
   dbAddAgentTool as addAgentTool,
   dbRemoveAgentTool as removeAgentTool,
+  // Bash config
+  dbSetAgentBashMode as setAgentBashMode,
+  dbSetAgentBashConfig as setAgentBashConfig,
+  dbAddAgentBashAllowlist as addAgentBashAllowlist,
+  dbRemoveAgentBashAllowlist as removeAgentBashAllowlist,
+  dbAddAgentBashDenylist as addAgentBashDenylist,
+  dbRemoveAgentBashDenylist as removeAgentBashDenylist,
 };
 
 // ============================================================================

@@ -18,8 +18,16 @@ import {
   setAgentDebounce,
   ensureAgentDirs,
   loadRouterConfig,
+  setAgentBashMode,
+  setAgentBashConfig,
+  addAgentBashAllowlist,
+  removeAgentBashAllowlist,
+  addAgentBashDenylist,
+  removeAgentBashDenylist,
 } from "../../router/config.js";
-import { DmScopeSchema } from "../../router/router-db.js";
+import { DmScopeSchema, BashModeSchema } from "../../router/router-db.js";
+import type { BashConfig, BashMode } from "../../bash/types.js";
+import { getDefaultAllowlist, getDefaultDenylist } from "../../bash/permissions.js";
 import {
   getSession,
   deleteSession,
@@ -65,18 +73,21 @@ export class AgentsCommands {
     }
 
     console.log("\nAgents:\n");
-    console.log("  ID              CWD                          TOOLS");
-    console.log("  --------------  ---------------------------  ----------------");
+    console.log("  ID              CWD                          TOOLS     BASH");
+    console.log("  --------------  ---------------------------  --------  --------");
 
     for (const agent of agents) {
       const isDefault = agent.id === config.defaultAgent;
       const id = (agent.id + (isDefault ? " *" : "")).padEnd(14);
       const cwd = agent.cwd.padEnd(27);
-      const tools = agent.allowedTools
+      const tools = (agent.allowedTools
         ? `[${agent.allowedTools.length}]`
+        : "bypass").padEnd(8);
+      const bash = agent.bashConfig
+        ? `${agent.bashConfig.mode}[${(agent.bashConfig.mode === "allowlist" ? agent.bashConfig.allowlist?.length : agent.bashConfig.denylist?.length) ?? 0}]`
         : "bypass";
 
-      console.log(`  ${id}  ${cwd}  ${tools}`);
+      console.log(`  ${id}  ${cwd}  ${tools}  ${bash}`);
     }
 
     console.log(`\n  Total: ${agents.length} (* = default)`);
@@ -108,6 +119,19 @@ export class AgentsCommands {
       }
     } else {
       console.log("  Allowed Tools: bypass (all tools)");
+    }
+
+    // Bash config
+    if (agent.bashConfig) {
+      const bash = agent.bashConfig;
+      const listCount = bash.mode === "allowlist"
+        ? bash.allowlist?.length ?? 0
+        : bash.mode === "denylist"
+        ? bash.denylist?.length ?? 0
+        : 0;
+      console.log(`  Bash Mode:     ${bash.mode} [${listCount}]`);
+    } else {
+      console.log("  Bash Mode:     bypass (all CLIs)");
     }
 
     if (agent.systemPromptAppend) {
@@ -371,6 +395,171 @@ export class AgentsCommands {
       }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  @Command({ name: "bash", description: "Manage agent bash CLI permissions" })
+  bash(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("action", { required: false, description: "Action: mode, allow, deny, remove, init, clear" }) action?: string,
+    @Arg("value", { required: false, description: "CLI name(s) or mode value" }) value?: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      fail(`Agent not found: ${id}`);
+    }
+
+    // No action = show current config
+    if (!action) {
+      const config = agent.bashConfig;
+      const mode = config?.mode ?? "bypass";
+
+      console.log(`\n🛡️  Bash permissions for agent: ${id}`);
+      console.log(`   Mode: ${mode}`);
+
+      if (mode === "bypass") {
+        console.log("\n   All CLI commands are allowed (no restrictions).");
+      } else if (mode === "allowlist") {
+        const list = config?.allowlist ?? [];
+        console.log(`\n   Allowlist (${list.length} CLIs):`);
+        if (list.length === 0) {
+          console.log("   (empty - all bash commands will be blocked!)");
+        } else {
+          for (const cli of list.sort()) {
+            console.log(`   ✓ ${cli}`);
+          }
+        }
+      } else if (mode === "denylist") {
+        const list = config?.denylist ?? [];
+        console.log(`\n   Denylist (${list.length} CLIs):`);
+        if (list.length === 0) {
+          console.log("   (empty - all bash commands allowed)");
+        } else {
+          for (const cli of list.sort()) {
+            console.log(`   ✗ ${cli}`);
+          }
+        }
+      }
+
+      console.log("\nUsage:");
+      console.log("  ravi agents bash <id> mode <mode>     # Set mode (bypass, allowlist, denylist)");
+      console.log("  ravi agents bash <id> allow <cli>     # Add CLI to allowlist");
+      console.log("  ravi agents bash <id> deny <cli>      # Add CLI to denylist");
+      console.log("  ravi agents bash <id> remove <cli>    # Remove CLI from lists");
+      console.log("  ravi agents bash <id> init            # Init denylist with dangerous CLIs");
+      console.log("  ravi agents bash <id> init strict     # Init allowlist with safe CLIs");
+      console.log("  ravi agents bash <id> clear           # Reset to bypass mode");
+      return;
+    }
+
+    // Handle actions
+    switch (action) {
+      case "mode": {
+        if (!value) {
+          fail("Mode required. Usage: ravi agents bash <id> mode <bypass|allowlist|denylist>");
+        }
+        const result = BashModeSchema.safeParse(value);
+        if (!result.success) {
+          fail(`Invalid mode: ${value}. Valid modes: bypass, allowlist, denylist`);
+        }
+        try {
+          setAgentBashMode(id, result.data as BashMode);
+          console.log(`✓ Bash mode set: ${id} -> ${value}`);
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      case "allow": {
+        if (!value) {
+          fail("CLI name required. Usage: ravi agents bash <id> allow <cli>");
+        }
+        // Ensure mode is allowlist
+        if (agent.bashConfig?.mode !== "allowlist") {
+          setAgentBashMode(id, "allowlist");
+        }
+        try {
+          addAgentBashAllowlist(id, value);
+          console.log(`✓ Added CLI to allowlist: ${value}`);
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      case "deny": {
+        if (!value) {
+          fail("CLI name required. Usage: ravi agents bash <id> deny <cli>");
+        }
+        // Ensure mode is denylist
+        if (agent.bashConfig?.mode !== "denylist") {
+          setAgentBashMode(id, "denylist");
+        }
+        try {
+          addAgentBashDenylist(id, value);
+          console.log(`✓ Added CLI to denylist: ${value}`);
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      case "remove": {
+        if (!value) {
+          fail("CLI name required. Usage: ravi agents bash <id> remove <cli>");
+        }
+        try {
+          removeAgentBashAllowlist(id, value);
+          removeAgentBashDenylist(id, value);
+          console.log(`✓ Removed CLI from lists: ${value}`);
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      case "init": {
+        try {
+          if (value === "strict") {
+            // Init with safe allowlist
+            const allowlist = getDefaultAllowlist();
+            const config: BashConfig = {
+              mode: "allowlist",
+              allowlist,
+            };
+            setAgentBashConfig(id, config);
+            console.log(`✓ Initialized strict allowlist with ${allowlist.length} safe CLIs`);
+            console.log("  Only these CLIs can be executed. Use 'allow' to add more.");
+          } else {
+            // Init with dangerous denylist
+            const denylist = getDefaultDenylist();
+            const config: BashConfig = {
+              mode: "denylist",
+              denylist,
+            };
+            setAgentBashConfig(id, config);
+            console.log(`✓ Initialized denylist with ${denylist.length} dangerous CLIs`);
+            console.log("  These CLIs are blocked. Use 'deny' to add more.");
+          }
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      case "clear": {
+        try {
+          setAgentBashMode(id, null);
+          console.log(`✓ Bash permissions cleared: ${id} (bypass mode)`);
+        } catch (err) {
+          fail(`Error: ${err instanceof Error ? err.message : err}`);
+        }
+        break;
+      }
+
+      default:
+        fail(`Unknown action: ${action}. Actions: mode, allow, deny, remove, init, clear`);
     }
   }
 
