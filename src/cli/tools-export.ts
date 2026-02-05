@@ -11,6 +11,8 @@ import {
   type OptionMetadata,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
+import { notif } from "../notif.js";
+import { getContext } from "./context.js";
 
 // ============================================================================
 // Types
@@ -77,7 +79,15 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
       tools.push({
         name: `${groupMeta.name}_${cmdMeta.name}`,
         description: cmdMeta.description,
-        handler: buildHandler(instance, cmdMeta.method, argsMeta, optionsMeta),
+        handler: buildHandler(
+          instance,
+          cmdMeta.method,
+          argsMeta,
+          optionsMeta,
+          `${groupMeta.name}_${cmdMeta.name}`,
+          groupMeta.name,
+          cmdMeta.name
+        ),
         metadata: {
           group: groupMeta.name,
           command: cmdMeta.name,
@@ -130,6 +140,24 @@ export function manifestToJSON(tools: ExportedTool[]): string {
 // Internal Helpers
 // ============================================================================
 
+const MAX_INPUT_LENGTH = 500;
+
+function truncateForEvent(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.length > MAX_INPUT_LENGTH
+      ? value.slice(0, MAX_INPUT_LENGTH) + "…"
+      : value;
+  }
+  if (value && typeof value === "object") {
+    const truncated: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      truncated[k] = truncateForEvent(v);
+    }
+    return truncated;
+  }
+  return value;
+}
+
 /**
  * Build handler function that executes the command method.
  */
@@ -137,9 +165,29 @@ function buildHandler(
   instance: object,
   methodName: string,
   args: ArgMetadata[],
-  options: OptionMetadata[]
+  options: OptionMetadata[],
+  toolName: string,
+  group: string,
+  command: string
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
+    const ctx = getContext();
+    const sessionKey = ctx?.sessionKey ?? "_cli";
+    const agentId = ctx?.agentId;
+
+    notif
+      .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+        event: "start",
+        tool: toolName,
+        input: truncateForEvent(toolArgs),
+        timestamp: new Date().toISOString(),
+        sessionKey,
+        agentId,
+      })
+      .catch(() => {});
+
+    const startTime = Date.now();
+
     // Capture console output
     const output: string[] = [];
     const originalLog = console.log;
@@ -193,6 +241,19 @@ function buildHandler(
     }
 
     const text = output.join("\n").trim() || "(no output)";
+
+    notif
+      .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+        event: "end",
+        tool: toolName,
+        output: truncateForEvent(text),
+        isError,
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        sessionKey,
+        agentId,
+      })
+      .catch(() => {});
 
     return {
       content: [{ type: "text", text }],
