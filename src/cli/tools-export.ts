@@ -175,17 +175,6 @@ function buildHandler(
     const sessionKey = ctx?.sessionKey ?? "_cli";
     const agentId = ctx?.agentId;
 
-    notif
-      .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
-        event: "start",
-        tool: toolName,
-        input: truncateForEvent(toolArgs),
-        timestamp: new Date().toISOString(),
-        sessionKey,
-        agentId,
-      })
-      .catch(() => {});
-
     const startTime = Date.now();
 
     // Capture console output
@@ -208,14 +197,12 @@ function buildHandler(
       const totalParams = args.length + options.length;
 
       for (let i = 0; i < totalParams; i++) {
-        // Check if this index is an arg
         const argAtIndex = args.find((a) => a.index === i);
         if (argAtIndex) {
           finalArgs.push(toolArgs[argAtIndex.name]);
           continue;
         }
 
-        // Check if this index is an option
         const optAtIndex = options.find((o) => o.index === i);
         if (optAtIndex) {
           const optName = extractOptionName(optAtIndex.flags);
@@ -227,7 +214,6 @@ function buildHandler(
       const method = (instance as Record<string, Function>)[methodName];
       const result = method.apply(instance, finalArgs);
 
-      // Handle async methods
       if (result instanceof Promise) {
         await result;
       }
@@ -235,7 +221,6 @@ function buildHandler(
       isError = true;
       output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      // Restore console
       console.log = originalLog;
       console.error = originalError;
     }
@@ -244,8 +229,8 @@ function buildHandler(
 
     notif
       .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
-        event: "end",
         tool: toolName,
+        input: truncateForEvent(toolArgs),
         output: truncateForEvent(text),
         isError,
         durationMs: Date.now() - startTime,

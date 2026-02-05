@@ -12,8 +12,26 @@ import {
   getOptionsMetadata,
   type CommandMetadata,
 } from "./decorators.js";
+import { extractOptionName } from "./utils.js";
+import { notif } from "../notif.js";
 
 type CommandClass = new () => object;
+
+const MAX_INPUT_LENGTH = 500;
+
+function truncate(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.length > MAX_INPUT_LENGTH
+      ? value.slice(0, MAX_INPUT_LENGTH) + "…"
+      : value;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k] = truncate(v);
+    return out;
+  }
+  return value;
+}
 
 /**
  * Register all command classes with Commander
@@ -36,7 +54,7 @@ export function registerCommands(
     const instance = new cls();
 
     for (const cmdMeta of commandsMeta) {
-      registerCommand(group, instance, cmdMeta);
+      registerCommand(group, instance, cmdMeta, groupMeta.name);
     }
   }
 }
@@ -44,7 +62,8 @@ export function registerCommands(
 function registerCommand(
   group: CommanderCommand,
   instance: object,
-  cmdMeta: CommandMetadata
+  cmdMeta: CommandMetadata,
+  groupName: string
 ): void {
   const sub = group.command(cmdMeta.name).description(cmdMeta.description);
 
@@ -80,63 +99,66 @@ function registerCommand(
     }
   }
 
-  // Set up the action handler
-  sub.action((...commanderArgs: unknown[]) => {
-    // Commander passes: args..., options, command
-    // We need to extract args and options in the right order
+  const toolName = `${groupName}_${cmdMeta.name}`;
 
-    // The last arg is the Command object, second to last is options
+  // Set up the action handler
+  sub.action(async (...commanderArgs: unknown[]) => {
+    // Commander passes: args..., options, command
     const cmd = commanderArgs.pop(); // Command object (unused)
     void cmd;
     const options = commanderArgs.pop() as Record<string, unknown>;
-
-    // Remaining are positional args
     const positionalArgs = commanderArgs;
+
+    // Build input map for the event
+    const input: Record<string, unknown> = {};
 
     // Build the final args array in parameter order
     const finalArgs: unknown[] = [];
     const totalParams = argsMeta.length + optionsMeta.length;
 
     for (let i = 0; i < totalParams; i++) {
-      // Check if this index is an arg
       const argAtIndex = argsMeta.find((a) => a.index === i);
       if (argAtIndex) {
         const argPosition = argsMeta.indexOf(argAtIndex);
         finalArgs.push(positionalArgs[argPosition]);
+        input[argAtIndex.name] = positionalArgs[argPosition];
         continue;
       }
 
-      // Check if this index is an option
       const optAtIndex = optionsMeta.find((o) => o.index === i);
       if (optAtIndex) {
-        // Extract option name from flags (e.g., "-f, --force" -> "force")
         const optName = extractOptionName(optAtIndex.flags);
         finalArgs.push(options[optName]);
+        if (options[optName] !== undefined) {
+          input[optName] = options[optName];
+        }
       }
     }
 
-    // Call the method with extracted arguments
-    const method = (instance as Record<string, Function>)[cmdMeta.method];
-    const result = method.apply(instance, finalArgs);
+    // Execute and emit single event with input + output
+    const startTime = Date.now();
+    let isError = false;
 
-    // Handle async methods
-    if (result instanceof Promise) {
-      result.catch((err: Error) => {
-        console.error(`Error: ${err.message}`);
-        process.exit(1);
-      });
+    try {
+      const method = (instance as Record<string, Function>)[cmdMeta.method];
+      const result = method.apply(instance, finalArgs);
+      if (result instanceof Promise) await result;
+    } catch (err) {
+      isError = true;
+      console.error(`Error: ${err instanceof Error ? err.message : err}`);
     }
-  });
-}
 
-function extractOptionName(flags: string): string {
-  // Parse flags like "-f, --force" or "--verbose" to get the long option name
-  const match = flags.match(/--([a-zA-Z-]+)/);
-  if (match) {
-    // Convert kebab-case to camelCase
-    return match[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-  }
-  // Fall back to short option
-  const shortMatch = flags.match(/-([a-zA-Z])/);
-  return shortMatch ? shortMatch[1] : "";
+    await notif
+      .emit(`ravi._cli.cli.${groupName}.${cmdMeta.name}`, {
+        tool: toolName,
+        input: truncate(input),
+        isError,
+        durationMs: Date.now() - startTime,
+        timestamp: new Date().toISOString(),
+        sessionKey: "_cli",
+      })
+      .catch(() => {});
+
+    if (isError) process.exit(1);
+  });
 }
