@@ -11,6 +11,7 @@ A Claude-powered conversational bot with WhatsApp and Matrix integration, sessio
 - **Debounce** - Group rapid messages before processing
 - **Heartbeat** - Proactive agent runs on schedule to check pending tasks
 - **Cron Jobs** - Schedule prompts with cron expressions, intervals, or one-shot times
+- **Event Triggers** - Subscribe to any notif topic and fire agent prompts on events
 - **Outbound Queues** - Automated outreach campaigns with follow-ups and qualification
 - **Emoji Reactions** - Agents can react to messages with emojis
 - **Media Downloads** - Images, videos, documents saved to /tmp with paths in prompts
@@ -126,6 +127,36 @@ ravi cron rm <id>                    # Delete job
 - `--at "2025-02-01T15:00"` - One-shot at specific time
 
 **Options:** `--agent`, `--isolated`, `--delete-after`, `--description`
+
+### Event Triggers
+
+```bash
+# Add trigger: fire when a contact is modified
+ravi triggers add "Contact Changed" \
+  --topic "ravi.*.cli.contacts.*" \
+  --message "Um contato foi modificado. Registre a mudança." \
+  --cooldown 30s
+
+# Add trigger: alert on WhatsApp inbound
+ravi triggers add "CRM Sync" \
+  --topic "whatsapp.*.inbound" \
+  --message "Nova mensagem recebida. Atualize o CRM." \
+  --cooldown 10s
+
+ravi triggers list                   # List all triggers
+ravi triggers show <id>              # Show details
+ravi triggers enable <id>            # Enable
+ravi triggers disable <id>           # Disable
+ravi triggers set <id> <key> <value> # Edit property
+ravi triggers test <id>              # Test with fake event
+ravi triggers rm <id>                # Delete
+```
+
+**Options:** `--topic` (required), `--message` (required), `--agent`, `--cooldown` (default: 5s), `--session` (main/isolated, default: isolated)
+
+**Available topics:** `ravi.*.cli.{group}.{command}`, `ravi.*.tool`, `whatsapp.*.inbound`, `matrix.*.inbound`
+
+Agents can self-configure triggers via MCP tools (`triggers_add`, `triggers_list`, etc.).
 
 ### Contacts
 

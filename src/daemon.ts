@@ -19,6 +19,7 @@ import { dbGetSetting } from "./router/router-db.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
+import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 
 const log = logger.child("daemon");
 
@@ -92,6 +93,7 @@ async function shutdown(signal: string) {
     }
 
     // Then stop runners
+    await stopTriggerRunner();
     await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
@@ -166,6 +168,10 @@ export async function startDaemon() {
   // Start outbound runner
   await startOutboundRunner();
   log.info("Outbound runner started");
+
+  // Start trigger runner
+  await startTriggerRunner();
+  log.info("Trigger runner started");
 
   log.info("Daemon ready");
 }

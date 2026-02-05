@@ -377,6 +377,25 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_outbound_queues_next_run ON outbound_queues(next_run_at);
     CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
     CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
+
+    -- Event triggers
+    CREATE TABLE IF NOT EXISTS triggers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      agent_id TEXT,
+      topic TEXT NOT NULL,
+      message TEXT NOT NULL,
+      session TEXT DEFAULT 'isolated' CHECK(session IN ('main','isolated')),
+      enabled INTEGER DEFAULT 1,
+      cooldown_ms INTEGER DEFAULT 5000,
+      last_fired_at INTEGER,
+      fire_count INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled);
+    CREATE INDEX IF NOT EXISTS idx_triggers_topic ON triggers(topic);
   `);
 
   // Migrations for outbound_entries

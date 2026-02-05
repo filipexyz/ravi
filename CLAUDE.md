@@ -63,6 +63,7 @@ agent:main:matrix:dm:@user:server        # Per-peer session (Matrix)
 agent:jarvis:main                        # Different agent
 agent:main:whatsapp:group:123456         # WhatsApp group session
 agent:main:matrix:room:!roomid:server    # Matrix room session
+agent:main:trigger:a1b2c3d4              # Event trigger session (isolated)
 ```
 
 ## Message Queue
@@ -193,6 +194,107 @@ ravi cron rm <id>
 3. For isolated sessions, agent can use `cross_send` to deliver responses
 4. Next run time is calculated (with anti-drift for intervals)
 5. One-shot jobs (`--at`) are deleted after execution
+
+## Event Triggers
+
+Event-driven triggers that subscribe to any notif topic and fire agent prompts when events occur:
+
+```bash
+# List all triggers
+ravi triggers list
+
+# Add trigger: notify when outbound lead is qualified
+ravi triggers add "Lead Qualificado" \
+  --topic "ravi.*.cli.outbound.qualify" \
+  --message "Um lead foi qualificado. Notifica o grupo do Slack e atualiza o CRM." \
+  --agent main \
+  --cooldown 30s
+
+# Add trigger: alert on agent tool errors
+ravi triggers add "Agent Error Alert" \
+  --topic "ravi.*.tool" \
+  --message "Um tool deu erro. Analise o que aconteceu e me avise se precisa de ação." \
+  --agent main \
+  --cooldown 1m
+
+# Add trigger: log all contact changes
+ravi triggers add "Contact Audit" \
+  --topic "ravi.*.cli.contacts.*" \
+  --message "Um contato foi modificado. Registre a mudança no log de auditoria." \
+  --agent main \
+  --session isolated
+
+# Show trigger details
+ravi triggers show <id>
+
+# Enable/disable
+ravi triggers enable <id>
+ravi triggers disable <id>
+
+# Update properties
+ravi triggers set <id> name "New Name"
+ravi triggers set <id> message "Nova instrução"
+ravi triggers set <id> topic "ravi.*.cli.outbound.*"
+ravi triggers set <id> agent jarvis
+ravi triggers set <id> session main          # main or isolated
+ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
+
+# Test trigger (fires with fake event data)
+ravi triggers test <id>
+
+# Delete
+ravi triggers rm <id>
+```
+
+**Available Topics:**
+- `ravi.*.cli.{group}.{command}` - CLI tool executions (e.g., `ravi.*.cli.contacts.add`)
+- `ravi.*.tool` - SDK tool executions (Bash, Read, etc.)
+- `whatsapp.*.inbound` - WhatsApp messages
+- `matrix.*.inbound` - Matrix messages
+
+**Blocked Topics (anti-loop):**
+- `ravi.*.prompt` - Would create trigger→prompt→trigger loops
+- `ravi.*.response` - Would create trigger→response self-fire loops
+- `ravi.*.claude` - Internal SDK events, same risk
+
+**Options:**
+- `--topic <pattern>` - Notif topic pattern to subscribe to (required)
+- `--message <text>` - Prompt to send when event fires (required)
+- `--agent <id>` - Target agent (default: default agent)
+- `--cooldown <duration>` - Minimum time between fires (default: 5s)
+- `--session <type>` - `main` or `isolated` (default: isolated)
+
+**Prompt Format (injected into agent):**
+```
+[Trigger: Lead Qualificado]
+Topic: ravi.agent:main:main.cli.outbound.qualify
+Data: {
+  "event": "end",
+  "tool": "outbound_qualify",
+  "output": "✓ Qualification set: abc123 -> warm"
+}
+
+Um lead foi qualificado. Notifica o grupo do Slack e atualiza o CRM.
+```
+
+**Session Keys:**
+- `isolated` (default): `agent:{agentId}:trigger:{triggerId}`
+- `main`: `agent:{agentId}:main`
+
+**Anti-Loop Protection:**
+1. Blocked topics: `.prompt`, `.response`, `.claude` topics are rejected at subscription time
+2. Session filter: events from trigger sessions (`:trigger:` in topic) are skipped
+3. Data flag: events with `_trigger: true` are skipped
+4. Cooldown: per-trigger cooldown (default 5s) prevents rapid re-firing
+
+**How it works:**
+1. Daemon starts TriggerRunner, which subscribes to all enabled trigger topics
+2. When an event fires on a matching topic, runner builds a prompt with event data
+3. Prompt is emitted to `ravi.{sessionKey}.prompt`
+4. Agent processes normally (can use `cross_send`, CLI tools, etc.)
+5. CLI mutations emit `ravi.triggers.refresh` to hot-reload subscriptions
+
+All CLI commands are auto-exported as MCP tools (`triggers_list`, `triggers_add`, etc.), so agents can self-configure triggers via conversation.
 
 ## Outbound Queues
 
@@ -439,6 +541,16 @@ ravi cron disable <id>               # Disable job
 ravi cron set <id> <key> <value>     # Set property
 ravi cron run <id>                   # Manual trigger
 ravi cron rm <id>                    # Delete job
+
+# Event triggers
+ravi triggers list                   # List all triggers
+ravi triggers add <name> [options]   # Add new trigger
+ravi triggers show <id>              # Show trigger details
+ravi triggers enable <id>            # Enable trigger
+ravi triggers disable <id>           # Disable trigger
+ravi triggers set <id> <key> <value> # Set property
+ravi triggers test <id>              # Test with fake event
+ravi triggers rm <id>                # Delete trigger
 
 # Outbound queues
 ravi outbound list                   # List queues
