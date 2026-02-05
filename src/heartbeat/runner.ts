@@ -197,6 +197,7 @@ export class HeartbeatRunner {
     log.info("Triggering heartbeat", { agentId, trigger });
 
     // Update last trigger time
+    const timer = this.timers.get(agentId);
     const timerState = timer ?? { lastTrigger: 0, intervalMs: agent.heartbeat?.intervalMs ?? 1800000 };
     timerState.lastTrigger = Date.now();
     this.timers.set(agentId, timerState);
