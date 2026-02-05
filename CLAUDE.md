@@ -194,6 +194,75 @@ ravi cron rm <id>
 4. Next run time is calculated (with anti-drift for intervals)
 5. One-shot jobs (`--at`) are deleted after execution
 
+## Outbound Queues
+
+Automated outreach campaigns with follow-ups and qualification tracking:
+
+```bash
+# Create a queue
+ravi outbound create "Prospecting" \
+  --instructions "Reach out to this lead..." \
+  --every 5m \
+  --agent main \
+  --follow-up '{"cold":120,"warm":30}' \
+  --max-rounds 3
+
+# Add entries
+ravi outbound add <queueId> <phone> --name "João Silva"
+ravi outbound add <queueId> <phone> --name "Maria" --context '{"company":"Acme"}'
+ravi outbound add <queueId> <phone> --tag leads  # Add all contacts with tag
+
+# Manage queues
+ravi outbound list                    # List all queues
+ravi outbound show <id>               # Show queue details
+ravi outbound start <id>              # Activate queue
+ravi outbound pause <id>              # Pause queue
+ravi outbound run <id>                # Manual trigger
+ravi outbound rm <id>                 # Delete queue
+
+# Manage entries
+ravi outbound entries <queueId>       # List entries
+ravi outbound status <entryId>        # Entry details
+ravi outbound qualify <id> warm       # Set qualification
+ravi outbound context <id> '{"note":"Interested in product X"}'
+ravi outbound reset <id>              # Reset entry to pending
+ravi outbound reset <id> --full       # Reset and clear context
+ravi outbound skip <id>               # Skip entry
+ravi outbound done <id>               # Mark as done
+
+# Agent tools (used during outbound sessions)
+ravi outbound send <entryId> "Hello!" --typing-delay 2000 --pause 1000
+
+# View chat history
+ravi outbound chat <entryId>
+ravi outbound chat <entryId> --limit 10
+
+# Full report
+ravi outbound report                  # All queues
+ravi outbound report <queueId>        # Specific queue
+```
+
+**Queue Options:**
+- `--every <interval>` - Time between processing entries (5m, 1h, etc.)
+- `--agent <id>` - Agent to process entries
+- `--active-start/--active-end` - Active hours (e.g., 09:00-22:00)
+- `--tz <timezone>` - Timezone for active hours
+- `--follow-up <json>` - Delays per qualification (minutes): `{"cold":120,"warm":30}`
+- `--max-rounds <n>` - Maximum rounds per entry
+
+**Entry Fields:**
+- `status` - pending, active, done, skipped, error
+- `qualification` - cold, warm, interested, qualified, rejected
+- `roundsCompleted` - Number of completed follow-up rounds
+- `context` - JSON with name, company, and custom fields
+
+**Humanized Delivery:**
+- `--typing-delay <ms>` - Show typing indicator before sending
+- `--pause <ms>` - Pause before typing (simulates reading)
+
+**Session Keys:**
+Outbound entries run in isolated sessions: `agent:{agentId}:outbound:{queueId}:{phone}`
+
 ## Router (`~/ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
@@ -220,6 +289,7 @@ ravi settings set defaultTimezone America/Sao_Paulo
 - `dmScope` - Session grouping for DMs
 - `debounceMs` - Message grouping window
 - `allowedTools` - Tool whitelist (undefined = all tools)
+- `bashConfig` - Bash CLI permissions (see Bash Permissions below)
 - `matrixAccount` - Matrix account username (for multi-account)
 
 **DM Scopes:**
@@ -227,6 +297,30 @@ ravi settings set defaultTimezone America/Sao_Paulo
 - `per-peer` - Isolated by contact
 - `per-channel-peer` - Isolated by channel+contact
 - `per-account-channel-peer` - Full isolation
+
+**Bash Permissions:**
+
+Control which CLI commands agents can execute:
+
+```bash
+ravi agents bash <id>                    # Show current config
+ravi agents bash <id> mode <mode>        # Set mode (bypass, allowlist, denylist)
+ravi agents bash <id> init               # Init denylist with dangerous CLIs
+ravi agents bash <id> init strict        # Init allowlist with safe CLIs only
+ravi agents bash <id> allow <cli>        # Add CLI to allowlist
+ravi agents bash <id> deny <cli>         # Add CLI to denylist
+ravi agents bash <id> remove <cli>       # Remove CLI from lists
+ravi agents bash <id> clear              # Reset to bypass mode
+```
+
+**Modes:**
+- `bypass` - All commands allowed (default)
+- `allowlist` - Only specified CLIs can run
+- `denylist` - Specified CLIs are blocked
+
+**Default Allowlist (init strict):** ls, cat, git, grep, node, npm, bun, python, make, etc.
+
+**Default Denylist (init):** rm, sudo, curl, wget, docker, kill, etc.
 
 **Global Settings:**
 - `defaultAgent` - Default agent when no route matches
@@ -244,6 +338,20 @@ Messages are routed to agents in this priority order:
 4. Default agent
 
 The accountId-as-agent feature allows Matrix multi-account setups where each Matrix account maps directly to an agent with the same ID.
+
+**Contact Fields:**
+- `phone` - Normalized phone number (primary key)
+- `name` - Contact name
+- `email` - Email address
+- `status` - allowed, pending, blocked, discovered
+- `agent_id` - Assigned agent
+- `reply_mode` - auto (default) or mention
+- `tags` - JSON array of tags (e.g., `["lead", "vip"]`)
+- `notes` - JSON object for custom data (e.g., `{"company": "Acme"}`)
+- `opt_out` - Whether contact opted out
+- `interaction_count` - Total interactions
+- `last_inbound_at` - Last message received
+- `last_outbound_at` - Last message sent
 
 ## Storage
 
@@ -290,9 +398,18 @@ ravi agents debounce <id> <ms>      # Set debounce
 ravi agents tools <id>              # Manage tools
 
 # Contacts
-ravi contacts list       # List contacts
-ravi contacts add <phone>
-ravi contacts pending    # Pending approvals
+ravi contacts list                   # List contacts
+ravi contacts add <phone> [name]     # Add/allow a contact
+ravi contacts pending                # Pending approvals
+ravi contacts check <phone>          # Show contact details
+ravi contacts tag <phone> <tag>      # Add tag
+ravi contacts untag <phone> <tag>    # Remove tag
+ravi contacts find <query>           # Search by name/phone
+ravi contacts find <tag> --tag       # Find by tag
+ravi contacts set <phone> email <email>
+ravi contacts set <phone> tags '["lead","vip"]'
+ravi contacts set <phone> notes '{"company":"Acme"}'
+ravi contacts set <phone> opt-out true
 
 # Matrix
 ravi matrix login        # Interactive login
@@ -322,6 +439,20 @@ ravi cron disable <id>               # Disable job
 ravi cron set <id> <key> <value>     # Set property
 ravi cron run <id>                   # Manual trigger
 ravi cron rm <id>                    # Delete job
+
+# Outbound queues
+ravi outbound list                   # List queues
+ravi outbound create <name> [opts]   # Create queue
+ravi outbound show <id>              # Queue details
+ravi outbound start <id>             # Activate
+ravi outbound pause <id>             # Pause
+ravi outbound entries <id>           # List entries
+ravi outbound add <queueId> <phone>  # Add entry
+ravi outbound status <entryId>       # Entry details
+ravi outbound run <id>               # Manual trigger
+
+# Reactions
+ravi react send <messageId> <emoji>  # Send emoji reaction
 ```
 
 ## Testing Agents
@@ -341,8 +472,12 @@ ravi agents chat test
 ravi agents session test
 
 # Reset session (clear context)
-ravi agents reset test
+ravi agents reset test                    # Reset main session
+ravi agents reset test <sessionKey>       # Reset specific session
+ravi agents reset test all                # Reset ALL sessions for agent
 ```
+
+When a specific session isn't found, available sessions are listed as hints.
 
 The `test` agent is pre-configured with all tools enabled (SDK + MCP CLI tools).
 
@@ -365,6 +500,26 @@ ravi agents tools test allow Bash   # Enable specific tool
 ravi agents tools test deny Bash    # Disable specific tool
 ravi agents tools test clear        # Bypass mode (all allowed)
 ```
+
+## Emoji Reactions
+
+Agents can send emoji reactions to messages. Message envelopes include `[mid:ID]` tags:
+
+```
+[WhatsApp +5511999 mid:ABC123XYZ 30/01/2026, 14:30] João: Bom dia!
+```
+
+From CLI or agent tools:
+
+```bash
+# CLI
+ravi react send ABC123XYZ 👍
+
+# Agent MCP tool
+mcp__ravi-cli__react_send ABC123XYZ 👍
+```
+
+Reactions are routed through the gateway to the appropriate channel plugin (WhatsApp, Matrix).
 
 ## Message Formatting
 
@@ -400,6 +555,19 @@ O texto transcrito do arquivo
 ```
 
 Requires `OPENAI_API_KEY` in environment.
+
+### Media Downloads
+
+Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and the local path is included in the prompt:
+
+```
+[WhatsApp +5511999 30/01/2026, 14:30]
+[Image: /tmp/ravi-media/1706619000000-ABC123.jpg]
+```
+
+- Max file size: 20MB (larger files are skipped with a note)
+- Supported types: images, videos, PDFs, documents, stickers
+- Files are named: `{timestamp}-{messageId}.{ext}`
 
 ## Environment (~/.ravi/.env)
 

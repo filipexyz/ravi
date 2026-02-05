@@ -11,6 +11,11 @@ A Claude-powered conversational bot with WhatsApp and Matrix integration, sessio
 - **Debounce** - Group rapid messages before processing
 - **Heartbeat** - Proactive agent runs on schedule to check pending tasks
 - **Cron Jobs** - Schedule prompts with cron expressions, intervals, or one-shot times
+- **Outbound Queues** - Automated outreach campaigns with follow-ups and qualification
+- **Emoji Reactions** - Agents can react to messages with emojis
+- **Media Downloads** - Images, videos, documents saved to /tmp with paths in prompts
+- **Bash Permissions** - Control which CLI commands agents can execute
+- **Contact Management** - Tags, notes, opt-out, interaction tracking
 - **Multi-Agent** - Configure multiple agents with different capabilities
 - **Daemon Mode** - Run as a system service (launchd/systemd)
 
@@ -82,6 +87,9 @@ ravi agents create mybot ~/ravi/mybot # Create new agent
 ravi agents set main model opus       # Set model
 ravi agents debounce main 2000        # Set 2s debounce
 ravi agents tools main                # Manage tool whitelist
+ravi agents bash main                 # Manage bash permissions
+ravi agents reset main                # Reset main session
+ravi agents reset main all            # Reset ALL sessions
 ```
 
 ### Heartbeat (Scheduled Tasks)
@@ -119,13 +127,62 @@ ravi cron rm <id>                    # Delete job
 
 **Options:** `--agent`, `--isolated`, `--delete-after`, `--description`
 
-### Contacts (WhatsApp)
+### Contacts
 
 ```bash
-ravi contacts list       # List approved contacts
-ravi contacts add +5511999999999
-ravi contacts pending    # Show pending requests
+ravi contacts list                   # List approved contacts
+ravi contacts add +5511999999999     # Add contact
+ravi contacts pending                # Show pending requests
+ravi contacts check +5511999999999   # Show contact details
+ravi contacts tag +55... lead        # Add tag
+ravi contacts untag +55... lead      # Remove tag
+ravi contacts find "João"            # Search by name/phone
+ravi contacts find lead --tag        # Find by tag
+ravi contacts set +55... email user@example.com
+ravi contacts set +55... opt-out true
 ```
+
+### Outbound Queues (Automated Campaigns)
+
+```bash
+# Create queue
+ravi outbound create "Prospecting" \
+  --instructions "Reach out to this lead..." \
+  --every 5m --agent main
+
+# Manage queues
+ravi outbound list                   # List queues
+ravi outbound show <id>              # Queue details
+ravi outbound start <id>             # Activate
+ravi outbound pause <id>             # Pause
+ravi outbound run <id>               # Manual trigger
+
+# Manage entries
+ravi outbound add <queueId> +55... --name "João Silva"
+ravi outbound entries <queueId>      # List entries
+ravi outbound status <entryId>       # Entry details
+ravi outbound qualify <id> warm      # Set qualification
+ravi outbound reset <id>             # Reset to pending
+```
+
+### Bash Permissions (Agent Security)
+
+```bash
+ravi agents bash main                # Show current config
+ravi agents bash main init           # Init denylist (block dangerous CLIs)
+ravi agents bash main init strict    # Init allowlist (only safe CLIs)
+ravi agents bash main allow curl     # Add to allowlist
+ravi agents bash main deny rm        # Add to denylist
+ravi agents bash main clear          # Reset to bypass mode
+```
+
+### Emoji Reactions
+
+```bash
+ravi react send <messageId> 👍       # React to a message
+```
+
+Messages include `[mid:ID]` tags for reaction targeting.
 
 ## Configuration
 
@@ -162,6 +219,7 @@ ravi settings set defaultTimezone America/Sao_Paulo
 | `dmScope` | How to group DM sessions |
 | `debounceMs` | Message grouping window in ms |
 | `allowedTools` | Whitelist of allowed tools |
+| `bashConfig` | Bash CLI permissions (bypass/allowlist/denylist) |
 
 ### DM Scopes
 
