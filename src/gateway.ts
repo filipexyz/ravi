@@ -379,8 +379,8 @@ export class Gateway {
           const sessionKey = event.topic.split(".").slice(1, -1).join(".");
           const data = event.data as { type?: string };
 
-          // On result, stop typing and clear target
-          if (data.type === "result") {
+          // On result or silent, stop typing and clear target
+          if (data.type === "result" || data.type === "silent") {
             const target = this.activeTargets.get(sessionKey);
             if (target) {
               const plugin = this.pluginsById.get(target.channel);

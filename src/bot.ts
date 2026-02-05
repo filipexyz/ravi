@@ -651,8 +651,16 @@ export class RaviBot {
 
             if (messageText.trim() === SILENT_TOKEN) {
               log.info("Silent response, not emitting", { sessionKey: session.sessionKey });
+              // Emit silent event to stop typing immediately
+              if (onSdkEvent) {
+                await onSdkEvent({ type: "silent" });
+              }
             } else if (messageText.trim() === HEARTBEAT_OK) {
               log.info("Heartbeat OK", { sessionKey: session.sessionKey });
+              // Emit silent event to stop typing immediately
+              if (onSdkEvent) {
+                await onSdkEvent({ type: "silent" });
+              }
             } else if (onMessage) {
               await onMessage(messageText);
             }
