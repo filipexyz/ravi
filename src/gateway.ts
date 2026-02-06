@@ -622,7 +622,10 @@ export class Gateway {
             channel: string;
             accountId: string;
             chatId: string;
-            media: import("./channels/types.js").OutboundMedia;
+            filePath: string;
+            mimetype: string;
+            type: "image" | "video" | "audio" | "document";
+            filename: string;
             caption?: string;
           };
 
@@ -633,11 +636,24 @@ export class Gateway {
           }
 
           try {
-            await plugin.outbound.send(data.accountId, data.chatId, {
-              media: data.media,
+            const { readFileSync } = await import("fs");
+            const buffer = readFileSync(data.filePath);
+
+            const result = await plugin.outbound.send(data.accountId, data.chatId, {
+              media: {
+                type: data.type,
+                data: buffer,
+                mimetype: data.mimetype,
+                filename: data.filename,
+                caption: data.caption,
+              },
               text: data.caption,
             });
-            log.info("Media sent", { chatId: data.chatId, type: data.media.type, filename: data.media.filename });
+            if (result.success) {
+              log.info("Media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
+            } else {
+              log.error("Media send failed", { chatId: data.chatId, error: result.error });
+            }
           } catch (err) {
             log.error("Failed to send media", { error: err });
           }

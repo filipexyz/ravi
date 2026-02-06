@@ -3,8 +3,8 @@
  */
 
 import "reflect-metadata";
-import { readFileSync, existsSync } from "fs";
-import { basename, extname } from "path";
+import { existsSync } from "fs";
+import { resolve, basename, extname } from "path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { notif } from "../../notif.js";
@@ -50,51 +50,40 @@ export class MediaCommands {
     @Option({ flags: "--to <chatId>", description: "Target chat ID" }) to?: string,
     @Option({ flags: "--account <id>", description: "Account ID" }) account?: string,
   ) {
+    const absPath = resolve(filePath);
+
     // Validate file exists
-    if (!existsSync(filePath)) {
-      fail(`File not found: ${filePath}`);
+    if (!existsSync(absPath)) {
+      fail(`File not found: ${absPath}`);
     }
 
-    // Read file
-    const data = readFileSync(filePath);
-    const ext = extname(filePath).toLowerCase();
-    const filename = basename(filePath);
+    const ext = extname(absPath).toLowerCase();
+    const filename = basename(absPath);
     const mimetype = MIME_MAP[ext] ?? "application/octet-stream";
     const type = mediaType(mimetype);
 
-    // Resolve target
-    let targetChannel = channel;
-    let targetAccount = account;
-    let targetChat = to;
+    // Resolve target: fill missing fields from context
+    const source = getContext()?.source;
+    const targetChannel = channel ?? source?.channel;
+    const targetAccount = account ?? source?.accountId;
+    const targetChat = to ?? source?.chatId;
 
-    if (!targetChannel || !targetChat) {
-      const ctx = getContext();
-      const source = ctx?.source;
-      if (!source) {
-        fail("No channel context available — use --channel, --to, and --account to specify target");
-      }
-      targetChannel = targetChannel ?? source.channel;
-      targetAccount = targetAccount ?? source.accountId;
-      targetChat = targetChat ?? source.chatId;
+    if (!targetChannel || !targetAccount || !targetChat) {
+      fail("No channel context available — use --channel, --to, and --account to specify target");
     }
-
-    const media: OutboundMedia = {
-      type,
-      data,
-      mimetype,
-      filename,
-      ...(caption ? { caption } : {}),
-    };
 
     await notif.emit("ravi.media.send", {
       channel: targetChannel,
       accountId: targetAccount,
       chatId: targetChat,
-      media,
+      filePath: absPath,
+      mimetype,
+      type,
+      filename,
       caption,
     });
 
-    console.log(`✓ ${type} sent: ${filename} (${(data.length / 1024).toFixed(1)}KB)`);
+    console.log(`✓ ${type} queued: ${filename}`);
     return { success: true, filename, type, channel: targetChannel, chatId: targetChat };
   }
 }
