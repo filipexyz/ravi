@@ -197,6 +197,9 @@ export class Gateway {
     // Subscribe to emoji reactions from agents
     this.subscribeToReactions();
 
+    // Subscribe to media send events from agents
+    this.subscribeToMediaSend();
+
     log.info("Gateway started");
   }
 
@@ -592,6 +595,61 @@ export class Gateway {
         this.activeSubscriptions.delete("reactions");
         if (this.running) {
           setTimeout(() => this.subscribeToReactions(), 1000);
+        }
+      }
+    })();
+  }
+
+  /**
+   * Subscribe to media send events from agents.
+   * Pattern: ravi.media.send → plugin.outbound.send() with media
+   */
+  private subscribeToMediaSend(): void {
+    if (this.activeSubscriptions.has("mediaSend")) {
+      log.warn("Media send subscription already active, skipping duplicate");
+      return;
+    }
+    this.activeSubscriptions.add("mediaSend");
+
+    log.info("Subscribing to media send");
+
+    (async () => {
+      try {
+        for await (const event of notif.subscribe("ravi.media.send")) {
+          if (!this.running) break;
+
+          const data = event.data as {
+            channel: string;
+            accountId: string;
+            chatId: string;
+            media: import("./channels/types.js").OutboundMedia;
+            caption?: string;
+          };
+
+          const plugin = this.pluginsById.get(data.channel);
+          if (!plugin) {
+            log.warn("No plugin for media send channel", { channel: data.channel });
+            continue;
+          }
+
+          try {
+            await plugin.outbound.send(data.accountId, data.chatId, {
+              media: data.media,
+              text: data.caption,
+            });
+            log.info("Media sent", { chatId: data.chatId, type: data.media.type, filename: data.media.filename });
+          } catch (err) {
+            log.error("Failed to send media", { error: err });
+          }
+        }
+      } catch (err) {
+        if (this.running) {
+          log.error("Media send subscription error", err);
+        }
+      } finally {
+        this.activeSubscriptions.delete("mediaSend");
+        if (this.running) {
+          setTimeout(() => this.subscribeToMediaSend(), 1000);
         }
       }
     })();
