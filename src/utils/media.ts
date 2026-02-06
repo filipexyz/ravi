@@ -10,6 +10,9 @@ const MEDIA_DIR = "/tmp/ravi-media";
 /** Max media file size for download (20MB) */
 export const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
 
+/** Max audio file size for download + transcription (20MB) */
+export const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+
 const MIME_EXT: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/png": ".png",

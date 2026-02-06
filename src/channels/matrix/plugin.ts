@@ -62,7 +62,7 @@ import {
   getHealth,
 } from "./status.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
-import { saveMediaToTmp, MAX_MEDIA_BYTES } from "../../utils/media.js";
+import { saveMediaToTmp, MAX_MEDIA_BYTES, MAX_AUDIO_BYTES } from "../../utils/media.js";
 import {
   isAllowed as isContactAllowed,
   savePendingContact,
@@ -480,30 +480,53 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
 
     // Download and transcribe audio if applicable
     if (message.media?.type === "audio" && message.media.url) {
-      try {
-        const content = event.content as { file?: unknown; info?: { size?: number } };
-        const buffer = await downloadMatrixMedia({
-          client,
-          mxcUrl: message.media.url,
-          contentType: message.media.mimetype,
-          sizeBytes: content.info?.size,
-          maxBytes: 20 * 1024 * 1024, // 20MB limit
-          file: content.file as import("./types.js").EncryptedFile | undefined,
-        });
+      const knownSize = message.media.sizeBytes;
+      if (knownSize && knownSize > MAX_AUDIO_BYTES) {
+        log.info("Audio too large, skipping download", { size: knownSize, limit: MAX_AUDIO_BYTES });
+      } else {
+        // Download audio
+        let audioBuffer: Buffer | undefined;
+        try {
+          const content = event.content as { file?: unknown; info?: { size?: number } };
+          audioBuffer = await downloadMatrixMedia({
+            client,
+            mxcUrl: message.media.url,
+            contentType: message.media.mimetype,
+            sizeBytes: content.info?.size,
+            maxBytes: MAX_AUDIO_BYTES,
+            file: content.file as import("./types.js").EncryptedFile | undefined,
+          }) ?? undefined;
+        } catch (err) {
+          log.warn("Failed to download audio", { error: err });
+        }
 
-        if (buffer) {
-          message.media.data = buffer;
-          log.debug("Audio downloaded", { size: buffer.length, mimetype: message.media.mimetype });
+        if (audioBuffer) {
+          message.media.data = audioBuffer;
+          log.debug("Audio downloaded", { size: audioBuffer.length, mimetype: message.media.mimetype });
+
+          // Save audio to /tmp for agent access
+          try {
+            const localPath = await saveMediaToTmp(
+              audioBuffer,
+              message.id,
+              message.media.mimetype,
+            );
+            message.media.localPath = localPath;
+          } catch (err) {
+            log.warn("Failed to save audio to tmp", { error: err });
+          }
 
           // Transcribe audio
           if (process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) {
-            const result = await transcribeAudio(buffer, message.media.mimetype);
-            message.transcription = result.text;
-            log.info("Audio transcribed", { textLength: result.text.length });
+            try {
+              const result = await transcribeAudio(audioBuffer, message.media.mimetype);
+              message.transcription = result.text;
+              log.info("Audio transcribed", { textLength: result.text.length });
+            } catch (err: any) {
+              log.warn("Failed to transcribe audio", { error: err?.message ?? err, status: err?.status, mimetype: message.media.mimetype, size: audioBuffer.length });
+            }
           }
         }
-      } catch (err) {
-        log.warn("Failed to process audio:", err);
       }
     }
 

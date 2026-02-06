@@ -42,7 +42,7 @@ import {
   downloadMedia,
 } from "./inbound.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
-import { saveMediaToTmp, MAX_MEDIA_BYTES } from "../../utils/media.js";
+import { saveMediaToTmp, MAX_MEDIA_BYTES, MAX_AUDIO_BYTES } from "../../utils/media.js";
 import {
   sendMessage,
   sendTyping,
@@ -474,21 +474,50 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       (message.media?.type === "document" && message.media.mimetype.startsWith("audio/"));
 
     if (isAudio && message.media) {
-      try {
-        const buffer = await downloadMedia(rawMessage);
-        if (buffer) {
-          message.media.data = buffer;
-          log.debug("Audio downloaded", { size: buffer.length, mimetype: message.media.mimetype });
+      const knownSize = message.media.sizeBytes;
+      if (knownSize && knownSize > MAX_AUDIO_BYTES) {
+        log.info("Audio too large, skipping download", { size: knownSize, limit: MAX_AUDIO_BYTES });
+      } else {
+        // Download audio
+        let audioBuffer: Buffer | undefined;
+        try {
+          audioBuffer = await downloadMedia(rawMessage);
+        } catch (err) {
+          log.warn("Failed to download audio", { error: err });
+        }
 
-          // Transcribe audio
-          if (process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) {
-            const result = await transcribeAudio(buffer, message.media.mimetype);
-            message.transcription = result.text;
-            log.info("Audio transcribed", { textLength: result.text.length });
+        if (audioBuffer) {
+          if (audioBuffer.length > MAX_AUDIO_BYTES) {
+            log.info("Downloaded audio too large, skipping", { size: audioBuffer.length, limit: MAX_AUDIO_BYTES });
+          } else {
+            message.media.data = audioBuffer;
+            log.debug("Audio downloaded", { size: audioBuffer.length, mimetype: message.media.mimetype });
+
+            // Save audio to /tmp for agent access
+            try {
+              const localPath = await saveMediaToTmp(
+                audioBuffer,
+                message.id,
+                message.media.mimetype,
+                message.media.filename,
+              );
+              message.media.localPath = localPath;
+            } catch (err) {
+              log.warn("Failed to save audio to tmp", { error: err });
+            }
+
+            // Transcribe audio
+            if (process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) {
+              try {
+                const result = await transcribeAudio(audioBuffer, message.media.mimetype);
+                message.transcription = result.text;
+                log.info("Audio transcribed", { textLength: result.text.length });
+              } catch (err: any) {
+                log.warn("Failed to transcribe audio", { error: err?.message ?? err, status: err?.status, mimetype: message.media.mimetype, size: audioBuffer.length });
+              }
+            }
           }
         }
-      } catch (err) {
-        log.warn("Failed to process audio", { error: err });
       }
     }
 
