@@ -317,6 +317,20 @@ export function deleteSession(sessionKey: string): boolean {
 }
 
 /**
+ * Find the most recent session that routes to a given chatId (last_to).
+ * Useful for resolving a phone/LID to a session key.
+ */
+export function findSessionByChatId(chatId: string): SessionEntry | null {
+  const db = getDb();
+  const row = db
+    .prepare(
+      "SELECT * FROM sessions WHERE last_to = ? COLLATE NOCASE AND last_channel IS NOT NULL ORDER BY updated_at DESC LIMIT 1"
+    )
+    .get(chatId) as SessionRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+/**
  * List all sessions
  */
 export function listSessions(): SessionEntry[] {

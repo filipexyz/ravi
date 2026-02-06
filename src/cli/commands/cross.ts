@@ -3,8 +3,8 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
-import { getSession, listSessions } from "../../router/sessions.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
+import { getSession, findSessionByChatId, listSessions } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { getContext } from "../context.js";
 import { notif } from "../../notif.js";
@@ -28,10 +28,12 @@ const PREFIX_MAP: Record<CrossType, string> = {
 export class CrossCommands {
   @Command({ name: "send", description: "Send a typed message to another session" })
   async send(
-    @Arg("target", { description: "Target session key" }) target: string,
+    @Arg("target", { description: "Target session key or contact ID" }) target: string,
     @Arg("type", { description: "Message type: send | contextualize | execute | ask | answer" }) type: string,
     @Arg("message", { description: "Message to send" }) message: string,
-    @Arg("sender", { required: false, description: "Who originally requested this (for ask/answer attribution)" }) sender?: string
+    @Arg("sender", { required: false, description: "Who originally requested this (for ask/answer attribution)" }) sender?: string,
+    @Option({ flags: "--channel <channel>", description: "Delivery channel (whatsapp, matrix)" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Delivery target (phone, room ID)" }) to?: string
   ) {
     // Validate type
     if (!VALID_TYPES.includes(type as CrossType)) {
@@ -40,12 +42,27 @@ export class CrossCommands {
       return { success: false, error: "Invalid type" };
     }
 
-    // Resolve source: existing session > derive from key > none
+    // If target doesn't look like a session key, resolve via chatId lookup
+    let resolvedTarget = target;
+    if (!target.startsWith("agent:")) {
+      const match = findSessionByChatId(target);
+      if (match) {
+        resolvedTarget = match.sessionKey;
+      }
+    }
+
+    // Resolve source (delivery routing)
+    // Priority: explicit --channel/--to > session lastChannel > derived from key
     let source: { channel: string; accountId: string; chatId: string } | undefined;
     let sourceOrigin: string;
 
-    const targetSession = getSession(target);
-    if (targetSession?.lastChannel && targetSession.lastTo) {
+    const targetSession = getSession(resolvedTarget);
+
+    if (channel && to) {
+      // Explicit routing — no ambiguity
+      source = { channel, accountId: "default", chatId: to };
+      sourceOrigin = "explicit";
+    } else if (targetSession?.lastChannel && targetSession.lastTo) {
       source = {
         channel: targetSession.lastChannel,
         accountId: targetSession.lastAccountId ?? "default",
@@ -53,7 +70,7 @@ export class CrossCommands {
       };
       sourceOrigin = "session";
     } else {
-      const derived = deriveSourceFromSessionKey(target);
+      const derived = deriveSourceFromSessionKey(resolvedTarget);
       if (derived) {
         source = derived;
         sourceOrigin = "derived";
@@ -85,15 +102,16 @@ export class CrossCommands {
       }
     }
 
-    await notif.emit(`ravi.${target}.prompt`, { prompt, source, context } as Record<string, unknown>);
+    await notif.emit(`ravi.${resolvedTarget}.prompt`, { prompt, source, context } as Record<string, unknown>);
 
     if (source) {
-      console.log(`✓ [${type}] sent to ${target} (routing: ${source.channel}, src: ${sourceOrigin})`);
+      const resolved = resolvedTarget !== target ? ` (resolved from ${target})` : "";
+      console.log(`✓ [${type}] sent to ${resolvedTarget}${resolved} (routing: ${source.channel}:${source.chatId}, src: ${sourceOrigin})`);
     } else {
-      console.log(`✓ [${type}] sent to ${target} (no routing — response won't reach a channel)`);
+      console.log(`✓ [${type}] sent to ${resolvedTarget} (no routing — response won't reach a channel)`);
     }
 
-    return { success: true, target, type, source };
+    return { success: true, target: resolvedTarget, type, source };
   }
 
   @Command({ name: "list", description: "List sessions with channel info" })
