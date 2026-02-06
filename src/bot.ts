@@ -317,15 +317,11 @@ export class RaviBot {
         active.messageQueue.push({ prompt, source: prompt.source });
         return;
       } else {
-        log.info("Interrupting for new message", { sessionKey });
+        log.info("Aborting for new message", { sessionKey });
         active.messageQueue.push({ prompt, source: prompt.source });
         if (!active.interrupted) {
           active.interrupted = true;
-          try {
-            await active.query.interrupt();
-          } catch (err) {
-            log.error("Interrupt failed", { sessionKey, error: err });
-          }
+          active.abortController.abort();
         }
         return;
       }
@@ -438,16 +434,22 @@ export class RaviBot {
         log.info("Completed", { sessionKey, tokens: response.usage.input_tokens + response.usage.output_tokens });
       }
     } catch (err) {
-      log.error("Query failed", { sessionKey, error: err });
-      const emitId = Math.random().toString(36).slice(2, 8);
-      await notif.emit(`ravi.${sessionKey}.response`, {
-        error: err instanceof Error ? err.message : "Unknown error",
-        target: prompt.source,
-        _emitId: emitId,
-        _instanceId: this.instanceId,
-        _pid: process.pid,
-        _v: 2,
-      });
+      // Abort errors are intentional (interrupt for new message) — not failures
+      const isAbort = err instanceof Error && /abort/i.test(err.message);
+      if (isAbort) {
+        log.info("Query aborted", { sessionKey });
+      } else {
+        log.error("Query failed", { sessionKey, error: err });
+        const emitId = Math.random().toString(36).slice(2, 8);
+        await notif.emit(`ravi.${sessionKey}.response`, {
+          error: err instanceof Error ? err.message : "Unknown error",
+          target: prompt.source,
+          _emitId: emitId,
+          _instanceId: this.instanceId,
+          _pid: process.pid,
+          _v: 2,
+        });
+      }
     }
   }
 
@@ -751,26 +753,31 @@ export class RaviBot {
       const pendingMessages = [...activeSession.messageQueue];
       this.activeSessions.delete(session.sessionKey);
 
-      // Process all pending messages in order
+      // Process pending messages — combine into a single prompt
       if (pendingMessages.length > 0) {
+        // If the original prompt was aborted before getting a response,
+        // prepend it so context isn't lost (e.g. "senha 123" + "qual a senha?")
+        const allPrompts = !responseText.trim()
+          ? [prompt.prompt, ...pendingMessages.map(m => m.prompt.prompt)]
+          : pendingMessages.map(m => m.prompt.prompt);
+
+        const combinedPrompt = allPrompts.join("\n\n");
+        const lastSource = pendingMessages[pendingMessages.length - 1].source;
+
         log.info("Processing pending messages", {
           sessionKey: session.sessionKey,
-          count: pendingMessages.length
+          count: pendingMessages.length,
+          includedOriginal: !responseText.trim(),
+          combinedLen: combinedPrompt.length,
         });
 
-        for (const queued of pendingMessages) {
-          log.info("Processing queued message", {
-            sessionKey: session.sessionKey,
-            prompt: queued.prompt.prompt.slice(0, 50)
+        try {
+          await this.processNewPrompt(session.sessionKey, {
+            prompt: combinedPrompt,
+            source: lastSource,
           });
-          try {
-            await this.processNewPrompt(session.sessionKey, {
-              prompt: queued.prompt.prompt,
-              source: queued.source
-            });
-          } catch (err) {
-            log.error("Failed to process queued message", { sessionKey: session.sessionKey, error: err });
-          }
+        } catch (err) {
+          log.error("Failed to process queued messages", { sessionKey: session.sessionKey, error: err });
         }
       }
     }
