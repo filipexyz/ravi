@@ -95,18 +95,18 @@ function formatEnvelope(
   // Format the message content
   const content = formatMessageContent(message);
 
-  // Message ID suffix for reaction targeting
-  const midTag = message.id ? ` [mid:${message.id}]` : "";
+  // Message ID tag for reaction targeting
+  const midTag = message.id ? ` mid:${message.id}` : "";
 
   if (message.isGroup) {
-    // [WhatsApp Família id:123@g.us 2024-01-30 14:30] João: texto [mid:XXX]
+    // [WhatsApp Família id:123@g.us mid:XXX 2024-01-30 14:30] João: texto
     const groupLabel = message.groupName ?? message.chatId;
     const sender = message.senderName ?? message.senderId;
-    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId} ${timestamp}] ${sender}: ${content}${midTag}`;
+    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId}${midTag} ${timestamp}] ${sender}: ${content}`;
   } else {
-    // [WhatsApp +5511999 2024-01-30 14:30] texto [mid:XXX]
+    // [WhatsApp +5511999 mid:XXX 2024-01-30 14:30] texto
     const from = message.senderPhone ?? message.senderId;
-    return `${replyPrefix}[${channel} ${from} ${timestamp}] ${content}${midTag}`;
+    return `${replyPrefix}[${channel} ${from}${midTag} ${timestamp}] ${content}`;
   }
 }
 
