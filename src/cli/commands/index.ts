@@ -19,4 +19,5 @@ export * from "./routes.js";
 export * from "./service.js";
 export * from "./settings.js";
 export * from "./tools.js";
+export * from "./transcribe.js";
 export * from "./triggers.js";
