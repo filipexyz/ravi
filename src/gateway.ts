@@ -333,8 +333,8 @@ export class Gateway {
    */
   private subscribeToClaudeEvents(): void {
     this.subscribe("claude", ["ravi.*.claude"], async (event) => {
-      const sessionKey = (event.data as any).sessionKey;
-      const data = event.data as { type?: string; sessionKey?: string };
+      const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+      const data = event.data as { type?: string };
 
       if (data.type === "result" || data.type === "silent") {
         const target = this.activeTargets.get(sessionKey);
