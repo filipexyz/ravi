@@ -4,7 +4,7 @@
  * Runs both the bot server and WhatsApp gateway in a single process.
  */
 
-import { mkdirSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
@@ -57,6 +57,7 @@ loadEnvFile();
 
 // Ensure log directory exists
 const LOG_DIR = join(homedir(), ".ravi", "logs");
+const RESTART_REASON_FILE = join(homedir(), ".ravi", "restart-reason.txt");
 mkdirSync(LOG_DIR, { recursive: true });
 
 // Handle signals
@@ -174,6 +175,37 @@ export async function startDaemon() {
   log.info("Trigger runner started");
 
   log.info("Daemon ready");
+
+  // Check for restart reason and notify main agent
+  // Small delay to ensure bot subscription is fully active
+  setTimeout(() => notifyRestartReason(), 2000);
+}
+
+/**
+ * Check if there's a restart reason file and notify the main agent
+ */
+async function notifyRestartReason() {
+  if (!existsSync(RESTART_REASON_FILE)) {
+    return;
+  }
+
+  try {
+    const reason = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    unlinkSync(RESTART_REASON_FILE); // Delete after reading
+
+    if (reason) {
+      log.info("Restart reason found, notifying main agent", { reason });
+
+      // Send notification to main agent via notif pub/sub
+      const message = `🔄 Daemon reiniciado!\n\nMotivo: ${reason}`;
+      const { notif } = await import("./notif.js");
+      await notif.emit("ravi.agent:main:main.prompt", {
+        prompt: `[System] Context: ${message}`,
+      });
+    }
+  } catch (err) {
+    log.error("Failed to process restart reason", err);
+  }
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command

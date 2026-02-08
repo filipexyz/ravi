@@ -13,6 +13,7 @@ const RAVI_DIR = join(homedir(), ".ravi");
 const PID_FILE = join(RAVI_DIR, "daemon.pid");
 const LOG_FILE = join(RAVI_DIR, "logs", "daemon.log");
 const ENV_FILE = join(RAVI_DIR, ".env");
+const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
 
 // launchd plist path (macOS)
 const PLIST_PATH = join(homedir(), "Library/LaunchAgents/sh.ravi.daemon.plist");
@@ -62,7 +63,32 @@ export class DaemonCommands {
   }
 
   @Command({ name: "restart", description: "Restart the daemon" })
-  restart() {
+  restart(
+    @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
+    @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean
+  ) {
+    // Build first if requested
+    if (build) {
+      console.log("Building...");
+      try {
+        execSync("bun run build", {
+          stdio: "inherit",
+          cwd: this.findProjectRoot()
+        });
+        console.log("✓ Build completed");
+      } catch (err) {
+        console.error("Build failed, aborting restart");
+        process.exit(1);
+      }
+    }
+
+    // Save restart reason if provided
+    if (message) {
+      mkdirSync(RAVI_DIR, { recursive: true });
+      writeFileSync(RESTART_REASON_FILE, message);
+      console.log(`Restart reason saved: ${message}`);
+    }
+
     if (this.isRunning()) {
       this.stop();
       // Wait for the old process to fully die before starting new one
@@ -192,6 +218,76 @@ export class DaemonCommands {
 
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
+  }
+
+  @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
+  async dev() {
+    const projectRoot = this.findProjectRoot();
+    if (!projectRoot) {
+      console.error("Could not find project root (package.json with ravi.bot)");
+      process.exit(1);
+    }
+
+    console.log(`🔧 Dev mode - watching ${projectRoot}/src`);
+    console.log("Auto-rebuild on changes. Use 'ravi daemon restart' to apply.\n");
+    console.log("Press Ctrl+C to stop\n");
+
+    // Initial build
+    console.log("Building...");
+    try {
+      execSync("bun run build", { stdio: "inherit", cwd: projectRoot });
+      console.log("✓ Build completed\n");
+    } catch {
+      console.error("Initial build failed");
+      process.exit(1);
+    }
+
+    const rebuild = () => {
+      console.log("\n📦 Rebuilding...");
+      try {
+        execSync("bun run build", { stdio: "inherit", cwd: projectRoot });
+        console.log("✓ Build completed - run 'ravi daemon restart' to apply");
+      } catch {
+        console.error("Build failed");
+      }
+    };
+
+    // Watch for file changes using native fs.watch
+    const { watch } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const srcDir = resolve(projectRoot, "src");
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const debounceMs = 500;
+
+    const watchDir = (dir: string) => {
+      try {
+        watch(dir, { recursive: true }, (eventType, filename) => {
+          if (!filename || !filename.endsWith(".ts")) return;
+
+          // Debounce multiple rapid changes
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            console.log(`\n📝 Changed: ${filename}`);
+            rebuild();
+          }, debounceMs);
+        });
+      } catch (err) {
+        console.error(`Failed to watch ${dir}:`, err);
+      }
+    };
+
+    watchDir(srcDir);
+    console.log(`👀 Watching ${srcDir} for changes...\n`);
+
+    // Handle Ctrl+C
+    process.on("SIGINT", () => {
+      console.log("\n\nStopping dev mode...");
+      process.exit(0);
+    });
+
+    // Keep process alive
+    await new Promise(() => {});
   }
 
   /**
@@ -494,6 +590,34 @@ WantedBy=multi-user.target
 
     // Fallback to assuming it's in PATH
     return "ravi";
+  }
+
+  private findProjectRoot(): string | null {
+    // Known location
+    const knownPath = "/Users/luis/dev/filipelabs/ravi.bot";
+    if (existsSync(join(knownPath, "package.json"))) {
+      return knownPath;
+    }
+
+    // Try to find from current directory going up
+    let dir = process.cwd();
+    while (dir !== "/") {
+      const pkgPath = join(dir, "package.json");
+      if (existsSync(pkgPath)) {
+        try {
+          const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+          if (pkg.name === "ravi.bot" || pkg.name === "@filipelabs/ravi") {
+            return dir;
+          }
+        } catch {
+          // ignore
+        }
+      }
+      dir = join(dir, "..");
+    }
+
+    // Fallback to known path
+    return knownPath;
   }
 
   private stopDirect() {
