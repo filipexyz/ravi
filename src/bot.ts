@@ -663,11 +663,15 @@ export class RaviBot {
             } else {
               responseText += messageText;
 
+              const trimmed = messageText.trim().toLowerCase();
               if (messageText.trim() === SILENT_TOKEN) {
                 log.info("Silent response", { sessionKey });
                 await emitSdkEvent({ type: "silent" });
               } else if (messageText.trim() === HEARTBEAT_OK) {
                 log.info("Heartbeat OK", { sessionKey });
+                await emitSdkEvent({ type: "silent" });
+              } else if (trimmed === "no response requested." || trimmed === "no response requested" || trimmed === "no response needed." || trimmed === "no response needed") {
+                log.info("Silent response (no response requested)", { sessionKey });
                 await emitSdkEvent({ type: "silent" });
               } else {
                 await emitResponse(messageText);
