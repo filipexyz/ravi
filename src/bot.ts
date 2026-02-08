@@ -18,13 +18,15 @@ import {
   type SessionEntry,
   type AgentConfig,
 } from "./router/index.js";
-import { createCliMcpServer, initCliTools } from "./cli/exports.js";
-import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
+// MCP disabled - uncomment to re-enable:
+// import { createCliMcpServer, initCliTools } from "./cli/exports.js";
+// import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
 import { ALL_BUILTIN_TOOLS } from "./constants.js";
+import { discoverPlugins } from "./plugins/index.js";
 
 const log = logger.child("bot");
 
@@ -180,7 +182,7 @@ export class RaviBot {
 
   async start(): Promise<void> {
     log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
-    initCliTools();
+    // initCliTools(); // MCP disabled
     this.running = true;
     this.subscribeToPrompts();
     log.info("Ravi bot started", {
@@ -532,24 +534,15 @@ export class RaviBot {
 
     log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
 
-    // Create MCP server with CLI tools filtered by agent permissions
-    // MCP tool naming: mcp__{server}__{tool}
-    // Example: mcp__ravi-cli__agents_list
-
-    // Filter allowed tools to only MCP tools for our server
-    const mcpToolsWhitelist = agent.allowedTools?.filter(t => t.startsWith(MCP_PREFIX));
-    const cliMcpServer = createCliMcpServer({
-      name: MCP_SERVER,
-      // Strip MCP prefix to get internal tool names
-      allowedTools: mcpToolsWhitelist?.length
-        ? mcpToolsWhitelist.map(t => t.replace(MCP_PREFIX, ""))
-        : undefined,
-    });
-
-    log.debug("CLI MCP Server created", {
-      agentId: agent.id,
-      serverName: cliMcpServer.name,
-    });
+    // MCP tools disabled - using skills + CLI instead
+    // To re-enable: uncomment mcpServers block below and this code:
+    // const mcpToolsWhitelist = agent.allowedTools?.filter(t => t.startsWith(MCP_PREFIX));
+    // const cliMcpServer = createCliMcpServer({
+    //   name: MCP_SERVER,
+    //   allowedTools: mcpToolsWhitelist?.length
+    //     ? mcpToolsWhitelist.map(t => t.replace(MCP_PREFIX, ""))
+    //     : undefined,
+    // });
 
     // Build hooks array
     const hooks: Record<string, unknown[]> = {};
@@ -564,6 +557,9 @@ export class RaviBot {
       createPreCompactHook({ memoryModel: agent.memoryModel }),
     ];
 
+    // Discover plugins (internal + user)
+    const plugins = discoverPlugins();
+
     const queryResult = query({
       prompt: prompt.prompt,
       options: {
@@ -572,9 +568,7 @@ export class RaviBot {
         resume: session.sdkSessionId,
         abortController,
         ...permissionOptions,
-        mcpServers: {
-          "ravi-cli": cliMcpServer,
-        },
+        // MCP disabled - to re-enable: mcpServers: { "ravi-cli": cliMcpServer },
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
@@ -582,6 +576,7 @@ export class RaviBot {
         },
         settingSources: agent.settingSources ?? ["project"],
         ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
+        ...(plugins.length > 0 ? { plugins } : {}),
       },
     });
 

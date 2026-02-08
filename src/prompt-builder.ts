@@ -106,6 +106,47 @@ export function buildSilentReplies(): string {
 }
 
 /**
+ * Build output formatting section based on channel
+ */
+function outputFormattingText(channelName: string): string {
+  if (channelName === "WhatsApp") {
+    return `Ao listar itens (contacts, triggers, agents, routes, etc), use este formato:
+
+\`\`\`
+⚡ Nome da Lista (N)
+
+1️⃣ Nome do Item
+   📋 detalhe principal
+   🔹 info extra | ✅ status
+
+2️⃣ Outro Item
+   📋 detalhe
+   🔹 info | ❌ inativo
+\`\`\`
+
+Regras:
+- Use emojis como ícones visuais
+- Números com emoji (1️⃣ 2️⃣ 3️⃣) para itens
+- Indentação com espaços para hierarquia
+- Status com ✅ (ativo/ok) ou ❌ (inativo/erro)
+- Evite tabelas markdown - WhatsApp não renderiza bem
+- Mantenha conciso - telas mobile são pequenas`;
+  }
+
+  if (channelName === "Matrix") {
+    return `Use markdown rico para formatação:
+- Tabelas markdown funcionam bem
+- Use \`código\` para IDs e comandos
+- **Negrito** para destaques
+- Listas com bullets para organização`;
+  }
+
+  // TUI or unknown
+  return `Use formatação ASCII para tabelas e listas.
+Tabelas com caracteres | - + funcionam bem no terminal.`;
+}
+
+/**
  * Build reactions section for system prompt
  */
 function reactionsText(): string {
@@ -138,6 +179,9 @@ export function buildSystemPrompt(
   if (ctx) {
     // Add runtime info
     builder.section("Runtime", buildRuntimeInfo(agentId, ctx).replace(/^## Runtime\n\n/, ""));
+
+    // Add output formatting based on channel
+    builder.section("Output Formatting", outputFormattingText(ctx.channelName));
 
     // Add reactions section
     builder.section("Reactions", reactionsText());

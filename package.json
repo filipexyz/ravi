@@ -26,7 +26,8 @@
   },
   "scripts": {
     "gen:commands": "bun scripts/gen-commands.ts",
-    "prebuild": "bun run gen:commands",
+    "gen:plugins": "bun scripts/gen-plugins.ts",
+    "prebuild": "bun run gen:commands && bun run gen:plugins",
     "build": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --external '@matrix-org/*' --external '@whiskeysockets/*' --external '@vector-im/*' --external ink --external react --external '@anthropic-ai/*' --external openai",
     "postinstall": "node -e \"const p=require.resolve('@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js');require('child_process').execSync('node '+p,{stdio:'inherit'})\" || true",
     "start": "bun src/index.ts",
