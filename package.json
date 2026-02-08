@@ -1,6 +1,6 @@
 {
   "name": "ravi.bot",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Claude-powered bot with WhatsApp and Matrix integration via notif.sh",
   "type": "module",
   "main": "dist/bundle/index.js",

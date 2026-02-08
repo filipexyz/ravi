@@ -115,6 +115,23 @@ export class DaemonCommands {
       console.log(`Restart reason saved: ${message}`);
     }
 
+    if (IS_LINUX && this.isRunning()) {
+      // On Linux with systemd, this process may be part of the service cgroup.
+      // systemctl stop kills the entire cgroup — including us — so we never reach start().
+      // Re-exec ourselves under systemd-run --scope to escape the cgroup first.
+      const raviBin = this.findRaviBin();
+      const args = ["--scope", raviBin, "daemon", "restart"];
+      if (message) args.push("-m", message);
+      if (build) args.push("--build");
+      console.log("Escaping service cgroup via systemd-run...");
+      try {
+        execSync(`systemd-run ${args.map(a => `'${a}'`).join(" ")}`, { stdio: "inherit" });
+      } catch {
+        console.error("Failed to restart daemon");
+      }
+      return;
+    }
+
     if (this.isRunning()) {
       this.stop();
       // Wait for the old process to fully die before starting new one
