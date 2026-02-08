@@ -340,18 +340,30 @@ export class RaviBot {
 
       if (existing.pushMessage) {
         // Generator is waiting for next message — deliver directly
+        // Add to pending so the generator's settling window can combine with future messages
+        existing.pendingMessages.push(userMsg);
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
-        resolver(userMsg);
+        resolver(null as any); // wake generator to drain pending
       } else {
-        // Generator is busy (SDK processing a turn) — queue and interrupt
-        log.info("Streaming: queueing message and interrupting current turn", {
-          sessionKey,
-          queueSize: existing.pendingMessages.length + 1,
-        });
+        // Generator is busy (SDK processing a turn) — queue
         existing.pendingMessages.push(userMsg);
-        // Interrupt triggers the SDK to stop current turn and ask generator for next message
-        existing.queryHandle.interrupt().catch(() => {});
+
+        if (existing.toolRunning) {
+          // Tool running — don't interrupt, let it finish. Message will be processed after.
+          log.info("Streaming: queueing message (tool running, no interrupt)", {
+            sessionKey,
+            queueSize: existing.pendingMessages.length,
+            tool: existing.currentToolName,
+          });
+        } else {
+          // Text generation — interrupt immediately so we can combine and re-respond
+          log.info("Streaming: queueing message and interrupting", {
+            sessionKey,
+            queueSize: existing.pendingMessages.length,
+          });
+          existing.queryHandle.interrupt().catch(() => {});
+        }
       }
       return;
     }
@@ -498,28 +510,33 @@ export class RaviBot {
 
     // Then wait for subsequent messages
     while (!session.done) {
-      // First drain any pending messages (queued while SDK was busy)
+      // Wait for a signal (either a direct message or a wake-up to drain pending)
+      if (session.pendingMessages.length === 0) {
+        const msg = await new Promise<UserMessage | null>((resolve) => {
+          session.pushMessage = resolve;
+        });
+        // msg is null when used as a wake-up signal to drain pending, or when session ends
+        if (msg === null && session.pendingMessages.length === 0) break;
+        // If msg has content, it was delivered directly — but we now always use pending queue
+      }
+
+      // Settling window: wait briefly for more messages to accumulate
+      // This catches rapid-fire messages (WhatsApp fragments) without a full debounce
+      const SETTLE_MS = 300;
+      await new Promise(resolve => setTimeout(resolve, SETTLE_MS));
+
+      // Drain everything that arrived during the window
       if (session.pendingMessages.length > 0) {
         const pending = session.pendingMessages.splice(0);
-        // Combine all pending into one message
         const combined = pending.map(m => m.message.content).join("\n\n");
-        log.info("Generator: draining pending messages", {
+        log.info("Generator: yielding combined messages", {
           sessionKey, count: pending.length,
         });
         yield {
           type: "user" as const,
           message: { role: "user" as const, content: combined },
         };
-        continue;
       }
-
-      // No pending messages — wait for the next one
-      const msg = await new Promise<UserMessage | null>((resolve) => {
-        session.pushMessage = resolve;
-      });
-
-      if (msg === null) break; // session ended
-      yield msg;
     }
   }
 
