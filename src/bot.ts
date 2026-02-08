@@ -340,11 +340,9 @@ export class RaviBot {
 
       if (existing.pushMessage) {
         // Generator is waiting for next message — deliver directly
-        // Add to pending so the generator's settling window can combine with future messages
-        existing.pendingMessages.push(userMsg);
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
-        resolver(null as any); // wake generator to drain pending
+        resolver(userMsg);
       } else {
         // Generator is busy (SDK processing a turn) — queue
         existing.pendingMessages.push(userMsg);
@@ -510,22 +508,7 @@ export class RaviBot {
 
     // Then wait for subsequent messages
     while (!session.done) {
-      // Wait for a signal (either a direct message or a wake-up to drain pending)
-      if (session.pendingMessages.length === 0) {
-        const msg = await new Promise<UserMessage | null>((resolve) => {
-          session.pushMessage = resolve;
-        });
-        // msg is null when used as a wake-up signal to drain pending, or when session ends
-        if (msg === null && session.pendingMessages.length === 0) break;
-        // If msg has content, it was delivered directly — but we now always use pending queue
-      }
-
-      // Settling window: wait briefly for more messages to accumulate
-      // This catches rapid-fire messages (WhatsApp fragments) without a full debounce
-      const SETTLE_MS = 300;
-      await new Promise(resolve => setTimeout(resolve, SETTLE_MS));
-
-      // Drain everything that arrived during the window
+      // Drain any pending messages first (queued during interrupt)
       if (session.pendingMessages.length > 0) {
         const pending = session.pendingMessages.splice(0);
         const combined = pending.map(m => m.message.content).join("\n\n");
@@ -536,7 +519,21 @@ export class RaviBot {
           type: "user" as const,
           message: { role: "user" as const, content: combined },
         };
+        continue;
       }
+
+      // No pending — wait for next message
+      const msg = await new Promise<UserMessage | null>((resolve) => {
+        session.pushMessage = resolve;
+      });
+
+      if (msg === null && session.pendingMessages.length === 0) break;
+
+      // If there are pending messages (from wake-up signal), loop back to drain them
+      if (session.pendingMessages.length > 0) continue;
+
+      // Direct message delivery — yield immediately
+      if (msg) yield msg;
     }
   }
 
