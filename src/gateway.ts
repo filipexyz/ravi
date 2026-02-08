@@ -332,7 +332,7 @@ export class Gateway {
    * Subscribe to Claude SDK events for typing heartbeat.
    */
   private subscribeToClaudeEvents(): void {
-    this.subscribe("claude", ["ravi.claude.events"], async (event) => {
+    this.subscribe("claude", ["ravi.*.claude"], async (event) => {
       const sessionKey = (event.data as any).sessionKey;
       const data = event.data as { type?: string; sessionKey?: string };
 
@@ -348,7 +348,7 @@ export class Gateway {
         return;
       }
 
-      if (data.type === "init" || data.type === "assistant") {
+      if (data.type === "system" || data.type === "assistant") {
         const target = this.activeTargets.get(sessionKey);
         if (target) {
           const plugin = this.pluginsById.get(target.channel);
