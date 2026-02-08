@@ -8,6 +8,7 @@ import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync } from "
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
+import { hasContext } from "../context.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const PID_FILE = join(RAVI_DIR, "daemon.pid");
@@ -67,6 +68,31 @@ export class DaemonCommands {
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean
   ) {
+    // When called via MCP (inside daemon), spawn detached restart and return immediately
+    // This prevents deadlock since we'd be killing ourselves
+    if (hasContext()) {
+      // Save restart reason if provided
+      if (message) {
+        mkdirSync(RAVI_DIR, { recursive: true });
+        writeFileSync(RESTART_REASON_FILE, message);
+      }
+
+      // Spawn detached process to do the actual restart
+      const args = ["daemon", "restart"];
+      if (build) args.push("--build");
+      // Don't pass message again - already saved to file
+
+      const child = spawn("ravi", args, {
+        detached: true,
+        stdio: "ignore",
+        cwd: this.findProjectRoot(),
+      });
+      child.unref();
+
+      console.log("🔄 Restart scheduled (detached)");
+      return;
+    }
+
     // Build first if requested
     if (build) {
       console.log("Building...");

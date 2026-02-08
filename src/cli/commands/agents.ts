@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
-import { fail } from "../context.js";
+import { fail, getContext } from "../context.js";
 import { notif } from "../../notif.js";
 import {
   getAgent,
@@ -578,6 +578,12 @@ export class AgentsCommands {
     }
 
     const sessionKey = `agent:${id}:main`;
+
+    // Block self-sends to prevent deadlock
+    const currentSession = getContext()?.sessionKey;
+    if (currentSession === sessionKey) {
+      fail(`Cannot send to same session (${sessionKey}) - would cause deadlock`);
+    }
 
     console.log(`\n📤 Sending to ${sessionKey}\n`);
     console.log(`Prompt: ${prompt}\n`);

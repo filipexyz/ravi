@@ -356,7 +356,19 @@ export class RaviBot {
     const agentCwd = expandHome(agent.cwd);
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
 
-    // Update source for response routing (cross-session messages need this)
+    // Resolve source for response routing
+    // Priority: explicit source in prompt > last known source from session
+    let resolvedSource = prompt.source;
+    if (!resolvedSource && session.lastChannel && session.lastTo) {
+      resolvedSource = {
+        channel: session.lastChannel,
+        accountId: session.lastAccountId ?? "default",
+        chatId: session.lastTo,
+      };
+      log.debug("Using last known source for routing", { sessionKey, source: resolvedSource });
+    }
+
+    // Update source for response routing (only when explicit source provided)
     if (prompt.source) {
       updateSessionSource(sessionKey, prompt.source);
     }
@@ -393,7 +405,7 @@ export class RaviBot {
     const toolContext = {
       sessionKey,
       agentId: agent.id,
-      source: prompt.source,
+      source: resolvedSource,
     };
 
     try {
@@ -403,7 +415,7 @@ export class RaviBot {
         log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
         const emitResult = await notif.emit(`ravi.${sessionKey}.response`, {
           response: text,
-          target: prompt.source,
+          target: resolvedSource,
           _emitId: emitId,
           _instanceId: this.instanceId,
           _pid: process.pid,
@@ -443,7 +455,7 @@ export class RaviBot {
         const emitId = Math.random().toString(36).slice(2, 8);
         await notif.emit(`ravi.${sessionKey}.response`, {
           error: err instanceof Error ? err.message : "Unknown error",
-          target: prompt.source,
+          target: resolvedSource,
           _emitId: emitId,
           _instanceId: this.instanceId,
           _pid: process.pid,
