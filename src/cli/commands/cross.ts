@@ -42,6 +42,39 @@ export class CrossCommands {
       return { success: false, error: "Invalid type" };
     }
 
+    // Validate target is a full session key
+    if (!target.includes(":")) {
+      // Looks like a short name (e.g., "main" instead of "agent:main:main")
+      const sessions = listSessions();
+      const suggestions = sessions
+        .filter(s => s.sessionKey.includes(target))
+        .map(s => {
+          const routing = s.lastChannel && s.lastTo
+            ? `→ ${s.lastChannel}:${s.lastTo}`
+            : "(no routing)";
+          return `  ${s.sessionKey} ${routing}`;
+        });
+
+      console.error(`[ERROR] Invalid target: "${target}"`);
+      console.error(`Target must be a full session key (e.g., agent:main:main)\n`);
+
+      if (suggestions.length > 0) {
+        console.log(`Did you mean:\n${suggestions.join("\n")}`);
+      } else {
+        console.log(`Available sessions:`);
+        for (const s of sessions.slice(0, 10)) {
+          const routing = s.lastChannel && s.lastTo
+            ? `→ ${s.lastChannel}:${s.lastTo}`
+            : "(no routing)";
+          console.log(`  ${s.sessionKey} ${routing}`);
+        }
+        if (sessions.length > 10) {
+          console.log(`  ... and ${sessions.length - 10} more (use cross_list to see all)`);
+        }
+      }
+      return { success: false, error: `Invalid target: ${target}` };
+    }
+
     // If target doesn't look like a session key, resolve via chatId lookup
     let resolvedTarget = target;
     if (!target.startsWith("agent:")) {
@@ -51,12 +84,31 @@ export class CrossCommands {
       }
     }
 
+    // Verify session exists
+    const targetSession = getSession(resolvedTarget);
+    if (!targetSession) {
+      const sessions = listSessions();
+      console.error(`[ERROR] Session not found: "${resolvedTarget}"\n`);
+      console.log(`Available sessions:`);
+      for (const s of sessions.slice(0, 10)) {
+        const routing = s.lastChannel && s.lastTo
+          ? `→ ${s.lastChannel}:${s.lastTo}`
+          : "(no routing)";
+        console.log(`  ${s.sessionKey} ${routing}`);
+      }
+      if (sessions.length > 10) {
+        console.log(`  ... and ${sessions.length - 10} more (use cross_list to see all)`);
+      }
+      if (sessions.length === 0) {
+        console.log(`  (no active sessions)`);
+      }
+      return { success: false, error: `Session not found: ${resolvedTarget}` };
+    }
+
     // Resolve source (delivery routing)
     // Priority: explicit --channel/--to > session lastChannel > derived from key
     let source: { channel: string; accountId: string; chatId: string } | undefined;
     let sourceOrigin: string;
-
-    const targetSession = getSession(resolvedTarget);
 
     if (channel && to) {
       // Explicit routing — no ambiguity

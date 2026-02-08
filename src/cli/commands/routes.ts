@@ -5,6 +5,12 @@
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
 import { fail } from "../context.js";
+import { notif } from "../../notif.js";
+
+/** Notify gateway that config changed (routes, agents, settings, contacts) */
+function emitConfigChanged() {
+  notif.emit("ravi.config.changed", {}).catch(() => {});
+}
 import {
   dbGetRoute,
   dbListRoutes,
@@ -123,6 +129,7 @@ export class RoutesCommands {
     try {
       dbCreateRoute({ pattern, agent, priority: 0 });
       console.log(`✓ Route added: ${pattern} -> ${agent}`);
+      emitConfigChanged();
 
       // Delete any sessions that were created with a different agent
       const deleted = deleteConflictingSessions(pattern, agent);
@@ -139,6 +146,7 @@ export class RoutesCommands {
     const deleted = dbDeleteRoute(pattern);
     if (deleted) {
       console.log(`✓ Route removed: ${pattern}`);
+      emitConfigChanged();
     } else {
       fail(`Route not found: ${pattern}`);
     }
@@ -190,6 +198,7 @@ export class RoutesCommands {
       }
       dbUpdateRoute(pattern, updates);
       console.log(`✓ ${key} set: ${pattern} -> ${value}`);
+      emitConfigChanged();
 
       // If agent changed, clean up conflicting sessions
       if (key === "agent") {

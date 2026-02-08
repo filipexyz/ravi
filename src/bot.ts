@@ -147,6 +147,8 @@ export interface ResponseMessage {
   response?: string;
   error?: string;
   target?: MessageTarget;
+  /** Unique emit ID to detect ghost/duplicate responses */
+  _emitId?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

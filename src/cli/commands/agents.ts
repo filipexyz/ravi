@@ -45,6 +45,11 @@ import type { ResponseMessage } from "../../bot.js";
 
 const PROMPT_TIMEOUT_MS = 120000; // 2 minutes
 
+/** Notify gateway that config changed */
+function emitConfigChanged() {
+  notif.emit("ravi.config.changed", {}).catch(() => {});
+}
+
 /**
  * Check if a tool is enabled for an agent
  */
@@ -153,6 +158,7 @@ export class AgentsCommands {
 
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
+      emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -164,6 +170,7 @@ export class AgentsCommands {
       const deleted = deleteAgent(id);
       if (deleted) {
         console.log(`\u2713 Agent deleted: ${id}`);
+        emitConfigChanged();
       } else {
         fail(`Agent not found: ${id}`);
       }
@@ -227,6 +234,7 @@ export class AgentsCommands {
     try {
       updateAgent(id, { [key]: parsedValue });
       console.log(`\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`);
+      emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }

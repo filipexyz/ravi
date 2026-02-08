@@ -16,6 +16,7 @@ import {
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
 import { dbGetEntry, dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
+import { readFile } from "fs/promises";
 
 const log = logger.child("gateway");
 
@@ -144,7 +145,6 @@ export class Gateway {
   private plugins: ChannelPlugin[] = [];
   private pluginsById = new Map<string, ChannelPlugin>();
   private channelManager: ChannelManager | null = null;
-  private responseSubscriptions = new Map<string, AbortController>();
   private activeTargets = new Map<string, MessageTarget>();
   private activeSubscriptions = new Set<string>();
 
@@ -200,17 +200,15 @@ export class Gateway {
     // Subscribe to media send events from agents
     this.subscribeToMediaSend();
 
+    // Subscribe to config changes for cache invalidation
+    this.subscribeToConfigChanges();
+
     log.info("Gateway started");
   }
 
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
-
-    for (const [, controller] of this.responseSubscriptions) {
-      controller.abort();
-    }
-    this.responseSubscriptions.clear();
 
     // Stop via ChannelManager
     if (this.channelManager) {
@@ -222,463 +220,311 @@ export class Gateway {
   }
 
   /**
-   * Subscribe to inbound topics for all registered plugins.
-   * Pattern: {channelId}.*.inbound
+   * Generic subscription helper with auto-reconnect.
+   * Reduces boilerplate across all subscription methods.
    */
-  private subscribeToInbound(): void {
-    if (this.activeSubscriptions.has("inbound")) {
-      log.warn("Inbound subscription already active, skipping duplicate");
+  private subscribe(
+    key: string,
+    topics: string[],
+    handler: (event: { topic: string; data: unknown }) => Promise<void>
+  ): void {
+    if (this.activeSubscriptions.has(key)) {
+      log.warn(`${key} subscription already active, skipping duplicate`);
       return;
     }
-    this.activeSubscriptions.add("inbound");
+    this.activeSubscriptions.add(key);
 
-    const topics = this.plugins.map((p) => `${p.id}.*.inbound`);
-    log.info("Subscribing to inbound topics", { topics });
+    log.info(`Subscribing to ${key}`, { topics });
 
     (async () => {
       try {
         for await (const event of notif.subscribe(...topics)) {
           if (!this.running) break;
-
-          // Parse topic: {channelId}.{accountId}.inbound
-          const parts = event.topic.split(".");
-          const channelId = parts[0];
-          const plugin = this.pluginsById.get(channelId);
-
-          if (!plugin) {
-            log.warn("No plugin for channel", { channelId });
-            continue;
-          }
-
-          const message = event.data as unknown as InboundMessage;
-          await this.handleInboundMessage(plugin, message);
+          await handler(event);
         }
       } catch (err) {
         if (this.running) {
-          log.error("Inbound subscription error", err);
+          log.error(`${key} subscription error`, err);
         }
       } finally {
-        this.activeSubscriptions.delete("inbound");
+        this.activeSubscriptions.delete(key);
         if (this.running) {
-          setTimeout(() => this.subscribeToInbound(), 1000);
+          setTimeout(() => this.subscribe(key, topics, handler), 1000);
         }
       }
     })();
+  }
+
+  /**
+   * Subscribe to inbound topics for all registered plugins.
+   * Pattern: {channelId}.*.inbound
+   */
+  private subscribeToInbound(): void {
+    const topics = this.plugins.map((p) => `${p.id}.*.inbound`);
+
+    this.subscribe("inbound", topics, async (event) => {
+      const parts = event.topic.split(".");
+      const channelId = parts[0];
+      const plugin = this.pluginsById.get(channelId);
+
+      if (!plugin) {
+        log.warn("No plugin for channel", { channelId });
+        return;
+      }
+
+      const message = event.data as unknown as InboundMessage;
+      await this.handleInboundMessage(plugin, message);
+    });
   }
 
   /**
    * Subscribe to all bot responses and route based on target.
    */
   private subscribeToResponses(): void {
-    if (this.activeSubscriptions.has("responses")) {
-      log.warn("Response subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("responses");
+    this.subscribe("responses", ["ravi.*.response"], async (event) => {
+      const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+      const response = event.data as unknown as ResponseMessage;
 
-    log.info("Subscribing to responses");
+      log.debug("Response event received", {
+        sessionKey,
+        keys: Object.keys(response),
+        hasEmitId: !!response._emitId,
+        emitId: response._emitId ?? "NONE",
+      });
 
-    (async () => {
-      try {
-        for await (const event of notif.subscribe("ravi.*.response")) {
-          if (!this.running) break;
+      const target = response.target;
+      if (!target) return;
 
-          // Parse topic: ravi.{sessionKey}.response
-          const sessionKey = event.topic.split(".").slice(1, -1).join(".");
-          const response = event.data as unknown as ResponseMessage;
-
-          log.debug("Response event received", {
-            sessionKey,
-            eventId: event.id,
-            keys: Object.keys(response),
-            hasEmitId: !!(response as any)._emitId,
-            emitId: (response as any)._emitId ?? "NONE",
-          });
-
-          // Target is required to route to a channel
-          const target = response.target;
-          if (!target) {
-            continue;
-          }
-
-          const { channel, accountId, chatId } = target;
-
-          // Get plugin for this channel
-          const plugin = this.pluginsById.get(channel);
-          if (!plugin) {
-            log.warn("No plugin for channel", { channel });
-            continue;
-          }
-
-          const text = response.error
-            ? `Error: ${response.error}`
-            : response.response;
-
-          // Skip silent responses
-          if (text && text.trim() === SILENT_TOKEN) {
-            log.debug("Silent response, not sending to channel", { sessionKey });
-            continue;
-          }
-
-          if (text) {
-            // Validate _emitId to prevent ghost/duplicate responses from orphaned SDK subprocesses
-            if (!(response as any)._emitId) {
-              log.warn("GHOST RESPONSE DROPPED", {
-                sessionKey,
-                textPreview: text.slice(0, 200),
-                hasInstanceId: !!(response as any)._instanceId,
-                instanceId: (response as any)._instanceId ?? "NONE",
-                pid: (response as any)._pid ?? "NONE",
-                version: (response as any)._v ?? "NONE",
-                keys: Object.keys(response),
-                fullPayload: JSON.stringify(response).slice(0, 500),
-                // Full notif event tracing
-                eventId: event.id,
-                eventTimestamp: event.timestamp,
-                eventAttempt: event.attempt,
-                eventMaxAttempts: (event as any).maxAttempts,
-                eventTopic: event.topic,
-              });
-              continue;
-            }
-            log.info("Sending response", {
-              sessionKey, channel, chatId, textLen: text.length,
-              emitId: (response as any)._emitId,
-              instanceId: (response as any)._instanceId ?? "?",
-            });
-            await plugin.outbound.send(accountId, chatId, { text });
-          }
-        }
-      } catch (err) {
-        if (this.running) {
-          log.error("Response subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("responses");
-        if (this.running) {
-          setTimeout(() => this.subscribeToResponses(), 1000);
-        }
+      const { channel, accountId, chatId } = target;
+      const plugin = this.pluginsById.get(channel);
+      if (!plugin) {
+        log.warn("No plugin for channel", { channel });
+        return;
       }
-    })();
+
+      const text = response.error
+        ? `Error: ${response.error}`
+        : response.response;
+
+      if (text && text.trim() === SILENT_TOKEN) {
+        log.debug("Silent response, not sending to channel", { sessionKey });
+        return;
+      }
+
+      if (text) {
+        if (!response._emitId) {
+          log.warn("GHOST RESPONSE DROPPED", {
+            sessionKey,
+            textPreview: text.slice(0, 200),
+          });
+          return;
+        }
+        log.info("Sending response", {
+          sessionKey, channel, chatId, textLen: text.length,
+          emitId: response._emitId,
+        });
+        await plugin.outbound.send(accountId, chatId, { text });
+      }
+    });
   }
 
   /**
    * Subscribe to Claude SDK events for typing heartbeat.
    */
   private subscribeToClaudeEvents(): void {
-    if (this.activeSubscriptions.has("claude")) {
-      log.warn("Claude events subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("claude");
+    this.subscribe("claude", ["ravi.claude.events"], async (event) => {
+      const sessionKey = (event.data as any).sessionKey;
+      const data = event.data as { type?: string; sessionKey?: string };
 
-    log.info("Subscribing to Claude events");
-
-    (async () => {
-      try {
-        for await (const event of notif.subscribe("ravi.*.claude")) {
-          if (!this.running) break;
-
-          const sessionKey = event.topic.split(".").slice(1, -1).join(".");
-          const data = event.data as { type?: string };
-
-          // On result or silent, stop typing and clear target
-          if (data.type === "result" || data.type === "silent") {
-            const target = this.activeTargets.get(sessionKey);
-            if (target) {
-              const plugin = this.pluginsById.get(target.channel);
-              if (plugin) {
-                await plugin.outbound.sendTyping(target.accountId, target.chatId, false);
-              }
-              this.activeTargets.delete(sessionKey);
-            }
-            continue;
+      if (data.type === "result" || data.type === "silent") {
+        const target = this.activeTargets.get(sessionKey);
+        if (target) {
+          const plugin = this.pluginsById.get(target.channel);
+          if (plugin) {
+            await plugin.outbound.sendTyping(target.accountId, target.chatId, false);
           }
+          this.activeTargets.delete(sessionKey);
+        }
+        return;
+      }
 
-          // Send typing heartbeat on init and assistant events
-          if (data.type === "init" || data.type === "assistant") {
-            const target = this.activeTargets.get(sessionKey);
-            if (target) {
-              const plugin = this.pluginsById.get(target.channel);
-              if (plugin) {
-                await plugin.outbound.sendTyping(target.accountId, target.chatId, true);
-              }
-            }
+      if (data.type === "init" || data.type === "assistant") {
+        const target = this.activeTargets.get(sessionKey);
+        if (target) {
+          const plugin = this.pluginsById.get(target.channel);
+          if (plugin) {
+            await plugin.outbound.sendTyping(target.accountId, target.chatId, true);
           }
-        }
-      } catch (err) {
-        if (this.running) {
-          log.error("Claude events subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("claude");
-        if (this.running) {
-          setTimeout(() => this.subscribeToClaudeEvents(), 1000);
         }
       }
-    })();
+    });
   }
 
   /**
    * Subscribe to direct send events from the outbound module.
    */
   private subscribeToDirectSend(): void {
-    if (this.activeSubscriptions.has("directSend")) {
-      log.warn("Direct send subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("directSend");
+    this.subscribe("directSend", ["ravi.outbound.deliver"], async (event) => {
+      const data = event.data as {
+        channel: string;
+        accountId: string;
+        to: string;
+        text: string;
+        typingDelayMs?: number;
+        pauseMs?: number;
+      };
 
-    log.info("Subscribing to outbound direct send");
+      const plugin = this.pluginsById.get(data.channel);
+      if (!plugin) {
+        log.warn("No plugin for direct send channel", { channel: data.channel });
+        return;
+      }
 
-    (async () => {
       try {
-        for await (const event of notif.subscribe("ravi.outbound.deliver")) {
-          if (!this.running) break;
+        if (data.pauseMs && data.pauseMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, data.pauseMs));
+        }
 
-          const data = event.data as {
-            channel: string;
-            accountId: string;
-            to: string;
-            text: string;
-            typingDelayMs?: number;
-            pauseMs?: number;
-          };
+        if (data.typingDelayMs && data.typingDelayMs > 0) {
+          await plugin.outbound.sendTyping(data.accountId, data.to, true);
+          await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
+          await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+          await plugin.outbound.sendTyping(data.accountId, data.to, false);
+        } else {
+          await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+        }
+        log.info("Direct send delivered", { to: data.to, channel: data.channel });
 
-          const plugin = this.pluginsById.get(data.channel);
-          if (!plugin) {
-            log.warn("No plugin for direct send channel", { channel: data.channel });
-            continue;
-          }
-
-          try {
-            // Pause before typing (simulates reading/thinking)
-            if (data.pauseMs && data.pauseMs > 0) {
-              await new Promise(resolve => setTimeout(resolve, data.pauseMs));
-            }
-
-            if (data.typingDelayMs && data.typingDelayMs > 0) {
-              await plugin.outbound.sendTyping(data.accountId, data.to, true);
-              await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
-              await plugin.outbound.send(data.accountId, data.to, { text: data.text });
-              await plugin.outbound.sendTyping(data.accountId, data.to, false);
-            } else {
-              await plugin.outbound.send(data.accountId, data.to, { text: data.text });
-            }
-            log.info("Direct send delivered", { to: data.to, channel: data.channel, typingDelayMs: data.typingDelayMs });
-
-            // Mark last_sent_at on outbound entry so we can match LID replies
-            const entry = dbFindActiveEntryByPhone(data.to);
-            if (entry) {
-              dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
-
-              // Resolve LID from local mapping store
-              if (!entry.senderId && plugin.outbound.resolveJid) {
-                const resolved = await plugin.outbound.resolveJid(data.accountId, data.to);
-                if (resolved && resolved !== data.to) {
-                  dbSetEntrySenderId(entry.id, resolved);
-                  log.info("LID resolved from mapping store", { entryId: entry.id, phone: data.to, lid: resolved });
-                }
-              }
-            }
-          } catch (err) {
-            log.error("Direct send delivery failed", { to: data.to, error: err });
-          }
+        const entry = dbFindActiveEntryByPhone(data.to);
+        if (entry && entry.id) {
+          dbUpdateEntry(entry.id, {
+            lastSentAt: Date.now(),
+          });
         }
       } catch (err) {
-        if (this.running) {
-          log.error("Direct send subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("directSend");
-        if (this.running) {
-          setTimeout(() => this.subscribeToDirectSend(), 1000);
-        }
+        log.error("Failed to deliver direct send", { error: err });
       }
-    })();
+    });
   }
 
   /**
-   * Subscribe to deferred outbound read receipt events.
-   * When the runner processes an entry with a pending receipt, it emits here.
+   * Subscribe to deferred outbound read receipts.
    */
   private subscribeToOutboundReceipts(): void {
-    if (this.activeSubscriptions.has("receipts")) {
-      log.warn("Receipts subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("receipts");
+    this.subscribe("receipts", ["ravi.outbound.receipt"], async (event) => {
+      const data = event.data as {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        senderId: string;
+        messageIds: string[];
+      };
 
-    log.info("Subscribing to outbound receipts");
-
-    (async () => {
-      try {
-        for await (const event of notif.subscribe("ravi.outbound.receipt")) {
-          if (!this.running) break;
-
-          const data = event.data as {
-            channel: string;
-            accountId: string;
-            chatId: string;
-            senderId: string;
-            messageIds: string[];
-          };
-
-          const plugin = this.pluginsById.get(data.channel);
-          if (!plugin) {
-            log.warn("No plugin for outbound receipt channel", { channel: data.channel });
-            continue;
-          }
-
-          try {
-            await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, data.messageIds);
-            log.info("Deferred read receipt sent", { chatId: data.chatId, count: data.messageIds.length });
-          } catch (err) {
-            log.error("Failed to send deferred read receipt", { error: err });
-          }
-        }
-      } catch (err) {
-        if (this.running) {
-          log.error("Outbound receipt subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("receipts");
-        if (this.running) {
-          setTimeout(() => this.subscribeToOutboundReceipts(), 1000);
-        }
+      const plugin = this.pluginsById.get(data.channel);
+      if (!plugin) {
+        log.warn("No plugin for outbound receipt channel", { channel: data.channel });
+        return;
       }
-    })();
+
+      try {
+        await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, data.messageIds);
+        log.info("Deferred read receipt sent", { chatId: data.chatId, count: data.messageIds.length });
+      } catch (err) {
+        log.error("Failed to send deferred read receipt", { error: err });
+      }
+    });
   }
 
   /**
    * Subscribe to emoji reaction events from agents.
-   * Pattern: ravi.outbound.reaction → plugin.outbound.sendReaction()
    */
   private subscribeToReactions(): void {
-    if (this.activeSubscriptions.has("reactions")) {
-      log.warn("Reactions subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("reactions");
+    this.subscribe("reactions", ["ravi.outbound.reaction"], async (event) => {
+      const data = event.data as {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        messageId: string;
+        emoji: string;
+      };
 
-    log.info("Subscribing to outbound reactions");
-
-    (async () => {
-      try {
-        for await (const event of notif.subscribe("ravi.outbound.reaction")) {
-          if (!this.running) break;
-
-          const data = event.data as {
-            channel: string;
-            accountId: string;
-            chatId: string;
-            messageId: string;
-            emoji: string;
-          };
-
-          const plugin = this.pluginsById.get(data.channel);
-          if (!plugin) {
-            log.warn("No plugin for reaction channel", { channel: data.channel });
-            continue;
-          }
-
-          try {
-            await plugin.outbound.sendReaction(data.accountId, data.chatId, data.messageId, data.emoji);
-            log.info("Reaction sent", { chatId: data.chatId, messageId: data.messageId, emoji: data.emoji });
-          } catch (err) {
-            log.error("Failed to send reaction", { error: err });
-          }
-        }
-      } catch (err) {
-        if (this.running) {
-          log.error("Reactions subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("reactions");
-        if (this.running) {
-          setTimeout(() => this.subscribeToReactions(), 1000);
-        }
+      const plugin = this.pluginsById.get(data.channel);
+      if (!plugin) {
+        log.warn("No plugin for reaction channel", { channel: data.channel });
+        return;
       }
-    })();
+
+      try {
+        await plugin.outbound.sendReaction(data.accountId, data.chatId, data.messageId, data.emoji);
+        log.info("Reaction sent", { chatId: data.chatId, messageId: data.messageId, emoji: data.emoji });
+      } catch (err) {
+        log.error("Failed to send reaction", { error: err });
+      }
+    });
   }
 
   /**
    * Subscribe to media send events from agents.
-   * Pattern: ravi.media.send → plugin.outbound.send() with media
    */
   private subscribeToMediaSend(): void {
-    if (this.activeSubscriptions.has("mediaSend")) {
-      log.warn("Media send subscription already active, skipping duplicate");
-      return;
-    }
-    this.activeSubscriptions.add("mediaSend");
+    this.subscribe("mediaSend", ["ravi.media.send"], async (event) => {
+      const data = event.data as {
+        channel: string;
+        accountId: string;
+        chatId: string;
+        filePath: string;
+        mimetype: string;
+        type: "image" | "video" | "audio" | "document";
+        filename: string;
+        caption?: string;
+      };
 
-    log.info("Subscribing to media send");
+      const plugin = this.pluginsById.get(data.channel);
+      if (!plugin) {
+        log.warn("No plugin for media send channel", { channel: data.channel });
+        return;
+      }
 
-    (async () => {
       try {
-        for await (const event of notif.subscribe("ravi.media.send")) {
-          if (!this.running) break;
+        const buffer = await readFile(data.filePath);
 
-          const data = event.data as {
-            channel: string;
-            accountId: string;
-            chatId: string;
-            filePath: string;
-            mimetype: string;
-            type: "image" | "video" | "audio" | "document";
-            filename: string;
-            caption?: string;
-          };
-
-          const plugin = this.pluginsById.get(data.channel);
-          if (!plugin) {
-            log.warn("No plugin for media send channel", { channel: data.channel });
-            continue;
-          }
-
-          try {
-            const { readFileSync } = await import("fs");
-            const buffer = readFileSync(data.filePath);
-
-            const result = await plugin.outbound.send(data.accountId, data.chatId, {
-              media: {
-                type: data.type,
-                data: buffer,
-                mimetype: data.mimetype,
-                filename: data.filename,
-                caption: data.caption,
-              },
-              text: data.caption,
-            });
-            if (result.success) {
-              log.info("Media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
-            } else {
-              log.error("Media send failed", { chatId: data.chatId, error: result.error });
-            }
-          } catch (err) {
-            log.error("Failed to send media", { error: err });
-          }
+        const result = await plugin.outbound.send(data.accountId, data.chatId, {
+          media: {
+            type: data.type,
+            data: buffer,
+            mimetype: data.mimetype,
+            filename: data.filename,
+            caption: data.caption,
+          },
+          text: data.caption,
+        });
+        if (result.success) {
+          log.info("Media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
+        } else {
+          log.error("Media send failed", { chatId: data.chatId, error: result.error });
         }
       } catch (err) {
-        if (this.running) {
-          log.error("Media send subscription error", err);
-        }
-      } finally {
-        this.activeSubscriptions.delete("mediaSend");
-        if (this.running) {
-          setTimeout(() => this.subscribeToMediaSend(), 1000);
-        }
+        log.error("Failed to send media", { error: err });
       }
-    })();
+    });
+  }
+
+  /**
+   * Subscribe to config changes for cache invalidation.
+   * CLI commands emit this event when routes/settings change.
+   */
+  private subscribeToConfigChanges(): void {
+    this.subscribe("config", ["ravi.config.changed"], async () => {
+      this.routerConfig = loadRouterConfig();
+      log.info("Router config reloaded");
+    });
   }
 
   private async handleInboundMessage(
     plugin: ChannelPlugin,
     message: InboundMessage
   ): Promise<void> {
-    // Reload config to pick up route changes (routes may be added via CLI)
-    this.routerConfig = loadRouterConfig();
+    // Config is now kept fresh via subscribeToConfigChanges
 
     // Check if sender has an active outbound entry (plugin already resolved the ID)
     // If so, record the response and DON'T emit prompt (let the runner handle it)

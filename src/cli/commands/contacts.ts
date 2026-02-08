@@ -5,6 +5,12 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { notif } from "../../notif.js";
+
+/** Notify gateway that config changed */
+function emitConfigChanged() {
+  notif.emit("ravi.config.changed", {}).catch(() => {});
+}
 import {
   getAllContacts,
   getContact,
@@ -137,6 +143,7 @@ export class ContactsCommands {
     if (replyMode) {
       setContactReplyMode(normalized, replyMode as ReplyMode);
     }
+    emitConfigChanged();
 
     const agentInfo = agentId ? ` → agent:${agentId}` : "";
     const modeInfo = replyMode ? ` (${replyMode})` : "";
@@ -161,6 +168,7 @@ export class ContactsCommands {
     const normalized = normalizePhone(phone);
     allowContact(normalized);
     console.log(`✓ Contact allowed: ${formatPhone(normalized)}`);
+    emitConfigChanged();
   }
 
   @Command({ name: "block", description: "Block a contact" })
@@ -168,6 +176,7 @@ export class ContactsCommands {
     const normalized = normalizePhone(phone);
     blockContact(normalized);
     console.log(`✗ Contact blocked: ${formatPhone(normalized)}`);
+    emitConfigChanged();
   }
 
   @Command({ name: "set", description: "Set contact property" })
@@ -185,6 +194,7 @@ export class ContactsCommands {
     if (key === "agent") {
       allowContact(normalized, value);
       console.log(`✓ Agent set: ${formatPhone(normalized)} → ${value}`);
+      emitConfigChanged();
     } else if (key === "mode") {
       if (value !== "auto" && value !== "mention") {
         fail("Mode must be 'auto' or 'mention'");

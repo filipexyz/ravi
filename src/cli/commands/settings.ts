@@ -5,6 +5,12 @@
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
 import { fail } from "../context.js";
+import { notif } from "../../notif.js";
+
+/** Notify gateway that config changed */
+function emitConfigChanged() {
+  notif.emit("ravi.config.changed", {}).catch(() => {});
+}
 import {
   dbGetSetting,
   dbSetSetting,
@@ -143,6 +149,7 @@ export class SettingsCommands {
     try {
       dbSetSetting(key, value);
       console.log(`✓ ${key} set: ${value}`);
+      emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -153,6 +160,7 @@ export class SettingsCommands {
     const deleted = dbDeleteSetting(key);
     if (deleted) {
       console.log(`\u2713 Setting deleted: ${key}`);
+      emitConfigChanged();
     } else {
       console.log(`Setting not found: ${key}`);
     }
