@@ -52,7 +52,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.37",
     "@hapi/boom": "^10.0.1",
     "@vector-im/matrix-bot-sdk": "^0.8.0-element.3",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
