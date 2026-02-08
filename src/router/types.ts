@@ -79,6 +79,9 @@ export interface AgentConfig {
 
   /** Bash CLI permission configuration */
   bashConfig?: BashConfig;
+
+  /** Model to use for memory extraction during PreCompact (default: "haiku") */
+  memoryModel?: string;
 }
 
 // ============================================================================

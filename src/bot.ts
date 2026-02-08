@@ -23,6 +23,8 @@ import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook } from "./bash/index.js";
+import { createPreCompactHook } from "./hooks/index.js";
+import { ALL_BUILTIN_TOOLS } from "./constants.js";
 
 const log = logger.child("bot");
 
@@ -501,16 +503,6 @@ export class RaviBot {
 
     const model = agent.model ?? this.config.model;
 
-    // All built-in tools (used to compute disallowedTools)
-    const ALL_BUILTIN_TOOLS = [
-      // Core tools
-      "Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write",
-      "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
-      "ExitPlanMode", "EnterPlanMode", "AskUserQuestion", "Skill",
-      // Additional tools
-      "TaskOutput", "KillShell", "TaskStop", "LSP",
-    ];
-
     // Build permission options: use disallowedTools if whitelist defined, otherwise bypass mode
     let permissionOptions: Record<string, unknown>;
     if (agent.allowedTools) {
@@ -564,6 +556,11 @@ export class RaviBot {
     if (agent.bashConfig) {
       hooks.PreToolUse = [createBashPermissionHook(() => agent.bashConfig)];
     }
+
+    // Add PreCompact hook to extract memories before compaction
+    hooks.PreCompact = [
+      createPreCompactHook({ memoryModel: agent.memoryModel }),
+    ];
 
     const queryResult = query({
       prompt: prompt.prompt,
@@ -737,7 +734,19 @@ export class RaviBot {
         if (message.type === "result") {
           inputTokens = message.usage?.input_tokens ?? 0;
           outputTokens = message.usage?.output_tokens ?? 0;
-          log.info("Result", { runId, inputTokens, outputTokens, sessionId: message.session_id });
+          const cacheRead = (message.usage as any)?.cache_read_input_tokens ?? 0;
+          const cacheCreation = (message.usage as any)?.cache_creation_input_tokens ?? 0;
+          const totalContext = inputTokens + cacheRead + cacheCreation;
+
+          log.info("Context", {
+            runId,
+            total: totalContext,
+            new: inputTokens,
+            cached: cacheRead,
+            written: cacheCreation,
+            output: outputTokens,
+            sessionId: message.session_id,
+          });
 
           if ("session_id" in message && message.session_id) {
             updateSdkSessionId(session.sessionKey, message.session_id);
