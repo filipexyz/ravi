@@ -148,6 +148,8 @@ interface StreamingSession {
   abortController: AbortController;
   /** Resolve function to unblock the generator and yield the next message */
   pushMessage: ((msg: UserMessage) => void) | null;
+  /** Queue of messages waiting to be yielded (when generator is not yet waiting) */
+  pendingMessages: UserMessage[];
   /** Current response source for routing */
   currentSource?: MessageTarget;
   /** Tool tracking */
@@ -331,20 +333,25 @@ export class RaviBot {
         existing.currentSource = prompt.source;
       }
 
+      const userMsg: UserMessage = {
+        type: "user",
+        message: { role: "user", content: prompt.prompt },
+      };
+
       if (existing.pushMessage) {
+        // Generator is waiting for next message — deliver directly
         const resolver = existing.pushMessage;
-        existing.pushMessage = null; // consumed
-        resolver({
-          type: "user",
-          message: { role: "user", content: prompt.prompt },
-        });
+        existing.pushMessage = null;
+        resolver(userMsg);
       } else {
-        // Generator not yet waiting — this shouldn't normally happen,
-        // but if it does, abort and start fresh
-        log.warn("Streaming: generator not ready, restarting session", { sessionKey });
-        existing.abortController.abort();
-        this.streamingSessions.delete(sessionKey);
-        await this.startStreamingSession(sessionKey, prompt);
+        // Generator is busy (SDK processing a turn) — queue and interrupt
+        log.info("Streaming: queueing message and interrupting current turn", {
+          sessionKey,
+          queueSize: existing.pendingMessages.length + 1,
+        });
+        existing.pendingMessages.push(userMsg);
+        // Interrupt triggers the SDK to stop current turn and ask generator for next message
+        existing.queryHandle.interrupt().catch(() => {});
       }
       return;
     }
@@ -416,6 +423,7 @@ export class RaviBot {
       queryHandle: null as any, // set below
       abortController,
       pushMessage: null,
+      pendingMessages: [],
       currentSource: resolvedSource,
       toolRunning: false,
       lastActivity: Date.now(),
@@ -490,6 +498,22 @@ export class RaviBot {
 
     // Then wait for subsequent messages
     while (!session.done) {
+      // First drain any pending messages (queued while SDK was busy)
+      if (session.pendingMessages.length > 0) {
+        const pending = session.pendingMessages.splice(0);
+        // Combine all pending into one message
+        const combined = pending.map(m => m.message.content).join("\n\n");
+        log.info("Generator: draining pending messages", {
+          sessionKey, count: pending.length,
+        });
+        yield {
+          type: "user" as const,
+          message: { role: "user" as const, content: combined },
+        };
+        continue;
+      }
+
+      // No pending messages — wait for the next one
       const msg = await new Promise<UserMessage | null>((resolve) => {
         session.pushMessage = resolve;
       });
