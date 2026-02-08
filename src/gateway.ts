@@ -395,12 +395,14 @@ export class Gateway {
             continue;
           }
 
-          // Send typing heartbeat if we have a target
-          const target = this.activeTargets.get(sessionKey);
-          if (target) {
-            const plugin = this.pluginsById.get(target.channel);
-            if (plugin) {
-              await plugin.outbound.sendTyping(target.accountId, target.chatId, true);
+          // Send typing heartbeat on init and assistant events
+          if (data.type === "init" || data.type === "assistant") {
+            const target = this.activeTargets.get(sessionKey);
+            if (target) {
+              const plugin = this.pluginsById.get(target.channel);
+              if (plugin) {
+                await plugin.outbound.sendTyping(target.accountId, target.chatId, true);
+              }
             }
           }
         }
