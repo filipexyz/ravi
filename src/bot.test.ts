@@ -190,27 +190,29 @@ describe("handlePromptImmediate — streaming sessions", () => {
   it("pushes message to existing session instead of creating new", async () => {
     const sessionKey = "agent:main:test-push";
 
-    // Create a fake streaming session that is alive and waiting
-    let capturedMessage: any = null;
+    // Create a fake streaming session that is alive and waiting (generator idle)
+    let wokenUp = false;
     const streamingSession = {
       queryHandle: {},
       abortController: new AbortController(),
-      pushMessage: (msg: any) => { capturedMessage = msg; },
+      pushMessage: (_msg: any) => { wokenUp = true; },
       pendingMessages: [] as any[],
       currentSource: { channel: "whatsapp", accountId: "default", chatId: "test" },
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
+      interrupted: false,
+      onTurnComplete: null,
     };
     (bot as any).streamingSessions.set(sessionKey, streamingSession);
 
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("follow-up"));
 
-    // Should have delivered the message directly
-    expect(capturedMessage).not.toBeNull();
-    expect(capturedMessage.type).toBe("user");
-    expect(capturedMessage.message.content).toBe("follow-up");
-    // pushMessage should be consumed (set to null)
+    // Message should be enqueued (not delivered directly)
+    expect(streamingSession.pendingMessages.length).toBe(1);
+    expect(streamingSession.pendingMessages[0].message.content).toBe("follow-up");
+    // Generator should be woken up via null signal
+    expect(wokenUp).toBe(true);
     expect(streamingSession.pushMessage).toBeNull();
   });
 
@@ -252,6 +254,8 @@ describe("handlePromptImmediate — streaming sessions", () => {
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
+      interrupted: false,
+      onTurnComplete: null,
     };
     (bot as any).streamingSessions.set(sessionKey, streamingSession);
 

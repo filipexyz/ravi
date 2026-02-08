@@ -146,9 +146,9 @@ interface StreamingSession {
   queryHandle: Query;
   /** Abort controller to kill the subprocess */
   abortController: AbortController;
-  /** Resolve function to unblock the generator and yield the next message */
-  pushMessage: ((msg: UserMessage) => void) | null;
-  /** Queue of messages waiting to be yielded (when generator is not yet waiting) */
+  /** Resolve function to unblock the generator when waiting between turns */
+  pushMessage: ((msg: UserMessage | null) => void) | null;
+  /** Queue of messages — stays in queue until turn completes without interrupt */
   pendingMessages: UserMessage[];
   /** Current response source for routing */
   currentSource?: MessageTarget;
@@ -159,8 +159,12 @@ interface StreamingSession {
   toolStartTime?: number;
   /** Activity tracking */
   lastActivity: number;
-  /** Whether the event loop is done (result received) */
+  /** Whether the event loop is done (session ended) */
   done: boolean;
+  /** Whether the current turn was interrupted (discard response, keep queue) */
+  interrupted: boolean;
+  /** Signal from result handler to unblock generator after turn completes */
+  onTurnComplete: (() => void) | null;
 }
 
 /** User message format for the SDK streaming input */
@@ -338,30 +342,30 @@ export class RaviBot {
         message: { role: "user", content: prompt.prompt },
       };
 
+      // Always enqueue — messages only leave the queue when a turn completes without interrupt
+      existing.pendingMessages.push(userMsg);
+
       if (existing.pushMessage) {
-        // Generator is waiting for next message — deliver directly
+        // Generator waiting between turns — wake it up to yield the queue
+        log.info("Streaming: waking generator", { sessionKey, queueSize: existing.pendingMessages.length });
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
-        resolver(userMsg);
+        resolver(null); // wake-up signal
+      } else if (existing.toolRunning) {
+        // Tool running — just enqueue, don't interrupt
+        log.info("Streaming: queueing (tool running)", {
+          sessionKey,
+          queueSize: existing.pendingMessages.length,
+          tool: existing.currentToolName,
+        });
       } else {
-        // Generator is busy (SDK processing a turn) — queue
-        existing.pendingMessages.push(userMsg);
-
-        if (existing.toolRunning) {
-          // Tool running — don't interrupt, let it finish. Message will be processed after.
-          log.info("Streaming: queueing message (tool running, no interrupt)", {
-            sessionKey,
-            queueSize: existing.pendingMessages.length,
-            tool: existing.currentToolName,
-          });
-        } else {
-          // Text generation — interrupt immediately so we can combine and re-respond
-          log.info("Streaming: queueing message and interrupting", {
-            sessionKey,
-            queueSize: existing.pendingMessages.length,
-          });
-          existing.queryHandle.interrupt().catch(() => {});
-        }
+        // SDK generating text — interrupt, discard response, re-process with full queue
+        log.info("Streaming: interrupting turn", {
+          sessionKey,
+          queueSize: existing.pendingMessages.length,
+        });
+        existing.interrupted = true;
+        existing.queryHandle.interrupt().catch(() => {});
       }
       return;
     }
@@ -438,6 +442,8 @@ export class RaviBot {
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
+      interrupted: false,
+      onTurnComplete: null,
     };
     this.streamingSessions.set(sessionKey, streamingSession);
 
@@ -500,40 +506,53 @@ export class RaviBot {
     firstMessage: string,
     session: StreamingSession
   ): AsyncGenerator<UserMessage> {
-    // Yield the first message immediately
-    yield {
+    // First message goes directly into queue so the same drain logic handles it
+    session.pendingMessages.push({
       type: "user" as const,
       message: { role: "user" as const, content: firstMessage },
-    };
+    });
 
-    // Then wait for subsequent messages
     while (!session.done) {
-      // Drain any pending messages first (queued during interrupt)
-      if (session.pendingMessages.length > 0) {
-        const pending = session.pendingMessages.splice(0);
-        const combined = pending.map(m => m.message.content).join("\n\n");
-        log.info("Generator: yielding combined messages", {
-          sessionKey, count: pending.length,
+      // Wait for messages if queue is empty
+      if (session.pendingMessages.length === 0) {
+        await new Promise<void>((resolve) => {
+          session.pushMessage = () => resolve();
         });
-        yield {
-          type: "user" as const,
-          message: { role: "user" as const, content: combined },
-        };
-        continue;
+        if (session.pendingMessages.length === 0 && session.done) break;
+        if (session.pendingMessages.length === 0) continue;
       }
 
-      // No pending — wait for next message
-      const msg = await new Promise<UserMessage | null>((resolve) => {
-        session.pushMessage = resolve;
+      // Snapshot how many messages we're yielding (more may arrive during the turn)
+      const yieldedCount = session.pendingMessages.length;
+      const combined = session.pendingMessages.map(m => m.message.content).join("\n\n");
+      log.info("Generator: yielding", {
+        sessionKey, count: yieldedCount,
       });
 
-      if (msg === null && session.pendingMessages.length === 0) break;
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: combined },
+      };
 
-      // If there are pending messages (from wake-up signal), loop back to drain them
-      if (session.pendingMessages.length > 0) continue;
+      // Wait for result handler to signal turn complete
+      await new Promise<void>((resolve) => {
+        session.onTurnComplete = resolve;
+      });
 
-      // Direct message delivery — yield immediately
-      if (msg) yield msg;
+      if (session.interrupted) {
+        // Turn was interrupted — keep ALL messages (they'll be re-yielded combined)
+        log.info("Generator: turn interrupted, keeping queue", {
+          sessionKey, count: session.pendingMessages.length,
+        });
+        session.interrupted = false;
+      } else {
+        // Turn completed normally — remove only the messages that were yielded
+        // New messages that arrived during the turn (e.g. during tool execution) stay
+        session.pendingMessages.splice(0, yieldedCount);
+        log.info("Generator: turn complete", {
+          sessionKey, cleared: yieldedCount, remaining: session.pendingMessages.length,
+        });
+      }
     }
   }
 
@@ -636,17 +655,23 @@ export class RaviBot {
           }
           if (messageText) {
             messageText = messageText.trimStart();
-            log.info("Assistant message", { runId, text: messageText.slice(0, 100) });
-            responseText += messageText;
+            log.info("Assistant message", { runId, interrupted: streaming.interrupted, text: messageText.slice(0, 100) });
 
-            if (messageText.trim() === SILENT_TOKEN) {
-              log.info("Silent response", { sessionKey });
-              await emitSdkEvent({ type: "silent" });
-            } else if (messageText.trim() === HEARTBEAT_OK) {
-              log.info("Heartbeat OK", { sessionKey });
-              await emitSdkEvent({ type: "silent" });
+            if (streaming.interrupted) {
+              // Turn was interrupted — discard response
+              log.info("Discarding interrupted response", { sessionKey, textLen: messageText.length });
             } else {
-              await emitResponse(messageText);
+              responseText += messageText;
+
+              if (messageText.trim() === SILENT_TOKEN) {
+                log.info("Silent response", { sessionKey });
+                await emitSdkEvent({ type: "silent" });
+              } else if (messageText.trim() === HEARTBEAT_OK) {
+                log.info("Heartbeat OK", { sessionKey });
+                await emitSdkEvent({ type: "silent" });
+              } else {
+                await emitResponse(messageText);
+              }
             }
           }
         }
@@ -688,6 +713,7 @@ export class RaviBot {
 
           log.info("Turn complete", {
             runId,
+            interrupted: streaming.interrupted,
             total: inputTokens + cacheRead + cacheCreation,
             new: inputTokens,
             cached: cacheRead,
@@ -701,12 +727,19 @@ export class RaviBot {
           }
           updateTokens(sessionKey, inputTokens, outputTokens);
 
-          if (responseText.trim()) {
+          if (!streaming.interrupted && responseText.trim()) {
             saveMessage(sessionKey, "assistant", responseText.trim());
           }
 
           // Reset for next turn
           responseText = "";
+          streaming.toolRunning = false;
+
+          // Signal generator to continue (it will clear or keep queue based on interrupted flag)
+          if (streaming.onTurnComplete) {
+            streaming.onTurnComplete();
+            streaming.onTurnComplete = null;
+          }
         }
       }
     } finally {
@@ -715,10 +748,14 @@ export class RaviBot {
 
       streaming.done = true;
 
-      // Unblock generator if it's waiting
+      // Unblock generator if it's waiting (between turns or waiting for turn complete)
       if (streaming.pushMessage) {
         streaming.pushMessage(null as any);
         streaming.pushMessage = null;
+      }
+      if (streaming.onTurnComplete) {
+        streaming.onTurnComplete();
+        streaming.onTurnComplete = null;
       }
 
       // Abort subprocess if still alive
