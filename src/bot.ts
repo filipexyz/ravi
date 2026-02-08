@@ -104,28 +104,9 @@ export interface ChannelContext {
   groupMembers?: string[];
 }
 
-/** Queued message waiting to be processed */
-interface QueuedMessage {
-  prompt: PromptMessage;
-  source?: MessageTarget;
-}
-
-/** Active session state for interrupt handling */
-interface ActiveSession {
-  query: Query;
-  abortController: AbortController;
-  toolRunning: boolean;
-  currentToolId?: string;
-  currentToolName?: string;
-  toolStartTime?: number;
-  messageQueue: QueuedMessage[];
-  interrupted: boolean;
-  lastActivity: number;
-}
-
 /** Debounce state for grouping messages */
 interface DebounceState {
-  messages: QueuedMessage[];
+  messages: Array<{ prompt: PromptMessage; source?: MessageTarget }>;
   timer: ReturnType<typeof setTimeout>;
   debounceMs: number;
 }
@@ -142,6 +123,8 @@ export interface PromptMessage {
   prompt: string;
   source?: MessageTarget;
   context?: MessageContext;
+  /** Outbound system context injected by outbound module */
+  _outboundSystemContext?: string;
 }
 
 /** Response message structure */
@@ -157,6 +140,36 @@ export interface ResponseMessage {
   };
 }
 
+/** Streaming session — persistent SDK subprocess that accepts messages via AsyncGenerator */
+interface StreamingSession {
+  /** The SDK query handle */
+  queryHandle: Query;
+  /** Abort controller to kill the subprocess */
+  abortController: AbortController;
+  /** Resolve function to unblock the generator and yield the next message */
+  pushMessage: ((msg: UserMessage) => void) | null;
+  /** Current response source for routing */
+  currentSource?: MessageTarget;
+  /** Tool tracking */
+  toolRunning: boolean;
+  currentToolId?: string;
+  currentToolName?: string;
+  toolStartTime?: number;
+  /** Activity tracking */
+  lastActivity: number;
+  /** Whether the event loop is done (result received) */
+  done: boolean;
+}
+
+/** User message format for the SDK streaming input */
+interface UserMessage {
+  type: "user";
+  message: {
+    role: "user";
+    content: string;
+  };
+}
+
 export interface RaviBotOptions {
   config: Config;
 }
@@ -165,12 +178,9 @@ export class RaviBot {
   private config: Config;
   private routerConfig: RouterConfig;
   private running = false;
-  private activeSessions = new Map<string, ActiveSession>();
+  private streamingSessions = new Map<string, StreamingSession>();
   private debounceStates = new Map<string, DebounceState>();
   private promptSubscriptionActive = false;
-  private processingNewPrompts = new Set<string>();
-  /** Track abort controllers per session to kill orphaned SDK subprocesses */
-  private sessionAbortControllers = new Map<string, AbortController>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
 
@@ -196,23 +206,17 @@ export class RaviBot {
     log.info("Stopping Ravi bot...");
     this.running = false;
 
-    // Abort ALL active SDK subprocesses to prevent orphans after daemon restart
-    if (this.sessionAbortControllers.size > 0) {
-      log.info("Aborting active SDK subprocesses", {
-        count: this.sessionAbortControllers.size,
-        sessions: [...this.sessionAbortControllers.keys()],
+    // Abort ALL streaming sessions
+    if (this.streamingSessions.size > 0) {
+      log.info("Aborting streaming sessions", {
+        count: this.streamingSessions.size,
+        sessions: [...this.streamingSessions.keys()],
       });
-      for (const [sessionKey, controller] of this.sessionAbortControllers) {
-        log.info("Aborting SDK subprocess", { sessionKey });
-        controller.abort();
+      for (const [sessionKey, session] of this.streamingSessions) {
+        log.info("Aborting streaming session", { sessionKey });
+        session.abortController.abort();
       }
-      this.sessionAbortControllers.clear();
-    }
-
-    // Clear active sessions
-    if (this.activeSessions.size > 0) {
-      log.info("Clearing active sessions", { count: this.activeSessions.size });
-      this.activeSessions.clear();
+      this.streamingSessions.clear();
     }
 
     closeDb();
@@ -238,7 +242,7 @@ export class RaviBot {
         const sessionKey = event.topic.split(".").slice(1, -1).join(".");
         const prompt = event.data as unknown as PromptMessage;
 
-        // Don't await - handle concurrently to allow interrupts
+        // Don't await - handle concurrently
         this.handlePrompt(sessionKey, prompt).catch(err => {
           log.error("Failed to handle prompt", err);
         });
@@ -314,42 +318,47 @@ export class RaviBot {
   }
 
   private async handlePromptImmediate(sessionKey: string, prompt: PromptMessage): Promise<void> {
-    const active = this.activeSessions.get(sessionKey);
+    const existing = this.streamingSessions.get(sessionKey);
 
-    if (active) {
-      // Session already active - queue or interrupt
-      if (active.toolRunning) {
-        log.info("Tool running, queueing message", { sessionKey, queueSize: active.messageQueue.length + 1 });
-        active.messageQueue.push({ prompt, source: prompt.source });
-        return;
-      } else {
-        log.info("Aborting for new message", { sessionKey });
-        active.messageQueue.push({ prompt, source: prompt.source });
-        if (!active.interrupted) {
-          active.interrupted = true;
-          active.abortController.abort();
-        }
-        return;
+    if (existing && !existing.done) {
+      // Session alive — just push the new message into the generator
+      log.info("Streaming: pushing message to existing session", { sessionKey });
+      this.updateSessionMetadata(sessionKey, prompt);
+      saveMessage(sessionKey, "user", prompt.prompt);
+
+      // Update source for response routing
+      if (prompt.source) {
+        existing.currentSource = prompt.source;
       }
-    }
 
-    // Guard: prevent duplicate processNewPrompt for the same session
-    // (can happen if notif delivers the same event twice via duplicate subscriptions)
-    if (this.processingNewPrompts.has(sessionKey)) {
-      log.warn("Duplicate prompt while initializing session, skipping", { sessionKey });
+      if (existing.pushMessage) {
+        const resolver = existing.pushMessage;
+        existing.pushMessage = null; // consumed
+        resolver({
+          type: "user",
+          message: { role: "user", content: prompt.prompt },
+        });
+      } else {
+        // Generator not yet waiting — this shouldn't normally happen,
+        // but if it does, abort and start fresh
+        log.warn("Streaming: generator not ready, restarting session", { sessionKey });
+        existing.abortController.abort();
+        this.streamingSessions.delete(sessionKey);
+        await this.startStreamingSession(sessionKey, prompt);
+      }
       return;
     }
-    this.processingNewPrompts.add(sessionKey);
 
-    try {
-      await this.processNewPrompt(sessionKey, prompt);
-    } finally {
-      this.processingNewPrompts.delete(sessionKey);
+    // No active session or previous one finished — start new streaming session
+    if (existing?.done) {
+      this.streamingSessions.delete(sessionKey);
     }
+    await this.startStreamingSession(sessionKey, prompt);
   }
 
-  private async processNewPrompt(sessionKey: string, prompt: PromptMessage): Promise<void> {
-    // Parse session key to get agent ID: "agent:main:..." -> "main"
+  /** Start a new streaming session with an AsyncGenerator that stays alive */
+  private async startStreamingSession(sessionKey: string, prompt: PromptMessage): Promise<void> {
+    // Parse session key to get agent ID
     const parts = sessionKey.split(":");
     const agentId = parts[0] === "agent" ? parts[1] : this.routerConfig.defaultAgent;
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
@@ -363,7 +372,6 @@ export class RaviBot {
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
 
     // Resolve source for response routing
-    // Priority: explicit source in prompt > last known source from session
     let resolvedSource = prompt.source;
     if (!resolvedSource && session.lastChannel && session.lastTo) {
       resolvedSource = {
@@ -371,16 +379,325 @@ export class RaviBot {
         accountId: session.lastAccountId ?? "default",
         chatId: session.lastTo,
       };
-      log.debug("Using last known source for routing", { sessionKey, source: resolvedSource });
     }
 
-    // Update source for response routing (only when explicit source provided)
+    this.updateSessionMetadata(sessionKey, prompt);
+    saveMessage(sessionKey, "user", prompt.prompt);
+
+    const model = agent.model ?? this.config.model;
+
+    // Build permission options
+    let permissionOptions: Record<string, unknown>;
+    if (agent.allowedTools) {
+      const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
+      permissionOptions = { disallowedTools: disallowed, allowedTools: agent.allowedTools };
+    } else {
+      permissionOptions = { permissionMode: "bypassPermissions" as const, allowDangerouslySkipPermissions: true };
+    }
+
+    // Build system prompt
+    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
+    if (prompt._outboundSystemContext) {
+      systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
+    }
+
+    // Build hooks
+    const hooks: Record<string, unknown[]> = {};
+    if (agent.bashConfig) {
+      hooks.PreToolUse = [createBashPermissionHook(() => agent.bashConfig)];
+    }
+    hooks.PreCompact = [createPreCompactHook({ memoryModel: agent.memoryModel })];
+
+    const plugins = discoverPlugins();
+    const abortController = new AbortController();
+
+    // Create the streaming session state
+    const streamingSession: StreamingSession = {
+      queryHandle: null as any, // set below
+      abortController,
+      pushMessage: null,
+      currentSource: resolvedSource,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+    };
+    this.streamingSessions.set(sessionKey, streamingSession);
+
+    // Create the AsyncGenerator that feeds messages to the SDK
+    const messageGenerator = this.createMessageGenerator(sessionKey, prompt.prompt, streamingSession);
+
+    const runId = Math.random().toString(36).slice(2, 8);
+    log.info("Starting streaming session", {
+      runId,
+      sessionKey,
+      agentId: agent.id,
+      sdkSessionId: session.sdkSessionId ?? null,
+      resuming: !!session.sdkSessionId,
+    });
+
+    const queryResult = query({
+      prompt: messageGenerator,
+      options: {
+        model,
+        cwd: agentCwd,
+        resume: session.sdkSessionId,
+        abortController,
+        ...permissionOptions,
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: systemPromptAppend,
+        },
+        settingSources: agent.settingSources ?? ["project"],
+        ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
+        ...(plugins.length > 0 ? { plugins } : {}),
+      },
+    });
+
+    streamingSession.queryHandle = queryResult;
+
+    // Build tool context for CLI tools
+    const toolContext = {
+      sessionKey,
+      agentId: agent.id,
+      source: resolvedSource,
+    };
+
+    // Run the event loop in the background (don't await — it stays alive)
+    runWithContext(toolContext, () =>
+      this.runEventLoop(runId, sessionKey, session, agent, streamingSession, queryResult)
+    ).catch(err => {
+      const isAbort = err instanceof Error && /abort/i.test(err.message);
+      if (isAbort) {
+        log.info("Streaming session aborted", { sessionKey });
+      } else {
+        log.error("Streaming session failed", { sessionKey, error: err });
+      }
+    });
+  }
+
+  /** AsyncGenerator that yields user messages. Stays alive between turns. */
+  private async *createMessageGenerator(
+    sessionKey: string,
+    firstMessage: string,
+    session: StreamingSession
+  ): AsyncGenerator<UserMessage> {
+    // Yield the first message immediately
+    yield {
+      type: "user" as const,
+      message: { role: "user" as const, content: firstMessage },
+    };
+
+    // Then wait for subsequent messages
+    while (!session.done) {
+      const msg = await new Promise<UserMessage | null>((resolve) => {
+        session.pushMessage = resolve;
+      });
+
+      if (msg === null) break; // session ended
+      yield msg;
+    }
+  }
+
+  /** Process SDK events from the streaming query */
+  private async runEventLoop(
+    runId: string,
+    sessionKey: string,
+    session: SessionEntry,
+    agent: AgentConfig,
+    streaming: StreamingSession,
+    queryResult: Query
+  ): Promise<void> {
+    // Timeout watchdog
+    const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
+    const watchdog = setInterval(() => {
+      const elapsed = Date.now() - streaming.lastActivity;
+      if (elapsed > SESSION_TIMEOUT_MS) {
+        log.warn("Streaming session idle timeout", { sessionKey, elapsedMs: elapsed });
+        streaming.done = true;
+        if (streaming.pushMessage) {
+          streaming.pushMessage(null as any);
+          streaming.pushMessage = null;
+        }
+        streaming.abortController.abort();
+        this.streamingSessions.delete(sessionKey);
+        clearInterval(watchdog);
+      }
+    }, 30000);
+
+    let sdkEventCount = 0;
+    let responseText = "";
+
+    const emitSdkEvent = async (event: Record<string, unknown>) => {
+      await safeEmit(`ravi.${sessionKey}.claude`, event);
+    };
+
+    const emitResponse = async (text: string) => {
+      const emitId = Math.random().toString(36).slice(2, 8);
+      log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
+      await notif.emit(`ravi.${sessionKey}.response`, {
+        response: text,
+        target: streaming.currentSource,
+        _emitId: emitId,
+        _instanceId: this.instanceId,
+        _pid: process.pid,
+        _v: 2,
+      });
+    };
+
+    try {
+      for await (const message of queryResult) {
+        sdkEventCount++;
+        streaming.lastActivity = Date.now();
+
+        // Log SDK events
+        log.info("SDK event", {
+          runId,
+          seq: sdkEventCount,
+          type: message.type,
+          sessionKey,
+          ...(message.type === "assistant" ? {
+            contentTypes: message.message.content.map((b: any) => b.type),
+            textPreview: message.message.content
+              .filter((b: any) => b.type === "text")
+              .map((b: any) => b.text?.slice(0, 80))
+              .join("") || undefined,
+          } : {}),
+          ...(message.type === "result" ? {
+            sessionId: (message as any).session_id,
+          } : {}),
+        });
+
+        // Emit all SDK events for typing heartbeat etc.
+        await emitSdkEvent(message as unknown as Record<string, unknown>);
+
+        // Handle assistant messages
+        if (message.type === "assistant") {
+          const blocks = message.message.content;
+          let messageText = "";
+          for (const block of blocks) {
+            if (block.type === "text") {
+              messageText += block.text;
+            }
+            if (block.type === "tool_use") {
+              streaming.toolRunning = true;
+              streaming.currentToolId = block.id;
+              streaming.currentToolName = block.name;
+              streaming.toolStartTime = Date.now();
+
+              safeEmit(`ravi.${sessionKey}.tool`, {
+                event: "start",
+                toolId: block.id,
+                toolName: block.name,
+                input: truncateOutput(block.input),
+                timestamp: new Date().toISOString(),
+                sessionKey,
+                agentId: agent.id,
+              }).catch(err => log.warn("Failed to emit tool start", { error: err }));
+            }
+          }
+          if (messageText) {
+            messageText = messageText.trimStart();
+            log.info("Assistant message", { runId, text: messageText.slice(0, 100) });
+            responseText += messageText;
+
+            if (messageText.trim() === SILENT_TOKEN) {
+              log.info("Silent response", { sessionKey });
+              await emitSdkEvent({ type: "silent" });
+            } else if (messageText.trim() === HEARTBEAT_OK) {
+              log.info("Heartbeat OK", { sessionKey });
+              await emitSdkEvent({ type: "silent" });
+            } else {
+              await emitResponse(messageText);
+            }
+          }
+        }
+
+        // Handle tool results
+        if (message.type === "user") {
+          const content = (message as any).message?.content;
+          if (Array.isArray(content)) {
+            const toolResult = content.find((b: any) => b.type === "tool_result");
+            if (toolResult) {
+              const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
+
+              safeEmit(`ravi.${sessionKey}.tool`, {
+                event: "end",
+                toolId: streaming.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
+                toolName: streaming.currentToolName ?? "unknown",
+                output: truncateOutput(toolResult?.content),
+                isError: toolResult?.is_error ?? false,
+                durationMs,
+                timestamp: new Date().toISOString(),
+                sessionKey,
+                agentId: agent.id,
+              }).catch(err => log.warn("Failed to emit tool end", { error: err }));
+
+              streaming.toolRunning = false;
+              streaming.currentToolId = undefined;
+              streaming.currentToolName = undefined;
+              streaming.toolStartTime = undefined;
+            }
+          }
+        }
+
+        // Handle result (turn complete — save and wait for next message)
+        if (message.type === "result") {
+          const inputTokens = message.usage?.input_tokens ?? 0;
+          const outputTokens = message.usage?.output_tokens ?? 0;
+          const cacheRead = (message.usage as any)?.cache_read_input_tokens ?? 0;
+          const cacheCreation = (message.usage as any)?.cache_creation_input_tokens ?? 0;
+
+          log.info("Turn complete", {
+            runId,
+            total: inputTokens + cacheRead + cacheCreation,
+            new: inputTokens,
+            cached: cacheRead,
+            written: cacheCreation,
+            output: outputTokens,
+            sessionId: message.session_id,
+          });
+
+          if ("session_id" in message && message.session_id) {
+            updateSdkSessionId(sessionKey, message.session_id);
+          }
+          updateTokens(sessionKey, inputTokens, outputTokens);
+
+          if (responseText.trim()) {
+            saveMessage(sessionKey, "assistant", responseText.trim());
+          }
+
+          // Reset for next turn
+          responseText = "";
+        }
+      }
+    } finally {
+      log.info("Streaming session ended", { runId, sessionKey });
+      clearInterval(watchdog);
+
+      streaming.done = true;
+
+      // Unblock generator if it's waiting
+      if (streaming.pushMessage) {
+        streaming.pushMessage(null as any);
+        streaming.pushMessage = null;
+      }
+
+      // Abort subprocess if still alive
+      if (!streaming.abortController.signal.aborted) {
+        streaming.abortController.abort();
+      }
+
+      this.streamingSessions.delete(sessionKey);
+    }
+  }
+
+  /** Update session metadata (source, context, display name) */
+  private updateSessionMetadata(sessionKey: string, prompt: PromptMessage): void {
     if (prompt.source) {
       updateSessionSource(sessionKey, prompt.source);
     }
 
-    // Persist stable channel/group metadata for cross-send reuse
-    // Only store from gateway messages (have senderId), not from recovered cross-send context
     if (prompt.context?.senderId) {
       const channelCtx: ChannelContext = {
         channelId: prompt.context.channelId,
@@ -395,414 +712,5 @@ export class RaviBot {
         updateSessionDisplayName(sessionKey, prompt.context.groupName);
       }
     }
-
-    log.info("Processing prompt", {
-      sessionKey,
-      agentId,
-      cwd: agentCwd,
-      sdkSessionId: session.sdkSessionId ?? null,
-      resuming: !!session.sdkSessionId,
-    });
-
-    // Save message
-    saveMessage(sessionKey, "user", prompt.prompt);
-
-    // Build tool context for CLI tools
-    const toolContext = {
-      sessionKey,
-      agentId: agent.id,
-      source: resolvedSource,
-    };
-
-    try {
-      // Emit partial messages as they arrive (tagged for ghost detection + tracing)
-      const onMessage = async (text: string) => {
-        const emitId = Math.random().toString(36).slice(2, 8);
-        log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
-        const emitResult = await notif.emit(`ravi.${sessionKey}.response`, {
-          response: text,
-          target: resolvedSource,
-          _emitId: emitId,
-          _instanceId: this.instanceId,
-          _pid: process.pid,
-          _v: 2,
-        });
-        log.debug("Response emitted to notif", {
-          sessionKey, emitId,
-          notifEventId: emitResult.id,
-          notifTopic: emitResult.topic,
-        });
-      };
-
-      // Emit all SDK events
-      const onSdkEvent = async (event: Record<string, unknown>) => {
-        await safeEmit(`ravi.${sessionKey}.claude`, event);
-      };
-
-      // Run with context so CLI tools can access session info
-      const response = await runWithContext(toolContext, () =>
-        this.processPrompt(prompt, session, agent, agentCwd, onMessage, onSdkEvent)
-      );
-
-      if (response.response) {
-        saveMessage(sessionKey, "assistant", response.response);
-      }
-
-      if (response.usage) {
-        log.info("Completed", { sessionKey, tokens: response.usage.input_tokens + response.usage.output_tokens });
-      }
-    } catch (err) {
-      // Abort errors are intentional (interrupt for new message) — not failures
-      const isAbort = err instanceof Error && /abort/i.test(err.message);
-      if (isAbort) {
-        log.info("Query aborted", { sessionKey });
-      } else {
-        log.error("Query failed", { sessionKey, error: err });
-        const emitId = Math.random().toString(36).slice(2, 8);
-        await notif.emit(`ravi.${sessionKey}.response`, {
-          error: err instanceof Error ? err.message : "Unknown error",
-          target: resolvedSource,
-          _emitId: emitId,
-          _instanceId: this.instanceId,
-          _pid: process.pid,
-          _v: 2,
-        });
-      }
-    }
-  }
-
-  private async processPrompt(
-    prompt: PromptMessage,
-    session: SessionEntry,
-    agent: AgentConfig,
-    agentCwd: string,
-    onMessage?: (text: string) => Promise<void>,
-    onSdkEvent?: (event: Record<string, unknown>) => Promise<void>
-  ): Promise<ResponseMessage> {
-    const runId = Math.random().toString(36).slice(2, 8);
-    log.info("processPrompt START", {
-      runId,
-      sessionKey: session.sessionKey,
-      agentId: agent.id,
-      instanceId: this.instanceId,
-      pid: process.pid,
-      sdkSessionId: session.sdkSessionId ?? null,
-      resuming: !!session.sdkSessionId,
-      activeControllers: this.sessionAbortControllers.size,
-      activeSessions: this.activeSessions.size,
-    });
-
-    // Abort any previous SDK subprocess for this session (prevents orphaned processes)
-    const previousAbort = this.sessionAbortControllers.get(session.sessionKey);
-    if (previousAbort) {
-      log.warn("Aborting previous SDK subprocess", { runId, sessionKey: session.sessionKey });
-      previousAbort.abort();
-    }
-    const abortController = new AbortController();
-    this.sessionAbortControllers.set(session.sessionKey, abortController);
-
-    let responseText = "";
-    let inputTokens = 0;
-    let outputTokens = 0;
-
-    const model = agent.model ?? this.config.model;
-
-    // Build permission options: use disallowedTools if whitelist defined, otherwise bypass mode
-    let permissionOptions: Record<string, unknown>;
-    if (agent.allowedTools) {
-      const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
-      log.debug("Tool restriction", { agentId: agent.id, disallowedTools: disallowed });
-      permissionOptions = {
-        disallowedTools: disallowed,
-        allowedTools: agent.allowedTools,
-      };
-    } else {
-      log.debug("Bypass mode", { agentId: agent.id });
-      permissionOptions = {
-        permissionMode: "bypassPermissions" as const,
-        allowDangerouslySkipPermissions: true
-      };
-    }
-
-    // Build system prompt with channel context if available
-    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
-
-    // Inject outbound system context if present
-    if (prompt._outboundSystemContext) {
-      systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
-    }
-
-    log.debug("System prompt", { agentId: agent.id, hasContext: !!prompt.context });
-
-    // MCP tools disabled - using skills + CLI instead
-    // To re-enable: uncomment mcpServers block below and this code:
-    // const mcpToolsWhitelist = agent.allowedTools?.filter(t => t.startsWith(MCP_PREFIX));
-    // const cliMcpServer = createCliMcpServer({
-    //   name: MCP_SERVER,
-    //   allowedTools: mcpToolsWhitelist?.length
-    //     ? mcpToolsWhitelist.map(t => t.replace(MCP_PREFIX, ""))
-    //     : undefined,
-    // });
-
-    // Build hooks array
-    const hooks: Record<string, unknown[]> = {};
-
-    // Add bash permission hook if agent has bash config
-    if (agent.bashConfig) {
-      hooks.PreToolUse = [createBashPermissionHook(() => agent.bashConfig)];
-    }
-
-    // Add PreCompact hook to extract memories before compaction
-    hooks.PreCompact = [
-      createPreCompactHook({ memoryModel: agent.memoryModel }),
-    ];
-
-    // Discover plugins (internal + user)
-    const plugins = discoverPlugins();
-
-    const queryResult = query({
-      prompt: prompt.prompt,
-      options: {
-        model,
-        cwd: agentCwd,
-        resume: session.sdkSessionId,
-        abortController,
-        ...permissionOptions,
-        // MCP disabled - to re-enable: mcpServers: { "ravi-cli": cliMcpServer },
-        systemPrompt: {
-          type: "preset",
-          preset: "claude_code",
-          append: systemPromptAppend,
-        },
-        settingSources: agent.settingSources ?? ["project"],
-        ...(Object.keys(hooks).length > 0 ? { hooks } : {}),
-        ...(plugins.length > 0 ? { plugins } : {}),
-      },
-    });
-
-    // Register active session for interrupt handling
-    const activeSession: ActiveSession = {
-      query: queryResult,
-      abortController,
-      toolRunning: false,
-      messageQueue: [],
-      interrupted: false,
-      lastActivity: Date.now(),
-    };
-    this.activeSessions.set(session.sessionKey, activeSession);
-
-    // Timeout watchdog - detect stuck sessions
-    const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-    const watchdog = setInterval(() => {
-      const elapsed = Date.now() - activeSession.lastActivity;
-      if (elapsed > SESSION_TIMEOUT_MS) {
-        log.error("Session timed out - SDK may have died", {
-          sessionKey: session.sessionKey,
-          elapsedMs: elapsed,
-        });
-        // Force cleanup
-        this.activeSessions.delete(session.sessionKey);
-        clearInterval(watchdog);
-      }
-    }, 30000); // Check every 30s
-
-    let sdkEventCount = 0;
-
-    try {
-      for await (const message of queryResult) {
-        sdkEventCount++;
-        activeSession.lastActivity = Date.now();
-
-        // Log EVERY SDK event with sequence number for tracing ghost sources
-        log.info("SDK event", {
-          runId,
-          seq: sdkEventCount,
-          type: message.type,
-          sessionKey: session.sessionKey,
-          ...(message.type === "assistant" ? {
-            contentTypes: message.message.content.map((b: any) => b.type),
-            textPreview: message.message.content
-              .filter((b: any) => b.type === "text")
-              .map((b: any) => b.text?.slice(0, 80))
-              .join("") || undefined,
-          } : {}),
-          ...(message.type === "result" ? {
-            sessionId: (message as any).session_id,
-          } : {}),
-        });
-
-        // Emit all SDK events
-        if (onSdkEvent) {
-          await onSdkEvent(message as unknown as Record<string, unknown>);
-        }
-
-        // Detect tool start (assistant message with tool_use blocks)
-        if (message.type === "assistant") {
-          const blocks = message.message.content;
-          let messageText = "";
-          for (const block of blocks) {
-            if (block.type === "text") {
-              messageText += block.text;
-            }
-            if (block.type === "tool_use") {
-              activeSession.toolRunning = true;
-              activeSession.currentToolId = block.id;
-              activeSession.currentToolName = block.name;
-              activeSession.toolStartTime = Date.now();
-              log.debug("Tool started", { sessionKey: session.sessionKey, toolName: block.name });
-
-              safeEmit(`ravi.${session.sessionKey}.tool`, {
-                event: "start",
-                toolId: block.id,
-                toolName: block.name,
-                input: truncateOutput(block.input),
-                timestamp: new Date().toISOString(),
-                sessionKey: session.sessionKey,
-                agentId: agent.id,
-              }).catch(err => log.warn("Failed to emit tool start", { error: err }));
-            }
-          }
-          if (messageText) {
-            messageText = messageText.trimStart();
-            log.info("Assistant message", { runId, text: messageText.slice(0, 100) });
-            responseText += messageText;
-
-            if (messageText.trim() === SILENT_TOKEN) {
-              log.info("Silent response, not emitting", { sessionKey: session.sessionKey });
-              // Emit silent event to stop typing immediately
-              if (onSdkEvent) {
-                await onSdkEvent({ type: "silent" });
-              }
-            } else if (messageText.trim() === HEARTBEAT_OK) {
-              log.info("Heartbeat OK", { sessionKey: session.sessionKey });
-              // Emit silent event to stop typing immediately
-              if (onSdkEvent) {
-                await onSdkEvent({ type: "silent" });
-              }
-            } else if (onMessage) {
-              await onMessage(messageText);
-            }
-          }
-        }
-
-        // Detect tool end (user message with tool_result)
-        if (message.type === "user") {
-          const content = (message as any).message?.content;
-          if (Array.isArray(content)) {
-            const hasToolResult = content.some((b: any) => b.type === "tool_result");
-            if (hasToolResult) {
-              const toolResult = content.find((b: any) => b.type === "tool_result");
-              const durationMs = activeSession.toolStartTime ? Date.now() - activeSession.toolStartTime : undefined;
-
-              safeEmit(`ravi.${session.sessionKey}.tool`, {
-                event: "end",
-                toolId: activeSession.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
-                toolName: activeSession.currentToolName ?? "unknown",
-                output: truncateOutput(toolResult?.content),
-                isError: toolResult?.is_error ?? false,
-                durationMs,
-                timestamp: new Date().toISOString(),
-                sessionKey: session.sessionKey,
-                agentId: agent.id,
-              }).catch(err => log.warn("Failed to emit tool end", { error: err }));
-
-              activeSession.toolRunning = false;
-              activeSession.currentToolId = undefined;
-              activeSession.currentToolName = undefined;
-              activeSession.toolStartTime = undefined;
-              log.debug("Tool finished", { sessionKey: session.sessionKey });
-
-              // Check if there are pending messages - interrupt to process them
-              if (activeSession.messageQueue.length > 0 && !activeSession.interrupted) {
-                log.info("Interrupting for pending messages", {
-                  sessionKey: session.sessionKey,
-                  queueSize: activeSession.messageQueue.length
-                });
-                activeSession.interrupted = true;
-                await queryResult.interrupt();
-                break;
-              } else if (activeSession.messageQueue.length > 0 && activeSession.interrupted) {
-                log.debug("Already interrupted, waiting for loop to end", { sessionKey: session.sessionKey });
-              }
-            }
-          }
-        }
-
-        if (message.type === "result") {
-          inputTokens = message.usage?.input_tokens ?? 0;
-          outputTokens = message.usage?.output_tokens ?? 0;
-          const cacheRead = (message.usage as any)?.cache_read_input_tokens ?? 0;
-          const cacheCreation = (message.usage as any)?.cache_creation_input_tokens ?? 0;
-          const totalContext = inputTokens + cacheRead + cacheCreation;
-
-          log.info("Context", {
-            runId,
-            total: totalContext,
-            new: inputTokens,
-            cached: cacheRead,
-            written: cacheCreation,
-            output: outputTokens,
-            sessionId: message.session_id,
-          });
-
-          if ("session_id" in message && message.session_id) {
-            updateSdkSessionId(session.sessionKey, message.session_id);
-          }
-
-          updateTokens(session.sessionKey, inputTokens, outputTokens);
-        }
-      }
-    } finally {
-      log.info("processPrompt END", { runId, sessionKey: session.sessionKey });
-      clearInterval(watchdog);
-
-      // Abort the SDK subprocess immediately to prevent orphaned processes
-      // This is critical: after interrupt+break, the subprocess may still be alive
-      if (!abortController.signal.aborted) {
-        abortController.abort();
-      }
-
-      // Clean up abort controller only if it's still ours (not replaced by a newer run)
-      if (this.sessionAbortControllers.get(session.sessionKey) === abortController) {
-        this.sessionAbortControllers.delete(session.sessionKey);
-      }
-
-      // Get pending messages before cleaning up
-      const pendingMessages = [...activeSession.messageQueue];
-      this.activeSessions.delete(session.sessionKey);
-
-      // Process pending messages — combine into a single prompt
-      if (pendingMessages.length > 0) {
-        // If the original prompt was aborted before getting a response,
-        // prepend it so context isn't lost (e.g. "senha 123" + "qual a senha?")
-        const allPrompts = !responseText.trim()
-          ? [prompt.prompt, ...pendingMessages.map(m => m.prompt.prompt)]
-          : pendingMessages.map(m => m.prompt.prompt);
-
-        const combinedPrompt = allPrompts.join("\n\n");
-        const lastSource = pendingMessages[pendingMessages.length - 1].source;
-
-        log.info("Processing pending messages", {
-          sessionKey: session.sessionKey,
-          count: pendingMessages.length,
-          includedOriginal: !responseText.trim(),
-          combinedLen: combinedPrompt.length,
-        });
-
-        try {
-          await this.processNewPrompt(session.sessionKey, {
-            prompt: combinedPrompt,
-            source: lastSource,
-          });
-        } catch (err) {
-          log.error("Failed to process queued messages", { sessionKey: session.sessionKey, error: err });
-        }
-      }
-    }
-
-    return {
-      response: responseText.trim(),
-      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
-    };
   }
 }
