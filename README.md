@@ -156,7 +156,7 @@ ravi triggers rm <id>                # Delete
 
 **Available topics:** `ravi.*.cli.{group}.{command}`, `ravi.*.tool`, `whatsapp.*.inbound`, `matrix.*.inbound`
 
-Agents can self-configure triggers via MCP tools (`triggers_add`, `triggers_list`, etc.).
+Agents can self-configure triggers via CLI tools (`triggers_add`, `triggers_list`, etc.).
 
 ### Contacts
 

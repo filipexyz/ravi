@@ -2,7 +2,7 @@
  * Bash Permission Hook
  *
  * SDK PreToolUse hook that intercepts Bash tool calls
- * and validates them against the agent's BashConfig.
+ * and validates them against the agent's BashConfig and allowedTools.
  */
 
 import type { BashConfig } from "./types.js";
@@ -45,52 +45,113 @@ interface HookCallbackMatcher {
 }
 
 /**
+ * Extract ravi CLI tool name from a bash command.
+ * e.g. "ravi cross send ..." → "cross_send"
+ *      "ravi daemon restart ..." → "daemon_restart"
+ *      "ravi agents list" → "agents_list"
+ *
+ * Returns null if not a ravi command or can't parse.
+ */
+function extractRaviToolName(command: string): string | null {
+  const match = command.match(/(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+(\w+)\s+(\w+)/);
+  if (match) {
+    return `${match[1]}_${match[2]}`;
+  }
+  return null;
+}
+
+/**
+ * Check if a ravi CLI tool is allowed by the agent's allowedTools.
+ * allowedTools uses plain names like "cross_send", "media_send".
+ */
+function checkRaviToolPermission(
+  command: string,
+  allowedTools: string[] | undefined
+): { allowed: boolean; toolName?: string; reason?: string } {
+  if (!allowedTools) return { allowed: true };
+
+  const toolName = extractRaviToolName(command);
+  if (!toolName) return { allowed: true };
+
+  if (allowedTools.includes(toolName)) {
+    return { allowed: true, toolName };
+  }
+
+  return {
+    allowed: false,
+    toolName,
+    reason: `ravi CLI tool not allowed: ${toolName}`,
+  };
+}
+
+interface BashHookOptions {
+  getBashConfig: () => BashConfig | undefined;
+  getAllowedTools: () => string[] | undefined;
+}
+
+/**
  * Create a bash permission hook for the SDK.
  *
- * @param getBashConfig Function that returns the current BashConfig for the agent.
- *                      This is called on each tool invocation to get the latest config.
- * @returns A HookCallbackMatcher that can be added to the PreToolUse hooks array.
+ * Validates both:
+ * 1. Bash CLI executable permissions (via BashConfig)
+ * 2. Ravi CLI subcommand permissions (via allowedTools)
  */
 export function createBashPermissionHook(
-  getBashConfig: () => BashConfig | undefined
+  options: BashHookOptions
 ): HookCallbackMatcher {
+
   const bashPermissionHook: HookCallback = async (input, toolUseId, context) => {
-    // Extract the command from the tool input
     const command = input.tool_input?.command as string | undefined;
 
     if (!command) {
-      // No command - likely a malformed request, but let SDK handle it
       return {};
     }
 
-    // Get current config
-    const config = getBashConfig();
+    // Step 1: Check bash CLI permissions (executables)
+    const config = options.getBashConfig();
+    const bashResult = checkBashPermission(command, config);
 
-    // Check permission
-    const result = checkBashPermission(command, config);
-
-    if (!result.allowed) {
+    if (!bashResult.allowed) {
       log.warn("Bash command blocked", {
         command: command.slice(0, 200),
-        reason: result.reason,
-        blockedExecutables: result.blockedExecutables,
+        reason: bashResult.reason,
+        blockedExecutables: bashResult.blockedExecutables,
       });
 
-      // Return deny decision
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           permissionDecision: "deny",
-          permissionDecisionReason: `Bash command blocked: ${result.reason}`,
+          permissionDecisionReason: `Bash command blocked: ${bashResult.reason}`,
+        },
+      };
+    }
+
+    // Step 2: Check ravi CLI subcommand permissions
+    const allowedTools = options.getAllowedTools();
+    const raviResult = checkRaviToolPermission(command, allowedTools);
+
+    if (!raviResult.allowed) {
+      log.warn("Ravi CLI tool blocked", {
+        command: command.slice(0, 200),
+        tool: raviResult.toolName,
+        reason: raviResult.reason,
+      });
+
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: raviResult.reason!,
         },
       };
     }
 
     log.debug("Bash command allowed", {
       command: command.slice(0, 100),
+      raviTool: raviResult.toolName,
     });
 
-    // Allow the command
     return {};
   };
 
@@ -100,7 +161,4 @@ export function createBashPermissionHook(
   };
 }
 
-/**
- * Export the types for external use.
- */
 export type { HookCallbackMatcher };

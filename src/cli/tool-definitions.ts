@@ -1,11 +1,9 @@
 /**
- * MCP Server - CLI commands as MCP tools for Claude Agent SDK
+ * Tool Definitions - CLI tool discovery, schema generation, and inspection
  */
 
-import { createSdkMcpServer as sdkCreateMcpServer, tool } from "@anthropic-ai/claude-agent-sdk";
-import { z } from "zod";
 import { extractTools, type ExportedTool } from "./tools-export.js";
-import { registerCliTools, setCliToolsInitializer } from "./tool-registry.js";
+import { setCliToolsInitializer } from "./tool-registry.js";
 import { extractOptionName, isBooleanOption } from "./utils.js";
 
 // ============================================================================
@@ -13,14 +11,6 @@ import { extractOptionName, isBooleanOption } from "./utils.js";
 // ============================================================================
 
 type CommandClass = new () => object;
-
-export interface CreateMcpServerOptions {
-  name?: string;
-  version?: string;
-  allowedTools?: string[];
-}
-
-export type McpServer = ReturnType<typeof sdkCreateMcpServer>;
 
 export interface SdkToolDefinition {
   name: string;
@@ -73,33 +63,6 @@ setCliToolsInitializer(() => getCachedTools().map(t => t.name));
 // ============================================================================
 // Public API
 // ============================================================================
-
-/**
- * Initialize the tool registry. Call this once at startup.
- */
-export function initCliTools(): void {
-  const names = getCachedTools().map((t) => t.name);
-  registerCliTools(names);
-}
-
-/**
- * Create an MCP server from CLI commands.
- */
-export function createCliMcpServer(options: CreateMcpServerOptions = {}): McpServer {
-  const { name = "ravi-cli", version = "1.0.0", allowedTools } = options;
-
-  let tools = getCachedTools();
-
-  if (allowedTools) {
-    tools = tools.filter((t) => allowedTools.includes(t.name));
-  }
-
-  return sdkCreateMcpServer({
-    name,
-    version,
-    tools: tools.map(convertToSdkTool),
-  });
-}
 
 /**
  * Get all CLI tool names.
@@ -193,28 +156,4 @@ function toSdkDefinition(tool: ExportedTool): SdkToolDefinition {
     description: tool.description,
     inputSchema: { type: "object", properties, required },
   };
-}
-
-/**
- * Convert to SDK's native tool format (with Zod schema).
- */
-function convertToSdkTool(t: ExportedTool) {
-  const schema: Record<string, z.ZodTypeAny> = {};
-
-  for (const arg of t.metadata.args) {
-    let s = z.string();
-    if (arg.description) s = s.describe(arg.description);
-    schema[arg.name] = arg.required === false ? s.optional() : s;
-  }
-
-  for (const opt of t.metadata.options) {
-    const name = extractOptionName(opt.flags);
-    let s: z.ZodTypeAny = isBooleanOption(opt.flags) ? z.boolean() : z.string();
-    if (opt.description) s = s.describe(opt.description);
-    schema[name] = s.optional();
-  }
-
-  return tool(t.name, t.description, schema, async (args) => {
-    return t.handler(args as Record<string, unknown>);
-  });
 }

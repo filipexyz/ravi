@@ -47,14 +47,35 @@ export function runWithContext<T>(context: ToolContext, fn: () => T): T {
 
 /**
  * Get current tool context.
- * Returns undefined if called outside a context.
+ * First checks AsyncLocalStorage (in-process), then falls back to RAVI_* env vars
+ * (when running as subprocess via Bash).
  *
  * @example
  * const ctx = getContext();
  * const sessionKey = ctx?.sessionKey ?? "unknown";
  */
 export function getContext(): ToolContext | undefined {
-  return contextStorage.getStore();
+  const store = contextStorage.getStore();
+  if (store) return store;
+
+  // Fallback: build context from RAVI_* env vars (set when running via Bash in SDK)
+  const env = process.env;
+  if (!env.RAVI_SESSION_KEY) return undefined;
+
+  const ctx: ToolContext = {
+    sessionKey: env.RAVI_SESSION_KEY,
+    agentId: env.RAVI_AGENT_ID,
+  };
+
+  if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
+    ctx.source = {
+      channel: env.RAVI_CHANNEL,
+      accountId: env.RAVI_ACCOUNT_ID,
+      chatId: env.RAVI_CHAT_ID,
+    };
+  }
+
+  return ctx;
 }
 
 /**
@@ -70,14 +91,14 @@ export function getContextValue<K extends keyof ToolContext>(
 }
 
 /**
- * Check if running within a tool context.
+ * Check if running within a tool context (in-process or via env vars).
  */
 export function hasContext(): boolean {
-  return contextStorage.getStore() !== undefined;
+  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY;
 }
 
 /**
- * Fail with error. Throws if running as MCP tool (to avoid killing daemon),
+ * Fail with error. Throws if running inside daemon context,
  * otherwise logs error and exits.
  */
 export function fail(message: string): never {

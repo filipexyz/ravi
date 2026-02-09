@@ -12,29 +12,20 @@ export {
 } from "./tools-export.js";
 
 export {
-  initCliTools,
-  createCliMcpServer,
   getAllCliToolNames,
   getCliToolsByGroup,
   createSdkTools,
   generateToolsJsonSchema,
   getAllCommandClasses,
-  type McpServer,
-  type CreateMcpServerOptions,
   type SdkToolDefinition,
   type CreateSdkToolsOptions,
-} from "./mcp-server.js";
+} from "./tool-definitions.js";
 
 export {
-  MCP_SERVER,
-  MCP_PREFIX,
   SDK_TOOLS,
   registerCliTools,
   getCliToolNames,
-  getCliToolsFullNames,
-  getAllToolsFullNames,
-  toFullToolName,
-  toShortToolName,
+  getAllToolNames,
   isCliTool,
   isSdkTool,
 } from "./tool-registry.js";

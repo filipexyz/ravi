@@ -98,16 +98,6 @@ mock.module("./router/index.js", () => ({
   expandHome: (p: string) => p.replace("~", "/Users/test"),
 }));
 
-mock.module("./cli/exports.js", () => ({
-  createCliMcpServer: () => ({ name: "ravi-cli" }),
-  initCliTools: mock(() => {}),
-}));
-
-mock.module("./cli/tool-registry.js", () => ({
-  MCP_SERVER: "ravi-cli",
-  MCP_PREFIX: "mcp__ravi-cli__",
-}));
-
 mock.module("./cli/context.js", () => ({
   runWithContext: (_ctx: unknown, fn: () => unknown) => fn(),
 }));

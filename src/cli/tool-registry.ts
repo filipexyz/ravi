@@ -5,10 +5,6 @@
  * Instead, it maintains a registry that can be populated dynamically.
  */
 
-// MCP naming convention
-export const MCP_SERVER = "ravi-cli";
-export const MCP_PREFIX = `mcp__${MCP_SERVER}__`;
-
 // SDK built-in tools
 export const SDK_TOOLS = [
   "Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write",
@@ -47,45 +43,17 @@ export function getCliToolNames(): string[] {
 }
 
 /**
- * Get all CLI tools with full MCP names
+ * Get all tools (SDK + CLI)
  */
-export function getCliToolsFullNames(): string[] {
-  return getCliToolNames().map(t => `${MCP_PREFIX}${t}`);
-}
-
-/**
- * Get all tools (SDK + CLI with full names)
- */
-export function getAllToolsFullNames(): string[] {
-  return [...SDK_TOOLS, ...getCliToolsFullNames()];
-}
-
-/**
- * Convert short tool name to full name (with MCP prefix if CLI tool)
- */
-export function toFullToolName(shortName: string): string {
-  if (getCliToolNames().includes(shortName)) {
-    return `${MCP_PREFIX}${shortName}`;
-  }
-  return shortName;
-}
-
-/**
- * Convert full tool name to short name (strip MCP prefix if present)
- */
-export function toShortToolName(fullName: string): string {
-  if (fullName.startsWith(MCP_PREFIX)) {
-    return fullName.replace(MCP_PREFIX, "");
-  }
-  return fullName;
+export function getAllToolNames(): string[] {
+  return [...SDK_TOOLS, ...getCliToolNames()];
 }
 
 /**
  * Check if a tool name is a CLI tool
  */
 export function isCliTool(name: string): boolean {
-  const shortName = toShortToolName(name);
-  return getCliToolNames().includes(shortName);
+  return getCliToolNames().includes(name);
 }
 
 /**

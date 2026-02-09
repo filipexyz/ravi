@@ -35,11 +35,8 @@ import {
 } from "../../router/sessions.js";
 import {
   SDK_TOOLS,
-  MCP_PREFIX,
-  toFullToolName,
   getCliToolNames,
-  getCliToolsFullNames,
-  getAllToolsFullNames,
+  getAllToolNames,
 } from "../tool-registry.js";
 import type { ResponseMessage } from "../../bot.js";
 
@@ -253,8 +250,7 @@ export class AgentsCommands {
 
     // Get CLI tools from registry (lazy init)
     const CLI_TOOL_NAMES = getCliToolNames();
-    const CLI_TOOLS_FULL = getCliToolsFullNames();
-    const ALL_TOOLS_FULL = getAllToolsFullNames();
+    const ALL_TOOLS = getAllToolNames();
 
     // No action = list all tools with status
     if (!action) {
@@ -275,12 +271,11 @@ export class AgentsCommands {
 
       // CLI Tools (auto-discovered)
       console.log("\nCLI Tools:");
-      for (const shortName of CLI_TOOL_NAMES) {
-        const fullName = `${MCP_PREFIX}${shortName}`;
-        const enabled = isToolEnabled(fullName, allowed);
+      for (const name of CLI_TOOL_NAMES) {
+        const enabled = isToolEnabled(name, allowed);
         const icon = enabled ? "✓" : "✗";
         const color = enabled ? "\x1b[32m" : "\x1b[90m";
-        console.log(`  ${color}${icon}\x1b[0m ${shortName}`);
+        console.log(`  ${color}${icon}\x1b[0m ${name}`);
       }
 
       console.log("\nUsage:");
@@ -300,9 +295,7 @@ export class AgentsCommands {
           fail("Tool name required. Usage: ravi agents tools <id> allow <tool>");
         }
         try {
-          // Convert short name to full name if needed
-          const fullName = toFullToolName(tool);
-          addAgentTool(id, fullName);
+          addAgentTool(id, tool);
           console.log(`✓ Tool enabled: ${tool}`);
         } catch (err) {
           fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -314,9 +307,7 @@ export class AgentsCommands {
           fail("Tool name required. Usage: ravi agents tools <id> deny <tool>");
         }
         try {
-          // Convert short name to full name if needed
-          const fullName = toFullToolName(tool);
-          removeAgentTool(id, fullName);
+          removeAgentTool(id, tool);
           console.log(`✓ Tool disabled: ${tool}`);
         } catch (err) {
           fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -327,9 +318,9 @@ export class AgentsCommands {
         // Initialize whitelist with specific category
         let toolsToAdd: string[];
         if (tool === "all") {
-          toolsToAdd = ALL_TOOLS_FULL;
+          toolsToAdd = ALL_TOOLS;
         } else if (tool === "cli") {
-          toolsToAdd = CLI_TOOLS_FULL;
+          toolsToAdd = [...CLI_TOOL_NAMES];
         } else {
           // Default: SDK tools only
           toolsToAdd = SDK_TOOLS;

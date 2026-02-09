@@ -294,7 +294,7 @@ Um lead foi qualificado. Notifica o grupo do Slack e atualiza o CRM.
 4. Agent processes normally (can use `cross_send`, CLI tools, etc.)
 5. CLI mutations emit `ravi.triggers.refresh` to hot-reload subscriptions
 
-All CLI commands are auto-exported as MCP tools (`triggers_list`, `triggers_add`, etc.), so agents can self-configure triggers via conversation.
+All CLI commands are available as tools (`triggers_list`, `triggers_add`, etc.), so agents can self-configure triggers via conversation.
 
 ## Outbound Queues
 
@@ -591,16 +591,16 @@ ravi agents reset test all                # Reset ALL sessions for agent
 
 When a specific session isn't found, available sessions are listed as hints.
 
-The `test` agent is pre-configured with all tools enabled (SDK + MCP CLI tools).
+The `test` agent is pre-configured with all tools enabled (SDK + CLI tools).
 
-### MCP CLI Tools
+### CLI Tools
 
-Agents can use CLI commands as MCP tools. Tool naming convention:
+Agents can use CLI commands as tools via Bash. Tool naming convention:
 
 ```
-mcp__ravi-cli__agents_list      # ravi agents list
-mcp__ravi-cli__agents_show      # ravi agents show <id>
-mcp__ravi-cli__contacts_list    # ravi contacts list
+agents_list      # ravi agents list
+agents_show      # ravi agents show <id>
+contacts_list    # ravi contacts list
 ```
 
 Manage agent tools:
@@ -624,11 +624,7 @@ Agents can send emoji reactions to messages. Message envelopes include `[mid:ID]
 From CLI or agent tools:
 
 ```bash
-# CLI
 ravi react send ABC123XYZ 👍
-
-# Agent MCP tool
-mcp__ravi-cli__react_send ABC123XYZ 👍
 ```
 
 Reactions are routed through the gateway to the appropriate channel plugin (WhatsApp, Matrix).
@@ -707,11 +703,7 @@ MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
 Agents can send typed messages to other sessions using CLI tools:
 
 ```bash
-# From CLI
 ravi cross send agent:main:dm:5511999 send "Lembrete: reunião em 10 minutos"
-
-# From agent (via MCP tool)
-mcp__ravi-cli__cross_send agent:main:dm:5511999 send "Mensagem do agente"
 ```
 
 **Message Types:**

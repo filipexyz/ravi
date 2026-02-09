@@ -465,6 +465,24 @@ function getDb(): Database {
     log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
   }
 
+  // Migration: strip mcp__ravi-cli__ prefix from allowed_tools
+  const agentsWithTools = db.prepare(
+    "SELECT id, allowed_tools FROM agents WHERE allowed_tools IS NOT NULL AND allowed_tools LIKE '%mcp__ravi-cli__%'"
+  ).all() as Array<{ id: string; allowed_tools: string }>;
+  if (agentsWithTools.length > 0) {
+    const updateStmt = db.prepare("UPDATE agents SET allowed_tools = ? WHERE id = ?");
+    for (const agent of agentsWithTools) {
+      try {
+        const tools: string[] = JSON.parse(agent.allowed_tools);
+        const cleaned = tools.map(t => t.replace(/^mcp__ravi-cli__/, ""));
+        updateStmt.run(JSON.stringify(cleaned), agent.id);
+      } catch {
+        // skip invalid JSON
+      }
+    }
+    log.info("Migrated allowed_tools: removed mcp__ravi-cli__ prefix", { count: agentsWithTools.length });
+  }
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {

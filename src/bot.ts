@@ -18,9 +18,6 @@ import {
   type SessionEntry,
   type AgentConfig,
 } from "./router/index.js";
-// MCP disabled - uncomment to re-enable:
-// import { createCliMcpServer, initCliTools } from "./cli/exports.js";
-// import { MCP_SERVER, MCP_PREFIX } from "./cli/tool-registry.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook } from "./bash/index.js";
@@ -198,7 +195,6 @@ export class RaviBot {
 
   async start(): Promise<void> {
     log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
-    // initCliTools(); // MCP disabled
     this.running = true;
     this.subscribeToPrompts();
     log.info("Ravi bot started", {
@@ -424,8 +420,11 @@ export class RaviBot {
 
     // Build hooks
     const hooks: Record<string, unknown[]> = {};
-    if (agent.bashConfig) {
-      hooks.PreToolUse = [createBashPermissionHook(() => agent.bashConfig)];
+    if (agent.bashConfig || agent.allowedTools) {
+      hooks.PreToolUse = [createBashPermissionHook({
+        getBashConfig: () => agent.bashConfig,
+        getAllowedTools: () => agent.allowedTools,
+      })];
     }
     hooks.PreCompact = [createPreCompactHook({ memoryModel: agent.memoryModel })];
 
@@ -459,6 +458,26 @@ export class RaviBot {
       resuming: !!session.sdkSessionId,
     });
 
+    // Build RAVI_* env vars for session context (available in Bash tools)
+    const raviEnv: Record<string, string> = {
+      RAVI_SESSION_KEY: sessionKey,
+      RAVI_AGENT_ID: agent.id,
+    };
+    if (resolvedSource) {
+      raviEnv.RAVI_CHANNEL = resolvedSource.channel;
+      raviEnv.RAVI_ACCOUNT_ID = resolvedSource.accountId;
+      raviEnv.RAVI_CHAT_ID = resolvedSource.chatId;
+    }
+    if (prompt.context) {
+      raviEnv.RAVI_SENDER_ID = prompt.context.senderId;
+      if (prompt.context.senderName) raviEnv.RAVI_SENDER_NAME = prompt.context.senderName;
+      if (prompt.context.senderPhone) raviEnv.RAVI_SENDER_PHONE = prompt.context.senderPhone;
+      if (prompt.context.isGroup) {
+        if (prompt.context.groupId) raviEnv.RAVI_GROUP_ID = prompt.context.groupId;
+        if (prompt.context.groupName) raviEnv.RAVI_GROUP_NAME = prompt.context.groupName;
+      }
+    }
+
     const queryResult = query({
       prompt: messageGenerator,
       options: {
@@ -467,6 +486,7 @@ export class RaviBot {
         resume: session.sdkSessionId,
         abortController,
         ...permissionOptions,
+        env: { ...process.env, ...raviEnv },
         systemPrompt: {
           type: "preset",
           preset: "claude_code",

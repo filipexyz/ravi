@@ -11,7 +11,7 @@ import {
   getCliToolsByGroup,
   createSdkTools,
   generateToolsJsonSchema,
-} from "../mcp-server.js";
+} from "../tool-definitions.js";
 
 @Group({
   name: "tools",

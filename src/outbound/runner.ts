@@ -332,12 +332,12 @@ export class OutboundRunner {
     parts.push(queue.instructions);
     parts.push("");
     parts.push("## Available Actions");
-    parts.push(`- \`mcp__ravi-cli__outbound_send ${entry.id} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
-    parts.push(`- \`mcp__ravi-cli__outbound_qualify ${entry.id} <status>\` — SEMPRE atualize a qualificação quando o status mudar (cold/warm/interested/qualified/rejected)`);
-    parts.push(`- \`mcp__ravi-cli__outbound_done ${entry.id}\` — Encerrar entry (use DEPOIS de qualify qualified/rejected)`);
-    parts.push(`- \`mcp__ravi-cli__outbound_complete ${entry.id}\` — Re-encerrar entry que reativou com nova mensagem`);
-    parts.push(`- \`mcp__ravi-cli__outbound_skip ${entry.id}\` — Pular por agora`);
-    parts.push(`- \`mcp__ravi-cli__outbound_context ${entry.id} <json>\` — Salvar contexto coletado (merge com existente)`);
+    parts.push(`- \`ravi outbound send ${entry.id} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
+    parts.push(`- \`ravi outbound qualify ${entry.id} <status>\` — SEMPRE atualize a qualificação quando o status mudar (cold/warm/interested/qualified/rejected)`);
+    parts.push(`- \`ravi outbound done ${entry.id}\` — Encerrar entry (use DEPOIS de qualify qualified/rejected)`);
+    parts.push(`- \`ravi outbound complete ${entry.id}\` — Re-encerrar entry que reativou com nova mensagem`);
+    parts.push(`- \`ravi outbound skip ${entry.id}\` — Pular por agora`);
+    parts.push(`- \`ravi outbound context ${entry.id} <json>\` — Salvar contexto coletado (merge com existente)`);
     parts.push("");
     parts.push("## Workflow");
     parts.push("1. Converse e colete informações → salve com outbound_context");

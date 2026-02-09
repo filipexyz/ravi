@@ -68,7 +68,7 @@ export class DaemonCommands {
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean
   ) {
-    // When called via MCP (inside daemon), spawn detached restart and return immediately
+    // When called inside daemon, spawn detached restart and return immediately
     // This prevents deadlock since we'd be killing ourselves
     if (hasContext()) {
       // Save restart reason if provided
