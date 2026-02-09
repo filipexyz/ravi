@@ -419,6 +419,23 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   ): Promise<void> {
     const accountConfig = getAccountConfig(config, accountId);
 
+    // Handle inbound reactions (before shouldProcess, which filters them)
+    const reactionMsg = rawMessage.message?.reactionMessage;
+    if (reactionMsg && reactionMsg.key?.id) {
+      const emoji = reactionMsg.text ?? "";
+      const targetMessageId = reactionMsg.key.id;
+      log.info("Inbound reaction", { accountId, emoji, targetMessageId });
+      notif.emit("ravi.inbound.reaction", {
+        channel: "whatsapp",
+        accountId,
+        chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
+        senderId: normalizePhone(rawMessage.key.participant ?? rawMessage.key.remoteJid ?? ""),
+        targetMessageId,
+        emoji,
+      }).catch(err => log.warn("Failed to emit inbound reaction", { error: err }));
+      return;
+    }
+
     // Check if message should be processed
     const filterResult = shouldProcess(rawMessage, accountConfig);
     if (!filterResult.pass) {

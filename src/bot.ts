@@ -177,6 +177,12 @@ export interface RaviBotOptions {
   config: Config;
 }
 
+/** Pending approval waiting for a reaction */
+interface PendingApproval {
+  resolve: (approved: boolean) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 export class RaviBot {
   private config: Config;
   private routerConfig: RouterConfig;
@@ -184,6 +190,8 @@ export class RaviBot {
   private streamingSessions = new Map<string, StreamingSession>();
   private debounceStates = new Map<string, DebounceState>();
   private promptSubscriptionActive = false;
+  /** Pending approvals keyed by outbound messageId */
+  private pendingApprovals = new Map<string, PendingApproval>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
 
@@ -197,6 +205,7 @@ export class RaviBot {
     log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
     this.running = true;
     this.subscribeToPrompts();
+    this.subscribeToInboundReactions();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
@@ -224,6 +233,84 @@ export class RaviBot {
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
+  }
+
+  /**
+   * Listen for inbound reactions and resolve pending approvals.
+   */
+  private async subscribeToInboundReactions(): Promise<void> {
+    for await (const event of notif.subscribe("ravi.inbound.reaction")) {
+      if (!this.running) break;
+      const data = event.data as {
+        targetMessageId: string;
+        emoji: string;
+        senderId: string;
+      };
+
+      const pending = this.pendingApprovals.get(data.targetMessageId);
+      if (!pending) continue;
+
+      const approved = data.emoji === "👍";
+      log.info("Approval reaction received", {
+        targetMessageId: data.targetMessageId,
+        emoji: data.emoji,
+        approved,
+        senderId: data.senderId,
+      });
+
+      clearTimeout(pending.timer);
+      this.pendingApprovals.delete(data.targetMessageId);
+      pending.resolve(approved);
+    }
+  }
+
+  /**
+   * Send a message to WhatsApp and wait for a reaction (👍 or ❌).
+   * Returns true if approved, false if rejected or timed out.
+   */
+  private async requestApproval(
+    source: MessageTarget,
+    text: string,
+    timeoutMs = 5 * 60 * 1000 // 5 minutes
+  ): Promise<boolean> {
+    // Send via gateway with replyTopic to get the messageId back
+    const replyTopic = `ravi.approval.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
+
+    // Start listening before emitting (to avoid race condition)
+    const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
+      const timeout = setTimeout(() => resolve({}), 5000);
+      notif.subscribe(replyTopic).next().then(({ value }) => {
+        clearTimeout(timeout);
+        resolve((value?.data as { messageId?: string }) ?? {});
+      });
+    });
+
+    await notif.emit("ravi.outbound.deliver", {
+      channel: source.channel,
+      accountId: source.accountId,
+      to: source.chatId,
+      text,
+      replyTopic,
+    });
+
+    const sendResult = await sendResultPromise;
+
+    if (!sendResult.messageId) {
+      log.warn("Failed to get messageId for approval message");
+      return true; // default to approved if we can't track
+    }
+
+    log.info("Waiting for approval reaction", { messageId: sendResult.messageId });
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingApprovals.delete(sendResult.messageId!);
+        log.warn("Approval timed out", { messageId: sendResult.messageId });
+        resolve(false);
+      }, timeoutMs);
+
+      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer });
+    });
   }
 
   private async subscribeToPrompts(): Promise<void> {
@@ -478,6 +565,30 @@ export class RaviBot {
       }
     }
 
+    // Build canUseTool — intercept ExitPlanMode for reaction-based approval
+    const canUseTool = resolvedSource
+      ? async (toolName: string, input: Record<string, unknown>) => {
+          if (toolName !== "ExitPlanMode") {
+            return { behavior: "allow" as const, updatedInput: input };
+          }
+
+          log.info("ExitPlanMode called, requesting approval via reaction", { sessionKey });
+
+          const plan = typeof input.plan === "string" ? input.plan : JSON.stringify(input);
+          const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 pra aprovar ou qualquer outro emoji pra rejeitar._`;
+
+          const approved = await this.requestApproval(resolvedSource!, approvalText);
+
+          if (approved) {
+            log.info("Plan approved via reaction", { sessionKey });
+            return { behavior: "allow" as const, updatedInput: input };
+          } else {
+            log.info("Plan rejected via reaction", { sessionKey });
+            return { behavior: "deny" as const, message: "Plano rejeitado pelo usuário." };
+          }
+        }
+      : undefined;
+
     const queryResult = query({
       prompt: messageGenerator,
       options: {
@@ -486,6 +597,7 @@ export class RaviBot {
         resume: session.sdkSessionId,
         abortController,
         ...permissionOptions,
+        ...(canUseTool ? { canUseTool } : {}),
         env: { ...process.env, ...raviEnv },
         systemPrompt: {
           type: "preset",

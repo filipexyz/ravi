@@ -5,7 +5,7 @@
  */
 
 import { notif } from "./notif.js";
-import type { ChannelPlugin, InboundMessage, QuotedMessage } from "./channels/types.js";
+import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from "./channels/types.js";
 import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
@@ -372,15 +372,21 @@ export class Gateway {
         text: string;
         typingDelayMs?: number;
         pauseMs?: number;
+        replyTopic?: string;
       };
 
       const plugin = this.pluginsById.get(data.channel);
       if (!plugin) {
         log.warn("No plugin for direct send channel", { channel: data.channel });
+        if (data.replyTopic) {
+          notif.emit(data.replyTopic, { success: false, error: "No plugin" }).catch(() => {});
+        }
         return;
       }
 
       try {
+        let sendResult: SendResult = { success: true };
+
         if (data.pauseMs && data.pauseMs > 0) {
           await new Promise(resolve => setTimeout(resolve, data.pauseMs));
         }
@@ -388,12 +394,16 @@ export class Gateway {
         if (data.typingDelayMs && data.typingDelayMs > 0) {
           await plugin.outbound.sendTyping(data.accountId, data.to, true);
           await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
-          await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+          sendResult = await plugin.outbound.send(data.accountId, data.to, { text: data.text });
           await plugin.outbound.sendTyping(data.accountId, data.to, false);
         } else {
-          await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+          sendResult = await plugin.outbound.send(data.accountId, data.to, { text: data.text });
         }
-        log.info("Direct send delivered", { to: data.to, channel: data.channel });
+        log.info("Direct send delivered", { to: data.to, channel: data.channel, messageId: sendResult.messageId });
+
+        if (data.replyTopic) {
+          notif.emit(data.replyTopic, sendResult as unknown as Record<string, unknown>).catch(() => {});
+        }
 
         const entry = dbFindActiveEntryByPhone(data.to);
         if (entry && entry.id) {
@@ -403,6 +413,9 @@ export class Gateway {
         }
       } catch (err) {
         log.error("Failed to deliver direct send", { error: err });
+        if (data.replyTopic) {
+          notif.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
+        }
       }
     });
   }
