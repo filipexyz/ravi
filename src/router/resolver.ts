@@ -28,23 +28,26 @@ const log = logger.child("router");
  * - All: "*"
  */
 export function matchPattern(phone: string, pattern: string): boolean {
+  const p = phone.toLowerCase();
+  const pat = pattern.toLowerCase();
+
   // Exact match
-  if (!pattern.includes("*")) {
-    return phone === pattern;
+  if (!pat.includes("*")) {
+    return p === pat;
   }
 
   // All match
-  if (pattern === "*") {
+  if (pat === "*") {
     return true;
   }
 
-  // Convert glob to regex
-  const regexStr = pattern
+  // Convert glob to regex (case-insensitive)
+  const regexStr = pat
     .replace(/[.+?^${}()|[\]\\]/g, "\\$&") // Escape special chars
     .replace(/\*/g, ".*"); // * -> .*
 
-  const regex = new RegExp(`^${regexStr}$`);
-  return regex.test(phone);
+  const regex = new RegExp(`^${regexStr}$`, "i");
+  return regex.test(p);
 }
 
 /**

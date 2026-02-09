@@ -1071,10 +1071,11 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
   }
 
   const now = Date.now();
+  const normalizedPattern = validated.pattern.toLowerCase();
 
   try {
     s.insertRoute.run(
-      validated.pattern,
+      normalizedPattern,
       validated.agent,
       validated.dmScope ?? null,
       validated.priority,
@@ -1082,8 +1083,8 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       now
     );
 
-    log.info("Created route", { pattern: validated.pattern, agent: validated.agent });
-    return dbGetRoute(validated.pattern)!;
+    log.info("Created route", { pattern: normalizedPattern, agent: validated.agent });
+    return dbGetRoute(normalizedPattern)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
       throw new Error(`Route already exists: ${validated.pattern}`);
