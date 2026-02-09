@@ -48,16 +48,31 @@ ravi contacts approve <phone> <agent>
 ravi contacts set <phone> agent <agent>
 ```
 
-### 3. Testar
+### 3. Ativar em grupo WhatsApp
 
-Mande uma mensagem no canal/grupo configurado. O agent responde automaticamente.
+Grupos novos precisam ser **aprovados** antes de funcionar.
+
+**Instrua o usuário a:**
+1. Criar um grupo no WhatsApp e adicionar o bot
+2. Mandar uma mensagem qualquer no grupo (isso faz o grupo aparecer como **pending**)
+
+**Depois, VOCÊ (o agent) deve executar:**
+```bash
+ravi contacts pending                            # Checar pendentes — o grupo aparece aqui
+ravi contacts approve <group-id> <agent>         # Aprovar e associar ao agent
+ravi routes add <group-id> <agent>               # Criar rota pro grupo
+```
+
+**IMPORTANTE:** Não peça o ID do grupo pro usuário. Rode `ravi contacts pending` pra descobrir o ID automaticamente. O usuário já mandou a mensagem — o grupo já está lá.
+
+Tudo atualiza em tempo real. **Não precisa reiniciar o daemon.**
 
 ### Como novos contatos/grupos aparecem?
 
-Quando alguém novo manda mensagem (ou o bot é adicionado a um grupo novo), o contato aparece como **pending**:
+Quando alguém novo manda mensagem (ou o bot é adicionado a um grupo novo), o contato/grupo aparece como **pending** automaticamente. Nenhuma mensagem é processada até ser aprovado.
 
 ```bash
-ravi contacts pending     # Ver contatos pendentes
+ravi contacts pending     # Ver contatos/grupos pendentes
 ```
 
 Pra aprovar e rotear:
