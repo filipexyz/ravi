@@ -195,8 +195,9 @@ export class ContactsCommands {
     }
 
     if (key === "agent") {
-      allowContact(normalized, value);
-      console.log(`✓ Agent set: ${formatPhone(normalized)} → ${value}`);
+      const agentValue = value === "-" || value === "" ? undefined : value;
+      allowContact(normalized, agentValue);
+      console.log(`✓ Agent set: ${formatPhone(normalized)} → ${agentValue || "(cleared)"}`);
       emitConfigChanged();
     } else if (key === "mode") {
       if (value !== "auto" && value !== "mention") {

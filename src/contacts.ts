@@ -246,14 +246,15 @@ export function deleteContact(phone: string): boolean {
  */
 export function setContactStatus(phone: string, status: ContactStatus, agentId?: string): void {
   const normalizedPhone = normalizePhone(phone);
+  const effectiveAgentId = agentId || undefined;
   const contact = getContact(normalizedPhone);
   if (!contact) {
     upsertContact(normalizedPhone, null, status);
-    if (agentId) {
-      setStatusStmt.run(status, agentId, normalizedPhone);
+    if (effectiveAgentId) {
+      setStatusStmt.run(status, effectiveAgentId, normalizedPhone);
     }
   } else {
-    setStatusStmt.run(status, agentId ?? contact.agent_id, normalizedPhone);
+    setStatusStmt.run(status, effectiveAgentId ?? contact.agent_id ?? null, normalizedPhone);
   }
 }
 
@@ -269,7 +270,7 @@ export function allowContact(phone: string, agentId?: string): void {
  */
 export function getContactAgent(phone: string): string | null {
   const contact = getContact(phone);
-  return contact?.agent_id ?? null;
+  return contact?.agent_id || null;
 }
 
 /**
