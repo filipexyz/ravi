@@ -30,6 +30,7 @@ import {
   setOptOut,
   type ContactStatus,
   type ReplyMode,
+  type ContactSource,
 } from "../../contacts.js";
 
 function statusIcon(status: ContactStatus): string {
@@ -118,7 +119,7 @@ export class ContactsCommands {
     @Arg("name", { required: false, description: "Contact name" }) name?: string
   ) {
     const normalized = normalizePhone(phone);
-    upsertContact(normalized, name ?? null, "allowed");
+    upsertContact(normalized, name ?? null, "allowed", "manual");
     console.log(
       `✓ Contact added: ${formatPhone(normalized)}${name ? ` (${name})` : ""}`
     );
@@ -231,8 +232,15 @@ export class ContactsCommands {
       const boolValue = value === "true" || value === "yes" || value === "1";
       setOptOut(normalized, boolValue);
       console.log(`✓ Opt-out set: ${formatPhone(normalized)} → ${boolValue ? "yes" : "no"}`);
+    } else if (key === "source") {
+      const validSources = ["inbound", "outbound", "manual", "discovered"];
+      if (value !== "-" && !validSources.includes(value)) {
+        fail(`Source must be one of: ${validSources.join(", ")} (or '-' to clear)`);
+      }
+      updateContact(normalized, { source: value === "-" ? null : value as ContactSource });
+      console.log(`✓ Source set: ${formatPhone(normalized)} → ${value}`);
     } else {
-      fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out`);
+      fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out, source`);
     }
   }
 
@@ -251,6 +259,7 @@ export class ContactsCommands {
       console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
       console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);
       console.log(`  Opt-out: ${contact.opt_out ? "yes" : "no"}`);
+      console.log(`  Source:  ${contact.source || "-"}`);
       console.log(`  Interactions: ${contact.interaction_count}`);
       if (contact.last_inbound_at) console.log(`  Last inbound:  ${contact.last_inbound_at}`);
       if (contact.last_outbound_at) console.log(`  Last outbound: ${contact.last_outbound_at}`);

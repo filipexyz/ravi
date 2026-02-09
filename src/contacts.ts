@@ -69,9 +69,13 @@ try {
 try {
   db.exec(`ALTER TABLE contacts ADD COLUMN interaction_count INTEGER DEFAULT 0`);
 } catch { /* exists */ }
+try {
+  db.exec(`ALTER TABLE contacts ADD COLUMN source TEXT`);
+} catch { /* exists */ }
 
 export type ContactStatus = "allowed" | "pending" | "blocked" | "discovered";
 export type ReplyMode = "auto" | "mention";
+export type ContactSource = "inbound" | "outbound" | "manual" | "discovered";
 
 export interface Contact {
   phone: string;
@@ -83,6 +87,7 @@ export interface Contact {
   tags: string[];
   notes: Record<string, unknown>;
   opt_out: boolean;
+  source: ContactSource | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
   interaction_count: number;
@@ -101,6 +106,7 @@ interface ContactRow {
   tags: string | null;
   notes: string | null;
   opt_out: number | null;
+  source: string | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
   interaction_count: number | null;
@@ -119,6 +125,7 @@ function rowToContact(row: ContactRow): Contact {
     tags: row.tags ? JSON.parse(row.tags) : [],
     notes: row.notes ? JSON.parse(row.notes) : {},
     opt_out: (row.opt_out ?? 0) === 1,
+    source: (row.source as ContactSource) ?? null,
     last_inbound_at: row.last_inbound_at,
     last_outbound_at: row.last_outbound_at,
     interaction_count: row.interaction_count ?? 0,
@@ -129,8 +136,8 @@ function rowToContact(row: ContactRow): Contact {
 
 // Prepared statements
 const upsertStmt = db.prepare(`
-  INSERT INTO contacts (phone, name, status, updated_at)
-  VALUES (?, ?, ?, datetime('now'))
+  INSERT INTO contacts (phone, name, status, source, updated_at)
+  VALUES (?, ?, ?, ?, datetime('now'))
   ON CONFLICT(phone) DO UPDATE SET
     name = COALESCE(excluded.name, contacts.name),
     status = excluded.status,
@@ -138,8 +145,8 @@ const upsertStmt = db.prepare(`
 `);
 
 const upsertNameOnlyStmt = db.prepare(`
-  INSERT INTO contacts (phone, name, status, updated_at)
-  VALUES (?, ?, 'pending', datetime('now'))
+  INSERT INTO contacts (phone, name, status, source, updated_at)
+  VALUES (?, ?, 'pending', 'inbound', datetime('now'))
   ON CONFLICT(phone) DO UPDATE SET
     name = COALESCE(excluded.name, contacts.name),
     updated_at = datetime('now')
@@ -171,10 +178,11 @@ const setStatusStmt = db.prepare(
 export function upsertContact(
   phone: string,
   name?: string | null,
-  status: ContactStatus = "allowed"
+  status: ContactStatus = "allowed",
+  source?: ContactSource | null
 ): void {
   const normalizedPhone = normalizePhone(phone);
-  upsertStmt.run(normalizedPhone, name ?? null, status);
+  upsertStmt.run(normalizedPhone, name ?? null, status, source ?? null);
 }
 
 /**
@@ -304,8 +312,8 @@ export function getContactName(phone: string): string | null {
 export function saveDiscoveredContact(phone: string, name?: string | null): void {
   const normalizedPhone = normalizePhone(phone);
   db.prepare(`
-    INSERT INTO contacts (phone, name, status, updated_at)
-    VALUES (?, ?, 'discovered', datetime('now'))
+    INSERT INTO contacts (phone, name, status, source, updated_at)
+    VALUES (?, ?, 'discovered', 'discovered', datetime('now'))
     ON CONFLICT(phone) DO UPDATE SET
       name = COALESCE(contacts.name, excluded.name),
       updated_at = datetime('now')
@@ -320,6 +328,7 @@ export function createContact(input: {
   name?: string;
   email?: string;
   status?: ContactStatus;
+  source?: ContactSource;
   tags?: string[];
   notes?: Record<string, unknown>;
 }): Contact {
@@ -330,13 +339,14 @@ export function createContact(input: {
   }
 
   db.prepare(`
-    INSERT INTO contacts (phone, name, email, status, tags, notes, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO contacts (phone, name, email, status, source, tags, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     normalized,
     input.name ?? null,
     input.email ?? null,
     input.status ?? "allowed",
+    input.source ?? null,
     input.tags ? JSON.stringify(input.tags) : null,
     input.notes ? JSON.stringify(input.notes) : null,
   );
@@ -358,6 +368,7 @@ export function updateContact(
     tags?: string[];
     notes?: Record<string, unknown>;
     opt_out?: boolean;
+    source?: ContactSource | null;
   }
 ): Contact {
   const normalized = normalizePhone(phone);
@@ -401,6 +412,10 @@ export function updateContact(
   if (updates.opt_out !== undefined) {
     fields.push("opt_out = ?");
     values.push(updates.opt_out ? 1 : 0);
+  }
+  if (updates.source !== undefined) {
+    fields.push("source = ?");
+    values.push(updates.source);
   }
 
   if (fields.length === 0) return contact;
