@@ -13,6 +13,7 @@ import {
   updateSessionContext,
   updateSessionDisplayName,
   closeRouterDb,
+  deleteSession,
   expandHome,
   type RouterConfig,
   type SessionEntry,
@@ -162,6 +163,8 @@ interface StreamingSession {
   interrupted: boolean;
   /** Signal from result handler to unblock generator after turn completes */
   onTurnComplete: (() => void) | null;
+  /** Flag: SDK returned "Prompt is too long" — session needs reset */
+  _promptTooLong?: boolean;
 }
 
 /** User message format for the SDK streaming input */
@@ -177,11 +180,19 @@ export interface RaviBotOptions {
   config: Config;
 }
 
-/** Pending approval waiting for a reaction */
+/** Pending approval waiting for a reaction or reply */
 interface PendingApproval {
-  resolve: (approved: boolean) => void;
+  resolve: (result: { approved: boolean; reason?: string }) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** Only this senderId can approve/reject (if set) */
+  allowedSenderId?: string;
 }
+
+/**
+ * In-process reply callbacks for replyTopic.
+ * Used by gateway to resolve send results without SSE round-trip.
+ */
+export const pendingReplyCallbacks = new Map<string, (data: { messageId?: string }) => void>();
 
 export class RaviBot {
   private config: Config;
@@ -206,6 +217,7 @@ export class RaviBot {
     this.running = true;
     this.subscribeToPrompts();
     this.subscribeToInboundReactions();
+    this.subscribeToInboundReplies();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
@@ -230,6 +242,16 @@ export class RaviBot {
       this.streamingSessions.clear();
     }
 
+    // Cancel all pending approvals
+    if (this.pendingApprovals.size > 0) {
+      log.info("Cancelling pending approvals", { count: this.pendingApprovals.size });
+      for (const [messageId, approval] of this.pendingApprovals) {
+        clearTimeout(approval.timer);
+        approval.resolve({ approved: false, reason: "Bot shutting down." });
+      }
+      this.pendingApprovals.clear();
+    }
+
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
@@ -239,49 +261,116 @@ export class RaviBot {
    * Listen for inbound reactions and resolve pending approvals.
    */
   private async subscribeToInboundReactions(): Promise<void> {
-    for await (const event of notif.subscribe("ravi.inbound.reaction")) {
-      if (!this.running) break;
-      const data = event.data as {
-        targetMessageId: string;
-        emoji: string;
-        senderId: string;
-      };
+    while (this.running) {
+      try {
+        for await (const event of notif.subscribe("ravi.inbound.reaction")) {
+          if (!this.running) break;
+          const data = event.data as {
+            targetMessageId: string;
+            emoji: string;
+            senderId: string;
+          };
 
-      const pending = this.pendingApprovals.get(data.targetMessageId);
-      if (!pending) continue;
+          const pending = this.pendingApprovals.get(data.targetMessageId);
+          if (!pending) continue;
 
-      const approved = data.emoji === "👍";
-      log.info("Approval reaction received", {
-        targetMessageId: data.targetMessageId,
-        emoji: data.emoji,
-        approved,
-        senderId: data.senderId,
-      });
+          // Only the session owner can approve/reject
+          if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
+            log.info("Ignoring reaction from non-owner", {
+              targetMessageId: data.targetMessageId,
+              senderId: data.senderId,
+              expected: pending.allowedSenderId,
+            });
+            continue;
+          }
 
-      clearTimeout(pending.timer);
-      this.pendingApprovals.delete(data.targetMessageId);
-      pending.resolve(approved);
+          const approved = data.emoji === "👍" || data.emoji === "❤️" || data.emoji === "❤";
+          log.info("Approval reaction received", {
+            targetMessageId: data.targetMessageId,
+            emoji: data.emoji,
+            approved,
+            senderId: data.senderId,
+          });
+
+          clearTimeout(pending.timer);
+          this.pendingApprovals.delete(data.targetMessageId);
+          pending.resolve({ approved });
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Reaction subscription error, reconnecting in 2s", { error: err });
+        await new Promise(r => setTimeout(r, 2000));
+      }
     }
   }
 
   /**
-   * Send a message to WhatsApp and wait for a reaction (👍 or ❌).
-   * Returns true if approved, false if rejected or timed out.
+   * Listen for inbound replies and resolve pending approvals as rejections.
+   */
+  private async subscribeToInboundReplies(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of notif.subscribe("ravi.inbound.reply")) {
+          if (!this.running) break;
+          const data = event.data as {
+            targetMessageId: string;
+            text: string;
+            senderId: string;
+          };
+
+          const pending = this.pendingApprovals.get(data.targetMessageId);
+          if (!pending) continue;
+
+          // Only the session owner can reject
+          if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
+            log.info("Ignoring reply from non-owner", {
+              targetMessageId: data.targetMessageId,
+              senderId: data.senderId,
+              expected: pending.allowedSenderId,
+            });
+            continue;
+          }
+
+          log.info("Approval reply received (rejection)", {
+            targetMessageId: data.targetMessageId,
+            text: data.text,
+            senderId: data.senderId,
+          });
+
+          clearTimeout(pending.timer);
+          this.pendingApprovals.delete(data.targetMessageId);
+          pending.resolve({ approved: false, reason: data.text });
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Reply subscription error, reconnecting in 2s", { error: err });
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  /**
+   * Send a message to WhatsApp and wait for a reaction (👍) or reply (rejection).
+   * Returns { approved, reason } — reason is the reply text if rejected.
    */
   private async requestApproval(
     source: MessageTarget,
     text: string,
-    timeoutMs = 5 * 60 * 1000 // 5 minutes
-  ): Promise<boolean> {
-    // Send via gateway with replyTopic to get the messageId back
+    options?: { timeoutMs?: number; allowedSenderId?: string }
+  ): Promise<{ approved: boolean; reason?: string }> {
+    const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000; // 5 minutes
+    // Use in-process callback to capture messageId (avoids SSE round-trip race condition)
     const replyTopic = `ravi.approval.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
 
-    // Start listening before emitting (to avoid race condition)
     const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
-      const timeout = setTimeout(() => resolve({}), 5000);
-      notif.subscribe(replyTopic).next().then(({ value }) => {
+      const timeout = setTimeout(() => {
+        pendingReplyCallbacks.delete(replyTopic);
+        resolve({});
+      }, 5000);
+      pendingReplyCallbacks.set(replyTopic, (data) => {
         clearTimeout(timeout);
-        resolve((value?.data as { messageId?: string }) ?? {});
+        pendingReplyCallbacks.delete(replyTopic);
+        resolve(data);
       });
     });
 
@@ -296,20 +385,20 @@ export class RaviBot {
     const sendResult = await sendResultPromise;
 
     if (!sendResult.messageId) {
-      log.warn("Failed to get messageId for approval message");
-      return true; // default to approved if we can't track
+      log.warn("Failed to get messageId for approval message — rejecting by default");
+      return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
     }
 
-    log.info("Waiting for approval reaction", { messageId: sendResult.messageId });
+    log.info("Waiting for approval reaction or reply", { messageId: sendResult.messageId });
 
-    return new Promise<boolean>((resolve) => {
+    return new Promise<{ approved: boolean; reason?: string }>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingApprovals.delete(sendResult.messageId!);
         log.warn("Approval timed out", { messageId: sendResult.messageId });
-        resolve(false);
+        resolve({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
       }, timeoutMs);
 
-      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer });
+      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer, allowedSenderId: options?.allowedSenderId });
     });
   }
 
@@ -491,12 +580,15 @@ export class RaviBot {
     const model = agent.model ?? this.config.model;
 
     // Build permission options
+    // Use "default" permissionMode so canUseTool callback is always invoked.
+    // The callback auto-approves everything (equivalent to bypassPermissions)
+    // except ExitPlanMode, which goes through WhatsApp reaction approval.
     let permissionOptions: Record<string, unknown>;
     if (agent.allowedTools) {
       const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
       permissionOptions = { disallowedTools: disallowed, allowedTools: agent.allowedTools };
     } else {
-      permissionOptions = { permissionMode: "bypassPermissions" as const, allowDangerouslySkipPermissions: true };
+      permissionOptions = {}; // default permissionMode — canUseTool handles approval
     }
 
     // Build system prompt
@@ -565,29 +657,40 @@ export class RaviBot {
       }
     }
 
-    // Build canUseTool — intercept ExitPlanMode for reaction-based approval
-    const canUseTool = resolvedSource
-      ? async (toolName: string, input: Record<string, unknown>) => {
-          if (toolName !== "ExitPlanMode") {
-            return { behavior: "allow" as const, updatedInput: input };
-          }
+    // Build canUseTool — auto-approve all tools (replaces bypassPermissions),
+    // but intercept ExitPlanMode for reaction-based approval via WhatsApp.
+    const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
+      if (toolName !== "ExitPlanMode") {
+        return { behavior: "allow" as const, updatedInput: input };
+      }
 
-          log.info("ExitPlanMode called, requesting approval via reaction", { sessionKey });
+      // ExitPlanMode: request approval via WhatsApp reaction
+      if (!resolvedSource) {
+        // No channel to send approval request — auto-approve
+        log.info("ExitPlanMode auto-approved (no channel source)", { sessionKey });
+        return { behavior: "allow" as const, updatedInput: input };
+      }
 
-          const plan = typeof input.plan === "string" ? input.plan : JSON.stringify(input);
-          const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 pra aprovar ou qualquer outro emoji pra rejeitar._`;
+      log.info("ExitPlanMode called, requesting approval via reaction", { sessionKey });
 
-          const approved = await this.requestApproval(resolvedSource!, approvalText);
+      const plan = typeof input.plan === "string" ? input.plan : JSON.stringify(input);
+      const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
 
-          if (approved) {
-            log.info("Plan approved via reaction", { sessionKey });
-            return { behavior: "allow" as const, updatedInput: input };
-          } else {
-            log.info("Plan rejected via reaction", { sessionKey });
-            return { behavior: "deny" as const, message: "Plano rejeitado pelo usuário." };
-          }
-        }
-      : undefined;
+      const result = await this.requestApproval(resolvedSource, approvalText, {
+        allowedSenderId: prompt.context?.senderId,
+      });
+
+      if (result.approved) {
+        log.info("Plan approved via reaction", { sessionKey });
+        return { behavior: "allow" as const, updatedInput: input };
+      } else {
+        const reason = result.reason
+          ? `Plano rejeitado: ${result.reason}`
+          : "Plano rejeitado pelo usuário.";
+        log.info("Plan rejected", { sessionKey, reason: result.reason });
+        return { behavior: "deny" as const, message: reason };
+      }
+    };
 
     const queryResult = query({
       prompt: messageGenerator,
@@ -597,7 +700,7 @@ export class RaviBot {
         resume: session.sdkSessionId,
         abortController,
         ...permissionOptions,
-        ...(canUseTool ? { canUseTool } : {}),
+        canUseTool,
         env: { ...process.env, ...raviEnv },
         systemPrompt: {
           type: "preset",
@@ -796,7 +899,11 @@ export class RaviBot {
               responseText += messageText;
 
               const trimmed = messageText.trim().toLowerCase();
-              if (messageText.trim() === SILENT_TOKEN) {
+              if (trimmed === "prompt is too long") {
+                log.warn("Prompt too long — will auto-reset session", { sessionKey });
+                streaming._promptTooLong = true;
+                await emitSdkEvent({ type: "silent" });
+              } else if (messageText.trim() === SILENT_TOKEN) {
                 log.info("Silent response", { sessionKey });
                 await emitSdkEvent({ type: "silent" });
               } else if (messageText.trim() === HEARTBEAT_OK) {
@@ -862,6 +969,26 @@ export class RaviBot {
             updateSdkSessionId(sessionKey, message.session_id);
           }
           updateTokens(sessionKey, inputTokens, outputTokens);
+
+          // Auto-reset session when prompt is too long (compact failed)
+          if (streaming._promptTooLong) {
+            log.warn("Auto-resetting session due to 'Prompt is too long'", { sessionKey });
+            deleteSession(sessionKey);
+            streaming._promptTooLong = false;
+
+            // Notify the user that the session was reset
+            if (streaming.currentSource) {
+              notif.emit("ravi.outbound.deliver", {
+                channel: streaming.currentSource.channel,
+                accountId: streaming.currentSource.accountId,
+                to: streaming.currentSource.chatId,
+                text: "⚠️ Sessão resetada (contexto estourou). Pode mandar de novo.",
+              }).catch(err => log.warn("Failed to notify session reset", { error: err }));
+            }
+
+            // Abort the streaming session so next message creates a fresh one
+            streaming.abortController.abort();
+          }
 
           if (!streaming.interrupted && responseText.trim()) {
             saveMessage(sessionKey, "assistant", responseText.trim());

@@ -421,7 +421,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
 
     // Handle inbound reactions (before shouldProcess, which filters them)
     const reactionMsg = rawMessage.message?.reactionMessage;
-    if (reactionMsg && reactionMsg.key?.id) {
+    if (reactionMsg && reactionMsg.key?.id && rawMessage.key.fromMe !== true) {
       const emoji = reactionMsg.text ?? "";
       const targetMessageId = reactionMsg.key.id;
       log.info("Inbound reaction", { accountId, emoji, targetMessageId });
@@ -434,6 +434,27 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         emoji,
       }).catch(err => log.warn("Failed to emit inbound reaction", { error: err }));
       return;
+    }
+
+    // Handle inbound replies to bot messages (for approval rejection via reply)
+    const contextInfo =
+      rawMessage.message?.extendedTextMessage?.contextInfo ??
+      rawMessage.message?.imageMessage?.contextInfo ??
+      rawMessage.message?.audioMessage?.contextInfo;
+    if (contextInfo?.stanzaId && rawMessage.key.fromMe !== true) {
+      const replyText =
+        rawMessage.message?.conversation ??
+        rawMessage.message?.extendedTextMessage?.text ??
+        "";
+      notif.emit("ravi.inbound.reply", {
+        channel: "whatsapp",
+        accountId,
+        chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
+        senderId: normalizePhone(rawMessage.key.participant ?? rawMessage.key.remoteJid ?? ""),
+        targetMessageId: contextInfo.stanzaId,
+        text: replyText,
+      }).catch(err => log.warn("Failed to emit inbound reply", { error: err }));
+      // Don't return — let the message continue through normal processing
     }
 
     // Check if message should be processed

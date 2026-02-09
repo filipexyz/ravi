@@ -5,6 +5,7 @@
  */
 
 import { notif } from "./notif.js";
+import { pendingReplyCallbacks } from "./bot.js";
 import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from "./channels/types.js";
 import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
@@ -379,7 +380,9 @@ export class Gateway {
       if (!plugin) {
         log.warn("No plugin for direct send channel", { channel: data.channel });
         if (data.replyTopic) {
-          notif.emit(data.replyTopic, { success: false, error: "No plugin" }).catch(() => {});
+          const cb = pendingReplyCallbacks.get(data.replyTopic);
+          if (cb) cb({ messageId: undefined });
+          else notif.emit(data.replyTopic, { success: false, error: "No plugin" }).catch(() => {});
         }
         return;
       }
@@ -402,7 +405,9 @@ export class Gateway {
         log.info("Direct send delivered", { to: data.to, channel: data.channel, messageId: sendResult.messageId });
 
         if (data.replyTopic) {
-          notif.emit(data.replyTopic, sendResult as unknown as Record<string, unknown>).catch(() => {});
+          const cb = pendingReplyCallbacks.get(data.replyTopic);
+          if (cb) cb({ messageId: sendResult.messageId });
+          else notif.emit(data.replyTopic, sendResult as unknown as Record<string, unknown>).catch(() => {});
         }
 
         const entry = dbFindActiveEntryByPhone(data.to);
@@ -414,7 +419,9 @@ export class Gateway {
       } catch (err) {
         log.error("Failed to deliver direct send", { error: err });
         if (data.replyTopic) {
-          notif.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
+          const cb = pendingReplyCallbacks.get(data.replyTopic);
+          if (cb) cb({ messageId: undefined });
+          else notif.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
         }
       }
     });
