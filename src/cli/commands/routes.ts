@@ -22,6 +22,17 @@ import {
   DmScopeSchema,
 } from "../../router/router-db.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
+import { getContact, type ContactStatus } from "../../contacts.js";
+
+function routeStatusIcon(status?: ContactStatus | null): string {
+  if (!status) return "\x1b[33m?\x1b[0m";
+  switch (status) {
+    case "allowed": return "\x1b[32m✓\x1b[0m";
+    case "pending": return "\x1b[33m?\x1b[0m";
+    case "blocked": return "\x1b[31m✗\x1b[0m";
+    case "discovered": return "\x1b[36m○\x1b[0m";
+  }
+}
 
 /**
  * Delete sessions that conflict with a new route.
@@ -87,16 +98,18 @@ export class RoutesCommands {
     }
 
     console.log("\nRoutes:\n");
-    console.log("  PATTERN                              AGENT           PRIORITY  DM SCOPE");
-    console.log("  -----------------------------------  --------------  --------  ----------------");
+    console.log("  ST  PATTERN                              AGENT           NAME                  PRI");
+    console.log("  --  -----------------------------------  --------------  --------------------  ---");
 
     for (const route of routes) {
+      const contact = getContact(route.pattern);
+      const icon = routeStatusIcon(contact?.status);
       const pattern = route.pattern.padEnd(35);
       const agent = route.agent.padEnd(14);
-      const priority = String(route.priority ?? 0).padEnd(8);
-      const dmScope = route.dmScope ?? "-";
+      const name = (contact?.name ?? "-").slice(0, 20).padEnd(20);
+      const priority = String(route.priority ?? 0);
 
-      console.log(`  ${pattern}  ${agent}  ${priority}  ${dmScope}`);
+      console.log(`  ${icon}   ${pattern}  ${agent}  ${name}  ${priority}`);
     }
 
     console.log(`\n  Total: ${routes.length} routes`);

@@ -73,13 +73,15 @@ export class ContactsCommands {
     }
 
     console.log("\nContacts:\n");
-    console.log("  ST  PHONE                  NAME");
-    console.log("  --  --------------------   ----------------");
+    console.log("  ST  PHONE                  NAME                  AGENT           MODE");
+    console.log("  --  --------------------   --------------------  --------------  -------");
     for (const contact of contacts) {
       const icon = statusIcon(contact.status);
       const phone = formatPhone(contact.phone).padEnd(20);
-      const name = contact.name || "-";
-      console.log(`  ${icon}   ${phone}   ${name}`);
+      const name = (contact.name || "-").slice(0, 20).padEnd(20);
+      const agent = (contact.agent_id || "-").padEnd(14);
+      const mode = contact.reply_mode || "auto";
+      console.log(`  ${icon}   ${phone}   ${name}  ${agent}  ${mode}`);
     }
     const allowed = contacts.filter((c) => c.status === "allowed").length;
     const pending = contacts.filter((c) => c.status === "pending").length;

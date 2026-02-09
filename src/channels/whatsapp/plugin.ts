@@ -672,7 +672,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         if (decision.pending) {
           // Save as pending - use chatId for groups, senderId for DMs
           const pendingId = message.isGroup ? message.chatId : message.senderId;
-          const pendingName = message.isGroup ? null : message.senderName ?? null;
+          const pendingName = message.isGroup ? message.groupName ?? null : message.senderName ?? null;
           savePendingContact(pendingId, pendingName);
           log.info("Saved pending", {
             id: pendingId,

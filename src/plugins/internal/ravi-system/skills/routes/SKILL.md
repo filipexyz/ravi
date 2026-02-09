@@ -72,3 +72,13 @@ Definir fallback:
 ```bash
 ravi routes add "*" main
 ```
+
+## Relação com Contacts
+
+Routes e Contacts trabalham juntos no roteamento:
+
+- **Contacts** podem ter `agent_id` atribuído diretamente (via `ravi contacts set <phone> agent <agent>` ou `ravi contacts approve <phone> <agent>`)
+- **Routes** definem regras por padrão (prefixo, grupo, catch-all)
+- Na resolução, `contact.agent_id` tem prioridade sobre routes
+- `ravi routes list` mostra o nome e status do contato associado a cada padrão
+- Para gerenciar contatos: use a skill `ravi-system:contacts`

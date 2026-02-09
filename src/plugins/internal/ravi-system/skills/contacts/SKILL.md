@@ -115,3 +115,13 @@ Configurar notas com contexto:
 ```bash
 ravi contacts set 5511999999999 notes '{"empresa":"TechCorp","cargo":"CTO"}'
 ```
+
+## Relação com Routes
+
+Contacts e Routes trabalham juntos no roteamento:
+
+- **Contacts** podem ter `agent_id` direto — isso tem prioridade sobre routes
+- **Routes** definem regras por padrão (prefixo, grupo, catch-all) como fallback
+- `ravi contacts list` mostra o agent e modo de resposta de cada contato
+- Para gerenciar rotas: use a skill `ravi-system:routes`
+- Ordem de resolução: contact.agent_id > route match > accountId > default agent
