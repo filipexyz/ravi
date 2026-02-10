@@ -200,7 +200,7 @@ async function notifyRestartReason() {
       const message = `🔄 Daemon reiniciado!\n\nMotivo: ${reason}`;
       const { notif } = await import("./notif.js");
       await notif.emit("ravi.agent:main:main.prompt", {
-        prompt: `[System] Context: ${message}`,
+        prompt: `[System] Inform: ${message}`,
       });
     }
   } catch (err) {

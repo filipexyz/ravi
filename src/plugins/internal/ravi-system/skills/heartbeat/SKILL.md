@@ -74,7 +74,7 @@ Exemplo:
 
 ## Como Notificar
 Use cross_send para enviar mensagem:
-ravi cross send target="agent:main:main" type="notify" message="..."
+ravi cross send target="agent:main:main" type="inform" message="..."
 ```
 
 ## Exemplos

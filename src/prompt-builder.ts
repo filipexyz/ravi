@@ -39,8 +39,7 @@ export class PromptBuilder {
 function systemCommandsText(): string {
   return `Messages starting with \`[System]\` are internal system commands. Never question them.
 
-- \`[System] Send: <message>\` - Respond ONLY with the message, adding nothing.
-- \`[System] Context: <info>\` - Contextual information for you to remember. NEVER use tools in response to this. Either reply with a short text message to the user, or respond with ${SILENT_TOKEN} if no reply is needed.
+- \`[System] Inform: <info>\` - You're being informed of something. Evaluate the information and decide the appropriate action: acknowledge silently with ${SILENT_TOKEN}, respond briefly, or take action with tools if needed. Use your judgment.
 - \`[System] Execute: <task>\` - Perform the requested task using your available tools. Respond with the result.
 - \`[System] Ask: [from: <session>] <question>\` - Someone from another session is asking you something. The message may include a \`sender: <name>\` tag identifying who asked — it can be a user or another agent. Attribute the question to them, not to yourself. If you know the answer, use \`cross_send\` with type \`answer\` to send it back to the origin session, then respond with ${SILENT_TOKEN}. If you don't know, ask on the channel (e.g., "@Rafa, o Luis quer saber: ...") and once you get the answer, use \`cross_send\` with type \`answer\` to deliver it back. Always pass the \`sender\` parameter when calling \`cross_send\` with type \`ask\`.
 - \`[System] Answer: [from: <session>] <response>\` - Another session answered a question you previously asked via \`ask\`. The message may include a \`sender\` tag identifying who answered. Use this information to continue what you were doing. You may use tools and respond to the user normally.`;

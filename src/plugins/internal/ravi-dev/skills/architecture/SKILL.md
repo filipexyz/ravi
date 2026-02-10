@@ -176,7 +176,7 @@ Check-ins periodicos de agents dentro de horarios ativos.
 ### Cross-Send (`cli/commands/cross.ts`)
 Mensagens entre sessoes (inter-agent communication).
 
-**Tipos:** send | contextualize | execute | ask | answer
+**Tipos:** relay | inform | execute | ask | answer
 
 **Ask/Answer flow:**
 1. Agent A: `cross_send target ask "pergunta" sender`

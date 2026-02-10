@@ -10,12 +10,12 @@ import { getContext } from "../context.js";
 import { notif } from "../../notif.js";
 import type { ChannelContext } from "../../bot.js";
 
-const VALID_TYPES = ["send", "contextualize", "execute", "ask", "answer"] as const;
+const VALID_TYPES = ["relay", "inform", "execute", "ask", "answer"] as const;
 type CrossType = (typeof VALID_TYPES)[number];
 
 const PREFIX_MAP: Record<CrossType, string> = {
-  send: "[System] Send:",
-  contextualize: "[System] Context:",
+  relay: "",  // transparent — no prefix
+  inform: "[System] Inform:",
   execute: "[System] Execute:",
   ask: "[System] Ask:",
   answer: "[System] Answer:",
@@ -29,7 +29,7 @@ export class CrossCommands {
   @Command({ name: "send", description: "Send a typed message to another session" })
   async send(
     @Arg("target", { description: "Target session key or contact ID" }) target: string,
-    @Arg("type", { description: "Message type: send | contextualize | execute | ask | answer" }) type: string,
+    @Arg("type", { description: "Message type: relay | inform | execute | ask | answer" }) type: string,
     @Arg("message", { description: "Message to send" }) message: string,
     @Arg("sender", { required: false, description: "Who originally requested this (for ask/answer attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Delivery channel (whatsapp, matrix)" }) channel?: string,
@@ -134,7 +134,10 @@ export class CrossCommands {
     const crossType = type as CrossType;
     let prompt: string;
 
-    if (crossType === "ask" || crossType === "answer") {
+    if (crossType === "relay") {
+      // Transparent — message as-is, no system prefix
+      prompt = message;
+    } else if (crossType === "ask" || crossType === "answer") {
       // Include origin session and optional sender for attribution
       const ctx = getContext();
       const origin = ctx?.sessionKey ?? "unknown";

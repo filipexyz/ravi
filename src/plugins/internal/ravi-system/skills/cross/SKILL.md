@@ -22,11 +22,11 @@ Cross-session messaging permite que um agent envie mensagens para outra sessão 
 
 | Type | Descrição |
 |------|-----------|
-| `send` | Envia mensagem que dispara prompt (resposta) |
-| `contextualize` | Adiciona contexto para próxima mensagem |
-| `execute` | Pede execução de ação |
-| `ask` | Faz pergunta atribuída ao sender |
-| `answer` | Responde a uma pergunta anterior |
+| `relay` | Repasse transparente — mensagem chega sem prefixo, como se fosse do usuário |
+| `inform` | Informação pro agent avaliar — ele decide se age, responde ou fica em silêncio |
+| `execute` | Ordem direta — execute a tarefa usando tools |
+| `ask` | Pergunta cross-session atribuída ao sender |
+| `answer` | Resposta a uma pergunta anterior |
 
 ## Comandos
 
@@ -52,19 +52,19 @@ ravi cross list
 
 ## Exemplos
 
-Notificar usuário no WhatsApp:
+Repassar mensagem transparente:
 ```bash
-ravi cross send "agent:main:whatsapp:lid:12345" send "Tarefa concluída!"
+ravi cross send "agent:main:whatsapp:lid:12345" relay "Tarefa concluída!"
+```
+
+Informar agent (ele decide o que fazer):
+```bash
+ravi cross send "agent:main:main" inform "Daemon reiniciou, motivo: atualização"
 ```
 
 Fazer pergunta para outro agent:
 ```bash
 ravi cross send "agent:sde:main" ask "Como implementar X?" "Usuário"
-```
-
-Adicionar contexto antes de mandar mensagem:
-```bash
-ravi cross send "agent:main:main" contextualize "Projeto: MoltTalent, Stack: React+Node"
 ```
 
 Ver todas as sessões ativas:
