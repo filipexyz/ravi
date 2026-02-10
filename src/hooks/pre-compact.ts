@@ -189,7 +189,7 @@ Seja proativo. Organize as memórias da forma que fizer mais sentido.`;
             allowDangerouslySkipPermissions: true,
             allowedTools: ["Read", "Edit", "Write"],
             hooks: {
-              PreToolUse: [fileAccessHook],
+              PreToolUse: [{ hooks: [fileAccessHook] }],
             },
             systemPrompt: {
               type: "custom",

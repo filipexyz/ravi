@@ -15,6 +15,7 @@ import {
   closeRouterDb,
   deleteSession,
   expandHome,
+  getAnnounceCompaction,
   type RouterConfig,
   type SessionEntry,
   type AgentConfig,
@@ -165,6 +166,8 @@ interface StreamingSession {
   onTurnComplete: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" — session needs reset */
   _promptTooLong?: boolean;
+  /** Whether the SDK is currently compacting (don't interrupt during compaction) */
+  compacting: boolean;
 }
 
 /** User message format for the SDK streaming input */
@@ -523,11 +526,12 @@ export class RaviBot {
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
         resolver(null); // wake-up signal
-      } else if (existing.toolRunning) {
-        // Tool running — just enqueue, don't interrupt
-        log.info("Streaming: queueing (tool running)", {
+      } else if (existing.toolRunning || existing.compacting) {
+        // Tool running or compacting — just enqueue, don't interrupt
+        log.info("Streaming: queueing (busy)", {
           sessionKey,
           queueSize: existing.pendingMessages.length,
+          reason: existing.compacting ? "compacting" : "tool",
           tool: existing.currentToolName,
         });
       } else {
@@ -597,15 +601,15 @@ export class RaviBot {
       systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
     }
 
-    // Build hooks
-    const hooks: Record<string, unknown[]> = {};
+    // Build hooks (SDK expects HookCallbackMatcher[] per event)
+    const hooks: Record<string, Array<{ hooks: Array<(...args: any[]) => any> }>> = {};
     if (agent.bashConfig || agent.allowedTools) {
-      hooks.PreToolUse = [createBashPermissionHook({
+      hooks.PreToolUse = [{ hooks: [createBashPermissionHook({
         getBashConfig: () => agent.bashConfig,
         getAllowedTools: () => agent.allowedTools,
-      })];
+      })] }];
     }
-    hooks.PreCompact = [createPreCompactHook({ memoryModel: agent.memoryModel })];
+    hooks.PreCompact = [{ hooks: [createPreCompactHook({ memoryModel: agent.memoryModel })] }];
 
     const plugins = discoverPlugins();
     const abortController = new AbortController();
@@ -621,6 +625,7 @@ export class RaviBot {
       lastActivity: Date.now(),
       done: false,
       interrupted: false,
+      compacting: false,
       onTurnComplete: null,
     };
     this.streamingSessions.set(sessionKey, streamingSession);
@@ -862,6 +867,22 @@ export class RaviBot {
 
         // Emit all SDK events for typing heartbeat etc.
         await emitSdkEvent(message as unknown as Record<string, unknown>);
+
+        // Track compaction status — block interrupts while compacting
+        if (message.type === "system" && (message as any).subtype === "status") {
+          const status = (message as any).status;
+          const wasCompacting = streaming.compacting;
+          streaming.compacting = status === "compacting";
+          log.info("Compaction status", { sessionKey, compacting: streaming.compacting });
+
+          if (getAnnounceCompaction() && streaming.currentSource) {
+            if (streaming.compacting && !wasCompacting) {
+              emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
+            } else if (!streaming.compacting && wasCompacting) {
+              emitResponse("🧠 Memória compactada. Pronto pra continuar.").catch(() => {});
+            }
+          }
+        }
 
         // Handle assistant messages
         if (message.type === "assistant") {

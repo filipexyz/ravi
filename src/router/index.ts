@@ -66,6 +66,7 @@ export {
   dbListSettings,
   getDefaultAgentId,
   getDefaultDmScope,
+  getAnnounceCompaction,
   // Schema (for validation)
   DmScopeSchema,
   // Database management

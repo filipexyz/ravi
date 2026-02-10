@@ -1251,6 +1251,14 @@ export function getDefaultTimezone(): string | undefined {
   return dbGetSetting("defaultTimezone") ?? undefined;
 }
 
+/**
+ * Whether to announce compaction start/end to the active session's channel.
+ * Setting value: "true" or "false" (default: "true")
+ */
+export function getAnnounceCompaction(): boolean {
+  return dbGetSetting("announceCompaction") !== "false";
+}
+
 // ============================================================================
 // Database Management
 // ============================================================================
