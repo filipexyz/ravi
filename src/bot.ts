@@ -581,7 +581,7 @@ export class RaviBot {
     this.updateSessionMetadata(sessionKey, prompt);
     saveMessage(sessionKey, "user", prompt.prompt);
 
-    const model = agent.model ?? this.config.model;
+    const model = session.modelOverride ?? agent.model ?? this.config.model;
 
     // Build permission options
     // Use "default" permissionMode so canUseTool callback is always invoked.

@@ -105,6 +105,8 @@ interface SessionStatements {
   updateSource: Statement;
   updateDisplayName: Statement;
   updateContext: Statement;
+  updateModelOverride: Statement;
+  updateThinkingLevel: Statement;
 }
 
 let stmts: SessionStatements | null = null;
@@ -179,6 +181,12 @@ function getStatements(): SessionStatements {
     ),
     updateContext: db.prepare(
       "UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"
+    ),
+    updateModelOverride: db.prepare(
+      "UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"
+    ),
+    updateThinkingLevel: db.prepare(
+      "UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"
     ),
   };
 
@@ -379,6 +387,28 @@ export function updateSessionContext(
 /**
  * Update session heartbeat info
  */
+/**
+ * Update session model override (null to clear)
+ */
+export function updateSessionModelOverride(
+  sessionKey: string,
+  model: string | null
+): void {
+  const s = getStatements();
+  s.updateModelOverride.run(model, Date.now(), sessionKey);
+}
+
+/**
+ * Update session thinking level (null to clear)
+ */
+export function updateSessionThinkingLevel(
+  sessionKey: string,
+  level: string | null
+): void {
+  const s = getStatements();
+  s.updateThinkingLevel.run(level, Date.now(), sessionKey);
+}
+
 export function updateSessionHeartbeat(
   sessionKey: string,
   text: string

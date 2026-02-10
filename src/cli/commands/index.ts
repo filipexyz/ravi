@@ -19,6 +19,7 @@ export * from "./outbound.js";
 export * from "./react.js";
 export * from "./routes.js";
 export * from "./service.js";
+export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./tools.js";
 export * from "./transcribe.js";
