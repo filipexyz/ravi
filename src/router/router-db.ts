@@ -315,6 +315,7 @@ function getDb(): Database {
 
       -- Execution config
       session_target TEXT DEFAULT 'main',
+      reply_session TEXT,
       payload_text TEXT NOT NULL,
 
       -- State
@@ -330,7 +331,14 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled);
     CREATE INDEX IF NOT EXISTS idx_cron_jobs_next_run ON cron_jobs(next_run_at);
+  `);
 
+  // Migration: add reply_session to cron_jobs
+  try {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN reply_session TEXT");
+  } catch { /* column already exists */ }
+
+  db.exec(`
     -- Outbound queues
     CREATE TABLE IF NOT EXISTS outbound_queues (
       id TEXT PRIMARY KEY,

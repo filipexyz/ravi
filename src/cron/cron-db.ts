@@ -39,6 +39,7 @@ interface CronJobRow {
   schedule_timezone: string | null;
 
   session_target: string;
+  reply_session: string | null;
   payload_text: string;
 
   next_run_at: number | null;
@@ -79,6 +80,7 @@ function rowToJob(row: CronJobRow): CronJob {
 
   if (row.agent_id !== null) job.agentId = row.agent_id;
   if (row.description !== null) job.description = row.description;
+  if (row.reply_session !== null) job.replySession = row.reply_session;
   if (row.next_run_at !== null) job.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) job.lastRunAt = row.last_run_at;
   if (row.last_status !== null) job.lastStatus = row.last_status as JobStatus;
@@ -107,10 +109,10 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     INSERT INTO cron_jobs (
       id, agent_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
-      session_target, payload_text,
+      session_target, reply_session, payload_text,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -126,6 +128,7 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.schedule.cron ?? null,
     input.schedule.timezone ?? null,
     input.sessionTarget ?? "main",
+    input.replySession ?? null,
     input.message,
     nextRunAt ?? null,
     now,
@@ -211,6 +214,10 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   if (updates.sessionTarget !== undefined) {
     fields.push("session_target = ?");
     values.push(updates.sessionTarget);
+  }
+  if (updates.replySession !== undefined) {
+    fields.push("reply_session = ?");
+    values.push(updates.replySession ?? null);
   }
   if (updates.message !== undefined) {
     fields.push("payload_text = ?");

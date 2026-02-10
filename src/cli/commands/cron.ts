@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { fail } from "../context.js";
+import { fail, getContext } from "../context.js";
 import { notif } from "../../notif.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone } from "../../router/router-db.js";
@@ -76,6 +76,9 @@ export class CronCommands {
     console.log(`  Enabled:         ${job.enabled ? "yes" : "no"}`);
     console.log(`  Schedule:        ${describeSchedule(job.schedule)}`);
     console.log(`  Session:         ${job.sessionTarget}`);
+    if (job.replySession) {
+      console.log(`  Reply session:   ${job.replySession}`);
+    }
 
     if (job.description) {
       console.log(`  Description:     ${job.description}`);
@@ -166,12 +169,20 @@ export class CronCommands {
       fail(`Invalid schedule: ${err instanceof Error ? err.message : err}`);
     }
 
+    // Resolve agent: explicit flag > caller agent (from session context) > system default
+    const ctx = getContext();
+    const resolvedAgent = agent ?? ctx?.agentId;
+
+    // Capture reply session from caller context (e.g., agent:comm:whatsapp:default:group:123)
+    const replySession = ctx?.sessionKey;
+
     // Create job
     const input: CronJobInput = {
       name,
       schedule,
       message,
-      agentId: agent,
+      agentId: resolvedAgent,
+      replySession,
       description,
       sessionTarget: isolated ? "isolated" : "main",
       deleteAfterRun: deleteAfter,
@@ -237,7 +248,7 @@ export class CronCommands {
   @Command({ name: "set", description: "Set job property" })
   async set(
     @Arg("id", { description: "Job ID" }) id: string,
-    @Arg("key", { description: "Property: name, message, cron, every, tz, agent, description, session, delete-after" }) key: string,
+    @Arg("key", { description: "Property: name, message, cron, every, tz, agent, description, session, reply-session, delete-after" }) key: string,
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const job = dbGetCronJob(id);
@@ -323,6 +334,13 @@ export class CronCommands {
           break;
         }
 
+        case "reply-session": {
+          const replySession = value === "null" || value === "-" ? undefined : value;
+          dbUpdateCronJob(id, { replySession });
+          console.log(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);
+          break;
+        }
+
         case "delete-after": {
           const boolValue = value === "true" || value === "yes" || value === "1";
           if (!["true", "false", "yes", "no", "1", "0"].includes(value.toLowerCase())) {
@@ -334,7 +352,7 @@ export class CronCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, description, session, delete-after`);
+          fail(`Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, description, session, reply-session, delete-after`);
       }
 
       // Signal daemon to refresh timers

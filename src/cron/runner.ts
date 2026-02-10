@@ -186,13 +186,28 @@ export class CronRunner {
   }
 
   /**
+   * Format current time for prompt injection.
+   */
+  private formatNow(): string {
+    return new Date().toLocaleString("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  /**
    * Execute a job in the main session (shared with TUI/WhatsApp/etc).
+   * If replySession is set, uses that session key instead of agent:{id}:main.
    */
   private async executeMainJob(job: CronJob): Promise<void> {
     const agentId = job.agentId ?? getDefaultAgentId();
-    const sessionKey = `agent:${agentId}:main`;
+    const sessionKey = job.replySession ?? `agent:${agentId}:main`;
 
-    const prompt = `[Cron: ${job.name}]\n${job.message}`;
+    const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
     await notif.emit(`ravi.${sessionKey}.prompt`, {
       prompt,
@@ -209,7 +224,7 @@ export class CronRunner {
     const agentId = job.agentId ?? getDefaultAgentId();
     const sessionKey = `agent:${agentId}:cron:${job.id}`;
 
-    const prompt = `[Cron: ${job.name}]\n${job.message}\n\nCurrent time: ${new Date().toISOString()}`;
+    const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
     await notif.emit(`ravi.${sessionKey}.prompt`, {
       prompt,
