@@ -179,6 +179,6 @@ export function getHeartbeatEnabledAgents(): AgentConfig[] {
 export const HEARTBEAT_PROMPT = `[Sistema Heartbeat]
 Leia o arquivo HEARTBEAT.md no seu workspace.
 Execute as tarefas pendentes conforme instruído.
-Se não houver nada a fazer, responda apenas: HEARTBEAT_OK`;
+CRITICAL: Se não houver nada a fazer, responda EXATAMENTE "HEARTBEAT_OK" — nada antes, nada depois. Qualquer texto adicional será enviado como mensagem pro usuário.`;
 
 export const HEARTBEAT_OK = "HEARTBEAT_OK";

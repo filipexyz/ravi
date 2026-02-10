@@ -941,7 +941,7 @@ export class RaviBot {
               } else if (messageText.trim() === SILENT_TOKEN) {
                 log.info("Silent response", { sessionKey });
                 await emitSdkEvent({ type: "silent" });
-              } else if (messageText.trim() === HEARTBEAT_OK) {
+              } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
                 log.info("Heartbeat OK", { sessionKey });
                 await emitSdkEvent({ type: "silent" });
               } else if (trimmed === "no response requested." || trimmed === "no response requested" || trimmed === "no response needed." || trimmed === "no response needed") {
