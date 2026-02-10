@@ -66,6 +66,7 @@ import {
   getContactReplyMode,
   getContactName,
   saveDiscoveredContact,
+  autoLinkIdentities,
 } from "../../contacts.js";
 import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindEntriesWithoutSenderId, dbSetEntrySenderId, dbSetPendingReceipt } from "../../outbound/index.js";
 import { logger } from "../../utils/logger.js";
@@ -296,7 +297,10 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
         const lid = await lidMapping.getLIDForPN(jid);
         log.info("getLIDForPN result", { phone, jid, lid });
         if (lid) {
-          return normalizePhone(lid);
+          const normalizedLid = normalizePhone(lid);
+          // Auto-link phone ↔ LID in contacts
+          autoLinkIdentities(phone, normalizedLid);
+          return normalizedLid;
         }
       }
 
@@ -429,7 +433,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         channel: "whatsapp",
         accountId,
         chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
-        senderId: normalizePhone(rawMessage.key.participant ?? rawMessage.key.remoteJid ?? ""),
+        senderId: normalizePhone(rawMessage.key.participant || rawMessage.key.remoteJid || ""),
         targetMessageId,
         emoji,
       }).catch(err => log.warn("Failed to emit inbound reaction", { error: err }));
@@ -450,7 +454,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         channel: "whatsapp",
         accountId,
         chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
-        senderId: normalizePhone(rawMessage.key.participant ?? rawMessage.key.remoteJid ?? ""),
+        senderId: normalizePhone(rawMessage.key.participant || rawMessage.key.remoteJid || ""),
         targetMessageId: contextInfo.stanzaId,
         text: replyText,
       }).catch(err => log.warn("Failed to emit inbound reply", { error: err }));
@@ -633,6 +637,8 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
                     // Found the match — persist the senderId mapping
                     dbSetEntrySenderId(entry.id, message.senderId);
                     outboundMatch = entry;
+                    // Auto-link phone ↔ LID in contacts
+                    autoLinkIdentities(entry.contactPhone, message.senderId);
                     log.info("LID matched via getLIDForPN iteration", {
                       entryId: entry.id,
                       phone: entry.contactPhone,
