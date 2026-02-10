@@ -7,6 +7,7 @@
 import { notif } from "./notif.js";
 import { pendingReplyCallbacks } from "./bot.js";
 import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from "./channels/types.js";
+import { dispatchGroupOp, type GroupOpName } from "./channels/whatsapp/group-ops.js";
 import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
@@ -205,6 +206,9 @@ export class Gateway {
 
     // Subscribe to config changes for cache invalidation
     this.subscribeToConfigChanges();
+
+    // Subscribe to WhatsApp group operations
+    this.subscribeToGroupOps();
 
     log.info("Gateway started");
   }
@@ -539,6 +543,36 @@ export class Gateway {
     this.subscribe("config", ["ravi.config.changed"], async () => {
       this.routerConfig = loadRouterConfig();
       log.info("Router config reloaded");
+    });
+  }
+
+  /**
+   * Subscribe to WhatsApp group operation requests.
+   * CLI commands emit ravi.whatsapp.group.{op} with a replyTopic.
+   * We execute the operation and emit the result back.
+   */
+  private subscribeToGroupOps(): void {
+    this.subscribe("groupOps", ["ravi.whatsapp.group.*"], async (event) => {
+      const data = event.data as Record<string, unknown>;
+      const replyTopic = data.replyTopic as string | undefined;
+
+      // Extract operation from topic: ravi.whatsapp.group.{op}
+      const op = event.topic.split(".").pop() as GroupOpName;
+
+      try {
+        const result = await dispatchGroupOp(op, data);
+
+        if (replyTopic) {
+          await notif.emit(replyTopic, result);
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        log.error("Group operation failed", { op, error });
+
+        if (replyTopic) {
+          await notif.emit(replyTopic, { error });
+        }
+      }
     });
   }
 

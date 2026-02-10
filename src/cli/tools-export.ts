@@ -76,20 +76,23 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
       const optionsMeta = getOptionsMetadata(instance, cmdMeta.method);
 
+      // Normalize dot-separated group names to underscores for tool names
+      const normalizedGroup = groupMeta.name.replace(/\./g, "_");
+
       tools.push({
-        name: `${groupMeta.name}_${cmdMeta.name}`,
+        name: `${normalizedGroup}_${cmdMeta.name}`,
         description: cmdMeta.description,
         handler: buildHandler(
           instance,
           cmdMeta.method,
           argsMeta,
           optionsMeta,
-          `${groupMeta.name}_${cmdMeta.name}`,
-          groupMeta.name,
+          `${normalizedGroup}_${cmdMeta.name}`,
+          normalizedGroup,
           cmdMeta.name
         ),
         metadata: {
-          group: groupMeta.name,
+          group: normalizedGroup,
           command: cmdMeta.name,
           method: cmdMeta.method,
           args: argsMeta,

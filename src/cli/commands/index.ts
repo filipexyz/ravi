@@ -11,6 +11,7 @@ export * from "./contacts.js";
 export * from "./cron.js";
 export * from "./cross.js";
 export * from "./daemon.js";
+export * from "./group.js";
 export * from "./heartbeat.js";
 export * from "./matrix.js";
 export * from "./media.js";

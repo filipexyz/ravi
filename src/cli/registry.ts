@@ -34,7 +34,38 @@ function truncate(value: unknown): unknown {
 }
 
 /**
- * Register all command classes with Commander
+ * Resolve a nested command path, creating intermediate commands as needed.
+ * e.g. "whatsapp.group" on program creates program → whatsapp → group
+ * Returns the deepest command node.
+ */
+function resolveCommandPath(
+  parent: CommanderCommand,
+  segments: string[],
+  description: string
+): CommanderCommand {
+  let current = parent;
+  for (let i = 0; i < segments.length; i++) {
+    const name = segments[i];
+    const isLast = i === segments.length - 1;
+
+    // Check if this subcommand already exists
+    let existing = current.commands.find((c) => c.name() === name);
+    if (!existing) {
+      existing = current
+        .command(name)
+        .description(isLast ? description : "");
+    } else if (isLast && description) {
+      // Update description if this is the final segment
+      existing.description(description);
+    }
+    current = existing;
+  }
+  return current;
+}
+
+/**
+ * Register all command classes with Commander.
+ * Supports nested groups via dot notation: "whatsapp.group" → ravi whatsapp group <cmd>
  */
 export function registerCommands(
   program: CommanderCommand,
@@ -47,14 +78,17 @@ export function registerCommands(
     const commandsMeta = getCommandsMetadata(cls);
     if (commandsMeta.length === 0) continue;
 
-    const group = program
-      .command(groupMeta.name)
-      .description(groupMeta.description);
+    // Support nested groups via dot notation
+    const segments = groupMeta.name.split(".");
+    const group = resolveCommandPath(program, segments, groupMeta.description);
 
     const instance = new cls();
 
+    // Tool name uses underscore-separated full path
+    const toolGroupName = segments.join("_");
+
     for (const cmdMeta of commandsMeta) {
-      registerCommand(group, instance, cmdMeta, groupMeta.name);
+      registerCommand(group, instance, cmdMeta, toolGroupName);
     }
   }
 }
