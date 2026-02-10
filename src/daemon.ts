@@ -14,6 +14,7 @@ import { createMatrixPlugin } from "./channels/matrix/index.js";
 import { isMatrixConfigured } from "./channels/matrix/config.js";
 import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
 import { loadConfig } from "./utils/config.js";
+import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
@@ -194,13 +195,12 @@ async function notifyRestartReason() {
     unlinkSync(RESTART_REASON_FILE); // Delete after reading
 
     if (reason) {
-      log.info("Restart reason found, notifying main agent", { reason });
+      log.info("Restart reason", { reason });
 
-      // Send notification to main agent via notif pub/sub
-      const message = `🔄 Daemon reiniciado!\n\nMotivo: ${reason}`;
-      const { notif } = await import("./notif.js");
-      await notif.emit("ravi.agent:main:main.prompt", {
-        prompt: `[System] Inform: ${message}`,
+      // Notify main agent about the restart
+      const defaultAgent = dbGetSetting("defaultAgent") || "main";
+      await notif.emit(`ravi.agent:${defaultAgent}:main.prompt`, {
+        prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
       });
     }
   } catch (err) {

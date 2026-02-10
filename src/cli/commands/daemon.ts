@@ -77,15 +77,21 @@ export class DaemonCommands {
         writeFileSync(RESTART_REASON_FILE, message);
       }
 
-      // Spawn detached process to do the actual restart
+      // Spawn detached process to do the actual restart.
+      // CRITICAL: strip RAVI_SESSION_KEY from env so the child process
+      // doesn't think it's inside the daemon (which would cause infinite fork).
       const args = ["daemon", "restart"];
       if (build) args.push("--build");
       // Don't pass message again - already saved to file
+
+      const cleanEnv = { ...process.env };
+      delete cleanEnv.RAVI_SESSION_KEY;
 
       const child = spawn("ravi", args, {
         detached: true,
         stdio: "ignore",
         cwd: this.findProjectRoot(),
+        env: cleanEnv,
       });
       child.unref();
 
@@ -124,6 +130,21 @@ export class DaemonCommands {
         console.log("✓ Daemon restarted");
       } catch {
         console.error("Failed to restart daemon");
+      }
+      return;
+    }
+
+    if (IS_MACOS && this.isRunning()) {
+      // On macOS with KeepAlive, unload/load causes race conditions.
+      // Use kickstart -k which atomically kills and restarts the service.
+      try {
+        const uid = execSync("id -u", { encoding: "utf-8" }).trim();
+        execSync(`launchctl kickstart -k gui/${uid}/sh.ravi.daemon`, { stdio: "inherit" });
+        console.log("✓ Daemon restarted");
+      } catch {
+        console.error("Failed to restart daemon via kickstart, falling back to stop/start");
+        this.stop();
+        this.start();
       }
       return;
     }
