@@ -172,7 +172,8 @@ export function buildSystemPrompt(
 ): string {
   const builder = new PromptBuilder()
     .section("Identidade", "Você é Ravi.")
-    .section("System Commands", systemCommandsText());
+    .section("System Commands", systemCommandsText())
+    .section("Silent Replies", buildSilentReplies().replace(/^## Silent Replies\n\n/, ""));
 
   // Add context-dependent sections
   if (ctx) {

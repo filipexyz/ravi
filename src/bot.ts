@@ -609,7 +609,21 @@ export class RaviBot {
         getAllowedTools: () => agent.allowedTools,
       })] }];
     }
-    hooks.PreCompact = [{ hooks: [createPreCompactHook({ memoryModel: agent.memoryModel })] }];
+    const preCompactHook = createPreCompactHook({ memoryModel: agent.memoryModel });
+    hooks.PreCompact = [{ hooks: [async (input, toolUseId, context) => {
+      log.info("PreCompact hook CALLED by SDK", {
+        sessionKey,
+        agentId: agent.id,
+        inputKeys: Object.keys(input),
+        hookEventName: (input as any).hook_event_name,
+      });
+      return preCompactHook(input as any, toolUseId ?? null, context as any);
+    }] }];
+
+    log.info("Hooks registered", {
+      sessionKey,
+      hookEvents: Object.keys(hooks),
+    });
 
     const plugins = discoverPlugins();
     const abortController = new AbortController();
