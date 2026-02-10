@@ -10,6 +10,7 @@ import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from ".
 import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
+  expandHome,
   loadRouterConfig,
   resolveRoute,
   type RouterConfig,
@@ -17,7 +18,8 @@ import {
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
 import { dbGetEntry, dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
-import { readFile } from "fs/promises";
+import { mkdir, readFile, rename } from "fs/promises";
+import path from "path";
 
 const log = logger.child("gateway");
 
@@ -590,6 +592,21 @@ export class Gateway {
       sessionKey,
       agentId: resolved.agent.id,
     });
+
+    // Move media from /tmp staging to agent's attachments directory
+    if (message.media?.localPath) {
+      try {
+        const agentCwd = expandHome(resolved.agent.cwd);
+        const attachDir = path.join(agentCwd, "attachments");
+        await mkdir(attachDir, { recursive: true });
+        const filename = path.basename(message.media.localPath);
+        const targetPath = path.join(attachDir, filename);
+        await rename(message.media.localPath, targetPath);
+        message.media.localPath = targetPath;
+      } catch (err) {
+        log.warn("Failed to move media to agent workspace, keeping original path", { error: err });
+      }
+    }
 
     // Build source info for prompt
     const source: MessageTarget = {

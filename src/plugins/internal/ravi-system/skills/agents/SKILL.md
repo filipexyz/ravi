@@ -244,6 +244,98 @@ ravi agents run <id> "prompt"
 ravi agents chat <id>
 ```
 
+## Receita Completa: Agent Pessoal com Grupo WhatsApp
+
+Agents pessoais são agents dedicados a um aspecto da vida do usuário (comunicação, journaling, estratégia, etc). Cada um tem seu grupo WhatsApp exclusivo.
+
+**Conceito importante:** O agent já nasce dentro do WhatsApp. Ele não precisa de nenhuma tool pra enviar mensagens — toda resposta dele já chega automaticamente no WhatsApp. Ele deve saber disso no CLAUDE.md.
+
+### Passo a passo
+
+#### 1. Criar diretório e CLAUDE.md
+
+```bash
+mkdir -p ~/ravi/<agent-id>
+```
+
+Escreva o `CLAUDE.md` com a identidade e instruções do agent. Estrutura recomendada:
+
+```markdown
+# <Nome do Agent>
+
+## Quem Você É
+- Papel, personalidade, tom de voz
+- O que você faz e o que NÃO faz
+
+## Contexto
+- Você já está conversando pelo WhatsApp com o usuário
+- Toda mensagem que você envia chega diretamente no WhatsApp
+- Você NÃO precisa de nenhuma tool pra enviar mensagens
+
+## Como Funciona
+- Metodologia, frameworks, abordagem
+- Exemplos de interação
+
+## Regras
+- Limites, boundaries, o que evitar
+```
+
+**Dicas pro CLAUDE.md:**
+- Dê personalidade — agents genéricos são chatos
+- Seja específico sobre o que o agent faz e não faz
+- Inclua que ele já está no WhatsApp (não precisa de tool pra mensagem)
+- Adapte o tom pro contexto (coach é diferente de diário é diferente de estrategista)
+
+#### 2. Criar o agent no sistema
+
+```bash
+ravi agents create <agent-id> ~/ravi/<agent-id>
+```
+
+#### 3. Criar grupo WhatsApp dedicado
+
+O usuário cria um grupo no WhatsApp (ex: "Vida - Comunicação") e adiciona o bot. Ao enviar a primeira mensagem no grupo, o contato aparece automaticamente como **pending**.
+
+#### 4. Aprovar e rotear o grupo
+
+**Não peça o ID do grupo pro usuário.** Rode o CLI pra descobrir:
+
+```bash
+# Ver grupos/contatos pendentes
+ravi contacts pending
+
+# Aprovar o grupo
+ravi contacts approve <group-id>
+
+# Criar rota pro agent
+ravi routes add <group-id> <agent-id>
+```
+
+O `group-id` tem formato `group:120363406060070449`.
+
+#### 5. Pronto!
+
+O agent já está respondendo no grupo. Não precisa reiniciar o daemon.
+
+### Exemplo real: Agent de comunicação
+
+```bash
+# 1. Criar diretório
+mkdir -p ~/ravi/comm
+
+# 2. Escrever CLAUDE.md (com identidade de coach de comunicação)
+
+# 3. Criar agent
+ravi agents create comm ~/ravi/comm
+
+# 4. Usuário cria grupo "Vida - Comunicação" no WhatsApp e manda msg
+
+# 5. Aprovar e rotear
+ravi contacts pending                          # Encontra group:120363406060070449
+ravi contacts approve group:120363406060070449  # Aprova
+ravi routes add group:120363406060070449 comm   # Roteia pro comm
+```
+
 ## Exemplos Práticos
 
 ### Criar agent pra atendimento
