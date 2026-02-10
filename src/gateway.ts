@@ -21,6 +21,7 @@ import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
 import { dbGetEntry, dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
 import { mkdir, readFile, rename } from "fs/promises";
 import path from "path";
+import { handleSlashCommand } from "./slash/index.js";
 
 const log = logger.child("gateway");
 
@@ -581,6 +582,23 @@ export class Gateway {
     message: InboundMessage
   ): Promise<void> {
     // Config is now kept fresh via subscribeToConfigChanges
+
+    // Slash command interception — before any other processing
+    const text = message.text?.trim() ?? "";
+    if (text.startsWith("/")) {
+      const handled = await handleSlashCommand({
+        text,
+        senderId: message.senderId,
+        senderName: message.senderName,
+        chatId: message.chatId,
+        isGroup: message.isGroup,
+        plugin,
+        accountId: message.accountId,
+        routerConfig: this.routerConfig,
+      });
+      if (handled) return;
+      // Command not found or no permission → fall through to normal processing
+    }
 
     // Check if sender has an active outbound entry (plugin already resolved the ID)
     // If so, record the response and DON'T emit prompt (let the runner handle it)
