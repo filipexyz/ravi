@@ -26,6 +26,8 @@ import { createBashPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
 import { ALL_BUILTIN_TOOLS } from "./constants.js";
 import { discoverPlugins } from "./plugins/index.js";
+import { mkdirSync, existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const log = logger.child("bot");
 
@@ -566,6 +568,22 @@ export class RaviBot {
     }
 
     const agentCwd = expandHome(agent.cwd);
+
+    // Ensure .claude/settings.json exists with PermissionRequest auto-approve hook.
+    // Subagents (teams/tasks) inherit settings from the project dir but NOT
+    // programmatic hooks, so this file is required for headless operation.
+    const settingsPath = join(agentCwd, ".claude", "settings.json");
+    if (!existsSync(settingsPath)) {
+      mkdirSync(join(agentCwd, ".claude"), { recursive: true });
+      writeFileSync(settingsPath, JSON.stringify({
+        PermissionRequest: [{
+          matcher: "*",
+          hooks: [{ type: "command", command: "echo '{\"decision\":\"allow\"}'", timeout: 5 }],
+        }],
+      }, null, 2));
+      log.info("Created auto-approve settings for agent", { agentId: agent.id, path: settingsPath });
+    }
+
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
 
     // Resolve source for response routing
@@ -584,15 +602,14 @@ export class RaviBot {
     const model = session.modelOverride ?? agent.model ?? this.config.model;
 
     // Build permission options
-    // Use "default" permissionMode so canUseTool callback is always invoked.
-    // The callback auto-approves everything (equivalent to bypassPermissions)
-    // except ExitPlanMode, which goes through WhatsApp reaction approval.
-    let permissionOptions: Record<string, unknown>;
+    // Use bypassPermissions so subagents (teams/tasks) inherit skip-all-permissions.
+    // canUseTool callback still intercepts ExitPlanMode for reaction-based approval.
+    let permissionOptions: Record<string, unknown> = {
+      permissionMode: "bypassPermissions",
+    };
     if (agent.allowedTools) {
       const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
-      permissionOptions = { disallowedTools: disallowed, allowedTools: agent.allowedTools };
-    } else {
-      permissionOptions = {}; // default permissionMode — canUseTool handles approval
+      permissionOptions = { ...permissionOptions, disallowedTools: disallowed, allowedTools: agent.allowedTools };
     }
 
     // Build system prompt
