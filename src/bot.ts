@@ -609,6 +609,17 @@ export class RaviBot {
         getAllowedTools: () => agent.allowedTools,
       })] }];
     }
+
+    // Auto-approve all permission requests for subagents (teams/tasks).
+    // The parent process uses canUseTool callback which isn't inherited by
+    // subagent child processes. This hook ensures they don't hang waiting
+    // for interactive approval in headless daemon mode.
+    hooks.PermissionRequest = [{ hooks: [async () => ({
+      hookSpecificOutput: {
+        hookEventName: "PermissionRequest" as const,
+        decision: { behavior: "allow" as const },
+      },
+    })] }];
     const preCompactHook = createPreCompactHook({ memoryModel: agent.memoryModel });
     hooks.PreCompact = [{ hooks: [async (input, toolUseId, context) => {
       log.info("PreCompact hook CALLED by SDK", {
