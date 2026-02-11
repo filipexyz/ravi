@@ -3,11 +3,13 @@
  *
  * SDK PreCompact hook that reads the transcript before compaction
  * and extracts important memories using a cheap model.
- * The model has access to Read/Edit/Write tools restricted to MEMORY.md only.
+ * The model has access to Read/Edit/Write tools restricted to MEMORY.md
+ * and Read-only access to a temp transcript file.
  */
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { logger } from "../utils/logger.js";
 import { parseTranscript, formatTranscript } from "./transcript-parser.js";
@@ -117,36 +119,83 @@ Foque em:
       return {};
     }
 
+    // Format the full transcript (no truncation)
     const formattedTranscript = formatTranscript(messages, {
       includeTools: options.includeTools ?? false,
+    });
+
+    // Write full transcript to temp file
+    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_:-]/g, "_");
+    const transcriptTmpPath = join(
+      tmpdir(),
+      `ravi-memory-${sanitizedSessionId}-${Date.now()}.md`
+    );
+    writeFileSync(transcriptTmpPath, formattedTranscript, "utf-8");
+    const lineCount = formattedTranscript.split("\n").length;
+
+    log.info("Wrote transcript to temp file", {
+      path: transcriptTmpPath,
+      chars: formattedTranscript.length,
+      lines: lineCount,
     });
 
     const memoryPath = join(agentCwd, "MEMORY.md");
     const modelToUse = options.memoryModel ?? "haiku";
 
-    const promptToSend = `Você tem acesso ao arquivo MEMORY.md em: ${memoryPath}
+    const promptToSend = `## Arquivos disponíveis
+
+- **Transcript**: \`${transcriptTmpPath}\` (${lineCount} linhas) — SOMENTE LEITURA
+- **MEMORY.md**: \`${memoryPath}\` — leitura e escrita
 
 ## Sua tarefa
-Analise a conversa abaixo e atualize o MEMORY.md com informações importantes.
 
-## Instruções
+Leia a conversa completa no transcript e atualize o MEMORY.md com todas as informações importantes.
+
+## Instruções específicas
 ${instructions}
 
-## Conversa recente
-${formattedTranscript}
+## Como ler o transcript
 
-## O que fazer
-1. Primeiro, leia o MEMORY.md atual (se existir)
-2. Decida o que adicionar, atualizar ou reorganizar
-3. Edite o arquivo diretamente
+O transcript tem ${lineCount} linhas. Leia em seções de 500 linhas:
+1. Read file_path="${transcriptTmpPath}" offset=1 limit=500
+2. Read file_path="${transcriptTmpPath}" offset=501 limit=500
+3. Continue até cobrir todas as ${lineCount} linhas
 
-Seja proativo. Organize as memórias da forma que fizer mais sentido.`;
+**IMPORTANTE**: Leia TODAS as seções sistematicamente. Não pule nenhuma parte.
+
+## O que extrair
+
+Preste atenção especial a:
+- **Pessoas**: nomes, papéis, relações, preferências mencionadas
+- **Decisões**: escolhas técnicas, de negócio, de produto
+- **Contexto de negócio**: empresas, projetos, clientes, metas
+- **Problemas e soluções**: bugs resolvidos, workarounds, padrões que funcionaram
+- **Padrões de comportamento**: como o usuário gosta de trabalhar, convenções
+- **Compromissos**: promessas feitas, prazos, tarefas pendentes
+- **Mudanças de opinião**: quando algo que era de um jeito mudou
+- **Informação implícita**: contexto que não foi dito explicitamente mas se deduz
+
+## Processo
+
+1. Leia o MEMORY.md atual (se existir)
+2. Leia o transcript COMPLETO, seção por seção (500 linhas por vez)
+3. Edite o MEMORY.md com as novas memórias
+
+## Regras
+
+- NUNCA apague memórias antigas — elas são valiosas
+- ADICIONE novas memórias ao arquivo existente
+- Pode REORGANIZAR ou CONSOLIDAR se fizer sentido, mas sem perder informação
+- Se uma memória nova contradiz uma antiga, mantenha ambas com contexto temporal
+- Seja conciso mas completo — não perca detalhes importantes`;
 
     log.info("Scheduling background extraction", {
       sessionId,
       model: modelToUse,
       memoryPath,
-      transcriptLen: formattedTranscript.length,
+      transcriptTmpPath,
+      transcriptLines: lineCount,
+      transcriptChars: formattedTranscript.length,
     });
 
     // Fire and forget
@@ -157,29 +206,49 @@ Seja proativo. Organize as memórias da forma que fizer mais sentido.`;
         // Ensure directory exists
         mkdirSync(dirname(memoryPath), { recursive: true });
 
-        // Hook to restrict file access to MEMORY.md only
+        // Hook to restrict file access
+        // - Transcript file: Read only
+        // - MEMORY.md: Read/Edit/Write
+        // - Everything else: blocked
         const fileAccessHook = async (
           toolInput: Record<string, unknown>,
           _toolUseId: string | null
         ) => {
           const filePath = (toolInput.file_path as string) || "";
-          // Resolve to absolute path and normalize (handles ../ traversal)
           const normalizedPath = resolve(agentCwd, filePath);
 
-          if (normalizedPath !== memoryPath) {
-            log.warn("Memory agent tried to access unauthorized file", {
+          const isRead = !("old_string" in toolInput) && !("content" in toolInput);
+          const isTranscript = normalizedPath === transcriptTmpPath;
+          const isMemory = normalizedPath === memoryPath;
+
+          if (isTranscript) {
+            if (isRead) {
+              return { decision: "allow" as const };
+            }
+            log.warn("Memory agent tried to write to transcript file", {
               attempted: normalizedPath,
-              allowed: memoryPath,
             });
             return {
               decision: "block" as const,
-              reason: `Acesso negado. Você só pode acessar: ${memoryPath}`,
+              reason: `O transcript é somente leitura. Você só pode escrever em: ${memoryPath}`,
             };
           }
-          return { decision: "allow" as const };
+
+          if (isMemory) {
+            return { decision: "allow" as const };
+          }
+
+          log.warn("Memory agent tried to access unauthorized file", {
+            attempted: normalizedPath,
+            allowed: [transcriptTmpPath, memoryPath],
+          });
+          return {
+            decision: "block" as const,
+            reason: `Acesso negado. Arquivos permitidos: ${transcriptTmpPath} (leitura) e ${memoryPath} (leitura/escrita)`,
+          };
         };
 
-        // Use query with Read/Edit/Write tools restricted to MEMORY.md
+        // Use query with Read/Edit/Write tools
         const result = query({
           prompt: promptToSend,
           options: {
@@ -193,9 +262,12 @@ Seja proativo. Organize as memórias da forma que fizer mais sentido.`;
             },
             systemPrompt: {
               type: "custom",
-              content: `Você é um gerenciador de memórias. Você pode APENAS ler e editar o arquivo: ${memoryPath}
+              content: `Você é um gerenciador de memórias. Você tem acesso a dois arquivos:
+- ${transcriptTmpPath} — transcript da conversa (SOMENTE LEITURA)
+- ${memoryPath} — arquivo de memórias (leitura e escrita)
 
 REGRAS:
+- Leia o transcript COMPLETO, seção por seção (500 linhas por vez)
 - NUNCA apague memórias antigas - elas são valiosas
 - ADICIONE novas memórias ao arquivo existente
 - Pode REORGANIZAR ou CONSOLIDAR se fizer sentido, mas sem perder informação
@@ -221,6 +293,14 @@ Organize de forma clara e útil.`,
           error: err instanceof Error ? err.message : String(err),
           stack: err instanceof Error ? err.stack : undefined,
         });
+      } finally {
+        // Cleanup temp transcript file
+        try {
+          unlinkSync(transcriptTmpPath);
+          log.debug("Cleaned up transcript temp file", { path: transcriptTmpPath });
+        } catch {
+          // Ignore cleanup errors
+        }
       }
     });
 
