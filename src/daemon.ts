@@ -72,7 +72,8 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  log.error("Unhandled rejection", { reason, promise });
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  log.error("Unhandled rejection", { reason, stack, promise });
   // Don't exit - let the daemon continue running
 });
 
