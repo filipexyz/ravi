@@ -6,6 +6,8 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
+import { upsertContact } from "../../contacts.js";
+import { dbCreateRoute } from "../../router/router-db.js";
 
 const TOPIC_PREFIX = "ravi.whatsapp.group";
 
@@ -104,7 +106,8 @@ export class GroupCommands {
   async create(
     @Arg("name", { description: "Group name/subject" }) name: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({ flags: "--agent <id>", description: "Agent to route this group to (auto-approves contact)" }) agent?: string
   ) {
     const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
 
@@ -121,6 +124,24 @@ export class GroupCommands {
     console.log(`✓ Group created: ${result.subject}`);
     console.log(`  ID:           ${result.id}`);
     console.log(`  Participants: ${result.participants}`);
+
+    // Auto-approve contact and route to agent if specified
+    const groupId = result.id.replace(/@g\.us$/, "");
+    const groupIdentity = `group:${groupId}`;
+
+    // Always auto-approve groups we create ourselves
+    upsertContact(groupIdentity, result.subject, "allowed");
+    console.log(`  Contact:      approved`);
+
+    if (agent) {
+      try {
+        dbCreateRoute({ pattern: `group:${groupId}`, agent, priority: 0 });
+        console.log(`  Route:        ${agent}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  Route:        failed (${msg})`);
+      }
+    }
 
     return result;
   }
