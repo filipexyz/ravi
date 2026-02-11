@@ -658,10 +658,46 @@ export class RaviBot {
 
       log.info("ExitPlanMode hook: requesting approval via reaction", { sessionKey });
 
-      const plan = typeof input.tool_input === "object"
-        ? JSON.stringify(input.tool_input, null, 2)
-        : String(input.tool_input ?? "");
-      const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+      // The plan content lives in the plan file written by the SDK.
+      // tool_input may have a "plan" field or we can read the plan file directly.
+      let planText = "";
+      const toolInput = input.tool_input as Record<string, unknown> | undefined;
+
+      // Try to read the plan file from the agent's cwd
+      try {
+        const { readFileSync } = await import("node:fs");
+        const { globSync } = await import("node:fs");
+        const planDir = join(agentCwd, ".claude", "plans");
+        // Find most recently modified plan file
+        const files = await import("node:fs").then(fs => {
+          try {
+            return fs.readdirSync(planDir)
+              .filter((f: string) => f.endsWith(".md"))
+              .map((f: string) => ({ name: f, mtime: fs.statSync(join(planDir, f)).mtimeMs }))
+              .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
+          } catch { return []; }
+        });
+        if (files.length > 0) {
+          planText = readFileSync(join(planDir, files[0].name), "utf-8");
+        }
+      } catch {
+        // Fallback: use tool_input fields
+      }
+
+      // Fallback to tool_input if we couldn't read the file
+      if (!planText && toolInput) {
+        if (typeof toolInput.plan === "string") {
+          planText = toolInput.plan;
+        } else {
+          // Strip internal fields, show only meaningful content
+          const { allowedPrompts, pushToRemote, remoteSessionId, remoteSessionTitle, remoteSessionUrl, ...rest } = toolInput;
+          planText = Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : "(plano vazio)";
+        }
+      }
+
+      if (!planText) planText = "(plano vazio)";
+
+      const approvalText = `📋 *Plano pendente*\n\n${planText}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
 
       const result = await this.requestApproval(resolvedSource, approvalText, {
         allowedSenderId: prompt.context?.senderId,
