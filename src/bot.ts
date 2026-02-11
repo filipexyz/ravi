@@ -223,6 +223,7 @@ export class RaviBot {
     this.subscribeToPrompts();
     this.subscribeToInboundReactions();
     this.subscribeToInboundReplies();
+    this.subscribeToSessionAborts();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
@@ -260,6 +261,19 @@ export class RaviBot {
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
+  }
+
+  /**
+   * Abort and remove a streaming session by key.
+   * Used by /reset to kill the SDK process before deleting the DB entry.
+   */
+  abortSession(sessionKey: string): boolean {
+    const session = this.streamingSessions.get(sessionKey);
+    if (!session) return false;
+    log.info("Aborting streaming session via reset", { sessionKey });
+    session.abortController.abort();
+    this.streamingSessions.delete(sessionKey);
+    return true;
   }
 
   /**
@@ -349,6 +363,27 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Reply subscription error, reconnecting in 2s", { error: err });
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  /**
+   * Listen for session abort events (from /reset slash command).
+   * Kills the streaming SDK process so it doesn't compact or respond after reset.
+   */
+  private async subscribeToSessionAborts(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of notif.subscribe("ravi.session.abort")) {
+          if (!this.running) break;
+          const { sessionKey } = event.data as { sessionKey: string };
+          const aborted = this.abortSession(sessionKey);
+          log.info("Session abort request", { sessionKey, aborted });
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Session abort subscription error, reconnecting in 2s", { error: err });
         await new Promise(r => setTimeout(r, 2000));
       }
     }
