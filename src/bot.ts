@@ -269,9 +269,15 @@ export class RaviBot {
    */
   /** Abort a streaming session synchronously. Used by /reset. */
   public abortSession(sessionKey: string): boolean {
+    const allKeys = [...this.streamingSessions.keys()];
+    log.info("abortSession called", {
+      sessionKey,
+      allKeys,
+      found: this.streamingSessions.has(sessionKey),
+    });
     const session = this.streamingSessions.get(sessionKey);
     if (!session) return false;
-    log.info("Aborting streaming session via reset", { sessionKey });
+    log.info("Aborting streaming session via reset", { sessionKey, done: session.done });
     session.abortController.abort();
     this.streamingSessions.delete(sessionKey);
     return true;
@@ -621,6 +627,11 @@ export class RaviBot {
     }
 
     const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
+    log.info("startStreamingSession", {
+      sessionKey,
+      sdkSessionId: session.sdkSessionId,
+      willResume: !!session.sdkSessionId,
+    });
 
     // Resolve source for response routing
     let resolvedSource = prompt.source;
