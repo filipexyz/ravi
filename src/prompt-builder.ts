@@ -149,8 +149,9 @@ Tabelas com caracteres | - + funcionam bem no terminal.`;
  * Build reactions section for system prompt
  */
 function reactionsText(): string {
-  return `Mensagens incluem um tag \`[mid:ID]\` no final com o ID da mensagem original.
-Use o tool \`react_send\` para enviar reações com emoji.
+  return `Mensagens incluem \`mid:ID\` no header (dentro dos colchetes). Esse é o ID da mensagem — use com \`react_send\` para enviar reações.
+
+**NUNCA inclua \`[mid:...]\` ou \`mid:...\` nas suas respostas.** O mid é metadado interno, não faz parte do texto visível.
 
 Quando reagir:
 - Prefira reagir com emoji em vez de responder "ok", "entendi", "beleza", etc.
