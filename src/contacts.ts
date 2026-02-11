@@ -332,6 +332,12 @@ function resolveContact(identity: string): Contact | null {
     if (byRawId) return rowToContact(byRawId);
   }
 
+  // If input is pure digits, also try as LID (common case: LID passed without prefix)
+  if (/^\d+$/.test(normalized) && !normalized.startsWith("lid:")) {
+    const asLid = stmts.getContactByIdentity.get(`lid:${normalized}`) as ContactV2Row | undefined;
+    if (asLid) return rowToContact(asLid);
+  }
+
   return null;
 }
 
