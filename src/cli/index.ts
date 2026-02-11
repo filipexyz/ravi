@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
+import { runSetup } from "./commands/setup.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -31,6 +32,14 @@ program
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands));
+
+// Top-level commands (not via decorator groups)
+program
+  .command("setup")
+  .description("Wizard interativo de configuração")
+  .action(async () => {
+    await runSetup();
+  });
 
 // Parse and execute
 program.parse();
