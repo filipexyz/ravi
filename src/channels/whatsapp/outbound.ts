@@ -10,6 +10,7 @@ import type { AckReactionConfig } from "./config.js";
 import { phoneToJid } from "./normalize.js";
 import { logger } from "../../utils/logger.js";
 import { sessionManager } from "./session.js";
+import { markdownToWhatsApp } from "./format.js";
 
 const log = logger.child("wa:outbound");
 
@@ -39,7 +40,7 @@ export async function sendMessage(
     if (options.media) {
       content = buildMediaContent(options.media, options.text);
     } else if (options.text) {
-      content = { text: options.text };
+      content = { text: markdownToWhatsApp(options.text) };
     } else if (options.reaction) {
       // Handle reaction separately
       return await sendReaction(socket, targetId, options.replyTo ?? "", options.reaction);
