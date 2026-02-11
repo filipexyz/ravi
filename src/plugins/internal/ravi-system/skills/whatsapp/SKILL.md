@@ -40,6 +40,20 @@ ravi whatsapp group create "Nome do Grupo" "5511999999999,5511888888888"
 
 Participantes separados por vírgula. Aceita números de telefone ou JIDs.
 
+**Com agent (recomendado):** Auto-aprova o contato e cria a rota pro agent num comando só:
+```bash
+ravi whatsapp group create "Vida - Health" "5511947879044" --agent health
+```
+
+Saída:
+```
+✓ Group created: Vida - Health
+  ID:           120363405113391144@g.us
+  Participants: 2
+  Contact:      approved
+  Route:        health
+```
+
 ### Sair de um grupo
 ```bash
 ravi whatsapp group leave <groupId>
@@ -124,15 +138,14 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 
 ### Criar grupo pra um agent
 ```bash
-# 1. Criar o grupo
-ravi whatsapp group create "Vida - Finanças" "5511947879044"
+# Tudo num comando só:
+ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
+```
 
-# 2. O grupo aparece como pending
-ravi contacts pending
-
-# 3. Aprovar e rotear pro agent
-ravi contacts approve <group-id> financas
-ravi routes add <group-id> financas
+Sem `--agent`, o grupo é criado e aprovado automaticamente, mas sem rota — precisa rotear manualmente:
+```bash
+ravi whatsapp group create "Grupo Avulso" "5511999999999"
+ravi routes add group:<id> meu-agent
 ```
 
 ### Gerenciar membros de equipe
