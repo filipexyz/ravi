@@ -648,6 +648,50 @@ export class RaviBot {
       return preCompactHook(input as any, toolUseId ?? null, context as any);
     }] }];
 
+    // PreToolUse hook for ExitPlanMode — request approval via WhatsApp reaction.
+    // With bypassPermissions the canUseTool callback is NOT called, but hooks still fire.
+    const exitPlanHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
+      if (!resolvedSource) {
+        log.info("ExitPlanMode auto-approved (no channel source)", { sessionKey });
+        return {};
+      }
+
+      log.info("ExitPlanMode hook: requesting approval via reaction", { sessionKey });
+
+      const plan = typeof input.tool_input === "object"
+        ? JSON.stringify(input.tool_input, null, 2)
+        : String(input.tool_input ?? "");
+      const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+
+      const result = await this.requestApproval(resolvedSource, approvalText, {
+        allowedSenderId: prompt.context?.senderId,
+      });
+
+      if (result.approved) {
+        log.info("Plan approved via reaction (hook)", { sessionKey });
+        return {};
+      }
+
+      const reason = result.reason
+        ? `Plano rejeitado: ${result.reason}`
+        : "Plano rejeitado pelo usuário.";
+      log.info("Plan rejected (hook)", { sessionKey, reason: result.reason });
+
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason,
+        },
+      };
+    };
+
+    // Append ExitPlanMode hook to PreToolUse hooks
+    hooks.PreToolUse = [
+      ...(hooks.PreToolUse ?? []),
+      { matcher: "ExitPlanMode", hooks: [exitPlanHook] },
+    ];
+
     log.info("Hooks registered", {
       sessionKey,
       hookEvents: Object.keys(hooks),
