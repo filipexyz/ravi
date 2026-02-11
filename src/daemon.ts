@@ -81,6 +81,11 @@ let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let shuttingDown = false;
 
+/** Get the bot instance (for in-process access like /reset) */
+export function getBotInstance(): RaviBot | null {
+  return bot;
+}
+
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;

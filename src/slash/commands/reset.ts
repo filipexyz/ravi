@@ -1,13 +1,13 @@
 /**
  * /reset — Reset the agent session for the current chat
  *
- * 1. Emits abort event so the bot kills the streaming SDK process
+ * 1. Aborts the streaming SDK session synchronously (in-process)
  * 2. Deletes the session entry from the database
  */
 
 import { resolveRoute } from "../../router/resolver.js";
 import { deleteSession } from "../../router/sessions.js";
-import { notif } from "../../notif.js";
+import { getBotInstance } from "../../daemon.js";
 import type { SlashCommand, SlashContext } from "../registry.js";
 
 export const resetCommand: SlashCommand = {
@@ -23,14 +23,13 @@ export const resetCommand: SlashCommand = {
       groupId: ctx.isGroup ? ctx.chatId : undefined,
     });
 
-    // Abort streaming session (kills SDK process in bot.ts)
-    await notif.emit("ravi.session.abort", {
-      sessionKey: resolved.sessionKey,
-    });
+    // Abort streaming session synchronously (no notif delay)
+    const bot = getBotInstance();
+    const aborted = bot?.abortSession(resolved.sessionKey) ?? false;
 
     const deleted = deleteSession(resolved.sessionKey);
 
-    if (deleted) {
+    if (aborted || deleted) {
       return `✅ Sessão resetada (${resolved.agent.id})`;
     }
     return `✅ Nenhuma sessão ativa encontrada (${resolved.agent.id})`;

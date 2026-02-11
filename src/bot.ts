@@ -267,7 +267,8 @@ export class RaviBot {
    * Abort and remove a streaming session by key.
    * Used by /reset to kill the SDK process before deleting the DB entry.
    */
-  abortSession(sessionKey: string): boolean {
+  /** Abort a streaming session synchronously. Used by /reset. */
+  public abortSession(sessionKey: string): boolean {
     const session = this.streamingSessions.get(sessionKey);
     if (!session) return false;
     log.info("Aborting streaming session via reset", { sessionKey });
