@@ -5,7 +5,7 @@
  *   **bold**    → *bold*
  *   *italic*    → _italic_
  *   ~~strike~~  → ~strike~
- *   `code`      → ```code```
+ *   `code`      → `code`  (preserved as-is)
  *   ```block``` → ```block```  (unchanged)
  *   # Heading   → *HEADING*
  *   ## Heading  → *Heading*
@@ -68,9 +68,9 @@ export function markdownToWhatsApp(text: string): string {
   // 10. Horizontal rules: --- or *** → ———
   result = result.replace(/^(?:---+|\*\*\*+)$/gm, "———");
 
-  // 11. Restore inline code → ```code```
+  // 11. Restore inline code → `code` (WhatsApp supports single backtick for monospace)
   result = result.replace(/\x01INLINE_(\d+)\x02/g, (_, idx) => {
-    return "```" + inlineCodes[parseInt(idx)] + "```";
+    return "`" + inlineCodes[parseInt(idx)] + "`";
   });
 
   // 12. Restore code blocks → ```code```
