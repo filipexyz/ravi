@@ -78,14 +78,17 @@ export class DaemonCommands {
       }
 
       // Spawn detached process to do the actual restart.
-      // CRITICAL: strip RAVI_SESSION_KEY from env so the child process
+      // CRITICAL: strip all RAVI_* env vars so the child process
       // doesn't think it's inside the daemon (which would cause infinite fork).
+      // hasContext() checks both RAVI_SESSION_KEY and RAVI_SESSION_NAME.
       const args = ["daemon", "restart"];
       if (build) args.push("--build");
       // Don't pass message again - already saved to file
 
       const cleanEnv = { ...process.env };
-      delete cleanEnv.RAVI_SESSION_KEY;
+      for (const key of Object.keys(cleanEnv)) {
+        if (key.startsWith("RAVI_")) delete cleanEnv[key];
+      }
 
       const child = spawn("ravi", args, {
         detached: true,
