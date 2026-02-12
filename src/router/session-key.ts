@@ -177,7 +177,7 @@ export function matchSessionKey(key: string, pattern: string): boolean {
 /**
  * Derive message source (channel routing info) from a session key.
  *
- * Used by cross_send to reconstruct routing when the target session
+ * Used by sessions send/ask/answer to reconstruct routing when the target session
  * doesn't exist yet or has no channel info stored.
  *
  * Returns null for keys that don't contain channel info (e.g. "agent:X:main").

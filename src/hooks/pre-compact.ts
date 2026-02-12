@@ -221,30 +221,37 @@ Preste atenção especial a:
           const isTranscript = normalizedPath === transcriptTmpPath;
           const isMemory = normalizedPath === memoryPath;
 
-          if (isTranscript) {
-            if (isRead) {
-              return { decision: "allow" as const };
-            }
-            log.warn("Memory agent tried to write to transcript file", {
-              attempted: normalizedPath,
-            });
-            return {
-              decision: "block" as const,
-              reason: `O transcript é somente leitura. Você só pode escrever em: ${memoryPath}`,
-            };
-          }
-
+          // MEMORY.md: full access (read + write)
           if (isMemory) {
             return { decision: "allow" as const };
           }
 
-          log.warn("Memory agent tried to access unauthorized file", {
+          // Read-only: allow transcript and any file under agent CWD
+          // (e.g. CLAUDE.md, HEARTBEAT.md — useful context for memory extraction)
+          if (isRead) {
+            const isUnderCwd = normalizedPath.startsWith(agentCwd + "/") || normalizedPath === agentCwd;
+            if (isTranscript || isUnderCwd) {
+              return { decision: "allow" as const };
+            }
+          }
+
+          // Block writes to anything other than MEMORY.md
+          if (!isRead) {
+            log.warn("Memory agent tried to write unauthorized file", {
+              attempted: normalizedPath,
+            });
+            return {
+              decision: "block" as const,
+              reason: `Escrita permitida apenas em: ${memoryPath}`,
+            };
+          }
+
+          log.warn("Memory agent tried to access file outside allowed paths", {
             attempted: normalizedPath,
-            allowed: [transcriptTmpPath, memoryPath],
           });
           return {
             decision: "block" as const,
-            reason: `Acesso negado. Arquivos permitidos: ${transcriptTmpPath} (leitura) e ${memoryPath} (leitura/escrita)`,
+            reason: `Acesso negado. Leitura permitida em: ${agentCwd}/ e ${transcriptTmpPath}. Escrita apenas em: ${memoryPath}`,
           };
         };
 

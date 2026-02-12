@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { fail, getContext } from "../context.js";
+import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import {
   getAgent,
@@ -34,15 +34,14 @@ import {
   getSession,
   deleteSession,
   getSessionsByAgent,
+  getMainSession,
+  resolveSession,
 } from "../../router/sessions.js";
 import {
   SDK_TOOLS,
   getCliToolNames,
   getAllToolNames,
 } from "../tool-registry.js";
-import type { ResponseMessage } from "../../bot.js";
-
-const PROMPT_TIMEOUT_MS = 120000; // 2 minutes
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -564,173 +563,6 @@ export class AgentsCommands {
     }
   }
 
-  // ============================================================================
-  // Agent Interaction Commands
-  // ============================================================================
-
-  @Command({ name: "run", description: "Send a prompt to an agent" })
-  async run(
-    @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("prompt", { description: "Prompt to send" }) prompt: string
-  ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
-
-    const sessionKey = `agent:${id}:main`;
-
-    // Block self-sends to prevent deadlock
-    const currentSession = getContext()?.sessionKey;
-    if (currentSession === sessionKey) {
-      fail(`Cannot send to same session (${sessionKey}) - would cause deadlock`);
-    }
-
-    console.log(`\n📤 Sending to ${sessionKey}\n`);
-    console.log(`Prompt: ${prompt}\n`);
-    console.log("─".repeat(50));
-
-    const chars = await this.sendPrompt(sessionKey, prompt);
-
-    console.log("\n" + "─".repeat(50));
-    console.log(`\n✅ Done (${chars} chars)`);
-  }
-
-  @Command({ name: "chat", description: "Interactive chat with an agent" })
-  async chat(@Arg("id", { description: "Agent ID" }) id: string) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
-
-    const sessionKey = `agent:${id}:main`;
-
-    const readline = await import("node:readline");
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    console.log(`\n🤖 Interactive Chat`);
-    console.log(`   Agent: ${id}`);
-    console.log(`   Session: ${sessionKey}`);
-    console.log(`   Commands: /reset, /session, /exit\n`);
-
-    const ask = () => {
-      rl.question(`\x1b[36m${id}>\x1b[0m `, async (input) => {
-        const trimmed = input.trim();
-
-        if (!trimmed) {
-          ask();
-          return;
-        }
-
-        if (trimmed === "/exit" || trimmed === "/quit") {
-          console.log("\nBye!");
-          rl.close();
-          process.exit(0);
-        }
-
-        if (trimmed === "/reset") {
-          deleteSession(sessionKey);
-          console.log("Session reset.\n");
-          ask();
-          return;
-        }
-
-        if (trimmed === "/session") {
-          const session = getSession(sessionKey);
-          if (session) {
-            console.log(`SDK Session: ${session.sdkSessionId || "(none)"}`);
-            console.log(`Tokens: ${(session.inputTokens || 0) + (session.outputTokens || 0)}\n`);
-          } else {
-            console.log("No active session.\n");
-          }
-          ask();
-          return;
-        }
-
-        // Send prompt
-        console.log();
-        await this.sendPrompt(sessionKey, trimmed);
-        console.log("\n");
-        ask();
-      });
-    };
-
-    ask();
-  }
-
-  /**
-   * Send a prompt to an agent session and stream the response.
-   * Returns the number of characters received.
-   */
-  private async sendPrompt(sessionKey: string, prompt: string): Promise<number> {
-    let responseLength = 0;
-
-    // Get subscription streams so we can close them
-    const claudeStream = notif.subscribe(`ravi.${sessionKey}.claude`);
-    const responseStream = notif.subscribe(`ravi.${sessionKey}.response`);
-
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
-    const cleanup = () => {
-      if (timeoutId) clearTimeout(timeoutId);
-      // Close streams to stop the for-await loops
-      claudeStream.close();
-      responseStream.close();
-    };
-
-    // Promise that resolves on completion or timeout
-    const completion = new Promise<void>((resolve) => {
-      timeoutId = setTimeout(() => {
-        console.log("\n⏱️  Timeout");
-        resolve();
-      }, PROMPT_TIMEOUT_MS);
-
-      // Wait for result event
-      (async () => {
-        try {
-          for await (const event of claudeStream) {
-            if ((event.data as Record<string, unknown>).type === "result") {
-              resolve();
-              break;
-            }
-          }
-        } catch { /* ignore */ }
-      })();
-    });
-
-    // Stream responses (runs until completion resolves)
-    const streaming = (async () => {
-      try {
-        for await (const event of responseStream) {
-          const data = event.data as ResponseMessage;
-          if (data.error) {
-            console.log(`\n❌ ${data.error}`);
-            break;
-          }
-          if (data.response) {
-            process.stdout.write(data.response);
-            responseLength += data.response.length;
-          }
-        }
-      } catch { /* ignore */ }
-    })();
-
-    // Send prompt
-    await notif.emit(`ravi.${sessionKey}.prompt`, { prompt } as unknown as Record<string, unknown>);
-
-    // Wait for completion, then cleanup
-    await completion;
-    cleanup();
-
-    // Give streaming a moment to finish any pending writes
-    await Promise.race([streaming, new Promise(r => setTimeout(r, 100))]);
-
-    return responseLength;
-  }
-
   @Command({ name: "session", description: "Show agent session status" })
   session(@Arg("id", { description: "Agent ID" }) id: string) {
     const agent = getAgent(id);
@@ -752,7 +584,7 @@ export class AgentsCommands {
       const tokens = (session.inputTokens || 0) + (session.outputTokens || 0);
       const updated = new Date(session.updatedAt).toLocaleString();
 
-      console.log(`  ${session.sessionKey}`);
+      console.log(`  ${session.name ?? session.sessionKey}`);
       console.log(`    SDK: ${session.sdkSessionId || "(none)"}`);
       console.log(`    Tokens: ${tokens}`);
       console.log(`    Updated: ${updated}`);
@@ -763,7 +595,7 @@ export class AgentsCommands {
   @Command({ name: "reset", description: "Reset agent session" })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("sessionKey", { required: false, description: "Specific session key, 'all' to reset all, or omit for agent:ID:main" }) sessionKey?: string
+    @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" }) nameOrKey?: string
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -771,14 +603,18 @@ export class AgentsCommands {
     }
 
     // Helper: abort SDK session + delete from DB
-    const resetOne = async (key: string): Promise<boolean> => {
-      // Abort SDK streaming session in daemon
-      await notif.emit("ravi.session.abort", { sessionKey: key });
+    const resetOne = async (key: string, name?: string): Promise<boolean> => {
+      // Abort SDK streaming session in daemon (use session name for topic)
+      if (name) {
+        await notif.emit("ravi.session.abort", { sessionName: name, sessionKey: key });
+      } else {
+        await notif.emit("ravi.session.abort", { sessionKey: key });
+      }
       return deleteSession(key);
     };
 
     // Reset all sessions for this agent
-    if (sessionKey === "all") {
+    if (nameOrKey === "all") {
       const sessions = getSessionsByAgent(id);
       if (sessions.length === 0) {
         console.log(`ℹ️  No sessions to reset for agent: ${id}`);
@@ -786,29 +622,40 @@ export class AgentsCommands {
       }
       let count = 0;
       for (const s of sessions) {
-        if (await resetOne(s.sessionKey)) count++;
+        if (await resetOne(s.sessionKey, s.name)) count++;
       }
       console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
       return;
     }
 
-    const key = sessionKey || `agent:${id}:main`;
-    const deleted = await resetOne(key);
+    // Resolve by name, or find main session
+    let session;
+    if (nameOrKey) {
+      session = resolveSession(nameOrKey);
+    } else {
+      session = getMainSession(id);
+    }
 
-    if (deleted) {
-      console.log(`✅ Session reset: ${key}`);
+    if (session) {
+      const deleted = await resetOne(session.sessionKey, session.name);
+      const label = session.name ?? session.sessionKey;
+      if (deleted) {
+        console.log(`✅ Session reset: ${label}`);
+      } else {
+        console.log(`ℹ️  Session already clean: ${label}`);
+      }
     } else {
       // Show available sessions as hint
       const sessions = getSessionsByAgent(id);
       if (sessions.length > 0) {
-        console.log(`ℹ️  No session found: ${key}`);
+        console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
         console.log(`\n  Available sessions for ${id}:`);
         for (const s of sessions) {
-          console.log(`    ${s.sessionKey}`);
+          console.log(`    ${s.name ?? s.sessionKey}`);
         }
         console.log(`\n  Usage:`);
-        console.log(`    ravi agents reset ${id} <sessionKey>   Reset specific session`);
-        console.log(`    ravi agents reset ${id} all            Reset all sessions`);
+        console.log(`    ravi agents reset ${id} <name>   Reset specific session`);
+        console.log(`    ravi agents reset ${id} all      Reset all sessions`);
       } else {
         console.log(`ℹ️  No sessions to reset for agent: ${id}`);
       }
@@ -818,7 +665,7 @@ export class AgentsCommands {
   @Command({ name: "debug", description: "Show last turns of an agent session (what it received, what it responded)" })
   debug(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("sessionKey", { required: false, description: "Session key (omit for agent:ID:main)" }) sessionKey?: string,
+    @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,
     @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" }) turnsStr?: string
   ) {
     const agent = getAgent(id);
@@ -826,16 +673,20 @@ export class AgentsCommands {
       fail(`Agent not found: ${id}`);
     }
 
-    const key = sessionKey || `agent:${id}:main`;
-    const session = getSession(key);
+    let session;
+    if (nameOrKey) {
+      session = resolveSession(nameOrKey);
+    } else {
+      session = getMainSession(id);
+    }
 
     if (!session) {
-      console.log(`ℹ️  No session found: ${key}`);
+      console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
       const sessions = getSessionsByAgent(id);
       if (sessions.length > 0) {
         console.log(`\n  Available sessions for ${id}:`);
         for (const s of sessions) {
-          console.log(`    ${s.sessionKey}`);
+          console.log(`    ${s.name ?? s.sessionKey}`);
         }
       }
       return;
@@ -844,7 +695,7 @@ export class AgentsCommands {
     const maxTurns = parseInt(turnsStr ?? "5", 10);
 
     // Session metadata
-    console.log(`\n🔍 Debug: ${key}\n`);
+    console.log(`\n🔍 Debug: ${session.name ?? session.sessionKey}\n`);
     console.log(`  Agent:       ${session.agentId}`);
     console.log(`  CWD:         ${session.agentCwd}`);
     console.log(`  SDK ID:      ${session.sdkSessionId ?? "(none)"}`);

@@ -7,12 +7,11 @@
  *   Group: /reset @agentName   (resets a specific agent — by ID or mention)
  *
  * 1. Aborts the streaming SDK session synchronously (in-process)
- * 2. Deletes the session entry from the database
+ * 2. Resets the session (clears SDK state but keeps routing/metadata)
  */
 
 import { resolveRoute } from "../../router/resolver.js";
-import { deleteSession } from "../../router/sessions.js";
-import { buildSessionKey } from "../../router/session-key.js";
+import { resetSession, findSessionByAttributes } from "../../router/sessions.js";
 import { getBotInstance } from "../../daemon.js";
 import { getContact } from "../../contacts.js";
 import { logger } from "../../utils/logger.js";
@@ -75,25 +74,29 @@ export const resetCommand: SlashCommand = {
       agentId = resolved.agent.id;
     }
 
-    const sessionKey = buildSessionKey({
-      agentId,
+    // Resolve route to find the session (this creates/finds it via resolver)
+    const resolved = resolveRoute(ctx.routerConfig, {
+      phone: ctx.senderId,
       channel: ctx.plugin.id,
       accountId: ctx.accountId,
-      peerKind: ctx.isGroup ? "group" : "dm",
-      peerId: ctx.isGroup ? ctx.chatId : ctx.senderId,
-      dmScope: ctx.isGroup ? undefined : "per-peer",
+      isGroup: ctx.isGroup,
+      groupId: ctx.isGroup ? ctx.chatId : undefined,
     });
 
-    log.info("/reset called", { sessionKey, agentId, isGroup: ctx.isGroup });
+    const sessionName = resolved.sessionName;
+    const sessionKey = resolved.sessionKey;
+
+    log.info("/reset called", { sessionName, sessionKey, agentId, isGroup: ctx.isGroup });
 
     const bot = getBotInstance();
-    const aborted = bot?.abortSession(sessionKey) ?? false;
-    log.info("/reset abort result", { sessionKey, aborted, botExists: !!bot });
+    // Try abort by session name first (streaming sessions are keyed by name)
+    const aborted = bot?.abortSession(sessionName) ?? false;
+    log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
 
-    const deleted = deleteSession(sessionKey);
-    log.info("/reset delete result", { sessionKey, deleted });
+    const reset = resetSession(sessionKey);
+    log.info("/reset result", { sessionKey, reset });
 
-    if (aborted || deleted) {
+    if (aborted || reset) {
       return `✅ Sessão resetada (${agentId})`;
     }
     return `✅ Nenhuma sessão ativa encontrada (${agentId})`;

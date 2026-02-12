@@ -9,7 +9,6 @@ export * from "./agents.js";
 export * from "./channels.js";
 export * from "./contacts.js";
 export * from "./cron.js";
-export * from "./cross.js";
 export * from "./daemon.js";
 export * from "./group.js";
 export * from "./heartbeat.js";

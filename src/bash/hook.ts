@@ -46,7 +46,7 @@ interface HookCallbackMatcher {
 
 /**
  * Extract ravi CLI tool name from a bash command.
- * e.g. "ravi cross send ..." → "cross_send"
+ * e.g. "ravi sessions send ..." → "sessions_send"
  *      "ravi daemon restart ..." → "daemon_restart"
  *      "ravi agents list" → "agents_list"
  *
@@ -62,7 +62,7 @@ function extractRaviToolName(command: string): string | null {
 
 /**
  * Check if a ravi CLI tool is allowed by the agent's allowedTools.
- * allowedTools uses plain names like "cross_send", "media_send".
+ * allowedTools uses plain names like "sessions_send", "media_send".
  */
 function checkRaviToolPermission(
   command: string,

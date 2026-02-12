@@ -17,6 +17,7 @@ import { loadConfig } from "./utils/config.js";
 import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
+import { getMainSession } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
@@ -205,7 +206,9 @@ async function notifyRestartReason() {
 
       // Notify main agent about the restart
       const defaultAgent = dbGetSetting("defaultAgent") || "main";
-      await notif.emit(`ravi.agent:${defaultAgent}:main.prompt`, {
+      const mainSession = getMainSession(defaultAgent);
+      const sessionName = mainSession?.name ?? defaultAgent;
+      await notif.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
       });
     }

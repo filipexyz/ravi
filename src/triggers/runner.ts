@@ -9,6 +9,16 @@
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
+import {
+  getMainSession,
+  getOrCreateSession,
+  resolveSession,
+  generateSessionName,
+  ensureUniqueName,
+  updateSessionName,
+  expandHome,
+} from "../router/index.js";
+import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
 import type { Trigger } from "./types.js";
 
@@ -169,10 +179,33 @@ export class TriggerRunner {
     event: { topic: string; data: unknown }
   ): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
-    const sessionKey =
-      trigger.session === "main"
-        ? `agent:${agentId}:main`
-        : `agent:${agentId}:trigger:${trigger.id}`;
+    const agent = getAgent(agentId);
+    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+
+    let sessionName: string;
+
+    if (trigger.session === "main") {
+      const main = getMainSession(agentId);
+      if (main?.name) {
+        sessionName = main.name;
+      } else {
+        const baseName = generateSessionName(agentId, { isMain: true });
+        sessionName = ensureUniqueName(baseName);
+        const session = getOrCreateSession(`agent:${agentId}:main`, agentId, agentCwd, { name: sessionName });
+        if (!session.name) updateSessionName(session.sessionKey, sessionName);
+      }
+    } else {
+      const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
+      const existing = resolveSession(dbKey);
+      if (existing?.name) {
+        sessionName = existing.name;
+      } else {
+        const baseName = generateSessionName(agentId, { suffix: `trigger-${trigger.name}` });
+        sessionName = ensureUniqueName(baseName);
+        const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+        if (!session.name) updateSessionName(session.sessionKey, sessionName);
+      }
+    }
 
     const prompt = [
       `[Trigger: ${trigger.name}]`,
@@ -186,10 +219,10 @@ export class TriggerRunner {
       triggerId: trigger.id,
       triggerName: trigger.name,
       topic: event.topic,
-      sessionKey,
+      sessionName,
     });
 
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       _trigger: true,
       _triggerId: trigger.id,

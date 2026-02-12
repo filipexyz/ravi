@@ -12,8 +12,10 @@ import { AsyncLocalStorage } from "node:async_hooks";
  * Context available to CLI tools during execution
  */
 export interface ToolContext {
-  /** Current session key (e.g., "agent:main:dm:5511999") */
+  /** Current session key (DB primary key) */
   sessionKey?: string;
+  /** Current session name (human-readable) */
+  sessionName?: string;
   /** Agent ID */
   agentId?: string;
   /** Channel info for response routing */
@@ -60,10 +62,11 @@ export function getContext(): ToolContext | undefined {
 
   // Fallback: build context from RAVI_* env vars (set when running via Bash in SDK)
   const env = process.env;
-  if (!env.RAVI_SESSION_KEY) return undefined;
+  if (!env.RAVI_SESSION_KEY && !env.RAVI_SESSION_NAME) return undefined;
 
   const ctx: ToolContext = {
     sessionKey: env.RAVI_SESSION_KEY,
+    sessionName: env.RAVI_SESSION_NAME,
     agentId: env.RAVI_AGENT_ID,
   };
 
@@ -94,7 +97,7 @@ export function getContextValue<K extends keyof ToolContext>(
  * Check if running within a tool context (in-process or via env vars).
  */
 export function hasContext(): boolean {
-  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY;
+  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY || !!process.env.RAVI_SESSION_NAME;
 }
 
 /**

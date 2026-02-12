@@ -10,7 +10,8 @@ import { upsertContact } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
 import { notif } from "../../notif.js";
 import { buildSessionKey } from "../../router/session-key.js";
-import { getOrCreateSession, updateSessionSource } from "../../router/sessions.js";
+import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
+import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
 import { getAgent } from "../../router/config.js";
 import { expandHome } from "../../router/resolver.js";
 
@@ -161,25 +162,33 @@ export class GroupCommands {
         const agentCwd = expandHome(agentConfig.cwd);
         const acctId = account ?? "default";
 
-        getOrCreateSession(sessionKey, agent, agentCwd, {
+        // Generate a human-readable session name
+        const baseName = generateSessionName(agent, { groupName: name });
+        const sessionName = ensureUniqueName(baseName);
+
+        const session = getOrCreateSession(sessionKey, agent, agentCwd, {
+          name: sessionName,
           chatType: "group",
           channel: "whatsapp",
           accountId: acctId,
           groupId: `group:${groupId}`,
           subject: name,
         });
+        if (!session.name) {
+          updateSessionName(sessionKey, sessionName);
+        }
         updateSessionSource(sessionKey, {
           channel: "whatsapp",
           accountId: acctId,
           chatId: `group:${groupId}`,
         });
-        console.log(`  Session:      created`);
+        console.log(`  Session:      ${session.name ?? sessionName}`);
 
         // Send an inform so the agent introduces itself
         const memberList = participants.join(", ");
         const inform = `[System] Inform: Você foi adicionado ao grupo WhatsApp "${name}" com os membros: ${memberList}. Se apresente brevemente.`;
 
-        await notif.emit(`ravi.${sessionKey}.prompt`, {
+        await notif.emit(`ravi.session.${session.name ?? sessionName}.prompt`, {
           prompt: inform,
           source: {
             channel: "whatsapp",

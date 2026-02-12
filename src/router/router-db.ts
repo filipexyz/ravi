@@ -296,6 +296,51 @@ function getDb(): Database {
     log.info("Added last_context column to sessions table");
   }
 
+  // Migration: add name column to sessions (human-readable unique identifier)
+  if (!sessionColumns.some(c => c.name === "name")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN name TEXT");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL");
+    log.info("Added name column to sessions table");
+
+    // Migrate existing sessions: generate names from session_key
+    const rows = db.prepare("SELECT session_key, agent_id, display_name, chat_type, group_id FROM sessions").all() as Array<{
+      session_key: string; agent_id: string; display_name: string | null; chat_type: string | null; group_id: string | null;
+    }>;
+    const usedNames = new Set<string>();
+    const { slugify } = require("./session-name.js") as typeof import("./session-name.js");
+    const updateName = db.prepare("UPDATE sessions SET name = ? WHERE session_key = ?");
+    for (const row of rows) {
+      let name: string;
+      const agent = slugify(row.agent_id);
+      if (row.session_key.endsWith(":main")) {
+        name = agent;
+      } else if (row.display_name) {
+        name = `${agent}-${slugify(row.display_name)}`;
+      } else if (row.group_id) {
+        const cleanId = row.group_id.replace(/^group:/, "").slice(-8);
+        name = `${agent}-group-${cleanId}`;
+      } else {
+        // DM or unknown — use last part of session key
+        const parts = row.session_key.split(":");
+        const lastPart = parts[parts.length - 1];
+        const clean = slugify(lastPart).slice(-12);
+        name = `${agent}-${clean || "session"}`;
+      }
+      // Deduplicate
+      let finalName = name.slice(0, 64);
+      let i = 2;
+      while (usedNames.has(finalName)) {
+        finalName = `${name.slice(0, 60)}-${i}`;
+        i++;
+      }
+      usedNames.add(finalName);
+      updateName.run(finalName, row.session_key);
+    }
+    if (rows.length > 0) {
+      log.info(`Migrated ${rows.length} session names`);
+    }
+  }
+
   // Migration: create cron_jobs table
   db.exec(`
     CREATE TABLE IF NOT EXISTS cron_jobs (

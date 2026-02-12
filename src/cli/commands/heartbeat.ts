@@ -16,7 +16,7 @@ import {
   HEARTBEAT_PROMPT,
 } from "../../heartbeat/index.js";
 import { notif } from "../../notif.js";
-import { expandHome } from "../../router/index.js";
+import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 
 @Group({
@@ -209,9 +209,10 @@ export class HeartbeatCommands {
         return;
       }
 
-      // Send heartbeat prompt
-      const sessionKey = `agent:${id}:main`;
-      await notif.emit(`ravi.${sessionKey}.prompt`, {
+      // Send heartbeat prompt using session name
+      const mainSession = getMainSession(id);
+      const sessionName = mainSession?.name ?? id;
+      await notif.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: HEARTBEAT_PROMPT,
         _heartbeat: true,
       });

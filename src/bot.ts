@@ -7,8 +7,10 @@ import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
+  getSessionByName,
   updateSdkSessionId,
   updateTokens,
+  updateSessionName,
   updateSessionSource,
   updateSessionContext,
   updateSessionDisplayName,
@@ -16,6 +18,8 @@ import {
   deleteSession,
   expandHome,
   getAnnounceCompaction,
+  generateSessionName,
+  ensureUniqueName,
   type RouterConfig,
   type SessionEntry,
   type AgentConfig,
@@ -241,8 +245,8 @@ export class RaviBot {
         count: this.streamingSessions.size,
         sessions: [...this.streamingSessions.keys()],
       });
-      for (const [sessionKey, session] of this.streamingSessions) {
-        log.info("Aborting streaming session", { sessionKey });
+      for (const [sessionName, session] of this.streamingSessions) {
+        log.info("Aborting streaming session", { sessionName });
         session.abortController.abort();
       }
       this.streamingSessions.clear();
@@ -267,19 +271,19 @@ export class RaviBot {
    * Abort and remove a streaming session by key.
    * Used by /reset to kill the SDK process before deleting the DB entry.
    */
-  /** Abort a streaming session synchronously. Used by /reset. */
-  public abortSession(sessionKey: string): boolean {
-    const allKeys = [...this.streamingSessions.keys()];
+  /** Abort a streaming session by name. Used by /reset. */
+  public abortSession(sessionName: string): boolean {
+    const allNames = [...this.streamingSessions.keys()];
     log.info("abortSession called", {
-      sessionKey,
-      allKeys,
-      found: this.streamingSessions.has(sessionKey),
+      sessionName,
+      allNames,
+      found: this.streamingSessions.has(sessionName),
     });
-    const session = this.streamingSessions.get(sessionKey);
+    const session = this.streamingSessions.get(sessionName);
     if (!session) return false;
-    log.info("Aborting streaming session via reset", { sessionKey, done: session.done });
+    log.info("Aborting streaming session via reset", { sessionName, done: session.done });
     session.abortController.abort();
-    this.streamingSessions.delete(sessionKey);
+    this.streamingSessions.delete(sessionName);
     return true;
   }
 
@@ -384,9 +388,12 @@ export class RaviBot {
       try {
         for await (const event of notif.subscribe("ravi.session.abort")) {
           if (!this.running) break;
-          const { sessionKey } = event.data as { sessionKey: string };
-          const aborted = this.abortSession(sessionKey);
-          log.info("Session abort request", { sessionKey, aborted });
+          const data = event.data as { sessionKey?: string; sessionName?: string };
+          // Try session name first (streaming sessions are keyed by name), then DB key
+          const key = data.sessionName ?? data.sessionKey;
+          if (!key) continue;
+          const aborted = this.abortSession(key);
+          log.info("Session abort request", { key, aborted });
         }
       } catch (err) {
         if (!this.running) break;
@@ -456,19 +463,19 @@ export class RaviBot {
     }
     this.promptSubscriptionActive = true;
 
-    const topic = "ravi.*.prompt";
+    const topic = "ravi.session.*.prompt";
     log.info(`Subscribing to ${topic}`);
 
     try {
       for await (const event of notif.subscribe(topic)) {
         if (!this.running) break;
 
-        // Extract session key from topic: ravi.{sessionKey}.prompt
-        const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+        // Extract session name from topic: ravi.session.{name}.prompt
+        const sessionName = event.topic.split(".")[2];
         const prompt = event.data as unknown as PromptMessage;
 
         // Don't await - handle concurrently
-        this.handlePrompt(sessionKey, prompt).catch(err => {
+        this.handlePrompt(sessionName, prompt).catch(err => {
           log.error("Failed to handle prompt", err);
         });
       }
@@ -482,74 +489,77 @@ export class RaviBot {
     }
   }
 
-  private async handlePrompt(sessionKey: string, prompt: PromptMessage): Promise<void> {
+  private async handlePrompt(sessionName: string, prompt: PromptMessage): Promise<void> {
     // Reload config to get latest settings
     this.routerConfig = loadRouterConfig();
 
-    // Get agent config for debounce setting
-    const parts = sessionKey.split(":");
-    const agentId = parts[0] === "agent" ? parts[1] : this.routerConfig.defaultAgent;
+    // Look up session by name to get agentId
+    const sessionEntry = getSessionByName(sessionName);
+    const agentId = sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
     const debounceMs = agent?.debounceMs;
-
-    log.debug("handlePrompt", { sessionKey, agentId, debounceMs });
+    log.debug("handlePrompt", { sessionName, agentId, debounceMs });
 
     // If debounce is configured, use debounce flow
     if (debounceMs && debounceMs > 0) {
-      this.handlePromptWithDebounce(sessionKey, prompt, debounceMs);
+      this.handlePromptWithDebounce(sessionName, prompt, debounceMs);
       return;
     }
 
     // No debounce - use immediate flow
-    await this.handlePromptImmediate(sessionKey, prompt);
+    await this.handlePromptImmediate(sessionName, prompt);
   }
 
-  private handlePromptWithDebounce(sessionKey: string, prompt: PromptMessage, debounceMs: number): void {
-    const existing = this.debounceStates.get(sessionKey);
+  private handlePromptWithDebounce(sessionName: string, prompt: PromptMessage, debounceMs: number): void {
+    const existing = this.debounceStates.get(sessionName);
 
     if (existing) {
-      log.debug("Debounce: adding message", { sessionKey, count: existing.messages.length + 1 });
+      log.debug("Debounce: adding message", { sessionName, count: existing.messages.length + 1 });
       clearTimeout(existing.timer);
       existing.messages.push({ prompt, source: prompt.source });
-      existing.timer = setTimeout(() => this.flushDebounce(sessionKey), debounceMs);
+      existing.timer = setTimeout(() => this.flushDebounce(sessionName), debounceMs);
     } else {
-      log.debug("Debounce: starting", { sessionKey, debounceMs });
+      log.debug("Debounce: starting", { sessionName, debounceMs });
       const state: DebounceState = {
         messages: [{ prompt, source: prompt.source }],
-        timer: setTimeout(() => this.flushDebounce(sessionKey), debounceMs),
+        timer: setTimeout(() => this.flushDebounce(sessionName), debounceMs),
         debounceMs,
       };
-      this.debounceStates.set(sessionKey, state);
+      this.debounceStates.set(sessionName, state);
     }
   }
 
-  private async flushDebounce(sessionKey: string): Promise<void> {
-    const state = this.debounceStates.get(sessionKey);
+  private async flushDebounce(sessionName: string): Promise<void> {
+    const state = this.debounceStates.get(sessionName);
     if (!state) return;
 
-    this.debounceStates.delete(sessionKey);
+    this.debounceStates.delete(sessionName);
 
     // Combine all messages into one
     const combinedPrompt = state.messages.map(m => m.prompt.prompt).join("\n\n");
     const lastSource = state.messages[state.messages.length - 1].source;
 
-    log.info("Debounce: flushing", { sessionKey, messageCount: state.messages.length });
+    log.info("Debounce: flushing", { sessionName, messageCount: state.messages.length });
 
     // Process the combined message
-    await this.handlePromptImmediate(sessionKey, {
+    await this.handlePromptImmediate(sessionName, {
       prompt: combinedPrompt,
       source: lastSource,
     });
   }
 
-  private async handlePromptImmediate(sessionKey: string, prompt: PromptMessage): Promise<void> {
-    const existing = this.streamingSessions.get(sessionKey);
+  private async handlePromptImmediate(sessionName: string, prompt: PromptMessage): Promise<void> {
+    const existing = this.streamingSessions.get(sessionName);
 
     if (existing && !existing.done) {
       // Session alive — just push the new message into the generator
-      log.info("Streaming: pushing message to existing session", { sessionKey });
-      this.updateSessionMetadata(sessionKey, prompt);
-      saveMessage(sessionKey, "user", prompt.prompt);
+      log.info("Streaming: pushing message to existing session", { sessionName });
+      // Resolve DB primary key for metadata updates
+      const entry = getSessionByName(sessionName);
+      if (entry) {
+        this.updateSessionMetadata(entry.sessionKey, prompt);
+      }
+      saveMessage(sessionName, "user", prompt.prompt);
 
       // Update source for response routing
       if (prompt.source) {
@@ -566,14 +576,14 @@ export class RaviBot {
 
       if (existing.pushMessage) {
         // Generator waiting between turns — wake it up to yield the queue
-        log.info("Streaming: waking generator", { sessionKey, queueSize: existing.pendingMessages.length });
+        log.info("Streaming: waking generator", { sessionName, queueSize: existing.pendingMessages.length });
         const resolver = existing.pushMessage;
         existing.pushMessage = null;
         resolver(null); // wake-up signal
       } else if (existing.toolRunning || existing.compacting) {
         // Tool running or compacting — just enqueue, don't interrupt
         log.info("Streaming: queueing (busy)", {
-          sessionKey,
+          sessionName,
           queueSize: existing.pendingMessages.length,
           reason: existing.compacting ? "compacting" : "tool",
           tool: existing.currentToolName,
@@ -581,7 +591,7 @@ export class RaviBot {
       } else {
         // SDK generating text — interrupt, discard response, re-process with full queue
         log.info("Streaming: interrupting turn", {
-          sessionKey,
+          sessionName,
           queueSize: existing.pendingMessages.length,
         });
         existing.interrupted = true;
@@ -592,20 +602,20 @@ export class RaviBot {
 
     // No active session or previous one finished — start new streaming session
     if (existing?.done) {
-      this.streamingSessions.delete(sessionKey);
+      this.streamingSessions.delete(sessionName);
     }
-    await this.startStreamingSession(sessionKey, prompt);
+    await this.startStreamingSession(sessionName, prompt);
   }
 
   /** Start a new streaming session with an AsyncGenerator that stays alive */
-  private async startStreamingSession(sessionKey: string, prompt: PromptMessage): Promise<void> {
-    // Parse session key to get agent ID
-    const parts = sessionKey.split(":");
-    const agentId = parts[0] === "agent" ? parts[1] : this.routerConfig.defaultAgent;
+  private async startStreamingSession(sessionName: string, prompt: PromptMessage): Promise<void> {
+    // Look up agent from DB by session name
+    const sessionEntry = getSessionByName(sessionName);
+    const agentId = sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
 
     if (!agent) {
-      log.error("No agent found", { sessionKey, agentId });
+      log.error("No agent found", { sessionName, agentId });
       return;
     }
 
@@ -626,9 +636,13 @@ export class RaviBot {
       log.info("Created auto-approve settings for agent", { agentId: agent.id, path: settingsPath });
     }
 
-    const session = getOrCreateSession(sessionKey, agent.id, agentCwd);
+    // Session should already exist (created by resolver/CLI/heartbeat).
+    // If not (e.g. direct notif emit), create one using the name as both key and name.
+    const session = sessionEntry ?? getOrCreateSession(sessionName, agent.id, agentCwd, { name: sessionName });
+    const dbSessionKey = session.sessionKey; // actual DB primary key
     log.info("startStreamingSession", {
-      sessionKey,
+      sessionName,
+      dbSessionKey,
       sdkSessionId: session.sdkSessionId,
       willResume: !!session.sdkSessionId,
     });
@@ -643,8 +657,8 @@ export class RaviBot {
       };
     }
 
-    this.updateSessionMetadata(sessionKey, prompt);
-    saveMessage(sessionKey, "user", prompt.prompt);
+    this.updateSessionMetadata(dbSessionKey, prompt);
+    saveMessage(sessionName, "user", prompt.prompt);
 
     const model = session.modelOverride ?? agent.model ?? this.config.model;
 
@@ -687,7 +701,7 @@ export class RaviBot {
     const preCompactHook = createPreCompactHook({ memoryModel: agent.memoryModel });
     hooks.PreCompact = [{ hooks: [async (input, toolUseId, context) => {
       log.info("PreCompact hook CALLED by SDK", {
-        sessionKey,
+        sessionName,
         agentId: agent.id,
         inputKeys: Object.keys(input),
         hookEventName: (input as any).hook_event_name,
@@ -699,11 +713,11 @@ export class RaviBot {
     // With bypassPermissions the canUseTool callback is NOT called, but hooks still fire.
     const exitPlanHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
       if (!resolvedSource) {
-        log.info("ExitPlanMode auto-approved (no channel source)", { sessionKey });
+        log.info("ExitPlanMode auto-approved (no channel source)", { sessionName });
         return {};
       }
 
-      log.info("ExitPlanMode hook: requesting approval via reaction", { sessionKey });
+      log.info("ExitPlanMode hook: requesting approval via reaction", { sessionName });
 
       // The plan content lives in the plan file written by the SDK.
       // tool_input may have a "plan" field or we can read the plan file directly.
@@ -751,14 +765,14 @@ export class RaviBot {
       });
 
       if (result.approved) {
-        log.info("Plan approved via reaction (hook)", { sessionKey });
+        log.info("Plan approved via reaction (hook)", { sessionName });
         return {};
       }
 
       const reason = result.reason
         ? `Plano rejeitado: ${result.reason}`
         : "Plano rejeitado pelo usuário.";
-      log.info("Plan rejected (hook)", { sessionKey, reason: result.reason });
+      log.info("Plan rejected (hook)", { sessionName, reason: result.reason });
 
       return {
         hookSpecificOutput: {
@@ -776,7 +790,7 @@ export class RaviBot {
     ];
 
     log.info("Hooks registered", {
-      sessionKey,
+      sessionName,
       hookEvents: Object.keys(hooks),
     });
 
@@ -797,15 +811,15 @@ export class RaviBot {
       compacting: false,
       onTurnComplete: null,
     };
-    this.streamingSessions.set(sessionKey, streamingSession);
+    this.streamingSessions.set(sessionName, streamingSession);
 
     // Create the AsyncGenerator that feeds messages to the SDK
-    const messageGenerator = this.createMessageGenerator(sessionKey, prompt.prompt, streamingSession);
+    const messageGenerator = this.createMessageGenerator(sessionName, prompt.prompt, streamingSession);
 
     const runId = Math.random().toString(36).slice(2, 8);
     log.info("Starting streaming session", {
       runId,
-      sessionKey,
+      sessionName,
       agentId: agent.id,
       sdkSessionId: session.sdkSessionId ?? null,
       resuming: !!session.sdkSessionId,
@@ -813,7 +827,8 @@ export class RaviBot {
 
     // Build RAVI_* env vars for session context (available in Bash tools)
     const raviEnv: Record<string, string> = {
-      RAVI_SESSION_KEY: sessionKey,
+      RAVI_SESSION_KEY: dbSessionKey,
+      RAVI_SESSION_NAME: sessionName,
       RAVI_AGENT_ID: agent.id,
     };
     if (resolvedSource) {
@@ -841,11 +856,11 @@ export class RaviBot {
       // ExitPlanMode: request approval via WhatsApp reaction
       if (!resolvedSource) {
         // No channel to send approval request — auto-approve
-        log.info("ExitPlanMode auto-approved (no channel source)", { sessionKey });
+        log.info("ExitPlanMode auto-approved (no channel source)", { sessionName });
         return { behavior: "allow" as const, updatedInput: input };
       }
 
-      log.info("ExitPlanMode called, requesting approval via reaction", { sessionKey });
+      log.info("ExitPlanMode called, requesting approval via reaction", { sessionName });
 
       const plan = typeof input.plan === "string" ? input.plan : JSON.stringify(input);
       const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
@@ -855,13 +870,13 @@ export class RaviBot {
       });
 
       if (result.approved) {
-        log.info("Plan approved via reaction", { sessionKey });
+        log.info("Plan approved via reaction", { sessionName });
         return { behavior: "allow" as const, updatedInput: input };
       } else {
         const reason = result.reason
           ? `Plano rejeitado: ${result.reason}`
           : "Plano rejeitado pelo usuário.";
-        log.info("Plan rejected", { sessionKey, reason: result.reason });
+        log.info("Plan rejected", { sessionName, reason: result.reason });
         return { behavior: "deny" as const, message: reason };
       }
     };
@@ -891,27 +906,27 @@ export class RaviBot {
 
     // Build tool context for CLI tools
     const toolContext = {
-      sessionKey,
+      sessionKey: sessionName,
       agentId: agent.id,
       source: resolvedSource,
     };
 
     // Run the event loop in the background (don't await — it stays alive)
     runWithContext(toolContext, () =>
-      this.runEventLoop(runId, sessionKey, session, agent, streamingSession, queryResult)
+      this.runEventLoop(runId, sessionName, session, agent, streamingSession, queryResult)
     ).catch(err => {
       const isAbort = err instanceof Error && /abort/i.test(err.message);
       if (isAbort) {
-        log.info("Streaming session aborted", { sessionKey });
+        log.info("Streaming session aborted", { sessionName });
       } else {
-        log.error("Streaming session failed", { sessionKey, error: err });
+        log.error("Streaming session failed", { sessionName, error: err });
       }
     });
   }
 
   /** AsyncGenerator that yields user messages. Stays alive between turns. */
   private async *createMessageGenerator(
-    sessionKey: string,
+    sessionName: string,
     firstMessage: string,
     session: StreamingSession
   ): AsyncGenerator<UserMessage> {
@@ -935,7 +950,7 @@ export class RaviBot {
       const yieldedCount = session.pendingMessages.length;
       const combined = session.pendingMessages.map(m => m.message.content).join("\n\n");
       log.info("Generator: yielding", {
-        sessionKey, count: yieldedCount,
+        sessionName, count: yieldedCount,
       });
 
       yield {
@@ -951,7 +966,7 @@ export class RaviBot {
       if (session.interrupted) {
         // Turn was interrupted — keep ALL messages (they'll be re-yielded combined)
         log.info("Generator: turn interrupted, keeping queue", {
-          sessionKey, count: session.pendingMessages.length,
+          sessionName, count: session.pendingMessages.length,
         });
         session.interrupted = false;
       } else {
@@ -959,7 +974,7 @@ export class RaviBot {
         // New messages that arrived during the turn (e.g. during tool execution) stay
         session.pendingMessages.splice(0, yieldedCount);
         log.info("Generator: turn complete", {
-          sessionKey, cleared: yieldedCount, remaining: session.pendingMessages.length,
+          sessionName, cleared: yieldedCount, remaining: session.pendingMessages.length,
         });
       }
     }
@@ -968,7 +983,7 @@ export class RaviBot {
   /** Process SDK events from the streaming query */
   private async runEventLoop(
     runId: string,
-    sessionKey: string,
+    sessionName: string,
     session: SessionEntry,
     agent: AgentConfig,
     streaming: StreamingSession,
@@ -979,14 +994,14 @@ export class RaviBot {
     const watchdog = setInterval(() => {
       const elapsed = Date.now() - streaming.lastActivity;
       if (elapsed > SESSION_TIMEOUT_MS) {
-        log.warn("Streaming session idle timeout", { sessionKey, elapsedMs: elapsed });
+        log.warn("Streaming session idle timeout", { sessionName, elapsedMs: elapsed });
         streaming.done = true;
         if (streaming.pushMessage) {
           streaming.pushMessage(null as any);
           streaming.pushMessage = null;
         }
         streaming.abortController.abort();
-        this.streamingSessions.delete(sessionKey);
+        this.streamingSessions.delete(sessionName);
         clearInterval(watchdog);
       }
     }, 30000);
@@ -995,13 +1010,13 @@ export class RaviBot {
     let responseText = "";
 
     const emitSdkEvent = async (event: Record<string, unknown>) => {
-      await safeEmit(`ravi.${sessionKey}.claude`, event);
+      await safeEmit(`ravi.session.${sessionName}.claude`, event);
     };
 
     const emitResponse = async (text: string) => {
       const emitId = Math.random().toString(36).slice(2, 8);
-      log.info("Emitting response", { sessionKey, emitId, textLen: text.length });
-      await notif.emit(`ravi.${sessionKey}.response`, {
+      log.info("Emitting response", { sessionName, emitId, textLen: text.length });
+      await notif.emit(`ravi.session.${sessionName}.response`, {
         response: text,
         target: streaming.currentSource,
         _emitId: emitId,
@@ -1021,7 +1036,7 @@ export class RaviBot {
           runId,
           seq: sdkEventCount,
           type: message.type,
-          sessionKey,
+          sessionName,
           ...(message.type === "assistant" ? {
             contentTypes: message.message.content.map((b: any) => b.type),
             textPreview: message.message.content
@@ -1042,7 +1057,7 @@ export class RaviBot {
           const status = (message as any).status;
           const wasCompacting = streaming.compacting;
           streaming.compacting = status === "compacting";
-          log.info("Compaction status", { sessionKey, compacting: streaming.compacting });
+          log.info("Compaction status", { sessionName, compacting: streaming.compacting });
 
           if (getAnnounceCompaction() && streaming.currentSource) {
             if (streaming.compacting && !wasCompacting) {
@@ -1067,13 +1082,13 @@ export class RaviBot {
               streaming.currentToolName = block.name;
               streaming.toolStartTime = Date.now();
 
-              safeEmit(`ravi.${sessionKey}.tool`, {
+              safeEmit(`ravi.session.${sessionName}.tool`, {
                 event: "start",
                 toolId: block.id,
                 toolName: block.name,
                 input: truncateOutput(block.input),
                 timestamp: new Date().toISOString(),
-                sessionKey,
+                sessionName,
                 agentId: agent.id,
               }).catch(err => log.warn("Failed to emit tool start", { error: err }));
             }
@@ -1084,23 +1099,23 @@ export class RaviBot {
 
             if (streaming.interrupted) {
               // Turn was interrupted — discard response
-              log.info("Discarding interrupted response", { sessionKey, textLen: messageText.length });
+              log.info("Discarding interrupted response", { sessionName, textLen: messageText.length });
             } else {
               responseText += messageText;
 
               const trimmed = messageText.trim().toLowerCase();
               if (trimmed === "prompt is too long") {
-                log.warn("Prompt too long — will auto-reset session", { sessionKey });
+                log.warn("Prompt too long — will auto-reset session", { sessionName });
                 streaming._promptTooLong = true;
                 await emitSdkEvent({ type: "silent" });
               } else if (messageText.trim() === SILENT_TOKEN) {
-                log.info("Silent response", { sessionKey });
+                log.info("Silent response", { sessionName });
                 await emitSdkEvent({ type: "silent" });
               } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
-                log.info("Heartbeat OK", { sessionKey });
+                log.info("Heartbeat OK", { sessionName });
                 await emitSdkEvent({ type: "silent" });
               } else if (trimmed === "no response requested." || trimmed === "no response requested" || trimmed === "no response needed." || trimmed === "no response needed") {
-                log.info("Silent response (no response requested)", { sessionKey });
+                log.info("Silent response (no response requested)", { sessionName });
                 await emitSdkEvent({ type: "silent" });
               } else {
                 await emitResponse(messageText);
@@ -1117,7 +1132,7 @@ export class RaviBot {
             if (toolResult) {
               const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
 
-              safeEmit(`ravi.${sessionKey}.tool`, {
+              safeEmit(`ravi.session.${sessionName}.tool`, {
                 event: "end",
                 toolId: streaming.currentToolId ?? toolResult?.tool_use_id ?? "unknown",
                 toolName: streaming.currentToolName ?? "unknown",
@@ -1125,7 +1140,7 @@ export class RaviBot {
                 isError: toolResult?.is_error ?? false,
                 durationMs,
                 timestamp: new Date().toISOString(),
-                sessionKey,
+                sessionName,
                 agentId: agent.id,
               }).catch(err => log.warn("Failed to emit tool end", { error: err }));
 
@@ -1156,14 +1171,14 @@ export class RaviBot {
           });
 
           if ("session_id" in message && message.session_id) {
-            updateSdkSessionId(sessionKey, message.session_id);
+            updateSdkSessionId(session.sessionKey, message.session_id);
           }
-          updateTokens(sessionKey, inputTokens, outputTokens);
+          updateTokens(session.sessionKey, inputTokens, outputTokens);
 
           // Auto-reset session when prompt is too long (compact failed)
           if (streaming._promptTooLong) {
-            log.warn("Auto-resetting session due to 'Prompt is too long'", { sessionKey });
-            deleteSession(sessionKey);
+            log.warn("Auto-resetting session due to 'Prompt is too long'", { sessionName });
+            deleteSession(session.sessionKey);
             streaming._promptTooLong = false;
 
             // Notify the user that the session was reset
@@ -1181,7 +1196,7 @@ export class RaviBot {
           }
 
           if (!streaming.interrupted && responseText.trim()) {
-            saveMessage(sessionKey, "assistant", responseText.trim());
+            saveMessage(sessionName, "assistant", responseText.trim());
           }
 
           // Reset for next turn
@@ -1196,7 +1211,7 @@ export class RaviBot {
         }
       }
     } finally {
-      log.info("Streaming session ended", { runId, sessionKey });
+      log.info("Streaming session ended", { runId, sessionName });
       clearInterval(watchdog);
 
       streaming.done = true;
@@ -1216,7 +1231,7 @@ export class RaviBot {
         streaming.abortController.abort();
       }
 
-      this.streamingSessions.delete(sessionKey);
+      this.streamingSessions.delete(sessionName);
     }
   }
 

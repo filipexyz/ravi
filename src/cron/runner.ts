@@ -10,6 +10,16 @@ import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
+  getMainSession,
+  getOrCreateSession,
+  resolveSession,
+  generateSessionName,
+  ensureUniqueName,
+  updateSessionName,
+  expandHome,
+} from "../router/index.js";
+import { getAgent } from "../router/config.js";
+import {
   dbGetDueJobs,
   dbGetNextDueJob,
   dbUpdateJobState,
@@ -201,19 +211,63 @@ export class CronRunner {
   }
 
   /**
+   * Resolve session name for an agent's main session (find or create).
+   */
+  private resolveMainSessionName(agentId: string): string {
+    // If replySession is set, try to resolve it as a session name
+    const main = getMainSession(agentId);
+    if (main?.name) return main.name;
+
+    // Create main session
+    const agent = getAgent(agentId);
+    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+    const baseName = generateSessionName(agentId, { isMain: true });
+    const sessionName = ensureUniqueName(baseName);
+    const session = getOrCreateSession(`agent:${agentId}:main`, agentId, agentCwd, { name: sessionName });
+    if (!session.name) {
+      updateSessionName(session.sessionKey, sessionName);
+    }
+    return sessionName;
+  }
+
+  /**
+   * Resolve session name for a reply session (name or legacy key).
+   */
+  private resolveReplySessionName(replySession: string): string | null {
+    const session = resolveSession(replySession);
+    return session?.name ?? null;
+  }
+
+  /**
    * Execute a job in the main session (shared with TUI/WhatsApp/etc).
-   * If replySession is set, uses that session key instead of agent:{id}:main.
+   * If replySession is set, uses that session instead of agent main.
    */
   private async executeMainJob(job: CronJob): Promise<void> {
     const agentId = job.agentId ?? getDefaultAgentId();
-    const sessionKey = job.replySession ?? `agent:${agentId}:main`;
+
+    let sessionName: string;
+    let source: { channel: string; accountId: string; chatId: string } | undefined;
+
+    if (job.replySession) {
+      const resolved = this.resolveReplySessionName(job.replySession);
+      if (resolved) {
+        sessionName = resolved;
+        const session = resolveSession(job.replySession);
+        if (session?.lastChannel && session.lastTo) {
+          source = { channel: session.lastChannel, accountId: session.lastAccountId ?? "default", chatId: session.lastTo };
+        }
+      } else {
+        // Fallback: derive source from old-style key and use main session
+        source = deriveSourceFromSessionKey(job.replySession) ?? undefined;
+        sessionName = this.resolveMainSessionName(agentId);
+      }
+    } else {
+      sessionName = this.resolveMainSessionName(agentId);
+    }
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
-    // Derive source from session key so responses route to the right channel
-    const source = deriveSourceFromSessionKey(sessionKey) ?? undefined;
-
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       source,
       _cron: true,
@@ -223,20 +277,42 @@ export class CronRunner {
 
   /**
    * Execute a job in an isolated session.
-   * Uses format agent:{agentId}:cron:{jobId} so bot.ts can parse the agentId.
    */
   private async executeIsolatedJob(job: CronJob): Promise<void> {
     const agentId = job.agentId ?? getDefaultAgentId();
-    const sessionKey = `agent:${agentId}:cron:${job.id}`;
+    const agent = getAgent(agentId);
+    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+
+    // Create/find isolated cron session
+    const dbKey = `agent:${agentId}:cron:${job.id}`;
+    const existing = resolveSession(dbKey);
+    let sessionName: string;
+
+    if (existing?.name) {
+      sessionName = existing.name;
+    } else {
+      const baseName = generateSessionName(agentId, { suffix: `cron-${job.name}` });
+      sessionName = ensureUniqueName(baseName);
+      const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+      if (!session.name) {
+        updateSessionName(session.sessionKey, sessionName);
+      }
+    }
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
     // Derive source from replySession if set, so responses route correctly
-    const source = job.replySession
-      ? deriveSourceFromSessionKey(job.replySession) ?? undefined
-      : undefined;
+    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    if (job.replySession) {
+      const replyResolved = resolveSession(job.replySession);
+      if (replyResolved?.lastChannel && replyResolved.lastTo) {
+        source = { channel: replyResolved.lastChannel, accountId: replyResolved.lastAccountId ?? "default", chatId: replyResolved.lastTo };
+      } else {
+        source = deriveSourceFromSessionKey(job.replySession) ?? undefined;
+      }
+    }
 
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       source,
       _cron: true,

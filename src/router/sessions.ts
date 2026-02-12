@@ -18,6 +18,7 @@ const log = logger.child("router:sessions");
 
 interface SessionRow {
   session_key: string;
+  name: string | null;
   sdk_session_id: string | null;
   agent_id: string;
   agent_cwd: string;
@@ -54,6 +55,7 @@ interface SessionRow {
 function rowToEntry(row: SessionRow): SessionEntry {
   return {
     sessionKey: row.session_key,
+    name: row.name ?? undefined,
     sdkSessionId: row.sdk_session_id ?? undefined,
     agentId: row.agent_id,
     agentCwd: row.agent_cwd,
@@ -95,11 +97,16 @@ function rowToEntry(row: SessionRow): SessionEntry {
 interface SessionStatements {
   upsert: Statement;
   getByKey: Statement;
+  getByName: Statement;
   getBySdkId: Statement;
   getByAgent: Statement;
+  findByAttributes: Statement;
   updateSdkId: Statement;
   updateTokens: Statement;
+  updateName: Statement;
+  nameExists: Statement;
   delete: Statement;
+  deleteByName: Statement;
   listAll: Statement;
   updateAgent: Statement;
   updateSource: Statement;
@@ -119,7 +126,7 @@ function getStatements(): SessionStatements {
   stmts = {
     upsert: db.prepare(`
       INSERT INTO sessions (
-        session_key, sdk_session_id, agent_id, agent_cwd,
+        session_key, name, sdk_session_id, agent_id, agent_cwd,
         chat_type, channel, account_id, group_id, subject, display_name,
         last_channel, last_to, last_account_id, last_thread_id,
         model_override, thinking_level,
@@ -128,7 +135,7 @@ function getStatements(): SessionStatements {
         system_sent, aborted_last_run, compaction_count,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?,
@@ -138,6 +145,7 @@ function getStatements(): SessionStatements {
         ?, ?
       )
       ON CONFLICT(session_key) DO UPDATE SET
+        name = COALESCE(excluded.name, sessions.name),
         sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
         chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
         channel = COALESCE(excluded.channel, sessions.channel),
@@ -156,8 +164,10 @@ function getStatements(): SessionStatements {
         updated_at = excluded.updated_at
     `),
     getByKey: db.prepare("SELECT * FROM sessions WHERE session_key = ?"),
+    getByName: db.prepare("SELECT * FROM sessions WHERE name = ?"),
     getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ?"),
-    getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? OR session_key LIKE 'agent:' || ? || ':%' ORDER BY updated_at DESC"),
+    getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"),
+    findByAttributes: db.prepare("SELECT * FROM sessions WHERE agent_id = ? AND channel = ? AND group_id = ? ORDER BY updated_at DESC LIMIT 1"),
     updateSdkId: db.prepare("UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"),
     updateTokens: db.prepare(`
       UPDATE sessions SET
@@ -168,7 +178,10 @@ function getStatements(): SessionStatements {
         updated_at = ?
       WHERE session_key = ?
     `),
+    updateName: db.prepare("UPDATE sessions SET name = ?, updated_at = ? WHERE session_key = ?"),
+    nameExists: db.prepare("SELECT 1 FROM sessions WHERE name = ?"),
     delete: db.prepare("DELETE FROM sessions WHERE session_key = ?"),
+    deleteByName: db.prepare("DELETE FROM sessions WHERE name = ?"),
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
     updateAgent: db.prepare(
       "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
@@ -228,6 +241,7 @@ export function getOrCreateSession(
   const now = Date.now();
   s.upsert.run(
     sessionKey,
+    defaults?.name ?? null,
     defaults?.sdkSessionId ?? null,
     agentId,
     agentCwd,
@@ -279,7 +293,7 @@ export function getSessionBySdkId(sdkSessionId: string): SessionEntry | null {
  */
 export function getSessionsByAgent(agentId: string): SessionEntry[] {
   const s = getStatements();
-  const rows = s.getByAgent.all(agentId, agentId) as SessionRow[];
+  const rows = s.getByAgent.all(agentId) as SessionRow[];
   return rows.map(rowToEntry);
 }
 
@@ -321,6 +335,29 @@ export function updateTokens(
 export function deleteSession(sessionKey: string): boolean {
   const s = getStatements();
   s.delete.run(sessionKey);
+  return getDbChanges() > 0;
+}
+
+/**
+ * Reset a session — clears conversation state but keeps the session entry
+ * (name, agent, routing, display name, etc. are preserved).
+ */
+export function resetSession(sessionKey: string): boolean {
+  const db = getDb();
+  db.prepare(`
+    UPDATE sessions SET
+      sdk_session_id = NULL,
+      session_file = NULL,
+      system_sent = 0,
+      aborted_last_run = 0,
+      compaction_count = 0,
+      input_tokens = 0,
+      output_tokens = 0,
+      total_tokens = 0,
+      context_tokens = 0,
+      updated_at = ?
+    WHERE session_key = ?
+  `).run(Date.now(), sessionKey);
   return getDbChanges() > 0;
 }
 
@@ -423,4 +460,90 @@ export function updateSessionHeartbeat(
   `);
   const now = Date.now();
   stmt.run(text, now, now, sessionKey);
+}
+
+// ============================================================================
+// Name-based lookups
+// ============================================================================
+
+/**
+ * Get session by name
+ */
+export function getSessionByName(name: string): SessionEntry | null {
+  const s = getStatements();
+  const row = s.getByName.get(name) as SessionRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Update session name.
+ * Names must not contain dots (used as topic separator in notif).
+ */
+export function updateSessionName(
+  sessionKey: string,
+  name: string
+): void {
+  if (name.includes(".")) {
+    throw new Error(`Session name must not contain dots: "${name}"`);
+  }
+  const s = getStatements();
+  s.updateName.run(name, Date.now(), sessionKey);
+}
+
+/**
+ * Check if a session name is already taken (cached prepared statement).
+ */
+export function isNameTaken(name: string): boolean {
+  const s = getStatements();
+  return !!s.nameExists.get(name);
+}
+
+/**
+ * Delete session by name
+ */
+export function deleteSessionByName(name: string): boolean {
+  const s = getStatements();
+  s.deleteByName.run(name);
+  return getDbChanges() > 0;
+}
+
+/**
+ * Find session by attributes (agent + channel + group/peer).
+ * Used by resolveRoute to find existing sessions.
+ */
+export function findSessionByAttributes(
+  agentId: string,
+  channel: string,
+  groupId: string,
+): SessionEntry | null {
+  const s = getStatements();
+  const row = s.findByAttributes.get(agentId, channel, groupId) as SessionRow | undefined;
+  return row ? rowToEntry(row) : null;
+}
+
+/**
+ * Find the main session for an agent.
+ * Tries name = slugified agentId first, falls back to chat_type = 'main'.
+ */
+export function getMainSession(agentId: string): SessionEntry | null {
+  const db = getDb();
+  // Main session name is the slugified agent ID
+  const slug = agentId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const row = db.prepare("SELECT * FROM sessions WHERE name = ? AND agent_id = ?").get(slug, agentId) as SessionRow | undefined;
+  if (row) return rowToEntry(row);
+  // Fallback: if main session was renamed, find by session_key suffix
+  const fallback = db.prepare("SELECT * FROM sessions WHERE agent_id = ? AND session_key LIKE '%:main' ORDER BY updated_at DESC LIMIT 1").get(agentId) as SessionRow | undefined;
+  return fallback ? rowToEntry(fallback) : null;
+}
+
+/**
+ * Resolve a session: try by name first, then by session_key.
+ * This allows CLI commands to accept either format.
+ */
+export function resolveSession(nameOrKey: string): SessionEntry | null {
+  // Try name first
+  const byName = getSessionByName(nameOrKey);
+  if (byName) return byName;
+  // Fall back to session_key
+  return getSession(nameOrKey);
 }

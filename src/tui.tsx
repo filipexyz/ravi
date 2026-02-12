@@ -16,8 +16,8 @@ interface Message {
   source?: MessageTarget;
 }
 
-// Session to send messages to (default: agent:main:main)
-const SEND_TO = process.argv[2] || "agent:main:main";
+// Session name to send messages to (default: main)
+const SEND_TO = process.argv[2] || "main";
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -29,10 +29,10 @@ function App() {
     const subscribe = async () => {
       try {
         // Subscribe to ALL sessions
-        for await (const event of notif.subscribe("ravi.*.prompt", "ravi.*.response")) {
-          // Extract session key from topic: ravi.{sessionKey}.prompt
+        for await (const event of notif.subscribe("ravi.session.*.prompt", "ravi.session.*.response")) {
+          // Extract session name from topic: ravi.session.{name}.prompt
           const parts = event.topic.split(".");
-          const sessionKey = parts.slice(1, -1).join(".");
+          const sessionKey = parts[2];
           const eventType = parts[parts.length - 1];
 
           if (eventType === "prompt") {
@@ -69,7 +69,7 @@ function App() {
     if (!prompt.trim() || loading) return;
     setInput("");
     try {
-      await notif.emit(`ravi.${SEND_TO}.prompt`, { prompt });
+      await notif.emit(`ravi.session.${SEND_TO}.prompt`, { prompt });
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -78,16 +78,8 @@ function App() {
     }
   };
 
-  // Format session key for display (shorter)
-  const formatSession = (key: string) => {
-    const parts = key.split(":");
-    if (parts[0] === "agent" && parts.length >= 3) {
-      // agent:main:main -> main:main
-      // agent:main:dm:123 -> main:dm:123
-      return parts.slice(1).join(":");
-    }
-    return key;
-  };
+  // Session names are already human-readable
+  const formatSession = (name: string) => name;
 
   return (
     <Box flexDirection="column" padding={1}>

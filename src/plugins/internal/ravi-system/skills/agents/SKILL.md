@@ -142,7 +142,7 @@ ravi agents tools <id>
 ### Permitir tool
 ```bash
 ravi agents tools <id> allow <tool>
-# Ex: ravi agents tools marina allow cross_send
+# Ex: ravi agents tools marina allow sessions_send
 # Ex: ravi agents tools marina allow contacts_list
 ```
 
@@ -170,7 +170,7 @@ Os nomes seguem o padrão `grupo_comando`. Pra ver todos disponíveis:
 ravi tools list
 ```
 
-Exemplos: `cross_send`, `media_send`, `contacts_list`, `contacts_approve`, `agents_list`, `daemon_restart`, `outbound_send`, etc.
+Exemplos: `sessions_send`, `sessions_ask`, `sessions_answer`, `media_send`, `contacts_list`, `contacts_approve`, `agents_list`, `daemon_restart`, `outbound_send`, etc.
 
 ## Permissões de Bash
 

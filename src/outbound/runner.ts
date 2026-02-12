@@ -8,6 +8,15 @@
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
+import {
+  getOrCreateSession,
+  resolveSession,
+  generateSessionName,
+  ensureUniqueName,
+  updateSessionName,
+  expandHome,
+} from "../router/index.js";
+import { getAgent } from "../router/config.js";
 import { getContact } from "../contacts.js";
 import {
   dbGetDueQueues,
@@ -285,20 +294,34 @@ export class OutboundRunner {
       ? this.buildFollowUpPrompt(queue, entry)
       : this.buildOutreachPrompt(queue, entry);
 
-    // Session key: agent:{agentId}:outbound:{queueId}:{phone}
-    const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+    // Find or create outbound session
+    const dbKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+    const existing = resolveSession(dbKey);
+    let sessionName: string;
+
+    if (existing?.name) {
+      sessionName = existing.name;
+    } else {
+      const agent = getAgent(agentId);
+      const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+      const phoneSuffix = entry.contactPhone.replace(/[^0-9]/g, "").slice(-6);
+      const baseName = generateSessionName(agentId, { suffix: `outbound-${phoneSuffix}` });
+      sessionName = ensureUniqueName(baseName);
+      const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+      if (!session.name) updateSessionName(session.sessionKey, sessionName);
+    }
 
     log.info("Sending prompt to agent", {
       entryId: entry.id,
       phone: entry.contactPhone,
       isFollowUp,
       roundsCompleted: entry.roundsCompleted,
-      sessionKey,
+      sessionName,
       prompt,
     });
 
     // Emit prompt
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,
@@ -434,17 +457,32 @@ export class OutboundRunner {
     const systemContext = this.buildSystemContext(queue, entry);
     const prompt = this.buildNoResponsePrompt(queue, entry);
 
-    const sessionKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+    // Find or create outbound session (same logic as processEntry)
+    const dbKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+    const existing = resolveSession(dbKey);
+    let sessionName: string;
+
+    if (existing?.name) {
+      sessionName = existing.name;
+    } else {
+      const agent = getAgent(agentId);
+      const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+      const phoneSuffix = entry.contactPhone.replace(/[^0-9]/g, "").slice(-6);
+      const baseName = generateSessionName(agentId, { suffix: `outbound-${phoneSuffix}` });
+      sessionName = ensureUniqueName(baseName);
+      const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+      if (!session.name) updateSessionName(session.sessionKey, sessionName);
+    }
 
     log.info("Sending no-response follow-up to agent", {
       entryId: entry.id,
       phone: entry.contactPhone,
       qualification: entry.qualification ?? "cold",
       roundsCompleted: entry.roundsCompleted,
-      sessionKey,
+      sessionName,
     });
 
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,

@@ -289,12 +289,12 @@ export class Gateway {
    * Subscribe to all bot responses and route based on target.
    */
   private subscribeToResponses(): void {
-    this.subscribe("responses", ["ravi.*.response"], async (event) => {
-      const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+    this.subscribe("responses", ["ravi.session.*.response"], async (event) => {
+      const sessionName = event.topic.split(".")[2];
       const response = event.data as unknown as ResponseMessage;
 
       log.debug("Response event received", {
-        sessionKey,
+        sessionName,
         keys: Object.keys(response),
         hasEmitId: !!response._emitId,
         emitId: response._emitId ?? "NONE",
@@ -315,20 +315,20 @@ export class Gateway {
         : response.response;
 
       if (text && text.trim() === SILENT_TOKEN) {
-        log.debug("Silent response, not sending to channel", { sessionKey });
+        log.debug("Silent response, not sending to channel", { sessionName });
         return;
       }
 
       if (text) {
         if (!response._emitId) {
           log.warn("GHOST RESPONSE DROPPED", {
-            sessionKey,
+            sessionName,
             textPreview: text.slice(0, 200),
           });
           return;
         }
         log.info("Sending response", {
-          sessionKey, channel, chatId, textLen: text.length,
+          sessionName, channel, chatId, textLen: text.length,
           emitId: response._emitId,
         });
         await plugin.outbound.send(accountId, chatId, { text });
@@ -340,24 +340,24 @@ export class Gateway {
    * Subscribe to Claude SDK events for typing heartbeat.
    */
   private subscribeToClaudeEvents(): void {
-    this.subscribe("claude", ["ravi.*.claude"], async (event) => {
-      const sessionKey = event.topic.split(".").slice(1, -1).join(".");
+    this.subscribe("claude", ["ravi.session.*.claude"], async (event) => {
+      const sessionName = event.topic.split(".")[2];
       const data = event.data as { type?: string };
 
       if (data.type === "result" || data.type === "silent") {
-        const target = this.activeTargets.get(sessionKey);
+        const target = this.activeTargets.get(sessionName);
         if (target) {
           const plugin = this.pluginsById.get(target.channel);
           if (plugin) {
             await plugin.outbound.sendTyping(target.accountId, target.chatId, false);
           }
-          this.activeTargets.delete(sessionKey);
+          this.activeTargets.delete(sessionName);
         }
         return;
       }
 
       if (data.type === "system" || data.type === "assistant") {
-        const target = this.activeTargets.get(sessionKey);
+        const target = this.activeTargets.get(sessionName);
         if (target) {
           const plugin = this.pluginsById.get(target.channel);
           if (plugin) {
@@ -636,12 +636,12 @@ export class Gateway {
       groupId: message.isGroup ? message.chatId : undefined,
     });
 
-    const sessionKey = resolved.sessionKey;
+    const sessionName = resolved.sessionName;
 
     log.info("Inbound message", {
       channel: plugin.id,
       sender: message.senderId,
-      sessionKey,
+      sessionName,
       agentId: resolved.agent.id,
     });
 
@@ -672,14 +672,14 @@ export class Gateway {
     const envelope = formatEnvelope(plugin, message);
 
     // Store target for typing heartbeat
-    this.activeTargets.set(sessionKey, source);
+    this.activeTargets.set(sessionName, source);
 
     // Typing indicator
     await plugin.outbound.sendTyping(message.accountId, message.chatId, true);
 
     // Emit prompt with source and context
     try {
-      await notif.emit(`ravi.${sessionKey}.prompt`, {
+      await notif.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: envelope,
         source,
         context,

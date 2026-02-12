@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { dbListAgents } from "../router/router-db.js";
-import { expandHome } from "../router/index.js";
+import { expandHome, getMainSession, getOrCreateSession, generateSessionName, ensureUniqueName, updateSessionName } from "../router/index.js";
 import type { AgentConfig } from "../router/types.js";
 import {
   isWithinActiveHours,
@@ -205,11 +205,28 @@ export class HeartbeatRunner {
     // Update last run timestamp in DB
     updateAgentHeartbeatLastRun(agentId);
 
-    // Build session key - use the main session for the agent
-    const sessionKey = `agent:${agentId}:main`;
+    // Find or create the main session for the agent
+    let mainSession = getMainSession(agentId);
+    if (!mainSession) {
+      const agentCwd = expandHome(agent.cwd);
+      const baseName = generateSessionName(agentId, { isMain: true });
+      const sessionName = ensureUniqueName(baseName);
+      mainSession = getOrCreateSession(
+        `agent:${agentId}:main`,
+        agentId,
+        agentCwd,
+        { name: sessionName }
+      );
+      if (!mainSession.name) {
+        updateSessionName(mainSession.sessionKey, sessionName);
+        mainSession.name = sessionName;
+      }
+    }
+
+    const sessionName = mainSession.name!;
 
     // Send heartbeat prompt
-    await notif.emit(`ravi.${sessionKey}.prompt`, {
+    await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt: HEARTBEAT_PROMPT,
       _heartbeat: true, // Mark as heartbeat for response handling
     });

@@ -73,18 +73,33 @@ export {
   closeRouterDb,
 } from "./router-db.js";
 
+// Session Name
+export {
+  generateSessionName,
+  ensureUniqueName,
+  slugify,
+} from "./session-name.js";
+
 // Sessions
 export {
   getOrCreateSession,
   getSession,
+  getSessionByName,
   getSessionBySdkId,
   getSessionsByAgent,
+  getMainSession,
+  resolveSession,
+  findSessionByAttributes,
   updateSdkSessionId,
   updateTokens,
+  updateSessionName,
   updateSessionSource,
   updateSessionContext,
   updateSessionDisplayName,
   updateSessionHeartbeat,
+  isNameTaken,
   deleteSession,
+  deleteSessionByName,
+  resetSession,
   listSessions,
 } from "./sessions.js";

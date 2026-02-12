@@ -73,8 +73,8 @@ Exemplo:
 - Se há muito tempo sem interação
 
 ## Como Notificar
-Use cross_send para enviar mensagem:
-ravi cross send target="agent:main:main" type="inform" message="..."
+Use sessions inform para enviar mensagem:
+ravi sessions inform <session-name> "mensagem"
 ```
 
 ## Exemplos

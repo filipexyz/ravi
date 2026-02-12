@@ -173,15 +173,15 @@ Check-ins periodicos de agents dentro de horarios ativos.
 4. Envia prompt de status check
 5. `HEARTBEAT_OK` = silencioso, qualquer outro texto = envia pro canal
 
-### Cross-Send (`cli/commands/cross.ts`)
-Mensagens entre sessoes (inter-agent communication).
+### Session Messaging (`cli/commands/sessions.ts`)
+Mensagens entre sessoes (inter-session communication).
 
-**Tipos:** relay | inform | execute | ask | answer
+**Comandos:** `sessions send` | `sessions inform` | `sessions execute` | `sessions ask` | `sessions answer`
 
 **Ask/Answer flow:**
-1. Agent A: `cross_send target ask "pergunta" sender`
+1. Agent A: `ravi sessions ask <target-session> "pergunta" "sender"`
 2. Bot emite `[System] Ask:` para target
-3. Agent B responde, usa `cross_send origin answer "resposta"`
+3. Agent B responde, usa `ravi sessions answer <origin-session> "resposta" "sender"`
 4. Bot emite `[System] Answer:` para origin
 
 ## Sistema de Plugins

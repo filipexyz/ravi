@@ -12,6 +12,8 @@ import type {
   DmScope,
 } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
+import { generateSessionName, ensureUniqueName } from "./session-name.js";
+import { getOrCreateSession, findSessionByAttributes, updateSessionName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
 import { getContactAgent } from "../contacts.js";
 
@@ -112,7 +114,7 @@ export function resolveRoute(
   const dmScope: DmScope =
     route?.dmScope ?? agent.dmScope ?? config.defaultDmScope;
 
-  // Build session key
+  // Build session key (kept for backwards compat in DB PK)
   const sessionKey = buildSessionKey({
     agentId,
     channel,
@@ -122,11 +124,34 @@ export function resolveRoute(
     dmScope,
   });
 
+  // Resolve or generate session name
+  // Check if session already exists (has a name)
+  const agentCwd = expandHome(agent.cwd);
+  const existing = getOrCreateSession(sessionKey, agentId, agentCwd);
+  let sessionName = existing.name;
+
+  if (!sessionName) {
+    // Generate a name for this session
+    const isMain = dmScope === "main";
+    const nameOpts = {
+      isMain,
+      chatType: isGroup ? "group" as const : "dm" as const,
+      peerKind: isGroup ? "group" as const : "dm" as const,
+      peerId: isGroup ? groupId : phone,
+      groupName: existing.displayName ?? existing.subject ?? undefined,
+    };
+    const baseName = generateSessionName(agentId, nameOpts);
+    sessionName = ensureUniqueName(baseName);
+    // Persist the name
+    updateSessionName(sessionKey, sessionName);
+  }
+
   log.debug("Resolved route", {
     phone,
     agentId,
     dmScope,
     sessionKey,
+    sessionName,
     matchedPattern: route?.pattern,
   });
 
@@ -134,6 +159,7 @@ export function resolveRoute(
     agent,
     dmScope,
     sessionKey,
+    sessionName,
     route: route ?? undefined,
   };
 }

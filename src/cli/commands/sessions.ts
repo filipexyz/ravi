@@ -4,16 +4,27 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { fail } from "../context.js";
+import { fail, getContext } from "../context.js";
+import { notif } from "../../notif.js";
 import {
   listSessions,
   getSession,
   getSessionsByAgent,
   deleteSession,
+  resetSession,
+  resolveSession,
+  getOrCreateSession,
+  findSessionByChatId,
   updateSessionDisplayName,
   updateSessionModelOverride,
   updateSessionThinkingLevel,
 } from "../../router/sessions.js";
+import { deriveSourceFromSessionKey } from "../../router/session-key.js";
+import { loadRouterConfig, expandHome } from "../../router/index.js";
+import type { ResponseMessage, ChannelContext } from "../../bot.js";
+import type { SessionEntry } from "../../router/types.js";
+
+const SEND_TIMEOUT_MS = 120000; // 2 minutes
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -50,16 +61,16 @@ export class SessionCommands {
 
     const label = agentId ? `Sessions for ${agentId}` : "All sessions";
     console.log(`\n${label} (${sessions.length}):\n`);
-    console.log("  SESSION KEY                                          AGENT     TOKENS    MODEL      NAME");
-    console.log("  ───────────────────────────────────────────────────  ────────  ────────  ─────────  ──────────────────");
+    console.log("  NAME                                  AGENT     TOKENS    MODEL      DISPLAY");
+    console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ──────────────────");
 
     for (const s of sessions) {
-      const key = s.sessionKey.padEnd(51);
+      const name = (s.name ?? s.sessionKey).padEnd(38);
       const agent = (s.agentId ?? "-").padEnd(8);
       const tokens = formatTokens(s.totalTokens ?? 0).padStart(8);
       const model = (s.modelOverride ?? "-").padEnd(9);
-      const name = s.displayName ?? s.lastTo ?? "-";
-      console.log(`  ${key}  ${agent}  ${tokens}  ${model}  ${name}`);
+      const display = s.displayName ?? s.lastTo ?? "-";
+      console.log(`  ${name}  ${agent}  ${tokens}  ${model}  ${display}`);
     }
 
     console.log();
@@ -67,15 +78,16 @@ export class SessionCommands {
   }
 
   @Command({ name: "info", description: "Show session details" })
-  info(@Arg("sessionKey", { description: "Session key" }) sessionKey: string) {
-    const s = getSession(sessionKey);
+  info(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+    const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${sessionKey}`);
+      fail(`Session not found: ${nameOrKey}`);
       return;
     }
 
-    console.log(`\nSession:     ${s.sessionKey}`);
-    console.log(`Name:        ${s.displayName ?? "(none)"}`);
+    console.log(`\nSession:     ${s.name ?? s.sessionKey}`);
+    console.log(`Key:         ${s.sessionKey}`);
+    console.log(`Display:     ${s.displayName ?? "(none)"}`);
     console.log(`Agent:       ${s.agentId}`);
     console.log(`Model:       ${s.modelOverride ?? "(agent default)"}`);
     console.log(`Thinking:    ${s.thinkingLevel ?? "(default)"}`);
@@ -99,36 +111,37 @@ export class SessionCommands {
 
   @Command({ name: "rename", description: "Set session display name" })
   rename(
-    @Arg("sessionKey", { description: "Session key" }) sessionKey: string,
-    @Arg("name", { description: "Display name" }) name: string
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("displayName", { description: "Display name" }) displayName: string
   ) {
-    const s = getSession(sessionKey);
+    const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${sessionKey}`);
+      fail(`Session not found: ${nameOrKey}`);
       return;
     }
 
-    updateSessionDisplayName(sessionKey, name);
-    console.log(`Renamed: ${sessionKey} -> "${name}"`);
+    updateSessionDisplayName(s.sessionKey, displayName);
+    console.log(`Renamed: ${s.name ?? s.sessionKey} -> "${displayName}"`);
   }
 
   @Command({ name: "set-model", description: "Set session model override" })
   setModel(
-    @Arg("sessionKey", { description: "Session key" }) sessionKey: string,
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string
   ) {
-    const s = getSession(sessionKey);
+    const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${sessionKey}`);
+      fail(`Session not found: ${nameOrKey}`);
       return;
     }
 
+    const label = s.name ?? s.sessionKey;
     if (model === "clear") {
-      updateSessionModelOverride(sessionKey, null);
-      console.log(`Cleared model override for: ${sessionKey}`);
+      updateSessionModelOverride(s.sessionKey, null);
+      console.log(`Cleared model override for: ${label}`);
     } else {
-      updateSessionModelOverride(sessionKey, model);
-      console.log(`Set model to "${model}" for: ${sessionKey}`);
+      updateSessionModelOverride(s.sessionKey, model);
+      console.log(`Set model to "${model}" for: ${label}`);
     }
 
     console.log("Note: takes effect on next session start (reset or daemon restart).");
@@ -136,12 +149,12 @@ export class SessionCommands {
 
   @Command({ name: "set-thinking", description: "Set session thinking level" })
   setThinking(
-    @Arg("sessionKey", { description: "Session key" }) sessionKey: string,
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string
   ) {
-    const s = getSession(sessionKey);
+    const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${sessionKey}`);
+      fail(`Session not found: ${nameOrKey}`);
       return;
     }
 
@@ -151,44 +164,434 @@ export class SessionCommands {
       return;
     }
 
+    const label = s.name ?? s.sessionKey;
     if (level === "clear") {
-      updateSessionThinkingLevel(sessionKey, null);
-      console.log(`Cleared thinking level for: ${sessionKey}`);
+      updateSessionThinkingLevel(s.sessionKey, null);
+      console.log(`Cleared thinking level for: ${label}`);
     } else {
-      updateSessionThinkingLevel(sessionKey, level);
-      console.log(`Set thinking to "${level}" for: ${sessionKey}`);
+      updateSessionThinkingLevel(s.sessionKey, level);
+      console.log(`Set thinking to "${level}" for: ${label}`);
     }
 
     console.log("Note: takes effect on next session start (reset or daemon restart).");
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
-  reset(@Arg("sessionKey", { description: "Session key" }) sessionKey: string) {
-    const s = getSession(sessionKey);
+  reset(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+    const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${sessionKey}`);
+      fail(`Session not found: ${nameOrKey}`);
       return;
     }
 
-    deleteSession(sessionKey);
-    console.log(`Session reset: ${sessionKey}`);
+    resetSession(s.sessionKey);
+    console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
   }
 
-  @Command({ name: "reset-all", description: "Reset all sessions for an agent" })
-  resetAll(@Arg("agentId", { description: "Agent ID" }) agentId: string) {
-    const sessions = getSessionsByAgent(agentId);
+  // ===========================================================================
+  // Messaging Commands
+  // ===========================================================================
 
-    if (sessions.length === 0) {
-      console.log(`No sessions to reset for agent: ${agentId}`);
+  @Command({ name: "send", description: "Send a prompt to a session (use -i for interactive)" })
+  async send(
+    @Arg("nameOrKey", { description: "Session name" }) nameOrKey: string,
+    @Arg("prompt", { description: "Prompt to send (omit for interactive mode)", required: false }) prompt?: string,
+    @Option({ flags: "-i, --interactive", description: "Interactive mode" }) interactive?: boolean,
+    @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
+    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+  ) {
+    const session = this.resolveTarget(nameOrKey, agentId);
+    if (!session) return;
+
+    const sessionName = session.name ?? nameOrKey;
+
+    // Self-send check
+    const currentSession = getContext()?.sessionKey;
+    if (currentSession && currentSession === sessionName) {
+      fail(`Cannot send to same session (${sessionName}) - would cause deadlock`);
       return;
     }
 
-    let count = 0;
-    for (const s of sessions) {
-      if (deleteSession(s.sessionKey)) count++;
+    if (interactive || !prompt) {
+      return this.interactiveMode(sessionName, session, channel, to);
     }
 
-    console.log(`Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${agentId}`);
+    console.log(`\n📤 Sending to ${sessionName}\n`);
+    console.log(`Prompt: ${prompt}\n`);
+    console.log("─".repeat(50));
+
+    const chars = await this.streamToSession(sessionName, prompt, session, channel, to);
+
+    console.log("\n" + "─".repeat(50));
+    console.log(`\n✅ Done (${chars} chars)`);
+  }
+
+  @Command({ name: "ask", description: "Ask a question to another session (fire-and-forget)" })
+  async ask(
+    @Arg("target", { description: "Target session name" }) target: string,
+    @Arg("message", { description: "Question to ask" }) message: string,
+    @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
+    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+  ) {
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const origin = getContext()?.sessionKey ?? "unknown";
+    const senderTag = sender ? `, sender: ${sender}` : "";
+    const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time.)`;
+
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    console.log(`✓ [ask] sent to ${session.name ?? target}`);
+  }
+
+  @Command({ name: "answer", description: "Answer a question from another session (fire-and-forget)" })
+  async answer(
+    @Arg("target", { description: "Target session name (the one that asked)" }) target: string,
+    @Arg("message", { description: "Answer to send back" }) message: string,
+    @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
+    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+  ) {
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const origin = getContext()?.sessionKey ?? "unknown";
+    const senderTag = sender ? `, sender: ${sender}` : "";
+    const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
+
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    console.log(`✓ [answer] sent to ${session.name ?? target}`);
+  }
+
+  @Command({ name: "execute", description: "Send an execute command to another session (fire-and-forget)" })
+  async execute(
+    @Arg("target", { description: "Target session name" }) target: string,
+    @Arg("message", { description: "Task to execute" }) message: string,
+    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+  ) {
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const prompt = `[System] Execute: ${message}`;
+
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    console.log(`✓ [execute] sent to ${session.name ?? target}`);
+  }
+
+  @Command({ name: "inform", description: "Send an informational message to another session (fire-and-forget)" })
+  async inform(
+    @Arg("target", { description: "Target session name" }) target: string,
+    @Arg("message", { description: "Information to send" }) message: string,
+    @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+  ) {
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const prompt = `[System] Inform: ${message}`;
+
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    console.log(`✓ [inform] sent to ${session.name ?? target}`);
+  }
+
+  @Command({ name: "read", description: "Read message history of a session (normalized)" })
+  read(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" }) countStr?: string
+  ) {
+    const session = this.resolveTarget(nameOrKey);
+    if (!session) return;
+
+    if (!session.sdkSessionId) {
+      console.log("⚠️  No SDK session — no history available");
+      return;
+    }
+
+    const { homedir } = require("os");
+    const { existsSync, readFileSync } = require("fs");
+
+    const escapedCwd = (session.agentCwd ?? "").replace(/\//g, "-");
+    const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
+
+    if (!existsSync(jsonlPath)) {
+      console.log("⚠️  Transcript not found");
+      return;
+    }
+
+    const maxMessages = parseInt(countStr ?? "20", 10);
+    const raw = readFileSync(jsonlPath, "utf-8") as string;
+    const lines = raw.trim().split("\n").filter(Boolean);
+
+    interface Message {
+      role: string;
+      text: string;
+      time: string;
+    }
+
+    const messages: Message[] = [];
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+
+        if (entry.type === "user" && entry.message?.content) {
+          const content = typeof entry.message.content === "string"
+            ? entry.message.content
+            : Array.isArray(entry.message.content)
+              ? entry.message.content
+                  .filter((p: { type: string }) => p.type === "text")
+                  .map((p: { text?: string }) => p.text ?? "")
+                  .join(" ")
+              : "";
+          if (!content.trim()) continue;
+          messages.push({
+            role: "user",
+            text: content.trim(),
+            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          });
+        } else if (entry.type === "assistant" && entry.message?.content) {
+          const parts = entry.message.content as Array<{ type: string; text?: string }>;
+          const text = parts
+            .filter((p) => p.type === "text")
+            .map((p) => p.text ?? "")
+            .join(" ")
+            .trim();
+          if (!text || text === "@@SILENT@@") continue;
+          messages.push({
+            role: "assistant",
+            text,
+            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+          });
+        }
+      } catch {
+        // skip malformed
+      }
+    }
+
+    const recent = messages.slice(-maxMessages);
+    console.log(`\n💬 ${session.name ?? nameOrKey} — last ${recent.length} of ${messages.length} messages\n`);
+
+    for (const msg of recent) {
+      const who = msg.role === "user" ? "👤" : "🤖";
+      const timeStr = msg.time ? ` [${msg.time}]` : "";
+      console.log(`${who}${timeStr} ${msg.text}\n`);
+    }
+  }
+
+  // ===========================================================================
+  // Private helpers
+  // ===========================================================================
+
+  /**
+   * Resolve a target session by name, key, or chatId. Optionally create with -a.
+   */
+  private resolveTarget(nameOrKey: string, createWithAgent?: string): SessionEntry | null {
+    let session = resolveSession(nameOrKey);
+
+    // Try chatId lookup
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+
+    if (!session) {
+      if (!createWithAgent) {
+        fail(`Session not found: ${nameOrKey}. Use -a <agent> to create it.`);
+        return null;
+      }
+
+      const config = loadRouterConfig();
+      const agent = config.agents[createWithAgent];
+      if (!agent) {
+        fail(`Agent not found: ${createWithAgent}`);
+        return null;
+      }
+
+      const agentCwd = expandHome(agent.cwd);
+      getOrCreateSession(nameOrKey, createWithAgent, agentCwd, { name: nameOrKey });
+      console.log(`Created session: ${nameOrKey} (agent: ${createWithAgent})`);
+      session = resolveSession(nameOrKey);
+    }
+
+    return session ?? null;
+  }
+
+  /**
+   * Resolve source (delivery routing) from session, with optional overrides.
+   */
+  private resolveSource(
+    session: SessionEntry,
+    channelOverride?: string,
+    toOverride?: string
+  ): { source?: { channel: string; accountId: string; chatId: string }; context?: ChannelContext } {
+    let source: { channel: string; accountId: string; chatId: string } | undefined;
+    let context: ChannelContext | undefined;
+
+    if (channelOverride && toOverride) {
+      source = { channel: channelOverride, accountId: "default", chatId: toOverride };
+    } else if (session.lastChannel && session.lastTo) {
+      source = {
+        channel: session.lastChannel,
+        accountId: session.lastAccountId ?? "default",
+        chatId: session.lastTo,
+      };
+    } else {
+      const derived = deriveSourceFromSessionKey(session.sessionKey);
+      if (derived) source = derived;
+    }
+
+    if (session.lastContext) {
+      try { context = JSON.parse(session.lastContext) as ChannelContext; } catch { /* ignore */ }
+    }
+
+    return { source, context };
+  }
+
+  /**
+   * Fire-and-forget emit to a session (for ask/answer/execute/inform).
+   */
+  private async emitToSession(
+    sessionName: string,
+    prompt: string,
+    session: SessionEntry,
+    channelOverride?: string,
+    toOverride?: string
+  ): Promise<void> {
+    const { source, context } = this.resolveSource(session, channelOverride, toOverride);
+    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context } as Record<string, unknown>);
+  }
+
+  /**
+   * Send a prompt to a session and stream the response.
+   */
+  private async streamToSession(
+    sessionName: string,
+    prompt: string,
+    session: SessionEntry,
+    channelOverride?: string,
+    toOverride?: string
+  ): Promise<number> {
+    let responseLength = 0;
+
+    const claudeStream = notif.subscribe(`ravi.session.${sessionName}.claude`);
+    const responseStream = notif.subscribe(`ravi.session.${sessionName}.response`);
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      claudeStream.close();
+      responseStream.close();
+    };
+
+    const completion = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
+        console.log("\n⏱️  Timeout");
+        resolve();
+      }, SEND_TIMEOUT_MS);
+
+      (async () => {
+        try {
+          for await (const event of claudeStream) {
+            if ((event.data as Record<string, unknown>).type === "result") {
+              resolve();
+              break;
+            }
+          }
+        } catch { /* ignore */ }
+      })();
+    });
+
+    const streaming = (async () => {
+      try {
+        for await (const event of responseStream) {
+          const data = event.data as ResponseMessage;
+          if (data.error) {
+            console.log(`\n❌ ${data.error}`);
+            break;
+          }
+          if (data.response) {
+            process.stdout.write(data.response);
+            responseLength += data.response.length;
+          }
+        }
+      } catch { /* ignore */ }
+    })();
+
+    const { source, context } = this.resolveSource(session, channelOverride, toOverride);
+    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context } as Record<string, unknown>);
+
+    await completion;
+    cleanup();
+
+    await Promise.race([streaming, new Promise(r => setTimeout(r, 100))]);
+
+    return responseLength;
+  }
+
+  private async interactiveMode(
+    sessionName: string,
+    session: SessionEntry,
+    channelOverride?: string,
+    toOverride?: string
+  ): Promise<void> {
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    console.log(`\n🤖 Interactive Chat`);
+    console.log(`   Session: ${sessionName}`);
+    console.log(`   Commands: /reset, /info, /exit\n`);
+
+    const ask = () => {
+      rl.question(`\x1b[36m${sessionName}>\x1b[0m `, async (input) => {
+        const trimmed = input.trim();
+
+        if (!trimmed) {
+          ask();
+          return;
+        }
+
+        if (trimmed === "/exit" || trimmed === "/quit") {
+          console.log("\nBye!");
+          rl.close();
+          process.exit(0);
+        }
+
+        if (trimmed === "/reset") {
+          const s = resolveSession(sessionName);
+          if (s) resetSession(s.sessionKey);
+          console.log("Session reset.\n");
+          ask();
+          return;
+        }
+
+        if (trimmed === "/info") {
+          const s = resolveSession(sessionName);
+          if (s) {
+            console.log(`Session: ${s.name ?? s.sessionKey}`);
+            console.log(`SDK Session: ${s.sdkSessionId || "(none)"}`);
+            console.log(`Tokens: ${(s.inputTokens || 0) + (s.outputTokens || 0)}\n`);
+          } else {
+            console.log("No active session.\n");
+          }
+          ask();
+          return;
+        }
+
+        console.log();
+        await this.streamToSession(sessionName, trimmed, session, channelOverride, toOverride);
+        console.log("\n");
+        ask();
+      });
+    };
+
+    ask();
   }
 }

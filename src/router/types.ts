@@ -141,6 +141,8 @@ export interface SessionKeyParams {
 export interface SessionEntry {
   // Identification
   sessionKey: string;
+  /** Human-readable unique session name (used in notif topics) */
+  name?: string;
   sdkSessionId?: string;
   sessionFile?: string;
   updatedAt: number;
@@ -199,5 +201,7 @@ export interface ResolvedRoute {
   agent: AgentConfig;
   dmScope: DmScope;
   sessionKey: string;
+  /** Human-readable session name (used in notif topics) */
+  sessionName: string;
   route?: RouteConfig;
 }
