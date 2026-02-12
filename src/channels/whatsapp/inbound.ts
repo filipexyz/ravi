@@ -406,16 +406,34 @@ export function mergeMessages(messages: WhatsAppInbound[]): WhatsAppInbound {
     return messages[0];
   }
 
-  // Use the last message as base
+  // Use the last message as base (its media stays as the primary attachment)
   const base = messages[messages.length - 1];
 
-  // Combine all text
-  const texts = messages
-    .map((m) => m.text)
-    .filter((t): t is string => !!t);
+  // Collect all parts: text, media references, and transcriptions from all messages
+  const parts: string[] = [];
+
+  for (const m of messages) {
+    if (m.media && m !== base) {
+      // Include non-base media as text references so they aren't lost
+      const label = m.media.caption
+        ? `[${m.media.type}] ${m.media.caption}`
+        : `[${m.media.type}]`;
+      parts.push(label);
+      if (m.media.localPath) {
+        parts.push(`[file: ${m.media.localPath}]`);
+      }
+      if (m.transcription) {
+        parts.push(`Transcript:\n${m.transcription}`);
+      }
+    }
+
+    if (m.text) {
+      parts.push(m.text);
+    }
+  }
 
   return {
     ...base,
-    text: texts.join("\n"),
+    text: parts.length > 0 ? parts.join("\n") : base.text,
   };
 }
