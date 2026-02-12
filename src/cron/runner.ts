@@ -8,6 +8,7 @@
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
+import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
   dbGetDueJobs,
   dbGetNextDueJob,
@@ -209,8 +210,12 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
+    // Derive source from session key so responses route to the right channel
+    const source = deriveSourceFromSessionKey(sessionKey) ?? undefined;
+
     await notif.emit(`ravi.${sessionKey}.prompt`, {
       prompt,
+      source,
       _cron: true,
       _jobId: job.id,
     });
@@ -226,8 +231,14 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
+    // Derive source from replySession if set, so responses route correctly
+    const source = job.replySession
+      ? deriveSourceFromSessionKey(job.replySession) ?? undefined
+      : undefined;
+
     await notif.emit(`ravi.${sessionKey}.prompt`, {
       prompt,
+      source,
       _cron: true,
       _jobId: job.id,
     });

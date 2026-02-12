@@ -8,6 +8,11 @@ import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { upsertContact } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
+import { notif } from "../../notif.js";
+import { buildSessionKey } from "../../router/session-key.js";
+import { getOrCreateSession, updateSessionSource } from "../../router/sessions.js";
+import { getAgent } from "../../router/config.js";
+import { expandHome } from "../../router/resolver.js";
 
 const TOPIC_PREFIX = "ravi.whatsapp.group";
 
@@ -140,6 +145,51 @@ export class GroupCommands {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(`  Route:        failed (${msg})`);
+      }
+
+      // Natively create the session so it's ready before the first message
+      const sessionKey = buildSessionKey({
+        agentId: agent,
+        channel: "whatsapp",
+        accountId: account ?? "default",
+        peerKind: "group",
+        peerId: `group:${groupId}`,
+      });
+
+      const agentConfig = getAgent(agent);
+      if (agentConfig) {
+        const agentCwd = expandHome(agentConfig.cwd);
+        const acctId = account ?? "default";
+
+        getOrCreateSession(sessionKey, agent, agentCwd, {
+          chatType: "group",
+          channel: "whatsapp",
+          accountId: acctId,
+          groupId: `group:${groupId}`,
+          subject: name,
+        });
+        updateSessionSource(sessionKey, {
+          channel: "whatsapp",
+          accountId: acctId,
+          chatId: `group:${groupId}`,
+        });
+        console.log(`  Session:      created`);
+
+        // Send an inform so the agent introduces itself
+        const memberList = participants.join(", ");
+        const inform = `[System] Inform: Você foi adicionado ao grupo WhatsApp "${name}" com os membros: ${memberList}. Se apresente brevemente.`;
+
+        await notif.emit(`ravi.${sessionKey}.prompt`, {
+          prompt: inform,
+          source: {
+            channel: "whatsapp",
+            accountId: acctId,
+            chatId: `group:${groupId}`,
+          },
+        });
+        console.log(`  Inform:       sent`);
+      } else {
+        console.log(`  Session:      skipped (agent "${agent}" not found)`);
       }
     }
 

@@ -3,7 +3,9 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { notif } from "../../notif.js";
 import {
@@ -759,7 +761,7 @@ export class AgentsCommands {
   }
 
   @Command({ name: "reset", description: "Reset agent session" })
-  reset(
+  async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("sessionKey", { required: false, description: "Specific session key, 'all' to reset all, or omit for agent:ID:main" }) sessionKey?: string
   ) {
@@ -767,6 +769,13 @@ export class AgentsCommands {
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
+
+    // Helper: abort SDK session + delete from DB
+    const resetOne = async (key: string): Promise<boolean> => {
+      // Abort SDK streaming session in daemon
+      await notif.emit("ravi.session.abort", { sessionKey: key });
+      return deleteSession(key);
+    };
 
     // Reset all sessions for this agent
     if (sessionKey === "all") {
@@ -777,14 +786,14 @@ export class AgentsCommands {
       }
       let count = 0;
       for (const s of sessions) {
-        if (deleteSession(s.sessionKey)) count++;
+        if (await resetOne(s.sessionKey)) count++;
       }
       console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
       return;
     }
 
     const key = sessionKey || `agent:${id}:main`;
-    const deleted = deleteSession(key);
+    const deleted = await resetOne(key);
 
     if (deleted) {
       console.log(`✅ Session reset: ${key}`);
@@ -804,5 +813,120 @@ export class AgentsCommands {
         console.log(`ℹ️  No sessions to reset for agent: ${id}`);
       }
     }
+  }
+
+  @Command({ name: "debug", description: "Show last turns of an agent session (what it received, what it responded)" })
+  debug(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("sessionKey", { required: false, description: "Session key (omit for agent:ID:main)" }) sessionKey?: string,
+    @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" }) turnsStr?: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      fail(`Agent not found: ${id}`);
+    }
+
+    const key = sessionKey || `agent:${id}:main`;
+    const session = getSession(key);
+
+    if (!session) {
+      console.log(`ℹ️  No session found: ${key}`);
+      const sessions = getSessionsByAgent(id);
+      if (sessions.length > 0) {
+        console.log(`\n  Available sessions for ${id}:`);
+        for (const s of sessions) {
+          console.log(`    ${s.sessionKey}`);
+        }
+      }
+      return;
+    }
+
+    const maxTurns = parseInt(turnsStr ?? "5", 10);
+
+    // Session metadata
+    console.log(`\n🔍 Debug: ${key}\n`);
+    console.log(`  Agent:       ${session.agentId}`);
+    console.log(`  CWD:         ${session.agentCwd}`);
+    console.log(`  SDK ID:      ${session.sdkSessionId ?? "(none)"}`);
+    console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
+    console.log(`  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`);
+    console.log(`  Compactions:  ${session.compactionCount}`);
+    console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
+    console.log(`  Updated:     ${new Date(session.updatedAt).toLocaleString()}`);
+
+    // Try to read SDK session transcript
+    if (!session.sdkSessionId) {
+      console.log(`\n  ⚠️  No SDK session ID — cannot read transcript`);
+      return;
+    }
+
+    // SDK stores sessions at ~/.claude/projects/-{escaped-cwd}/{sdkSessionId}.jsonl
+    const escapedCwd = session.agentCwd.replace(/\//g, "-");
+    const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
+
+    if (!existsSync(jsonlPath)) {
+      console.log(`\n  ⚠️  Transcript not found: ${jsonlPath}`);
+      return;
+    }
+
+    // Read and parse JSONL
+    const raw = readFileSync(jsonlPath, "utf-8");
+    const lines = raw.trim().split("\n").filter(Boolean);
+
+    // Extract user/assistant turns
+    interface Turn {
+      type: string;
+      timestamp: string;
+      text?: string;
+      toolUse?: string;
+    }
+
+    const turns: Turn[] = [];
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === "user" && entry.message?.content) {
+          const content = typeof entry.message.content === "string"
+            ? entry.message.content
+            : JSON.stringify(entry.message.content).slice(0, 200);
+          turns.push({
+            type: "user",
+            timestamp: entry.timestamp ?? "",
+            text: content.slice(0, 300),
+          });
+        } else if (entry.type === "assistant" && entry.message?.content) {
+          const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
+          const textParts = parts.filter((p: { type: string }) => p.type === "text").map((p: { text?: string }) => p.text ?? "");
+          const toolParts = parts.filter((p: { type: string }) => p.type === "tool_use").map((p: { name?: string; input?: unknown }) => `${p.name}(${JSON.stringify(p.input).slice(0, 100)})`);
+
+          turns.push({
+            type: "assistant",
+            timestamp: entry.timestamp ?? "",
+            text: textParts.join(" ").slice(0, 300) || undefined,
+            toolUse: toolParts.join(", ").slice(0, 200) || undefined,
+          });
+        }
+      } catch {
+        // skip malformed lines
+      }
+    }
+
+    // Show last N turns
+    const recent = turns.slice(-maxTurns * 2); // user+assistant pairs
+    console.log(`\n  📋 Last ${Math.min(recent.length, maxTurns * 2)} entries (of ${turns.length} total):\n`);
+
+    for (const turn of recent) {
+      const time = turn.timestamp ? new Date(turn.timestamp).toLocaleTimeString() : "";
+      const prefix = turn.type === "user" ? "  👤 USER" : "  🤖 ASST";
+
+      if (turn.text) {
+        console.log(`${prefix} [${time}] ${turn.text}`);
+      }
+      if (turn.toolUse) {
+        console.log(`${prefix} [${time}] 🔧 ${turn.toolUse}`);
+      }
+    }
+
+    console.log();
   }
 }

@@ -84,26 +84,8 @@ export class CrossCommands {
       }
     }
 
-    // Verify session exists
+    // Look up session (may be null for new sessions — that's OK)
     const targetSession = getSession(resolvedTarget);
-    if (!targetSession) {
-      const sessions = listSessions();
-      console.error(`[ERROR] Session not found: "${resolvedTarget}"\n`);
-      console.log(`Available sessions:`);
-      for (const s of sessions.slice(0, 10)) {
-        const routing = s.lastChannel && s.lastTo
-          ? `→ ${s.lastChannel}:${s.lastTo}`
-          : "(no routing)";
-        console.log(`  ${s.sessionKey} ${routing}`);
-      }
-      if (sessions.length > 10) {
-        console.log(`  ... and ${sessions.length - 10} more (use cross_list to see all)`);
-      }
-      if (sessions.length === 0) {
-        console.log(`  (no active sessions)`);
-      }
-      return { success: false, error: `Session not found: ${resolvedTarget}` };
-    }
 
     // Resolve source (delivery routing)
     // Priority: explicit --channel/--to > session lastChannel > derived from key
