@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { upsertContact } from "../../contacts.js";
+import { upsertContact, allowContact } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
 import { notif } from "../../notif.js";
 import { buildSessionKey } from "../../router/session-key.js";
@@ -17,16 +17,20 @@ import { expandHome } from "../../router/resolver.js";
 
 const TOPIC_PREFIX = "ravi.whatsapp.group";
 
+/** Operations that may take longer (write operations on WhatsApp) */
+const SLOW_OPS = new Set(["create", "leave", "add", "remove", "join"]);
+
 /** Send a group operation and wait for the result */
 async function groupRequest<T = Record<string, unknown>>(
   op: string,
   data: Record<string, unknown>,
   account?: string
 ): Promise<T> {
+  const timeout = SLOW_OPS.has(op) ? 45000 : 15000;
   return requestReply<T>(`${TOPIC_PREFIX}.${op}`, {
     ...data,
     accountId: account ?? "default",
-  });
+  }, timeout);
 }
 
 @Group({
@@ -137,6 +141,9 @@ export class GroupCommands {
 
     // Always auto-approve groups we create ourselves
     upsertContact(groupIdentity, result.subject, "allowed");
+    if (agent) {
+      allowContact(groupIdentity, agent);
+    }
     console.log(`  Contact:      approved`);
 
     if (agent) {

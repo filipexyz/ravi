@@ -231,14 +231,14 @@ const stmts = {
   getContactByIdentity: db.prepare(`
     SELECT c.* FROM contacts_v2 c
     JOIN contact_identities ci ON ci.contact_id = c.id
-    WHERE ci.identity_value = ?
+    WHERE ci.identity_value = ? COLLATE NOCASE
     LIMIT 1
   `),
   getIdentities: db.prepare("SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at"),
   getAllContacts: db.prepare("SELECT * FROM contacts_v2 ORDER BY status, name, id"),
   getContactsByStatus: db.prepare("SELECT * FROM contacts_v2 WHERE status = ? ORDER BY name, id"),
   deleteContact: db.prepare("DELETE FROM contacts_v2 WHERE id = ?"),
-  deleteIdentity: db.prepare("DELETE FROM contact_identities WHERE platform = ? AND identity_value = ?"),
+  deleteIdentity: db.prepare("DELETE FROM contact_identities WHERE platform = ? AND identity_value = ? COLLATE NOCASE"),
   insertContact: db.prepare(`
     INSERT INTO contacts_v2 (id, name, email, status, source, updated_at)
     VALUES (?, ?, ?, ?, ?, datetime('now'))
@@ -264,7 +264,7 @@ const stmts = {
   findByTag: db.prepare(`
     SELECT c.* FROM contacts_v2 c, json_each(c.tags) AS t WHERE t.value = ? ORDER BY c.name, c.id
   `),
-  getIdentityByValue: db.prepare("SELECT * FROM contact_identities WHERE identity_value = ?"),
+  getIdentityByValue: db.prepare("SELECT * FROM contact_identities WHERE identity_value = ? COLLATE NOCASE"),
   moveIdentities: db.prepare("UPDATE contact_identities SET contact_id = ? WHERE contact_id = ?"),
 };
 
