@@ -28,6 +28,7 @@ import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
+import { getToolSafety } from "./hooks/tool-safety.js";
 import { ALL_BUILTIN_TOOLS } from "./constants.js";
 import { discoverPlugins } from "./plugins/index.js";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
@@ -174,6 +175,10 @@ interface StreamingSession {
   _promptTooLong?: boolean;
   /** Whether the SDK is currently compacting (don't interrupt during compaction) */
   compacting: boolean;
+  /** Tool safety classification — "safe" tools can be interrupted, "unsafe" cannot */
+  currentToolSafety: "safe" | "unsafe" | null;
+  /** Pending abort — set when abort is requested during an unsafe tool call */
+  pendingAbort: boolean;
 }
 
 /** User message format for the SDK streaming input */
@@ -271,7 +276,8 @@ export class RaviBot {
    * Abort and remove a streaming session by key.
    * Used by /reset to kill the SDK process before deleting the DB entry.
    */
-  /** Abort a streaming session by name. Used by /reset. */
+  /** Abort a streaming session by name. Used by /reset.
+   *  If an unsafe tool is running, defers the abort until the tool completes. */
   public abortSession(sessionName: string): boolean {
     const allNames = [...this.streamingSessions.keys()];
     log.info("abortSession called", {
@@ -281,7 +287,18 @@ export class RaviBot {
     });
     const session = this.streamingSessions.get(sessionName);
     if (!session) return false;
-    log.info("Aborting streaming session via reset", { sessionName, done: session.done });
+
+    // If an unsafe tool is running, defer the abort
+    if (session.toolRunning && session.currentToolSafety === "unsafe") {
+      log.info("Deferring abort — unsafe tool running", {
+        sessionName,
+        tool: session.currentToolName,
+      });
+      session.pendingAbort = true;
+      return true;
+    }
+
+    log.info("Aborting streaming session", { sessionName, done: session.done });
     session.abortController.abort();
     this.streamingSessions.delete(sessionName);
     return true;
@@ -810,6 +827,8 @@ export class RaviBot {
       interrupted: false,
       compacting: false,
       onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
     };
     this.streamingSessions.set(sessionName, streamingSession);
 
@@ -1081,11 +1100,13 @@ export class RaviBot {
               streaming.currentToolId = block.id;
               streaming.currentToolName = block.name;
               streaming.toolStartTime = Date.now();
+              streaming.currentToolSafety = getToolSafety(block.name);
 
               safeEmit(`ravi.session.${sessionName}.tool`, {
                 event: "start",
                 toolId: block.id,
                 toolName: block.name,
+                safety: streaming.currentToolSafety,
                 input: truncateOutput(block.input),
                 timestamp: new Date().toISOString(),
                 sessionName,
@@ -1148,6 +1169,14 @@ export class RaviBot {
               streaming.currentToolId = undefined;
               streaming.currentToolName = undefined;
               streaming.toolStartTime = undefined;
+              streaming.currentToolSafety = null;
+
+              // Execute deferred abort now that unsafe tool has completed
+              if (streaming.pendingAbort) {
+                log.info("Executing deferred abort after unsafe tool completed", { sessionName });
+                streaming.abortController.abort();
+                this.streamingSessions.delete(sessionName);
+              }
             }
           }
         }
