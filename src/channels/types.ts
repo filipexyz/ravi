@@ -58,6 +58,8 @@ export interface InboundMessage {
   text?: string;
   media?: InboundMedia;
   replyTo?: QuotedMessage;
+  /** Resolved mention names (e.g. ["Rapha", "Luís"]) */
+  mentions?: string[];
   transcription?: string;
   timestamp: number;
   isGroup: boolean;

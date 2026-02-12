@@ -14,6 +14,7 @@ import {
   isBroadcast,
 } from "./normalize.js";
 import { logger } from "../../utils/logger.js";
+import { getContactName } from "../../contacts.js";
 
 const log = logger.child("wa:inbound");
 
@@ -56,6 +57,37 @@ export function isMentioned(message: WAMessage, botJid: string): boolean {
   // Compare without the resource part (everything after @)
   const botUser = botJid.split("@")[0];
   return mentions.some((jid) => jid.split("@")[0] === botUser);
+}
+
+/**
+ * Resolve @LID mentions in text to @Name using contacts DB.
+ *
+ * WhatsApp sends mentions as @LID_NUMBER in text (e.g. @119546774069478).
+ * This replaces them with @ContactName for readability.
+ * Returns the resolved text and array of mentioned names.
+ */
+export function resolveMentionsInbound(text: string, mentionedJids: string[]): { text: string; mentions: string[] } {
+  if (!mentionedJids.length || !text) return { text, mentions: [] };
+
+  const mentions: string[] = [];
+  let resolved = text;
+
+  for (const jid of mentionedJids) {
+    const userPart = jid.split("@")[0]; // e.g. "119546774069478" or "5511999999999"
+    const normalizedId = normalizePhone(jid); // e.g. "lid:119546774069478" or "5511999999999"
+    const name = getContactName(normalizedId);
+
+    if (name) {
+      mentions.push(name);
+      // Replace @LID_NUMBER with @Name in text
+      resolved = resolved.replace(new RegExp(`@${userPart}\\b`, "g"), `@${name}`);
+    } else {
+      // No name found — keep as-is but still track
+      mentions.push(normalizedId);
+    }
+  }
+
+  return { text: resolved, mentions };
 }
 
 /**
@@ -226,9 +258,14 @@ export function normalizeMessage(
 
   const senderId = normalizePhone(senderJid);
   const chatId = normalizePhone(jid);
-  const text = extractText(message);
+  const rawText = extractText(message);
   const media = extractMedia(message);
   const replyTo = extractQuotedMessage(message);
+
+  // Resolve @LID mentions in text to @Name
+  const mentionedJids = extractMentions(message);
+  const { text: resolvedText, mentions } = resolveMentionsInbound(rawText ?? "", mentionedJids);
+  const text = rawText ? resolvedText : undefined;
 
   // Extract phone number from sender JID (format: 5511999999999@s.whatsapp.net)
   const senderPhone = senderJid.split("@")[0].replace(/^lid:/, "");
@@ -244,6 +281,7 @@ export function normalizeMessage(
     text,
     media,
     replyTo,
+    mentions: mentions.length > 0 ? mentions : undefined,
     timestamp: (message.messageTimestamp as number) * 1000 || Date.now(),
     isGroup: isGroupChat,
     groupName: isGroupChat ? groupName : undefined,

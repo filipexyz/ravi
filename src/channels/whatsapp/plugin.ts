@@ -40,6 +40,7 @@ import {
   debounceMessage,
   mergeMessages,
   downloadMedia,
+  isMentioned,
 } from "./inbound.js";
 import { transcribeAudio } from "../../transcribe/openai.js";
 import { saveMediaToTmp, MAX_MEDIA_BYTES, MAX_AUDIO_BYTES } from "../../utils/media.js";
@@ -729,7 +730,10 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       const socket = sessionManager.getSocket(accountId);
       if (socket) {
         // Check if message mentions us (for group ACK policy)
-        const isMention = false; // TODO: implement mention detection
+        const botJid = socket?.user?.id;
+        const botLid = socket?.user?.lid;
+        const isMention = (botJid ? isMentioned(rawMessage, botJid) : false) ||
+          (botLid ? isMentioned(rawMessage, botLid) : false);
         await sendAckReaction(
           socket,
           message.chatId,
