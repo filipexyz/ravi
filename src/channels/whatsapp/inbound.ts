@@ -205,16 +205,28 @@ export function extractQuotedMessage(message: WAMessage): QuotedMessage | undefi
  * Download media from a WhatsApp message
  */
 export async function downloadMedia(
-  message: WAMessage
+  message: WAMessage,
+  retries = 2,
 ): Promise<Buffer | undefined> {
-  try {
-    const { downloadMediaMessage } = await import("@whiskeysockets/baileys");
-    const buffer = await downloadMediaMessage(message, "buffer", {});
-    return buffer as Buffer;
-  } catch (err) {
-    log.warn("Failed to download media", { error: err });
-    return undefined;
+  const { downloadMediaMessage } = await import("@whiskeysockets/baileys");
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const buffer = await downloadMediaMessage(message, "buffer", {});
+      if (buffer && (buffer as Buffer).length > 0) {
+        return buffer as Buffer;
+      }
+      log.warn("Download returned empty buffer", { attempt, retries });
+    } catch (err) {
+      log.warn("Failed to download media", { error: err, attempt, retries });
+    }
+
+    if (attempt < retries) {
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
   }
+
+  return undefined;
 }
 
 // ============================================================================

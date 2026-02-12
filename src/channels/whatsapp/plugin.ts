@@ -529,7 +529,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
           log.warn("Failed to download audio", { error: err });
         }
 
-        if (audioBuffer) {
+        if (audioBuffer && audioBuffer.length > 0) {
           if (audioBuffer.length > MAX_AUDIO_BYTES) {
             log.info("Downloaded audio too large, skipping", { size: audioBuffer.length, limit: MAX_AUDIO_BYTES });
           } else {
