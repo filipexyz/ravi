@@ -52,25 +52,37 @@ export function buildGroupContext(ctx: ChannelContext): string {
   if (!ctx.isGroup) return "";
 
   const members = ctx.groupMembers?.join(", ") ?? "unknown";
+  const memberCount = ctx.groupMembers?.length ?? 0;
+  const isLargeGroup = memberCount >= 3;
 
-  return [
+  const lines = [
     `## Group Chat Context`,
     ``,
     `You are replying inside the ${ctx.channelName} group "${ctx.groupName ?? ctx.groupId}".`,
     `Group members: ${members}.`,
-    ``,
-    `Be a good group participant: mostly lurk and follow the conversation;`,
-    `reply only when directly addressed or you can add clear value.`,
-    ``,
-    `If no response is needed, reply with exactly "${SILENT_TOKEN}"`,
-    `(and nothing else) so the bot stays silent.`,
-    ``,
-    `Be extremely selective: reply only when directly addressed or clearly helpful.`,
-    `Otherwise stay silent.`,
+  ];
+
+  if (isLargeGroup) {
+    lines.push(
+      ``,
+      `Be a good group participant: mostly lurk and follow the conversation;`,
+      `reply only when directly addressed or you can add clear value.`,
+      ``,
+      `If no response is needed, reply with exactly "${SILENT_TOKEN}"`,
+      `(and nothing else) so the bot stays silent.`,
+      ``,
+      `Be extremely selective: reply only when directly addressed or clearly helpful.`,
+      `Otherwise stay silent.`,
+    );
+  }
+
+  lines.push(
     ``,
     `Write like a human. Avoid Markdown tables.`,
     `Address the specific sender noted in the message context.`,
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 /**
@@ -171,10 +183,16 @@ export function buildSystemPrompt(
   agentId: string,
   ctx?: ChannelContext
 ): string {
+  const isLargeGroup = ctx?.isGroup && (ctx.groupMembers?.length ?? 0) >= 3;
+
   const builder = new PromptBuilder()
     .section("Identidade", "Você é Ravi.")
-    .section("System Commands", systemCommandsText())
-    .section("Silent Replies", buildSilentReplies().replace(/^## Silent Replies\n\n/, ""));
+    .section("System Commands", systemCommandsText());
+
+  // Silent replies only for groups with 3+ members
+  if (isLargeGroup) {
+    builder.section("Silent Replies", buildSilentReplies().replace(/^## Silent Replies\n\n/, ""));
+  }
 
   // Add context-dependent sections
   if (ctx) {
