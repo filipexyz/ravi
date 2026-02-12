@@ -109,15 +109,14 @@ export class ContactsCommands {
     }
 
     console.log("\nContacts:\n");
-    console.log("  ST  ID          NAME                  AGENT           IDENTITIES");
-    console.log("  --  ----------  --------------------  --------------  ---------------------------");
+    console.log("  ST  ID          NAME                  IDENTITIES");
+    console.log("  --  ----------  --------------------  ---------------------------");
     for (const contact of contacts) {
       const icon = statusIcon(contact.status);
       const id = contact.id.padEnd(10);
       const name = (contact.name || "-").slice(0, 20).padEnd(20);
-      const agent = (contact.agent_id || "-").padEnd(14);
       const identities = formatIdentitiesShort(contact, 50);
-      console.log(`  ${icon}   ${id}  ${name}  ${agent}  ${identities}`);
+      console.log(`  ${icon}   ${id}  ${name}  ${identities}`);
     }
     const allowed = contacts.filter((c) => c.status === "allowed").length;
     const pending = contacts.filter((c) => c.status === "pending").length;
@@ -166,7 +165,6 @@ export class ContactsCommands {
   @Command({ name: "approve", description: "Approve pending contact" })
   approve(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("agent", { required: false, description: "Agent ID" }) agentId?: string,
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
     replyMode?: string
   ) {
@@ -179,16 +177,15 @@ export class ContactsCommands {
       fail(`Contact not found: ${contactRef}`);
     }
 
-    allowContact(contact.phone, agentId);
+    allowContact(contact.phone);
     if (replyMode) {
       setContactReplyMode(contact.phone, replyMode as ReplyMode);
     }
     emitConfigChanged();
 
-    const agentInfo = agentId ? ` → agent:${agentId}` : "";
     const modeInfo = replyMode ? ` (${replyMode})` : "";
     console.log(
-      `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${agentInfo}${modeInfo}`
+      `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}`
     );
   }
 
@@ -236,10 +233,7 @@ export class ContactsCommands {
     }
 
     if (key === "agent") {
-      const agentValue = value === "-" || value === "" ? undefined : value;
-      allowContact(contact.phone, agentValue);
-      console.log(`✓ Agent set: ${contact.id} → ${agentValue || "(cleared)"}`);
-      emitConfigChanged();
+      fail("agent is no longer set on contacts. Use 'ravi routes add <pattern> <agent>' instead.");
     } else if (key === "mode") {
       if (value !== "auto" && value !== "mention") {
         fail("Mode must be 'auto' or 'mention'");
@@ -299,7 +293,7 @@ export class ContactsCommands {
     console.log(`  Name:    ${contact.name || "-"}`);
     console.log(`  Email:   ${contact.email || "-"}`);
     console.log(`  Status:  ${statusText(contact.status)}`);
-    console.log(`  Agent:   ${contact.agent_id || "-"}`);
+    // Agent is now managed via routes, not contacts
     console.log(`  Mode:    ${contact.reply_mode || "auto"}`);
     console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
     console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);

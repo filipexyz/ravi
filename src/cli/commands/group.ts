@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { upsertContact, allowContact } from "../../contacts.js";
+import { upsertContact } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
 import { notif } from "../../notif.js";
 import { buildSessionKey } from "../../router/session-key.js";
@@ -141,9 +141,6 @@ export class GroupCommands {
 
     // Always auto-approve groups we create ourselves
     upsertContact(groupIdentity, result.subject, "allowed");
-    if (agent) {
-      allowContact(groupIdentity, agent);
-    }
     console.log(`  Contact:      approved`);
 
     if (agent) {

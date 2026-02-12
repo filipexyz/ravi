@@ -15,7 +15,7 @@ import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName } from "./session-name.js";
 import { getOrCreateSession, findSessionByAttributes, updateSessionName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
-import { getContactAgent } from "../contacts.js";
+
 
 const log = logger.child("router");
 
@@ -86,10 +86,7 @@ export function resolveRoute(
 ): ResolvedRoute {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
-  // Check contacts DB for agent assignment
-  const contactAgentId = getContactAgent(isGroup ? groupId ?? phone : phone);
-
-  // Find matching route (fallback)
+  // Find matching route
   // For groups, match against groupId; for DMs, match against phone
   const routeTarget = isGroup ? groupId ?? phone : phone;
   const route = findRoute(routeTarget, config.routes);
@@ -101,8 +98,8 @@ export function resolveRoute(
       ? accountId
       : undefined;
 
-  // Get agent: contacts DB > route > accountId-as-agent > default
-  const agentId = contactAgentId ?? route?.agent ?? accountAgentId ?? config.defaultAgent;
+  // Get agent: route > accountId-as-agent > default
+  const agentId = route?.agent ?? accountAgentId ?? config.defaultAgent;
   const agent = config.agents[agentId];
 
   if (!agent) {

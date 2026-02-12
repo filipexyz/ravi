@@ -247,7 +247,7 @@ const stmts = {
     INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
     VALUES (?, ?, ?, ?)
   `),
-  updateStatus: db.prepare("UPDATE contacts_v2 SET status = ?, agent_id = ?, updated_at = datetime('now') WHERE id = ?"),
+  updateStatus: db.prepare("UPDATE contacts_v2 SET status = ?, updated_at = datetime('now') WHERE id = ?"),
   updateReplyMode: db.prepare("UPDATE contacts_v2 SET reply_mode = ?, updated_at = datetime('now') WHERE id = ?"),
   upsertPending: db.prepare(`
     INSERT INTO contacts_v2 (id, name, status, source, updated_at)
@@ -465,33 +465,21 @@ export function deleteContact(phone: string): boolean {
 /**
  * Set contact status and optionally agent
  */
-export function setContactStatus(phone: string, status: ContactStatus, agentId?: string): void {
+export function setContactStatus(phone: string, status: ContactStatus): void {
   const normalized = normalizePhone(phone);
   const contact = resolveContact(normalized);
   if (!contact) {
     upsertContact(normalized, null, status);
-    if (agentId) {
-      const created = resolveContact(normalized);
-      if (created) stmts.updateStatus.run(status, agentId, created.id);
-    }
   } else {
-    stmts.updateStatus.run(status, agentId ?? contact.agent_id ?? null, contact.id);
+    stmts.updateStatus.run(status, contact.id);
   }
 }
 
 /**
- * Allow a contact with optional agent
+ * Allow a contact
  */
-export function allowContact(phone: string, agentId?: string): void {
-  setContactStatus(phone, "allowed", agentId);
-}
-
-/**
- * Get agent for a contact
- */
-export function getContactAgent(phone: string): string | null {
-  const contact = getContact(phone);
-  return contact?.agent_id || null;
+export function allowContact(phone: string): void {
+  setContactStatus(phone, "allowed");
 }
 
 /**
@@ -599,7 +587,6 @@ export function updateContact(
     name?: string | null;
     email?: string | null;
     status?: ContactStatus;
-    agent_id?: string | null;
     reply_mode?: ReplyMode;
     tags?: string[];
     notes?: Record<string, unknown>;
@@ -627,10 +614,6 @@ export function updateContact(
   if (updates.status !== undefined) {
     fields.push("status = ?");
     values.push(updates.status);
-  }
-  if (updates.agent_id !== undefined) {
-    fields.push("agent_id = ?");
-    values.push(updates.agent_id);
   }
   if (updates.reply_mode !== undefined) {
     fields.push("reply_mode = ?");

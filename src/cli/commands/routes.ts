@@ -22,7 +22,7 @@ import {
   DmScopeSchema,
 } from "../../router/router-db.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
-import { getContact, updateContact, type ContactStatus } from "../../contacts.js";
+import { getContact, type ContactStatus } from "../../contacts.js";
 
 function routeStatusIcon(status?: ContactStatus | null): string {
   if (!status) return "\x1b[33m?\x1b[0m";
@@ -144,13 +144,6 @@ export class RoutesCommands {
       console.log(`✓ Route added: ${pattern} -> ${agent}`);
       emitConfigChanged();
 
-      // Sync agent_id on the contact if it exists
-      const contact = getContact(pattern);
-      if (contact && contact.agent_id !== agent) {
-        updateContact(pattern, { agent_id: agent });
-        console.log(`✓ Contact agent_id synced: ${pattern} -> ${agent}`);
-      }
-
       // Delete any sessions that were created with a different agent
       const deleted = deleteConflictingSessions(pattern, agent);
       if (deleted > 0) {
@@ -220,15 +213,8 @@ export class RoutesCommands {
       console.log(`✓ ${key} set: ${pattern} -> ${value}`);
       emitConfigChanged();
 
-      // If agent changed, sync contact and clean up conflicting sessions
+      // If agent changed, clean up conflicting sessions
       if (key === "agent") {
-        // Sync agent_id on the contact (contacts.agent_id takes precedence over routes)
-        const contact = getContact(pattern);
-        if (contact && contact.agent_id !== value) {
-          updateContact(pattern, { agent_id: value });
-          console.log(`✓ Contact agent_id synced: ${pattern} -> ${value}`);
-        }
-
         const deleted = deleteConflictingSessions(pattern, value);
         if (deleted > 0) {
           console.log(`✓ Cleaned ${deleted} conflicting session(s)`);
