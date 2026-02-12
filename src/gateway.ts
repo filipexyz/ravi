@@ -45,7 +45,12 @@ function formatMessageContent(message: InboundMessage): string {
   // Audio with transcription (voice message or audio file)
   if (message.transcription) {
     const label = message.media?.type === "audio" ? "Audio" : `Audio: ${message.media?.filename ?? "file"}`;
-    return `[${label}]\nTranscript:\n${message.transcription}`;
+    const parts = [`[${label}]`];
+    if (message.media?.localPath) {
+      parts.push(`[file: ${message.media.localPath}]`);
+    }
+    parts.push(`Transcript:\n${message.transcription}`);
+    return parts.join("\n");
   }
 
   // Other media
