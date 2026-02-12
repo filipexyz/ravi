@@ -1100,7 +1100,7 @@ export class RaviBot {
               streaming.currentToolId = block.id;
               streaming.currentToolName = block.name;
               streaming.toolStartTime = Date.now();
-              streaming.currentToolSafety = getToolSafety(block.name);
+              streaming.currentToolSafety = getToolSafety(block.name, block.input as Record<string, unknown>);
 
               safeEmit(`ravi.session.${sessionName}.tool`, {
                 event: "start",
@@ -1115,12 +1115,17 @@ export class RaviBot {
             }
           }
           if (messageText) {
-            messageText = messageText.trimStart();
+            // Strip @@SILENT@@ from anywhere in the text and trim
+            messageText = messageText.replace(new RegExp(SILENT_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g"), "").trim();
             log.info("Assistant message", { runId, interrupted: streaming.interrupted, text: messageText.slice(0, 100) });
 
             if (streaming.interrupted) {
               // Turn was interrupted — discard response
               log.info("Discarding interrupted response", { sessionName, textLen: messageText.length });
+            } else if (!messageText) {
+              // After stripping SILENT_TOKEN, nothing left
+              log.info("Silent response (stripped)", { sessionName });
+              await emitSdkEvent({ type: "silent" });
             } else {
               responseText += messageText;
 
@@ -1128,9 +1133,6 @@ export class RaviBot {
               if (trimmed === "prompt is too long") {
                 log.warn("Prompt too long — will auto-reset session", { sessionName });
                 streaming._promptTooLong = true;
-                await emitSdkEvent({ type: "silent" });
-              } else if (messageText.trim() === SILENT_TOKEN) {
-                log.info("Silent response", { sessionName });
                 await emitSdkEvent({ type: "silent" });
               } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
                 log.info("Heartbeat OK", { sessionName });

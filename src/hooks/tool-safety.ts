@@ -28,24 +28,35 @@ const SAFE_TOOLS = new Set([
   "AskUserQuestion",
   "EnterPlanMode",
   "ExitPlanMode",
-  "Sleep",
 ]);
 
 export type ToolSafety = "safe" | "unsafe";
 
 /**
- * Classify a tool call as safe or unsafe.
+ * Check if a Bash command is a sleep (always safe to interrupt).
  */
-export function classifyToolSafety(toolName: string): ToolSafety {
-  return SAFE_TOOLS.has(toolName) ? "safe" : "unsafe";
+function isBashSleep(command: string): boolean {
+  return /^\s*sleep\s+/.test(command.trim());
 }
 
 /**
- * Callback to update streaming session tool safety.
- * Called from bot.ts when tool_use blocks are detected.
+ * Classify a tool call as safe or unsafe.
+ * For Bash, inspects the command — sleep is always safe.
  */
-export function getToolSafety(toolName: string): ToolSafety {
-  const safety = classifyToolSafety(toolName);
-  log.debug("Tool classified", { toolName, safety });
-  return safety;
+export function getToolSafety(toolName: string, toolInput?: Record<string, unknown>): ToolSafety {
+  if (SAFE_TOOLS.has(toolName)) {
+    log.debug("Tool classified", { toolName, safety: "safe" });
+    return "safe";
+  }
+
+  if (toolName === "Bash" && toolInput?.command) {
+    const command = toolInput.command as string;
+    if (isBashSleep(command)) {
+      log.debug("Bash sleep classified as safe", { command: command.slice(0, 50) });
+      return "safe";
+    }
+  }
+
+  log.debug("Tool classified", { toolName, safety: "unsafe" });
+  return "unsafe";
 }
