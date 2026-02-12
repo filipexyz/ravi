@@ -11,8 +11,80 @@ import { phoneToJid } from "./normalize.js";
 import { logger } from "../../utils/logger.js";
 import { sessionManager } from "./session.js";
 import { markdownToWhatsApp } from "./format.js";
+import { searchContacts } from "../../contacts.js";
 
 const log = logger.child("wa:outbound");
+
+// ============================================================================
+// Mention Resolution
+// ============================================================================
+
+interface ResolvedMentions {
+  text: string;
+  mentionJids: string[];
+}
+
+/**
+ * Resolve @Name mentions in text to @phone + mentionedJid.
+ *
+ * Scans for @Word patterns, looks up contacts by name,
+ * replaces @Name with @phone in text, and collects JIDs.
+ * Already-numeric @mentions (e.g. @5511999) are passed through as-is.
+ */
+function resolveMentionsInText(text: string): ResolvedMentions {
+  // Match @Name (one or two words, letters/digits/accented chars)
+  const mentionPattern = /@([\w\u00C0-\u024F]+(?:\s+[\w\u00C0-\u024F]+)?)/g;
+  const mentionJids: string[] = [];
+  let resolvedText = text;
+
+  const matches = [...text.matchAll(mentionPattern)];
+  if (matches.length === 0) return { text, mentionJids: [] };
+
+  // Process in reverse order to preserve indices during replacement
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const match = matches[i];
+    const name = match[1];
+    const startIdx = match.index!;
+    const fullMatch = match[0]; // e.g. "@Rafa"
+
+    // Already a phone number — just add to JIDs
+    if (/^\d+$/.test(name)) {
+      const jid = phoneToJid(name);
+      if (jid) mentionJids.push(jid);
+      continue;
+    }
+
+    // Search contacts by name
+    const candidates = searchContacts(name);
+    if (candidates.length === 0) continue;
+
+    // Find best match: exact name match (case-insensitive) first
+    const exact = candidates.find(
+      c => c.name?.toLowerCase() === name.toLowerCase()
+    );
+    const contact = exact ?? candidates[0];
+
+    // Get phone identity (not LID, not group)
+    const phoneIdentity = contact.identities.find(
+      id => id.platform === "phone"
+    );
+    const phone = phoneIdentity?.value ?? contact.phone;
+
+    // Skip if no usable phone number
+    if (!phone || phone.startsWith("lid:") || phone.startsWith("group:")) continue;
+
+    const jid = phoneToJid(phone);
+    if (!jid) continue;
+
+    mentionJids.push(jid);
+    // Replace @Name with @phone in text
+    resolvedText = resolvedText.slice(0, startIdx) + `@${phone}` + resolvedText.slice(startIdx + fullMatch.length);
+
+    log.debug("Resolved mention", { name, phone, jid });
+  }
+
+  return { text: resolvedText, mentionJids };
+}
 
 // ============================================================================
 // Message Sending
@@ -37,10 +109,33 @@ export async function sendMessage(
   try {
     let content: AnyMessageContent;
 
+    // Resolve explicit mentions (from options.mentions) to JIDs
+    const explicitJids = options.mentions
+      ?.map(m => phoneToJid(m))
+      .filter(Boolean) as string[] ?? [];
+
+    // Resolve @Name mentions in text automatically
+    let processedText = options.text;
+    let autoJids: string[] = [];
+    if (processedText) {
+      const resolved = resolveMentionsInText(processedText);
+      processedText = resolved.text;
+      autoJids = resolved.mentionJids;
+    }
+
+    // Combine explicit + auto-resolved mentions (deduplicated)
+    const allMentionJids = [...new Set([...explicitJids, ...autoJids])];
+
     if (options.media) {
-      content = buildMediaContent(options.media, options.text);
-    } else if (options.text) {
-      content = { text: markdownToWhatsApp(options.text) };
+      content = buildMediaContent(options.media, processedText);
+      if (allMentionJids.length) {
+        (content as Record<string, unknown>).contextInfo = { mentionedJid: allMentionJids };
+      }
+    } else if (processedText) {
+      content = {
+        text: markdownToWhatsApp(processedText),
+        ...(allMentionJids.length && { contextInfo: { mentionedJid: allMentionJids } }),
+      } as AnyMessageContent;
     } else if (options.reaction) {
       // Handle reaction separately
       return await sendReaction(socket, targetId, options.replyTo ?? "", options.reaction);

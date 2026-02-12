@@ -94,6 +94,8 @@ export interface OutboundOptions {
   media?: OutboundMedia;
   replyTo?: string;
   reaction?: string;
+  /** JIDs/phones to mention (triggers notification). Use normalized format: "5511999999999" or "lid:123456789" */
+  mentions?: string[];
 }
 
 /** Outbound media */
