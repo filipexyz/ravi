@@ -39,6 +39,7 @@ import {
   type ContactSource,
 } from "../../contacts.js";
 import { dbGetRoute } from "../../router/router-db.js";
+import { findSessionByChatId } from "../../router/sessions.js";
 
 function statusIcon(status: ContactStatus): string {
   switch (status) {
@@ -71,6 +72,15 @@ function getRouteAgent(contact: Contact): string | null {
   for (const id of contact.identities) {
     const route = dbGetRoute(id.value.toLowerCase());
     if (route) return route.agent;
+  }
+  return null;
+}
+
+/** Lookup session name by checking all contact identities */
+function getSessionName(contact: Contact): string | null {
+  for (const id of contact.identities) {
+    const session = findSessionByChatId(id.value);
+    if (session?.name) return session.name;
   }
   return null;
 }
@@ -119,15 +129,16 @@ export class ContactsCommands {
     }
 
     console.log("\nContacts:\n");
-    console.log("  ST  ID          NAME                  AGENT           IDENTITIES");
-    console.log("  --  ----------  --------------------  --------------  ---------------------------");
+    console.log("  ST  ID          NAME                  AGENT           SESSION              IDENTITIES");
+    console.log("  --  ----------  --------------------  --------------  -------------------  ---------------------------");
     for (const contact of contacts) {
       const icon = statusIcon(contact.status);
       const id = contact.id.padEnd(10);
       const name = (contact.name || "-").slice(0, 20).padEnd(20);
       const agent = (getRouteAgent(contact) || "-").padEnd(14);
+      const session = (getSessionName(contact) || "-").padEnd(19);
       const identities = formatIdentitiesShort(contact, 50);
-      console.log(`  ${icon}   ${id}  ${name}  ${agent}  ${identities}`);
+      console.log(`  ${icon}   ${id}  ${name}  ${agent}  ${session}  ${identities}`);
     }
     const allowed = contacts.filter((c) => c.status === "allowed").length;
     const pending = contacts.filter((c) => c.status === "pending").length;
@@ -305,6 +316,7 @@ export class ContactsCommands {
     console.log(`  Email:   ${contact.email || "-"}`);
     console.log(`  Status:  ${statusText(contact.status)}`);
     console.log(`  Agent:   ${getRouteAgent(contact) || "-"} (via route)`);
+    console.log(`  Session: ${getSessionName(contact) || "-"}`);
     console.log(`  Mode:    ${contact.reply_mode || "auto"}`);
     console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
     console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);
