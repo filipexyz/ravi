@@ -38,6 +38,7 @@ import {
   type ReplyMode,
   type ContactSource,
 } from "../../contacts.js";
+import { dbGetRoute } from "../../router/router-db.js";
 
 function statusIcon(status: ContactStatus): string {
   switch (status) {
@@ -63,6 +64,15 @@ function statusText(status: ContactStatus): string {
     case "discovered":
       return "\x1b[36mdiscovered\x1b[0m";
   }
+}
+
+/** Lookup agent from routes table by checking all contact identities */
+function getRouteAgent(contact: Contact): string | null {
+  for (const id of contact.identities) {
+    const route = dbGetRoute(id.value.toLowerCase());
+    if (route) return route.agent;
+  }
+  return null;
 }
 
 function platformIcon(platform: string): string {
@@ -109,14 +119,15 @@ export class ContactsCommands {
     }
 
     console.log("\nContacts:\n");
-    console.log("  ST  ID          NAME                  IDENTITIES");
-    console.log("  --  ----------  --------------------  ---------------------------");
+    console.log("  ST  ID          NAME                  AGENT           IDENTITIES");
+    console.log("  --  ----------  --------------------  --------------  ---------------------------");
     for (const contact of contacts) {
       const icon = statusIcon(contact.status);
       const id = contact.id.padEnd(10);
       const name = (contact.name || "-").slice(0, 20).padEnd(20);
+      const agent = (getRouteAgent(contact) || "-").padEnd(14);
       const identities = formatIdentitiesShort(contact, 50);
-      console.log(`  ${icon}   ${id}  ${name}  ${identities}`);
+      console.log(`  ${icon}   ${id}  ${name}  ${agent}  ${identities}`);
     }
     const allowed = contacts.filter((c) => c.status === "allowed").length;
     const pending = contacts.filter((c) => c.status === "pending").length;
@@ -293,7 +304,7 @@ export class ContactsCommands {
     console.log(`  Name:    ${contact.name || "-"}`);
     console.log(`  Email:   ${contact.email || "-"}`);
     console.log(`  Status:  ${statusText(contact.status)}`);
-    // Agent is now managed via routes, not contacts
+    console.log(`  Agent:   ${getRouteAgent(contact) || "-"} (via route)`);
     console.log(`  Mode:    ${contact.reply_mode || "auto"}`);
     console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
     console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);
