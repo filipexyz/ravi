@@ -31,6 +31,7 @@ export interface SlashContext {
   chatId: string;
   isGroup: boolean;
   args: string[];
+  mentions?: string[];
   plugin: ChannelPlugin;
   accountId: string;
   routerConfig: RouterConfig;
@@ -42,6 +43,7 @@ interface HandleInput {
   senderName?: string;
   chatId: string;
   isGroup: boolean;
+  mentions?: string[];
   plugin: ChannelPlugin;
   accountId: string;
   routerConfig: RouterConfig;
@@ -125,6 +127,7 @@ export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
       chatId: input.chatId,
       isGroup: input.isGroup,
       args: parsed.args,
+      mentions: input.mentions,
       plugin: input.plugin,
       accountId: input.accountId,
       routerConfig: input.routerConfig,

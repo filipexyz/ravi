@@ -347,7 +347,6 @@ export function resetSession(sessionKey: string): boolean {
   db.prepare(`
     UPDATE sessions SET
       sdk_session_id = NULL,
-      session_file = NULL,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,

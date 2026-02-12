@@ -592,6 +592,7 @@ export class Gateway {
         senderName: message.senderName,
         chatId: message.chatId,
         isGroup: message.isGroup,
+        mentions: message.mentions,
         plugin,
         accountId: message.accountId,
         routerConfig: this.routerConfig,
