@@ -222,6 +222,16 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
 
+    -- Message metadata (transcriptions, media paths — for reply reinjection)
+    CREATE TABLE IF NOT EXISTS message_metadata (
+      message_id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      transcription TEXT,
+      media_path TEXT,
+      media_type TEXT,
+      created_at INTEGER NOT NULL
+    );
+
     -- Matrix accounts (all users - both regular users and agents)
     CREATE TABLE IF NOT EXISTS matrix_accounts (
       username TEXT PRIMARY KEY,
@@ -598,6 +608,10 @@ interface PreparedStatements {
   deleteMatrixAccount: Statement;
   listMatrixAccounts: Statement;
   touchMatrixAccount: Statement;
+  // Message metadata
+  upsertMessageMeta: Statement;
+  getMessageMeta: Statement;
+  cleanupMessageMeta: Statement;
 }
 
 let stmts: PreparedStatements | null = null;
@@ -692,6 +706,17 @@ function getStatements(): PreparedStatements {
     deleteMatrixAccount: database.prepare("DELETE FROM matrix_accounts WHERE username = ?"),
     listMatrixAccounts: database.prepare("SELECT * FROM matrix_accounts ORDER BY username"),
     touchMatrixAccount: database.prepare("UPDATE matrix_accounts SET last_used_at = ? WHERE username = ?"),
+    // Message metadata
+    upsertMessageMeta: database.prepare(`
+      INSERT INTO message_metadata (message_id, chat_id, transcription, media_path, media_type, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(message_id) DO UPDATE SET
+        transcription = COALESCE(excluded.transcription, message_metadata.transcription),
+        media_path = COALESCE(excluded.media_path, message_metadata.media_path),
+        media_type = COALESCE(excluded.media_type, message_metadata.media_type)
+    `),
+    getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
+    cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
   };
 
   return stmts;
@@ -1442,4 +1467,73 @@ export function dbGetAgentMatrixAccount(agentId: string): MatrixAccount | null {
   const agent = dbGetAgent(agentId);
   if (!agent?.matrixAccount) return null;
   return dbGetMatrixAccount(agent.matrixAccount);
+}
+
+// ============================================================================
+// Message Metadata (transcriptions + media paths for reply reinjection)
+// ============================================================================
+
+export interface MessageMetadata {
+  messageId: string;
+  chatId: string;
+  transcription?: string;
+  mediaPath?: string;
+  mediaType?: string;
+  createdAt: number;
+}
+
+/**
+ * Store message metadata (transcription/media path).
+ * Upserts — safe to call multiple times for the same message.
+ */
+export function dbSaveMessageMeta(
+  messageId: string,
+  chatId: string,
+  opts: { transcription?: string; mediaPath?: string; mediaType?: string }
+): void {
+  const s = getStatements();
+  s.upsertMessageMeta.run(
+    messageId,
+    chatId,
+    opts.transcription ?? null,
+    opts.mediaPath ?? null,
+    opts.mediaType ?? null,
+    Date.now()
+  );
+}
+
+/**
+ * Get message metadata by message ID.
+ */
+export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
+  const s = getStatements();
+  const row = s.getMessageMeta.get(messageId) as {
+    message_id: string;
+    chat_id: string;
+    transcription: string | null;
+    media_path: string | null;
+    media_type: string | null;
+    created_at: number;
+  } | null;
+  if (!row) return null;
+  return {
+    messageId: row.message_id,
+    chatId: row.chat_id,
+    transcription: row.transcription ?? undefined,
+    mediaPath: row.media_path ?? undefined,
+    mediaType: row.media_type ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+/**
+ * Delete message metadata older than 7 days.
+ * Returns number of rows deleted.
+ */
+export function dbCleanupMessageMeta(): number {
+  const s = getStatements();
+  s.cleanupMessageMeta.run(Date.now() - MESSAGE_META_TTL_MS);
+  return getDbChanges();
 }

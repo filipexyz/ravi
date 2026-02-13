@@ -71,6 +71,11 @@ export {
   DmScopeSchema,
   // Database management
   closeRouterDb,
+  // Message metadata
+  dbSaveMessageMeta,
+  dbGetMessageMeta,
+  dbCleanupMessageMeta,
+  type MessageMetadata,
 } from "./router-db.js";
 
 // Session Name

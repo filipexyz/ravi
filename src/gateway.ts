@@ -14,6 +14,7 @@ import {
   expandHome,
   loadRouterConfig,
   resolveRoute,
+  dbSaveMessageMeta,
   type RouterConfig,
 } from "./router/index.js";
 import { logger } from "./utils/logger.js";
@@ -35,7 +36,35 @@ export const SILENT_TOKEN = "@@SILENT@@";
 function formatReplyContext(replyTo: QuotedMessage): string {
   const sender = replyTo.senderName ?? replyTo.senderId;
   const idPart = ` id:${replyTo.id}`;
-  const content = replyTo.text ?? (replyTo.mediaType ? `[${replyTo.mediaType}]` : "[media]");
+
+  const parts: string[] = [];
+
+  // Media type label
+  if (replyTo.mediaType) {
+    parts.push(`[${replyTo.mediaType}]`);
+  }
+
+  // Media file path
+  if (replyTo.mediaPath) {
+    parts.push(`[file: ${replyTo.mediaPath}]`);
+  }
+
+  // Text content (may be original text or enriched transcription)
+  if (replyTo.text) {
+    // If this is an audio reply with transcription, label it
+    if (replyTo.mediaType === "audio") {
+      parts.push(`Transcript:\n${replyTo.text}`);
+    } else {
+      parts.push(replyTo.text);
+    }
+  }
+
+  // Fallback if nothing
+  if (parts.length === 0) {
+    parts.push("[media]");
+  }
+
+  const content = parts.join("\n");
   return `[Replying to ${sender}${idPart}]\n${content}\n[/Replying]\n\n`;
 }
 
@@ -665,6 +694,15 @@ export class Gateway {
       } catch (err) {
         log.warn("Failed to move media to agent workspace, keeping original path", { error: err });
       }
+    }
+
+    // Persist message metadata (transcription + final media path) for reply reinjection
+    if (message.transcription || message.media?.localPath) {
+      dbSaveMessageMeta(message.id, message.chatId, {
+        transcription: message.transcription,
+        mediaPath: message.media?.localPath,
+        mediaType: message.media?.type,
+      });
     }
 
     // Build source info for prompt

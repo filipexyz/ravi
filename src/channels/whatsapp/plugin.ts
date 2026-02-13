@@ -559,6 +559,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
                 log.warn("Failed to transcribe audio", { error: err?.message ?? err, status: err?.status, mimetype: message.media.mimetype, size: audioBuffer.length });
               }
             }
+
           }
         }
       }

@@ -15,6 +15,7 @@ import {
 } from "./normalize.js";
 import { logger } from "../../utils/logger.js";
 import { getContactName } from "../../contacts.js";
+import { dbGetMessageMeta } from "../../router/router-db.js";
 
 const log = logger.child("wa:inbound");
 
@@ -189,11 +190,18 @@ export function extractQuotedMessage(message: WAMessage): QuotedMessage | undefi
     quoted?.documentMessage?.caption ??
     undefined;
 
+  const mediaType = detectQuotedMediaType(quoted);
+
+  // Only look up metadata when the quoted message has media (avoids unnecessary DB calls for text replies)
+  const meta = mediaType ? dbGetMessageMeta(contextInfo.stanzaId) : null;
+  const enrichedText = text ?? meta?.transcription ?? undefined;
+
   return {
     id: contextInfo.stanzaId,
     senderId: contextInfo.participant ?? "",
-    text,
-    mediaType: detectQuotedMediaType(quoted),
+    text: enrichedText,
+    mediaType,
+    mediaPath: meta?.mediaPath,
   };
 }
 

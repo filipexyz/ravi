@@ -14,6 +14,7 @@ import {
   deleteSessionByName,
   deleteSession,
 } from "../router/sessions.js";
+import { dbCleanupMessageMeta } from "../router/router-db.js";
 
 const log = logger.child("ephemeral");
 
@@ -84,6 +85,11 @@ Sem ação = sessão será excluída automaticamente.`;
         warned.delete(session.sessionKey);
         log.info("Deleted expired ephemeral session", { sessionName });
       }
+    }
+    // 3. Cleanup old message metadata (>7 days)
+    const cleaned = dbCleanupMessageMeta();
+    if (cleaned > 0) {
+      log.info("Cleaned up old message metadata", { count: cleaned });
     }
   } catch (err) {
     log.error("Ephemeral cleanup tick failed", err);

@@ -88,6 +88,8 @@ export interface QuotedMessage {
   senderName?: string;
   text?: string;
   mediaType?: "image" | "video" | "audio" | "document" | "sticker";
+  /** Local file path of the original media (from message_metadata) */
+  mediaPath?: string;
 }
 
 /** Outbound message options */
