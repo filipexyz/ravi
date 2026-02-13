@@ -156,6 +156,8 @@ export class AgentsCommands {
 
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
+      console.log(`  Permissions: closed (no tools, no bash)`);
+      console.log(`  Use 'ravi agents tools ${id} init' and 'ravi agents bash ${id} init' to configure`);
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

@@ -843,7 +843,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.model ?? null,
       validated.dmScope ?? null,
       validated.systemPromptAppend ?? null,
-      validated.allowedTools ? JSON.stringify(validated.allowedTools) : null,
+      JSON.stringify(validated.allowedTools ?? []),
       validated.debounceMs ?? null,
       validated.matrixAccount ?? null,
       validated.settingSources ? JSON.stringify(validated.settingSources) : null,
@@ -853,9 +853,9 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // heartbeat_model
       null, // heartbeat_active_start
       null, // heartbeat_active_end
-      // Bash fields (defaults)
-      null, // bash_mode
-      null, // bash_allowlist
+      // Bash fields (closed by default)
+      "allowlist", // bash_mode
+      JSON.stringify([]), // bash_allowlist (empty = nothing allowed)
       null, // bash_denylist
       now,
       now
