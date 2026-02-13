@@ -219,6 +219,10 @@ export class RaviBot {
   private pendingApprovals = new Map<string, PendingApproval>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
+  /** Subscriber health: incremented on every prompt received */
+  private promptsReceived = 0;
+  /** Subscriber health: watchdog timer */
+  private subscriberHealthTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
@@ -233,6 +237,7 @@ export class RaviBot {
     this.subscribeToInboundReactions();
     this.subscribeToInboundReplies();
     this.subscribeToSessionAborts();
+    this.startSubscriberHealthCheck();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
@@ -243,6 +248,12 @@ export class RaviBot {
   async stop(): Promise<void> {
     log.info("Stopping Ravi bot...");
     this.running = false;
+
+    // Stop subscriber health check
+    if (this.subscriberHealthTimer) {
+      clearInterval(this.subscriberHealthTimer);
+      this.subscriberHealthTimer = null;
+    }
 
     // Abort ALL streaming sessions
     if (this.streamingSessions.size > 0) {
@@ -473,6 +484,30 @@ export class RaviBot {
     });
   }
 
+  /**
+   * Periodic health check for the prompt subscriber.
+   * If subscriber died without reconnecting, force a resubscribe.
+   */
+  private startSubscriberHealthCheck(): void {
+    const HEALTH_CHECK_INTERVAL_MS = 30_000; // 30 seconds
+    this.subscriberHealthTimer = setInterval(() => {
+      if (!this.running) return;
+
+      if (!this.promptSubscriptionActive) {
+        log.warn("Subscriber health check: prompt subscription INACTIVE — forcing resubscribe", {
+          promptsReceived: this.promptsReceived,
+          streamingSessions: this.streamingSessions.size,
+        });
+        this.subscribeToPrompts();
+      } else {
+        log.debug("Subscriber health check: OK", {
+          promptsReceived: this.promptsReceived,
+          streamingSessions: this.streamingSessions.size,
+        });
+      }
+    }, HEALTH_CHECK_INTERVAL_MS);
+  }
+
   private async subscribeToPrompts(): Promise<void> {
     if (this.promptSubscriptionActive) {
       log.warn("Prompt subscription already active, skipping duplicate");
@@ -487,6 +522,8 @@ export class RaviBot {
       for await (const event of notif.subscribe(topic)) {
         if (!this.running) break;
 
+        this.promptsReceived++;
+
         // Extract session name from topic: ravi.session.{name}.prompt
         const sessionName = event.topic.split(".")[2];
         const prompt = event.data as unknown as PromptMessage;
@@ -497,9 +534,10 @@ export class RaviBot {
         });
       }
     } catch (err) {
-      log.error("Subscription error", err);
+      log.error("Prompt subscription error — will reconnect", { error: err });
     } finally {
       this.promptSubscriptionActive = false;
+      log.warn("Prompt subscription ended", { running: this.running, promptsReceived: this.promptsReceived });
       if (this.running) {
         setTimeout(() => this.subscribeToPrompts(), 1000);
       }

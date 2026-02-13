@@ -187,6 +187,8 @@ export class Gateway {
   private channelManager: ChannelManager | null = null;
   private activeTargets = new Map<string, MessageTarget>();
   private activeSubscriptions = new Set<string>();
+  /** Periodic config refresh timer (safety net if event is missed) */
+  private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: GatewayOptions = {}) {
     this.routerConfig = loadRouterConfig();
@@ -246,12 +248,23 @@ export class Gateway {
     // Subscribe to WhatsApp group operations
     this.subscribeToGroupOps();
 
+    // Periodic config refresh as safety net (in case event is missed)
+    this.configRefreshTimer = setInterval(() => {
+      if (!this.running) return;
+      this.routerConfig = loadRouterConfig();
+    }, 60_000); // every 60 seconds
+
     log.info("Gateway started");
   }
 
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
+
+    if (this.configRefreshTimer) {
+      clearInterval(this.configRefreshTimer);
+      this.configRefreshTimer = null;
+    }
 
     // Stop via ChannelManager
     if (this.channelManager) {
