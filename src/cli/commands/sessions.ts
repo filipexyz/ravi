@@ -57,6 +57,20 @@ function formatDate(ts: number): string {
   });
 }
 
+function timeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 0) return "now";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
 @Group({
   name: "sessions",
   description: "Manage agent sessions",
@@ -93,18 +107,19 @@ export class SessionCommands {
         console.log(`  ${name}  ${agent}  ${expires}  ${display}`);
       }
     } else {
-      console.log("  NAME                                  AGENT     TOKENS    TYPE       EXPIRES             DISPLAY");
-      console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ──────────────────  ──────────────────");
+      console.log("  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             DISPLAY");
+      console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ──────────────────");
 
       for (const s of sessions) {
         const ephTag = s.ephemeral ? "⏳" : "  ";
         const name = (s.name ?? s.sessionKey).padEnd(36);
         const agent = (s.agentId ?? "-").padEnd(8);
         const tokens = formatTokens(s.totalTokens ?? 0).padStart(8);
+        const activity = timeAgo(s.updatedAt).padEnd(9);
         const type = (s.ephemeral ? "ephemeral" : "permanent").padEnd(9);
         const expires = s.ephemeral && s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "-".padEnd(18);
         const display = s.displayName ?? s.lastTo ?? "-";
-        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${type}  ${expires}  ${display}`);
+        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${activity}  ${type}  ${expires}  ${display}`);
       }
     }
 
