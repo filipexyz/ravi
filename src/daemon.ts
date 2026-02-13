@@ -22,6 +22,7 @@ import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js"
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
+import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 
 const log = logger.child("daemon");
 
@@ -102,6 +103,7 @@ async function shutdown(signal: string) {
     }
 
     // Then stop runners
+    await stopEphemeralRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
     await stopHeartbeatRunner();
@@ -182,11 +184,15 @@ export async function startDaemon() {
   await startTriggerRunner();
   log.info("Trigger runner started");
 
+  // Start ephemeral session cleanup runner
+  await startEphemeralRunner();
+  log.info("Ephemeral runner started");
+
   log.info("Daemon ready");
 
   // Check for restart reason and notify main agent
-  // Small delay to ensure bot subscription is fully active
-  setTimeout(() => notifyRestartReason(), 2000);
+  // Delay to ensure bot's notif subscription is fully established
+  setTimeout(() => notifyRestartReason(), 5000);
 }
 
 /**
@@ -197,24 +203,46 @@ async function notifyRestartReason() {
     return;
   }
 
+  let reason: string;
   try {
-    const reason = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    reason = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
     unlinkSync(RESTART_REASON_FILE); // Delete after reading
-
-    if (reason) {
-      log.info("Restart reason", { reason });
-
-      // Notify main agent about the restart
-      const defaultAgent = dbGetSetting("defaultAgent") || "main";
-      const mainSession = getMainSession(defaultAgent);
-      const sessionName = mainSession?.name ?? defaultAgent;
-      await notif.emit(`ravi.session.${sessionName}.prompt`, {
-        prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
-      });
-    }
   } catch (err) {
-    log.error("Failed to process restart reason", err);
+    log.error("Failed to read restart reason file", err);
+    return;
   }
+
+  if (!reason) return;
+
+  const defaultAgent = dbGetSetting("defaultAgent") || "main";
+  const mainSession = getMainSession(defaultAgent);
+  const sessionName = mainSession?.name ?? defaultAgent;
+
+  // Build source from session's last known channel for response routing
+  const source = mainSession?.lastChannel && mainSession.lastTo
+    ? { channel: mainSession.lastChannel, accountId: mainSession.lastAccountId ?? "default", chatId: mainSession.lastTo }
+    : undefined;
+
+  const topic = `ravi.session.${sessionName}.prompt`;
+  const payload = {
+    prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
+    source,
+  };
+
+  // Retry emit — notif WebSocket may not be ready on first attempts
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      log.info("Emitting restart reason", { reason, topic, hasSource: !!source, attempt });
+      await notif.emit(topic, payload);
+      log.info("Restart reason prompt emitted", { topic, attempt });
+      return;
+    } catch (err) {
+      log.warn("Restart reason emit failed, retrying", { attempt, error: err });
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+
+  log.error("Failed to emit restart reason after 3 attempts");
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command

@@ -102,4 +102,9 @@ export {
   deleteSessionByName,
   resetSession,
   listSessions,
+  setSessionEphemeral,
+  extendSession,
+  makeSessionPermanent,
+  getExpiringSessions,
+  getExpiredSessions,
 } from "./sessions.js";

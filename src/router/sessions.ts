@@ -48,6 +48,9 @@ interface SessionRow {
   // Heartbeat columns
   last_heartbeat_text: string | null;
   last_heartbeat_sent_at: number | null;
+  // Ephemeral columns
+  ephemeral: number;
+  expires_at: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -85,6 +88,9 @@ function rowToEntry(row: SessionRow): SessionEntry {
     // Heartbeat fields
     lastHeartbeatText: row.last_heartbeat_text ?? undefined,
     lastHeartbeatSentAt: row.last_heartbeat_sent_at ?? undefined,
+    // Ephemeral fields
+    ephemeral: row.ephemeral === 1,
+    expiresAt: row.expires_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -504,6 +510,75 @@ export function deleteSessionByName(name: string): boolean {
   const s = getStatements();
   s.deleteByName.run(name);
   return getDbChanges() > 0;
+}
+
+// ============================================================================
+// Ephemeral Sessions
+// ============================================================================
+
+/**
+ * Make a session ephemeral with a TTL.
+ * Sets ephemeral=1 and expires_at = now + ttlMs.
+ */
+export function setSessionEphemeral(sessionKey: string, ttlMs: number): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    "UPDATE sessions SET ephemeral = 1, expires_at = ?, updated_at = ? WHERE session_key = ?"
+  ).run(now + ttlMs, now, sessionKey);
+}
+
+/**
+ * Extend an ephemeral session's TTL by the given amount.
+ */
+export function extendSession(nameOrKey: string, ttlMs: number): boolean {
+  const session = resolveSession(nameOrKey);
+  if (!session) return false;
+
+  const db = getDb();
+  const now = Date.now();
+  const newExpiry = Math.max(session.expiresAt ?? now, now) + ttlMs;
+  db.prepare(
+    "UPDATE sessions SET expires_at = ?, updated_at = ? WHERE session_key = ?"
+  ).run(newExpiry, now, session.sessionKey);
+  return true;
+}
+
+/**
+ * Make an ephemeral session permanent (removes TTL).
+ */
+export function makeSessionPermanent(nameOrKey: string): boolean {
+  const session = resolveSession(nameOrKey);
+  if (!session) return false;
+
+  const db = getDb();
+  db.prepare(
+    "UPDATE sessions SET ephemeral = 0, expires_at = NULL, updated_at = ? WHERE session_key = ?"
+  ).run(Date.now(), session.sessionKey);
+  return true;
+}
+
+/**
+ * Get ephemeral sessions expiring within the next `withinMs` milliseconds.
+ */
+export function getExpiringSessions(withinMs: number): SessionEntry[] {
+  const db = getDb();
+  const now = Date.now();
+  const rows = db.prepare(
+    "SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ? AND expires_at > ?"
+  ).all(now + withinMs, now) as SessionRow[];
+  return rows.map(rowToEntry);
+}
+
+/**
+ * Get ephemeral sessions that have already expired.
+ */
+export function getExpiredSessions(): SessionEntry[] {
+  const db = getDb();
+  const rows = db.prepare(
+    "SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"
+  ).all(Date.now()) as SessionRow[];
+  return rows.map(rowToEntry);
 }
 
 /**

@@ -296,6 +296,14 @@ function getDb(): Database {
     log.info("Added last_context column to sessions table");
   }
 
+  // Migration: add ephemeral session columns
+  if (!sessionColumns.some(c => c.name === "ephemeral")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN ephemeral INTEGER DEFAULT 0");
+    db.exec("ALTER TABLE sessions ADD COLUMN expires_at INTEGER");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_ephemeral ON sessions(ephemeral, expires_at) WHERE ephemeral = 1");
+    log.info("Added ephemeral session columns to sessions table");
+  }
+
   // Migration: add name column to sessions (human-readable unique identifier)
   if (!sessionColumns.some(c => c.name === "name")) {
     db.exec("ALTER TABLE sessions ADD COLUMN name TEXT");

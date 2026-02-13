@@ -18,6 +18,9 @@ import {
   updateSessionDisplayName,
   updateSessionModelOverride,
   updateSessionThinkingLevel,
+  setSessionEphemeral,
+  extendSession,
+  makeSessionPermanent,
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
@@ -30,6 +33,17 @@ function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function parseDurationMs(str: string): number | null {
+  const match = str.match(/^(\d+(?:\.\d+)?)\s*(m|min|h|hr|d)$/i);
+  if (!match) return null;
+  const value = parseFloat(match[1]);
+  const unit = match[2].toLowerCase();
+  if (unit === "m" || unit === "min") return value * 60_000;
+  if (unit === "h" || unit === "hr") return value * 3_600_000;
+  if (unit === "d") return value * 86_400_000;
+  return null;
 }
 
 function formatDate(ts: number): string {
@@ -50,27 +64,48 @@ function formatDate(ts: number): string {
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
   list(
-    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string
+    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
+    @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean
   ) {
-    const sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
+    let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
+
+    if (ephemeralOnly) {
+      sessions = sessions.filter(s => s.ephemeral);
+    }
 
     if (sessions.length === 0) {
       console.log(agentId ? `No sessions for agent: ${agentId}` : "No sessions found.");
       return { sessions: [], total: 0 };
     }
 
-    const label = agentId ? `Sessions for ${agentId}` : "All sessions";
+    const label = agentId ? `Sessions for ${agentId}` : ephemeralOnly ? "Ephemeral sessions" : "All sessions";
     console.log(`\n${label} (${sessions.length}):\n`);
-    console.log("  NAME                                  AGENT     TOKENS    MODEL      DISPLAY");
-    console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ──────────────────");
 
-    for (const s of sessions) {
-      const name = (s.name ?? s.sessionKey).padEnd(38);
-      const agent = (s.agentId ?? "-").padEnd(8);
-      const tokens = formatTokens(s.totalTokens ?? 0).padStart(8);
-      const model = (s.modelOverride ?? "-").padEnd(9);
-      const display = s.displayName ?? s.lastTo ?? "-";
-      console.log(`  ${name}  ${agent}  ${tokens}  ${model}  ${display}`);
+    if (ephemeralOnly) {
+      console.log("  NAME                                  AGENT     EXPIRES AT          DISPLAY");
+      console.log("  ────────────────────────────────────  ────────  ──────────────────  ──────────────────");
+
+      for (const s of sessions) {
+        const name = (s.name ?? s.sessionKey).padEnd(38);
+        const agent = (s.agentId ?? "-").padEnd(8);
+        const expires = s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "never".padEnd(18);
+        const display = s.displayName ?? s.lastTo ?? "-";
+        console.log(`  ${name}  ${agent}  ${expires}  ${display}`);
+      }
+    } else {
+      console.log("  NAME                                  AGENT     TOKENS    TYPE       EXPIRES             DISPLAY");
+      console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ──────────────────  ──────────────────");
+
+      for (const s of sessions) {
+        const ephTag = s.ephemeral ? "⏳" : "  ";
+        const name = (s.name ?? s.sessionKey).padEnd(36);
+        const agent = (s.agentId ?? "-").padEnd(8);
+        const tokens = formatTokens(s.totalTokens ?? 0).padStart(8);
+        const type = (s.ephemeral ? "ephemeral" : "permanent").padEnd(9);
+        const expires = s.ephemeral && s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "-".padEnd(18);
+        const display = s.displayName ?? s.lastTo ?? "-";
+        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${type}  ${expires}  ${display}`);
+      }
     }
 
     console.log();
@@ -98,6 +133,12 @@ export class SessionCommands {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
       const account = s.lastAccountId ? ` (account: ${s.lastAccountId})` : "";
       console.log(`Channel:     ${routing}${account}`);
+    }
+
+    if (s.ephemeral) {
+      const expiresStr = s.expiresAt ? formatDate(s.expiresAt) : "unknown";
+      const remaining = s.expiresAt ? Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000)) : 0;
+      console.log(`Ephemeral:   ⏳ yes — expires ${expiresStr} (${remaining}min left)`);
     }
 
     console.log(`Queue:       ${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`);
@@ -187,6 +228,100 @@ export class SessionCommands {
     resetSession(s.sessionKey);
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
+  }
+
+  @Command({ name: "delete", description: "Delete a session permanently" })
+  async delete(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Abort SDK subprocess first
+    try {
+      await notif.emit("ravi.session.abort", {
+        sessionKey: s.sessionKey,
+        sessionName: s.name,
+      });
+    } catch { /* session may not be active */ }
+
+    deleteSession(s.sessionKey);
+    console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
+  }
+
+  // ===========================================================================
+  // Ephemeral Commands
+  // ===========================================================================
+
+  @Command({ name: "set-ttl", description: "Make a session ephemeral with a TTL" })
+  setTtl(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const ttlMs = parseDurationMs(duration);
+    if (!ttlMs) {
+      fail(`Invalid duration: ${duration}. Use format like 5h, 30m, 1d`);
+      return;
+    }
+
+    setSessionEphemeral(s.sessionKey, ttlMs);
+    const expiresAt = new Date(Date.now() + ttlMs);
+    console.log(`⏳ Session "${s.name ?? s.sessionKey}" is now ephemeral.`);
+    console.log(`   Expires: ${formatDate(expiresAt.getTime())}`);
+  }
+
+  @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
+  extend(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    if (!s.ephemeral) {
+      fail(`Session "${s.name ?? s.sessionKey}" is not ephemeral.`);
+      return;
+    }
+
+    const ttlMs = parseDurationMs(duration ?? "5h");
+    if (!ttlMs) {
+      fail(`Invalid duration: ${duration}. Use format like 5h, 30m, 1d`);
+      return;
+    }
+
+    extendSession(nameOrKey, ttlMs);
+    const newExpiry = Math.max(s.expiresAt ?? Date.now(), Date.now()) + ttlMs;
+    console.log(`⏳ Extended "${s.name ?? s.sessionKey}" by ${duration ?? "5h"}.`);
+    console.log(`   New expiry: ${formatDate(newExpiry)}`);
+  }
+
+  @Command({ name: "keep", description: "Make an ephemeral session permanent" })
+  keep(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    if (!s.ephemeral) {
+      console.log(`Session "${s.name ?? s.sessionKey}" is already permanent.`);
+      return;
+    }
+
+    makeSessionPermanent(nameOrKey);
+    console.log(`✅ Session "${s.name ?? s.sessionKey}" is now permanent.`);
   }
 
   // ===========================================================================

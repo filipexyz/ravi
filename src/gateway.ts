@@ -23,6 +23,7 @@ import { mkdir, readFile, rename } from "fs/promises";
 import path from "path";
 import { handleSlashCommand } from "./slash/index.js";
 
+
 const log = logger.child("gateway");
 
 /** Silent reply token - when response contains this, don't send to channel */

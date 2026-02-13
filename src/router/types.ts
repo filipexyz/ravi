@@ -191,6 +191,10 @@ export interface SessionEntry {
   // Heartbeat
   lastHeartbeatText?: string;
   lastHeartbeatSentAt?: number;
+
+  // Ephemeral sessions
+  ephemeral?: boolean;
+  expiresAt?: number;
 }
 
 // ============================================================================
