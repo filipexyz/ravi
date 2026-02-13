@@ -484,6 +484,10 @@ function getDb(): Database {
     db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
     log.info("Added max_rounds column to outbound_queues table");
   }
+  if (!queueColumns.some(c => c.name === "stages")) {
+    db.exec("ALTER TABLE outbound_queues ADD COLUMN stages TEXT");
+    log.info("Added stages column to outbound_queues table");
+  }
 
   // Migration: add 'agent' to outbound_entries status CHECK constraint
   // SQLite requires table recreation to modify CHECK constraints

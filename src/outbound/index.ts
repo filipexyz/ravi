@@ -8,11 +8,11 @@
 export type {
   QueueStatus,
   EntryStatus,
-  QualificationStatus,
   OutboundQueue,
   OutboundQueueInput,
   OutboundEntry,
   OutboundEntryInput,
+  OutboundStage,
   QueueStateUpdate,
   PendingReceipt,
 } from "./types.js";
@@ -47,6 +47,9 @@ export {
   dbClearPendingReceipt,
   dbClearResponseText,
   dbSetEntrySenderId,
+  getQueueStageNames,
+  getStageDelays,
+  getDefaultStageName,
 } from "./outbound-db.js";
 
 // Direct send

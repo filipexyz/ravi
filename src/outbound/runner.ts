@@ -31,6 +31,9 @@ import {
   dbListEntries,
   dbClearPendingReceipt,
   dbClearResponseText,
+  getQueueStageNames,
+  getStageDelays,
+  getDefaultStageName,
 } from "./outbound-db.js";
 import type { OutboundQueue, OutboundEntry } from "./types.js";
 
@@ -145,6 +148,13 @@ export class OutboundRunner {
     log.info("Processing queue", { queueId: queue.id, queueName: queue.name, agentId });
 
     try {
+      // Check stages configured
+      if (queue.stages.length === 0) {
+        log.warn("Queue has no stages configured, skipping", { queueId: queue.id, queueName: queue.name });
+        this.scheduleNext(queue, startTime);
+        return;
+      }
+
       // Check active hours
       if (!this.isWithinActiveHours(queue)) {
         log.debug("Queue outside active hours, skipping", { queueId: queue.id });
@@ -169,14 +179,15 @@ export class OutboundRunner {
         return;
       }
 
-      // Priority 2: Follow-up for entries without response (if followUp configured)
-      if (queue.followUp && Object.keys(queue.followUp).length > 0) {
-        const followUpEntry = dbGetNextFollowUpEntry(queue.id, queue.followUp, queue.maxRounds);
+      // Priority 2: Follow-up for entries without response (if delays configured)
+      const stageDelays = getStageDelays(queue);
+      if (Object.keys(stageDelays).length > 0) {
+        const followUpEntry = dbGetNextFollowUpEntry(queue.id, stageDelays, queue.maxRounds);
         if (followUpEntry) {
           log.info("Processing follow-up entry (no response)", {
             entryId: followUpEntry.id,
             phone: followUpEntry.contactPhone,
-            qualification: followUpEntry.qualification ?? "cold",
+            qualification: followUpEntry.qualification,
             rounds: followUpEntry.roundsCompleted,
           });
           await this.processFollowUpEntry(queue, followUpEntry, agentId, startTime);
@@ -202,7 +213,7 @@ export class OutboundRunner {
         const notDoneCount = allEntries.filter(e => e.status !== "done" && e.status !== "skipped").length;
 
         // Don't mark completed if there are entries that could still get follow-ups
-        const hasFollowUpCandidates = queue.followUp && Object.keys(queue.followUp).length > 0 &&
+        const hasFollowUpCandidates = Object.keys(stageDelays).length > 0 &&
           allEntries.some(e =>
             e.roundsCompleted > 0 &&
             !e.lastResponseText &&
@@ -295,21 +306,7 @@ export class OutboundRunner {
       : this.buildOutreachPrompt(queue, entry);
 
     // Find or create outbound session
-    const dbKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
-    const existing = resolveSession(dbKey);
-    let sessionName: string;
-
-    if (existing?.name) {
-      sessionName = existing.name;
-    } else {
-      const agent = getAgent(agentId);
-      const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
-      const phoneSuffix = entry.contactPhone.replace(/[^0-9]/g, "").slice(-6);
-      const baseName = generateSessionName(agentId, { suffix: `outbound-${phoneSuffix}` });
-      sessionName = ensureUniqueName(baseName);
-      const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
-      if (!session.name) updateSessionName(session.sessionKey, sessionName);
-    }
+    const sessionName = this.resolveOutboundSession(queue, entry, agentId);
 
     log.info("Sending prompt to agent", {
       entryId: entry.id,
@@ -343,34 +340,60 @@ export class OutboundRunner {
   }
 
   /**
+   * Find or create outbound session for an entry.
+   */
+  private resolveOutboundSession(queue: OutboundQueue, entry: OutboundEntry, agentId: string): string {
+    const dbKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
+    const existing = resolveSession(dbKey);
+
+    if (existing?.name) {
+      return existing.name;
+    }
+
+    const agent = getAgent(agentId);
+    const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
+    const phoneSuffix = entry.contactPhone.replace(/[^0-9]/g, "").slice(-6);
+    const baseName = generateSessionName(agentId, { suffix: `outbound-${phoneSuffix}` });
+    const sessionName = ensureUniqueName(baseName);
+    const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
+    if (!session.name) updateSessionName(session.sessionKey, sessionName);
+    return sessionName;
+  }
+
+  /**
    * Build system context (injected into system prompt, invisible to user).
    * Contains instructions, available tools, and metadata.
    */
   private buildSystemContext(queue: OutboundQueue, entry: OutboundEntry): string {
     const parts: string[] = [];
+    const stageNames = getQueueStageNames(queue);
+    const defaultStage = getDefaultStageName(queue);
 
     parts.push(`[Outbound Session: ${queue.name}]`);
     parts.push("");
     parts.push("## Queue Instructions");
     parts.push(queue.instructions);
     parts.push("");
+    parts.push("## Pipeline Stages");
+    parts.push(`Estágios disponíveis: ${stageNames.join(" → ")}`);
+    parts.push("");
     parts.push("## Available Actions");
     parts.push(`- \`ravi outbound send ${entry.id} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
-    parts.push(`- \`ravi outbound qualify ${entry.id} <status>\` — SEMPRE atualize a qualificação quando o status mudar (cold/warm/interested/qualified/rejected)`);
-    parts.push(`- \`ravi outbound done ${entry.id}\` — Encerrar entry (use DEPOIS de qualify qualified/rejected)`);
+    parts.push(`- \`ravi outbound qualify ${entry.id} <stage>\` — Atualize o estágio quando mudar (${stageNames.join("/")})`);
+    parts.push(`- \`ravi outbound done ${entry.id}\` — Encerrar entry (use quando concluir o pipeline)`);
     parts.push(`- \`ravi outbound complete ${entry.id}\` — Re-encerrar entry que reativou com nova mensagem`);
     parts.push(`- \`ravi outbound skip ${entry.id}\` — Pular por agora`);
     parts.push(`- \`ravi outbound context ${entry.id} <json>\` — Salvar contexto coletado (merge com existente)`);
     parts.push("");
     parts.push("## Workflow");
     parts.push("1. Converse e colete informações → salve com outbound_context");
-    parts.push("2. A cada mudança de temperatura → chame outbound_qualify (cold→warm→interested→qualified)");
-    parts.push("3. Quando qualificado → outbound_qualify qualified + outbound_done");
-    parts.push("4. Se rejeitou/não tem fit → outbound_qualify rejected + outbound_done");
+    parts.push(`2. A cada mudança de estágio → chame outbound_qualify (${stageNames.join("→")})`);
+    parts.push("3. Quando concluir o pipeline → outbound_qualify <estágio final> + outbound_done");
+    parts.push("4. Se não tem fit → outbound_qualify <estágio de rejeição> + outbound_done");
     parts.push("");
     parts.push("## Metadata");
-    const qual = entry.qualification ?? "cold";
-    parts.push(`Entry ID: ${entry.id} | Queue ID: ${queue.id} | Round: ${entry.roundsCompleted + 1} | Qualification: ${qual}`);
+    const qual = entry.qualification ?? defaultStage;
+    parts.push(`Entry ID: ${entry.id} | Queue ID: ${queue.id} | Round: ${entry.roundsCompleted + 1} | Stage: ${qual}`);
 
     return parts.join("\n");
   }
@@ -457,27 +480,13 @@ export class OutboundRunner {
     const systemContext = this.buildSystemContext(queue, entry);
     const prompt = this.buildNoResponsePrompt(queue, entry);
 
-    // Find or create outbound session (same logic as processEntry)
-    const dbKey = `agent:${agentId}:outbound:${queue.id}:${entry.contactPhone}`;
-    const existing = resolveSession(dbKey);
-    let sessionName: string;
-
-    if (existing?.name) {
-      sessionName = existing.name;
-    } else {
-      const agent = getAgent(agentId);
-      const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
-      const phoneSuffix = entry.contactPhone.replace(/[^0-9]/g, "").slice(-6);
-      const baseName = generateSessionName(agentId, { suffix: `outbound-${phoneSuffix}` });
-      sessionName = ensureUniqueName(baseName);
-      const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
-      if (!session.name) updateSessionName(session.sessionKey, sessionName);
-    }
+    // Find or create outbound session
+    const sessionName = this.resolveOutboundSession(queue, entry, agentId);
 
     log.info("Sending no-response follow-up to agent", {
       entryId: entry.id,
       phone: entry.contactPhone,
-      qualification: entry.qualification ?? "cold",
+      qualification: entry.qualification,
       roundsCompleted: entry.roundsCompleted,
       sessionName,
     });
@@ -504,7 +513,7 @@ export class OutboundRunner {
   private buildNoResponsePrompt(queue: OutboundQueue, entry: OutboundEntry): string {
     const elapsed = Date.now() - (entry.lastSentAt ?? 0);
     const minutes = Math.round(elapsed / 60000);
-    const qual = entry.qualification ?? "cold";
+    const qual = entry.qualification ?? getDefaultStageName(queue);
 
     const parts: string[] = [];
     parts.push(`[Outbound: ${queue.name} — Sem resposta há ${minutes} min | Status: ${qual}]`);

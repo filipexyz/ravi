@@ -8,7 +8,14 @@
 
 export type QueueStatus = "active" | "paused" | "completed";
 export type EntryStatus = "pending" | "active" | "done" | "skipped" | "error" | "agent";
-export type QualificationStatus = "cold" | "warm" | "interested" | "qualified" | "rejected";
+/**
+ * Custom pipeline stage for a queue.
+ * Each queue MUST define its own stages.
+ */
+export interface OutboundStage {
+  name: string;
+  delay?: number | null; // follow-up delay in minutes (null = no auto follow-up)
+}
 
 /**
  * Pending read receipt stored on an outbound entry.
@@ -39,8 +46,9 @@ export interface OutboundQueue {
   timezone?: string;
   currentIndex: number;
 
-  // Follow-up config
-  followUp?: Record<string, number>; // qualification status → delay in minutes
+  // Pipeline stages (required per queue)
+  stages: OutboundStage[];
+
   maxRounds?: number;
 
   // State
@@ -71,7 +79,7 @@ export interface OutboundQueueInput {
   activeStart?: string;
   activeEnd?: string;
   timezone?: string;
-  followUp?: Record<string, number>;
+  stages: OutboundStage[];
   maxRounds?: number;
 }
 
@@ -86,7 +94,7 @@ export interface OutboundEntry {
   position: number;
   status: EntryStatus;
   context: Record<string, unknown>;
-  qualification?: QualificationStatus;
+  qualification?: string;
   roundsCompleted: number;
   lastProcessedAt?: number;
   lastSentAt?: number;

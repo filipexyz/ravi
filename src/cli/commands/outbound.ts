@@ -29,7 +29,9 @@ import {
   dbUpdateEntryContext,
   dbAddEntriesFromContacts,
   directSend,
+  getQueueStageNames,
 } from "../../outbound/index.js";
+import type { OutboundStage } from "../../outbound/index.js";
 
 function statusColor(status: string): string {
   switch (status) {
@@ -66,7 +68,7 @@ export class OutboundCommands {
     @Option({ flags: "--active-start <time>", description: "Active hours start (e.g., 09:00)" }) activeStart?: string,
     @Option({ flags: "--active-end <time>", description: "Active hours end (e.g., 22:00)" }) activeEnd?: string,
     @Option({ flags: "--tz <timezone>", description: "Timezone" }) tz?: string,
-    @Option({ flags: "--follow-up <json>", description: 'Follow-up delays per qualification in minutes, e.g. \'{"cold":120,"warm":30}\'' }) followUpJson?: string,
+    @Option({ flags: "--stages <json>", description: 'Pipeline stages JSON, e.g. \'[{"name":"novo"},{"name":"engajado","delay":30},{"name":"fechado"}]\'' }) stagesJson?: string,
     @Option({ flags: "--max-rounds <n>", description: "Maximum rounds per entry" }) maxRoundsStr?: string,
   ) {
     if (!instructions) {
@@ -85,13 +87,25 @@ export class OutboundCommands {
 
     const timezone = tz ?? getDefaultTimezone();
 
-    let followUp: Record<string, number> | undefined;
-    if (followUpJson) {
-      try {
-        followUp = JSON.parse(followUpJson);
-      } catch {
-        fail("Invalid --follow-up JSON");
+    if (!stagesJson) {
+      fail("--stages is required (e.g. --stages '[{\"name\":\"cold\"},{\"name\":\"warm\",\"delay\":30},{\"name\":\"qualified\"},{\"name\":\"rejected\"}]')");
+    }
+
+    let stages: OutboundStage[];
+    try {
+      const parsed = JSON.parse(stagesJson);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        fail("--stages must be a non-empty JSON array");
       }
+      for (const s of parsed) {
+        if (!s.name || typeof s.name !== "string") {
+          fail("Each stage must have a 'name' string");
+        }
+      }
+      stages = parsed as OutboundStage[];
+    } catch (e) {
+      if ((e as Error).message?.includes("must be") || (e as Error).message?.includes("must have")) throw e;
+      fail("Invalid --stages JSON");
     }
 
     const maxRounds = maxRoundsStr ? parseInt(maxRoundsStr, 10) : undefined;
@@ -106,13 +120,14 @@ export class OutboundCommands {
         activeStart,
         activeEnd,
         timezone,
-        followUp,
+        stages,
         maxRounds,
       });
 
       console.log(`\n✓ Created queue: ${queue.id}`);
       console.log(`  Name:      ${queue.name}`);
       console.log(`  Interval:  ${formatDurationMs(queue.intervalMs)}`);
+      console.log(`  Stages:    ${queue.stages.map(s => s.name).join(" → ")}`);
       console.log(`  Status:    paused`);
       console.log(`\nAdd entries:`);
       console.log(`  ravi outbound add ${queue.id} <phone> --name "João Silva"`);
@@ -172,14 +187,17 @@ export class OutboundCommands {
     if (queue.description) {
       console.log(`  Description:  ${queue.description}`);
     }
+    if (queue.stages.length > 0) {
+      console.log(`  Stages:       ${queue.stages.map(s => {
+        const delay = s.delay != null ? ` (${s.delay}min)` : "";
+        return s.name + delay;
+      }).join(" → ")}`);
+    }
     if (queue.activeStart && queue.activeEnd) {
       console.log(`  Active hours: ${queue.activeStart} - ${queue.activeEnd}`);
     }
     if (queue.timezone) {
       console.log(`  Timezone:     ${queue.timezone}`);
-    }
-    if (queue.followUp) {
-      console.log(`  Follow-up:    ${JSON.stringify(queue.followUp)}`);
     }
     if (queue.maxRounds !== undefined) {
       console.log(`  Max rounds:   ${queue.maxRounds}`);
@@ -213,6 +231,10 @@ export class OutboundCommands {
   async start(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
     if (!queue) fail(`Queue not found: ${id}`);
+
+    if (queue.stages.length === 0) {
+      fail(`Queue has no stages configured. Set stages first: ravi outbound set ${id} stages '[{"name":"novo"},{"name":"engajado","delay":30}]'`);
+    }
 
     const entries = dbListEntries(id);
     const pending = entries.filter(e => e.status === "pending" || e.status === "active").length;
@@ -307,18 +329,25 @@ export class OutboundCommands {
           console.log(`✓ Timezone set: ${id} -> ${value}`);
           break;
 
-        case "follow-up":
-        case "followUp": {
+        case "stages": {
           if (value === "null" || value === "-") {
-            dbUpdateQueue(id, { followUp: undefined });
-            console.log(`✓ Follow-up disabled: ${id}`);
+            fail("stages is required — cannot clear. Set new stages instead.");
           } else {
             try {
               const parsed = JSON.parse(value);
-              dbUpdateQueue(id, { followUp: parsed });
-              console.log(`✓ Follow-up set: ${id} -> ${JSON.stringify(parsed)}`);
-            } catch {
-              fail("Invalid JSON for follow-up");
+              if (!Array.isArray(parsed) || parsed.length === 0) {
+                fail("stages must be a non-empty JSON array");
+              }
+              for (const s of parsed) {
+                if (!s.name || typeof s.name !== "string") {
+                  fail("Each stage must have a 'name' string");
+                }
+              }
+              dbUpdateQueue(id, { stages: parsed as OutboundStage[] });
+              console.log(`✓ Stages set: ${id} -> ${(parsed as OutboundStage[]).map((s: OutboundStage) => s.name).join(" → ")}`);
+            } catch (e) {
+              if ((e as Error).message?.includes("must be") || (e as Error).message?.includes("must have")) throw e;
+              fail("Invalid JSON for stages");
             }
           }
           break;
@@ -339,7 +368,7 @@ export class OutboundCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, follow-up, max-rounds`);
+          fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds`);
       }
 
       await notif.emit("ravi.outbound.refresh", {});
@@ -514,7 +543,7 @@ export class OutboundCommands {
       const entries = dbListEntries(queue.id);
       console.log(`# ${queue.name} (${queue.status})`);
       console.log(`Interval: ${formatDurationMs(queue.intervalMs)} | Agent: ${queue.agentId}`);
-      if (queue.followUp) console.log(`Follow-up: ${JSON.stringify(queue.followUp)} | Max rounds: ${queue.maxRounds ?? "-"}`);
+      if (queue.stages.length > 0) console.log(`Stages: ${queue.stages.map(s => s.name).join(" → ")} | Max rounds: ${queue.maxRounds ?? "-"}`);
       console.log(`Entries: ${entries.length}\n`);
 
       for (const entry of entries) {
@@ -604,6 +633,16 @@ export class OutboundCommands {
     });
 
     if (result.success) {
+      // Update lastSentAt on entry + increment queue totalSent
+      dbUpdateEntry(entryId, { lastSentAt: Date.now() });
+      const queue = dbGetQueue(entry.queueId);
+      if (queue) {
+        dbUpdateQueueState(entry.queueId, {
+          lastRunAt: queue.lastRunAt ?? Date.now(),
+          lastStatus: queue.lastStatus ?? "ok",
+          totalSent: queue.totalSent + 1,
+        });
+      }
       console.log(`✓ Message sent to ${formatPhone(entry.contactPhone)}`);
     } else {
       fail(`Send failed: ${result.error}`);
@@ -656,21 +695,24 @@ export class OutboundCommands {
     }
   }
 
-  @Command({ name: "qualify", description: "Set qualification status on an entry" })
+  @Command({ name: "qualify", description: "Set pipeline stage on an entry" })
   qualify(
     @Arg("id", { description: "Entry ID" }) id: string,
-    @Arg("status", { description: "Qualification: cold, warm, interested, qualified, rejected" }) status: string,
+    @Arg("status", { description: "Pipeline stage name" }) status: string,
   ) {
     const entry = dbGetEntry(id);
     if (!entry) fail(`Entry not found: ${id}`);
 
-    const valid = ["cold", "warm", "interested", "qualified", "rejected"];
+    const queue = dbGetQueue(entry.queueId);
+    if (!queue) fail(`Queue not found: ${entry.queueId}`);
+
+    const valid = getQueueStageNames(queue);
     if (!valid.includes(status)) {
-      fail(`Invalid status: ${status}. Valid: ${valid.join(", ")}`);
+      fail(`Invalid stage: ${status}. Valid for this queue: ${valid.join(", ")}`);
     }
 
-    dbUpdateEntry(id, { qualification: status as any });
-    console.log(`✓ Qualification set: ${id} -> ${status}`);
+    dbUpdateEntry(id, { qualification: status });
+    console.log(`✓ Stage set: ${id} -> ${status}`);
   }
 
   @Command({ name: "reset", description: "Reset an entry to pending (clear rounds, responses, session)" })
@@ -684,9 +726,9 @@ export class OutboundCommands {
     const queue = dbGetQueue(entry.queueId);
     const agentId = queue?.agentId ?? getDefaultAgentId();
 
-    // Reset entry state
-    // Use null cast to clear optional fields (undefined = "don't update" in dbUpdateEntry)
-    const updates: Partial<any> = {
+    // Reset entry state — null clears optional fields in dbUpdateEntry
+    type ResetUpdates = Partial<Record<keyof import("../../outbound/types.js").OutboundEntry, unknown>>;
+    const updates: ResetUpdates = {
       status: "pending",
       roundsCompleted: 0,
       qualification: null,

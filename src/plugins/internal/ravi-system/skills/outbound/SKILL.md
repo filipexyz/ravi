@@ -27,16 +27,20 @@ ravi outbound show <id>
 
 ### Criar fila
 ```bash
-ravi outbound create "<nome>" --instructions "<prompt>" --every <interval>
+ravi outbound create "<nome>" --instructions "<prompt>" --every <interval> --stages '<json>'
 ```
 
-Opções:
+Opções obrigatórias:
+- `--instructions <text>` - Instruções do agent
+- `--every <interval>` - Intervalo entre entries (ex: 5m, 1h)
+- `--stages <json>` - Pipeline stages (ver seção abaixo)
+
+Opções extras:
 - `--agent <id>` - Agent que processa
 - `--description <text>` - Descrição da fila
 - `--active-start <HH:MM>` - Horário início (ex: 09:00)
 - `--active-end <HH:MM>` - Horário fim (ex: 22:00)
 - `--tz <timezone>` - Fuso horário
-- `--follow-up <json>` - Delays por qualificação: `'{"cold":120,"warm":30}'`
 - `--max-rounds <n>` - Máximo de rounds por entry
 
 ### Iniciar/Pausar fila
@@ -49,7 +53,7 @@ ravi outbound pause <id>
 ```bash
 ravi outbound set <id> <key> <value>
 ```
-Keys: name, instructions, every, agent, description, active-start, active-end, tz, follow-up, max-rounds
+Keys: name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds
 
 ### Deletar fila
 ```bash
@@ -93,11 +97,11 @@ ravi outbound chat <entryId>
 ravi outbound context <entryId> '{"empresa":"Nova Info"}'
 ```
 
-### Qualificar lead
+### Qualificar lead / Mudar estágio
 ```bash
-ravi outbound qualify <entryId> <status>
+ravi outbound qualify <entryId> <stage>
 ```
-Status: cold, warm, interested, qualified, rejected
+Aceita qualquer estágio definido na fila. Cada fila define seus próprios estágios.
 
 ### Marcar como concluído
 ```bash
@@ -129,3 +133,43 @@ Opções:
 - `--account <id>` - Conta WhatsApp
 - `--typing-delay <ms>` - Delay de digitação
 - `--pause <ms>` - Pausa antes de digitar
+
+## Pipeline Stages
+
+Cada fila **deve** definir seus próprios estágios. Não existe padrão — defina o funil que faz sentido pro caso de uso.
+
+### Formato
+```json
+[
+  { "name": "novo" },
+  { "name": "engajado", "delay": 30 },
+  { "name": "qualificado" },
+  { "name": "perdido" }
+]
+```
+
+- `name` — identificador do estágio
+- `delay` — minutos para follow-up automático (null/omitido = sem follow-up)
+
+### Exemplos por caso de uso
+
+**Vendas B2B:**
+```bash
+ravi outbound create "Prospecção" --instructions "..." --every 5m \
+  --stages '[{"name":"cold"},{"name":"engajado","delay":30},{"name":"reuniao_marcada","delay":1440},{"name":"proposta","delay":4320},{"name":"fechado"},{"name":"perdido"}]'
+```
+
+**Recrutamento:**
+```bash
+ravi outbound set <id> stages '[{"name":"novo"},{"name":"respondeu","delay":30},{"name":"interessado","delay":60},{"name":"agendou_entrevista","delay":1440},{"name":"contratado"},{"name":"recusou"}]'
+```
+
+**Cobrança:**
+```bash
+ravi outbound set <id> stages '[{"name":"aviso"},{"name":"lembrete","delay":1440},{"name":"urgente","delay":2880},{"name":"ultima_chance","delay":4320},{"name":"inadimplente"}]'
+```
+
+### Como funciona
+- O agent recebe os estágios disponíveis no prompt automaticamente
+- `qualify` valida contra os estágios da fila
+- Follow-up automático usa o `delay` do estágio atual da entry

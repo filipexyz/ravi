@@ -13,9 +13,9 @@ import type {
   OutboundQueueInput,
   OutboundEntry,
   OutboundEntryInput,
+  OutboundStage,
   QueueStatus,
   EntryStatus,
-  QualificationStatus,
   QueueStateUpdate,
   PendingReceipt,
 } from "./types.js";
@@ -38,7 +38,7 @@ interface QueueRow {
   active_end: string | null;
   timezone: string | null;
   current_index: number;
-  follow_up: string | null;
+  stages: string | null;
   max_rounds: number | null;
   next_run_at: number | null;
   last_run_at: number | null;
@@ -77,6 +77,11 @@ interface EntryRow {
 // ============================================================================
 
 function rowToQueue(row: QueueRow): OutboundQueue {
+  let stages: OutboundStage[] = [];
+  if (row.stages !== null) {
+    try { stages = JSON.parse(row.stages); } catch { /* ignore */ }
+  }
+
   const queue: OutboundQueue = {
     id: row.id,
     name: row.name,
@@ -84,6 +89,7 @@ function rowToQueue(row: QueueRow): OutboundQueue {
     status: row.status as QueueStatus,
     intervalMs: row.interval_ms,
     currentIndex: row.current_index,
+    stages,
     totalProcessed: row.total_processed,
     totalSent: row.total_sent,
     totalSkipped: row.total_skipped,
@@ -96,9 +102,6 @@ function rowToQueue(row: QueueRow): OutboundQueue {
   if (row.active_start !== null) queue.activeStart = row.active_start;
   if (row.active_end !== null) queue.activeEnd = row.active_end;
   if (row.timezone !== null) queue.timezone = row.timezone;
-  if (row.follow_up !== null) {
-    try { queue.followUp = JSON.parse(row.follow_up); } catch { /* ignore */ }
-  }
   if (row.max_rounds !== null) queue.maxRounds = row.max_rounds;
   if (row.next_run_at !== null) queue.nextRunAt = row.next_run_at;
   if (row.last_run_at !== null) queue.lastRunAt = row.last_run_at;
@@ -123,7 +126,7 @@ function rowToEntry(row: EntryRow): OutboundEntry {
   };
 
   if (row.contact_email !== null) entry.contactEmail = row.contact_email;
-  if (row.qualification !== null) entry.qualification = row.qualification as QualificationStatus;
+  if (row.qualification !== null) entry.qualification = row.qualification;
   if (row.last_processed_at !== null) entry.lastProcessedAt = row.last_processed_at;
   if (row.last_sent_at !== null) entry.lastSentAt = row.last_sent_at;
   if (row.last_response_at !== null) entry.lastResponseAt = row.last_response_at;
@@ -160,7 +163,7 @@ export function dbCreateQueue(input: OutboundQueueInput): OutboundQueue {
     INSERT INTO outbound_queues (
       id, agent_id, name, description, instructions,
       status, interval_ms, active_start, active_end, timezone,
-      follow_up, max_rounds,
+      stages, max_rounds,
       current_index, next_run_at,
       total_processed, total_sent, total_skipped,
       created_at, updated_at
@@ -175,7 +178,7 @@ export function dbCreateQueue(input: OutboundQueueInput): OutboundQueue {
     input.activeStart ?? null,
     input.activeEnd ?? null,
     input.timezone ?? null,
-    input.followUp ? JSON.stringify(input.followUp) : null,
+    JSON.stringify(input.stages),
     input.maxRounds ?? null,
     now,
     now,
@@ -254,9 +257,9 @@ export function dbUpdateQueue(id: string, updates: Partial<OutboundQueue>): Outb
     fields.push("timezone = ?");
     values.push(updates.timezone ?? null);
   }
-  if (updates.followUp !== undefined) {
-    fields.push("follow_up = ?");
-    values.push(updates.followUp ? JSON.stringify(updates.followUp) : null);
+  if (updates.stages !== undefined) {
+    fields.push("stages = ?");
+    values.push(JSON.stringify(updates.stages));
   }
   if (updates.maxRounds !== undefined) {
     fields.push("max_rounds = ?");
@@ -554,7 +557,7 @@ export function dbGetNextEntryWithResponse(queueId: string): OutboundEntry | nul
 
 /**
  * Get the next entry eligible for follow-up (contacted but no response).
- * Uses the queue's followUp config to determine delay per qualification status.
+ * Uses the queue's stage delays to determine follow-up timing per stage.
  */
 export function dbGetNextFollowUpEntry(
   queueId: string,
@@ -577,7 +580,7 @@ export function dbGetNextFollowUpEntry(
 
   for (const row of rows) {
     const entry = rowToEntry(row);
-    const qual = entry.qualification ?? "cold";
+    const qual = entry.qualification ?? "";
     const delayMinutes = followUp[qual];
 
     // No delay configured for this status → skip (no follow-up)
@@ -826,4 +829,36 @@ export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
     LIMIT 1
   `).get(phone) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
+}
+
+// ============================================================================
+// Stage Helpers
+// ============================================================================
+
+/**
+ * Get stage names for a queue.
+ */
+export function getQueueStageNames(queue: OutboundQueue): string[] {
+  return queue.stages.map(s => s.name);
+}
+
+/**
+ * Get follow-up delays derived from stages.
+ * Returns a map of stage name → delay in minutes (only stages with delay > 0).
+ */
+export function getStageDelays(queue: OutboundQueue): Record<string, number> {
+  const delays: Record<string, number> = {};
+  for (const stage of queue.stages) {
+    if (stage.delay != null && stage.delay > 0) {
+      delays[stage.name] = stage.delay;
+    }
+  }
+  return delays;
+}
+
+/**
+ * Get the default/first stage name for a queue.
+ */
+export function getDefaultStageName(queue: OutboundQueue): string {
+  return queue.stages[0]?.name ?? "unknown";
 }
