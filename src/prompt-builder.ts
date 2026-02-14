@@ -163,6 +163,8 @@ Tabelas com caracteres | - + funcionam bem no terminal.`;
 function reactionsText(): string {
   return `Mensagens incluem \`mid:ID\` no header (dentro dos colchetes). Esse é o ID da mensagem — use com \`react_send\` para enviar reações.
 
+O header também inclui o dia da semana abreviado em inglês (mon, tue, wed, thu, fri, sat, sun) ao final do timestamp. Use para contexto temporal.
+
 **NUNCA inclua \`[mid:...]\` ou \`mid:...\` nas suas respostas.** O mid é metadado interno, não faz parte do texto visível.
 
 Quando reagir:

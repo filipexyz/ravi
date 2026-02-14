@@ -140,19 +140,48 @@ Foque em:
     });
 
     const memoryPath = join(agentCwd, "MEMORY.md");
+    const memoryDir = join(agentCwd, "memory");
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
     const modelToUse = options.memoryModel ?? "haiku";
 
     const promptToSend = `## Arquivos disponíveis
 
 - **Transcript**: \`${transcriptTmpPath}\` (${lineCount} linhas) — SOMENTE LEITURA
-- **MEMORY.md**: \`${memoryPath}\` — leitura e escrita
+- **MEMORY.md**: \`${memoryPath}\` — leitura e escrita (índice principal)
+- **memory/**: \`${memoryDir}/\` — pasta com arquivos por data (leitura e escrita)
+
+Data de hoje: ${today}
 
 ## Sua tarefa
 
-Leia a conversa completa no transcript e atualize o MEMORY.md com todas as informações importantes.
+Leia a conversa completa no transcript e atualize a memória do agent.
 
 ## Instruções específicas
 ${instructions}
+
+## Estrutura de Memória
+
+A memória é organizada em DOIS NÍVEIS:
+
+### 1. MEMORY.md (índice principal — DEVE ser curto, <100 linhas)
+Contém APENAS informações persistentes e de referência rápida:
+- **Regras de Operação** — lições aprendidas, regras que não mudam entre sessões
+- **Padrões Técnicos** — como o sistema funciona, convenções
+- **Contexto de Negócio** — projetos ativos, pessoas-chave, bugs pendentes, deadlines
+- **Diário** — tabela com data, tópicos abordados e link pro arquivo detalhado. Os tópicos servem como índice de busca — ex: "session names, bug fixes, outbound" pra saber em qual dia procurar cada assunto
+
+**NÃO coloque detalhes de implementação no MEMORY.md** — esses vão no arquivo por data.
+
+### 2. memory/YYYY-MM-DD.md (arquivos por data)
+Cada dia tem seu arquivo com uma descrição fiel do que aconteceu. O objetivo é que, ao ler o arquivo, dê pra entender o que foi feito e onde buscar mais detalhes se necessário. Inclua:
+- Features implementadas (o que faz, arquivos principais, commits)
+- Bugs encontrados e resolvidos (sintoma, causa, fix)
+- Decisões técnicas relevantes (o que foi decidido e por quê)
+- Lições aprendidas
+- Dados ou resultados concretos quando relevantes
+- Contexto de conversas importantes
+
+**Seja fiel mas conciso. O arquivo serve como índice detalhado — não precisa replicar código ou explicar cada linha.**
 
 ## Como ler o transcript
 
@@ -178,16 +207,23 @@ Preste atenção especial a:
 ## Processo
 
 1. Leia o MEMORY.md atual (se existir)
-2. Leia o transcript COMPLETO, seção por seção (500 linhas por vez)
-3. Edite o MEMORY.md com as novas memórias
+2. Leia os arquivos existentes em memory/ (se houver) para não duplicar
+3. Leia o transcript COMPLETO, seção por seção (500 linhas por vez)
+4. Determine a data da sessão pelo conteúdo do transcript
+5. Crie ou atualize o arquivo \`memory/YYYY-MM-DD.md\` com uma descrição fiel do dia
+6. Atualize o MEMORY.md:
+   - Adicione/atualize a linha na tabela do diário com os tópicos abordados (ex: "outbound stages, BUG-001 fix, doma-rdp") — esses tópicos são o índice de busca pra saber em qual dia procurar cada assunto
+   - Atualize regras de operação se novas lições foram aprendidas
+   - Atualize contexto de negócio se mudou (versão, projetos, pessoas, bugs)
+   - Atualize padrões técnicos se novos padrões foram descobertos
 
 ## Regras
 
 - NUNCA apague memórias antigas — elas são valiosas
-- ADICIONE novas memórias ao arquivo existente
+- NUNCA coloque detalhes extensos no MEMORY.md — use os arquivos por data
 - Pode REORGANIZAR ou CONSOLIDAR se fizer sentido, mas sem perder informação
 - Se uma memória nova contradiz uma antiga, mantenha ambas com contexto temporal
-- Seja conciso mas completo — não perca detalhes importantes`;
+- Seja conciso no MEMORY.md, fiel e útil nos arquivos por data`;
 
     log.info("Scheduling background extraction", {
       sessionId,
@@ -203,13 +239,14 @@ Preste atenção especial a:
       try {
         log.info("STARTING memory extraction", { sessionId, model: modelToUse });
 
-        // Ensure directory exists
+        // Ensure directories exist
         mkdirSync(dirname(memoryPath), { recursive: true });
+        mkdirSync(memoryDir, { recursive: true });
 
         // Hook to restrict file access
         // - Transcript file: Read only
-        // - MEMORY.md: Read/Edit/Write
-        // - Everything else: blocked
+        // - MEMORY.md + memory/*.md: Read/Edit/Write
+        // - Everything else under CWD: Read only
         const fileAccessHook = async (
           toolInput: Record<string, unknown>,
           _toolUseId: string | null
@@ -220,9 +257,10 @@ Preste atenção especial a:
           const isRead = !("old_string" in toolInput) && !("content" in toolInput);
           const isTranscript = normalizedPath === transcriptTmpPath;
           const isMemory = normalizedPath === memoryPath;
+          const isMemoryDir = normalizedPath.startsWith(memoryDir + "/");
 
-          // MEMORY.md: full access (read + write)
-          if (isMemory) {
+          // MEMORY.md + memory/*.md: full access (read + write)
+          if (isMemory || isMemoryDir) {
             return { decision: "allow" as const };
           }
 
@@ -235,14 +273,14 @@ Preste atenção especial a:
             }
           }
 
-          // Block writes to anything other than MEMORY.md
+          // Block writes to anything other than MEMORY.md and memory/
           if (!isRead) {
             log.warn("Memory agent tried to write unauthorized file", {
               attempted: normalizedPath,
             });
             return {
               decision: "block" as const,
-              reason: `Escrita permitida apenas em: ${memoryPath}`,
+              reason: `Escrita permitida apenas em: ${memoryPath} e ${memoryDir}/`,
             };
           }
 
@@ -251,7 +289,7 @@ Preste atenção especial a:
           });
           return {
             decision: "block" as const,
-            reason: `Acesso negado. Leitura permitida em: ${agentCwd}/ e ${transcriptTmpPath}. Escrita apenas em: ${memoryPath}`,
+            reason: `Acesso negado. Leitura permitida em: ${agentCwd}/ e ${transcriptTmpPath}. Escrita apenas em: ${memoryPath} e ${memoryDir}/`,
           };
         };
 
@@ -269,18 +307,22 @@ Preste atenção especial a:
             },
             systemPrompt: {
               type: "custom",
-              content: `Você é um gerenciador de memórias. Você tem acesso a dois arquivos:
+              content: `Você é um gerenciador de memórias. Você tem acesso a:
 - ${transcriptTmpPath} — transcript da conversa (SOMENTE LEITURA)
-- ${memoryPath} — arquivo de memórias (leitura e escrita)
+- ${memoryPath} — índice principal de memórias (leitura e escrita, MANTER CURTO <100 linhas)
+- ${memoryDir}/ — pasta com arquivos detalhados por data (leitura e escrita)
+
+ESTRUTURA:
+- MEMORY.md = índice enxuto: regras de operação, padrões técnicos, contexto de negócio, tabela-diário com tópicos + links
+- memory/YYYY-MM-DD.md = descrição fiel do dia: features, bugs, decisões, lições. Serve como índice detalhado pra saber onde buscar
 
 REGRAS:
 - Leia o transcript COMPLETO, seção por seção (500 linhas por vez)
-- NUNCA apague memórias antigas - elas são valiosas
-- ADICIONE novas memórias ao arquivo existente
+- NUNCA apague memórias antigas — elas são valiosas
+- Detalhes extensos vão no arquivo por data, NÃO no MEMORY.md
+- MEMORY.md deve ter apenas informações de referência rápida e a tabela-diário
 - Pode REORGANIZAR ou CONSOLIDAR se fizer sentido, mas sem perder informação
-- Se uma memória nova contradiz uma antiga, mantenha ambas com contexto
-
-Organize de forma clara e útil.`,
+- Se uma memória nova contradiz uma antiga, mantenha ambas com contexto`,
             },
           },
         });

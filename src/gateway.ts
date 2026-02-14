@@ -121,7 +121,8 @@ function formatEnvelope(
   message: InboundMessage
 ): string {
   const channel = plugin.meta.name;
-  const timestamp = new Date(message.timestamp).toLocaleString("pt-BR", {
+  const dt = new Date(message.timestamp);
+  const timestamp = dt.toLocaleString("pt-BR", {
     timeZone: "America/Sao_Paulo",
     year: "numeric",
     month: "2-digit",
@@ -129,6 +130,7 @@ function formatEnvelope(
     hour: "2-digit",
     minute: "2-digit",
   });
+  const dow = dt.toLocaleDateString("en-US", { timeZone: "America/Sao_Paulo", weekday: "short" }).toLowerCase();
 
   // Build reply context prefix
   const replyPrefix = message.replyTo ? formatReplyContext(message.replyTo) : "";
@@ -143,11 +145,11 @@ function formatEnvelope(
     // [WhatsApp Família id:123@g.us mid:XXX 2024-01-30 14:30] João: texto
     const groupLabel = message.groupName ?? message.chatId;
     const sender = message.senderName ?? message.senderId;
-    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId}${midTag} ${timestamp}] ${sender}: ${content}`;
+    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId}${midTag} ${timestamp} ${dow}] ${sender}: ${content}`;
   } else {
-    // [WhatsApp +5511999 mid:XXX 2024-01-30 14:30] texto
+    // [WhatsApp +5511999 mid:XXX 2024-01-30 14:30 fri] texto
     const from = message.senderPhone ?? message.senderId;
-    return `${replyPrefix}[${channel} ${from}${midTag} ${timestamp}] ${content}`;
+    return `${replyPrefix}[${channel} ${from}${midTag} ${timestamp} ${dow}] ${content}`;
   }
 }
 
