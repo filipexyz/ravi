@@ -549,8 +549,9 @@ export class RaviBot {
     this.routerConfig = loadRouterConfig();
 
     // Look up session by name to get agentId
+    // _agentId from heartbeat overrides DB (fixes race condition)
     const sessionEntry = getSessionByName(sessionName);
-    const agentId = sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
+    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
     const debounceMs = agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs });
@@ -665,8 +666,10 @@ export class RaviBot {
   /** Start a new streaming session with an AsyncGenerator that stays alive */
   private async startStreamingSession(sessionName: string, prompt: PromptMessage): Promise<void> {
     // Look up agent from DB by session name
+    // _agentId from heartbeat/cross-session overrides DB value (fixes race where bot
+    // creates session with default agent before the runner's session is committed)
     const sessionEntry = getSessionByName(sessionName);
-    const agentId = sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
+    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
     const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
 
     if (!agent) {
@@ -693,7 +696,14 @@ export class RaviBot {
 
     // Session should already exist (created by resolver/CLI/heartbeat).
     // If not (e.g. direct notif emit), create one using the name as both key and name.
-    const session = sessionEntry ?? getOrCreateSession(sessionName, agent.id, agentCwd, { name: sessionName });
+    // If session exists but agent_id is wrong, getOrCreateSession with same key fixes it.
+    let session: SessionEntry;
+    if (sessionEntry && sessionEntry.agentId !== agentId) {
+      // Fix agent_id mismatch (e.g. heartbeat created session with wrong agent)
+      session = getOrCreateSession(sessionEntry.sessionKey, agentId, agentCwd);
+    } else {
+      session = sessionEntry ?? getOrCreateSession(sessionName, agentId, agentCwd, { name: sessionName });
+    }
     const dbSessionKey = session.sessionKey; // actual DB primary key
     log.info("startStreamingSession", {
       sessionName,

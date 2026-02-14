@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { dbListAgents } from "../router/router-db.js";
-import { expandHome, getMainSession, getOrCreateSession, generateSessionName, ensureUniqueName, updateSessionName } from "../router/index.js";
+import { expandHome, getMainSession, getOrCreateSession, getSessionByName, generateSessionName, ensureUniqueName, updateSessionName } from "../router/index.js";
 import type { AgentConfig } from "../router/types.js";
 import {
   isWithinActiveHours,
@@ -205,30 +205,45 @@ export class HeartbeatRunner {
     // Update last run timestamp in DB
     updateAgentHeartbeatLastRun(agentId);
 
-    // Find or create the main session for the agent
-    let mainSession = getMainSession(agentId);
-    if (!mainSession) {
-      const agentCwd = expandHome(agent.cwd);
-      const baseName = generateSessionName(agentId, { isMain: true });
+    // Find or create the main session for the agent.
+    // Strategy: use the session NAME as the canonical key (same as bot.ts).
+    // This avoids a race where the bot creates a session with key=name while
+    // the runner creates one with key=agent:X:main, causing UNIQUE conflicts.
+    const baseName = generateSessionName(agentId, { isMain: true });
+
+    // Check if session already exists by name
+    let mainSession = getSessionByName(baseName);
+
+    if (mainSession) {
+      // Session exists — fix agent_id if it was created with wrong agent (race from previous bug)
+      if (mainSession.agentId !== agentId) {
+        log.info("Fixing session agent_id", {
+          sessionName: baseName,
+          oldAgent: mainSession.agentId,
+          newAgent: agentId,
+        });
+        // Re-create session entry with correct agent via getOrCreateSession
+        // (it updates agent_id if session_key matches)
+        getOrCreateSession(mainSession.sessionKey, agentId, agentCwd);
+        mainSession.agentId = agentId;
+      }
+    } else {
+      // Session doesn't exist — create it using name as key (matches bot.ts convention)
       const sessionName = ensureUniqueName(baseName);
-      mainSession = getOrCreateSession(
-        `agent:${agentId}:main`,
-        agentId,
-        agentCwd,
-        { name: sessionName }
-      );
+      mainSession = getOrCreateSession(sessionName, agentId, agentCwd, { name: sessionName });
       if (!mainSession.name) {
         updateSessionName(mainSession.sessionKey, sessionName);
         mainSession.name = sessionName;
       }
     }
 
-    const sessionName = mainSession.name!;
+    const sessionName = mainSession.name ?? baseName;
 
-    // Send heartbeat prompt
+    // Send heartbeat prompt with agent info
     await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt: HEARTBEAT_PROMPT,
-      _heartbeat: true, // Mark as heartbeat for response handling
+      _heartbeat: true,
+      _agentId: agentId,
     });
 
     return true;

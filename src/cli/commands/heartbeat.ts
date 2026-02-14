@@ -215,6 +215,7 @@ export class HeartbeatCommands {
       await notif.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: HEARTBEAT_PROMPT,
         _heartbeat: true,
+        _agentId: id,
       });
 
       console.log("✓ Heartbeat triggered");
