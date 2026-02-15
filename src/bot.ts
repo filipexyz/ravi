@@ -1024,7 +1024,14 @@ export class RaviBot {
       for (const q of questions) {
         const optionLabels = q.options.map(o => o.label);
 
-        const pollName = `${q.question}\n(responda a mensagem para outro)`;
+        // Build poll title with option descriptions (polls only support option names, no description field)
+        const hasDescriptions = q.options.some(o => o.description);
+        let pollName = q.question;
+        if (hasDescriptions) {
+          const descLines = q.options.map(o => `• ${o.label} — ${o.description}`).join("\n");
+          pollName += "\n\n" + descLines;
+        }
+        pollName += "\n(responda a mensagem para outro)";
 
         const result = await this.requestPollAnswer(
           resolvedSource,

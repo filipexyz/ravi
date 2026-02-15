@@ -105,6 +105,12 @@ export function buildRuntimeInfo(
     `## Runtime`,
     ``,
     `Runtime: agent=${agentId} | channel=${ctx.channelName} | capabilities=${capabilities}`,
+    ``,
+    `## AskUserQuestion`,
+    ``,
+    `O canal suporta polls. Quando você usar a tool AskUserQuestion, a pergunta será enviada como enquete no WhatsApp.`,
+    `O usuário pode votar numa opção ou responder a mensagem com texto livre (opção "Outro").`,
+    `Use AskUserQuestion sempre que precisar de input do usuário com opções definidas.`,
   ].join("\n");
 }
 
