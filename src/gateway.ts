@@ -430,7 +430,8 @@ export class Gateway {
         channel: string;
         accountId: string;
         to: string;
-        text: string;
+        text?: string;
+        poll?: { name: string; values: string[]; selectableCount?: number };
         typingDelayMs?: number;
         pauseMs?: number;
         replyTopic?: string;
@@ -454,13 +455,18 @@ export class Gateway {
           await new Promise(resolve => setTimeout(resolve, data.pauseMs));
         }
 
+        // Build outbound options (text or poll)
+        const outboundOptions: import("./channels/types.js").OutboundOptions = data.poll
+          ? { poll: data.poll }
+          : { text: data.text };
+
         if (data.typingDelayMs && data.typingDelayMs > 0) {
           await plugin.outbound.sendTyping(data.accountId, data.to, true);
           await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
-          sendResult = await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+          sendResult = await plugin.outbound.send(data.accountId, data.to, outboundOptions);
           await plugin.outbound.sendTyping(data.accountId, data.to, false);
         } else {
-          sendResult = await plugin.outbound.send(data.accountId, data.to, { text: data.text });
+          sendResult = await plugin.outbound.send(data.accountId, data.to, outboundOptions);
         }
         log.info("Direct send delivered", { to: data.to, channel: data.channel, messageId: sendResult.messageId });
 

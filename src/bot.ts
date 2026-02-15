@@ -206,6 +206,16 @@ interface PendingApproval {
   allowedSenderId?: string;
 }
 
+/** Pending poll question waiting for a vote or text reply */
+interface PendingPollQuestion {
+  resolve: (result: { selectedLabels: string[] } | { freeText: string }) => void;
+  timer: ReturnType<typeof setTimeout>;
+  /** Only this senderId can answer (if set) */
+  allowedSenderId?: string;
+  /** Poll option labels for mapping votes back */
+  optionLabels: string[];
+}
+
 /**
  * In-process reply callbacks for replyTopic.
  * Used by gateway to resolve send results without SSE round-trip.
@@ -221,6 +231,8 @@ export class RaviBot {
   private promptSubscriptionActive = false;
   /** Pending approvals keyed by outbound messageId */
   private pendingApprovals = new Map<string, PendingApproval>();
+  /** Pending poll questions keyed by poll messageId */
+  private pendingPollQuestions = new Map<string, PendingPollQuestion>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
   /** Subscriber health: incremented on every prompt received */
@@ -240,6 +252,7 @@ export class RaviBot {
     this.subscribeToPrompts();
     this.subscribeToInboundReactions();
     this.subscribeToInboundReplies();
+    this.subscribeToInboundPollVotes();
     this.subscribeToSessionAborts();
     this.startSubscriberHealthCheck();
     log.info("Ravi bot started", {
@@ -280,6 +293,16 @@ export class RaviBot {
         approval.resolve({ approved: false, reason: "Bot shutting down." });
       }
       this.pendingApprovals.clear();
+    }
+
+    // Cancel all pending poll questions
+    if (this.pendingPollQuestions.size > 0) {
+      log.info("Cancelling pending poll questions", { count: this.pendingPollQuestions.size });
+      for (const [, pending] of this.pendingPollQuestions) {
+        clearTimeout(pending.timer);
+        pending.resolve({ freeText: "Bot shutting down." });
+      }
+      this.pendingPollQuestions.clear();
     }
 
     closeDb();
@@ -380,32 +403,92 @@ export class RaviBot {
             senderId: string;
           };
 
+          // Check pending approvals
           const pending = this.pendingApprovals.get(data.targetMessageId);
-          if (!pending) continue;
+          if (pending) {
+            // Only the session owner can reject
+            if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
+              log.info("Ignoring reply from non-owner", {
+                targetMessageId: data.targetMessageId,
+                senderId: data.senderId,
+                expected: pending.allowedSenderId,
+              });
+              continue;
+            }
 
-          // Only the session owner can reject
-          if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
-            log.info("Ignoring reply from non-owner", {
+            log.info("Approval reply received (rejection)", {
               targetMessageId: data.targetMessageId,
+              text: data.text,
               senderId: data.senderId,
-              expected: pending.allowedSenderId,
             });
+
+            clearTimeout(pending.timer);
+            this.pendingApprovals.delete(data.targetMessageId);
+            pending.resolve({ approved: false, reason: data.text });
             continue;
           }
 
-          log.info("Approval reply received (rejection)", {
-            targetMessageId: data.targetMessageId,
-            text: data.text,
-            senderId: data.senderId,
-          });
+          // Check pending poll questions (text reply = free text answer)
+          const pendingPoll = this.pendingPollQuestions.get(data.targetMessageId);
+          if (pendingPoll) {
+            if (pendingPoll.allowedSenderId && data.senderId !== pendingPoll.allowedSenderId) {
+              continue;
+            }
 
-          clearTimeout(pending.timer);
-          this.pendingApprovals.delete(data.targetMessageId);
-          pending.resolve({ approved: false, reason: data.text });
+            log.info("Poll question answered via text reply", {
+              pollMessageId: data.targetMessageId,
+              text: data.text,
+              senderId: data.senderId,
+            });
+
+            clearTimeout(pendingPoll.timer);
+            this.pendingPollQuestions.delete(data.targetMessageId);
+            pendingPoll.resolve({ freeText: data.text });
+          }
         }
       } catch (err) {
         if (!this.running) break;
         log.warn("Reply subscription error, reconnecting in 2s", { error: err });
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  /**
+   * Listen for inbound poll votes and resolve pending poll questions.
+   */
+  private async subscribeToInboundPollVotes(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of notif.subscribe("ravi.inbound.pollVote")) {
+          if (!this.running) break;
+          const data = event.data as {
+            pollMessageId: string;
+            votes: Array<{ name: string; voters: string[] }>;
+          };
+
+          const pending = this.pendingPollQuestions.get(data.pollMessageId);
+          if (!pending) continue;
+
+          // Find which options got votes (from any voter — in DMs there's only one)
+          const selected = data.votes
+            .filter(v => v.voters.length > 0)
+            .map(v => v.name);
+
+          if (selected.length === 0) continue; // vote retracted, keep waiting
+
+          log.info("Poll vote received for pending question", {
+            pollMessageId: data.pollMessageId,
+            selected,
+          });
+
+          clearTimeout(pending.timer);
+          this.pendingPollQuestions.delete(data.pollMessageId);
+          pending.resolve({ selectedLabels: selected });
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Poll vote subscription error, reconnecting in 2s", { error: err });
         await new Promise(r => setTimeout(r, 2000));
       }
     }
@@ -485,6 +568,68 @@ export class RaviBot {
       }, timeoutMs);
 
       this.pendingApprovals.set(sendResult.messageId!, { resolve, timer, allowedSenderId: options?.allowedSenderId });
+    });
+  }
+
+  /**
+   * Send a WhatsApp poll and wait for a vote or text reply.
+   * Returns selected option labels or free text.
+   */
+  private async requestPollAnswer(
+    source: MessageTarget,
+    pollName: string,
+    optionLabels: string[],
+    options?: { timeoutMs?: number; allowedSenderId?: string; selectableCount?: number }
+  ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
+    const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000;
+    const replyTopic = `ravi.poll.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
+
+    const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
+      const timeout = setTimeout(() => {
+        pendingReplyCallbacks.delete(replyTopic);
+        resolve({});
+      }, 5000);
+      pendingReplyCallbacks.set(replyTopic, (data) => {
+        clearTimeout(timeout);
+        pendingReplyCallbacks.delete(replyTopic);
+        resolve(data);
+      });
+    });
+
+    await notif.emit("ravi.outbound.deliver", {
+      channel: source.channel,
+      accountId: source.accountId,
+      to: source.chatId,
+      poll: {
+        name: pollName,
+        values: optionLabels,
+        selectableCount: options?.selectableCount ?? 1,
+      },
+      replyTopic,
+    });
+
+    const sendResult = await sendResultPromise;
+
+    if (!sendResult.messageId) {
+      log.warn("Failed to get messageId for poll — falling back to free text");
+      return { freeText: "Failed to send poll." };
+    }
+
+    log.info("Poll sent, waiting for vote or reply", { messageId: sendResult.messageId, optionLabels });
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pendingPollQuestions.delete(sendResult.messageId!);
+        log.warn("Poll answer timed out", { messageId: sendResult.messageId });
+        resolve({ freeText: "Timeout — nenhuma resposta." });
+      }, timeoutMs);
+
+      this.pendingPollQuestions.set(sendResult.messageId!, {
+        resolve,
+        timer,
+        allowedSenderId: options?.allowedSenderId,
+        optionLabels,
+      });
     });
   }
 
@@ -853,10 +998,65 @@ export class RaviBot {
       };
     };
 
-    // Append ExitPlanMode hook to PreToolUse hooks
+    // PreToolUse hook for AskUserQuestion — send WhatsApp poll and wait for answer.
+    const askUserQuestionHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
+      if (!resolvedSource) {
+        log.info("AskUserQuestion auto-approved (no channel source)", { sessionName });
+        return {};
+      }
+
+      const toolInput = input.tool_input as Record<string, unknown> | undefined;
+      const questions = toolInput?.questions as Array<{
+        question: string;
+        header: string;
+        options: Array<{ label: string; description: string }>;
+        multiSelect: boolean;
+      }> | undefined;
+
+      if (!questions || questions.length === 0) {
+        return {};
+      }
+
+      log.info("AskUserQuestion hook: sending polls", { sessionName, questionCount: questions.length });
+
+      const answers: Record<string, string> = {};
+
+      for (const q of questions) {
+        const optionLabels = q.options.map(o => o.label);
+
+        const pollName = `${q.question}\n(responda a mensagem para outro)`;
+
+        const result = await this.requestPollAnswer(
+          resolvedSource,
+          pollName,
+          optionLabels,
+          {
+            allowedSenderId: prompt.context?.senderId,
+            selectableCount: q.multiSelect ? optionLabels.length : 1,
+          }
+        );
+
+        if ("selectedLabels" in result) {
+          answers[q.question] = result.selectedLabels.join(", ");
+        } else {
+          answers[q.question] = result.freeText;
+        }
+      }
+
+      log.info("AskUserQuestion answers collected", { sessionName, answers });
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse" as const,
+          updatedInput: { ...toolInput, answers },
+        },
+      };
+    };
+
+    // Append hooks to PreToolUse
     hooks.PreToolUse = [
       ...(hooks.PreToolUse ?? []),
       { matcher: "ExitPlanMode", hooks: [exitPlanHook] },
+      { matcher: "AskUserQuestion", hooks: [askUserQuestionHook] },
     ];
 
     log.info("Hooks registered", {
@@ -918,8 +1118,8 @@ export class RaviBot {
       }
     }
 
-    // Build canUseTool — auto-approve all tools (replaces bypassPermissions),
-    // but intercept ExitPlanMode for reaction-based approval via WhatsApp.
+    // Build canUseTool — auto-approve all tools.
+    // Note: with bypassPermissions, canUseTool is NOT called. We use PreToolUse hooks instead.
     const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
       if (toolName !== "ExitPlanMode") {
         return { behavior: "allow" as const, updatedInput: input };

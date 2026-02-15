@@ -126,7 +126,15 @@ export async function sendMessage(
     // Combine explicit + auto-resolved mentions (deduplicated)
     const allMentionJids = [...new Set([...explicitJids, ...autoJids])];
 
-    if (options.media) {
+    if (options.poll) {
+      content = {
+        poll: {
+          name: options.poll.name,
+          values: options.poll.values,
+          selectableCount: options.poll.selectableCount ?? 1,
+        },
+      } as AnyMessageContent;
+    } else if (options.media) {
       content = buildMediaContent(options.media, processedText);
       if (allMentionJids.length) {
         (content as Record<string, unknown>).contextInfo = { mentionedJid: allMentionJids };
@@ -174,6 +182,13 @@ export async function sendMessage(
       try {
         result = await socket.sendMessage(jid, content);
         log.info("Message sent", { jid, key: JSON.stringify(result?.key), attempt });
+
+        // Cache sent poll messages for vote decryption
+        if (options.poll && result?.key?.id && result.message) {
+          const { cacheSentPoll } = await import("./poll-cache.js");
+          cacheSentPoll(result.key.id, result);
+        }
+
         return {
           success: true,
           messageId: result?.key?.id ?? undefined,

@@ -27,6 +27,7 @@ export interface ChannelCapabilities {
   groups: boolean;
   typing: boolean;
   readReceipts: boolean;
+  polls: boolean;
 }
 
 /** Account state */
@@ -96,10 +97,21 @@ export interface QuotedMessage {
   mediaPath?: string;
 }
 
+/** Outbound poll options */
+export interface OutboundPoll {
+  /** Poll question / title */
+  name: string;
+  /** Poll options (up to 12) */
+  values: string[];
+  /** How many options can be selected (default: 1) */
+  selectableCount?: number;
+}
+
 /** Outbound message options */
 export interface OutboundOptions {
   text?: string;
   media?: OutboundMedia;
+  poll?: OutboundPoll;
   replyTo?: string;
   reaction?: string;
   /** JIDs/phones to mention (triggers notification). Use normalized format: "5511999999999" or "lid:123456789" */

@@ -71,6 +71,9 @@ import {
   getGroupTag,
 } from "../../contacts.js";
 import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindEntriesWithoutSenderId, dbSetEntrySenderId, dbSetPendingReceipt } from "../../outbound/index.js";
+import { getCachedPoll } from "./poll-cache.js";
+import { decryptPollVote, getKeyAuthor, jidNormalizedUser, proto } from "@whiskeysockets/baileys";
+import { createHash } from "node:crypto";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child("wa:plugin");
@@ -94,6 +97,7 @@ const CAPABILITIES: ChannelCapabilities = {
   groups: true,
   typing: true,
   readReceipts: true,
+  polls: true,
 };
 
 // ============================================================================
@@ -376,6 +380,17 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         // Get fresh config from global adapter (handles restarts within same process)
         const config = globalConfigAdapter?.getConfig() ?? this.configAdapter.getConfig();
         for (const message of messages) {
+          // Handle poll vote messages (pollUpdateMessage) before normal processing
+          const pollUpdate = message.message?.pollUpdateMessage;
+          if (pollUpdate && !message.key.fromMe) {
+            const creationKey = pollUpdate.pollCreationMessageKey;
+            const pollMsgId = creationKey?.id;
+            if (pollMsgId) {
+              await this.handlePollVote(accountId, message, pollMsgId, socket);
+            }
+            continue; // Don't process as normal message
+          }
+
           await this.handleMessage(accountId, message, config);
         }
       });
@@ -774,6 +789,136 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       this.emitMessage(merged);
     } else {
       this.emitMessage(message);
+    }
+  }
+
+  /**
+   * Handle an incoming poll vote message: decrypt and emit ravi.inbound.pollVote.
+   */
+  private async handlePollVote(
+    accountId: string,
+    rawMessage: import("@whiskeysockets/baileys").WAMessage,
+    pollMsgId: string,
+    socket: import("@whiskeysockets/baileys").WASocket
+  ): Promise<void> {
+    const cachedPoll = getCachedPoll(pollMsgId);
+    if (!cachedPoll) {
+      log.warn("Poll vote received but original poll not in cache", { pollMsgId });
+      return;
+    }
+
+    const pollEncKey = cachedPoll.message?.messageContextInfo?.messageSecret;
+    if (!pollEncKey) {
+      log.warn("Poll message missing messageSecret", { pollMsgId });
+      return;
+    }
+
+    const pollUpdate = rawMessage.message?.pollUpdateMessage;
+    if (!pollUpdate?.vote) {
+      log.warn("Poll update missing vote data", { pollMsgId });
+      return;
+    }
+
+    const meId = jidNormalizedUser(socket.user?.id ?? "");
+    const meLid = socket.user?.lid ? jidNormalizedUser(socket.user.lid) : undefined;
+    const creationKey = pollUpdate.pollCreationMessageKey;
+
+    // WhatsApp encrypts poll votes using the JID variants present in the key.
+    // getKeyAuthor prefers participantAlt (phone JID) but encryption may use
+    // participant (LID) or vice-versa. Try multiple combinations.
+    const pollCreatorCandidates = new Set<string>();
+    const voterCandidates = new Set<string>();
+
+    // Add getKeyAuthor result (prefers participantAlt > participant)
+    pollCreatorCandidates.add(getKeyAuthor(creationKey, meId));
+    voterCandidates.add(getKeyAuthor(rawMessage.key, meId));
+
+    // Add raw participant fields (LID variants)
+    if (creationKey?.participant) pollCreatorCandidates.add(jidNormalizedUser(creationKey.participant));
+    if ((creationKey as any)?.participantAlt) pollCreatorCandidates.add(jidNormalizedUser((creationKey as any).participantAlt));
+    if (creationKey?.fromMe && meLid) pollCreatorCandidates.add(meLid);
+
+    if (rawMessage.key.participant) voterCandidates.add(jidNormalizedUser(rawMessage.key.participant));
+    if ((rawMessage.key as any).participantAlt) voterCandidates.add(jidNormalizedUser((rawMessage.key as any).participantAlt));
+
+    // Try all combinations of creator/voter JIDs until decryption succeeds
+    let decryptedVote: proto.Message.PollVoteMessage | null = null;
+    let successCreator = "";
+    let successVoter = "";
+
+    for (const pollCreatorJid of pollCreatorCandidates) {
+      for (const voterJid of voterCandidates) {
+        try {
+          decryptedVote = decryptPollVote(
+            pollUpdate.vote!,
+            { pollEncKey, pollCreatorJid, pollMsgId, voterJid }
+          );
+          successCreator = pollCreatorJid;
+          successVoter = voterJid;
+          break;
+        } catch {
+          // Try next combination
+        }
+      }
+      if (decryptedVote) break;
+    }
+
+    if (!decryptedVote) {
+      log.warn("Failed to decrypt poll vote with any JID combination", {
+        pollMsgId,
+        pollCreatorCandidates: [...pollCreatorCandidates],
+        voterCandidates: [...voterCandidates],
+      });
+      return;
+    }
+
+    log.info("Poll vote decrypted successfully", { pollMsgId, successCreator, successVoter });
+
+    try {
+
+      // Match selected option hashes to option names
+      const pollCreation =
+        cachedPoll.message?.pollCreationMessage ??
+        cachedPoll.message?.pollCreationMessageV2 ??
+        cachedPoll.message?.pollCreationMessageV3;
+      const options = pollCreation?.options ?? [];
+
+      // Build hash→name map (SHA256 of option name)
+      const hashToName = new Map<string, string>();
+      for (const opt of options) {
+        if (opt.optionName) {
+          const hash = createHash("sha256").update(opt.optionName).digest("hex");
+          hashToName.set(hash, opt.optionName);
+        }
+      }
+
+      const selectedNames: string[] = [];
+      for (const selectedHash of decryptedVote.selectedOptions ?? []) {
+        const hex = Buffer.from(selectedHash).toString("hex");
+        const name = hashToName.get(hex);
+        selectedNames.push(name ?? `unknown(${hex.slice(0, 8)})`);
+      }
+
+      log.info("Poll vote options matched", { pollMsgId, selectedNames });
+
+      // Build aggregate votes format (same as what bot.ts expects)
+      const votes = options.map(opt => ({
+        name: opt.optionName ?? "",
+        voters: selectedNames.includes(opt.optionName ?? "") ? [successVoter] : [],
+      }));
+
+      await notif.emit("ravi.inbound.pollVote", {
+        channel: "whatsapp",
+        accountId,
+        pollMessageId: pollMsgId,
+        votes,
+      });
+    } catch (err: any) {
+      log.warn("Failed to decrypt poll vote", {
+        pollMsgId,
+        error: err?.message ?? String(err),
+        stack: err?.stack?.split("\n").slice(0, 3),
+      });
     }
   }
 
