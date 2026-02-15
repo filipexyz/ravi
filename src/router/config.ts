@@ -26,6 +26,7 @@ import {
   dbRemoveAgentBashAllowlist,
   dbAddAgentBashDenylist,
   dbRemoveAgentBashDenylist,
+  dbSetAgentSpecMode,
   getDefaultAgentId,
   getDefaultDmScope,
   getRaviDir,
@@ -53,6 +54,8 @@ export {
   dbRemoveAgentBashAllowlist as removeAgentBashAllowlist,
   dbAddAgentBashDenylist as addAgentBashDenylist,
   dbRemoveAgentBashDenylist as removeAgentBashDenylist,
+  // Spec mode
+  dbSetAgentSpecMode as setAgentSpecMode,
 };
 
 // ============================================================================

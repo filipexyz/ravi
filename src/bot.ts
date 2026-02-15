@@ -28,6 +28,7 @@ import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
+import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
 import { ALL_BUILTIN_TOOLS } from "./constants.js";
 import { discoverPlugins } from "./plugins/index.js";
@@ -1057,9 +1058,73 @@ export class RaviBot {
       };
     };
 
+    // Spec mode hooks
+    const specBlockHook = async (input: any) => {
+      if (!isSpecModeActive(sessionName)) return {};
+
+      const toolName = input.tool_name;
+      const BLOCKED_IN_SPEC = ["Edit", "Write", "Bash", "NotebookEdit", "Skill", "Task"];
+
+      // Allow spec tools themselves
+      if (typeof toolName === "string" && toolName.startsWith("mcp__spec__")) return {};
+
+      if (BLOCKED_IN_SPEC.includes(toolName)) {
+        log.info("Spec mode blocked tool", { sessionName, toolName });
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: "Spec mode ativo. Colete informações e complete a spec antes de implementar. Use Read, Glob, Grep, WebFetch para explorar.",
+          },
+        };
+      }
+      return {};
+    };
+
+    const exitSpecHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
+      if (!resolvedSource) {
+        log.info("exit_spec_mode auto-approved (no channel source)", { sessionName });
+        return {};
+      }
+
+      const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
+      if (!spec) return {};
+
+      log.info("exit_spec_mode: requesting approval via reaction", { sessionName });
+
+      const approvalText = `📋 *Spec pendente*\n\n${spec}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+
+      const result = await this.requestApproval(resolvedSource, approvalText, {
+        allowedSenderId: prompt.context?.senderId,
+      });
+
+      if (result.approved) {
+        // Deactivate spec mode — tools are now unblocked
+        const state = getSpecState(sessionName);
+        if (state) state.active = false;
+        log.info("Spec approved via reaction", { sessionName });
+        return {};
+      }
+
+      const reason = result.reason
+        ? `Spec rejeitada: ${result.reason}`
+        : "Spec rejeitada pelo usuário.";
+      log.info("Spec rejected", { sessionName, reason: result.reason });
+
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason,
+        },
+      };
+    };
+
     // Append hooks to PreToolUse
     hooks.PreToolUse = [
       ...(hooks.PreToolUse ?? []),
+      { hooks: [specBlockHook] },
+      { matcher: "mcp__spec__exit_spec_mode", hooks: [exitSpecHook] },
       { matcher: "ExitPlanMode", hooks: [exitPlanHook] },
       { matcher: "AskUserQuestion", hooks: [askUserQuestionHook] },
     ];
@@ -1068,6 +1133,9 @@ export class RaviBot {
       sessionName,
       hookEvents: Object.keys(hooks),
     });
+
+    // Create spec mode MCP server for this session (only if agent has specMode enabled)
+    const specServer = agent.specMode ? createSpecServer(sessionName, agentCwd) : null;
 
     const plugins = discoverPlugins();
     const abortController = new AbortController();
@@ -1158,6 +1226,16 @@ export class RaviBot {
       }
     };
 
+    // Spec MCP tools must be explicitly allowed when agent has specMode + allowedTools
+    if (specServer && permissionOptions.allowedTools) {
+      const specTools = [
+        "mcp__spec__enter_spec_mode",
+        "mcp__spec__update_spec",
+        "mcp__spec__exit_spec_mode",
+      ];
+      (permissionOptions.allowedTools as string[]).push(...specTools);
+    }
+
     const queryResult = query({
       prompt: messageGenerator,
       options: {
@@ -1168,6 +1246,7 @@ export class RaviBot {
         ...permissionOptions,
         canUseTool,
         env: { ...process.env, ...raviEnv },
+        ...(specServer ? { mcpServers: { spec: specServer } } : {}),
         systemPrompt: {
           type: "preset",
           preset: "claude_code",

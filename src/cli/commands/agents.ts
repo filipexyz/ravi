@@ -26,6 +26,7 @@ import {
   removeAgentBashAllowlist,
   addAgentBashDenylist,
   removeAgentBashDenylist,
+  setAgentSpecMode,
 } from "../../router/config.js";
 import { DmScopeSchema, BashModeSchema } from "../../router/router-db.js";
 import type { BashConfig, BashMode } from "../../bash/types.js";
@@ -123,6 +124,8 @@ export class AgentsCommands {
     } else {
       console.log("  Allowed Tools: bypass (all tools)");
     }
+
+    console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
 
     // Bash config
     if (agent.bashConfig) {
@@ -395,6 +398,39 @@ export class AgentsCommands {
       } else {
         console.log(`✓ Debounce set: ${id} -> ${debounceMs}ms`);
       }
+    } catch (err) {
+      fail(`Error: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  @Command({ name: "spec-mode", description: "Enable or disable spec mode for an agent" })
+  specMode(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Arg("enabled", { required: false, description: "true/false" }) enabled?: string
+  ) {
+    const agent = getAgent(id);
+    if (!agent) {
+      fail(`Agent not found: ${id}`);
+    }
+
+    if (enabled === undefined) {
+      console.log(`\nSpec mode for agent: ${id}`);
+      console.log(`  Status: ${agent.specMode ? "enabled" : "disabled"}`);
+      console.log("\nUsage:");
+      console.log("  ravi agents spec-mode <id> true    # Enable spec mode");
+      console.log("  ravi agents spec-mode <id> false   # Disable spec mode");
+      return;
+    }
+
+    if (enabled !== "true" && enabled !== "false") {
+      fail(`Invalid value: ${enabled}. Must be 'true' or 'false'`);
+    }
+
+    const value = enabled === "true";
+    try {
+      setAgentSpecMode(id, value);
+      console.log(`✓ Spec mode ${value ? "enabled" : "disabled"}: ${id}`);
+      emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }

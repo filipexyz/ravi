@@ -288,6 +288,12 @@ function getDb(): Database {
     log.info("Added bash permission columns to agents table");
   }
 
+  // Migration: add spec_mode column to agents if not exists
+  if (!agentColumns.some(c => c.name === "spec_mode")) {
+    db.exec("ALTER TABLE agents ADD COLUMN spec_mode INTEGER DEFAULT 0");
+    log.info("Added spec_mode column to agents table");
+  }
+
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
   if (!sessionColumns.some(c => c.name === "last_heartbeat_text")) {
@@ -631,9 +637,9 @@ function getStatements(): PreparedStatements {
     insertAgent: database.prepare(`
       INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
-        bash_mode, bash_allowlist, bash_denylist,
+        bash_mode, bash_allowlist, bash_denylist, spec_mode,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -654,6 +660,7 @@ function getStatements(): PreparedStatements {
         bash_mode = ?,
         bash_allowlist = ?,
         bash_denylist = ?,
+        spec_mode = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -769,6 +776,9 @@ function rowToAgent(row: AgentRow): AgentConfig {
     lastRunAt: row.heartbeat_last_run_at ?? undefined,
   };
 
+  // Spec mode
+  result.specMode = row.spec_mode === 1;
+
   // Bash config fields
   if (row.bash_mode !== null) {
     const parsed = BashModeSchema.safeParse(row.bash_mode);
@@ -857,6 +867,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       "allowlist", // bash_mode
       JSON.stringify([]), // bash_allowlist (empty = nothing allowed)
       null, // bash_denylist
+      0, // spec_mode (disabled by default)
       now,
       now
     );
@@ -944,6 +955,8 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     bash !== undefined
       ? bash?.denylist ? JSON.stringify(bash.denylist) : null
       : row.bash_denylist,
+    // Spec mode
+    updates.specMode !== undefined ? (updates.specMode ? 1 : 0) : row.spec_mode,
     now,
     id
   );
@@ -1027,6 +1040,18 @@ export function dbRemoveAgentTool(id: string, tool: string): void {
 export function dbSetAgentDebounce(id: string, debounceMs: number | null): void {
   dbUpdateAgent(id, { debounceMs: debounceMs as number | undefined });
   log.info("Set agent debounce", { id, debounceMs });
+}
+
+// ============================================================================
+// Agent Spec Mode
+// ============================================================================
+
+/**
+ * Enable or disable spec mode for an agent
+ */
+export function dbSetAgentSpecMode(id: string, enabled: boolean): void {
+  dbUpdateAgent(id, { specMode: enabled });
+  log.info("Set agent spec mode", { id, enabled });
 }
 
 // ============================================================================

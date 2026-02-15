@@ -82,6 +82,9 @@ export interface AgentConfig {
 
   /** Model to use for memory extraction during PreCompact (default: "haiku") */
   memoryModel?: string;
+
+  /** Enable spec mode tools for this agent (default: false) */
+  specMode?: boolean;
 }
 
 // ============================================================================

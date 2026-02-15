@@ -28,6 +28,9 @@ const SAFE_TOOLS = new Set([
   "AskUserQuestion",
   "EnterPlanMode",
   "ExitPlanMode",
+  "mcp__spec__enter_spec_mode",
+  "mcp__spec__update_spec",
+  "mcp__spec__exit_spec_mode",
 ]);
 
 export type ToolSafety = "safe" | "unsafe";
