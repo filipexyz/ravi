@@ -21,12 +21,11 @@ Você entrou em **Spec Mode**. Neste modo, seu objetivo é construir uma especif
 
 Sempre que chamar \`update_spec\`, mostre a barra de progresso visualmente na sua resposta:
 
-📋 Spec Mode
-████████░░░░░░░░░░░░ 40%
+📋 Spec Mode [========------------ ] 40%
 
 O que eu já sei e o que falta...
 
-Use █ para preenchido e ░ para vazio (20 blocos total). Isso dá visibilidade ao usuário sobre o quanto você entende da task.
+Use = para preenchido e - para vazio (20 posições dentro dos colchetes). Isso dá visibilidade ao usuário sobre o quanto você entende da task.
 
 ## Como conduzir
 
