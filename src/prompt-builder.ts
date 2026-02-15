@@ -73,6 +73,9 @@ export function buildGroupContext(ctx: ChannelContext): string {
       ``,
       `Be extremely selective: reply only when directly addressed or clearly helpful.`,
       `Otherwise stay silent.`,
+      ``,
+      `IMPORTANT: Messages with \`@mention\` in the header mean YOU were @mentioned directly.`,
+      `When you see \`@mention\`, you MUST respond — NEVER use ${SILENT_TOKEN}.`,
     );
   }
 
@@ -183,7 +186,8 @@ Quando NÃO reagir:
  */
 export function buildSystemPrompt(
   agentId: string,
-  ctx?: ChannelContext
+  ctx?: ChannelContext,
+  extraSections?: PromptSection[]
 ): string {
   const isLargeGroup = ctx?.isGroup && (ctx.groupMembers?.length ?? 0) >= 3;
 
@@ -210,6 +214,13 @@ export function buildSystemPrompt(
     // Add group context if applicable (includes silent reply instructions)
     if (ctx.isGroup) {
       builder.section("Contexto de Grupo", buildGroupContext(ctx).replace(/^## Group Chat Context\n\n/, ""));
+    }
+  }
+
+  // Plugin-injected sections
+  if (extraSections) {
+    for (const section of extraSections) {
+      builder.section(section.title, section.content);
     }
   }
 

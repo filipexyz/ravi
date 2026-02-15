@@ -23,6 +23,8 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { startPluginRunners, stopPluginRunners, initPluginDatabases } from "./plugins/extensions.js";
+import "./plugins/internal/register-all.js";
 
 const log = logger.child("daemon");
 
@@ -103,6 +105,7 @@ async function shutdown(signal: string) {
     }
 
     // Then stop runners
+    await stopPluginRunners();
     await stopEphemeralRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
@@ -187,6 +190,10 @@ export async function startDaemon() {
   // Start ephemeral session cleanup runner
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
+
+  // Plugin extensions: init databases and start runners
+  await initPluginDatabases();
+  await startPluginRunners();
 
   log.info("Daemon ready");
 

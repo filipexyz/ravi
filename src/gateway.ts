@@ -142,10 +142,11 @@ function formatEnvelope(
   const midTag = message.id ? ` mid:${message.id}` : "";
 
   if (message.isGroup) {
-    // [WhatsApp Família id:123@g.us mid:XXX 2024-01-30 14:30] João: texto
+    // [WhatsApp Família id:123@g.us mid:XXX @mention 2024-01-30 14:30] João: texto
     const groupLabel = message.groupName ?? message.chatId;
     const sender = message.senderName ?? message.senderId;
-    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId}${midTag} ${timestamp} ${dow}] ${sender}: ${content}`;
+    const mentionTag = message.isMentioned ? " @mention" : "";
+    return `${replyPrefix}[${channel} ${groupLabel} id:${message.chatId}${midTag}${mentionTag} ${timestamp} ${dow}] ${sender}: ${content}`;
   } else {
     // [WhatsApp +5511999 mid:XXX 2024-01-30 14:30 fri] texto
     const from = message.senderPhone ?? message.senderId;
@@ -173,6 +174,7 @@ function buildMessageContext(
     groupName: message.groupName,
     groupId: message.isGroup ? message.chatId : undefined,
     groupMembers: message.groupMembers,
+    isMentioned: message.isMentioned,
     timestamp: message.timestamp,
   };
 }

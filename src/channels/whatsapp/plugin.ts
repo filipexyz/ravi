@@ -726,47 +726,33 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       }
     }
 
+    // Check if message mentions us (computed once, used for ACK + routing + prompt)
+    const socket = sessionManager.getSocket(accountId);
+    {
+      const botJid = socket?.user?.id;
+      const botLid = socket?.user?.lid;
+      message.isMentioned = (botJid ? isMentioned(rawMessage, botJid) : false) ||
+        (botLid ? isMentioned(rawMessage, botLid) : false);
+    }
+
     // Send ACK reaction if configured
-    if (accountConfig.ackReaction) {
-      const socket = sessionManager.getSocket(accountId);
-      if (socket) {
-        // Check if message mentions us (for group ACK policy)
-        const botJid = socket?.user?.id;
-        const botLid = socket?.user?.lid;
-        const isMention = (botJid ? isMentioned(rawMessage, botJid) : false) ||
-          (botLid ? isMentioned(rawMessage, botLid) : false);
-        await sendAckReaction(
-          socket,
-          message.chatId,
-          message.id,
-          message.isGroup,
-          isMention,
-          accountConfig.ackReaction
-        );
-      }
+    if (accountConfig.ackReaction && socket) {
+      await sendAckReaction(
+        socket,
+        message.chatId,
+        message.id,
+        message.isGroup,
+        message.isMentioned ?? false,
+        accountConfig.ackReaction
+      );
     }
 
     // Check reply mode for groups
     if (message.isGroup) {
       const replyMode = getContactReplyMode(message.chatId);
-      if (replyMode === "mention") {
-        // Get bot JIDs (phone and lid) to check if mentioned
-        const socket = sessionManager.getSocket(accountId);
-        const botJid = socket?.user?.id;
-        const botLid = socket?.user?.lid;
-        const mentions = rawMessage.message?.extendedTextMessage?.contextInfo?.mentionedJid ?? [];
-
-        // Check if any of the bot's identifiers are mentioned
-        // Strip :XX suffix and @domain for comparison
-        const normalize = (id: string) => id.split("@")[0].split(":")[0];
-        const botIds = [botJid, botLid].filter(Boolean).map(id => normalize(id!));
-        const mentioned = mentions.some(m => botIds.includes(normalize(m)));
-
-        log.info("Mention check", { botJid, botLid, mentioned, mentions });
-        if (!mentioned) {
-          log.debug("Skipping group message (not mentioned)", { chatId: message.chatId });
-          return;
-        }
+      if (replyMode === "mention" && !message.isMentioned) {
+        log.debug("Skipping group message (not mentioned)", { chatId: message.chatId });
+        return;
       }
     }
 

@@ -60,6 +60,8 @@ export interface InboundMessage {
   replyTo?: QuotedMessage;
   /** Resolved mention names (e.g. ["Rapha", "Luís"]) */
   mentions?: string[];
+  /** Whether the bot itself was @mentioned in this message */
+  isMentioned?: boolean;
   transcription?: string;
   timestamp: number;
   isGroup: boolean;
