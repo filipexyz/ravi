@@ -75,11 +75,11 @@ export class DaemonCommands {
         fail("Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m \"motivo\"");
       }
 
-      // Save restart reason
-      if (message) {
-        mkdirSync(RAVI_DIR, { recursive: true });
-        writeFileSync(RESTART_REASON_FILE, message);
-      }
+      // Save restart reason with session context
+      mkdirSync(RAVI_DIR, { recursive: true });
+      const sessionName = process.env.RAVI_SESSION_NAME;
+      const restartData = JSON.stringify({ reason: message, sessionName });
+      writeFileSync(RESTART_REASON_FILE, restartData);
 
       // Spawn detached process to do the actual restart.
       // CRITICAL: strip all RAVI_* env vars so the child process

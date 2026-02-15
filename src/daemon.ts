@@ -203,7 +203,7 @@ export async function startDaemon() {
 }
 
 /**
- * Check if there's a restart reason file and notify the main agent
+ * Check if there's a restart reason file and notify the originating session
  */
 async function notifyRestartReason() {
   if (!existsSync(RESTART_REASON_FILE)) {
@@ -211,9 +211,19 @@ async function notifyRestartReason() {
   }
 
   let reason: string;
+  let sessionName: string | undefined;
   try {
-    reason = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
     unlinkSync(RESTART_REASON_FILE); // Delete after reading
+
+    // Try JSON format (new) first, fall back to plain text (legacy)
+    try {
+      const data = JSON.parse(raw);
+      reason = data.reason;
+      sessionName = data.sessionName;
+    } catch {
+      reason = raw;
+    }
   } catch (err) {
     log.error("Failed to read restart reason file", err);
     return;
@@ -221,25 +231,22 @@ async function notifyRestartReason() {
 
   if (!reason) return;
 
-  const defaultAgent = dbGetSetting("defaultAgent") || "main";
-  const mainSession = getMainSession(defaultAgent);
-  const sessionName = mainSession?.name ?? defaultAgent;
-
-  // Build source from session's last known channel for response routing
-  const source = mainSession?.lastChannel && mainSession.lastTo
-    ? { channel: mainSession.lastChannel, accountId: mainSession.lastAccountId ?? "default", chatId: mainSession.lastTo }
-    : undefined;
+  // Route to the session that requested the restart, or fall back to default agent's main session
+  if (!sessionName) {
+    const defaultAgent = dbGetSetting("defaultAgent") || "main";
+    const fallbackSession = getMainSession(defaultAgent);
+    sessionName = fallbackSession?.name ?? defaultAgent;
+  }
 
   const topic = `ravi.session.${sessionName}.prompt`;
   const payload = {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
-    source,
   };
 
   // Retry emit — notif WebSocket may not be ready on first attempts
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      log.info("Emitting restart reason", { reason, topic, hasSource: !!source, attempt });
+      log.info("Emitting restart reason", { reason, topic, sessionName, attempt });
       await notif.emit(topic, payload);
       log.info("Restart reason prompt emitted", { topic, attempt });
       return;
