@@ -233,12 +233,20 @@ export class SessionCommands {
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
-  reset(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  async reset(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
     const s = resolveSession(nameOrKey);
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
+
+    // Abort active SDK subprocess so it doesn't keep the old context
+    try {
+      await notif.emit("ravi.session.abort", {
+        sessionKey: s.sessionKey,
+        sessionName: s.name,
+      });
+    } catch { /* session may not be active */ }
 
     resetSession(s.sessionKey);
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
