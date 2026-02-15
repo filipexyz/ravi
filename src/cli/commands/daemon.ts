@@ -8,7 +8,7 @@ import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync } from "
 import { join } from "node:path";
 import { homedir, platform } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
-import { hasContext } from "../context.js";
+import { hasContext, fail } from "../context.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const PID_FILE = join(RAVI_DIR, "daemon.pid");
@@ -71,7 +71,11 @@ export class DaemonCommands {
     // When called inside daemon, spawn detached restart and return immediately
     // This prevents deadlock since we'd be killing ourselves
     if (hasContext()) {
-      // Save restart reason if provided
+      if (!message) {
+        fail("Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m \"motivo\"");
+      }
+
+      // Save restart reason
       if (message) {
         mkdirSync(RAVI_DIR, { recursive: true });
         writeFileSync(RESTART_REASON_FILE, message);
