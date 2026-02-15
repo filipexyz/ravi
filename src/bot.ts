@@ -4,7 +4,6 @@ import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
 import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
-import { getPluginPromptSections } from "./plugins/extensions.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
@@ -887,9 +886,8 @@ export class RaviBot {
       permissionOptions = { ...permissionOptions, disallowedTools: disallowed, allowedTools: agent.allowedTools };
     }
 
-    // Build system prompt (with plugin-injected sections)
-    const pluginSections = await getPluginPromptSections(dbSessionKey, prompt.context);
-    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, pluginSections.length > 0 ? pluginSections : undefined);
+    // Build system prompt
+    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
     if (prompt._outboundSystemContext) {
       systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
     }

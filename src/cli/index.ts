@@ -12,14 +12,12 @@
 import "./env.js";
 
 import "reflect-metadata";
-import "../plugins/internal/register-all.js";
 import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
-import { discoverPluginCommands } from "../plugins/extensions.js";
 import { runSetup } from "./commands/setup.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,9 +30,8 @@ program
   .description("Ravi Bot CLI - Claude-powered bot management")
   .version(pkg.version);
 
-// Register all command groups (auto-discovered from barrel + plugin extensions)
-const pluginCommands = await discoverPluginCommands();
-registerCommands(program, [...Object.values(allCommands), ...pluginCommands]);
+// Register all command groups (auto-discovered from barrel)
+registerCommands(program, Object.values(allCommands));
 
 // Top-level commands (not via decorator groups)
 program
