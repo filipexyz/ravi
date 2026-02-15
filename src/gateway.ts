@@ -175,6 +175,7 @@ function buildMessageContext(
     groupId: message.isGroup ? message.chatId : undefined,
     groupMembers: message.groupMembers,
     isMentioned: message.isMentioned,
+    botTag: message.botTag,
     timestamp: message.timestamp,
   };
 }

@@ -62,6 +62,8 @@ export interface InboundMessage {
   mentions?: string[];
   /** Whether the bot itself was @mentioned in this message */
   isMentioned?: boolean;
+  /** Bot's tag in this group (from contacts groupTags) */
+  botTag?: string;
   transcription?: string;
   timestamp: number;
   isGroup: boolean;

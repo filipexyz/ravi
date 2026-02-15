@@ -99,6 +99,7 @@ export interface MessageContext {
   groupId?: string;
   groupMembers?: string[];
   isMentioned?: boolean;
+  botTag?: string;
   timestamp: number;
 }
 
@@ -110,6 +111,7 @@ export interface ChannelContext {
   groupName?: string;
   groupId?: string;
   groupMembers?: string[];
+  botTag?: string;
 }
 
 /** Debounce state for grouping messages */

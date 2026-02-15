@@ -62,6 +62,10 @@ export function buildGroupContext(ctx: ChannelContext): string {
     `Group members: ${members}.`,
   ];
 
+  if (ctx.botTag) {
+    lines.push(`Your tag in this group: "${ctx.botTag}"`);
+  }
+
   if (isLargeGroup) {
     lines.push(
       ``,

@@ -874,6 +874,62 @@ export function autoLinkIdentities(phoneValue: string, lidValue: string): void {
   // If neither exists, nothing to link
 }
 
+// ============================================================================
+// Group Tags — per-group tags stored in notes.groupTags
+// ============================================================================
+
+/**
+ * Resolve a group reference to its contactId (UUID).
+ * Accepts contactId, group identity, or any resolveContact-compatible ref.
+ */
+function resolveGroupIdentity(groupRef: string): string {
+  const contact = resolveContact(groupRef);
+  if (contact) return contact.id;
+  return groupRef;
+}
+
+/**
+ * Set a tag for a contact in a specific group.
+ * Stored in notes.groupTags: { [groupContactId]: tag }
+ * Both contactRef and groupRef accept contactId or identity.
+ */
+export function setGroupTag(contactRef: string, groupRef: string, tag: string): void {
+  const contact = resolveContact(contactRef);
+  if (!contact) throw new Error(`Contact not found: ${contactRef}`);
+
+  const groupKey = resolveGroupIdentity(groupRef);
+  const groupTags = (contact.notes.groupTags as Record<string, string>) ?? {};
+  groupTags[groupKey] = tag;
+  mergeContactNotes(contact.phone, { groupTags });
+}
+
+/**
+ * Remove a contact's tag from a specific group.
+ */
+export function removeGroupTag(contactRef: string, groupRef: string): void {
+  const contact = resolveContact(contactRef);
+  if (!contact) return;
+
+  const groupKey = resolveGroupIdentity(groupRef);
+  const groupTags = (contact.notes.groupTags as Record<string, string>) ?? {};
+  delete groupTags[groupKey];
+  db.prepare(
+    "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?"
+  ).run(JSON.stringify(groupTags), contact.id);
+}
+
+/**
+ * Get a contact's tag in a specific group.
+ * Accepts contactId, phone, LID, or any resolveContact-compatible ref.
+ */
+export function getGroupTag(contactRef: string, groupRef: string): string | null {
+  const contact = resolveContact(contactRef);
+  if (!contact) return null;
+  const groupKey = resolveGroupIdentity(groupRef);
+  const groupTags = contact.notes.groupTags as Record<string, string> | undefined;
+  return groupTags?.[groupKey] ?? null;
+}
+
 export function closeContacts(): void {
   db.close();
 }

@@ -68,6 +68,7 @@ import {
   getContactName,
   saveDiscoveredContact,
   autoLinkIdentities,
+  getGroupTag,
 } from "../../contacts.js";
 import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindEntriesWithoutSenderId, dbSetEntrySenderId, dbSetPendingReceipt } from "../../outbound/index.js";
 import { logger } from "../../utils/logger.js";
@@ -481,6 +482,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
           // Cache metadata for cachedGroupMetadata (critical for avoiding "No sessions" error)
           sessionManager.cacheGroupMetadata(jid, metadata);
           groupName = metadata.subject;
+          const groupId = normalizePhone(jid);
           // Extract member names: try contacts DB, then pushName, then phone
           groupMembers = metadata.participants.map(p => {
             // Use normalizePhone to get consistent key (lid:xxx or phone number)
@@ -491,14 +493,9 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
             // Look up name: contacts DB > pushName > phone
             const contactName = getContactName(normalizedId);
             const resolvedName = contactName || p.notify || displayPhone;
-            log.info("Group member resolution", {
-              jid: p.id,
-              normalizedId,
-              pushName: p.notify ?? "(none)",
-              contactName: contactName ?? "(none)",
-              resolvedName,
-            });
-            return resolvedName;
+            // Append group tag if available
+            const groupTag = getGroupTag(normalizedId, groupId);
+            return groupTag ? `${resolvedName} [${groupTag}]` : resolvedName;
           });
         } catch (err) {
           log.debug("Failed to fetch group metadata", { jid, error: err });
@@ -733,6 +730,19 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       const botLid = socket?.user?.lid;
       message.isMentioned = (botJid ? isMentioned(rawMessage, botJid) : false) ||
         (botLid ? isMentioned(rawMessage, botLid) : false);
+    }
+
+    // Set bot's group tag from contacts (for self-awareness in prompts)
+    if (message.isGroup && socket?.user?.id) {
+      const botNormalized = normalizePhone(socket.user.id);
+      const groupId = normalizePhone(message.chatId);
+      message.botTag = getGroupTag(botNormalized, groupId) ?? undefined;
+
+      // Inject sender's group tag into senderName
+      const senderTag = getGroupTag(message.senderId, groupId);
+      if (senderTag && message.senderName) {
+        message.senderName = `${message.senderName} [${senderTag}]`;
+      }
     }
 
     // Send ACK reaction if configured

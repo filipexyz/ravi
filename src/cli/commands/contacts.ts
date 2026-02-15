@@ -33,6 +33,8 @@ import {
   removeContactIdentity,
   mergeContacts,
   getContactIdentities,
+  setGroupTag,
+  removeGroupTag,
   type Contact,
   type ContactStatus,
   type ReplyMode,
@@ -390,6 +392,43 @@ export class ContactsCommands {
 
     removeContactTag(contact.phone, tag);
     console.log(`✓ Tag removed: ${contact.id} -${tag}`);
+  }
+
+  @Command({ name: "group-tag", description: "Set a contact's tag in a specific group" })
+  groupTag(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
+    @Arg("tag", { description: "Tag label" }) tag: string
+  ) {
+    const contact = getContact(contactRef);
+    if (!contact) {
+      fail(`Contact not found: ${contactRef}`);
+    }
+    const group = getContact(groupRef);
+    if (!group) {
+      fail(`Group not found: ${groupRef}`);
+    }
+
+    setGroupTag(contact.id, group.id, tag);
+    console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
+  }
+
+  @Command({ name: "group-untag", description: "Remove a contact's tag from a specific group" })
+  groupUntag(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string
+  ) {
+    const contact = getContact(contactRef);
+    if (!contact) {
+      fail(`Contact not found: ${contactRef}`);
+    }
+    const group = getContact(groupRef);
+    if (!group) {
+      fail(`Group not found: ${groupRef}`);
+    }
+
+    removeGroupTag(contact.id, group.id);
+    console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
   }
 
   @Command({ name: "identity-add", description: "Add an identity to a contact" })
