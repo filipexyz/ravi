@@ -26,11 +26,10 @@ import {
 } from "./router/index.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
-import { createBashPermissionHook } from "./bash/index.js";
+import { createBashPermissionHook, createToolPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
-import { ALL_BUILTIN_TOOLS } from "./constants.js";
 import { discoverPlugins } from "./plugins/index.js";
 import { mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -879,13 +878,11 @@ export class RaviBot {
     // Build permission options
     // Use bypassPermissions so subagents (teams/tasks) inherit skip-all-permissions.
     // canUseTool callback still intercepts ExitPlanMode for reaction-based approval.
-    let permissionOptions: Record<string, unknown> = {
+    // SDK tool permissions are enforced dynamically via PreToolUse hook (not disallowedTools)
+    // so permission changes take effect immediately without session restart.
+    const permissionOptions: Record<string, unknown> = {
       permissionMode: "bypassPermissions",
     };
-    if (agent.allowedTools) {
-      const disallowed = ALL_BUILTIN_TOOLS.filter(t => !agent.allowedTools!.includes(t));
-      permissionOptions = { ...permissionOptions, disallowedTools: disallowed, allowedTools: agent.allowedTools };
-    }
 
     // Build system prompt
     let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
@@ -895,12 +892,11 @@ export class RaviBot {
 
     // Build hooks (SDK expects HookCallbackMatcher[] per event)
     const hooks: Record<string, Array<{ hooks: Array<(...args: any[]) => any> }>> = {};
-    if (agent.bashConfig || agent.allowedTools) {
-      hooks.PreToolUse = [{ hooks: [createBashPermissionHook({
-        getBashConfig: () => agent.bashConfig,
-        getAllowedTools: () => agent.allowedTools,
-      })] }];
-    }
+    const hookOpts = { getAgentId: () => agent.id };
+    hooks.PreToolUse = [
+      createToolPermissionHook(hookOpts),   // SDK tools (dynamic REBAC)
+      createBashPermissionHook(hookOpts),    // Bash executables
+    ];
 
     // Auto-approve all permission requests for subagents (teams/tasks).
     // The parent process uses canUseTool callback which isn't inherited by
@@ -1226,15 +1222,8 @@ export class RaviBot {
       }
     };
 
-    // Spec MCP tools must be explicitly allowed when agent has specMode + allowedTools
-    if (specServer && permissionOptions.allowedTools) {
-      const specTools = [
-        "mcp__spec__enter_spec_mode",
-        "mcp__spec__update_spec",
-        "mcp__spec__exit_spec_mode",
-      ];
-      (permissionOptions.allowedTools as string[]).push(...specTools);
-    }
+    // Note: Spec MCP tools are not affected by REBAC tool permissions.
+    // The PreToolUse hook only checks SDK_TOOLS, so MCP tools pass through.
 
     const queryResult = query({
       prompt: messageGenerator,

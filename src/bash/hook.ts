@@ -2,14 +2,26 @@
  * Bash Permission Hook
  *
  * SDK PreToolUse hook that intercepts Bash tool calls
- * and validates them against the agent's BashConfig, allowedTools, and REBAC engine.
+ * and validates them against REBAC permissions.
+ *
+ * Layers:
+ * 1. Env spoofing check (RAVI_* override)
+ * 2. Executable permissions (via REBAC: execute executable:<name>)
+ * 3. Session scope (via REBAC: access session:<name>)
+ *
+ * Note: ravi CLI group-level scope (execute group:<name>) is handled by
+ * enforceScopeCheck() in the CLI process, not here.
  */
 
-import type { BashConfig } from "./types.js";
-import { checkBashPermission } from "./permissions.js";
+import {
+  checkDangerousPatterns,
+  parseBashCommand,
+  UNCONDITIONAL_BLOCKS,
+} from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { agentCan } from "../permissions/engine.js";
+import { SDK_TOOLS } from "../cli/tool-registry.js";
 
 const log = logger.child("bash:hook");
 
@@ -63,38 +75,12 @@ function extractRaviToolName(command: string): string | null {
 }
 
 /**
- * Check if a ravi CLI tool is allowed by the agent's allowedTools.
- * allowedTools uses plain names like "sessions_send", "media_send".
- */
-function checkRaviToolPermission(
-  command: string,
-  allowedTools: string[] | undefined
-): { allowed: boolean; toolName?: string; reason?: string } {
-  if (!allowedTools) return { allowed: true };
-
-  const toolName = extractRaviToolName(command);
-  if (!toolName) return { allowed: true };
-
-  if (allowedTools.includes(toolName)) {
-    return { allowed: true, toolName };
-  }
-
-  return {
-    allowed: false,
-    toolName,
-    reason: `ravi CLI tool not allowed: ${toolName}`,
-  };
-}
-
-/**
  * Extract the first positional argument from a ravi CLI command.
  * e.g. "ravi sessions send main 'msg'" → "main"
  *      "ravi sessions list" → null
  *      "ravi sessions read my-session" → "my-session"
  */
 function extractRaviTarget(command: string): string | null {
-  // Match: ravi <group> <subcommand> <target>
-  // Target is the first non-flag argument after the subcommand
   const match = command.match(
     /(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+[\w-]+\s+[\w-]+\s+(?:(?:-\w+\s+\S+\s+)*)["']?([^"'\s]+)/
   );
@@ -112,6 +98,62 @@ function checkEnvSpoofing(command: string): { allowed: boolean; reason?: string 
       reason: "Cannot override RAVI environment variables",
     };
   }
+  return { allowed: true };
+}
+
+/**
+ * Check executable permissions via REBAC.
+ *
+ * Defense in depth:
+ * 1. Check for dangerous patterns (injection attempts)
+ * 2. Parse command to extract all executables
+ * 3. Check each executable against unconditional blocks
+ * 4. Check each executable against REBAC (execute executable:<name>)
+ */
+function checkExecutablePermissions(
+  command: string,
+  agentId: string
+): { allowed: boolean; reason?: string } {
+  // If agent has wildcard access, skip expensive parsing
+  if (agentCan(agentId, "execute", "executable", "*")) {
+    return { allowed: true };
+  }
+
+  // Step 1: Check for dangerous patterns
+  const patternCheck = checkDangerousPatterns(command);
+  if (!patternCheck.safe) {
+    return { allowed: false, reason: patternCheck.reason };
+  }
+
+  // Step 2: Parse command to extract executables
+  const parsed = parseBashCommand(command);
+  if (!parsed.success) {
+    return { allowed: false, reason: parsed.error || "Failed to parse command" };
+  }
+
+  // Step 3 & 4: Check each executable
+  const blocked: string[] = [];
+
+  for (const exec of parsed.executables) {
+    // Unconditional blocks (shells, eval, exec)
+    if (UNCONDITIONAL_BLOCKS.has(exec)) {
+      blocked.push(exec);
+      continue;
+    }
+
+    // REBAC check
+    if (!agentCan(agentId, "execute", "executable", exec)) {
+      blocked.push(exec);
+    }
+  }
+
+  if (blocked.length > 0) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${agentId} cannot execute: ${blocked.join(", ")}`,
+    };
+  }
+
   return { allowed: true };
 }
 
@@ -146,7 +188,7 @@ function checkScopePermission(
     if (target && !canAccessSession(scopeCtx, target)) {
       return {
         allowed: false,
-        reason: "Session not found",
+        reason: `Permission denied: agent:${scopeCtx.agentId} cannot access session:${target}`,
       };
     }
   }
@@ -155,17 +197,16 @@ function checkScopePermission(
 }
 
 interface BashHookOptions {
-  getBashConfig: () => BashConfig | undefined;
-  getAllowedTools: () => string[] | undefined;
+  getAgentId: () => string | undefined;
 }
 
 /**
  * Create a bash permission hook for the SDK.
  *
  * Validates:
- * 1. Bash CLI executable permissions (via BashConfig)
- * 2. Ravi CLI subcommand permissions (via allowedTools)
- * 3. Scope permissions (via REBAC engine)
+ * 1. Env spoofing (RAVI_* override)
+ * 2. Executable permissions (via REBAC)
+ * 3. Session scope (via REBAC)
  */
 export function createBashPermissionHook(
   options: BashHookOptions
@@ -178,9 +219,10 @@ export function createBashPermissionHook(
       return {};
     }
 
+    const agentId = options.getAgentId();
+
     // Step 0: Block RAVI_* env var spoofing (superadmins exempt — need it for testing)
-    const ctx = getScopeContext();
-    const isSuperadmin = !ctx.agentId || agentCan(ctx.agentId, "admin", "system", "*");
+    const isSuperadmin = !agentId || agentCan(agentId, "admin", "system", "*");
     const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(command);
     if (!spoofResult.allowed) {
       log.warn("Env spoofing blocked", {
@@ -197,48 +239,29 @@ export function createBashPermissionHook(
       };
     }
 
-    // Step 1: Check bash CLI permissions (executables)
-    const config = options.getBashConfig();
-    const bashResult = checkBashPermission(command, config);
+    // Step 1: Check executable permissions via REBAC
+    if (agentId) {
+      const execResult = checkExecutablePermissions(command, agentId);
 
-    if (!bashResult.allowed) {
-      log.warn("Bash command blocked", {
-        command: command.slice(0, 200),
-        reason: bashResult.reason,
-        blockedExecutables: bashResult.blockedExecutables,
-      });
+      if (!execResult.allowed) {
+        log.warn("Executable blocked", {
+          command: command.slice(0, 200),
+          reason: execResult.reason,
+        });
 
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: `Bash command blocked: ${bashResult.reason}`,
-        },
-      };
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: execResult.reason!,
+          },
+        };
+      }
     }
 
-    // Step 2: Check ravi CLI subcommand permissions
-    const allowedTools = options.getAllowedTools();
-    const raviResult = checkRaviToolPermission(command, allowedTools);
-
-    if (!raviResult.allowed) {
-      log.warn("Ravi CLI tool blocked", {
-        command: command.slice(0, 200),
-        tool: raviResult.toolName,
-        reason: raviResult.reason,
-      });
-
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: raviResult.reason!,
-        },
-      };
-    }
-
-    // Step 3: Check scope permissions (via REBAC engine)
-    const scopeResult = checkScopePermission(command, raviResult.toolName ?? extractRaviToolName(command), ctx);
+    // Step 2: Check session scope (via REBAC)
+    const toolName = extractRaviToolName(command);
+    const scopeResult = checkScopePermission(command, toolName);
 
     if (!scopeResult.allowed) {
       log.warn("Scope check blocked", {
@@ -257,7 +280,7 @@ export function createBashPermissionHook(
 
     log.debug("Bash command allowed", {
       command: command.slice(0, 100),
-      raviTool: raviResult.toolName,
+      raviTool: toolName,
     });
 
     return {};
@@ -266,6 +289,47 @@ export function createBashPermissionHook(
   return {
     matcher: "Bash",
     hooks: [bashPermissionHook],
+  };
+}
+
+/**
+ * Create a tool permission hook for the SDK.
+ *
+ * Intercepts ALL tool calls and checks via REBAC in real-time.
+ * This ensures permission changes take effect immediately without
+ * needing to restart the session.
+ */
+export function createToolPermissionHook(
+  options: BashHookOptions
+): HookCallbackMatcher {
+  const toolPermissionHook: HookCallback = async (input) => {
+    const agentId = options.getAgentId();
+    if (!agentId) return {};
+
+    const toolName = input.tool_name;
+    if (!toolName) return {};
+
+    // Only check SDK built-in tools — MCP tools and CLI tools are not gated here
+    if (!SDK_TOOLS.includes(toolName)) return {};
+
+    // Check REBAC: can agent use this tool?
+    if (!agentCan(agentId, "use", "tool", toolName)) {
+      log.warn("Tool blocked", { agentId, tool: toolName });
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: `Permission denied: agent:${agentId} cannot use tool:${toolName}`,
+        },
+      };
+    }
+
+    return {};
+  };
+
+  return {
+    // No matcher = fires for ALL tools
+    hooks: [toolPermissionHook],
   };
 }
 
