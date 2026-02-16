@@ -2,8 +2,6 @@
  * Session Router Types
  */
 
-import type { BashConfig } from "../bash/types.js";
-
 // ============================================================================
 // DM Scope
 // ============================================================================
@@ -62,9 +60,6 @@ export interface AgentConfig {
   /** System prompt append */
   systemPromptAppend?: string;
 
-  /** Whitelist of allowed tools (undefined = bypass mode, all tools allowed) */
-  allowedTools?: string[];
-
   /** Debounce time in ms - groups messages arriving within this window */
   debounceMs?: number;
 
@@ -76,9 +71,6 @@ export interface AgentConfig {
 
   /** Setting sources for Claude SDK (default: ["project"]) */
   settingSources?: ("user" | "project")[];
-
-  /** Bash CLI permission configuration */
-  bashConfig?: BashConfig;
 
   /** Model to use for memory extraction during PreCompact (default: "haiku") */
   memoryModel?: string;

@@ -24,7 +24,6 @@ export interface SdkToolDefinition {
 
 export interface CreateSdkToolsOptions {
   filter?: string | RegExp;
-  allowedTools?: string[];
 }
 
 // ============================================================================
@@ -96,7 +95,7 @@ export function createSdkTools(
   classes: CommandClass[],
   options: CreateSdkToolsOptions = {}
 ): SdkToolDefinition[] {
-  const { filter, allowedTools } = options;
+  const { filter } = options;
 
   // Use cache if using all classes, otherwise extract fresh
   const allClasses = getAllCommandClasses();
@@ -107,10 +106,6 @@ export function createSdkTools(
   if (filter) {
     const regex = typeof filter === "string" ? new RegExp(filter) : filter;
     tools = tools.filter((t) => regex.test(t.name));
-  }
-
-  if (allowedTools) {
-    tools = tools.filter((t) => allowedTools.includes(t.name));
   }
 
   return tools.map(toSdkDefinition);

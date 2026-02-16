@@ -14,50 +14,22 @@ import {
   createAgent,
   updateAgent,
   deleteAgent,
-  setAgentTools,
-  addAgentTool,
-  removeAgentTool,
   setAgentDebounce,
   ensureAgentDirs,
   loadRouterConfig,
-  setAgentBashMode,
-  setAgentBashConfig,
-  addAgentBashAllowlist,
-  removeAgentBashAllowlist,
-  addAgentBashDenylist,
-  removeAgentBashDenylist,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { DmScopeSchema, BashModeSchema } from "../../router/router-db.js";
-import type { BashConfig, BashMode } from "../../bash/types.js";
-import { getDefaultAllowlist, getDefaultDenylist } from "../../bash/permissions.js";
+import { DmScopeSchema } from "../../router/router-db.js";
 import {
-  getSession,
   deleteSession,
   getSessionsByAgent,
   getMainSession,
   resolveSession,
 } from "../../router/sessions.js";
-import {
-  SDK_TOOLS,
-  getCliToolNames,
-  getAllToolNames,
-} from "../tool-registry.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
   notif.emit("ravi.config.changed", {}).catch(() => {});
-}
-
-/**
- * Check if a tool is enabled for an agent
- */
-function isToolEnabled(
-  toolFullName: string,
-  allowedTools: string[] | undefined
-): boolean {
-  if (!allowedTools) return true; // bypass mode
-  return allowedTools.includes(toolFullName);
 }
 
 @Group({
@@ -77,21 +49,15 @@ export class AgentsCommands {
     }
 
     console.log("\nAgents:\n");
-    console.log("  ID              CWD                          TOOLS     BASH");
-    console.log("  --------------  ---------------------------  --------  --------");
+    console.log("  ID              CWD");
+    console.log("  --------------  ---------------------------");
 
     for (const agent of agents) {
       const isDefault = agent.id === config.defaultAgent;
       const id = (agent.id + (isDefault ? " *" : "")).padEnd(14);
-      const cwd = agent.cwd.padEnd(27);
-      const tools = (agent.allowedTools
-        ? `[${agent.allowedTools.length}]`
-        : "bypass").padEnd(8);
-      const bash = agent.bashConfig
-        ? `${agent.bashConfig.mode}[${(agent.bashConfig.mode === "allowlist" ? agent.bashConfig.allowlist?.length : agent.bashConfig.denylist?.length) ?? 0}]`
-        : "bypass";
+      const cwd = agent.cwd;
 
-      console.log(`  ${id}  ${cwd}  ${tools}  ${bash}`);
+      console.log(`  ${id}  ${cwd}`);
     }
 
     console.log(`\n  Total: ${agents.length} (* = default)`);
@@ -116,29 +82,8 @@ export class AgentsCommands {
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
     console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
-    if (agent.allowedTools) {
-      console.log(`  Allowed Tools: [${agent.allowedTools.length}]`);
-      for (const tool of agent.allowedTools) {
-        console.log(`    - ${tool}`);
-      }
-    } else {
-      console.log("  Allowed Tools: bypass (all tools)");
-    }
-
     console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
-
-    // Bash config
-    if (agent.bashConfig) {
-      const bash = agent.bashConfig;
-      const listCount = bash.mode === "allowlist"
-        ? bash.allowlist?.length ?? 0
-        : bash.mode === "denylist"
-        ? bash.denylist?.length ?? 0
-        : 0;
-      console.log(`  Bash Mode:     ${bash.mode} [${listCount}]`);
-    } else {
-      console.log("  Bash Mode:     bypass (all CLIs)");
-    }
+    console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
 
     if (agent.systemPromptAppend) {
       console.log(`  System Append: ${agent.systemPromptAppend.slice(0, 50)}...`);
@@ -159,8 +104,8 @@ export class AgentsCommands {
 
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
-      console.log(`  Permissions: closed (no tools, no bash)`);
-      console.log(`  Use 'ravi agents tools ${id} init' and 'ravi agents bash ${id} init' to configure`);
+      console.log(`  Permissions: closed (no tools, no executables)`);
+      console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -243,119 +188,6 @@ export class AgentsCommands {
     }
   }
 
-  @Command({ name: "tools", description: "Manage agent tools" })
-  tools(
-    @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("action", { required: false, description: "Action: allow, deny, clear, init" }) action?: string,
-    @Arg("tool", { required: false, description: "Tool name or category (sdk, cli, all)" }) tool?: string
-  ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
-
-    // Get CLI tools from registry (lazy init)
-    const CLI_TOOL_NAMES = getCliToolNames();
-    const ALL_TOOLS = getAllToolNames();
-
-    // No action = list all tools with status
-    if (!action) {
-      const allowed = agent.allowedTools;
-      const isBypass = !allowed;
-
-      console.log(`\n🔧 Tools for agent: ${id}`);
-      console.log(`   Mode: ${isBypass ? "bypass (all allowed)" : `whitelist (${allowed!.length} enabled)`}\n`);
-
-      // SDK Tools
-      console.log("SDK Tools:");
-      for (const t of SDK_TOOLS) {
-        const enabled = isToolEnabled(t, allowed);
-        const icon = enabled ? "✓" : "✗";
-        const color = enabled ? "\x1b[32m" : "\x1b[90m";
-        console.log(`  ${color}${icon}\x1b[0m ${t}`);
-      }
-
-      // CLI Tools (auto-discovered)
-      console.log("\nCLI Tools:");
-      for (const name of CLI_TOOL_NAMES) {
-        const enabled = isToolEnabled(name, allowed);
-        const icon = enabled ? "✓" : "✗";
-        const color = enabled ? "\x1b[32m" : "\x1b[90m";
-        console.log(`  ${color}${icon}\x1b[0m ${name}`);
-      }
-
-      console.log("\nUsage:");
-      console.log("  ravi agents tools <id> allow <tool>   # Enable a tool");
-      console.log("  ravi agents tools <id> deny <tool>    # Disable a tool");
-      console.log("  ravi agents tools <id> init           # Init whitelist with SDK tools");
-      console.log("  ravi agents tools <id> init all       # Init with all tools");
-      console.log("  ravi agents tools <id> init cli       # Init with CLI tools only");
-      console.log("  ravi agents tools <id> clear          # Clear whitelist (bypass mode)");
-      return;
-    }
-
-    // Handle actions
-    switch (action) {
-      case "allow":
-        if (!tool) {
-          fail("Tool name required. Usage: ravi agents tools <id> allow <tool>");
-        }
-        try {
-          addAgentTool(id, tool);
-          console.log(`✓ Tool enabled: ${tool}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-
-      case "deny":
-        if (!tool) {
-          fail("Tool name required. Usage: ravi agents tools <id> deny <tool>");
-        }
-        try {
-          removeAgentTool(id, tool);
-          console.log(`✓ Tool disabled: ${tool}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-
-      case "init": {
-        // Initialize whitelist with specific category
-        let toolsToAdd: string[];
-        if (tool === "all") {
-          toolsToAdd = ALL_TOOLS;
-        } else if (tool === "cli") {
-          toolsToAdd = [...CLI_TOOL_NAMES];
-        } else {
-          // Default: SDK tools only
-          toolsToAdd = SDK_TOOLS;
-        }
-
-        try {
-          setAgentTools(id, toolsToAdd);
-          console.log(`✓ Whitelist initialized with ${toolsToAdd.length} tools`);
-          console.log(`  Category: ${tool || "sdk"}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "clear":
-        try {
-          setAgentTools(id, null);
-          console.log(`✓ Whitelist cleared: ${id} (bypass mode)`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-
-      default:
-        fail(`Unknown action: ${action}. Actions: allow, deny, init, clear`);
-    }
-  }
-
   @Command({ name: "debounce", description: "Set message debounce time" })
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -433,171 +265,6 @@ export class AgentsCommands {
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
-  @Command({ name: "bash", description: "Manage agent bash CLI permissions" })
-  bash(
-    @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("action", { required: false, description: "Action: mode, allow, deny, remove, init, clear" }) action?: string,
-    @Arg("value", { required: false, description: "CLI name(s) or mode value" }) value?: string
-  ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
-
-    // No action = show current config
-    if (!action) {
-      const config = agent.bashConfig;
-      const mode = config?.mode ?? "bypass";
-
-      console.log(`\n🛡️  Bash permissions for agent: ${id}`);
-      console.log(`   Mode: ${mode}`);
-
-      if (mode === "bypass") {
-        console.log("\n   All CLI commands are allowed (no restrictions).");
-      } else if (mode === "allowlist") {
-        const list = config?.allowlist ?? [];
-        console.log(`\n   Allowlist (${list.length} CLIs):`);
-        if (list.length === 0) {
-          console.log("   (empty - all bash commands will be blocked!)");
-        } else {
-          for (const cli of list.sort()) {
-            console.log(`   ✓ ${cli}`);
-          }
-        }
-      } else if (mode === "denylist") {
-        const list = config?.denylist ?? [];
-        console.log(`\n   Denylist (${list.length} CLIs):`);
-        if (list.length === 0) {
-          console.log("   (empty - all bash commands allowed)");
-        } else {
-          for (const cli of list.sort()) {
-            console.log(`   ✗ ${cli}`);
-          }
-        }
-      }
-
-      console.log("\nUsage:");
-      console.log("  ravi agents bash <id> mode <mode>     # Set mode (bypass, allowlist, denylist)");
-      console.log("  ravi agents bash <id> allow <cli>     # Add CLI to allowlist");
-      console.log("  ravi agents bash <id> deny <cli>      # Add CLI to denylist");
-      console.log("  ravi agents bash <id> remove <cli>    # Remove CLI from lists");
-      console.log("  ravi agents bash <id> init            # Init denylist with dangerous CLIs");
-      console.log("  ravi agents bash <id> init strict     # Init allowlist with safe CLIs");
-      console.log("  ravi agents bash <id> clear           # Reset to bypass mode");
-      return;
-    }
-
-    // Handle actions
-    switch (action) {
-      case "mode": {
-        if (!value) {
-          fail("Mode required. Usage: ravi agents bash <id> mode <bypass|allowlist|denylist>");
-        }
-        const result = BashModeSchema.safeParse(value);
-        if (!result.success) {
-          fail(`Invalid mode: ${value}. Valid modes: bypass, allowlist, denylist`);
-        }
-        try {
-          setAgentBashMode(id, result.data as BashMode);
-          console.log(`✓ Bash mode set: ${id} -> ${value}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "allow": {
-        if (!value) {
-          fail("CLI name required. Usage: ravi agents bash <id> allow <cli>");
-        }
-        // Ensure mode is allowlist
-        if (agent.bashConfig?.mode !== "allowlist") {
-          setAgentBashMode(id, "allowlist");
-        }
-        try {
-          addAgentBashAllowlist(id, value);
-          console.log(`✓ Added CLI to allowlist: ${value}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "deny": {
-        if (!value) {
-          fail("CLI name required. Usage: ravi agents bash <id> deny <cli>");
-        }
-        // Ensure mode is denylist
-        if (agent.bashConfig?.mode !== "denylist") {
-          setAgentBashMode(id, "denylist");
-        }
-        try {
-          addAgentBashDenylist(id, value);
-          console.log(`✓ Added CLI to denylist: ${value}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "remove": {
-        if (!value) {
-          fail("CLI name required. Usage: ravi agents bash <id> remove <cli>");
-        }
-        try {
-          removeAgentBashAllowlist(id, value);
-          removeAgentBashDenylist(id, value);
-          console.log(`✓ Removed CLI from lists: ${value}`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "init": {
-        try {
-          if (value === "strict") {
-            // Init with safe allowlist
-            const allowlist = getDefaultAllowlist();
-            const config: BashConfig = {
-              mode: "allowlist",
-              allowlist,
-            };
-            setAgentBashConfig(id, config);
-            console.log(`✓ Initialized strict allowlist with ${allowlist.length} safe CLIs`);
-            console.log("  Only these CLIs can be executed. Use 'allow' to add more.");
-          } else {
-            // Init with dangerous denylist
-            const denylist = getDefaultDenylist();
-            const config: BashConfig = {
-              mode: "denylist",
-              denylist,
-            };
-            setAgentBashConfig(id, config);
-            console.log(`✓ Initialized denylist with ${denylist.length} dangerous CLIs`);
-            console.log("  These CLIs are blocked. Use 'deny' to add more.");
-          }
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      case "clear": {
-        try {
-          setAgentBashMode(id, null);
-          console.log(`✓ Bash permissions cleared: ${id} (bypass mode)`);
-        } catch (err) {
-          fail(`Error: ${err instanceof Error ? err.message : err}`);
-        }
-        break;
-      }
-
-      default:
-        fail(`Unknown action: ${action}. Actions: mode, allow, deny, remove, init, clear`);
     }
   }
 

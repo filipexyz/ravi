@@ -2,21 +2,6 @@
  * Bash CLI Permissioning Types
  */
 
-/** Permission mode for bash commands */
-export type BashMode = "bypass" | "allowlist" | "denylist";
-
-/** Bash permission configuration for an agent */
-export interface BashConfig {
-  /** Permission mode */
-  mode: BashMode;
-
-  /** CLIs allowed when mode is "allowlist" */
-  allowlist?: string[];
-
-  /** CLIs blocked when mode is "denylist" */
-  denylist?: string[];
-}
-
 /** Result of parsing a bash command */
 export interface ParsedCommand {
   /** All executables found in the command */
@@ -39,16 +24,4 @@ export interface PatternCheckResult {
 
   /** Matched pattern if unsafe */
   pattern?: string;
-}
-
-/** Result of permission check */
-export interface PermissionCheckResult {
-  /** Whether the command is allowed */
-  allowed: boolean;
-
-  /** Executables that were blocked */
-  blockedExecutables?: string[];
-
-  /** Reason for denial */
-  reason?: string;
 }

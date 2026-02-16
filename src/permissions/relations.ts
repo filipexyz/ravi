@@ -12,7 +12,6 @@
 
 import { getDb, dbListAgents } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
-
 const log = logger.child("permissions:relations");
 
 // ============================================================================
@@ -268,6 +267,7 @@ export function syncRelationsFromConfig(): void {
           granted++;
         }
       }
+
     }
   })();
 

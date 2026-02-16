@@ -201,11 +201,13 @@ export function enforceScopeCheck(
   const ctx = getScopeContext();
 
   switch (scope) {
-    case "superadmin":
+    case "superadmin": {
+      const allowed = agentCan(ctx.agentId, "admin", "system", "*");
       return {
-        allowed: agentCan(ctx.agentId, "admin", "system", "*"),
-        errorMessage: "Command not found",
+        allowed,
+        errorMessage: allowed ? "" : `Permission denied: agent:${ctx.agentId} requires admin on system:*`,
       };
+    }
     case "admin": {
       // Check group-level access first (e.g., execute group:agents)
       const groupAllowed = agentCan(
@@ -227,15 +229,16 @@ export function enforceScopeCheck(
         if (cmdAllowed) return { allowed: true, errorMessage: "" };
       }
 
-      return { allowed: false, errorMessage: "Command not found" };
+      const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
+      return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}` };
     }
     case "writeContacts":
       return {
         allowed: canWriteContacts(ctx),
-        errorMessage: "Contact not found",
+        errorMessage: canWriteContacts(ctx) ? "" : `Permission denied: agent:${ctx.agentId} requires write_contacts`,
       };
     default:
       // Fail-secure: unknown scope = deny
-      return { allowed: false, errorMessage: "Command not found" };
+      return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} — unknown scope "${scope}"` };
   }
 }

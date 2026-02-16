@@ -14,7 +14,6 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
-import type { BashConfig, BashMode } from "../bash/types.js";
 
 const log = logger.child("router:db");
 
@@ -36,12 +35,6 @@ export const DmScopeSchema = z.enum([
   "per-account-channel-peer",
 ]);
 
-export const BashModeSchema = z.enum([
-  "bypass",
-  "allowlist",
-  "denylist",
-]);
-
 export const AgentInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
@@ -49,7 +42,6 @@ export const AgentInputSchema = z.object({
   model: z.string().optional(),
   dmScope: DmScopeSchema.optional(),
   systemPromptAppend: z.string().optional(),
-  allowedTools: z.array(z.string()).optional(),
   debounceMs: z.number().int().min(0).optional(),
   matrixAccount: z.string().optional(),
 });
@@ -72,7 +64,6 @@ interface AgentRow {
   model: string | null;
   dm_scope: string | null;
   system_prompt_append: string | null;
-  allowed_tools: string | null;
   debounce_ms: number | null;
   matrix_account: string | null;
   setting_sources: string | null;
@@ -83,10 +74,6 @@ interface AgentRow {
   heartbeat_active_start: string | null;
   heartbeat_active_end: string | null;
   heartbeat_last_run_at: number | null;
-  // Bash permission columns
-  bash_mode: string | null;
-  bash_allowlist: string | null;
-  bash_denylist: string | null;
   // Scope isolation columns
   spec_mode: number;
   contact_scope: string | null;
@@ -168,7 +155,6 @@ function getDb(): Database {
       model TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       system_prompt_append TEXT,
-      allowed_tools TEXT,
       debounce_ms INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -303,12 +289,14 @@ function getDb(): Database {
     log.info("Added setting_sources column to agents table");
   }
 
-  // Migration: add bash permission columns to agents if not exists
-  if (!agentColumns.some(c => c.name === "bash_mode")) {
-    db.exec("ALTER TABLE agents ADD COLUMN bash_mode TEXT CHECK(bash_mode IS NULL OR bash_mode IN ('bypass','allowlist','denylist'))");
-    db.exec("ALTER TABLE agents ADD COLUMN bash_allowlist TEXT");
-    db.exec("ALTER TABLE agents ADD COLUMN bash_denylist TEXT");
-    log.info("Added bash permission columns to agents table");
+  // Migration: drop legacy permission columns (replaced by REBAC)
+  const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
+  const toDrop = legacyCols.filter(c => agentColumns.some(ac => ac.name === c));
+  if (toDrop.length > 0) {
+    for (const col of toDrop) {
+      db.exec(`ALTER TABLE agents DROP COLUMN ${col}`);
+    }
+    log.info("Dropped legacy permission columns from agents table", { columns: toDrop });
   }
 
   // Migration: add spec_mode column to agents if not exists
@@ -576,24 +564,6 @@ function getDb(): Database {
     log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
   }
 
-  // Migration: strip mcp__ravi-cli__ prefix from allowed_tools
-  const agentsWithTools = db.prepare(
-    "SELECT id, allowed_tools FROM agents WHERE allowed_tools IS NOT NULL AND allowed_tools LIKE '%mcp__ravi-cli__%'"
-  ).all() as Array<{ id: string; allowed_tools: string }>;
-  if (agentsWithTools.length > 0) {
-    const updateStmt = db.prepare("UPDATE agents SET allowed_tools = ? WHERE id = ?");
-    for (const agent of agentsWithTools) {
-      try {
-        const tools: string[] = JSON.parse(agent.allowed_tools);
-        const cleaned = tools.map(t => t.replace(/^mcp__ravi-cli__/, ""));
-        updateStmt.run(JSON.stringify(cleaned), agent.id);
-      } catch {
-        // skip invalid JSON
-      }
-    }
-    log.info("Migrated allowed_tools: removed mcp__ravi-cli__ prefix", { count: agentsWithTools.length });
-  }
-
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {
@@ -665,12 +635,12 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
-        bash_mode, bash_allowlist, bash_denylist, spec_mode,
+        spec_mode,
         contact_scope, allowed_sessions,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -679,7 +649,6 @@ function getStatements(): PreparedStatements {
         model = ?,
         dm_scope = ?,
         system_prompt_append = ?,
-        allowed_tools = ?,
         debounce_ms = ?,
         matrix_account = ?,
         setting_sources = ?,
@@ -688,9 +657,6 @@ function getStatements(): PreparedStatements {
         heartbeat_model = ?,
         heartbeat_active_start = ?,
         heartbeat_active_end = ?,
-        bash_mode = ?,
-        bash_allowlist = ?,
-        bash_denylist = ?,
         spec_mode = ?,
         contact_scope = ?,
         allowed_sessions = ?,
@@ -782,13 +748,6 @@ function rowToAgent(row: AgentRow): AgentConfig {
     }
   }
   if (row.system_prompt_append !== null) result.systemPromptAppend = row.system_prompt_append;
-  if (row.allowed_tools !== null) {
-    try {
-      result.allowedTools = JSON.parse(row.allowed_tools);
-    } catch {
-      // Ignore invalid JSON
-    }
-  }
   if (row.debounce_ms !== null) result.debounceMs = row.debounce_ms;
   if (row.matrix_account !== null) result.matrixAccount = row.matrix_account;
   if (row.setting_sources !== null) {
@@ -819,31 +778,6 @@ function rowToAgent(row: AgentRow): AgentConfig {
       result.allowedSessions = JSON.parse(row.allowed_sessions);
     } catch {
       // Ignore invalid JSON
-    }
-  }
-
-  // Bash config fields
-  if (row.bash_mode !== null) {
-    const parsed = BashModeSchema.safeParse(row.bash_mode);
-    if (parsed.success) {
-      const bashConfig: BashConfig = {
-        mode: parsed.data,
-      };
-      if (row.bash_allowlist !== null) {
-        try {
-          bashConfig.allowlist = JSON.parse(row.bash_allowlist);
-        } catch {
-          // Ignore invalid JSON
-        }
-      }
-      if (row.bash_denylist !== null) {
-        try {
-          bashConfig.denylist = JSON.parse(row.bash_denylist);
-        } catch {
-          // Ignore invalid JSON
-        }
-      }
-      result.bashConfig = bashConfig;
     }
   }
 
@@ -896,7 +830,6 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.model ?? null,
       validated.dmScope ?? null,
       validated.systemPromptAppend ?? null,
-      JSON.stringify(validated.allowedTools ?? []),
       validated.debounceMs ?? null,
       validated.matrixAccount ?? null,
       validated.settingSources ? JSON.stringify(validated.settingSources) : null,
@@ -906,10 +839,6 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // heartbeat_model
       null, // heartbeat_active_start
       null, // heartbeat_active_end
-      // Bash fields (closed by default)
-      "allowlist", // bash_mode
-      JSON.stringify([]), // bash_allowlist (empty = nothing allowed)
-      null, // bash_denylist
       0, // spec_mode (disabled by default)
       null, // contact_scope (no restriction by default)
       null, // allowed_sessions (no cross-session by default)
@@ -971,16 +900,12 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
 
   const now = Date.now();
   const hb = updates.heartbeat;
-  const bash = updates.bashConfig;
   s.updateAgent.run(
     updates.name !== undefined ? updates.name ?? null : row.name,
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? updates.model ?? null : row.model,
     updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
     updates.systemPromptAppend !== undefined ? updates.systemPromptAppend ?? null : row.system_prompt_append,
-    updates.allowedTools !== undefined
-      ? updates.allowedTools ? JSON.stringify(updates.allowedTools) : null
-      : row.allowed_tools,
     updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
     updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
     updates.settingSources !== undefined
@@ -992,14 +917,6 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     hb?.model !== undefined ? hb.model ?? null : row.heartbeat_model,
     hb?.activeStart !== undefined ? hb.activeStart ?? null : row.heartbeat_active_start,
     hb?.activeEnd !== undefined ? hb.activeEnd ?? null : row.heartbeat_active_end,
-    // Bash fields
-    bash !== undefined ? bash?.mode ?? null : row.bash_mode,
-    bash !== undefined
-      ? bash?.allowlist ? JSON.stringify(bash.allowlist) : null
-      : row.bash_allowlist,
-    bash !== undefined
-      ? bash?.denylist ? JSON.stringify(bash.denylist) : null
-      : row.bash_denylist,
     // Spec mode
     updates.specMode !== undefined ? (updates.specMode ? 1 : 0) : row.spec_mode,
     // Scope isolation
@@ -1044,47 +961,6 @@ export function dbDeleteAgent(id: string): boolean {
 }
 
 /**
- * Set allowed tools for an agent (null = bypass mode, clears whitelist)
- */
-export function dbSetAgentTools(id: string, tools: string[] | null): void {
-  dbUpdateAgent(id, { allowedTools: tools as string[] | undefined });
-  log.info("Set agent tools", { id, tools: tools?.length ?? "bypass" });
-}
-
-/**
- * Add a tool to the agent's whitelist
- */
-export function dbAddAgentTool(id: string, tool: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  const tools = existing.allowedTools ?? [];
-  if (!tools.includes(tool)) {
-    tools.push(tool);
-    dbUpdateAgent(id, { allowedTools: tools });
-    log.info("Added tool to agent", { id, tool });
-  }
-}
-
-/**
- * Remove a tool from the agent's whitelist
- */
-export function dbRemoveAgentTool(id: string, tool: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  if (!existing.allowedTools) return;
-
-  const tools = existing.allowedTools.filter(t => t !== tool);
-  dbUpdateAgent(id, { allowedTools: tools });
-  log.info("Removed tool from agent", { id, tool });
-}
-
-/**
  * Set debounce time for an agent (null = disable debounce)
  */
 export function dbSetAgentDebounce(id: string, debounceMs: number | null): void {
@@ -1102,121 +978,6 @@ export function dbSetAgentDebounce(id: string, debounceMs: number | null): void 
 export function dbSetAgentSpecMode(id: string, enabled: boolean): void {
   dbUpdateAgent(id, { specMode: enabled });
   log.info("Set agent spec mode", { id, enabled });
-}
-
-// ============================================================================
-// Agent Bash Config
-// ============================================================================
-
-/**
- * Set bash mode for an agent
- */
-export function dbSetAgentBashMode(id: string, mode: BashMode | null): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  if (mode === null) {
-    // Clear bash config entirely (bypass mode)
-    dbUpdateAgent(id, { bashConfig: undefined });
-    log.info("Cleared bash config for agent", { id });
-  } else {
-    const bashConfig: BashConfig = {
-      mode,
-      allowlist: existing.bashConfig?.allowlist,
-      denylist: existing.bashConfig?.denylist,
-    };
-    dbUpdateAgent(id, { bashConfig });
-    log.info("Set bash mode for agent", { id, mode });
-  }
-}
-
-/**
- * Set the complete bash config for an agent
- */
-export function dbSetAgentBashConfig(id: string, config: BashConfig | null): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  dbUpdateAgent(id, { bashConfig: config ?? undefined });
-  log.info("Set bash config for agent", { id, mode: config?.mode ?? "bypass" });
-}
-
-/**
- * Add a CLI to the agent's bash allowlist
- */
-export function dbAddAgentBashAllowlist(id: string, cli: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  const bashConfig = existing.bashConfig ?? { mode: "allowlist" as const };
-  const allowlist = bashConfig.allowlist ?? [];
-
-  if (!allowlist.includes(cli)) {
-    allowlist.push(cli);
-    bashConfig.allowlist = allowlist;
-    dbUpdateAgent(id, { bashConfig });
-    log.info("Added CLI to agent bash allowlist", { id, cli });
-  }
-}
-
-/**
- * Remove a CLI from the agent's bash allowlist
- */
-export function dbRemoveAgentBashAllowlist(id: string, cli: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  if (!existing.bashConfig?.allowlist) return;
-
-  const allowlist = existing.bashConfig.allowlist.filter(c => c !== cli);
-  const bashConfig = { ...existing.bashConfig, allowlist };
-  dbUpdateAgent(id, { bashConfig });
-  log.info("Removed CLI from agent bash allowlist", { id, cli });
-}
-
-/**
- * Add a CLI to the agent's bash denylist
- */
-export function dbAddAgentBashDenylist(id: string, cli: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  const bashConfig = existing.bashConfig ?? { mode: "denylist" as const };
-  const denylist = bashConfig.denylist ?? [];
-
-  if (!denylist.includes(cli)) {
-    denylist.push(cli);
-    bashConfig.denylist = denylist;
-    dbUpdateAgent(id, { bashConfig });
-    log.info("Added CLI to agent bash denylist", { id, cli });
-  }
-}
-
-/**
- * Remove a CLI from the agent's bash denylist
- */
-export function dbRemoveAgentBashDenylist(id: string, cli: string): void {
-  const existing = dbGetAgent(id);
-  if (!existing) {
-    throw new Error(`Agent not found: ${id}`);
-  }
-
-  if (!existing.bashConfig?.denylist) return;
-
-  const denylist = existing.bashConfig.denylist.filter(c => c !== cli);
-  const bashConfig = { ...existing.bashConfig, denylist };
-  dbUpdateAgent(id, { bashConfig });
-  log.info("Removed CLI from agent bash denylist", { id, cli });
 }
 
 // ============================================================================

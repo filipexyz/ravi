@@ -44,10 +44,6 @@ export {
   createAgent,
   updateAgent,
   deleteAgent,
-  // Tool Management
-  setAgentTools,
-  addAgentTool,
-  removeAgentTool,
   setAgentDebounce,
 } from "./config.js";
 
