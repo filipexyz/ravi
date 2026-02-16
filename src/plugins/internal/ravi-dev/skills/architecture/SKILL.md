@@ -196,8 +196,8 @@ Mensagens entre sessoes (inter-session communication).
 ## Sistema de Hooks
 
 ### PreToolUse (bash/hook.ts)
-Intercepta chamadas Bash e valida contra BashConfig do agent.
-Modos: bypass | allowlist | denylist
+Intercepta chamadas Bash e valida permissoes via REBAC.
+Checa `agentCan(id, "execute", "executable", exec)` pra cada executavel parsed.
 
 ### PreCompact (hooks/pre-compact.ts)
 Extrai memorias antes do SDK compactar contexto.

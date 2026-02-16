@@ -130,83 +130,25 @@ Keys:
 - `systemPromptAppend` — Texto adicional no system prompt
 - `matrixAccount` — Conta Matrix associada
 
-## Gerenciamento de Tools (CLI)
+## Permissões (REBAC)
 
-Controla quais comandos `ravi` o agent pode executar via Bash. Quando configurado, o agent só pode rodar os subcomandos permitidos.
+Permissões de tools e executáveis são gerenciadas via REBAC:
 
-### Ver tools
 ```bash
-ravi agents tools <id>
+# Ver permissões de um agent
+ravi permissions list --subject agent:<id>
+
+# Configurar permissões
+ravi permissions init agent:<id> full-access     # Tudo liberado
+ravi permissions init agent:<id> sdk-tools       # SDK tools padrão
+ravi permissions init agent:<id> safe-executables # Executáveis seguros
+
+# Grants individuais
+ravi permissions grant agent:<id> use tool:Bash
+ravi permissions grant agent:<id> execute executable:git
 ```
 
-### Permitir tool
-```bash
-ravi agents tools <id> allow <tool>
-# Ex: ravi agents tools marina allow sessions_send
-# Ex: ravi agents tools marina allow contacts_list
-```
-
-### Bloquear tool
-```bash
-ravi agents tools <id> deny <tool>
-```
-
-### Inicializar whitelist
-```bash
-ravi agents tools <id> init       # SDK tools apenas
-ravi agents tools <id> init all   # SDK + CLI tools
-ravi agents tools <id> init cli   # Apenas CLI tools
-```
-
-### Modo bypass (todas permitidas)
-```bash
-ravi agents tools <id> clear
-```
-
-### Nomes dos tools
-
-Os nomes seguem o padrão `grupo_comando`. Pra ver todos disponíveis:
-```bash
-ravi tools list
-```
-
-Exemplos: `sessions_send`, `sessions_ask`, `sessions_answer`, `media_send`, `contacts_list`, `contacts_approve`, `agents_list`, `daemon_restart`, `outbound_send`, etc.
-
-## Permissões de Bash
-
-Controla quais executáveis o agent pode rodar no terminal (git, node, etc). Separado do controle de tools CLI.
-
-### Ver configuração
-```bash
-ravi agents bash <id>
-```
-
-### Definir modo
-```bash
-ravi agents bash <id> mode <bypass|allowlist|denylist>
-```
-
-- `bypass` — tudo permitido
-- `allowlist` — só os listados
-- `denylist` — tudo exceto os listados
-
-### Gerenciar listas
-```bash
-ravi agents bash <id> allow <cli>     # Adicionar à allowlist
-ravi agents bash <id> deny <cli>      # Adicionar à denylist
-ravi agents bash <id> remove <cli>    # Remover das listas
-```
-
-### Inicializar com defaults
-```bash
-ravi agents bash <id> init         # Denylist com CLIs perigosos (rm, sudo, curl, etc)
-ravi agents bash <id> init strict  # Allowlist com CLIs seguros (git, node, etc)
-```
-
-### Resetar para bypass
-```bash
-ravi agents bash <id> clear
-```
+Ver skill `permissions-manager` para documentação completa.
 
 ## Debounce de Mensagens
 
@@ -351,11 +293,10 @@ ravi agents create atendimento ~/ravi/atendimento
 # 3. Rotear grupo pro agent
 ravi routes add group:120363425628305127 atendimento
 
-# 4. Configurar permissões (opcional)
-ravi agents bash atendimento init          # Denylist básica
-ravi agents tools atendimento init         # Whitelist de SDK tools
-ravi agents tools atendimento allow cross_send    # Liberar envio cross
-ravi agents tools atendimento allow contacts_list # Liberar listagem
+# 4. Configurar permissões (via REBAC)
+ravi permissions init agent:atendimento sdk-tools       # SDK tools padrão
+ravi permissions init agent:atendimento safe-executables # Executáveis seguros
+ravi permissions grant agent:atendimento use tool:Bash   # Liberar Bash
 ```
 
 ### Aprovar contato e associar a agent
