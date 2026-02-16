@@ -12,14 +12,21 @@ import { logger } from "../../utils/logger.js";
 
 const log = logger.child("wa:group-ops");
 
-/** Resolve socket from accountId, throw if not connected */
+/** Resolve socket from accountId, throw if not connected or not ready */
 function getSocket(accountId: string): WASocket {
   const socket = sessionManager.getSocket(accountId);
   if (!socket) {
     throw new Error(`WhatsApp account "${accountId}" not connected`);
   }
+
+  const state = sessionManager.getState(accountId);
+  if (state !== "connected") {
+    throw new Error(`WhatsApp account "${accountId}" not ready (state: ${state})`);
+  }
+
   return socket;
 }
+
 
 /** Convert phone/group ID to JID, throw if invalid */
 function toJid(id: string): string {
@@ -51,6 +58,7 @@ export async function groupCreate(
 
   log.info("Creating group", { subject, participants: jids.length });
   const metadata = await socket.groupCreate(subject, jids);
+  log.info("Group created", { id: metadata.id, subject: metadata.subject });
 
   sessionManager.cacheGroupMetadata(metadata.id, metadata);
 
@@ -114,6 +122,7 @@ export async function groupParticipantsUpdate(
 
   log.info("Updating participants", { groupId: jid, action, count: jids.length });
   const result = await socket.groupParticipantsUpdate(jid, jids, action);
+  log.info("Participants updated", { groupId: jid, action, results: result.length });
 
   return {
     results: result.map((r) => ({
@@ -160,6 +169,7 @@ export async function groupLeave(accountId: string, groupId: string) {
   const jid = toJid(groupId);
 
   await socket.groupLeave(jid);
+  log.info("Left group", { groupId: jid });
   return { left: true };
 }
 
