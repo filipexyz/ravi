@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { upsertContact } from "../../contacts.js";
+import { upsertContact, findContactsByTag } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
 import { notif } from "../../notif.js";
 import { buildSessionKey } from "../../router/session-key.js";
@@ -134,6 +134,25 @@ export class GroupCommands {
     console.log(`✓ Group created: ${result.subject}`);
     console.log(`  ID:           ${result.id}`);
     console.log(`  Participants: ${result.participants}`);
+
+    // Promote admin-tagged contacts to group admin
+    const adminContacts = findContactsByTag("admin");
+    const adminPhones = adminContacts
+      .flatMap((c) => c.identities.filter((i) => i.platform === "phone").map((i) => i.value))
+      .filter(Boolean);
+
+    if (adminPhones.length > 0) {
+      try {
+        await groupRequest("promote", {
+          groupId: result.id,
+          participants: adminPhones,
+        }, account);
+        console.log(`  Admins:       promoted ${adminPhones.length} contact(s)`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(`  Admins:       promote failed (${msg})`);
+      }
+    }
 
     // Auto-approve contact and route to agent if specified
     const groupId = result.id.replace(/@g\.us$/, "");
