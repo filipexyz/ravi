@@ -5,10 +5,32 @@
  * Delegates all permission checks to the REBAC engine.
  */
 
+import { spawn } from "node:child_process";
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
+
+/**
+ * Emit an audit event via notif (fire-and-forget).
+ */
+function emitAudit(event: {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+}): void {
+  try {
+    const data = JSON.stringify(event);
+    const child = spawn("notif", ["emit", "ravi.audit.denied", data], {
+      stdio: "ignore",
+      detached: true,
+    });
+    child.unref();
+  } catch {
+    // Best-effort
+  }
+}
 
 // ============================================================================
 // Scope Context
@@ -203,6 +225,14 @@ export function enforceScopeCheck(
   switch (scope) {
     case "superadmin": {
       const allowed = agentCan(ctx.agentId, "admin", "system", "*");
+      if (!allowed) {
+        emitAudit({
+          type: "scope",
+          agentId: ctx.agentId!,
+          denied: "system:*",
+          reason: `Permission denied: agent:${ctx.agentId} requires admin on system:*`,
+        });
+      }
       return {
         allowed,
         errorMessage: allowed ? "" : `Permission denied: agent:${ctx.agentId} requires admin on system:*`,
@@ -230,13 +260,29 @@ export function enforceScopeCheck(
       }
 
       const target = commandName && groupName ? `group:${groupName}_${commandName}` : `group:${groupName ?? "*"}`;
+      emitAudit({
+        type: "scope",
+        agentId: ctx.agentId!,
+        denied: target,
+        reason: `Permission denied: agent:${ctx.agentId} requires execute on ${target}`,
+      });
       return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}` };
     }
-    case "writeContacts":
+    case "writeContacts": {
+      const wcAllowed = canWriteContacts(ctx);
+      if (!wcAllowed) {
+        emitAudit({
+          type: "scope",
+          agentId: ctx.agentId!,
+          denied: "write_contacts",
+          reason: `Permission denied: agent:${ctx.agentId} requires write_contacts`,
+        });
+      }
       return {
-        allowed: canWriteContacts(ctx),
-        errorMessage: canWriteContacts(ctx) ? "" : `Permission denied: agent:${ctx.agentId} requires write_contacts`,
+        allowed: wcAllowed,
+        errorMessage: wcAllowed ? "" : `Permission denied: agent:${ctx.agentId} requires write_contacts`,
       };
+    }
     default:
       // Fail-secure: unknown scope = deny
       return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} — unknown scope "${scope}"` };

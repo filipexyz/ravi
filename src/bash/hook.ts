@@ -13,6 +13,7 @@
  * enforceScopeCheck() in the CLI process, not here.
  */
 
+import { spawn } from "node:child_process";
 import {
   checkDangerousPatterns,
   parseBashCommand,
@@ -24,6 +25,28 @@ import { agentCan } from "../permissions/engine.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
 
 const log = logger.child("bash:hook");
+
+/**
+ * Emit an audit event via notif (fire-and-forget).
+ */
+function emitAudit(event: {
+  type: string;
+  agentId: string;
+  denied: string;
+  reason: string;
+  detail?: string;
+}): void {
+  try {
+    const data = JSON.stringify(event);
+    const child = spawn("notif", ["emit", "ravi.audit.denied", data], {
+      stdio: "ignore",
+      detached: true,
+    });
+    child.unref();
+  } catch {
+    // Best-effort — don't break the hook if notif is unavailable
+  }
+}
 
 /**
  * Hook input structure from Claude Agent SDK.
@@ -229,6 +252,13 @@ export function createBashPermissionHook(
         command: command.slice(0, 200),
         reason: spoofResult.reason,
       });
+      emitAudit({
+        type: "env_spoofing",
+        agentId: agentId!,
+        denied: "RAVI_* override",
+        reason: spoofResult.reason!,
+        detail: command.slice(0, 200),
+      });
 
       return {
         hookSpecificOutput: {
@@ -247,6 +277,13 @@ export function createBashPermissionHook(
         log.warn("Executable blocked", {
           command: command.slice(0, 200),
           reason: execResult.reason,
+        });
+        emitAudit({
+          type: "executable",
+          agentId,
+          denied: command.split(/\s+/)[0],
+          reason: execResult.reason!,
+          detail: command.slice(0, 200),
         });
 
         return {
@@ -267,6 +304,13 @@ export function createBashPermissionHook(
       log.warn("Scope check blocked", {
         command: command.slice(0, 200),
         reason: scopeResult.reason,
+      });
+      emitAudit({
+        type: "session_scope",
+        agentId: agentId!,
+        denied: extractRaviTarget(command) ?? "unknown",
+        reason: scopeResult.reason!,
+        detail: command.slice(0, 200),
       });
 
       return {
@@ -315,6 +359,12 @@ export function createToolPermissionHook(
     // Check REBAC: can agent use this tool?
     if (!agentCan(agentId, "use", "tool", toolName)) {
       log.warn("Tool blocked", { agentId, tool: toolName });
+      emitAudit({
+        type: "tool",
+        agentId,
+        denied: `tool:${toolName}`,
+        reason: `Permission denied: agent:${agentId} cannot use tool:${toolName}`,
+      });
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
