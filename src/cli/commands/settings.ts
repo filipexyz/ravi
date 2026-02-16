@@ -78,9 +78,11 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   },
 };
 
+
 @Group({
   name: "settings",
   description: "Global settings management",
+  scope: "admin",
 })
 export class SettingsCommands {
   @Command({ name: "list", description: "List all settings" })

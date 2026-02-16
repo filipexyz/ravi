@@ -85,6 +85,7 @@ function deleteConflictingSessions(pattern: string, targetAgent: string): number
 @Group({
   name: "routes",
   description: "Route management",
+  scope: "admin",
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List all routes" })

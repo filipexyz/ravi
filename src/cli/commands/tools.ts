@@ -16,6 +16,7 @@ import {
 @Group({
   name: "tools",
   description: "CLI tools inspection and export",
+  scope: "open",
 })
 export class ToolsCommands {
   @Command({ name: "list", description: "List all available CLI tools" })

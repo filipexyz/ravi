@@ -85,6 +85,12 @@ export interface AgentConfig {
 
   /** Enable spec mode tools for this agent (default: false) */
   specMode?: boolean;
+
+  /** Contact scope: "own" | "tagged:<tag>" | "all" (default: undefined = no restriction for existing agents) */
+  contactScope?: string;
+
+  /** Whitelist of session names/patterns this agent can access beyond its own (default: []) */
+  allowedSessions?: string[];
 }
 
 // ============================================================================

@@ -19,9 +19,11 @@ import { notif } from "../../notif.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 
+
 @Group({
   name: "heartbeat",
   description: "Heartbeat scheduling management",
+  scope: "admin",
 })
 export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })

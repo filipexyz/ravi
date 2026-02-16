@@ -10,10 +10,13 @@ import {
   getCommandsMetadata,
   getArgsMetadata,
   getOptionsMetadata,
+  getScopeMetadata,
   type CommandMetadata,
+  type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
 import { notif } from "../notif.js";
+import { enforceScopeCheck } from "../permissions/scope.js";
 
 type CommandClass = new () => object;
 
@@ -87,8 +90,13 @@ export function registerCommands(
     // Tool name uses underscore-separated full path
     const toolGroupName = segments.join("_");
 
+    // Resolve scope: command-level > group-level > "admin" (fail-secure default)
+    const scopeMap = getScopeMetadata(cls);
+
     for (const cmdMeta of commandsMeta) {
-      registerCommand(group, instance, cmdMeta, toolGroupName);
+      const effectiveScope: ScopeType =
+        scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
+      registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope);
     }
   }
 }
@@ -97,7 +105,8 @@ function registerCommand(
   group: CommanderCommand,
   instance: object,
   cmdMeta: CommandMetadata,
-  groupName: string
+  groupName: string,
+  scope: ScopeType
 ): void {
   const sub = group.command(cmdMeta.name).description(cmdMeta.description);
 
@@ -167,6 +176,13 @@ function registerCommand(
           input[optName] = options[optName];
         }
       }
+    }
+
+    // Scope enforcement (before method execution)
+    const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
+    if (!scopeResult.allowed) {
+      console.error(scopeResult.errorMessage);
+      process.exit(1);
     }
 
     // Execute and emit single event with input + output

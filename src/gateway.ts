@@ -602,6 +602,9 @@ export class Gateway {
   private subscribeToConfigChanges(): void {
     this.subscribe("config", ["ravi.config.changed"], async () => {
       this.routerConfig = loadRouterConfig();
+      // Re-sync REBAC relations when config changes
+      const { syncRelationsFromConfig } = await import("./permissions/relations.js");
+      syncRelationsFromConfig();
       log.info("Router config reloaded");
     });
   }

@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
+import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import {
@@ -20,11 +21,18 @@ import {
 @Group({
   name: "triggers",
   description: "Event triggers",
+  scope: "resource",
 })
 export class TriggersCommands {
   @Command({ name: "list", description: "List all event triggers" })
   list() {
-    const triggers = dbListTriggers();
+    let triggers = dbListTriggers();
+
+    // Scope isolation: filter to own agent's triggers
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      triggers = triggers.filter(t => canAccessResource(scopeCtx, t.agentId));
+    }
 
     if (triggers.length === 0) {
       console.log("\nNo triggers configured.\n");
@@ -76,7 +84,7 @@ export class TriggersCommands {
   @Command({ name: "show", description: "Show trigger details" })
   show(@Arg("id", { description: "Trigger ID" }) id: string) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
@@ -212,7 +220,7 @@ export class TriggersCommands {
   @Command({ name: "enable", description: "Enable a trigger" })
   async enable(@Arg("id", { description: "Trigger ID" }) id: string) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
@@ -228,7 +236,7 @@ export class TriggersCommands {
   @Command({ name: "disable", description: "Disable a trigger" })
   async disable(@Arg("id", { description: "Trigger ID" }) id: string) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
@@ -252,7 +260,7 @@ export class TriggersCommands {
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
@@ -334,7 +342,7 @@ export class TriggersCommands {
   @Command({ name: "test", description: "Test trigger with fake event data" })
   async test(@Arg("id", { description: "Trigger ID" }) id: string) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
@@ -357,7 +365,7 @@ export class TriggersCommands {
   })
   async rm(@Arg("id", { description: "Trigger ID" }) id: string) {
     const trigger = dbGetTrigger(id);
-    if (!trigger) {
+    if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 

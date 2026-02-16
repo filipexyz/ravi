@@ -10,6 +10,7 @@ import { notif } from "../../notif.js";
 @Group({
   name: "react",
   description: "Emoji reactions",
+  scope: "open",
 })
 export class ReactCommands {
   @Command({ name: "send", description: "Send an emoji reaction to a message" })

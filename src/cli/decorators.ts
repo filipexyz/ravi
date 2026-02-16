@@ -9,11 +9,25 @@ const GROUP_KEY = Symbol("cli:group");
 const COMMANDS_KEY = Symbol("cli:commands");
 const ARGS_KEY = Symbol("cli:args");
 const OPTIONS_KEY = Symbol("cli:options");
+const SCOPE_KEY = Symbol("cli:scope");
 
 // Types
+
+/**
+ * Scope types for command access control.
+ *
+ * - "superadmin"    — Only superadmin (admin relation on system:*). Auto-enforced.
+ * - "admin"         — Only agents with execute relation on the group. Auto-enforced.
+ * - "writeContacts" — Only agents with contactScope "all". Auto-enforced.
+ * - "resource"      — Marker only; method must check canAccessResource() inline.
+ * - "open"          — No restrictions.
+ */
+export type ScopeType = "superadmin" | "admin" | "writeContacts" | "resource" | "open";
+
 export interface GroupOptions {
   name: string;
   description: string;
+  scope?: ScopeType;
 }
 
 export interface CommandOptions {
@@ -74,6 +88,23 @@ export function Command(options: CommandOptions) {
 }
 
 /**
+ * @Scope decorator - declares the access scope for a command method.
+ * Overrides the group-level scope for this specific command.
+ */
+export function Scope(type: ScopeType) {
+  return function (
+    target: object,
+    propertyKey: string,
+    _descriptor: PropertyDescriptor
+  ) {
+    const scopes: Map<string, ScopeType> =
+      Reflect.getMetadata(SCOPE_KEY, target.constructor) || new Map();
+    scopes.set(propertyKey, type);
+    Reflect.defineMetadata(SCOPE_KEY, scopes, target.constructor);
+  };
+}
+
+/**
  * @Arg decorator - marks a method parameter as a positional argument
  */
 export function Arg(name: string, options: ArgOptions = {}) {
@@ -128,4 +159,8 @@ export function getOptionsMetadata(
   propertyKey: string
 ): OptionMetadata[] {
   return Reflect.getMetadata(OPTIONS_KEY, target, propertyKey) || [];
+}
+
+export function getScopeMetadata(target: Function): Map<string, ScopeType> {
+  return Reflect.getMetadata(SCOPE_KEY, target) || new Map();
 }

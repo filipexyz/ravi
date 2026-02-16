@@ -15,6 +15,7 @@ export * from "./heartbeat.js";
 export * from "./matrix.js";
 export * from "./media.js";
 export * from "./outbound.js";
+export * from "./permissions.js";
 export * from "./react.js";
 export * from "./routes.js";
 export * from "./service.js";

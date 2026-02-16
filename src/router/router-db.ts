@@ -87,6 +87,10 @@ interface AgentRow {
   bash_mode: string | null;
   bash_allowlist: string | null;
   bash_denylist: string | null;
+  // Scope isolation columns
+  spec_mode: number;
+  contact_scope: string | null;
+  allowed_sessions: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -222,6 +226,25 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
 
+    -- REBAC: Relationship-based access control
+    CREATE TABLE IF NOT EXISTS relations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      object_type TEXT NOT NULL,
+      object_id TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_relations_unique
+      ON relations(subject_type, subject_id, relation, object_type, object_id);
+    CREATE INDEX IF NOT EXISTS idx_relations_subject
+      ON relations(subject_type, subject_id);
+    CREATE INDEX IF NOT EXISTS idx_relations_object
+      ON relations(object_type, object_id);
+
     -- Message metadata (transcriptions, media paths — for reply reinjection)
     CREATE TABLE IF NOT EXISTS message_metadata (
       message_id TEXT PRIMARY KEY,
@@ -292,6 +315,13 @@ function getDb(): Database {
   if (!agentColumns.some(c => c.name === "spec_mode")) {
     db.exec("ALTER TABLE agents ADD COLUMN spec_mode INTEGER DEFAULT 0");
     log.info("Added spec_mode column to agents table");
+  }
+
+  // Migration: add scope isolation columns to agents if not exists
+  if (!agentColumns.some(c => c.name === "contact_scope")) {
+    db.exec("ALTER TABLE agents ADD COLUMN contact_scope TEXT");
+    db.exec("ALTER TABLE agents ADD COLUMN allowed_sessions TEXT");
+    log.info("Added scope isolation columns to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -638,8 +668,9 @@ function getStatements(): PreparedStatements {
       INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, allowed_tools, debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
         bash_mode, bash_allowlist, bash_denylist, spec_mode,
+        contact_scope, allowed_sessions,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -661,6 +692,8 @@ function getStatements(): PreparedStatements {
         bash_allowlist = ?,
         bash_denylist = ?,
         spec_mode = ?,
+        contact_scope = ?,
+        allowed_sessions = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -779,6 +812,16 @@ function rowToAgent(row: AgentRow): AgentConfig {
   // Spec mode
   result.specMode = row.spec_mode === 1;
 
+  // Scope isolation
+  if (row.contact_scope !== null) result.contactScope = row.contact_scope;
+  if (row.allowed_sessions !== null) {
+    try {
+      result.allowedSessions = JSON.parse(row.allowed_sessions);
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
   // Bash config fields
   if (row.bash_mode !== null) {
     const parsed = BashModeSchema.safeParse(row.bash_mode);
@@ -868,6 +911,8 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       JSON.stringify([]), // bash_allowlist (empty = nothing allowed)
       null, // bash_denylist
       0, // spec_mode (disabled by default)
+      null, // contact_scope (no restriction by default)
+      null, // allowed_sessions (no cross-session by default)
       now,
       now
     );
@@ -957,6 +1002,11 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
       : row.bash_denylist,
     // Spec mode
     updates.specMode !== undefined ? (updates.specMode ? 1 : 0) : row.spec_mode,
+    // Scope isolation
+    updates.contactScope !== undefined ? updates.contactScope ?? null : row.contact_scope,
+    updates.allowedSessions !== undefined
+      ? updates.allowedSessions ? JSON.stringify(updates.allowedSessions) : null
+      : row.allowed_sessions,
     now,
     id
   );

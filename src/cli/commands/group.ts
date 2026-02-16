@@ -33,9 +33,11 @@ async function groupRequest<T = Record<string, unknown>>(
   }, timeout);
 }
 
+
 @Group({
   name: "whatsapp.group",
   description: "WhatsApp group management",
+  scope: "admin",
 })
 export class GroupCommands {
   @Command({ name: "list", description: "List all groups the bot participates in" })

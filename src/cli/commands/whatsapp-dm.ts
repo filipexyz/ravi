@@ -47,6 +47,7 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
 @Group({
   name: "whatsapp.dm",
   description: "WhatsApp direct messages",
+  scope: "open",
 })
 export class WhatsAppDmCommands {
   @Command({ name: "send", description: "Send a direct message to a contact" })

@@ -40,6 +40,7 @@ function mediaType(mime: string): OutboundMedia["type"] {
 @Group({
   name: "media",
   description: "Media sending",
+  scope: "open",
 })
 export class MediaCommands {
   @Command({ name: "send", description: "Send a media file (image, video, audio, document)" })

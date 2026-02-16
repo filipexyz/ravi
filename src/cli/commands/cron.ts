@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { notif } from "../../notif.js";
+import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone } from "../../router/router-db.js";
 import {
@@ -26,11 +27,18 @@ import {
 @Group({
   name: "cron",
   description: "Scheduled job management",
+  scope: "resource",
 })
 export class CronCommands {
   @Command({ name: "list", description: "List all scheduled jobs" })
   list() {
-    const jobs = dbListCronJobs();
+    let jobs = dbListCronJobs();
+
+    // Scope isolation: filter to own agent's jobs
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      jobs = jobs.filter(j => canAccessResource(scopeCtx, j.agentId));
+    }
 
     if (jobs.length === 0) {
       console.log("\nNo cron jobs configured.\n");
@@ -66,7 +74,7 @@ export class CronCommands {
   @Command({ name: "show", description: "Show job details" })
   show(@Arg("id", { description: "Job ID" }) id: string) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
@@ -208,7 +216,7 @@ export class CronCommands {
   @Command({ name: "enable", description: "Enable a job" })
   async enable(@Arg("id", { description: "Job ID" }) id: string) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
@@ -232,7 +240,7 @@ export class CronCommands {
   @Command({ name: "disable", description: "Disable a job" })
   async disable(@Arg("id", { description: "Job ID" }) id: string) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
@@ -252,7 +260,7 @@ export class CronCommands {
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
@@ -365,7 +373,7 @@ export class CronCommands {
   @Command({ name: "run", description: "Manually run a job (ignores schedule)" })
   async run(@Arg("id", { description: "Job ID" }) id: string) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
@@ -384,7 +392,7 @@ export class CronCommands {
   @Command({ name: "rm", description: "Delete a job", aliases: ["delete", "remove"] })
   async rm(@Arg("id", { description: "Job ID" }) id: string) {
     const job = dbGetCronJob(id);
-    if (!job) {
+    if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 

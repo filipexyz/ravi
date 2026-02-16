@@ -62,7 +62,7 @@ export function getContext(): ToolContext | undefined {
 
   // Fallback: build context from RAVI_* env vars (set when running via Bash in SDK)
   const env = process.env;
-  if (!env.RAVI_SESSION_KEY && !env.RAVI_SESSION_NAME) return undefined;
+  if (!env.RAVI_SESSION_KEY && !env.RAVI_SESSION_NAME && !env.RAVI_AGENT_ID) return undefined;
 
   const ctx: ToolContext = {
     sessionKey: env.RAVI_SESSION_KEY,
@@ -97,7 +97,7 @@ export function getContextValue<K extends keyof ToolContext>(
  * Check if running within a tool context (in-process or via env vars).
  */
 export function hasContext(): boolean {
-  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY || !!process.env.RAVI_SESSION_NAME;
+  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY || !!process.env.RAVI_SESSION_NAME || !!process.env.RAVI_AGENT_ID;
 }
 
 /**

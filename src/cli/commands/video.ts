@@ -19,6 +19,7 @@ function slugify(text: string): string {
 @Group({
   name: "video",
   description: "Video analysis tools",
+  scope: "open",
 })
 export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })

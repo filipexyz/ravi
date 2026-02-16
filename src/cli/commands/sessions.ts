@@ -26,6 +26,13 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
 import type { SessionEntry } from "../../router/types.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessSession,
+  canModifySession,
+  filterAccessibleSessions,
+} from "../../permissions/scope.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
 
@@ -74,6 +81,7 @@ function timeAgo(ts: number): string {
 @Group({
   name: "sessions",
   description: "Manage agent sessions",
+  scope: "open",
 })
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
@@ -82,6 +90,12 @@ export class SessionCommands {
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
+
+    // Scope isolation: filter to accessible sessions only
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      sessions = filterAccessibleSessions(scopeCtx, sessions);
+    }
 
     if (ephemeralOnly) {
       sessions = sessions.filter(s => s.ephemeral);
@@ -135,6 +149,13 @@ export class SessionCommands {
       return;
     }
 
+    // Scope: only accessible sessions
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
     console.log(`\nSession:     ${s.name ?? s.sessionKey}`);
     console.log(`Key:         ${s.sessionKey}`);
     console.log(`Display:     ${s.displayName ?? "(none)"}`);
@@ -176,6 +197,13 @@ export class SessionCommands {
       return;
     }
 
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
     updateSessionDisplayName(s.sessionKey, displayName);
     console.log(`Renamed: ${s.name ?? s.sessionKey} -> "${displayName}"`);
   }
@@ -187,6 +215,13 @@ export class SessionCommands {
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -210,6 +245,13 @@ export class SessionCommands {
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -240,6 +282,13 @@ export class SessionCommands {
       return;
     }
 
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
     // Abort active SDK subprocess so it doesn't keep the old context
     try {
       await notif.emit("ravi.session.abort", {
@@ -257,6 +306,13 @@ export class SessionCommands {
   async delete(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
     const s = resolveSession(nameOrKey);
     if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -288,6 +344,13 @@ export class SessionCommands {
       return;
     }
 
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
     const ttlMs = parseDurationMs(duration);
     if (!ttlMs) {
       fail(`Invalid duration: ${duration}. Use format like 5h, 30m, 1d`);
@@ -307,6 +370,13 @@ export class SessionCommands {
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -334,6 +404,13 @@ export class SessionCommands {
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
       fail(`Session not found: ${nameOrKey}`);
       return;
     }
@@ -556,9 +633,28 @@ export class SessionCommands {
       if (match) session = match;
     }
 
+    // Scope isolation: verify access (use generic "not found" to prevent enumeration)
+    if (session) {
+      const scopeCtx = getScopeContext();
+      if (isScopeEnforced(scopeCtx)) {
+        const sessionName = session.name ?? session.sessionKey;
+        if (!canAccessSession(scopeCtx, sessionName)) {
+          fail(`Session not found: ${nameOrKey}`);
+          return null;
+        }
+      }
+    }
+
     if (!session) {
       if (!createWithAgent) {
         fail(`Session not found: ${nameOrKey}. Use -a <agent> to create it.`);
+        return null;
+      }
+
+      // Scope: verify the caller can access sessions with this name pattern
+      const scopeCtx = getScopeContext();
+      if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, nameOrKey)) {
+        fail(`Session not found: ${nameOrKey}`);
         return null;
       }
 
@@ -724,8 +820,15 @@ export class SessionCommands {
 
         if (trimmed === "/reset") {
           const s = resolveSession(sessionName);
-          if (s) resetSession(s.sessionKey);
-          console.log("Session reset.\n");
+          if (s) {
+            const scopeCtx = getScopeContext();
+            if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+              console.log("Permission denied.\n");
+            } else {
+              resetSession(s.sessionKey);
+              console.log("Session reset.\n");
+            }
+          }
           ask();
           return;
         }

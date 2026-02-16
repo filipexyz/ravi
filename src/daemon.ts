@@ -23,6 +23,7 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { syncRelationsFromConfig } from "./permissions/relations.js";
 
 const log = logger.child("daemon");
 
@@ -125,6 +126,9 @@ export async function startDaemon() {
   logger.setLevel(config.logLevel);
 
   log.info("Starting Ravi daemon...");
+
+  // Sync REBAC relations from agent configs
+  syncRelationsFromConfig();
 
   // Start bot
   bot = new RaviBot({ config });

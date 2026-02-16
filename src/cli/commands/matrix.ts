@@ -253,9 +253,11 @@ function encodeRoomId(roomId: string): string {
   return encodeURIComponent(normalized);
 }
 
+
 @Group({
   name: "matrix",
   description: "Matrix channel management",
+  scope: "admin",
 })
 export class MatrixCommands {
   @Command({ name: "register", description: "Register a new Matrix account for an agent" })

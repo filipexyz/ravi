@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 
@@ -41,7 +41,12 @@ import {
   type ContactSource,
 } from "../../contacts.js";
 import { dbGetRoute } from "../../router/router-db.js";
-import { findSessionByChatId } from "../../router/sessions.js";
+import { findSessionByChatId, getSessionsByAgent } from "../../router/sessions.js";
+import {
+  getScopeContext,
+  isScopeEnforced,
+  canAccessContact,
+} from "../../permissions/scope.js";
 
 function statusIcon(status: ContactStatus): string {
   switch (status) {
@@ -116,13 +121,25 @@ function formatIdentitiesShort(contact: Contact, maxLen = 40): string {
   description: "Contact management",
 })
 export class ContactsCommands {
+  @Scope("open")
   @Command({ name: "list", description: "List all contacts" })
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string
   ) {
-    const contacts = filterStatus
+    let contacts = filterStatus
       ? getAllContacts().filter(c => c.status === filterStatus)
       : getAllContacts();
+
+    // Scope isolation: filter contacts by agent scope (via REBAC)
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      const agentSessions = scopeCtx.agentId
+        ? getSessionsByAgent(scopeCtx.agentId).map(s => ({ agentId: s.agentId }))
+        : [];
+      contacts = contacts.filter(c =>
+        canAccessContact(scopeCtx, c, null, agentSessions)
+      );
+    }
 
     if (contacts.length === 0) {
       console.log("No contacts registered.");
@@ -151,6 +168,7 @@ export class ContactsCommands {
     );
   }
 
+  @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
   pending() {
     const contacts = getPendingContacts();
@@ -173,6 +191,7 @@ export class ContactsCommands {
     console.log("Block:   ravi contacts block <id>");
   }
 
+  @Scope("writeContacts")
   @Command({ name: "add", description: "Add/allow a contact" })
   add(
     @Arg("identity", { description: "Phone number, LID, or group ID" }) identity: string,
@@ -186,6 +205,7 @@ export class ContactsCommands {
     );
   }
 
+  @Scope("writeContacts")
   @Command({ name: "approve", description: "Approve pending contact" })
   approve(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -213,6 +233,7 @@ export class ContactsCommands {
     );
   }
 
+  @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
   remove(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
     const deleted = deleteContact(contactRef);
@@ -223,6 +244,7 @@ export class ContactsCommands {
     }
   }
 
+  @Scope("writeContacts")
   @Command({ name: "allow", description: "Allow a contact" })
   allow(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
     const contact = getContact(contactRef);
@@ -234,6 +256,7 @@ export class ContactsCommands {
     emitConfigChanged();
   }
 
+  @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
   block(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
     const contact = getContact(contactRef);
@@ -245,6 +268,7 @@ export class ContactsCommands {
     emitConfigChanged();
   }
 
+  @Scope("writeContacts")
   @Command({ name: "set", description: "Set contact property" })
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -304,6 +328,7 @@ export class ContactsCommands {
     }
   }
 
+  @Scope("open")
   @Command({ name: "info", description: "Show contact details with all identities" })
   info(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
     const contact = getContact(contactRef);
@@ -337,11 +362,13 @@ export class ContactsCommands {
     }
   }
 
+  @Scope("open")
   @Command({ name: "check", description: "Check contact status (alias for info)" })
   check(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
     this.info(contactRef);
   }
 
+  @Scope("open")
   @Command({ name: "find", description: "Find contacts by tag or search query" })
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
@@ -366,6 +393,7 @@ export class ContactsCommands {
     }
   }
 
+  @Scope("writeContacts")
   @Command({ name: "tag", description: "Add a tag to a contact" })
   tag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -380,6 +408,7 @@ export class ContactsCommands {
     console.log(`✓ Tag added: ${contact.id} +${tag}`);
   }
 
+  @Scope("writeContacts")
   @Command({ name: "untag", description: "Remove a tag from a contact" })
   untag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -394,6 +423,7 @@ export class ContactsCommands {
     console.log(`✓ Tag removed: ${contact.id} -${tag}`);
   }
 
+  @Scope("writeContacts")
   @Command({ name: "group-tag", description: "Set a contact's tag in a specific group" })
   groupTag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -413,6 +443,7 @@ export class ContactsCommands {
     console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
   }
 
+  @Scope("writeContacts")
   @Command({ name: "group-untag", description: "Remove a contact's tag from a specific group" })
   groupUntag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -431,6 +462,7 @@ export class ContactsCommands {
     console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
   }
 
+  @Scope("writeContacts")
   @Command({ name: "identity-add", description: "Add an identity to a contact" })
   identityAdd(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
@@ -450,6 +482,7 @@ export class ContactsCommands {
     }
   }
 
+  @Scope("writeContacts")
   @Command({ name: "identity-remove", description: "Remove an identity" })
   identityRemove(
     @Arg("platform", { description: "Platform" }) platform: string,
@@ -459,6 +492,7 @@ export class ContactsCommands {
     console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatPhone(value)}`);
   }
 
+  @Scope("writeContacts")
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
   merge(
     @Arg("target", { description: "Target contact ID" }) targetRef: string,

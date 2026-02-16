@@ -7,12 +7,15 @@ import {
   getCommandsMetadata,
   getArgsMetadata,
   getOptionsMetadata,
+  getScopeMetadata,
   type ArgMetadata,
   type OptionMetadata,
+  type ScopeType,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { notif } from "../notif.js";
 import { getContext } from "./context.js";
+import { enforceScopeCheck } from "../permissions/scope.js";
 
 // ============================================================================
 // Types
@@ -31,6 +34,7 @@ export interface ExportedTool {
     method: string;
     args: ArgMetadata[];
     options: OptionMetadata[];
+    scope?: ScopeType;
   };
 }
 
@@ -72,12 +76,18 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
 
     const instance = new cls();
 
+    // Resolve scope: command-level > group-level > "admin" (fail-secure default)
+    const scopeMap = getScopeMetadata(cls);
+
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
       const optionsMeta = getOptionsMetadata(instance, cmdMeta.method);
 
       // Normalize dot-separated group names to underscores for tool names
       const normalizedGroup = groupMeta.name.replace(/\./g, "_");
+
+      const effectiveScope: ScopeType =
+        scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -89,7 +99,8 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           optionsMeta,
           `${normalizedGroup}_${cmdMeta.name}`,
           normalizedGroup,
-          cmdMeta.name
+          cmdMeta.name,
+          effectiveScope
         ),
         metadata: {
           group: normalizedGroup,
@@ -97,6 +108,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           method: cmdMeta.method,
           args: argsMeta,
           options: optionsMeta,
+          scope: effectiveScope,
         },
       });
     }
@@ -171,9 +183,19 @@ function buildHandler(
   options: OptionMetadata[],
   toolName: string,
   group: string,
-  command: string
+  command: string,
+  scope: ScopeType
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
+    // Scope enforcement (before method execution)
+    const scopeResult = enforceScopeCheck(scope, group, command);
+    if (!scopeResult.allowed) {
+      return {
+        content: [{ type: "text", text: scopeResult.errorMessage }],
+        isError: true,
+      };
+    }
+
     const ctx = getContext();
     const sessionKey = ctx?.sessionKey ?? "_cli";
     const agentId = ctx?.agentId;

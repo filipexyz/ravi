@@ -9,6 +9,7 @@ import { Group, Command, Arg } from "../decorators.js";
 @Group({
   name: "service",
   description: "Bot service management",
+  scope: "admin",
 })
 export class ServiceCommands {
   @Command({ name: "start", description: "Start the bot server" })

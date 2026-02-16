@@ -81,6 +81,7 @@ function loadPlugins(): Map<string, ChannelPlugin> {
 @Group({
   name: "channels",
   description: "Channel management",
+  scope: "admin",
 })
 export class ChannelsCommands {
   @Command({ name: "status", description: "Show channel status" })

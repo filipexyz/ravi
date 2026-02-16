@@ -22,6 +22,7 @@ const EXT_MIME: Record<string, string> = {
 @Group({
   name: "transcribe",
   description: "Audio transcription",
+  scope: "open",
 })
 export class TranscribeCommands {
   @Command({ name: "file", description: "Transcribe a local audio file" })

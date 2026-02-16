@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
+import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
 import { Database } from "bun:sqlite";
@@ -52,6 +53,7 @@ const RESET = "\x1b[0m";
 @Group({
   name: "outbound",
   description: "Outbound queue management",
+  scope: "resource",
 })
 export class OutboundCommands {
   // ========================================================================
@@ -140,7 +142,13 @@ export class OutboundCommands {
 
   @Command({ name: "list", description: "List all outbound queues" })
   list() {
-    const queues = dbListQueues();
+    let queues = dbListQueues();
+
+    // Scope isolation: filter to own agent's queues
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      queues = queues.filter(q => canAccessResource(scopeCtx, q.agentId));
+    }
 
     if (queues.length === 0) {
       console.log("\nNo outbound queues configured.\n");
@@ -172,7 +180,7 @@ export class OutboundCommands {
   @Command({ name: "show", description: "Show queue details" })
   show(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     const entries = dbListEntries(id);
     const pending = entries.filter(e => e.status === "pending" || e.status === "active").length;
@@ -230,7 +238,7 @@ export class OutboundCommands {
   @Command({ name: "start", description: "Start (activate) a queue" })
   async start(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     if (queue.stages.length === 0) {
       fail(`Queue has no stages configured. Set stages first: ravi outbound set ${id} stages '[{"name":"novo"},{"name":"engajado","delay":30}]'`);
@@ -260,7 +268,7 @@ export class OutboundCommands {
   @Command({ name: "pause", description: "Pause a queue" })
   async pause(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     dbUpdateQueue(id, { status: "paused" });
     await notif.emit("ravi.outbound.refresh", {});
@@ -275,7 +283,7 @@ export class OutboundCommands {
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     try {
       switch (key) {
@@ -380,7 +388,7 @@ export class OutboundCommands {
   @Command({ name: "rm", description: "Delete a queue", aliases: ["delete", "remove"] })
   async rm(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     dbDeleteQueue(id);
     await notif.emit("ravi.outbound.refresh", {});
@@ -402,7 +410,7 @@ export class OutboundCommands {
     @Option({ flags: "--context <json>", description: "Extra context as JSON (e.g., '{\"company\":\"Acme\"}')" }) contextJson?: string,
   ) {
     const queue = dbGetQueue(queueId);
-    if (!queue) fail(`Queue not found: ${queueId}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${queueId}`);
 
     if (tag) {
       // Add all contacts with the tag
@@ -466,7 +474,7 @@ export class OutboundCommands {
   @Command({ name: "entries", description: "List entries in a queue" })
   entries(@Arg("queueId", { description: "Queue ID" }) queueId: string) {
     const queue = dbGetQueue(queueId);
-    if (!queue) fail(`Queue not found: ${queueId}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${queueId}`);
 
     const entries = dbListEntries(queueId);
 
@@ -704,7 +712,7 @@ export class OutboundCommands {
     if (!entry) fail(`Entry not found: ${id}`);
 
     const queue = dbGetQueue(entry.queueId);
-    if (!queue) fail(`Queue not found: ${entry.queueId}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${entry.queueId}`);
 
     const valid = getQueueStageNames(queue);
     if (!valid.includes(status)) {
@@ -768,7 +776,7 @@ export class OutboundCommands {
   @Command({ name: "run", description: "Manually trigger a queue", aliases: ["trigger"] })
   async run(@Arg("id", { description: "Queue ID" }) id: string) {
     const queue = dbGetQueue(id);
-    if (!queue) fail(`Queue not found: ${id}`);
+    if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     console.log(`\nTriggering queue: ${queue.name}`);
 

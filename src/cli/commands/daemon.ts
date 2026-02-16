@@ -28,6 +28,7 @@ const IS_LINUX = platform() === "linux";
 @Group({
   name: "daemon",
   description: "Manage bot + gateway as system service",
+  scope: "admin",
 })
 export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon (bot + gateway)" })
