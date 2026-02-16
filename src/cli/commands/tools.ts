@@ -24,7 +24,7 @@ export class ToolsCommands {
     const groups = getCliToolsByGroup();
 
     console.log("\n📋 Available CLI Tools\n");
-    console.log("These tools can be injected into agents via allowedTools.\n");
+    console.log("These are the CLI tools available as SDK tools.\n");
     console.log("─".repeat(50));
 
     for (const group of Object.keys(groups)) {
@@ -104,7 +104,7 @@ export class ToolsCommands {
     }
 
     console.log("\nJSON Schema:");
-    const sdkTool = createSdkTools(getAllCommandClasses(), { allowedTools: [name] })[0];
+    const sdkTool = createSdkTools(getAllCommandClasses(), { filter: new RegExp(`^${name}$`) })[0];
     if (sdkTool) {
       console.log(JSON.stringify(sdkTool.inputSchema, null, 2));
     }
