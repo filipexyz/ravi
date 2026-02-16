@@ -8,6 +8,7 @@ import { fail } from "../context.js";
 import {
   grantRelation,
   revokeRelation,
+  hasRelation,
   listRelations,
   clearRelations,
   syncRelationsFromConfig,
@@ -35,6 +36,17 @@ export class PermissionsCommands {
 
     grantRelation(subjectType, subjectId, relation, objectType, objectId, "manual");
     console.log(`✓ Granted: (${subject}) ${relation} (${object})`);
+
+    // Warn about redundancy
+    if (objectId === "*") {
+      const individuals = listRelations({ subjectType, subjectId, relation, objectType })
+        .filter(r => r.objectId !== "*");
+      if (individuals.length > 0) {
+        console.log(`⚠ ${individuals.length} individual relation(s) are now redundant (covered by wildcard)`);
+      }
+    } else if (hasRelation(subjectType, subjectId, relation, objectType, "*")) {
+      console.log(`⚠ Redundant: wildcard ${objectType}:* already covers this`);
+    }
   }
 
   @Command({ name: "revoke", description: "Revoke a relation" })
@@ -49,6 +61,21 @@ export class PermissionsCommands {
     const deleted = revokeRelation(subjectType, subjectId, relation, objectType, objectId);
     if (deleted) {
       console.log(`✓ Revoked: (${subject}) ${relation} (${object})`);
+
+      // Warn about remaining individual grants after revoking wildcard
+      if (objectId === "*") {
+        const remaining = listRelations({ subjectType, subjectId, relation, objectType })
+          .filter(r => r.objectId !== "*");
+        if (remaining.length > 0) {
+          console.log(`⚠ ${remaining.length} individual relation(s) still active:`);
+          for (const r of remaining.slice(0, 10)) {
+            console.log(`    ${objectType}:${r.objectId}`);
+          }
+          if (remaining.length > 10) {
+            console.log(`    ... and ${remaining.length - 10} more`);
+          }
+        }
+      }
     } else {
       fail("Relation not found");
     }
