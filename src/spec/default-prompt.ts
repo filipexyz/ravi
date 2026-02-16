@@ -55,6 +55,17 @@ A spec passada para \`exit_spec_mode\` deve conter:
 
 Essas faixas são apenas referência — você decide o % real baseado no seu entendimento.
 
+## AskUserQuestion
+
+Use a tool \`AskUserQuestion\` sempre que fizer sentido durante o spec mode. Exemplos:
+
+- Escolher entre abordagens técnicas ("Redis vs in-memory?")
+- Confirmar requisitos ambíguos ("Deve funcionar offline?")
+- Priorizar features quando o escopo é grande
+- Validar suposições antes de avançar
+
+Prefira \`AskUserQuestion\` a perguntas em texto livre — opções estruturadas facilitam a tomada de decisão e aceleram a construção do spec.
+
 ## Importante
 
 - O progresso não precisa ser linear — pode pular de 20% pra 60% se o usuário explicar tudo
