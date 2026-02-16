@@ -41,7 +41,7 @@ import {
   type ContactSource,
 } from "../../contacts.js";
 import { dbGetRoute } from "../../router/router-db.js";
-import { findSessionByChatId, getSessionsByAgent } from "../../router/sessions.js";
+import { findSessionByChatId } from "../../router/sessions.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -133,12 +133,12 @@ export class ContactsCommands {
     // Scope isolation: filter contacts by agent scope (via REBAC)
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      const agentSessions = scopeCtx.agentId
-        ? getSessionsByAgent(scopeCtx.agentId).map(s => ({ agentId: s.agentId }))
-        : [];
-      contacts = contacts.filter(c =>
-        canAccessContact(scopeCtx, c, null, agentSessions)
-      );
+      contacts = contacts.filter(c => {
+        // Find the agent that owns this contact's session (via route)
+        const contactAgent = getRouteAgent(c);
+        const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+        return canAccessContact(scopeCtx, c, null, contactSessions);
+      });
     }
 
     if (contacts.length === 0) {
