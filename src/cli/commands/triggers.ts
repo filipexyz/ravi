@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { fail } from "../context.js";
+import { fail, getContext } from "../context.js";
 import { notif } from "../../notif.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
@@ -94,6 +94,9 @@ export class TriggersCommands {
     console.log(`  Enabled:         ${trigger.enabled ? "yes" : "no"}`);
     console.log(`  Topic:           ${trigger.topic}`);
     console.log(`  Session:         ${trigger.session}`);
+    if (trigger.replySession) {
+      console.log(`  Reply session:   ${trigger.replySession}`);
+    }
     console.log(`  Cooldown:        ${formatDurationMs(trigger.cooldownMs)}`);
     console.log("");
     console.log(`  Message:`);
@@ -183,6 +186,13 @@ export class TriggersCommands {
       sessionTarget = session;
     }
 
+    // Resolve agent: explicit flag > caller agent (from session context)
+    const ctx = getContext();
+    const resolvedAgent = agent ?? ctx?.agentId;
+
+    // Capture reply session from caller context for source routing
+    const replySession = ctx?.sessionKey;
+
     // Warn about blocked topics
     const blockedPatterns = [".prompt", ".response", ".claude"];
     if (blockedPatterns.some((p) => topic.includes(p))) {
@@ -195,7 +205,8 @@ export class TriggersCommands {
       name,
       topic,
       message,
-      agentId: agent,
+      agentId: resolvedAgent,
+      replySession,
       session: sessionTarget,
       cooldownMs,
     };

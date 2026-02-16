@@ -22,6 +22,7 @@ interface TriggerRow {
   topic: string;
   message: string;
   session: string;
+  reply_session: string | null;
   enabled: number;
   cooldown_ms: number;
   last_fired_at: number | null;
@@ -49,6 +50,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
   };
 
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
+  if (row.reply_session !== null) trigger.replySession = row.reply_session;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
 
   return trigger;
@@ -68,9 +70,9 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
 
   const stmt = db.prepare(`
     INSERT INTO triggers (
-      id, name, agent_id, topic, message, session, enabled, cooldown_ms,
+      id, name, agent_id, topic, message, session, reply_session, enabled, cooldown_ms,
       fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -80,6 +82,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.topic,
     input.message,
     input.session ?? "isolated",
+    input.replySession ?? null,
     input.enabled !== false ? 1 : 0,
     input.cooldownMs ?? 5000,
     0,
@@ -150,6 +153,10 @@ export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger 
   if (updates.session !== undefined) {
     fields.push("session = ?");
     values.push(updates.session);
+  }
+  if (updates.replySession !== undefined) {
+    fields.push("reply_session = ?");
+    values.push(updates.replySession ?? null);
   }
   if (updates.enabled !== undefined) {
     fields.push("enabled = ?");

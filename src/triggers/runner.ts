@@ -9,6 +9,7 @@
 import { notif } from "../notif.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
+import { deriveSourceFromSessionKey } from "../router/session-key.js";
 import {
   getMainSession,
   getOrCreateSession,
@@ -183,16 +184,24 @@ export class TriggerRunner {
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
 
     let sessionName: string;
+    let source: { channel: string; accountId: string; chatId: string } | undefined;
 
     if (trigger.session === "main") {
-      const main = getMainSession(agentId);
-      if (main?.name) {
-        sessionName = main.name;
+      // If replySession is set, resolve it for session name + source routing
+      if (trigger.replySession) {
+        const resolved = resolveSession(trigger.replySession);
+        if (resolved?.name) {
+          sessionName = resolved.name;
+          if (resolved.lastChannel && resolved.lastTo) {
+            source = { channel: resolved.lastChannel, accountId: resolved.lastAccountId ?? "default", chatId: resolved.lastTo };
+          }
+        } else {
+          // Fallback: derive source from session key and use main session
+          source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
+          sessionName = this.resolveMainSessionName(agentId, agentCwd);
+        }
       } else {
-        const baseName = generateSessionName(agentId, { isMain: true });
-        sessionName = ensureUniqueName(baseName);
-        const session = getOrCreateSession(`agent:${agentId}:main`, agentId, agentCwd, { name: sessionName });
-        if (!session.name) updateSessionName(session.sessionKey, sessionName);
+        sessionName = this.resolveMainSessionName(agentId, agentCwd);
       }
     } else {
       const dbKey = `agent:${agentId}:trigger:${trigger.id}`;
@@ -204,6 +213,16 @@ export class TriggerRunner {
         sessionName = ensureUniqueName(baseName);
         const session = getOrCreateSession(dbKey, agentId, agentCwd, { name: sessionName });
         if (!session.name) updateSessionName(session.sessionKey, sessionName);
+      }
+
+      // Derive source from replySession for isolated sessions too
+      if (trigger.replySession) {
+        const replyResolved = resolveSession(trigger.replySession);
+        if (replyResolved?.lastChannel && replyResolved.lastTo) {
+          source = { channel: replyResolved.lastChannel, accountId: replyResolved.lastAccountId ?? "default", chatId: replyResolved.lastTo };
+        } else {
+          source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
+        }
       }
     }
 
@@ -220,10 +239,12 @@ export class TriggerRunner {
       triggerName: trigger.name,
       topic: event.topic,
       sessionName,
+      hasSource: !!source,
     });
 
     await notif.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
+      source,
       _trigger: true,
       _triggerId: trigger.id,
     });
@@ -235,6 +256,20 @@ export class TriggerRunner {
 
     // Update in-memory trigger too (for cooldown tracking)
     trigger.lastFiredAt = Date.now();
+  }
+
+  /**
+   * Resolve main session name for an agent.
+   */
+  private resolveMainSessionName(agentId: string, agentCwd: string): string {
+    const main = getMainSession(agentId);
+    if (main?.name) return main.name;
+
+    const baseName = generateSessionName(agentId, { isMain: true });
+    const sessionName = ensureUniqueName(baseName);
+    const session = getOrCreateSession(`agent:${agentId}:main`, agentId, agentCwd, { name: sessionName });
+    if (!session.name) updateSessionName(session.sessionKey, sessionName);
+    return sessionName;
   }
 
   /**

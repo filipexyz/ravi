@@ -17,6 +17,7 @@ export interface Trigger {
   topic: string;
   message: string;
   session: SessionTarget;
+  replySession?: string;
   enabled: boolean;
   cooldownMs: number;
 
@@ -37,6 +38,7 @@ export interface TriggerInput {
   topic: string;
   message: string;
   session?: SessionTarget;
+  replySession?: string;
   enabled?: boolean;
   cooldownMs?: number;
 }

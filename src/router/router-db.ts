@@ -564,6 +564,13 @@ function getDb(): Database {
     log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
   }
 
+  // Migrations for triggers
+  const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>;
+  if (!triggerColumns.some(c => c.name === "reply_session")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN reply_session TEXT");
+    log.info("Added reply_session column to triggers table");
+  }
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {

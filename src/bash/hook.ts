@@ -154,6 +154,9 @@ function checkExecutablePermissions(
     return { allowed: false, reason: parsed.error || "Failed to parse command" };
   }
 
+  // Built-in executables: always allowed (ravi CLI is essential for all agents)
+  const BUILTIN_EXECUTABLES = new Set(["ravi"]);
+
   // Step 3 & 4: Check each executable
   const blocked: string[] = [];
 
@@ -163,6 +166,9 @@ function checkExecutablePermissions(
       blocked.push(exec);
       continue;
     }
+
+    // Built-in executables skip REBAC check
+    if (BUILTIN_EXECUTABLES.has(exec)) continue;
 
     // REBAC check
     if (!agentCan(agentId, "execute", "executable", exec)) {

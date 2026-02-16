@@ -19,6 +19,7 @@ function emitAudit(event: {
   agentId: string;
   denied: string;
   reason: string;
+  command?: string;
 }): void {
   try {
     const data = JSON.stringify(event);
@@ -231,6 +232,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "system:*",
           reason: `Permission denied: agent:${ctx.agentId} requires admin on system:*`,
+          command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
       return {
@@ -265,6 +267,7 @@ export function enforceScopeCheck(
         agentId: ctx.agentId!,
         denied: target,
         reason: `Permission denied: agent:${ctx.agentId} requires execute on ${target}`,
+        command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
       });
       return { allowed: false, errorMessage: `Permission denied: agent:${ctx.agentId} requires execute on ${target}` };
     }
@@ -276,6 +279,7 @@ export function enforceScopeCheck(
           agentId: ctx.agentId!,
           denied: "write_contacts",
           reason: `Permission denied: agent:${ctx.agentId} requires write_contacts`,
+          command: groupName ? `${groupName}${commandName ? ` ${commandName}` : ""}` : undefined,
         });
       }
       return {
