@@ -8,6 +8,7 @@ import { notif } from "./notif.js";
 import { pendingReplyCallbacks } from "./bot.js";
 import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from "./channels/types.js";
 import { dispatchGroupOp, type GroupOpName } from "./channels/whatsapp/group-ops.js";
+import { addWhatsAppAccount, DEFAULT_ACCOUNT_CONFIG } from "./channels/whatsapp/index.js";
 import { registerPlugin, shutdownAllPlugins } from "./channels/registry.js";
 import { ChannelManager, createChannelManager } from "./channels/manager/index.js";
 import {
@@ -252,6 +253,9 @@ export class Gateway {
 
     // Subscribe to WhatsApp group operations
     this.subscribeToGroupOps();
+
+    // Subscribe to WhatsApp account operations (connect/disconnect/status)
+    this.subscribeToWhatsAppOps();
 
     // Periodic config refresh as safety net (in case event is missed)
     this.configRefreshTimer = setInterval(() => {
@@ -634,6 +638,131 @@ export class Gateway {
 
         if (replyTopic) {
           await notif.emit(replyTopic, { error });
+        }
+      }
+    });
+  }
+
+  /**
+   * Subscribe to WhatsApp account operations (connect, disconnect, status).
+   * CLI commands emit ravi.whatsapp.account.{op} with operation data.
+   */
+  private subscribeToWhatsAppOps(): void {
+    this.subscribe("whatsappOps", ["ravi.whatsapp.account.*"], async (event) => {
+      const op = event.topic.split(".").pop();
+      const data = event.data as Record<string, unknown>;
+      const replyTopic = data.replyTopic as string | undefined;
+      const accountId = (data.accountId as string) || "default";
+
+      const plugin = this.pluginsById.get("whatsapp");
+      if (!plugin) {
+        if (replyTopic) {
+          await notif.emit(replyTopic, { type: "error", error: "WhatsApp plugin not registered" });
+        }
+        return;
+      }
+
+      try {
+        switch (op) {
+          case "connect": {
+            const existing = plugin.config.resolveAccount(accountId);
+
+            // Already connected — reply immediately
+            if (existing?.state === "connected") {
+              if (replyTopic) {
+                await notif.emit(replyTopic, {
+                  type: "connected",
+                  phone: existing.phone,
+                  name: existing.name,
+                });
+              }
+              break;
+            }
+
+            // Add account to config if brand new
+            if (!existing) {
+              addWhatsAppAccount(accountId, { ...DEFAULT_ACCOUNT_CONFIG });
+            }
+
+            // Register temporary listeners to stream QR + state changes back to CLI
+            if (replyTopic) {
+              const unsubQr = plugin.gateway.onQrCode((accId, qr) => {
+                if (accId !== accountId) return;
+                notif.emit(replyTopic, { type: "qr", qr }).catch(() => {});
+              });
+
+              const unsubState = plugin.gateway.onStateChange((accId, state) => {
+                if (accId !== accountId) return;
+                if (state === "connected") {
+                  const resolved = plugin.config.resolveAccount(accountId);
+                  notif.emit(replyTopic, {
+                    type: "connected",
+                    phone: resolved?.phone,
+                    name: resolved?.name,
+                  }).catch(() => {});
+                  // Clean up listeners after connected
+                  unsubQr();
+                  unsubState();
+                } else if (state === "disconnected") {
+                  notif.emit(replyTopic, { type: "disconnected", state }).catch(() => {});
+                }
+              });
+
+              // Timeout cleanup after 120s
+              setTimeout(() => {
+                unsubQr();
+                unsubState();
+              }, 120_000);
+            }
+
+            // If account exists but not connected, stop first so restart produces fresh QR
+            if (existing) {
+              await this.channelManager!.stopChannel("whatsapp", accountId);
+            }
+
+            // Start the account via ChannelManager
+            await this.channelManager!.startChannel("whatsapp", accountId);
+            break;
+          }
+
+          case "status": {
+            const resolved = plugin.config.resolveAccount(accountId);
+            if (!resolved) {
+              if (replyTopic) {
+                await notif.emit(replyTopic, { error: `Account "${accountId}" not found` });
+              }
+              return;
+            }
+            if (replyTopic) {
+              await notif.emit(replyTopic, {
+                accountId: resolved.id,
+                state: resolved.state,
+                phone: resolved.phone,
+                name: resolved.name,
+                enabled: resolved.enabled,
+              });
+            }
+            break;
+          }
+
+          case "disconnect": {
+            await this.channelManager!.stopChannel("whatsapp", accountId);
+            if (replyTopic) {
+              await notif.emit(replyTopic, { success: true });
+            }
+            break;
+          }
+
+          default:
+            if (replyTopic) {
+              await notif.emit(replyTopic, { type: "error", error: `Unknown operation: ${op}` });
+            }
+        }
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        log.error("WhatsApp account operation failed", { op, accountId, error });
+        if (replyTopic) {
+          await notif.emit(replyTopic, { type: "error", error });
         }
       }
     });

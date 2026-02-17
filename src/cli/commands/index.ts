@@ -27,3 +27,4 @@ export * from "./transcribe.js";
 export * from "./triggers.js";
 export * from "./video.js";
 export * from "./whatsapp-dm.js";
+export * from "./whatsapp.js";

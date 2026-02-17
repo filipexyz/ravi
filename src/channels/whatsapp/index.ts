@@ -89,4 +89,4 @@ export {
 export type { ChannelStats } from "./status.js";
 
 // Plugin
-export { createWhatsAppPlugin, whatsappPlugin } from "./plugin.js";
+export { createWhatsAppPlugin, whatsappPlugin, addWhatsAppAccount } from "./plugin.js";

@@ -119,6 +119,13 @@ class WhatsAppConfigAdapter implements ConfigAdapter<WhatsAppConfig> {
     return Object.keys(this.config.accounts);
   }
 
+  addAccount(accountId: string, config: AccountConfig): void {
+    this.config = {
+      ...this.config,
+      accounts: { ...this.config.accounts, [accountId]: config },
+    };
+  }
+
   resolveAccount(accountId: string): ResolvedAccount | null {
     const accountConfig = this.config.accounts[accountId];
     if (!accountConfig) {
@@ -1018,6 +1025,14 @@ export function createWhatsAppPlugin(
       await sessionManager.stopAll();
     },
   };
+}
+
+/**
+ * Add a WhatsApp account dynamically at runtime.
+ * Used by the gateway handler for `ravi whatsapp connect`.
+ */
+export function addWhatsAppAccount(accountId: string, config: AccountConfig): void {
+  globalConfigAdapter?.addAccount(accountId, config);
 }
 
 // ============================================================================

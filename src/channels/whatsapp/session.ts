@@ -17,7 +17,7 @@ import makeWASocket, {
 import pino from "pino";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import type { Boom } from "@hapi/boom";
 import type { AccountState } from "../types.js";
 import type { AccountConfig } from "./config.js";
@@ -117,13 +117,14 @@ export class SessionManager {
       },
     });
 
-    // Create session record
+    // Create session record (preserve reconnect attempts from previous session)
+    const previousAttempts = existing?.reconnectAttempts ?? 0;
     const session: ActiveSession = {
       accountId,
       socket,
       state: "connecting",
       lastActivity: Date.now(),
-      reconnectAttempts: 0,
+      reconnectAttempts: previousAttempts,
     };
     this.sessions.set(accountId, session);
 
@@ -366,6 +367,14 @@ export class SessionManager {
       } else if (statusCode === DisconnectReason.loggedOut) {
         log.error(`Session ${accountId} logged out - re-authentication required`);
         this.sessions.delete(accountId);
+        // Clear stale auth files so next connect gets a fresh QR
+        const authDir = config.authDir ?? join(DEFAULT_AUTH_DIR, accountId);
+        try {
+          rmSync(authDir, { recursive: true, force: true });
+          log.info(`Cleared auth for ${accountId}`, { authDir });
+        } catch (err) {
+          log.warn(`Failed to clear auth for ${accountId}`, { error: err });
+        }
       }
     }
   }
@@ -376,10 +385,12 @@ export class SessionManager {
 
     session.reconnectAttempts++;
 
-    // Reset attempts counter after max reached (keep trying forever with max delay)
+    // Stop reconnecting after max attempts
     if (session.reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
-      log.warn(`Session ${accountId} max reconnection attempts reached, will keep trying`);
-      session.reconnectAttempts = MAX_RECONNECT_ATTEMPTS; // Cap at max for delay calculation
+      log.error(`Session ${accountId} gave up after ${MAX_RECONNECT_ATTEMPTS} attempts. Use 'ravi whatsapp connect' to reconnect.`);
+      this.sessions.delete(accountId);
+      this.emit("stateChange", accountId, "disconnected");
+      return;
     }
 
     // Exponential backoff (capped at MAX_RECONNECT_DELAY)
@@ -388,15 +399,19 @@ export class SessionManager {
       MAX_RECONNECT_DELAY
     );
 
-    log.info(`Reconnecting ${accountId} in ${delay}ms (attempt ${session.reconnectAttempts})`);
+    log.info(`Reconnecting ${accountId} in ${delay}ms (attempt ${session.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
 
     setTimeout(async () => {
+      // Abort if session was removed while waiting (e.g., loggedOut or manual stop)
+      if (!this.sessions.has(accountId)) {
+        log.info(`Reconnect cancelled for ${accountId} (session removed)`);
+        return;
+      }
       try {
         await this.start(accountId, config);
       } catch (err) {
         log.error(`Reconnection failed for ${accountId}`, err);
         this.emit("error", accountId, err as Error);
-        // Keep trying to reconnect
         this.handleReconnect(accountId, config);
       }
     }, delay);
