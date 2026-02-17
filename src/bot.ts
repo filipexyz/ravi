@@ -134,6 +134,8 @@ export interface PromptMessage {
   context?: MessageContext;
   /** Outbound system context injected by outbound module */
   _outboundSystemContext?: string;
+  /** Approval routing: channel to send approval requests when agent has no direct channel */
+  _approvalSource?: MessageTarget;
 }
 
 /** Response message structure */
@@ -201,16 +203,12 @@ export interface RaviBotOptions {
 interface PendingApproval {
   resolve: (result: { approved: boolean; reason?: string }) => void;
   timer: ReturnType<typeof setTimeout>;
-  /** Only this senderId can approve/reject (if set) */
-  allowedSenderId?: string;
 }
 
 /** Pending poll question waiting for a vote or text reply */
 interface PendingPollQuestion {
   resolve: (result: { selectedLabels: string[] } | { freeText: string }) => void;
   timer: ReturnType<typeof setTimeout>;
-  /** Only this senderId can answer (if set) */
-  allowedSenderId?: string;
   /** Poll option labels for mapping votes back */
   optionLabels: string[];
 }
@@ -358,16 +356,6 @@ export class RaviBot {
           const pending = this.pendingApprovals.get(data.targetMessageId);
           if (!pending) continue;
 
-          // Only the session owner can approve/reject
-          if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
-            log.info("Ignoring reaction from non-owner", {
-              targetMessageId: data.targetMessageId,
-              senderId: data.senderId,
-              expected: pending.allowedSenderId,
-            });
-            continue;
-          }
-
           const approved = data.emoji === "👍" || data.emoji === "❤️" || data.emoji === "❤";
           log.info("Approval reaction received", {
             targetMessageId: data.targetMessageId,
@@ -405,16 +393,6 @@ export class RaviBot {
           // Check pending approvals
           const pending = this.pendingApprovals.get(data.targetMessageId);
           if (pending) {
-            // Only the session owner can reject
-            if (pending.allowedSenderId && data.senderId !== pending.allowedSenderId) {
-              log.info("Ignoring reply from non-owner", {
-                targetMessageId: data.targetMessageId,
-                senderId: data.senderId,
-                expected: pending.allowedSenderId,
-              });
-              continue;
-            }
-
             log.info("Approval reply received (rejection)", {
               targetMessageId: data.targetMessageId,
               text: data.text,
@@ -430,10 +408,6 @@ export class RaviBot {
           // Check pending poll questions (text reply = free text answer)
           const pendingPoll = this.pendingPollQuestions.get(data.targetMessageId);
           if (pendingPoll) {
-            if (pendingPoll.allowedSenderId && data.senderId !== pendingPoll.allowedSenderId) {
-              continue;
-            }
-
             log.info("Poll question answered via text reply", {
               pollMessageId: data.targetMessageId,
               text: data.text,
@@ -524,7 +498,7 @@ export class RaviBot {
   private async requestApproval(
     source: MessageTarget,
     text: string,
-    options?: { timeoutMs?: number; allowedSenderId?: string }
+    options?: { timeoutMs?: number }
   ): Promise<{ approved: boolean; reason?: string }> {
     const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000; // 5 minutes
     // Use in-process callback to capture messageId (avoids SSE round-trip race condition)
@@ -566,7 +540,7 @@ export class RaviBot {
         resolve({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
       }, timeoutMs);
 
-      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer, allowedSenderId: options?.allowedSenderId });
+      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer });
     });
   }
 
@@ -578,7 +552,7 @@ export class RaviBot {
     source: MessageTarget,
     pollName: string,
     optionLabels: string[],
-    options?: { timeoutMs?: number; allowedSenderId?: string; selectableCount?: number }
+    options?: { timeoutMs?: number; selectableCount?: number }
   ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
     const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000;
     const replyTopic = `ravi.poll.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
@@ -626,10 +600,59 @@ export class RaviBot {
       this.pendingPollQuestions.set(sendResult.messageId!, {
         resolve,
         timer,
-        allowedSenderId: options?.allowedSenderId,
         optionLabels,
       });
     });
+  }
+
+  /**
+   * Request approval via cascading: uses resolvedSource (direct) or approvalSource (delegated).
+   * Emits ravi.approval.request/response events for audit trail.
+   */
+  private async requestCascadingApproval(opts: {
+    resolvedSource?: MessageTarget;
+    approvalSource?: MessageTarget;
+    type: "plan" | "spec";
+    sessionName: string;
+    agentId: string;
+    text: string;
+  }): Promise<{ approved: boolean; reason?: string; isDelegated: boolean }> {
+    const targetSource = opts.resolvedSource ?? opts.approvalSource;
+    if (!targetSource) {
+      log.info(`${opts.type} auto-approved (no source available)`, { sessionName: opts.sessionName });
+      return { approved: true, isDelegated: false };
+    }
+
+    const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
+    log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
+
+    notif.emit("ravi.approval.request", {
+      type: opts.type,
+      sessionName: opts.sessionName,
+      agentId: opts.agentId,
+      delegated: isDelegated,
+      channel: targetSource.channel,
+      chatId: targetSource.chatId,
+      timestamp: Date.now(),
+    }).catch(() => {});
+
+    const label = opts.type === "plan" ? "Plano pendente" : "Spec pendente";
+    const approvalText = isDelegated
+      ? `📋 *${label}* (de _${opts.agentId}_)\n\n${opts.text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`
+      : `📋 *${label}*\n\n${opts.text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+
+    const result = await this.requestApproval(targetSource, approvalText);
+
+    notif.emit("ravi.approval.response", {
+      type: opts.type,
+      sessionName: opts.sessionName,
+      agentId: opts.agentId,
+      approved: result.approved,
+      reason: result.reason,
+      timestamp: Date.now(),
+    }).catch(() => {});
+
+    return { ...result, isDelegated };
   }
 
   /**
@@ -870,6 +893,9 @@ export class RaviBot {
       };
     }
 
+    // Approval source for cascading approvals (from delegating agent's channel)
+    const approvalSource = prompt._approvalSource;
+
     this.updateSessionMetadata(dbSessionKey, prompt);
     saveMessage(sessionName, "user", prompt.prompt);
 
@@ -921,69 +947,46 @@ export class RaviBot {
 
     // PreToolUse hook for ExitPlanMode — request approval via WhatsApp reaction.
     // With bypassPermissions the canUseTool callback is NOT called, but hooks still fire.
+    // Supports cascading approvals: if agent has no channel, uses _approvalSource from delegating agent.
     const exitPlanHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
-      if (!resolvedSource) {
-        log.info("ExitPlanMode auto-approved (no channel source)", { sessionName });
-        return {};
-      }
-
-      log.info("ExitPlanMode hook: requesting approval via reaction", { sessionName });
-
-      // The plan content lives in the plan file written by the SDK.
-      // tool_input may have a "plan" field or we can read the plan file directly.
+      // Extract plan text from plan file or tool_input
       let planText = "";
       const toolInput = input.tool_input as Record<string, unknown> | undefined;
 
-      // Try to read the plan file from the agent's cwd
       try {
-        const { readFileSync } = await import("node:fs");
-        const { globSync } = await import("node:fs");
+        const { readFileSync, readdirSync, statSync } = await import("node:fs");
         const planDir = join(agentCwd, ".claude", "plans");
-        // Find most recently modified plan file
-        const files = await import("node:fs").then(fs => {
+        const files = (() => {
           try {
-            return fs.readdirSync(planDir)
+            return readdirSync(planDir)
               .filter((f: string) => f.endsWith(".md"))
-              .map((f: string) => ({ name: f, mtime: fs.statSync(join(planDir, f)).mtimeMs }))
+              .map((f: string) => ({ name: f, mtime: statSync(join(planDir, f)).mtimeMs }))
               .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
           } catch { return []; }
-        });
+        })();
         if (files.length > 0) {
           planText = readFileSync(join(planDir, files[0].name), "utf-8");
         }
-      } catch {
-        // Fallback: use tool_input fields
-      }
+      } catch { /* fallback below */ }
 
-      // Fallback to tool_input if we couldn't read the file
       if (!planText && toolInput) {
         if (typeof toolInput.plan === "string") {
           planText = toolInput.plan;
         } else {
-          // Strip internal fields, show only meaningful content
           const { allowedPrompts, pushToRemote, remoteSessionId, remoteSessionTitle, remoteSessionUrl, ...rest } = toolInput;
           planText = Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : "(plano vazio)";
         }
       }
-
       if (!planText) planText = "(plano vazio)";
 
-      const approvalText = `📋 *Plano pendente*\n\n${planText}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
-
-      const result = await this.requestApproval(resolvedSource, approvalText, {
-        allowedSenderId: prompt.context?.senderId,
+      const result = await this.requestCascadingApproval({
+        resolvedSource, approvalSource, type: "plan",
+        sessionName, agentId: agent.id, text: planText,
       });
 
-      if (result.approved) {
-        log.info("Plan approved via reaction (hook)", { sessionName });
-        return {};
-      }
+      if (result.approved) return {};
 
-      const reason = result.reason
-        ? `Plano rejeitado: ${result.reason}`
-        : "Plano rejeitado pelo usuário.";
-      log.info("Plan rejected (hook)", { sessionName, reason: result.reason });
-
+      const reason = result.reason ? `Plano rejeitado: ${result.reason}` : "Plano rejeitado pelo usuário.";
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -994,11 +997,15 @@ export class RaviBot {
     };
 
     // PreToolUse hook for AskUserQuestion — send WhatsApp poll and wait for answer.
+    // Supports cascading approvals via _approvalSource.
     const askUserQuestionHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
-      if (!resolvedSource) {
-        log.info("AskUserQuestion auto-approved (no channel source)", { sessionName });
+      const targetSource = resolvedSource ?? approvalSource;
+      if (!targetSource) {
+        log.info("AskUserQuestion auto-approved (no source available)", { sessionName });
         return {};
       }
+
+      const isDelegated = !resolvedSource && !!approvalSource;
 
       const toolInput = input.tool_input as Record<string, unknown> | undefined;
       const questions = toolInput?.questions as Array<{
@@ -1008,35 +1015,31 @@ export class RaviBot {
         multiSelect: boolean;
       }> | undefined;
 
-      if (!questions || questions.length === 0) {
-        return {};
-      }
+      if (!questions || questions.length === 0) return {};
 
-      log.info("AskUserQuestion hook: sending polls", { sessionName, questionCount: questions.length });
+      log.info("AskUserQuestion hook: sending polls", { sessionName, questionCount: questions.length, isDelegated });
+
+      notif.emit("ravi.approval.request", {
+        type: "question", sessionName, agentId: agent.id, delegated: isDelegated,
+        channel: targetSource.channel, chatId: targetSource.chatId,
+        questionCount: questions.length, timestamp: Date.now(),
+      }).catch(() => {});
 
       const answers: Record<string, string> = {};
 
       for (const q of questions) {
         const optionLabels = q.options.map(o => o.label);
-
-        // Build poll title with option descriptions (polls only support option names, no description field)
         const hasDescriptions = q.options.some(o => o.description);
-        let pollName = q.question;
+        let pollName = isDelegated ? `[${agent.id}] ${q.question}` : q.question;
         if (hasDescriptions) {
           const descLines = q.options.map(o => `• ${o.label} — ${o.description}`).join("\n");
           pollName += "\n\n" + descLines;
         }
         pollName += "\n(responda a mensagem para outro)";
 
-        const result = await this.requestPollAnswer(
-          resolvedSource,
-          pollName,
-          optionLabels,
-          {
-            allowedSenderId: prompt.context?.senderId,
-            selectableCount: q.multiSelect ? optionLabels.length : 1,
-          }
-        );
+        const result = await this.requestPollAnswer(targetSource, pollName, optionLabels, {
+          selectableCount: q.multiSelect ? optionLabels.length : 1,
+        });
 
         if ("selectedLabels" in result) {
           answers[q.question] = result.selectedLabels.join(", ");
@@ -1045,7 +1048,12 @@ export class RaviBot {
         }
       }
 
-      log.info("AskUserQuestion answers collected", { sessionName, answers });
+      notif.emit("ravi.approval.response", {
+        type: "question", sessionName, agentId: agent.id,
+        approved: true, answers, timestamp: Date.now(),
+      }).catch(() => {});
+
+      log.info("AskUserQuestion answers collected", { sessionName, answers, isDelegated });
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse" as const,
@@ -1077,36 +1085,23 @@ export class RaviBot {
       return {};
     };
 
+    // Supports cascading approvals via _approvalSource.
     const exitSpecHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
-      if (!resolvedSource) {
-        log.info("exit_spec_mode auto-approved (no channel source)", { sessionName });
-        return {};
-      }
-
       const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
       if (!spec) return {};
 
-      log.info("exit_spec_mode: requesting approval via reaction", { sessionName });
-
-      const approvalText = `📋 *Spec pendente*\n\n${spec}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
-
-      const result = await this.requestApproval(resolvedSource, approvalText, {
-        allowedSenderId: prompt.context?.senderId,
+      const result = await this.requestCascadingApproval({
+        resolvedSource, approvalSource, type: "spec",
+        sessionName, agentId: agent.id, text: spec,
       });
 
       if (result.approved) {
-        // Deactivate spec mode — tools are now unblocked
         const state = getSpecState(sessionName);
         if (state) state.active = false;
-        log.info("Spec approved via reaction", { sessionName });
         return {};
       }
 
-      const reason = result.reason
-        ? `Spec rejeitada: ${result.reason}`
-        : "Spec rejeitada pelo usuário.";
-      log.info("Spec rejected", { sessionName, reason: result.reason });
-
+      const reason = result.reason ? `Spec rejeitada: ${result.reason}` : "Spec rejeitada pelo usuário.";
       return {
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
@@ -1187,39 +1182,10 @@ export class RaviBot {
       }
     }
 
-    // Build canUseTool — auto-approve all tools.
+    // canUseTool — auto-approve all tools.
     // Note: with bypassPermissions, canUseTool is NOT called. We use PreToolUse hooks instead.
-    const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
-      if (toolName !== "ExitPlanMode") {
-        return { behavior: "allow" as const, updatedInput: input };
-      }
-
-      // ExitPlanMode: request approval via WhatsApp reaction
-      if (!resolvedSource) {
-        // No channel to send approval request — auto-approve
-        log.info("ExitPlanMode auto-approved (no channel source)", { sessionName });
-        return { behavior: "allow" as const, updatedInput: input };
-      }
-
-      log.info("ExitPlanMode called, requesting approval via reaction", { sessionName });
-
-      const plan = typeof input.plan === "string" ? input.plan : JSON.stringify(input);
-      const approvalText = `📋 *Plano pendente*\n\n${plan}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
-
-      const result = await this.requestApproval(resolvedSource, approvalText, {
-        allowedSenderId: prompt.context?.senderId,
-      });
-
-      if (result.approved) {
-        log.info("Plan approved via reaction", { sessionName });
-        return { behavior: "allow" as const, updatedInput: input };
-      } else {
-        const reason = result.reason
-          ? `Plano rejeitado: ${result.reason}`
-          : "Plano rejeitado pelo usuário.";
-        log.info("Plan rejected", { sessionName, reason: result.reason });
-        return { behavior: "deny" as const, message: reason };
-      }
+    const canUseTool = async (_toolName: string, input: Record<string, unknown>) => {
+      return { behavior: "allow" as const, updatedInput: input };
     };
 
     // Note: Spec MCP tools are not affected by REBAC tool permissions.

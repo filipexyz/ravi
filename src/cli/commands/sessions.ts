@@ -706,6 +706,25 @@ export class SessionCommands {
   }
 
   /**
+   * Resolve the caller's channel source for cascading approval delegation.
+   * When agent A sends a task to agent B, A's channel becomes B's approval source.
+   */
+  private resolveCallerApprovalSource(): { channel: string; accountId: string; chatId: string } | undefined {
+    const callerCtx = getContext();
+    if (!callerCtx?.sessionKey) return undefined;
+
+    const callerSession = resolveSession(callerCtx.sessionKey);
+    if (callerSession?.lastChannel && callerSession.lastTo) {
+      return {
+        channel: callerSession.lastChannel,
+        accountId: callerSession.lastAccountId ?? "default",
+        chatId: callerSession.lastTo,
+      };
+    }
+    return undefined;
+  }
+
+  /**
    * Fire-and-forget emit to a session (for ask/answer/execute/inform).
    */
   private async emitToSession(
@@ -716,7 +735,11 @@ export class SessionCommands {
     toOverride?: string
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
-    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context } as Record<string, unknown>);
+
+    // Resolve caller's source for approval delegation (cascading approvals)
+    const _approvalSource = this.resolveCallerApprovalSource();
+
+    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
   }
 
   /**
@@ -777,7 +800,8 @@ export class SessionCommands {
     })();
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
-    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context } as Record<string, unknown>);
+    const _approvalSource = this.resolveCallerApprovalSource();
+    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
 
     await completion;
     cleanup();
