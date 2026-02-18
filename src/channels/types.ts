@@ -71,6 +71,10 @@ export interface InboundMessage {
   groupName?: string;
   groupMembers?: string[];
   outboundEntryId?: string;
+  /** Whether channel wants read receipts sent for this message */
+  readReceiptRequested?: boolean;
+  /** ACK emoji to send if agent mode allows */
+  ackEmoji?: string;
   raw: unknown;
 }
 
@@ -236,6 +240,7 @@ export interface OutboundAdapter<_T = unknown> {
   sendReadReceipt(
     accountId: string,
     chatId: string,
+    senderId: string,
     messageIds: string[]
   ): Promise<void>;
 

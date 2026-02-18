@@ -39,8 +39,10 @@ import {
   type ContactStatus,
   type ReplyMode,
   type ContactSource,
+  listAccountPending,
+  removeAccountPending,
 } from "../../contacts.js";
-import { dbGetRoute } from "../../router/router-db.js";
+import { dbListRoutes } from "../../router/router-db.js";
 import { findSessionByChatId } from "../../router/sessions.js";
 import {
   getScopeContext,
@@ -74,11 +76,16 @@ function statusText(status: ContactStatus): string {
   }
 }
 
-/** Lookup agent from routes table by checking all contact identities */
+/** Cached routes for batch lookups (reset per CLI invocation) */
+let _cachedRoutes: ReturnType<typeof dbListRoutes> | null = null;
+
+/** Lookup agent from routes table by checking all contact identities (searches all accounts) */
 function getRouteAgent(contact: Contact): string | null {
+  if (!_cachedRoutes) _cachedRoutes = dbListRoutes();
   for (const id of contact.identities) {
-    const route = dbGetRoute(id.value.toLowerCase());
-    if (route) return route.agent;
+    const val = id.value.toLowerCase();
+    const match = _cachedRoutes.find(r => r.pattern === val);
+    if (match) return match.agent;
   }
   return null;
 }
@@ -170,38 +177,68 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
-  pending() {
+  pending(
+    @Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string
+  ) {
+    // Global pending contacts
     const contacts = getPendingContacts();
-    if (contacts.length === 0) {
-      console.log("No pending contacts.");
-      return;
+    if (contacts.length > 0) {
+      console.log(`\nPending contacts (${contacts.length}):\n`);
+      console.log("  ID          NAME                 IDENTITIES                          SINCE");
+      console.log("  ----------  ----------------     ---------------------------------   ----------");
+      for (const contact of contacts) {
+        const id = contact.id.padEnd(10);
+        const name = (contact.name || "-").padEnd(16);
+        const identities = formatIdentitiesShort(contact, 35).padEnd(35);
+        const since = contact.created_at.split(" ")[0];
+        console.log(`  ${id}  ${name}     ${identities}   ${since}`);
+      }
+      console.log("\nApprove: ravi contacts approve <id>");
+      console.log("Block:   ravi contacts block <id>");
     }
 
-    console.log(`\nPending contacts (${contacts.length}):\n`);
-    console.log("  ID          NAME                 IDENTITIES                          SINCE");
-    console.log("  ----------  ----------------     ---------------------------------   ----------");
-    for (const contact of contacts) {
-      const id = contact.id.padEnd(10);
-      const name = (contact.name || "-").padEnd(16);
-      const identities = formatIdentitiesShort(contact, 35).padEnd(35);
-      const since = contact.created_at.split(" ")[0];
-      console.log(`  ${id}  ${name}     ${identities}   ${since}`);
+    // Per-account pending (unrouted messages on non-default accounts)
+    const accountPending = listAccountPending(account);
+    if (accountPending.length > 0) {
+      console.log(`\nAccount pending (${accountPending.length}):\n`);
+      console.log("  ACCOUNT       NAME                  IDENTITIES                          SINCE");
+      console.log("  ------------  --------------------  ---------------------------------   ----------");
+      for (const entry of accountPending) {
+        const acct = entry.accountId.padEnd(12);
+        const contact = getContact(entry.phone);
+        const icon = entry.isGroup ? "👥" : "📱";
+        const name = (contact?.name || entry.name || "-").slice(0, 20).padEnd(20);
+        const identities = contact
+          ? formatIdentitiesShort(contact, 35).padEnd(35)
+          : `${icon} ${entry.phone}`.slice(0, 35).padEnd(35);
+        const since = new Date(entry.updatedAt).toISOString().split("T")[0];
+        console.log(`  ${acct}  ${name}  ${identities}   ${since}`);
+      }
+      console.log("\nAdd route: ravi routes add <pattern> <agent> --account <id>");
     }
-    console.log("\nApprove: ravi contacts approve <id>");
-    console.log("Block:   ravi contacts block <id>");
+
+    if (contacts.length === 0 && accountPending.length === 0) {
+      console.log("No pending contacts.");
+    }
   }
 
   @Scope("writeContacts")
   @Command({ name: "add", description: "Add/allow a contact" })
   add(
     @Arg("identity", { description: "Phone number, LID, or group ID" }) identity: string,
-    @Arg("name", { required: false, description: "Contact name" }) name?: string
+    @Arg("name", { required: false, description: "Contact name" }) name?: string,
+    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string
   ) {
     const normalized = normalizePhone(identity);
     upsertContact(normalized, name ?? null, "allowed", "manual");
     const contact = getContact(normalized);
+    if (contact && agentIds) {
+      const agents = agentIds.split(",").map(a => a.trim()).filter(Boolean);
+      updateContact(contact.id, { allowedAgents: agents });
+    }
+    const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
     console.log(
-      `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}`
+      `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`
     );
   }
 
@@ -210,7 +247,8 @@ export class ContactsCommands {
   approve(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
-    replyMode?: string
+    replyMode?: string,
+    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string
   ) {
     if (replyMode && replyMode !== "auto" && replyMode !== "mention") {
       fail("Reply mode must be 'auto' or 'mention'");
@@ -225,11 +263,16 @@ export class ContactsCommands {
     if (replyMode) {
       setContactReplyMode(contact.phone, replyMode as ReplyMode);
     }
+    if (agentIds) {
+      const agents = agentIds.split(",").map(a => a.trim()).filter(Boolean);
+      updateContact(contact.id, { allowedAgents: agents });
+    }
     emitConfigChanged();
 
     const modeInfo = replyMode ? ` (${replyMode})` : "";
+    const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
     console.log(
-      `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}`
+      `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}${agentLabel}`
     );
   }
 
@@ -323,8 +366,24 @@ export class ContactsCommands {
       }
       updateContact(contact.id, { source: value === "-" ? null : value as ContactSource });
       console.log(`✓ Source set: ${contact.id} → ${value}`);
+    } else if (key === "allowed-agents") {
+      if (value === "-" || value === "null") {
+        updateContact(contact.id, { allowedAgents: null });
+        console.log(`✓ Allowed agents cleared: ${contact.id} → (all)`);
+      } else {
+        try {
+          const agents = JSON.parse(value);
+          if (!Array.isArray(agents) || !agents.every((a: unknown) => typeof a === "string")) {
+            fail("allowed-agents must be a JSON array of strings");
+          }
+          updateContact(contact.id, { allowedAgents: agents });
+          console.log(`✓ Allowed agents set: ${contact.id} → ${agents.join(", ")}`);
+        } catch {
+          fail("allowed-agents must be a valid JSON array, e.g. '[\"main\",\"sentinel\"]' (or '-' to clear)");
+        }
+      }
     } else {
-      fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out, source`);
+      fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out, source, allowed-agents`);
     }
   }
 
@@ -342,6 +401,7 @@ export class ContactsCommands {
     console.log(`  Name:    ${contact.name || "-"}`);
     console.log(`  Email:   ${contact.email || "-"}`);
     console.log(`  Status:  ${statusText(contact.status)}`);
+    console.log(`  Allowed: ${contact.allowedAgents?.length ? contact.allowedAgents.join(", ") : "(all)"}`);
     console.log(`  Agent:   ${getRouteAgent(contact) || "-"} (via route)`);
     console.log(`  Session: ${getSessionName(contact) || "-"}`);
     console.log(`  Mode:    ${contact.reply_mode || "auto"}`);

@@ -35,6 +35,8 @@ export const DmScopeSchema = z.enum([
   "per-account-channel-peer",
 ]);
 
+export const AgentModeSchema = z.enum(["active", "sentinel"]);
+
 export const AgentInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
@@ -44,10 +46,12 @@ export const AgentInputSchema = z.object({
   systemPromptAppend: z.string().optional(),
   debounceMs: z.number().int().min(0).optional(),
   matrixAccount: z.string().optional(),
+  mode: AgentModeSchema.optional(),
 });
 
 export const RouteInputSchema = z.object({
   pattern: z.string().min(1),
+  accountId: z.string().min(1).default("default"),
   agent: z.string().min(1),
   dmScope: DmScopeSchema.optional(),
   priority: z.number().int().default(0),
@@ -78,6 +82,8 @@ interface AgentRow {
   spec_mode: number;
   contact_scope: string | null;
   allowed_sessions: string | null;
+  // Agent mode
+  agent_mode: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -85,6 +91,7 @@ interface AgentRow {
 interface RouteRow {
   id: number;
   pattern: string;
+  account_id: string;
   agent_id: string;
   dm_scope: string | null;
   priority: number;
@@ -162,12 +169,14 @@ function getDb(): Database {
 
     CREATE TABLE IF NOT EXISTS routes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      pattern TEXT NOT NULL UNIQUE,
+      pattern TEXT NOT NULL,
+      account_id TEXT NOT NULL DEFAULT 'default',
       agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       priority INTEGER DEFAULT 0,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      UNIQUE(pattern, account_id)
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -310,6 +319,12 @@ function getDb(): Database {
     db.exec("ALTER TABLE agents ADD COLUMN contact_scope TEXT");
     db.exec("ALTER TABLE agents ADD COLUMN allowed_sessions TEXT");
     log.info("Added scope isolation columns to agents table");
+  }
+
+  // Migration: add agent_mode column to agents if not exists
+  if (!agentColumns.some(c => c.name === "agent_mode")) {
+    db.exec("ALTER TABLE agents ADD COLUMN agent_mode TEXT");
+    log.info("Added agent_mode column to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -530,38 +545,43 @@ function getDb(): Database {
   ).get() as { sql: string } | undefined)?.sql ?? "";
   if (entrySql && !entrySql.includes("'agent'")) {
     db.exec("PRAGMA foreign_keys=OFF");
-    db.exec(`
-      CREATE TABLE outbound_entries_new (
-        id TEXT PRIMARY KEY,
-        queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
-        contact_phone TEXT NOT NULL,
-        contact_email TEXT,
-        position INTEGER NOT NULL,
-        status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
-        context TEXT DEFAULT '{}',
-        qualification TEXT,
-        rounds_completed INTEGER DEFAULT 0,
-        last_processed_at INTEGER,
-        last_sent_at INTEGER,
-        last_response_at INTEGER,
-        last_response_text TEXT,
-        pending_receipt TEXT,
-        sender_id TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      INSERT INTO outbound_entries_new SELECT
-        id, queue_id, contact_phone, contact_email, position, status, context, qualification,
-        rounds_completed, last_processed_at, last_sent_at, last_response_at, last_response_text,
-        pending_receipt, sender_id, created_at, updated_at
-      FROM outbound_entries;
-      DROP TABLE outbound_entries;
-      ALTER TABLE outbound_entries_new RENAME TO outbound_entries;
-      CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
-      CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
-    `);
-    db.exec("PRAGMA foreign_keys=ON");
-    log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
+    try {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE outbound_entries_new (
+          id TEXT PRIMARY KEY,
+          queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
+          contact_phone TEXT NOT NULL,
+          contact_email TEXT,
+          position INTEGER NOT NULL,
+          status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
+          context TEXT DEFAULT '{}',
+          qualification TEXT,
+          rounds_completed INTEGER DEFAULT 0,
+          last_processed_at INTEGER,
+          last_sent_at INTEGER,
+          last_response_at INTEGER,
+          last_response_text TEXT,
+          pending_receipt TEXT,
+          sender_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        INSERT INTO outbound_entries_new SELECT
+          id, queue_id, contact_phone, contact_email, position, status, context, qualification,
+          rounds_completed, last_processed_at, last_sent_at, last_response_at, last_response_text,
+          pending_receipt, sender_id, created_at, updated_at
+        FROM outbound_entries;
+        DROP TABLE outbound_entries;
+        ALTER TABLE outbound_entries_new RENAME TO outbound_entries;
+        CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
+        CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
+        COMMIT;
+      `);
+      log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
+    } finally {
+      db.exec("PRAGMA foreign_keys=ON");
+    }
   }
 
   // Migrations for triggers
@@ -570,6 +590,41 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN reply_session TEXT");
     log.info("Added reply_session column to triggers table");
   }
+
+  // Migration: add account_id column to routes (recreate table for UNIQUE constraint change)
+  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  if (!routeColumns.some(c => c.name === "account_id")) {
+    db.exec("PRAGMA foreign_keys=OFF");
+    try {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE routes_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pattern TEXT NOT NULL,
+          account_id TEXT NOT NULL DEFAULT 'default',
+          agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
+          priority INTEGER DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE(pattern, account_id)
+        );
+        INSERT INTO routes_new (id, pattern, account_id, agent_id, dm_scope, priority, created_at, updated_at)
+          SELECT id, pattern, 'default', agent_id, dm_scope, priority, created_at, updated_at FROM routes;
+        DROP TABLE routes;
+        ALTER TABLE routes_new RENAME TO routes;
+        CREATE INDEX IF NOT EXISTS idx_routes_priority ON routes(priority DESC);
+        CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_routes_account ON routes(account_id);
+        COMMIT;
+      `);
+      log.info("Migrated routes table: added account_id column with UNIQUE(pattern, account_id)");
+    } finally {
+      db.exec("PRAGMA foreign_keys=ON");
+    }
+  }
+  // Ensure account index exists (for fresh DBs that skip migration)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_routes_account ON routes(account_id)");
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
@@ -611,6 +666,7 @@ interface PreparedStatements {
   deleteRoute: Statement;
   getRoute: Statement;
   listRoutes: Statement;
+  listRoutesByAccount: Statement;
   upsertSetting: Statement;
   getSetting: Statement;
   deleteSetting: Statement;
@@ -646,8 +702,9 @@ function getStatements(): PreparedStatements {
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
         spec_mode,
         contact_scope, allowed_sessions,
+        agent_mode,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -667,6 +724,7 @@ function getStatements(): PreparedStatements {
         spec_mode = ?,
         contact_scope = ?,
         allowed_sessions = ?,
+        agent_mode = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -679,8 +737,8 @@ function getStatements(): PreparedStatements {
 
     // Routes
     insertRoute: database.prepare(`
-      INSERT INTO routes (pattern, agent_id, dm_scope, priority, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, priority, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
     updateRoute: database.prepare(`
       UPDATE routes SET
@@ -688,11 +746,12 @@ function getStatements(): PreparedStatements {
         dm_scope = ?,
         priority = ?,
         updated_at = ?
-      WHERE pattern = ?
+      WHERE pattern = ? AND account_id = ?
     `),
-    deleteRoute: database.prepare("DELETE FROM routes WHERE pattern = ?"),
-    getRoute: database.prepare("SELECT * FROM routes WHERE pattern = ?"),
+    deleteRoute: database.prepare("DELETE FROM routes WHERE pattern = ? AND account_id = ?"),
+    getRoute: database.prepare("SELECT * FROM routes WHERE pattern = ? AND account_id = ?"),
     listRoutes: database.prepare("SELECT * FROM routes ORDER BY priority DESC, id"),
+    listRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? ORDER BY priority DESC, id"),
 
     // Settings
     upsertSetting: database.prepare(`
@@ -788,6 +847,11 @@ function rowToAgent(row: AgentRow): AgentConfig {
     }
   }
 
+  // Agent mode
+  if (row.agent_mode === "active" || row.agent_mode === "sentinel") {
+    result.mode = row.agent_mode;
+  }
+
   return result;
 }
 
@@ -795,6 +859,7 @@ function rowToRoute(row: RouteRow): RouteConfig & { id: number } {
   const result: RouteConfig & { id: number } = {
     id: row.id,
     pattern: row.pattern,
+    accountId: row.account_id,
     agent: row.agent_id,
     priority: row.priority,
   };
@@ -849,6 +914,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       0, // spec_mode (disabled by default)
       null, // contact_scope (no restriction by default)
       null, // allowed_sessions (no cross-session by default)
+      validated.mode ?? null, // agent_mode
       now,
       now
     );
@@ -931,6 +997,8 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.allowedSessions !== undefined
       ? updates.allowedSessions ? JSON.stringify(updates.allowedSessions) : null
       : row.allowed_sessions,
+    // Agent mode
+    updates.mode !== undefined ? updates.mode ?? null : row.agent_mode,
     now,
     id
   );
@@ -1009,6 +1077,7 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
   try {
     s.insertRoute.run(
       normalizedPattern,
+      validated.accountId,
       validated.agent,
       validated.dmScope ?? null,
       validated.priority,
@@ -1016,43 +1085,45 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       now
     );
 
-    log.info("Created route", { pattern: normalizedPattern, agent: validated.agent });
-    return dbGetRoute(normalizedPattern)!;
+    log.info("Created route", { pattern: normalizedPattern, account: validated.accountId, agent: validated.agent });
+    return dbGetRoute(normalizedPattern, validated.accountId)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
-      throw new Error(`Route already exists: ${validated.pattern}`);
+      throw new Error(`Route already exists: ${validated.pattern} (account: ${validated.accountId})`);
     }
     throw err;
   }
 }
 
 /**
- * Get route by pattern
+ * Get route by pattern and account
  */
-export function dbGetRoute(pattern: string): (RouteConfig & { id: number }) | null {
+export function dbGetRoute(pattern: string, accountId: string = "default"): (RouteConfig & { id: number }) | null {
   const s = getStatements();
-  const row = s.getRoute.get(pattern) as RouteRow | undefined;
+  const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
   return row ? rowToRoute(row) : null;
 }
 
 /**
- * List all routes
+ * List routes, optionally filtered by account
  */
-export function dbListRoutes(): (RouteConfig & { id: number })[] {
+export function dbListRoutes(accountId?: string): (RouteConfig & { id: number })[] {
   const s = getStatements();
-  const rows = s.listRoutes.all() as RouteRow[];
+  const rows = accountId
+    ? s.listRoutesByAccount.all(accountId) as RouteRow[]
+    : s.listRoutes.all() as RouteRow[];
   return rows.map(rowToRoute);
 }
 
 /**
  * Update an existing route
  */
-export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>): RouteConfig {
+export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, accountId: string = "default"): RouteConfig {
   const s = getStatements();
-  const row = s.getRoute.get(pattern) as RouteRow | undefined;
+  const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
 
   if (!row) {
-    throw new Error(`Route not found: ${pattern}`);
+    throw new Error(`Route not found: ${pattern} (account: ${accountId})`);
   }
 
   // Verify agent if updating
@@ -1071,21 +1142,22 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>): R
     updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
     updates.priority ?? row.priority,
     now,
-    pattern
+    pattern,
+    accountId
   );
 
-  log.info("Updated route", { pattern });
-  return dbGetRoute(pattern)!;
+  log.info("Updated route", { pattern, accountId });
+  return dbGetRoute(pattern, accountId)!;
 }
 
 /**
  * Delete a route
  */
-export function dbDeleteRoute(pattern: string): boolean {
+export function dbDeleteRoute(pattern: string, accountId: string = "default"): boolean {
   const s = getStatements();
-  s.deleteRoute.run(pattern);
+  s.deleteRoute.run(pattern, accountId);
   if (getDbChanges() > 0) {
-    log.info("Deleted route", { pattern });
+    log.info("Deleted route", { pattern, accountId });
     return true;
   }
   return false;

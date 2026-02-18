@@ -53,14 +53,21 @@ export function matchPattern(phone: string, pattern: string): boolean {
 }
 
 /**
- * Find the best matching route for a phone number
+ * Find the best matching route for a phone number.
+ * When accountId is provided, only routes for that exact account are considered.
  */
 export function findRoute(
   phone: string,
-  routes: RouteConfig[]
+  routes: RouteConfig[],
+  accountId?: string
 ): RouteConfig | null {
+  // Filter by account if specified (strict — no cross-account fallback)
+  const candidates = accountId
+    ? routes.filter(r => r.accountId === accountId)
+    : routes;
+
   // Sort by priority (higher first)
-  const sorted = [...routes].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  const sorted = [...candidates].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
   for (const route of sorted) {
     if (matchPattern(phone, route.pattern)) {
@@ -83,23 +90,28 @@ export function resolveRoute(
     isGroup?: boolean;
     groupId?: string;
   }
-): ResolvedRoute {
+): ResolvedRoute | null {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
-  // Find matching route
+  // Find matching route — scoped to the account that received the message
   // For groups, match against groupId; for DMs, match against phone
   const routeTarget = isGroup ? groupId ?? phone : phone;
-  const route = findRoute(routeTarget, config.routes);
+  const effectiveAccount = accountId ?? "default";
+  const route = findRoute(routeTarget, config.routes, effectiveAccount);
 
-  // Check if accountId matches an agent (for Matrix multi-account)
-  // If accountId is not "default" and matches an agent, use it
-  const accountAgentId =
-    accountId && accountId !== "default" && config.agents[accountId]
-      ? accountId
-      : undefined;
+  // Resolve agent: route > default (only for default account)
+  // No bypasses — every message must match a route (or be on the default account)
+  let agentId: string;
+  if (route?.agent) {
+    agentId = route.agent;
+  } else if (effectiveAccount === "default") {
+    agentId = config.defaultAgent;
+  } else {
+    // Non-default account with no route match → skip (saved as account pending by gateway)
+    log.debug("No route for account, skipping", { phone, accountId });
+    return null;
+  }
 
-  // Get agent: route > accountId-as-agent > default
-  const agentId = route?.agent ?? accountAgentId ?? config.defaultAgent;
   const agent = config.agents[agentId];
 
   if (!agent) {

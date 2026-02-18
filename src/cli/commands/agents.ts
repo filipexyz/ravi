@@ -79,6 +79,7 @@ export class AgentsCommands {
     console.log(`  CWD:           ${agent.cwd}`);
     console.log(`  Model:         ${agent.model || "-"}`);
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
+    console.log(`  Mode:          ${agent.mode ?? "active"}`);
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
     console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
@@ -138,7 +139,7 @@ export class AgentsCommands {
       fail(`Agent not found: ${id}`);
     }
 
-    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources"];
+    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources", "mode"];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
@@ -157,6 +158,13 @@ export class AgentsCommands {
       const account = dbGetMatrixAccount(value);
       if (!account) {
         fail(`Matrix account not found: ${value}. Run: ravi matrix users-list`);
+      }
+    }
+
+    // Validate mode values
+    if (key === "mode") {
+      if (value !== "active" && value !== "sentinel") {
+        fail(`Invalid mode: ${value}. Valid modes: active, sentinel`);
       }
     }
 

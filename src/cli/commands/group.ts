@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { upsertContact, findContactsByTag } from "../../contacts.js";
+import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
 import { notif } from "../../notif.js";
 import { buildSessionKey } from "../../router/session-key.js";
@@ -19,6 +19,42 @@ const TOPIC_PREFIX = "ravi.whatsapp.group";
 
 /** Operations that may take longer (write operations on WhatsApp) */
 const SLOW_OPS = new Set(["create", "leave", "add", "remove", "join"]);
+
+/**
+ * Validate that all phone numbers exist in contacts.
+ * Fails with suggestions if any number is unknown.
+ */
+function validateParticipantsAreContacts(participants: string[]): void {
+  const unknown: string[] = [];
+  for (const phone of participants) {
+    const contact = getContact(phone);
+    if (!contact) {
+      unknown.push(phone);
+    }
+  }
+
+  if (unknown.length > 0) {
+    console.error(`\n✗ Participant(s) not found in contacts:\n`);
+    for (const phone of unknown) {
+      console.error(`  - ${phone}`);
+      // Try fuzzy search with last digits
+      const lastDigits = phone.slice(-4);
+      const suggestions = searchContacts(lastDigits)
+        .filter(c => c.identities.some(i => i.platform === "phone"))
+        .slice(0, 3);
+      if (suggestions.length > 0) {
+        console.error(`    Did you mean?`);
+        for (const s of suggestions) {
+          const phoneId = s.identities.find(i => i.platform === "phone");
+          console.error(`      ${s.name ?? "(sem nome)"} — ${phoneId?.value ?? s.phone}`);
+        }
+      }
+    }
+    console.error(`\nOnly known contacts can be added to groups.`);
+    console.error(`Use 'ravi contacts list' to see all contacts.\n`);
+    fail("Unknown participant(s). Verify phone numbers against contacts.");
+  }
+}
 
 /** Send a group operation and wait for the result */
 async function groupRequest<T = Record<string, unknown>>(
@@ -127,6 +163,9 @@ export class GroupCommands {
       fail("At least one participant is required");
     }
 
+    // Validate all participants exist in contacts before creating group
+    validateParticipantsAreContacts(participants);
+
     const result = await groupRequest<{ id: string; subject: string; participants: number }>(
       "create",
       { subject: name, participants },
@@ -166,7 +205,7 @@ export class GroupCommands {
 
     if (agent) {
       try {
-        dbCreateRoute({ pattern: `group:${groupId}`, agent, priority: 0 });
+        dbCreateRoute({ pattern: `group:${groupId}`, agent, accountId: account ?? "default", priority: 0 });
         console.log(`  Route:        ${agent}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -237,6 +276,10 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
   ) {
     const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+
+    // Validate all participants exist in contacts before adding
+    validateParticipantsAreContacts(participants);
+
     const result = await groupRequest("add", { groupId, participants }, account);
     console.log(`✓ Added ${participants.length} participant(s)`);
     return result;

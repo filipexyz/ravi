@@ -18,6 +18,9 @@ import {
   dbSaveMessageMeta,
   type RouterConfig,
 } from "./router/index.js";
+import { saveMessage } from "./db.js";
+import { isContactAllowedForAgent, saveAccountPending } from "./contacts.js";
+import { getOrCreateSession } from "./router/sessions.js";
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage, MessageTarget, MessageContext } from "./bot.js";
 import { dbGetEntry, dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId, dbUpdateEntry } from "./outbound/index.js";
@@ -193,6 +196,15 @@ export class Gateway {
   private channelManager: ChannelManager | null = null;
   private activeTargets = new Map<string, MessageTarget>();
   private activeSubscriptions = new Set<string>();
+  /** Pending read receipts for sentinel chats (key: channel:accountId:chatId) */
+  private pendingReceipts = new Map<string, {
+    channel: string;
+    accountId: string;
+    chatId: string;
+    senderId: string;
+    messageIds: string[];
+    timestamp: number;
+  }>();
   /** Periodic config refresh timer (safety net if event is missed) */
   private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -455,8 +467,37 @@ export class Gateway {
       try {
         let sendResult: SendResult = { success: true };
 
-        if (data.pauseMs && data.pauseMs > 0) {
-          await new Promise(resolve => setTimeout(resolve, data.pauseMs));
+        // Auto sentinel behavior: read receipt → pause → typing → send
+        let typingDelayMs = data.typingDelayMs ?? 0;
+        let pauseMs = data.pauseMs ?? 0;
+        const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
+        if (isSentinelAuto) {
+          const mappedAgentId = this.routerConfig.accountAgents[data.accountId];
+          const mappedAgent = mappedAgentId ? this.routerConfig.agents[mappedAgentId] : undefined;
+          if (mappedAgent?.mode === "sentinel" && data.text) {
+            // 1. Send pending read receipt (blue ticks) if last msg was within 1 minute
+            const receiptKey = `${data.channel}:${data.accountId}:${data.to}`;
+            const pending = this.pendingReceipts.get(receiptKey);
+            if (pending && (Date.now() - pending.timestamp < 60_000)) {
+              try {
+                await plugin.outbound.sendReadReceipt(pending.accountId, pending.chatId, pending.senderId, pending.messageIds);
+                log.debug("Sentinel: read receipt sent", { chatId: pending.chatId, count: pending.messageIds.length });
+              } catch (err) {
+                log.warn("Sentinel: failed to send read receipt", { error: err });
+              }
+              this.pendingReceipts.delete(receiptKey);
+            }
+
+            const len = data.text.length;
+            // 2. Pause after read receipt: at least 3s (simulates reading)
+            pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
+            // 3. Typing: ~50ms per char (human avg ~40-60ms), 2-8s range + jitter
+            typingDelayMs = Math.max(2000, Math.min(len * 50, 8000)) + Math.random() * 1500;
+          }
+        }
+
+        if (pauseMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, pauseMs));
         }
 
         // Build outbound options (text or poll)
@@ -464,9 +505,9 @@ export class Gateway {
           ? { poll: data.poll }
           : { text: data.text };
 
-        if (data.typingDelayMs && data.typingDelayMs > 0) {
+        if (typingDelayMs > 0) {
           await plugin.outbound.sendTyping(data.accountId, data.to, true);
-          await new Promise(resolve => setTimeout(resolve, data.typingDelayMs));
+          await new Promise(resolve => setTimeout(resolve, typingDelayMs));
           sendResult = await plugin.outbound.send(data.accountId, data.to, outboundOptions);
           await plugin.outbound.sendTyping(data.accountId, data.to, false);
         } else {
@@ -517,7 +558,7 @@ export class Gateway {
       }
 
       try {
-        await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, data.messageIds);
+        await plugin.outbound.sendReadReceipt(data.accountId, data.chatId, data.senderId, data.messageIds);
         log.info("Deferred read receipt sent", { chatId: data.chatId, count: data.messageIds.length });
       } catch (err) {
         log.error("Failed to send deferred read receipt", { error: err });
@@ -828,14 +869,86 @@ export class Gateway {
       groupId: message.isGroup ? message.chatId : undefined,
     });
 
+    if (!resolved) {
+      // Save as per-account pending so user can see unrouted messages
+      const acctId = message.accountId ?? "default";
+      const pendingPhone = message.isGroup ? message.chatId : message.senderId;
+      saveAccountPending(acctId, pendingPhone, {
+        name: message.isGroup ? message.groupName : message.senderName,
+        chatId: message.chatId,
+        isGroup: message.isGroup,
+      });
+      log.info("No route for account, saved as pending", {
+        channel: plugin.id,
+        sender: message.senderId,
+        accountId: acctId,
+      });
+      return;
+    }
+
     const sessionName = resolved.sessionName;
+
+    const agentMode = resolved.agent.mode ?? "active";
 
     log.info("Inbound message", {
       channel: plugin.id,
       sender: message.senderId,
       sessionName,
       agentId: resolved.agent.id,
+      mode: agentMode,
     });
+
+    // Per-agent contact scoping: check if contact is allowed for this agent
+    if (agentMode !== "sentinel") {
+      const checkId = message.isGroup ? message.chatId : message.senderId;
+      if (!isContactAllowedForAgent(checkId, resolved.agent.id)) {
+        log.info("Contact not allowed for agent", { checkId, agentId: resolved.agent.id });
+        return;
+      }
+    }
+
+    if (agentMode === "sentinel") {
+      // Store pending read receipt for later (sent when replying via direct send)
+      if (message.id) {
+        const receiptKey = `${plugin.id}:${message.accountId}:${message.chatId}`;
+        const existing = this.pendingReceipts.get(receiptKey);
+        if (existing) {
+          // Cap messageIds to avoid unbounded growth (keep latest 50)
+          if (existing.messageIds.length >= 50) {
+            existing.messageIds = existing.messageIds.slice(-25);
+          }
+          existing.messageIds.push(message.id);
+          existing.timestamp = message.timestamp;
+        } else {
+          // Evict stale entries (>10min old) when map grows beyond 500
+          if (this.pendingReceipts.size >= 500) {
+            const cutoff = Date.now() - 10 * 60_000;
+            for (const [key, entry] of this.pendingReceipts) {
+              if (entry.timestamp < cutoff) this.pendingReceipts.delete(key);
+            }
+          }
+          this.pendingReceipts.set(receiptKey, {
+            channel: plugin.id,
+            accountId: message.accountId,
+            chatId: message.chatId,
+            senderId: message.senderId,
+            messageIds: [message.id],
+            timestamp: message.timestamp,
+          });
+        }
+      }
+    }
+
+    // Active mode: send read receipts and ACK (deferred from plugin)
+    // Sentinel skips these (read receipts are sent later via direct send humanized flow)
+    if (agentMode !== "sentinel") {
+      if (message.readReceiptRequested) {
+        await plugin.outbound.sendReadReceipt(message.accountId, message.chatId, message.senderId, [message.id]);
+      }
+      if (message.ackEmoji) {
+        await plugin.outbound.sendReaction(message.accountId, message.chatId, message.id, message.ackEmoji);
+      }
+    }
 
     // Move media from /tmp staging to agent's attachments directory
     if (message.media?.localPath) {
@@ -861,16 +974,31 @@ export class Gateway {
       });
     }
 
-    // Build source info for prompt
+    // Build context and formatted envelope
+    const context = buildMessageContext(plugin, message);
+    const envelope = formatEnvelope(plugin, message);
+
+    // Sentinel: emit prompt WITHOUT source (bot processes but response is not sent to channel)
+    // Active: emit prompt WITH source + typing indicators
+    if (agentMode === "sentinel") {
+      try {
+        const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
+        await notif.emit(`ravi.session.${sessionName}.prompt`, {
+          prompt: sentinelEnvelope,
+          context,
+        });
+      } catch (err) {
+        log.error("Failed to emit sentinel prompt", err);
+      }
+      return;
+    }
+
+    // Build source info for prompt (active mode only)
     const source: MessageTarget = {
       channel: plugin.id,
       accountId: message.accountId,
       chatId: message.chatId,
     };
-
-    // Build context and formatted envelope
-    const context = buildMessageContext(plugin, message);
-    const envelope = formatEnvelope(plugin, message);
 
     // Store target for typing heartbeat
     this.activeTargets.set(sessionName, source);

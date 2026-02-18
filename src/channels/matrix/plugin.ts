@@ -282,6 +282,7 @@ class MatrixOutboundAdapter implements OutboundAdapter<MatrixConfig> {
   async sendReadReceipt(
     accountId: string,
     chatId: string,
+    _senderId: string,
     messageIds: string[]
   ): Promise<void> {
     const client = sessionManager.getClient(accountId);
@@ -597,10 +598,8 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
       return;
     }
 
-    // Send read receipt if enabled
-    if (accountConfig.sendReadReceipts) {
-      await matrixSendReadReceipt(client, roomId, message.eventId);
-    }
+    // Set read receipt hint (gateway will send if agent mode is active)
+    message.readReceiptRequested = accountConfig.sendReadReceipts;
 
     // Apply debouncing
     const debounceMs = accountConfig.debounceMs;

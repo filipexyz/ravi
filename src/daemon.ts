@@ -9,14 +9,14 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
-import { createWhatsAppPlugin } from "./channels/whatsapp/index.js";
+import { createWhatsAppPlugin, addWhatsAppAccount, DEFAULT_ACCOUNT_CONFIG } from "./channels/whatsapp/index.js";
 import { createMatrixPlugin } from "./channels/matrix/index.js";
 import { isMatrixConfigured } from "./channels/matrix/config.js";
 import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
 import { loadConfig } from "./utils/config.js";
 import { notif } from "./notif.js";
 import { logger } from "./utils/logger.js";
-import { dbGetSetting } from "./router/router-db.js";
+import { dbGetSetting, dbListSettings } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
@@ -157,6 +157,19 @@ export async function startDaemon() {
     },
   });
   gateway.use(whatsappPlugin);
+
+  // Register additional WhatsApp accounts from persisted settings (account.{id}.agent)
+  const allSettings = dbListSettings();
+  for (const [key, value] of Object.entries(allSettings)) {
+    if (key.startsWith("account.") && key.endsWith(".agent") && value) {
+      const accId = key.slice("account.".length, -".agent".length);
+      if (accId !== "default") {
+        addWhatsAppAccount(accId, { ...DEFAULT_ACCOUNT_CONFIG, dmPolicy: waDmPolicy, groupPolicy: waGroupPolicy });
+        log.info("Registered persisted WhatsApp account", { accountId: accId, agent: value });
+      }
+    }
+  }
+
   log.info("WhatsApp plugin registered");
 
   // Matrix plugin (only if configured via env or credentials)

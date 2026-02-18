@@ -83,6 +83,9 @@ export interface AgentConfig {
 
   /** Whitelist of session names/patterns this agent can access beyond its own (default: []) */
   allowedSessions?: string[];
+
+  /** Agent operating mode: active (responds) or sentinel (observes silently) */
+  mode?: "active" | "sentinel";
 }
 
 // ============================================================================
@@ -92,6 +95,9 @@ export interface AgentConfig {
 export interface RouteConfig {
   /** Phone pattern (exact match or glob with *) */
   pattern: string;
+
+  /** Account ID this route belongs to (default: "default") */
+  accountId: string;
 
   /** Agent ID to route to */
   agent: string;
@@ -119,6 +125,9 @@ export interface RouterConfig {
 
   /** Default DM scope */
   defaultDmScope: DmScope;
+
+  /** Channel account → agent mapping (e.g., WhatsApp account "vendas" → agent "vendas") */
+  accountAgents: Record<string, string>;
 }
 
 // ============================================================================

@@ -4,7 +4,6 @@
  * Complete implementation of the WhatsApp channel using Baileys.
  */
 
-import qrcode from "qrcode-terminal";
 import { notif } from "../../notif.js";
 import type {
   ChannelPlugin,
@@ -50,7 +49,6 @@ import {
   sendReadReceipt,
   sendDeliveryReceipt,
   sendReaction,
-  sendAckReaction,
 } from "./outbound.js";
 import {
   recordReceived,
@@ -70,6 +68,7 @@ import {
   autoLinkIdentities,
   getGroupTag,
 } from "../../contacts.js";
+import { dbGetAgent, dbGetSetting } from "../../router/router-db.js";
 import { dbFindActiveEntryByPhone, dbFindActiveEntryBySenderId, dbFindEntriesWithoutSenderId, dbSetEntrySenderId, dbSetPendingReceipt } from "../../outbound/index.js";
 import { getCachedPoll } from "./poll-cache.js";
 import { decryptPollVote, getKeyAuthor, jidNormalizedUser, proto } from "@whiskeysockets/baileys";
@@ -269,6 +268,7 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
   async sendReadReceipt(
     accountId: string,
     chatId: string,
+    senderId: string,
     messageIds: string[]
   ): Promise<void> {
     const socket = sessionManager.getSocket(accountId);
@@ -277,8 +277,7 @@ class WhatsAppOutboundAdapter implements OutboundAdapter<WhatsAppConfig> {
       return;
     }
 
-    // For simplicity, use chatId as sender for DMs
-    await sendReadReceipt(socket, chatId, chatId, messageIds);
+    await sendReadReceipt(socket, chatId, senderId, messageIds);
   }
 
   async sendReaction(
@@ -685,7 +684,17 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       }
     }
 
+    // Sentinel agents observe ALL messages — bypass security check
+    let isSentinelAccount = false;
     if (!outboundMatch) {
+      const accountAgentId = dbGetSetting(`account.${accountId}.agent`);
+      if (accountAgentId) {
+        const accountAgent = dbGetAgent(accountAgentId);
+        isSentinelAccount = accountAgent?.mode === "sentinel";
+      }
+    }
+
+    if (!outboundMatch && !isSentinelAccount) {
       const decision = this.securityAdapter.checkAccess(
         accountId,
         checkId,
@@ -712,6 +721,11 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       }
     }
 
+    // Save discovered contacts for sentinel (so they appear in contacts DB)
+    if (isSentinelAccount && !message.isGroup) {
+      saveDiscoveredContact(normalizePhone(message.senderId), message.senderName ?? null);
+    }
+
     // Defer read receipt for outbound contacts (send delivery receipt immediately)
     if (outboundMatch) {
       // Send delivery receipt (2 gray checks) immediately
@@ -733,17 +747,8 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       });
     }
 
-    if (accountConfig.sendReadReceipts && !outboundMatch) {
-      const socket = sessionManager.getSocket(accountId);
-      if (socket) {
-        await sendReadReceipt(
-          socket,
-          message.chatId,
-          message.senderId,
-          [message.id]
-        );
-      }
-    }
+    // Set read receipt hint (gateway will send if agent mode is active)
+    message.readReceiptRequested = accountConfig.sendReadReceipts && !outboundMatch;
 
     // Check if message mentions us (computed once, used for ACK + routing + prompt)
     const socket = sessionManager.getSocket(accountId);
@@ -767,16 +772,16 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       }
     }
 
-    // Send ACK reaction if configured
-    if (accountConfig.ackReaction && socket) {
-      await sendAckReaction(
-        socket,
-        message.chatId,
-        message.id,
-        message.isGroup,
-        message.isMentioned ?? false,
-        accountConfig.ackReaction
-      );
+    // Set ACK reaction hint (gateway will send if agent mode is active)
+    if (accountConfig.ackReaction) {
+      const cfg = accountConfig.ackReaction;
+      if (message.isGroup) {
+        if (cfg.group !== "never" && (cfg.group !== "mentions" || message.isMentioned)) {
+          message.ackEmoji = cfg.emoji;
+        }
+      } else if (cfg.direct) {
+        message.ackEmoji = cfg.emoji;
+      }
     }
 
     // Check reply mode for groups
@@ -1008,11 +1013,8 @@ export function createWhatsAppPlugin(
     async init(): Promise<void> {
       log.info("WhatsApp plugin initialized");
 
-      // Set up QR code display
-      gatewayAdapter.onQrCode((accountId, qr) => {
-        log.info(`Scan QR code for ${accountId} (Settings > Linked Devices):`);
-        qrcode.generate(qr, { small: true });
-      });
+      // QR codes are only displayed via `ravi whatsapp connect` CLI flow
+      // (gateway streams QR events back to the CLI process)
 
       // Set up state logging
       gatewayAdapter.onStateChange((accountId, state) => {

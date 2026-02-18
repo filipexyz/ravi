@@ -9,6 +9,9 @@ import { Group, Command, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 import { requestReply } from "../../utils/request-reply.js";
+import { dbGetSetting, dbSetSetting, dbDeleteSetting, dbGetAgent, dbCreateAgent, dbUpdateAgent } from "../../router/router-db.js";
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 
 @Group({
   name: "whatsapp",
@@ -18,13 +21,44 @@ import { requestReply } from "../../utils/request-reply.js";
 export class WhatsAppCommands {
   @Command({ name: "connect", description: "Connect a WhatsApp account (scan QR code)" })
   async connect(
-    @Option({ flags: "--account <id>", description: "Account ID (default: \"default\")" }) account?: string
+    @Option({ flags: "--account <id>", description: "Account ID (default: \"default\")" }) account?: string,
+    @Option({ flags: "--agent <id>", description: "Agent to route messages to" }) agent?: string,
+    @Option({ flags: "--mode <mode>", description: "Agent mode: active or sentinel (auto-creates agent if needed)" }) mode?: string
   ) {
     const accountId = account ?? "default";
     const replyTopic = `ravi._reply.${randomUUID()}`;
     const TIMEOUT_MS = 120_000;
 
-    console.log(`Connecting WhatsApp account: ${accountId}`);
+    // Resolve agent: explicit --agent > accountId-as-agent (if exists) > no binding
+    const agentId = agent ?? (accountId !== "default" && dbGetAgent(accountId) ? accountId : undefined);
+
+    // Auto-create agent if --mode provided and agent doesn't exist
+    if (mode && (mode === "sentinel" || mode === "active")) {
+      const targetAgent = agentId ?? accountId;
+      if (!dbGetAgent(targetAgent)) {
+        const cwd = `${homedir()}/ravi/${targetAgent}`;
+        mkdirSync(cwd, { recursive: true });
+        dbCreateAgent({ id: targetAgent, cwd, mode: mode as "active" | "sentinel" });
+        console.log(`✓ Created agent "${targetAgent}" (${mode}) at ${cwd}`);
+      } else {
+        // Update mode on existing agent
+        dbUpdateAgent(targetAgent, { mode: mode as "active" | "sentinel" });
+      }
+      // Bind account → agent
+      if (accountId !== "default") {
+        dbSetSetting(`account.${accountId}.agent`, targetAgent);
+      }
+      notif.emit("ravi.config.changed", {}).catch(() => {});
+    } else if (agentId) {
+      // Bind account → agent (explicit or auto-detected)
+      dbSetSetting(`account.${accountId}.agent`, agentId);
+      notif.emit("ravi.config.changed", {}).catch(() => {});
+    }
+
+    const mappedAgent = dbGetSetting(`account.${accountId}.agent`);
+    const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
+    const modeLabel = agentConfig?.mode === "sentinel" ? " (sentinel)" : "";
+    console.log(`Connecting WhatsApp account: ${accountId}${mappedAgent ? ` → agent ${mappedAgent}${modeLabel}` : " → default agent"}`);
     console.log("Waiting for QR code...\n");
 
     // Subscribe to reply topic BEFORE emitting request
@@ -50,7 +84,7 @@ export class WhatsAppCommands {
       const timer = setTimeout(() => {
         cleanup();
         console.error("\n✗ Timeout waiting for connection (120s)");
-        reject(new Error("Connection timeout"));
+        process.exit(1);
       }, TIMEOUT_MS);
 
       (async () => {
@@ -72,7 +106,7 @@ export class WhatsAppCommands {
                 const phone = data.phone ? ` as +${data.phone}` : "";
                 console.log(`\n✓ Connected${phone}`);
                 resolve();
-                return;
+                process.exit(0);
               }
 
               case "disconnected":
@@ -83,8 +117,7 @@ export class WhatsAppCommands {
                 clearTimeout(timer);
                 cleanup();
                 console.error(`\n✗ ${data.error}`);
-                reject(new Error(data.error as string));
-                return;
+                process.exit(1);
 
               default:
                 // Unknown event type, log for debugging
@@ -117,6 +150,9 @@ export class WhatsAppCommands {
         enabled: boolean;
       }>("ravi.whatsapp.account.status", { accountId });
 
+      const mappedAgent = dbGetSetting(`account.${accountId}.agent`);
+      const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
+      const modeLabel = agentConfig?.mode ? ` (${agentConfig.mode})` : "";
       console.log(`\nWhatsApp Account: ${result.accountId}\n`);
       console.log(`  State:    ${result.state}`);
       if (result.phone) {
@@ -125,6 +161,7 @@ export class WhatsAppCommands {
       if (result.name) {
         console.log(`  Name:     ${result.name}`);
       }
+      console.log(`  Agent:    ${mappedAgent ?? "(default)"}${modeLabel}`);
       console.log(`  Enabled:  ${result.enabled}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -132,6 +169,30 @@ export class WhatsAppCommands {
         fail("Daemon not responding. Is it running? (ravi daemon status)");
       }
       fail(msg);
+    }
+  }
+
+  @Command({ name: "set", description: "Set account property (e.g., agent)" })
+  set(
+    @Option({ flags: "--account <id>", description: "Account ID (default: \"default\")" }) account?: string,
+    @Option({ flags: "--agent <id>", description: "Agent to route messages to (use '-' to clear)" }) agent?: string
+  ) {
+    const accountId = account ?? "default";
+
+    if (agent !== undefined) {
+      if (agent === "-" || agent === "null") {
+        dbDeleteSetting(`account.${accountId}.agent`);
+        console.log(`✓ Account ${accountId}: agent mapping cleared (will use default)`);
+      } else {
+        if (!dbGetAgent(agent)) {
+          fail(`Agent not found: ${agent}`);
+        }
+        dbSetSetting(`account.${accountId}.agent`, agent);
+        console.log(`✓ Account ${accountId}: agent → ${agent}`);
+      }
+      notif.emit("ravi.config.changed", {}).catch(() => {});
+    } else {
+      fail("Specify a property to set. Example: ravi whatsapp set --agent main");
     }
   }
 

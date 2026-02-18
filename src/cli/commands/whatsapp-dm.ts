@@ -58,11 +58,14 @@ export class WhatsAppDmCommands {
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
 
+    // Strip common bash escape artifacts (e.g. Claude writes "oi\!" instead of "oi!")
+    const cleanMessage = message.replace(/\\([!#$&*?])/g, "$1");
+
     await notif.emit("ravi.outbound.deliver", {
       channel: "whatsapp",
       accountId: account ?? "default",
       to: jid,
-      text: message,
+      text: cleanMessage,
     });
 
     console.log(`✓ Message sent to ${displayName} (${jid})`);

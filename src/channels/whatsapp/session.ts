@@ -178,8 +178,10 @@ export class SessionManager {
     }
 
     log.info(`Stopping session ${accountId}`);
-    session.socket.end(undefined);
+    // Delete from map BEFORE ending socket to prevent the disconnect event
+    // from triggering handleReconnect (socket.end fires events synchronously)
     this.sessions.delete(accountId);
+    session.socket.end(undefined);
     this.emit("stateChange", accountId, "disconnected");
   }
 

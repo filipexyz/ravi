@@ -36,6 +36,10 @@ export const resetCommand: SlashCommand = {
       groupId: ctx.isGroup ? ctx.chatId : undefined,
     });
 
+    if (!resolved) {
+      return "⚠️ No route configured for this account";
+    }
+
     const { sessionName, sessionKey } = resolved;
     const agentId = resolved.agent.id;
 

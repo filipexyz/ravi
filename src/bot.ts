@@ -20,6 +20,8 @@ import {
   getAnnounceCompaction,
   generateSessionName,
   ensureUniqueName,
+  dbGetSetting,
+  dbListSettings,
   type RouterConfig,
   type SessionEntry,
   type AgentConfig,
@@ -184,6 +186,8 @@ interface StreamingSession {
   currentToolSafety: "safe" | "unsafe" | null;
   /** Pending abort — set when abort is requested during an unsafe tool call */
   pendingAbort: boolean;
+  /** Agent mode (e.g. "sentinel") — controls compaction announcements and system commands */
+  agentMode?: string;
 }
 
 /** User message format for the SDK streaming input */
@@ -911,7 +915,7 @@ export class RaviBot {
     };
 
     // Build system prompt
-    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
+    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, { agentMode: agent.mode });
     if (prompt._outboundSystemContext) {
       systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
     }
@@ -1146,6 +1150,7 @@ export class RaviBot {
       onTurnComplete: null,
       currentToolSafety: null,
       pendingAbort: false,
+      agentMode: agent.mode,
     };
     this.streamingSessions.set(sessionName, streamingSession);
 
@@ -1171,6 +1176,26 @@ export class RaviBot {
       raviEnv.RAVI_CHANNEL = resolvedSource.channel;
       raviEnv.RAVI_ACCOUNT_ID = resolvedSource.accountId;
       raviEnv.RAVI_CHAT_ID = resolvedSource.chatId;
+    } else if (prompt.context?.accountId) {
+      // Sentinel inbound: no source but context carries accountId from gateway
+      raviEnv.RAVI_ACCOUNT_ID = prompt.context.accountId;
+      if (prompt.context.channelId) raviEnv.RAVI_CHANNEL = prompt.context.channelId;
+    } else if (agent.mode === "sentinel") {
+      // Sentinel heartbeat/cross-send: resolve accountId from settings mapping
+      // Settings format: account.<accountId>.agent = <agentId>
+      // Common case: accountId = agentId (e.g., account.luis.agent = luis)
+      if (dbGetSetting(`account.${agent.id}.agent`) === agent.id) {
+        raviEnv.RAVI_ACCOUNT_ID = agent.id;
+      } else {
+        // Reverse lookup when accountId ≠ agentId
+        const allSettings = dbListSettings();
+        for (const [key, value] of Object.entries(allSettings)) {
+          if (key.startsWith("account.") && key.endsWith(".agent") && value === agent.id) {
+            raviEnv.RAVI_ACCOUNT_ID = key.slice("account.".length, -".agent".length);
+            break;
+          }
+        }
+      }
     }
     if (prompt.context) {
       raviEnv.RAVI_SENDER_ID = prompt.context.senderId;
@@ -1329,7 +1354,7 @@ export class RaviBot {
       log.info("Emitting response", { sessionName, emitId, textLen: text.length });
       await notif.emit(`ravi.session.${sessionName}.response`, {
         response: text,
-        target: streaming.currentSource,
+        target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
         _emitId: emitId,
         _instanceId: this.instanceId,
         _pid: process.pid,
@@ -1370,7 +1395,7 @@ export class RaviBot {
           streaming.compacting = status === "compacting";
           log.info("Compaction status", { sessionName, compacting: streaming.compacting });
 
-          if (getAnnounceCompaction() && streaming.currentSource) {
+          if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
             if (streaming.compacting && !wasCompacting) {
               emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
             } else if (!streaming.compacting && wasCompacting) {
@@ -1504,8 +1529,8 @@ export class RaviBot {
             deleteSession(session.sessionKey);
             streaming._promptTooLong = false;
 
-            // Notify the user that the session was reset
-            if (streaming.currentSource) {
+            // Notify the user that the session was reset (skip for sentinel)
+            if (streaming.currentSource && streaming.agentMode !== "sentinel") {
               notif.emit("ravi.outbound.deliver", {
                 channel: streaming.currentSource.channel,
                 accountId: streaming.currentSource.accountId,

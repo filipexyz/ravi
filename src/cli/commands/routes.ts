@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { notif } from "../../notif.js";
 
@@ -22,7 +22,7 @@ import {
   DmScopeSchema,
 } from "../../router/router-db.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
-import { getContact, type ContactStatus } from "../../contacts.js";
+import { getContact, removeAccountPending, type ContactStatus } from "../../contacts.js";
 
 function routeStatusIcon(status?: ContactStatus | null): string {
   if (!status) return "\x1b[33m?\x1b[0m";
@@ -89,8 +89,10 @@ function deleteConflictingSessions(pattern: string, targetAgent: string): number
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List all routes" })
-  list() {
-    const routes = dbListRoutes();
+  list(
+    @Option({ flags: "-a, --account <id>", description: "Filter by account ID" }) account?: string
+  ) {
+    const routes = dbListRoutes(account);
 
     if (routes.length === 0) {
       console.log("No routes configured.");
@@ -99,32 +101,37 @@ export class RoutesCommands {
     }
 
     console.log("\nRoutes:\n");
-    console.log("  ST  PATTERN                              AGENT           NAME                  PRI");
-    console.log("  --  -----------------------------------  --------------  --------------------  ---");
+    console.log("  ST  PATTERN                              AGENT           ACCOUNT         NAME                  PRI");
+    console.log("  --  -----------------------------------  --------------  --------------  --------------------  ---");
 
     for (const route of routes) {
       const contact = getContact(route.pattern);
       const icon = routeStatusIcon(contact?.status);
       const pattern = route.pattern.padEnd(35);
       const agent = route.agent.padEnd(14);
+      const acct = route.accountId.padEnd(14);
       const name = (contact?.name ?? "-").slice(0, 20).padEnd(20);
       const priority = String(route.priority ?? 0);
 
-      console.log(`  ${icon}   ${pattern}  ${agent}  ${name}  ${priority}`);
+      console.log(`  ${icon}   ${pattern}  ${agent}  ${acct}  ${name}  ${priority}`);
     }
 
     console.log(`\n  Total: ${routes.length} routes`);
   }
 
   @Command({ name: "show", description: "Show route details" })
-  show(@Arg("pattern", { description: "Route pattern" }) pattern: string) {
-    const route = dbGetRoute(pattern);
+  show(
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+  ) {
+    const route = dbGetRoute(pattern, account ?? "default");
 
     if (!route) {
-      fail(`Route not found: ${pattern}`);
+      fail(`Route not found: ${pattern} (account: ${account ?? "default"})`);
     }
 
     console.log(`\nRoute: ${route.pattern}`);
+    console.log(`  Account:   ${route.accountId}`);
     console.log(`  Agent:     ${route.agent}`);
     console.log(`  Priority:  ${route.priority ?? 0}`);
     console.log(`  DM Scope:  ${route.dmScope ?? "-"}`);
@@ -133,7 +140,8 @@ export class RoutesCommands {
   @Command({ name: "add", description: "Add a new route" })
   add(
     @Arg("pattern", { description: "Route pattern (e.g., group:123456)" }) pattern: string,
-    @Arg("agent", { description: "Agent ID" }) agent: string
+    @Arg("agent", { description: "Agent ID" }) agent: string,
+    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
   ) {
     // Verify agent exists
     if (!dbGetAgent(agent)) {
@@ -141,9 +149,28 @@ export class RoutesCommands {
     }
 
     try {
-      dbCreateRoute({ pattern, agent, priority: 0 });
-      console.log(`✓ Route added: ${pattern} -> ${agent}`);
+      dbCreateRoute({ pattern, agent, accountId: account ?? "default", priority: 0 });
+      console.log(`✓ Route added: ${pattern} -> ${agent} (account: ${account ?? "default"})`);
       emitConfigChanged();
+
+      // Remove from account pending if it was there (try pattern + linked identities)
+      const acct = account ?? "default";
+      let removedPending = removeAccountPending(acct, pattern);
+      if (!removedPending) {
+        // Pattern might be a phone but pending was saved with LID (or vice versa)
+        const contact = getContact(pattern);
+        if (contact) {
+          for (const id of contact.identities) {
+            if (removeAccountPending(acct, id.value)) {
+              removedPending = true;
+              break;
+            }
+          }
+        }
+      }
+      if (removedPending) {
+        console.log(`✓ Removed from account pending`);
+      }
 
       // Delete any sessions that were created with a different agent
       const deleted = deleteConflictingSessions(pattern, agent);
@@ -156,13 +183,16 @@ export class RoutesCommands {
   }
 
   @Command({ name: "remove", description: "Remove a route" })
-  remove(@Arg("pattern", { description: "Route pattern" }) pattern: string) {
-    const deleted = dbDeleteRoute(pattern);
+  remove(
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+  ) {
+    const deleted = dbDeleteRoute(pattern, account ?? "default");
     if (deleted) {
-      console.log(`✓ Route removed: ${pattern}`);
+      console.log(`✓ Route removed: ${pattern} (account: ${account ?? "default"})`);
       emitConfigChanged();
     } else {
-      fail(`Route not found: ${pattern}`);
+      fail(`Route not found: ${pattern} (account: ${account ?? "default"})`);
     }
   }
 
@@ -170,11 +200,13 @@ export class RoutesCommands {
   set(
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: "Property key (agent, priority, dmScope)" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
   ) {
-    const route = dbGetRoute(pattern);
+    const acct = account ?? "default";
+    const route = dbGetRoute(pattern, acct);
     if (!route) {
-      fail(`Route not found: ${pattern}`);
+      fail(`Route not found: ${pattern} (account: ${acct})`);
     }
 
     const validKeys = ["agent", "priority", "dmScope"];
@@ -210,7 +242,7 @@ export class RoutesCommands {
       } else {
         updates[key] = value;
       }
-      dbUpdateRoute(pattern, updates);
+      dbUpdateRoute(pattern, updates, acct);
       console.log(`✓ ${key} set: ${pattern} -> ${value}`);
       emitConfigChanged();
 

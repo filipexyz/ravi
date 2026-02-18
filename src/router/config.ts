@@ -21,6 +21,7 @@ import {
   getDefaultAgentId,
   getDefaultDmScope,
   getRaviDir,
+  dbListSettings,
 } from "./router-db.js";
 
 const log = logger.child("router:config");
@@ -56,16 +57,30 @@ export function loadRouterConfig(): RouterConfig {
     agentsRecord[agent.id] = agent;
   }
 
+  // Build account→agent mapping from settings (e.g., "account.vendas.agent" → "vendas")
+  const allSettings = dbListSettings();
+  const accountAgents: Record<string, string> = {};
+  const prefix = "account.";
+  const suffix = ".agent";
+  for (const [key, value] of Object.entries(allSettings)) {
+    if (key.startsWith(prefix) && key.endsWith(suffix) && value) {
+      const accountId = key.slice(prefix.length, -suffix.length);
+      accountAgents[accountId] = value;
+    }
+  }
+
   const config: RouterConfig = {
     agents: agentsRecord,
     routes: routes.map(r => ({
       pattern: r.pattern,
+      accountId: r.accountId,
       agent: r.agent,
       dmScope: r.dmScope,
       priority: r.priority,
     })),
     defaultAgent: getDefaultAgentId(),
     defaultDmScope: getDefaultDmScope(),
+    accountAgents,
   };
 
   log.debug("Loaded router config", {

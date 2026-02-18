@@ -97,14 +97,16 @@ export function buildGroupContext(ctx: ChannelContext): string {
  */
 export function buildRuntimeInfo(
   agentId: string,
-  ctx: ChannelContext
+  ctx: ChannelContext,
+  sessionName?: string
 ): string {
   const capabilities = "polls,reactions"; // TODO: get from plugin
+  const sessionPart = sessionName ? ` | session=${sessionName}` : "";
 
   return [
     `## Runtime`,
     ``,
-    `Runtime: agent=${agentId} | channel=${ctx.channelName} | capabilities=${capabilities}`,
+    `Runtime: agent=${agentId}${sessionPart} | channel=${ctx.channelName} | capabilities=${capabilities}`,
     ``,
     `## AskUserQuestion`,
     ``,
@@ -197,13 +199,31 @@ Quando NÃO reagir:
 export function buildSystemPrompt(
   agentId: string,
   ctx?: ChannelContext,
-  extraSections?: PromptSection[]
+  extraSections?: PromptSection[],
+  sessionName?: string,
+  opts?: { agentMode?: string }
 ): string {
+  const isSentinel = opts?.agentMode === "sentinel";
   const isLargeGroup = ctx?.isGroup && (ctx.groupMembers?.length ?? 0) >= 3;
 
   const builder = new PromptBuilder()
-    .section("Identidade", "Você é Ravi.")
-    .section("System Commands", systemCommandsText());
+    .section("Identidade", "Você é Ravi.");
+
+  // System commands for all agents (sentinel needs them for cross-send execute/ask)
+  builder.section("System Commands", systemCommandsText());
+
+  // Sentinel: add explicit channel messaging instructions
+  if (isSentinel) {
+    builder.section("Channel Messaging", `You are a sentinel agent — you observe messages silently and never auto-reply.
+When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
+
+- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID\` — send a WhatsApp message
+- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages from a contact
+- \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID\` — send read receipt (blue ticks)
+
+The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
+Your text output is NOT sent to the channel. Use these tools to send explicitly.`);
+  }
 
   // Silent replies only for groups with 3+ members
   if (isLargeGroup) {
@@ -213,13 +233,15 @@ export function buildSystemPrompt(
   // Add context-dependent sections
   if (ctx) {
     // Add runtime info
-    builder.section("Runtime", buildRuntimeInfo(agentId, ctx).replace(/^## Runtime\n\n/, ""));
+    builder.section("Runtime", buildRuntimeInfo(agentId, ctx, sessionName).replace(/^## Runtime\n\n/, ""));
 
-    // Add output formatting based on channel
-    builder.section("Output Formatting", outputFormattingText(ctx.channelName));
+    if (!isSentinel) {
+      // Add output formatting based on channel
+      builder.section("Output Formatting", outputFormattingText(ctx.channelName));
 
-    // Add reactions section
-    builder.section("Reactions", reactionsText());
+      // Add reactions section
+      builder.section("Reactions", reactionsText());
+    }
 
     // Add group context if applicable (includes silent reply instructions)
     if (ctx.isGroup) {

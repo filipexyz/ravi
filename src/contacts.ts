@@ -67,6 +67,20 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_identities_contact ON contact_identities(contact_id)`);
 } catch { /* exists */ }
 
+// Per-account pending: tracks contacts that messaged a non-default account without a route
+db.exec(`
+  CREATE TABLE IF NOT EXISTS account_pending (
+    account_id TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    name TEXT,
+    chat_id TEXT,
+    is_group INTEGER DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (account_id, phone)
+  );
+`);
+
 // ============================================================================
 // Migration from old contacts table
 // ============================================================================
@@ -152,6 +166,12 @@ function migrateFromV1(): void {
 
 migrateFromV1();
 
+// Migration: add allowed_agents column
+const contactCols = db.prepare("PRAGMA table_info(contacts_v2)").all() as Array<{ name: string }>;
+if (!contactCols.some(c => c.name === "allowed_agents")) {
+  db.exec("ALTER TABLE contacts_v2 ADD COLUMN allowed_agents TEXT");
+}
+
 // ============================================================================
 // ID Generation
 // ============================================================================
@@ -187,6 +207,7 @@ export interface Contact {
   notes: Record<string, unknown>;
   opt_out: boolean;
   source: ContactSource | null;
+  allowedAgents: string[] | null;
   identities: ContactIdentity[];
   last_inbound_at: string | null;
   last_outbound_at: string | null;
@@ -207,6 +228,7 @@ interface ContactV2Row {
   notes: string | null;
   opt_out: number | null;
   source: string | null;
+  allowed_agents: string | null;
   last_inbound_at: string | null;
   last_outbound_at: string | null;
   interaction_count: number | null;
@@ -298,6 +320,7 @@ function rowToContact(row: ContactV2Row): Contact {
     notes: row.notes ? JSON.parse(row.notes) : {},
     opt_out: (row.opt_out ?? 0) === 1,
     source: (row.source as ContactSource) ?? null,
+    allowedAgents: row.allowed_agents ? JSON.parse(row.allowed_agents) : null,
     identities,
     last_inbound_at: row.last_inbound_at,
     last_outbound_at: row.last_outbound_at,
@@ -592,6 +615,7 @@ export function updateContact(
     notes?: Record<string, unknown>;
     opt_out?: boolean;
     source?: ContactSource | null;
+    allowedAgents?: string[] | null;
   }
 ): Contact {
   const contact = resolveContact(phone);
@@ -634,6 +658,10 @@ export function updateContact(
   if (updates.source !== undefined) {
     fields.push("source = ?");
     values.push(updates.source);
+  }
+  if (updates.allowedAgents !== undefined) {
+    fields.push("allowed_agents = ?");
+    values.push(updates.allowedAgents === null ? null : JSON.stringify(updates.allowedAgents));
   }
 
   if (fields.length === 0) return contact;
@@ -928,6 +956,98 @@ export function getGroupTag(contactRef: string, groupRef: string): string | null
   const groupKey = resolveGroupIdentity(groupRef);
   const groupTags = contact.notes.groupTags as Record<string, string> | undefined;
   return groupTags?.[groupKey] ?? null;
+}
+
+/**
+ * Check if a contact is allowed for a specific agent.
+ * Returns true if no restriction applies.
+ */
+export function isContactAllowedForAgent(phone: string, agentId: string): boolean {
+  const contact = getContact(phone);
+  if (!contact) return true;
+  if (contact.status !== "allowed") return true;
+  if (!contact.allowedAgents || contact.allowedAgents.length === 0) return true;
+  return contact.allowedAgents.includes(agentId);
+}
+
+// ============================================================================
+// Per-Account Pending
+// ============================================================================
+
+export interface AccountPendingEntry {
+  accountId: string;
+  phone: string;
+  name: string | null;
+  chatId: string | null;
+  isGroup: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * Save a contact as pending for a specific account (no route matched).
+ * Upserts — safe to call multiple times.
+ */
+export function saveAccountPending(
+  accountId: string,
+  phone: string,
+  opts?: { name?: string | null; chatId?: string; isGroup?: boolean }
+): void {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO account_pending (account_id, phone, name, chat_id, is_group, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, phone) DO UPDATE SET
+      name = COALESCE(excluded.name, account_pending.name),
+      chat_id = COALESCE(excluded.chat_id, account_pending.chat_id),
+      updated_at = excluded.updated_at
+  `).run(
+    accountId,
+    phone,
+    opts?.name ?? null,
+    opts?.chatId ?? null,
+    opts?.isGroup ? 1 : 0,
+    now,
+    now
+  );
+}
+
+/**
+ * List pending contacts for an account (or all accounts).
+ */
+export function listAccountPending(accountId?: string): AccountPendingEntry[] {
+  const rows = accountId
+    ? db.prepare("SELECT * FROM account_pending WHERE account_id = ? ORDER BY updated_at DESC").all(accountId)
+    : db.prepare("SELECT * FROM account_pending ORDER BY account_id, updated_at DESC").all();
+
+  return (rows as Array<{
+    account_id: string; phone: string; name: string | null;
+    chat_id: string | null; is_group: number; created_at: number; updated_at: number;
+  }>).map(r => ({
+    accountId: r.account_id,
+    phone: r.phone,
+    name: r.name,
+    chatId: r.chat_id,
+    isGroup: r.is_group === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  }));
+}
+
+/**
+ * Remove a contact from account pending (e.g., after adding a route).
+ */
+export function removeAccountPending(accountId: string, phone: string): boolean {
+  const result = db.prepare("DELETE FROM account_pending WHERE account_id = ? AND phone = ?").run(accountId, phone);
+  return result.changes > 0;
+}
+
+/**
+ * Clear all pending for an account.
+ */
+export function clearAccountPending(accountId: string): number {
+  const result = db.prepare("DELETE FROM account_pending WHERE account_id = ?").run(accountId);
+  return result.changes;
 }
 
 export function closeContacts(): void {
