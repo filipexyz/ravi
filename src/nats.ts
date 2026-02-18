@@ -114,6 +114,8 @@ export async function* subscribe(
     // Fast path: single subscription
     const sub = conn.subscribe(patterns[0]);
     for await (const msg of sub) {
+      // Skip NATS internal subjects (JetStream replies, API calls, advisories)
+      if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
       try {
         const raw = sc.decode(msg.data);
         const data = JSON.parse(raw) as Record<string, unknown>;
@@ -140,6 +142,8 @@ export async function* subscribe(
   const pumps = subs.map(async (sub) => {
     for await (const msg of sub) {
       if (done) return;
+      // Skip NATS internal subjects (JetStream replies, API calls, advisories)
+      if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
       try {
         const raw = sc.decode(msg.data);
         const data = JSON.parse(raw) as Record<string, unknown>;
