@@ -60,15 +60,40 @@ ravi triggers rm <id>
 
 Patterns usam wildcards (`*`):
 
+### Inbound e Canais
+
+| Pattern | Descrição |
+|---------|-----------|
+| `whatsapp.*.inbound` | Mensagens WhatsApp recebidas |
+| `matrix.*.inbound` | Mensagens Matrix recebidas |
+| `ravi.inbound.reaction` | Reações recebidas (emoji) |
+| `ravi.inbound.reply` | Replies a mensagens do bot |
+| `ravi.inbound.pollVote` | Votos em enquetes |
+
+### Contatos e Aprovações
+
+| Pattern | Descrição |
+|---------|-----------|
+| `ravi.contacts.pending` | Novo contato/grupo pendente de aprovação |
+| `ravi.approval.request` | Pedido de aprovação cascading |
+| `ravi.approval.response` | Resposta de aprovação |
+
+### Agent e Tools
+
 | Pattern | Descrição |
 |---------|-----------|
 | `ravi.*.cli.{group}.{command}` | Execuções de CLI tools (ex: `ravi.*.cli.contacts.add`) |
 | `ravi.*.tool` | Execuções de SDK tools (Bash, Read, etc) |
-| `ravi.*.response` | Respostas de agents |
-| `whatsapp.*.inbound` | Mensagens WhatsApp recebidas |
-| `matrix.*.inbound` | Mensagens Matrix recebidas |
 
-**Nota:** Triggers em `.prompt`, `.response` e `.claude` são ignorados para evitar loops.
+### Outbound
+
+| Pattern | Descrição |
+|---------|-----------|
+| `ravi.outbound.deliver` | Mensagens enviadas para canais |
+| `ravi.outbound.receipt` | Read receipts enviados |
+| `ravi.outbound.refresh` | Refresh de filas outbound |
+
+**Bloqueados (anti-loop):** Triggers em `.prompt`, `.response` e `.claude` são rejeitados para evitar loops.
 
 ## Exemplos
 

@@ -23,17 +23,55 @@ O notif.sh é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls
 
 ## Tópicos do Ravi
 
+### Sessões (por session)
+
 | Tópico | Conteúdo |
 |--------|----------|
-| `ravi.session.{name}.prompt` | Prompts recebidos (mensagens, heartbeat, system) |
-| `ravi.session.{name}.response` | Respostas do agent |
-| `ravi.session.{name}.claude` | Eventos brutos do SDK Claude |
+| `ravi.session.{name}.prompt` | Prompts recebidos (mensagens, heartbeat, system, cross-send) |
+| `ravi.session.{name}.response` | Respostas do agent (com `target` para routing) |
+| `ravi.session.{name}.claude` | Eventos brutos do SDK Claude (typing heartbeat) |
 | `ravi.session.{name}.tool` | Tool calls (start/end com input/output) |
-| `ravi.outbound.deliver` | Mensagens de saída para canais |
-| `ravi.inbound.reaction` | Reações recebidas |
-| `ravi.inbound.reply` | Replies recebidos |
-| `ravi.heartbeat.refresh` | Sinal de refresh de timers |
-| `ravi.session.abort` | Abortar sessão |
+| `ravi.session.abort` | Abortar sessão ephemeral |
+
+### Inbound (canais)
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `whatsapp.{accountId}.inbound` | Mensagens WhatsApp recebidas (InboundMessage) |
+| `matrix.{accountId}.inbound` | Mensagens Matrix recebidas (InboundMessage) |
+| `ravi.inbound.reaction` | Reações recebidas (`emoji`, `targetMessageId`) |
+| `ravi.inbound.reply` | Replies recebidos (`targetMessageId`, `text`) |
+| `ravi.inbound.pollVote` | Votos em enquetes (`pollMessageId`, `votes`) |
+
+### Outbound
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `ravi.outbound.deliver` | Mensagens de saída para canais (`channel`, `accountId`, `to`, `text`) |
+| `ravi.outbound.receipt` | Read receipts pendentes (`chatId`, `senderId`, `messageIds`) |
+| `ravi.outbound.refresh` | Sinal de refresh de filas outbound |
+
+### Contatos e Aprovações
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `ravi.contacts.pending` | Novo contato/grupo pendente (`type`: contact ou account) |
+| `ravi.approval.request` | Pedido de aprovação cascading (`sessionName`, `type`, `text`) |
+| `ravi.approval.response` | Resposta de aprovação (`approved`, `reason`) |
+
+### Sistema e Config
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `ravi.config.changed` | Configuração alterada via CLI |
+| `ravi.triggers.refresh` | Sinal de refresh de triggers |
+| `ravi.heartbeat.refresh` | Sinal de refresh de timers heartbeat |
+
+### CLI Tools (emitidos pelo bot)
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `ravi.{sessionKey}.cli.{group}.{command}` | Execuções de CLI tools pelo agent |
 
 ## Comandos
 
