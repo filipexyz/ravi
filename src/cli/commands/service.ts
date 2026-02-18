@@ -47,16 +47,9 @@ export class ServiceCommands {
     });
   }
 
-  @Command({ name: "wa", description: "Start WhatsApp gateway" })
+  @Command({ name: "wa", description: "Start WhatsApp gateway (deprecated — use daemon start)" })
   wa() {
-    console.log("Starting WhatsApp gateway...");
-    const child = spawn("bun", ["src/wa.ts"], {
-      stdio: "inherit",
-      cwd: process.cwd(),
-    });
-    child.on("error", (err) => {
-      console.error(`Failed to start gateway: ${err.message}`);
-      process.exit(1);
-    });
+    console.log("Note: WhatsApp is now managed by the omni process.");
+    console.log("Use 'ravi daemon start' to start all services including WhatsApp.");
   }
 }

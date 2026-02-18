@@ -1,34 +1,24 @@
 # Ravi Bot
 
-Claude-powered bot with session routing via notif.sh. Runs entirely locally with embedded infrastructure.
+Claude-powered bot with multi-channel messaging (WhatsApp, Telegram, Discord) via omni-v2. Runs entirely locally with embedded NATS JetStream and omni API server as child processes.
 
 ## Architecture
 
 ```
-                                    ┌──────────────┐  ┌──────────────┐
-                                    │   pgserve    │  │    notifd     │
-                                    │  :8432 (PG)  │  │ :8080 (NATS) │
-                                    └──────┬───────┘  └──────┬───────┘
-                                           └───────┬─────────┘
-┌─────────────┐                              ┌─────┴─────────────────┐
-│    TUI      │──────────────────────────────│       notif.sh        │
-└─────────────┘                              │  ravi.{sessionKey}.*  │
-                                             └───────────┬───────────┘
-┌─────────────┐     ┌─────────────┐                      │
-│  WhatsApp   │────▶│   Gateway   │──────────────────────┤
-│   Plugin    │     │  (router)   │                      │
-└─────────────┘     └─────────────┘                      │
-┌─────────────┐            │                             │
-│   Matrix    │────────────┘                             │
-│   Plugin    │                                          ▼
-└─────────────┘                              ┌───────────────────────┐
-                                             │       RaviBot         │
-                                             │   Claude Agent SDK    │
-                                             │   cwd: ~/ravi/{agent} │
-                                             └───────────────────────┘
+ravi daemon start
+  ├── nats-server :4222 (JetStream)
+  ├── omni API    :8882 (child process bun)
+  │     ├── WhatsApp (Baileys)
+  │     ├── Telegram
+  │     └── Discord
+  └── ravi bot
+        ├── OmniConsumer  → JetStream pull consumer (message.received.>)
+        ├── Claude Agent SDK (sessions, tools)
+        ├── OmniSender    → HTTP POST /api/v2/messages/send
+        └── Runners (cron, heartbeat, triggers, outbound)
 ```
 
-**Local Infrastructure:** The daemon auto-starts pgserve (embedded Postgres on :8432) and notifd (event bus on :8080 with embedded NATS). No external NOTIF_API_KEY needed -- the key is bootstrapped on first run and stored in `~/.ravi/local-api-key`. Process env vars `NOTIF_API_KEY` and `NOTIF_SERVER` are set automatically by the daemon.
+**Infrastructure:** nats-server (JetStream enabled) and omni API server start automatically as child processes. The omni API key is bootstrapped on first run and stored in `~/.ravi/omni-api-key`. Configure omni in `~/.ravi/.env` via `OMNI_DIR`, `DATABASE_URL`, `OMNI_API_PORT`.
 
 ## Quick Start
 
@@ -36,16 +26,20 @@ Claude-powered bot with session routing via notif.sh. Runs entirely locally with
 # 1. Install dependencies
 bun install
 
-# 2. Run setup wizard (downloads notifd, configures auth, creates agent)
+# 2. Run setup wizard (downloads nats-server, configures auth, creates agent)
 ravi setup
 
-# 3. Start daemon (local infra + bot + gateway)
+# 3. Configure omni in ~/.ravi/.env:
+# OMNI_DIR=/path/to/omni-v2
+# DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+
+# 4. Start daemon (nats-server + omni + bot + gateway)
 ravi daemon start
 
-# 4. Connect WhatsApp
+# 5. Connect WhatsApp
 ravi whatsapp connect
 
-# 5. Check status
+# 6. Check status
 ravi daemon status
 ravi daemon logs
 ```
@@ -69,16 +63,22 @@ ravi.triggers.refresh       # Hot-reload trigger subscriptions
 - **tool**: `{ event: "start"|"end", toolId, toolName, input?, output?, isError?, durationMs?, timestamp, sessionKey, agentId }`
 - **contacts.pending**: `{ type: "contact"|"account", phone?, accountId?, name? }`
 
+**omni NATS subjects (JetStream stream: MESSAGE):**
+- `message.received.{channelType}.{instanceId}` — inbound message
+- `reaction.received.{channelType}.{instanceId}` — inbound reaction
+- `instance.connected.{channelType}.{instanceId}` — account connected
+- `instance.qr_code.{channelType}.{instanceId}` — QR code for pairing
+
 ## Session Keys
 
 ```
-agent:main:main                          # Shared session (TUI + WA + Matrix)
-agent:main:dm:5511999999999              # Per-peer session (WhatsApp)
-agent:main:matrix:dm:@user:server        # Per-peer session (Matrix)
-agent:jarvis:main                        # Different agent
-agent:main:whatsapp:group:123456         # WhatsApp group session
-agent:main:matrix:room:!roomid:server    # Matrix room session
-agent:main:trigger:a1b2c3d4              # Event trigger session (isolated)
+agent:main:main                       # Shared session (all DMs + CLI)
+agent:main:dm:5511999999999           # Per-peer DM session
+agent:jarvis:main                     # Different agent
+agent:main:whatsapp:group:123456      # WhatsApp group session
+agent:main:trigger:a1b2c3d4           # Event trigger session (isolated)
+agent:main:cron:abc123                # Cron job session (isolated)
+agent:main:outbound:queueId:phone     # Outbound campaign session
 ```
 
 ## Message Queue
@@ -200,7 +200,7 @@ ravi cron rm <id>
 - `--tz <timezone>` - Timezone for cron expressions (default: from settings)
 
 **Session Targets:**
-- `main` - Shared session with TUI/WhatsApp/Matrix (default)
+- `main` - Shared session (default)
 - `isolated` - Dedicated session per job (`agent:{agentId}:cron:{jobId}`)
 
 **How it works:**
@@ -212,7 +212,7 @@ ravi cron rm <id>
 
 ## Event Triggers
 
-Event-driven triggers that subscribe to any notif topic and fire agent prompts when events occur:
+Event-driven triggers that subscribe to any NATS topic and fire agent prompts when events occur:
 
 ```bash
 # List all triggers
@@ -264,8 +264,7 @@ ravi triggers rm <id>
 **Available Topics:**
 - `ravi.*.cli.{group}.{command}` - CLI tool executions (e.g., `ravi.*.cli.contacts.add`)
 - `ravi.*.tool` - SDK tool executions (Bash, Read, etc.)
-- `whatsapp.*.inbound` - WhatsApp messages
-- `matrix.*.inbound` - Matrix messages
+- `message.received.{channelType}.{instanceId}` - Inbound channel messages (from omni)
 
 **Blocked Topics (anti-loop):**
 - `ravi.*.prompt` - Would create trigger→prompt→trigger loops
@@ -273,7 +272,7 @@ ravi triggers rm <id>
 - `ravi.*.claude` - Internal SDK events, same risk
 
 **Options:**
-- `--topic <pattern>` - Notif topic pattern to subscribe to (required)
+- `--topic <pattern>` - NATS topic pattern to subscribe to (required)
 - `--message <text>` - Prompt to send when event fires (required)
 - `--agent <id>` - Target agent (default: default agent)
 - `--cooldown <duration>` - Minimum time between fires (default: 5s)
@@ -392,7 +391,7 @@ ravi agents debounce main 2000
 
 # Routes
 ravi routes list
-ravi routes add "lid:178035101794451" main
+ravi routes add "+5511*" main
 
 # Settings
 ravi settings set defaultAgent main
@@ -406,7 +405,6 @@ ravi settings set defaultTimezone America/Sao_Paulo
 - `mode` - Operating mode: `active` (responds) or `sentinel` (observes silently)
 - `dmScope` - Session grouping for DMs
 - `debounceMs` - Message grouping window
-- `matrixAccount` - Matrix account username (for multi-account)
 - `contactScope` - Contact visibility: `own`, `tagged:<tag>`, `all`
 
 **DM Scopes:**
@@ -451,23 +449,21 @@ ravi permissions clear                           # Clear manual relations
 
 Messages are routed to agents in this priority order:
 1. Account-agent mapping (from `account.<id>.agent` setting)
-2. Contact's assigned agent (from contacts DB)
-3. Route match (from routes table, scoped to account)
-4. AccountId-as-agent (if accountId matches an existing agent ID)
-5. Default agent
+2. Route match (from routes table, scoped to account)
+3. Default agent (only for default account)
 
 The account-agent mapping is set via `ravi whatsapp connect --agent <id>` or `ravi whatsapp set --account <id> --agent <id>`.
 
-**Multi-Account WhatsApp:**
+**Multi-Account:**
 
-Connect multiple WhatsApp accounts, each mapped to a different agent:
+Connect multiple accounts (WhatsApp, Telegram), each mapped to a different agent:
 
 ```bash
 ravi whatsapp connect --account vendas --agent vendas --mode active
 ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 ```
 
-**Sentinel Mode:** Agents in sentinel mode observe messages silently without auto-replying. They can send messages explicitly via `ravi whatsapp dm send`. Useful for monitoring accounts where an agent only acts when instructed.
+**Sentinel Mode:** Agents in sentinel mode observe messages silently without auto-replying. Useful for monitoring accounts where an agent only acts when instructed.
 
 **Contact Fields:**
 - `phone` - Normalized phone number (primary key)
@@ -490,17 +486,15 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 ├── ravi.db          # Config and sessions (SQLite)
 └── main/            # Agent CWD
     ├── CLAUDE.md    # Agent instructions
-    └── HEARTBEAT.md # Pending tasks for heartbeat (optional)
+    ├── HEARTBEAT.md # Pending tasks for heartbeat (optional)
+    └── SPEC_INSTRUCTIONS.md  # Custom spec mode instructions (optional)
 
 ~/.ravi/
 ├── .env             # Environment variables (loaded by daemon)
-├── local-api-key    # Auto-generated notifd API key
+├── omni-api-key     # Auto-generated omni API key
+├── jetstream/       # NATS JetStream storage
 ├── bin/
-│   └── notifd       # notifd binary (auto-downloaded)
-├── pgserve/         # Embedded Postgres data directory
-├── nats/            # Embedded NATS JetStream store
-├── chat.db          # Message history
-├── matrix/          # Matrix SDK storage (sync, crypto)
+│   └── nats-server  # nats-server binary (auto-downloaded)
 └── logs/
     └── daemon.log   # Daemon logs
 ```
@@ -512,7 +506,7 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 ravi setup             # Interactive setup wizard
 
 # Daemon (recommended)
-ravi daemon start      # Start local infra + bot + gateway
+ravi daemon start      # Start nats + omni + bot + gateway
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
@@ -521,11 +515,6 @@ ravi daemon logs -f    # Follow mode (tail -f)
 ravi daemon logs -t 100  # Show last 100 lines
 ravi daemon logs --clear # Clear log file
 ravi daemon env        # Edit ~/.ravi/.env
-
-# Service (manual)
-ravi service start     # Start bot server only
-ravi service wa        # Start WhatsApp gateway only
-ravi service tui       # Start TUI
 
 # WhatsApp
 ravi whatsapp connect                # Connect account (QR code)
@@ -540,6 +529,12 @@ ravi agents show <id>               # Show agent details
 ravi agents create <id> <cwd>       # Create agent
 ravi agents set <id> <key> <value>  # Set property
 ravi agents debounce <id> <ms>      # Set debounce
+ravi agents run <id> "prompt"       # Send prompt and stream response
+ravi agents chat <id>               # Interactive chat mode (/reset, /session, /exit)
+ravi agents session <id>            # Check session status
+ravi agents reset <id>              # Reset main session
+ravi agents reset <id> <sessionKey> # Reset specific session
+ravi agents reset <id> all          # Reset ALL sessions for agent
 
 # Contacts
 ravi contacts list                   # List contacts
@@ -555,16 +550,13 @@ ravi contacts set <phone> tags '["lead","vip"]'
 ravi contacts set <phone> notes '{"company":"Acme"}'
 ravi contacts set <phone> opt-out true
 
-# Matrix
-ravi matrix login        # Interactive login
-ravi matrix status       # Show connection status
-ravi matrix logout       # Clear credentials
-ravi matrix rooms        # List joined rooms
-ravi matrix whoami       # Show current identity
-
 # Cross-session messaging
-ravi cross send <session> <message>  # Send message to another session
-ravi cross list                      # List sessions with channel info
+ravi sessions send <session> "prompt"   # Send prompt to session
+ravi sessions send <session> -i         # Interactive mode
+ravi sessions execute <session> "task"  # Execute task
+ravi sessions ask <session> "question"  # Ask another session
+ravi sessions answer <session> "reply"  # Reply to a previous ask
+ravi sessions inform <session> "info"   # Send context info
 
 # Heartbeat
 ravi heartbeat status                # Show all agents
@@ -604,6 +596,7 @@ ravi outbound entries <id>           # List entries
 ravi outbound add <queueId> <phone>  # Add entry
 ravi outbound status <entryId>       # Entry details
 ravi outbound run <id>               # Manual trigger
+ravi outbound rm <id>                # Delete queue
 
 # Permissions (REBAC)
 ravi permissions grant <subject> <relation> <object>
@@ -624,25 +617,21 @@ Use the CLI to interact with agents directly (daemon must be running):
 
 ```bash
 # Send a single prompt
-ravi agents run test "lista os agentes"
+ravi agents run main "lista os agentes"
 ravi agents run main "oi, tudo bem?"
 
 # Interactive chat mode
-ravi agents chat test
+ravi agents chat main
 # Commands: /reset, /session, /exit
 
 # Check session status
-ravi agents session test
+ravi agents session main
 
 # Reset session (clear context)
-ravi agents reset test                    # Reset main session
-ravi agents reset test <sessionKey>       # Reset specific session
-ravi agents reset test all                # Reset ALL sessions for agent
+ravi agents reset main                    # Reset main session
+ravi agents reset main <sessionKey>       # Reset specific session
+ravi agents reset main all                # Reset ALL sessions for agent
 ```
-
-When a specific session isn't found, available sessions are listed as hints.
-
-The `test` agent is pre-configured with all tools enabled (SDK + CLI tools).
 
 ### CLI Tools
 
@@ -668,7 +657,7 @@ ravi permissions init agent:main full-access              # All tools + executab
 Agents can send emoji reactions to messages. Message envelopes include `[mid:ID]` tags:
 
 ```
-[WhatsApp +5511999 mid:ABC123XYZ 30/01/2026, 14:30] João: Bom dia!
+[+5511999 mid:ABC123XYZ 30/01/2026, 14:30] João: Bom dia!
 ```
 
 From CLI or agent tools:
@@ -676,8 +665,6 @@ From CLI or agent tools:
 ```bash
 ravi react send ABC123XYZ 👍
 ```
-
-Reactions are routed through the gateway to the appropriate channel plugin (WhatsApp, Matrix).
 
 ## Message Formatting
 
@@ -690,7 +677,7 @@ When a message replies to another, the quoted message is included:
 Texto da mensagem original
 [/Replying]
 
-[WhatsApp Grupo id:123@g.us 30/01/2026, 14:30] Maria: Minha resposta
+[Grupo id:123@g.us 30/01/2026, 14:30] Maria: Minha resposta
 ```
 
 ### Audio Transcription
@@ -698,18 +685,10 @@ Texto da mensagem original
 Voice messages and audio files are automatically transcribed using OpenAI Whisper:
 
 ```
-[WhatsApp +5511999 30/01/2026, 14:30]
+[+5511999 30/01/2026, 14:30]
 [Audio]
 Transcript:
 O texto transcrito do áudio aparece aqui
-```
-
-For audio files sent as documents:
-
-```
-[Audio: gravacao.mp3]
-Transcript:
-O texto transcrito do arquivo
 ```
 
 Requires `OPENAI_API_KEY` in environment.
@@ -719,7 +698,7 @@ Requires `OPENAI_API_KEY` in environment.
 Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and the local path is included in the prompt:
 
 ```
-[WhatsApp +5511999 30/01/2026, 14:30]
+[+5511999 30/01/2026, 14:30]
 [Image: /tmp/ravi-media/1706619000000-ABC123.jpg]
 ```
 
@@ -734,22 +713,17 @@ Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
 ANTHROPIC_API_KEY=sk-ant-xxx
 
-# Auto-managed (set by daemon on startup, do NOT set manually)
-# NOTIF_API_KEY - bootstrapped from local notifd
-# NOTIF_SERVER  - http://localhost:8080
+# Omni (required for channel support)
+OMNI_DIR=/path/to/omni-v2
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+OMNI_API_PORT=8882          # Default
 
 # Optional
-OPENAI_API_KEY=sk-xxx   # For audio transcription
+OPENAI_API_KEY=sk-xxx       # For audio transcription
+GEMINI_API_KEY=AIza...      # For video analysis
 RAVI_MODEL=sonnet
-RAVI_LOG_LEVEL=info     # debug | info | warn | error
-
-# Matrix (optional)
-MATRIX_HOMESERVER=https://matrix.org
-MATRIX_ACCESS_TOKEN=syt_xxx   # Or use ravi matrix login
-MATRIX_ENCRYPTION=false       # Enable E2EE (requires native deps)
-MATRIX_DM_POLICY=open         # open | closed | pairing
-MATRIX_ROOM_POLICY=closed     # open | closed | allowlist
-MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
+RAVI_LOG_LEVEL=info         # debug | info | warn | error
+NATS_PORT=4222              # Default
 ```
 
 ## Cross-Session Messaging
@@ -757,7 +731,7 @@ MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
 Agents can send typed messages to other sessions using CLI tools:
 
 ```bash
-ravi cross send agent:main:dm:5511999 send "Lembrete: reunião em 10 minutos"
+ravi sessions send agent:main:dm:5511999 "Lembrete: reunião em 10 minutos"
 ```
 
 **Message Types:**
@@ -776,92 +750,118 @@ ravi cross send agent:main:dm:5511999 send "Lembrete: reunião em 10 minutos"
 3. Agent B: `cross_send(sessionA, "answer", "deploy concluído com sucesso")`
 4. Agent A receives `[System] Answer: [from: sessionB] deploy concluído com sucesso` — can use tools and respond normally
 
-## Notif Singleton
+## NATS JetStream Debugging
 
-All components share a single notif.sh WebSocket connection via `src/notif.ts`:
+NATS runs on `:4222`. Use the `nats` CLI (`brew install nats-io/nats-tools/nats`) to inspect streams and replay messages.
 
-```typescript
-import { notif } from "./notif.js";
-
-await notif.emit("topic", { data });
-for await (const event of notif.subscribe("topic.*")) { ... }
-```
-
-Connection targets `NOTIF_SERVER` (default: local notifd at `http://localhost:8080`). Shared across bot, gateway, plugins, and CLI. Closes automatically when process exits.
-
-## Matrix Integration
-
-### Setup
+### Connection shortcut
 
 ```bash
-# Option 1: Interactive login
-ravi matrix login
+alias nats-local='nats --server nats://127.0.0.1:4222'
+```
 
-# Option 2: Environment variables
-export MATRIX_HOMESERVER=https://matrix.org
-export MATRIX_ACCESS_TOKEN=syt_xxx
+### Streams overview
 
-# Restart daemon to pick up changes
+```bash
+nats stream ls --server nats://127.0.0.1:4222
+```
+
+Omni streams: `MESSAGE`, `INSTANCE`, `REACTION`, `MEDIA`, `ACCESS`, `IDENTITY`, `CUSTOM`, `SYSTEM`.
+
+### Inspect a stream
+
+```bash
+nats stream info MESSAGE --server nats://127.0.0.1:4222
+# Shows: subjects, retention, message count, consumer count, first/last seq
+```
+
+### Read messages from stream
+
+```bash
+# Last message on a subject pattern
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>"
+
+# Specific sequence number
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5
+
+# Pretty-print the JSON payload
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
+import sys, json
+raw = sys.stdin.read()
+start = raw.find('{')
+if start >= 0:
+    d = json.loads(raw[start:])
+    print('METADATA:', json.dumps(d.get('metadata', {}), indent=2))
+    print('PAYLOAD:', json.dumps(d.get('payload', {}), indent=2))
+"
+```
+
+### List / inspect consumers
+
+```bash
+# All consumers with their positions (ack floor = last processed seq)
+nats consumer report MESSAGE --server nats://127.0.0.1:4222
+
+# Ravi consumers
+nats consumer report MESSAGE --server nats://127.0.0.1:4222 | grep ravi
+nats consumer report INSTANCE --server nats://127.0.0.1:4222 | grep ravi
+```
+
+**Ravi consumer names:** `ravi-messages` (MESSAGE stream), `ravi-instances` (INSTANCE stream).
+
+### Replay messages to ravi (debug)
+
+Create a **temporary ephemeral consumer** that delivers from a specific sequence — useful to re-inject a message into the stream and watch ravi process it:
+
+```bash
+# Subscribe and receive all messages from seq 20 onwards (prints to terminal)
+nats consumer sub MESSAGE \
+  --server nats://127.0.0.1:4222 \
+  --filter "message.received.>" \
+  --deliver-start-sequence 20 \
+  --ack
+
+# Or deliver all messages from beginning
+nats consumer sub MESSAGE \
+  --server nats://127.0.0.1:4222 \
+  --filter "message.received.>" \
+  --deliver-all \
+  --ack
+```
+
+To force ravi to **reprocess** a specific message, bump the ravi consumer's ack floor back:
+
+```bash
+# Delete ravi-messages consumer (ravi recreates it with DeliverPolicy.New on restart)
+# WARNING: ravi won't get new messages until daemon restarts
+nats consumer rm MESSAGE ravi-messages --server nats://127.0.0.1:4222
 ravi daemon restart
 ```
 
-### Configuration
+### Live subscribe (plain pub/sub — no JetStream)
 
-Matrix is configured via environment variables in `~/.ravi/.env`:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `MATRIX_HOMESERVER` | Homeserver URL | (required) |
-| `MATRIX_ACCESS_TOKEN` | Access token | (from login) |
-| `MATRIX_USER_ID` | User ID (optional with token) | - |
-| `MATRIX_PASSWORD` | Password (if using password auth) | - |
-| `MATRIX_ENCRYPTION` | Enable E2EE | `false` |
-| `MATRIX_DM_POLICY` | DM policy: `open`, `closed`, `pairing` | `open` |
-| `MATRIX_ROOM_POLICY` | Room policy: `open`, `closed`, `allowlist` | `closed` |
-| `MATRIX_ROOM_ALLOWLIST` | Comma-separated room IDs/aliases | - |
-
-### Policies
-
-**DM Policy:**
-- `open` - Accept messages from anyone
-- `closed` - Reject all DMs
-- `pairing` - Save as pending for approval
-
-**Room Policy:**
-- `open` - Accept messages from all rooms
-- `closed` - Reject all room messages
-- `allowlist` - Only accept from rooms in allowlist
-
-### E2EE (Optional)
-
-End-to-end encryption requires the native `@matrix-org/matrix-sdk-crypto-nodejs` module:
+Watch events in real time as they arrive from omni:
 
 ```bash
-bun add @matrix-org/matrix-sdk-crypto-nodejs
+# All message events
+nats sub "message.received.>" --server nats://127.0.0.1:4222
+
+# Specific instance
+nats sub "message.received.whatsapp-baileys.d1458eb9-eec8-49b2-a7ad-d5f2ced8a280" \
+  --server nats://127.0.0.1:4222
+
+# Instance events (connect, disconnect, qr_code)
+nats sub "instance.>" --server nats://127.0.0.1:4222
 ```
 
-Then set `MATRIX_ENCRYPTION=true` in environment.
+### Check if ingestMode is set correctly
 
-### Message Flow
+After the history-sync fix, new messages should have `ingestMode: "realtime"` in metadata. History-sync messages get `ingestMode: "history-sync"` and are skipped by ravi.
 
-```
-Matrix Room → room.message event
-    ↓
-MatrixGatewayAdapter.handleMessage
-    ↓ (normalize → InboundMessage)
-notif.emit("matrix.default.inbound")
-    ↓
-Gateway → format envelope, resolve session
-    ↓
-notif.emit("ravi.{sessionKey}.prompt")
-    ↓
-RaviBot → Claude
-    ↓
-notif.emit("ravi.{sessionKey}.response")
-    ↓
-Gateway → MatrixOutboundAdapter.send
-    ↓
-MatrixClient.sendMessage
+```bash
+# Inspect metadata of last received message
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>" | \
+  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d['metadata'].get('ingestMode','NOT SET'))"
 ```
 
 ## Development
@@ -870,6 +870,7 @@ MatrixClient.sendMessage
 bun run build     # Compile TypeScript
 bun run dev       # Watch mode
 bun link          # Make `ravi` available globally
+make quality      # Run lint + typecheck
 ```
 
 ### When to restart the daemon

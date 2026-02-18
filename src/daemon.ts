@@ -1,7 +1,7 @@
 /**
  * Ravi Daemon
  *
- * Runs both the bot server and WhatsApp gateway in a single process.
+ * Runs the bot server, omni API, and gateway in a single process.
  */
 
 import { mkdirSync, existsSync, readFileSync, unlinkSync } from "node:fs";
@@ -9,14 +9,11 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
-import { createWhatsAppPlugin, addWhatsAppAccount, DEFAULT_ACCOUNT_CONFIG } from "./channels/whatsapp/index.js";
-import { createMatrixPlugin } from "./channels/matrix/index.js";
-import { isMatrixConfigured } from "./channels/matrix/config.js";
-import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
+import { OmniSender, OmniConsumer } from "./omni/index.js";
 import { loadConfig } from "./utils/config.js";
 import { nats } from "./nats.js";
 import { logger } from "./utils/logger.js";
-import { dbGetSetting, dbListSettings } from "./router/router-db.js";
+import { dbGetSetting } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
@@ -24,7 +21,7 @@ import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
-import { startLocalServer, type LocalServer } from "./local/index.js";
+import { startLocalServer, startOmniServer, type LocalServer, type OmniServer } from "./local/index.js";
 
 const log = logger.child("daemon");
 
@@ -46,7 +43,6 @@ function loadEnvFile() {
     const key = trimmed.slice(0, eqIndex).trim();
     let value = trimmed.slice(eqIndex + 1).trim();
 
-    // Remove quotes if present
     if ((value.startsWith('"') && value.endsWith('"')) ||
         (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
@@ -69,22 +65,22 @@ mkdirSync(LOG_DIR, { recursive: true });
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-// Handle uncaught errors - log but don't crash for transient errors
+// Handle uncaught errors
 process.on("uncaughtException", (err) => {
   log.error("Uncaught exception", err);
-  // Don't exit - let the daemon continue running
 });
 
 process.on("unhandledRejection", (reason, promise) => {
   const stack = reason instanceof Error ? reason.stack : undefined;
   log.error("Unhandled rejection", { reason, stack, promise });
-  // Don't exit - let the daemon continue running
 });
 
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let shuttingDown = false;
 let localServer: LocalServer | null = null;
+let omniServer: OmniServer | null = null;
+let omniConsumer: OmniConsumer | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -97,23 +93,42 @@ async function shutdown(signal: string) {
 
   log.info(`Received ${signal}, shutting down...`, { pid: process.pid });
 
+  // Global shutdown guard — force exit if graceful shutdown hangs
+  const shutdownTimeout = setTimeout(() => {
+    log.error("Shutdown timeout — forcing exit");
+    process.exit(1);
+  }, 15_000);
+
   try {
-    // Stop bot FIRST to abort SDK subprocesses before anything else
+    // Stop bot FIRST to abort SDK subprocesses
     if (bot) {
       log.info("Stopping bot (aborting SDK subprocesses)...");
       await bot.stop();
       log.info("Bot stopped");
     }
 
-    // Then stop runners
+    // Stop runners
     await stopEphemeralRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
 
+    // Stop gateway
     if (gateway) {
       await gateway.stop();
+    }
+
+    // Stop omni consumer
+    if (omniConsumer) {
+      await omniConsumer.stop();
+    }
+
+    // Stop omni server
+    if (omniServer) {
+      log.info("Stopping omni server...");
+      await omniServer.stop();
+      log.info("Omni server stopped");
     }
 
     // Stop local infrastructure last
@@ -126,12 +141,13 @@ async function shutdown(signal: string) {
     log.error("Error during shutdown", err);
   }
 
+  clearTimeout(shutdownTimeout);
   log.info("Daemon stopped", { pid: process.pid });
   process.exit(0);
 }
 
 export async function startDaemon() {
-  // Start local infrastructure (nats-server)
+  // Step 1: Start local infrastructure (nats-server with JetStream)
   localServer = await startLocalServer();
 
   const config = loadConfig();
@@ -139,94 +155,113 @@ export async function startDaemon() {
 
   log.info("Starting Ravi daemon...");
 
-  // Sync REBAC relations from agent configs
+  // Step 2: Start omni API server (if OMNI_DIR is configured)
+  let omniApiKey: string | undefined;
+  if (process.env.OMNI_DIR) {
+    try {
+      omniServer = await startOmniServer();
+      omniApiKey = omniServer.apiKey;
+      log.info("Omni server started", { apiUrl: omniServer.apiUrl });
+    } catch (err) {
+      log.error("Failed to start omni server — continuing without channel support", err);
+    }
+  } else {
+    log.warn("OMNI_DIR not set — omni server not started. Set OMNI_DIR in ~/.ravi/.env");
+  }
+
+  // Step 3: Sync REBAC relations from agent configs
   syncRelationsFromConfig();
 
-  // Start bot
+  // Step 4: Start bot
   bot = new RaviBot({ config });
   await bot.start();
   log.info("Bot started");
 
-  // Start gateway with channel plugins
-  gateway = createGateway({ logLevel: config.logLevel });
+  // Step 5: Set up omni sender + consumer + gateway
+  if (omniServer && omniApiKey) {
+    const sender = new OmniSender(omniServer.apiUrl, omniApiKey);
+    omniConsumer = new OmniConsumer(sender);
 
-  // WhatsApp plugin - read policies from settings
-  const waDmPolicy = (dbGetSetting("whatsapp.dmPolicy") || "pairing") as "open" | "pairing" | "closed";
-  const waGroupPolicy = (dbGetSetting("whatsapp.groupPolicy") || "allowlist") as "open" | "allowlist" | "closed";
-
-  log.info("WhatsApp policies", { dmPolicy: waDmPolicy, groupPolicy: waGroupPolicy });
-
-  const whatsappPlugin = createWhatsAppPlugin({
-    accounts: {
-      default: {
-        name: "Ravi WhatsApp",
-        enabled: true,
-        dmPolicy: waDmPolicy,
-        groupPolicy: waGroupPolicy,
-        sendReadReceipts: true,
-        debounceMs: 500,
-      },
-    },
-  });
-  gateway.use(whatsappPlugin);
-
-  // Register additional WhatsApp accounts from persisted settings (account.{id}.agent)
-  const allSettings = dbListSettings();
-  for (const [key, value] of Object.entries(allSettings)) {
-    if (key.startsWith("account.") && key.endsWith(".agent") && value) {
-      const accId = key.slice("account.".length, -".agent".length);
-      if (accId !== "default") {
-        addWhatsAppAccount(accId, { ...DEFAULT_ACCOUNT_CONFIG, dmPolicy: waDmPolicy, groupPolicy: waGroupPolicy });
-        log.info("Registered persisted WhatsApp account", { accountId: accId, agent: value });
-      }
+    try {
+      await omniConsumer.start();
+      log.info("Omni consumer started");
+    } catch (err) {
+      log.error("Failed to start omni consumer", err);
     }
-  }
 
-  log.info("WhatsApp plugin registered");
-
-  // Matrix plugin (only if configured via env or credentials)
-  const matrixCredentials = loadMatrixCredentials();
-  if (isMatrixConfigured() || matrixCredentials) {
-    const matrixPlugin = createMatrixPlugin();
-    gateway.use(matrixPlugin);
-    log.info("Matrix plugin registered");
+    gateway = createGateway({
+      logLevel: config.logLevel,
+      omniSender: sender,
+      omniConsumer,
+    });
   } else {
-    log.info("Matrix not configured, skipping");
+    // No omni — create a stub gateway that handles internal routing only
+    log.warn("Creating gateway without omni — outbound messages will fail");
+    const stubSender = createStubSender();
+    const stubConsumer = createStubConsumer();
+    gateway = createGateway({
+      logLevel: config.logLevel,
+      omniSender: stubSender,
+      omniConsumer: stubConsumer,
+    });
   }
 
   await gateway.start();
   log.info("Gateway started");
 
-  // Start heartbeat runner
+  // Step 6: Start runners
   await startHeartbeatRunner();
   log.info("Heartbeat runner started");
 
-  // Start cron runner
   await startCronRunner();
   log.info("Cron runner started");
 
-  // Start outbound runner
   await startOutboundRunner();
   log.info("Outbound runner started");
 
-  // Start trigger runner
   await startTriggerRunner();
   log.info("Trigger runner started");
 
-  // Start ephemeral session cleanup runner
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
 
-
   log.info("Daemon ready");
 
-  // Check for restart reason and notify main agent
-  // Delay to ensure bot's NATS subscription is fully established
+  // Notify restart reason
   setTimeout(() => notifyRestartReason(), 5000);
 }
 
 /**
- * Check if there's a restart reason file and notify the originating session
+ * Stub OmniSender for when omni is not configured.
+ * Logs warnings but doesn't throw.
+ */
+function createStubSender(): OmniSender {
+  return {
+    send: async (instanceId: string, to: string, _text: string) => {
+      log.warn("OmniSender stub: send called but omni not configured", { instanceId, to });
+      return {};
+    },
+    sendTyping: async () => {},
+    sendReaction: async () => {},
+    sendMedia: async () => { return {}; },
+    getClient: () => { throw new Error("Omni not configured"); },
+  } as unknown as OmniSender;
+}
+
+/**
+ * Stub OmniConsumer for when omni is not configured.
+ */
+function createStubConsumer(): OmniConsumer {
+  return {
+    start: async () => {},
+    stop: async () => {},
+    getActiveTarget: () => undefined,
+    clearActiveTarget: () => {},
+  } as unknown as OmniConsumer;
+}
+
+/**
+ * Check if there's a restart reason file and notify the originating session.
  */
 async function notifyRestartReason() {
   if (!existsSync(RESTART_REASON_FILE)) {
@@ -237,9 +272,8 @@ async function notifyRestartReason() {
   let sessionName: string | undefined;
   try {
     const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
-    unlinkSync(RESTART_REASON_FILE); // Delete after reading
+    unlinkSync(RESTART_REASON_FILE);
 
-    // Try JSON format (new) first, fall back to plain text (legacy)
     try {
       const data = JSON.parse(raw);
       reason = data.reason;
@@ -254,7 +288,6 @@ async function notifyRestartReason() {
 
   if (!reason) return;
 
-  // Route to the session that requested the restart, or fall back to default agent's main session
   if (!sessionName) {
     const defaultAgent = dbGetSetting("defaultAgent") || "main";
     const fallbackSession = getMainSession(defaultAgent);
@@ -266,7 +299,6 @@ async function notifyRestartReason() {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
-  // Retry emit — NATS subscription may not be ready on first attempts
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       log.info("Emitting restart reason", { reason, topic, sessionName, attempt });
@@ -275,7 +307,7 @@ async function notifyRestartReason() {
       return;
     } catch (err) {
       log.warn("Restart reason emit failed, retrying", { attempt, error: err });
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
@@ -283,4 +315,3 @@ async function notifyRestartReason() {
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command
-// Do not auto-execute here to avoid double initialization

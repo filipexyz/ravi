@@ -6,7 +6,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createConnection } from "node:net";
@@ -32,30 +32,69 @@ export interface LocalServer {
  * 3. Wait for port ready
  * 4. Connect the NatsBus singleton
  */
-export async function startLocalServer(): Promise<LocalServer> {
-  // Step 1: Ensure nats-server binary
-  const natsPath = await ensureNatsBinary();
-
-  // Step 2: Spawn nats-server
-  const url = `nats://127.0.0.1:${NATS_PORT}`;
-
-  log.info("Starting nats-server...");
-  const natsProc = spawn(natsPath, [
+/**
+ * Spawn the nats-server process.
+ */
+function spawnNats(natsPath: string, jetStreamDir: string) {
+  const proc = spawn(natsPath, [
     "-p", String(NATS_PORT),
-    "-a", "127.0.0.1",  // bind local only
+    "-a", "127.0.0.1",   // bind local only
+    "-js",               // enable JetStream
+    "-sd", jetStreamDir, // JetStream storage directory
   ], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  // Pipe logs
-  natsProc.stdout?.on("data", (data: Buffer) => {
+  proc.stdout?.on("data", (data: Buffer) => {
     const msg = data.toString().trim();
     if (msg) log.debug(`[nats-server] ${msg}`);
   });
-  natsProc.stderr?.on("data", (data: Buffer) => {
+  proc.stderr?.on("data", (data: Buffer) => {
     const msg = data.toString().trim();
     if (msg) log.debug(`[nats-server] ${msg}`);
   });
+
+  return proc;
+}
+
+export async function startLocalServer(): Promise<LocalServer> {
+  // Step 1: Ensure nats-server binary
+  const natsPath = await ensureNatsBinary();
+
+  // Step 2: Spawn nats-server with JetStream storage recovery
+  const url = `nats://127.0.0.1:${NATS_PORT}`;
+  const jetStreamDir = join(homedir(), ".ravi", "jetstream");
+  mkdirSync(jetStreamDir, { recursive: true });
+
+  log.info("Starting nats-server...");
+  let natsProc = spawnNats(natsPath, jetStreamDir);
+
+  // Step 3: Wait for port ready — on failure, attempt JetStream storage recovery
+  try {
+    await waitForPort(NATS_PORT, 8_000);
+  } catch {
+    log.warn("nats-server failed to start — attempting JetStream storage recovery...");
+
+    // Kill the failed process
+    if (!natsProc.killed) {
+      natsProc.kill("SIGTERM");
+      await new Promise<void>((resolve) => {
+        natsProc.once("exit", () => resolve());
+        setTimeout(resolve, 3000);
+      });
+    }
+
+    // Clear corrupted JetStream storage and retry
+    log.info("Clearing JetStream storage dir", { jetStreamDir });
+    rmSync(jetStreamDir, { recursive: true, force: true });
+    mkdirSync(jetStreamDir, { recursive: true });
+
+    natsProc = spawnNats(natsPath, jetStreamDir);
+    await waitForPort(NATS_PORT, 10_000); // Full timeout on retry
+    log.info("nats-server recovered after storage reset");
+  }
+
+  log.info("nats-server ready", { port: NATS_PORT });
 
   // Handle unexpected exit
   let stopped = false;
@@ -64,10 +103,6 @@ export async function startLocalServer(): Promise<LocalServer> {
       log.error("nats-server exited unexpectedly", { code, signal });
     }
   });
-
-  // Step 3: Wait for port ready
-  await waitForPort(NATS_PORT);
-  log.info("nats-server ready", { port: NATS_PORT });
 
   // Step 4: Connect NatsBus singleton
   await connectNats(url, { explicit: true });

@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
-import { phoneToJid, jidToSessionId } from "../../channels/whatsapp/normalize.js";
+import { phoneToJid, jidToSessionId } from "../../utils/phone.js";
 import { getRecentHistory } from "../../db.js";
 
 /**

@@ -3,14 +3,14 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 
-// Re-export normalize functions from channel module for backwards compatibility
+// Re-export normalize functions for backwards compatibility
 export {
   normalizePhone,
   isGroup,
   formatPhone,
-} from "./channels/whatsapp/normalize.js";
+} from "./utils/phone.js";
 
-import { normalizePhone } from "./channels/whatsapp/normalize.js";
+import { normalizePhone } from "./utils/phone.js";
 
 const DATA_DIR = join(homedir(), ".ravi");
 const DB_PATH = join(DATA_DIR, "chat.db");

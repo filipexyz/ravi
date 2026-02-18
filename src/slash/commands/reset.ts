@@ -30,7 +30,7 @@ export const resetCommand: SlashCommand = {
     // Resolve session by route (group route or DM route)
     const resolved = resolveRoute(ctx.routerConfig, {
       phone: ctx.senderId,
-      channel: ctx.plugin.id,
+      channel: ctx.channelType,
       accountId: ctx.accountId,
       isGroup: ctx.isGroup,
       groupId: ctx.isGroup ? ctx.chatId : undefined,

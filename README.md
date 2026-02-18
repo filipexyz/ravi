@@ -1,13 +1,12 @@
 # Ravi Bot
 
-A Claude-powered conversational bot with WhatsApp and Matrix integration, session routing, and message queuing. Runs entirely locally with embedded NATS for pub/sub.
+A Claude-powered conversational bot with multi-channel messaging (WhatsApp, Telegram, Discord) via [omni](https://github.com/namastex/omni-v2), session routing, and message queuing. Runs entirely locally with embedded NATS JetStream for pub/sub.
 
 ## Features
 
-- **Zero-Config Infrastructure** - Embedded nats-server starts automatically, no external services needed
-- **WhatsApp Integration** - Connect via Baileys (no API keys needed), multi-account support
-- **Matrix Integration** - Connect to any Matrix homeserver
-- **Multi-Account Routing** - Route WhatsApp accounts to different agents, sentinel mode for observation
+- **Zero-Config Infrastructure** - Embedded nats-server (JetStream) + omni API server start automatically
+- **Multi-Channel** - WhatsApp, Telegram, Discord via omni (no direct Baileys/SDKs)
+- **Multi-Account Routing** - Map channel accounts to different agents, sentinel mode for observation
 - **REBAC Permissions** - Fine-grained relation-based access control for tools, contacts, sessions
 - **Session Management** - Named sessions with model/thinking overrides, ephemeral TTL, cross-session messaging
 - **Message Queue** - Smart interruption handling when tools are running
@@ -46,12 +45,18 @@ ravi setup
 ```
 
 The setup wizard will:
-- Download the `nats-server` binary (local pub/sub)
+- Download the `nats-server` binary (local pub/sub + JetStream)
 - Configure Claude authentication (API key or OAuth token)
 - Create the default agent
 - Install and start the daemon
 
-No external services needed. The daemon auto-starts an embedded nats-server on launch.
+Configure omni in `~/.ravi/.env`:
+
+```bash
+OMNI_DIR=/path/to/omni-v2          # Required for channel support
+DATABASE_URL=postgresql://...       # PostgreSQL for omni
+OMNI_API_PORT=8882                  # Default
+```
 
 ### 2. Connect WhatsApp
 
@@ -78,7 +83,7 @@ ravi events stream   # Live event stream
 ### Daemon Management
 
 ```bash
-ravi daemon start      # Start bot + gateway
+ravi daemon start      # Start bot + omni + gateway
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
@@ -95,9 +100,7 @@ ravi whatsapp connect                    # Connect default account (QR code)
 ravi whatsapp connect --account vendas   # Connect named account
 ravi whatsapp connect --account vendas --agent vendas --mode sentinel
 ravi whatsapp status                     # Show connection status
-ravi whatsapp status --account vendas    # Status for specific account
 ravi whatsapp set --account vendas --agent main  # Change agent mapping
-ravi whatsapp set --account vendas --agent -     # Clear agent mapping
 ravi whatsapp disconnect                 # Disconnect account
 ```
 
@@ -123,18 +126,13 @@ Contacts can be referenced by phone, LID, or contact name.
 ravi whatsapp group list                             # List groups
 ravi whatsapp group info <groupId>                   # Group metadata + members
 ravi whatsapp group create "Name" "phone1,phone2"    # Create group
-ravi whatsapp group create "Name" "phones" --agent main  # Create + route to agent
 ravi whatsapp group add <groupId> "phone1,phone2"    # Add participants
 ravi whatsapp group remove <groupId> "phones"        # Remove participants
 ravi whatsapp group promote <groupId> "phones"       # Promote to admin
-ravi whatsapp group demote <groupId> "phones"        # Demote from admin
 ravi whatsapp group invite <groupId>                 # Get invite link
-ravi whatsapp group revoke-invite <groupId>          # Revoke invite link
 ravi whatsapp group join <code>                      # Join via invite
 ravi whatsapp group leave <groupId>                  # Leave group
 ravi whatsapp group rename <groupId> "New Name"      # Rename
-ravi whatsapp group description <groupId> "text"     # Update description
-ravi whatsapp group settings <groupId> <setting>     # announcement, locked, etc.
 ```
 
 ### Session Management
@@ -160,7 +158,6 @@ ravi sessions set-thinking <name> verbose   # Set thinking (off/normal/verbose/c
 # Ephemeral sessions (auto-delete after TTL)
 ravi sessions set-ttl <name> 5h             # Expires in 5 hours
 ravi sessions extend <name>                 # Extend by 5h (default)
-ravi sessions extend <name> 2h             # Extend by specific duration
 ravi sessions keep <name>                   # Make permanent (remove TTL)
 
 # Cross-session messaging
@@ -185,8 +182,29 @@ ravi agents debounce main 2000        # Set 2s debounce
 ravi agents reset main                # Reset main session
 ravi agents reset main all            # Reset ALL sessions
 ravi agents spec-mode main true       # Enable spec mode
-ravi agents spec-mode main false      # Disable spec mode
 ravi agents debug main                # Show last turns (raw transcript)
+```
+
+### Testing Agents
+
+Use these commands to interact with agents directly (daemon must be running):
+
+```bash
+# Send a single prompt
+ravi agents run main "oi, tudo bem?"
+ravi agents run main "lista os agentes"
+
+# Interactive chat mode
+ravi agents chat main
+# Commands: /reset, /session, /exit
+
+# Check session status
+ravi agents session main
+
+# Reset session (clear context)
+ravi agents reset main                    # Reset main session
+ravi agents reset main <sessionKey>       # Reset specific session
+ravi agents reset main all                # Reset ALL sessions
 ```
 
 ### Contacts
@@ -207,15 +225,10 @@ ravi contacts set +55... allowed-agents '["main","jarvis"]'
 
 # Identity management
 ravi contacts identity-add <contact> phone +5511...
-ravi contacts identity-add <contact> whatsapp_lid lid:123
 ravi contacts identity-remove phone +5511...
 
 # Merge contacts
 ravi contacts merge <target> <source>
-
-# Per-group tags
-ravi contacts group-tag <contact> <groupId> vip
-ravi contacts group-untag <contact> <groupId>
 ```
 
 ### REBAC Permissions
@@ -290,11 +303,6 @@ ravi triggers add "Contact Changed" \
   --message "Um contato foi modificado." \
   --cooldown 30s
 
-ravi triggers add "CRM Sync" \
-  --topic "whatsapp.*.inbound" \
-  --message "Nova mensagem recebida." \
-  --cooldown 10s
-
 ravi triggers list                   # List all triggers
 ravi triggers show <id>              # Show details
 ravi triggers enable <id>            # Enable
@@ -306,15 +314,15 @@ ravi triggers rm <id>                # Delete
 
 **Options:** `--topic` (required), `--message` (required), `--agent`, `--cooldown` (default: 5s), `--session` (main/isolated, default: isolated)
 
-**Available topics:** `ravi.*.cli.{group}.{command}`, `ravi.*.tool`, `whatsapp.*.inbound`, `matrix.*.inbound`, `ravi.contacts.pending`, `ravi.outbound.deliver`
-
 ### Outbound Queues (Automated Campaigns)
 
 ```bash
 # Create queue
 ravi outbound create "Prospecting" \
   --instructions "Reach out to this lead..." \
-  --every 5m --agent main
+  --every 5m --agent main \
+  --follow-up '{"cold":120,"warm":30}' \
+  --max-rounds 3
 
 # Manage queues
 ravi outbound list                   # List queues
@@ -322,25 +330,28 @@ ravi outbound show <id>              # Queue details
 ravi outbound start <id>             # Activate
 ravi outbound pause <id>             # Pause
 ravi outbound run <id>               # Manual trigger
+ravi outbound rm <id>                # Delete queue
 
 # Manage entries
 ravi outbound add <queueId> +55... --name "João Silva"
+ravi outbound add <queueId> +55... --tag leads       # Add all contacts with tag
 ravi outbound entries <queueId>      # List entries
 ravi outbound status <entryId>       # Entry details
-ravi outbound qualify <id> warm      # Set qualification
+ravi outbound qualify <id> warm      # Set qualification (cold/warm/interested/qualified/rejected)
+ravi outbound context <id> '{"note":"Interested in X"}'  # Update entry context
 ravi outbound reset <id>             # Reset to pending
-```
+ravi outbound reset <id> --full      # Reset and clear context
+ravi outbound skip <id>              # Skip entry
+ravi outbound done <id>              # Mark as done
 
-### Channel Management
+# Chat history and reports
+ravi outbound chat <entryId>         # View chat history
+ravi outbound chat <entryId> --limit 20
+ravi outbound report                 # Report for all queues
+ravi outbound report <queueId>       # Report for specific queue
 
-```bash
-ravi channels list                   # List channels + capabilities
-ravi channels status                 # All channel account statuses
-ravi channels status whatsapp        # Specific channel
-ravi channels start whatsapp         # Start all accounts
-ravi channels start whatsapp:main    # Start specific account
-ravi channels stop whatsapp:main     # Stop specific account
-ravi channels restart whatsapp       # Restart all accounts
+# Humanized send (used by agent during outbound session)
+ravi outbound send <entryId> "Hello!" --typing-delay 2000 --pause 1000
 ```
 
 ### Video Analysis
@@ -369,7 +380,7 @@ Requires `OPENAI_API_KEY` in `~/.ravi/.env`.
 ```bash
 ravi media send <filePath>                          # Send file (auto-detects type)
 ravi media send photo.jpg --caption "Check this"    # With caption
-ravi media send video.mp4 --channel whatsapp --to <jid>
+ravi media send video.mp4 --channel telegram --to <chatId>
 ```
 
 ### Live Event Stream
@@ -408,7 +419,6 @@ ravi agents debounce main 2000
 # Routes
 ravi routes list
 ravi routes add "+5511*" assistant
-ravi routes set "+5511*" priority 10
 
 # Settings
 ravi settings list
@@ -426,7 +436,6 @@ ravi settings set defaultTimezone America/Sao_Paulo
 | `mode` | Operating mode: `active` (responds) or `sentinel` (observes silently) |
 | `dmScope` | How to group DM sessions |
 | `debounceMs` | Message grouping window in ms |
-| `matrixAccount` | Matrix account username (for multi-account) |
 | `contactScope` | Contact visibility: `own`, `tagged:<tag>`, `all` |
 | `settingSources` | Claude SDK setting sources (JSON array) |
 
@@ -454,36 +463,34 @@ Customize via `SPEC_INSTRUCTIONS.md` in the agent's CWD.
 ## Architecture
 
 ```
-                                         ┌──────────────┐
-                                         │  nats-server  │
-                                         │    :4222      │
-                                         └──────┬───────┘
-                                                │
-┌─────────────┐                              ┌──┴────────────────────┐
-│    TUI      │──────────────────────────────│         NATS          │
-└─────────────┘                              │  ravi.{sessionKey}.*  │
-                                             └───────────┬───────────┘
-┌─────────────┐     ┌─────────────┐                      │
-│  WhatsApp   │────▶│   Gateway   │──────────────────────┤
-│   Plugin    │     │  (router)   │                      │
-└─────────────┘     └─────────────┘                      │
-┌─────────────┐            │                             │
-│   Matrix    │────────────┘                             │
-│   Plugin    │                                          ▼
-└─────────────┘                              ┌───────────────────────┐
-                                             │       RaviBot         │
-                                             │   Claude Agent SDK    │
-                                             │   cwd: ~/ravi/{agent} │
-                                             └───────────────────────┘
+ravi daemon start
+  ├── nats-server :4222 (JetStream)
+  ├── omni API    :8882 (child process)
+  │     ├── WhatsApp (Baileys)
+  │     ├── Telegram
+  │     └── Discord
+  └── ravi bot
+        ├── OmniConsumer  → subscribe JetStream message.received.>
+        ├── Claude Agent SDK (sessions, tools)
+        ├── OmniSender    → HTTP POST /api/v2/messages/send
+        └── Runners (cron, heartbeat, triggers, outbound)
 ```
 
-**Local Infrastructure:** The daemon auto-starts an embedded nats-server on :4222 for pub/sub. No external services needed.
+**Message flow:**
 
-### Message Flow
-
-1. **Inbound**: WhatsApp/Matrix → Gateway → NATS → Bot
-2. **Processing**: Bot uses Claude SDK with agent's working directory
-3. **Outbound**: Bot → NATS → Gateway → WhatsApp/Matrix
+```
+[WhatsApp / Telegram / Discord]
+    → omni API
+    → NATS JetStream (stream: MESSAGE)
+    → OmniConsumer (pull consumer, ACK explicit)
+    → ravi.{sessionKey}.prompt
+    → RaviBot (Claude SDK)
+    → ravi.{sessionKey}.response
+    → Gateway
+    → OmniSender (HTTP)
+    → omni API
+    → [WhatsApp / Telegram / Discord]
+```
 
 ### Message Queue
 
@@ -505,10 +512,10 @@ When messages arrive while processing:
 
 ~/.ravi/                  # Ravi config directory
 ├── .env                  # Environment variables
+├── omni-api-key          # Auto-generated omni API key
+├── jetstream/            # NATS JetStream storage
 ├── bin/
 │   └── nats-server       # nats-server binary (auto-downloaded)
-├── chat.db               # Message history
-├── matrix/               # Matrix SDK storage
 └── logs/
     └── daemon.log        # Daemon logs
 ```
@@ -518,20 +525,20 @@ When messages arrive while processing:
 ```bash
 # Required
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
+# or
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# Omni (required for channel support)
+OMNI_DIR=/path/to/omni-v2
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+OMNI_API_PORT=8882          # Default
 
 # Optional
-OPENAI_API_KEY=sk-xxx          # For audio transcription
-GEMINI_API_KEY=AIza...         # For video analysis
+OPENAI_API_KEY=sk-xxx       # For audio transcription
+GEMINI_API_KEY=AIza...      # For video analysis
 RAVI_MODEL=sonnet
-RAVI_LOG_LEVEL=info            # debug | info | warn | error
-
-# Matrix (optional)
-MATRIX_HOMESERVER=https://matrix.org
-MATRIX_ACCESS_TOKEN=syt_xxx
-MATRIX_ENCRYPTION=false
-MATRIX_DM_POLICY=open          # open | closed | pairing
-MATRIX_ROOM_POLICY=closed      # open | closed | allowlist
-MATRIX_ROOM_ALLOWLIST=!room1:server,#alias:server
+RAVI_LOG_LEVEL=info         # debug | info | warn | error
+NATS_PORT=4222              # Default
 ```
 
 ## Development
@@ -551,17 +558,14 @@ ravi daemon logs   # Check for errors
 ravi daemon env    # Verify Claude auth is set
 ```
 
-If nats-server fails to start, check that port 4222 is free:
-```bash
-lsof -i :4222
-```
+If nats-server fails to start, the daemon auto-recovers by clearing JetStream storage and retrying.
 
 ### WhatsApp not connecting
 
 ```bash
-ravi whatsapp status                  # Check current state
-rm -rf ~/.ravi/whatsapp-auth          # Reset auth, get new QR
-ravi daemon restart
+ravi whatsapp status      # Check current state
+ravi whatsapp connect     # Reconnect (shows QR if needed)
+ravi daemon logs          # Check omni logs
 ```
 
 ### Messages not being processed

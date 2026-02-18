@@ -184,7 +184,7 @@ if (channelName === "MeuCanal") {
 }
 ```
 
-2. O channelName vem do `ChannelPlugin.meta.name`.
+2. O channelName vem do `channelType` do OmniConsumer (ex: `"whatsapp-baileys"`, `"discord"`, `"telegram"`).
 
 ## Outbound System Context
 

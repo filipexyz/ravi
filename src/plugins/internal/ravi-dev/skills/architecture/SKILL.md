@@ -11,22 +11,25 @@ description: |
 
 # Ravi - Arquitetura do Sistema
 
-Ravi e um sistema multi-agent construido sobre o Claude Agent SDK que orquestra conversas em multiplas plataformas (WhatsApp, Matrix, TUI).
+Ravi é um sistema multi-agent construído sobre o Claude Agent SDK que orquestra conversas em múltiplas plataformas via omni (WhatsApp, Discord, Telegram).
 
-**Repositorio:** `/Users/luis/dev/filipelabs/ravi.bot`
-**Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS | **AI:** Claude SDK
+**Repositório:** `/Users/luis/dev/filipelabs/ravi.bot`
+**Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS JetStream | **AI:** Claude SDK
 
 ## Fluxo Principal de Mensagens
 
 ```
-[WhatsApp/Matrix/TUI]
-    -> Channel Plugin (normaliza mensagem)
-    -> Gateway (formata envelope, resolve rota)
+[WhatsApp/Discord/Telegram]
+    -> omni API (child process)
+    -> NATS JetStream (stream MESSAGE)
+    -> OmniConsumer (subscriber JetStream)
     -> nats.emit("ravi.{sessionKey}.prompt")
     -> RaviBot (Claude SDK query)
     -> nats.emit("ravi.{sessionKey}.response")
-    -> Gateway (roteia para canal)
-    -> [WhatsApp/Matrix/TUI]
+    -> Gateway
+    -> OmniSender (HTTP POST /api/v2/messages/send)
+    -> omni API
+    -> [WhatsApp/Discord/Telegram]
 ```
 
 ## Componentes Core
@@ -34,25 +37,52 @@ Ravi e um sistema multi-agent construido sobre o Claude Agent SDK que orquestra 
 ### daemon.ts - Ponto de Entrada
 Orquestra startup de todos os subsistemas:
 1. Carrega env de `~/.ravi/.env`
-2. Inicia RaviBot (Claude SDK)
-3. Cria Gateway com channel plugins
-4. Registra WhatsApp + Matrix
-5. Inicia HeartbeatRunner, CronRunner, OutboundRunner, TriggerRunner
+2. Inicia nats-server com JetStream (`local/server.ts`)
+3. Inicia omni API server (`local/omni.ts`)
+4. Inicia RaviBot (Claude SDK)
+5. Inicia OmniConsumer + Gateway
+6. Inicia HeartbeatRunner, CronRunner, OutboundRunner, TriggerRunner
 
-### gateway.ts - Orquestrador de Mensagens
-**Inbound:** Channel normaliza msg -> Gateway resolve rota -> emite prompt
-**Outbound:** Bot emite response -> Gateway extrai target -> envia pro canal
+Shutdown tem timeout global de 15s (force-exit se travar).
 
-Subscriptions importantes:
-- `{channelId}.*.inbound` - Msgs dos canais
-- `ravi.*.response` - Respostas do bot
-- `ravi.outbound.deliver` - Envio direto do outbound
-- `ravi.media.send` - Envio de midia
+### local/server.ts - nats-server
+Spawna nats-server com JetStream habilitado (`-js`). Armazena em `~/.ravi/jetstream/`.
+Inclui recovery automático: se startup falhar (WAL corrompido), limpa storage e reinicia.
 
-Features:
-- Ghost detection via `_emitId` (previne duplicatas de restarts)
-- Typing indicator automatico
-- Outbound suppression (msgs de contatos outbound nao geram prompt)
+### local/omni.ts - omni API
+Spawna omni API como child process (bun). Gerencia:
+- Build do bundle na primeira vez
+- Migrations de banco
+- API key bootstrap (`~/.ravi/omni-api-key`)
+- Healthcheck via HTTP GET /health
+
+### omni/consumer.ts - Inbound
+Subscriber de dois streams JetStream do omni:
+- `MESSAGE` (filter: `message.received.>`) → prompts de agente
+- `INSTANCE` (filter: `instance.>`) → QR codes, conexão
+
+Comportamento:
+- `start()` aguarda consumers ficarem prontos (timeout 60s, continua em background)
+- `msg.ack()` apenas após handler suceder; `msg.nak()` em erro (retry automático)
+- Auto-reconnect em erro de consumo (loop com retry 2s)
+- Config subscription com auto-reconnect para `ravi.config.changed`
+
+### omni/sender.ts - Outbound
+HTTP client para omni REST API (`@omni/sdk`). Métodos:
+- `send(instanceId, to, text)` — texto
+- `sendTyping(instanceId, to, active)` — indicador de digitação
+- `sendReaction(instanceId, to, messageId, emoji)` — reação
+- `sendMedia(instanceId, to, path, type, filename, caption)` — mídia
+
+Retry com backoff exponencial (3x, 1s/2s/3s). Só retenta TypeErrors (rede) e 5xx.
+
+### gateway.ts - Orquestrador Interno
+Subscriptions internas do ravi (não gerencia canais):
+- `ravi.*.response` → OmniSender.send()
+- `ravi.outbound.deliver` → OmniSender.send()
+- `ravi.*.claude` → typing heartbeat → OmniSender.sendTyping()
+- `ravi.outbound.reaction` → OmniSender.sendReaction()
+- `ravi.config.changed` → sync REBAC
 
 ### bot.ts - Core do Bot
 Processa prompts usando Claude Agent SDK.
@@ -62,27 +92,21 @@ Processa prompts usando Claude Agent SDK.
 2. Resolve agent config pela session key
 3. Debounce se configurado
 4. Cria/resume SDK session
-5. Streama resposta -> emite responses parciais
+5. Streama resposta → emite responses parciais
 6. Gerencia interrupts (msg nova durante processamento)
 
-**Interrupt handling:**
-- Tool rodando -> enfileira msg
-- Sem tool -> aborta query atual
-- Apos tool terminar -> checa fila -> interrupt
-- Msgs enfileiradas sao combinadas em 1 prompt
-
 **Abort control:**
-- Cada sessao tem AbortController
+- Cada sessão tem AbortController
 - Novo prompt aborta subprocess anterior
 - Daemon stop aborta TODOS os controllers
-- Watchdog de 5min detecta sessoes travadas
+- Watchdog de 5min detecta sessões travadas
 
 ### router/ - Sistema de Roteamento
 
-**Resolucao de rota (prioridade):**
-1. Agent atribuido ao contato
-2. Rota com pattern match
-3. AccountId = AgentId (Matrix)
+**Resolução de rota (prioridade):**
+1. `account.{id}.agent` setting
+2. Agent atribuído ao contato
+3. Rota com pattern match
 4. Agent default
 
 **Session keys:**
@@ -94,50 +118,20 @@ agent:main:whatsapp:group:123456         # Grupo
 agent:main:outbound:queueId:phone        # Outbound
 ```
 
-**DM Scopes:**
-- `main` - Todas DMs compartilham 1 sessao
-- `per-peer` - Isolado por contato (default)
-- `per-channel-peer` - Isolado por canal+contato
-- `per-account-channel-peer` - Isolamento total
-
 **Arquivos:**
-- `router/resolver.ts` - Resolve rota -> session key
-- `router/session-key.ts` - Constroi/parseia session keys
-- `router/sessions.ts` - CRUD de sessoes (SQLite)
+- `router/resolver.ts` - Resolve rota → session key
+- `router/session-key.ts` - Constrói/parseia session keys
+- `router/sessions.ts` - CRUD de sessões (SQLite)
 - `router/config.ts` - Carrega config de agents/routes
 - `router/router-db.ts` - Camada de banco
 
-### channels/ - Abstracao de Canais
-
-Interface unificada para plataformas de mensagem.
-
-**Adapters:**
-- ConfigAdapter - Configuracao de contas
-- SecurityAdapter - Controle de acesso
-- OutboundAdapter - Envio de msgs, typing, reactions
-- GatewayAdapter - Lifecycle de conexao
-- StatusAdapter - Health monitoring
-
-**WhatsApp (`channels/whatsapp/`):**
-- Baileys SDK, multi-account, QR pairing
-- Media download com limites de tamanho
-- Transcricao de audio (OpenAI Whisper)
-- JID/LID resolution
-- Sessao em `~/ravi/sessions/whatsapp/{accountId}/`
-
-**Matrix (`channels/matrix/`):**
-- matrix-bot-sdk, multi-account
-- E2E encryption, device verification
-- Credenciais em `~/ravi/sessions/matrix/accounts.json`
-- Cada agent pode ter matrixAccount diferente
-
-## Subsistemas de Automacao
+## Subsistemas de Automação
 
 ### Outbound (`outbound/`)
 Campanhas de mensagens proativas com processamento round-robin.
 
 **Fluxo:**
-1. Runner pega proxima queue do DB
+1. Runner pega próxima queue do DB
 2. Arma timer para `nextRunAt`
 3. Processa entries por prioridade:
    - Response entries (contato respondeu)
@@ -145,63 +139,57 @@ Campanhas de mensagens proativas com processamento round-robin.
    - Initial outreach (entries pendentes)
 4. Manda prompt para agent com contexto da campanha
 
-**Qualificacao:** cold -> warm -> interested -> qualified/rejected
+**Qualificação:** cold → warm → interested → qualified/rejected
 
 ### Triggers (`triggers/`)
-Automacao event-driven disparada por eventos do sistema.
+Automação event-driven disparada por eventos do sistema.
 
 **Fluxo:**
 1. Runner subscribe em topics configurados
-2. Evento dispara -> busca triggers ativos com match
-3. Emite prompt para sessao target do trigger
+2. Evento dispara → busca triggers ativos com match
+3. Emite prompt para sessão target do trigger
 4. Respeita cooldown entre disparos
 
 ### Cron (`cron/`)
-Jobs agendados com suporte a multiplos formatos.
+Jobs agendados com suporte a múltiplos formatos.
 
 **Schedules:** cron expression | interval ("30m") | daily ("09:00") | at (one-time)
 
-**Fluxo:** Timer -> job due -> emite prompt -> calcula proximo run
+**Fluxo:** Timer → job due → emite prompt → calcula próximo run
 
 ### Heartbeat (`heartbeat/`)
-Check-ins periodicos de agents dentro de horarios ativos.
+Check-ins periódicos de agents dentro de horários ativos.
 
 **Fluxo:**
 1. Checa agents com heartbeat enabled
-2. Para cada sessao, verifica se esta due
+2. Para cada sessão, verifica se está due
 3. Checa active hours (timezone-aware)
 4. Envia prompt de status check
 5. `HEARTBEAT_OK` = silencioso, qualquer outro texto = envia pro canal
 
 ### Session Messaging (`cli/commands/sessions.ts`)
-Mensagens entre sessoes (inter-session communication).
+Mensagens entre sessões (inter-session communication).
 
 **Comandos:** `sessions send` | `sessions inform` | `sessions execute` | `sessions ask` | `sessions answer`
-
-**Ask/Answer flow:**
-1. Agent A: `ravi sessions ask <target-session> "pergunta" "sender"`
-2. Bot emite `[System] Ask:` para target
-3. Agent B responde, usa `ravi sessions answer <origin-session> "resposta" "sender"`
-4. Bot emite `[System] Answer:` para origin
 
 ## Sistema de Plugins
 
 **Duas fontes:**
-1. **Internos** - Embutidos no build, extraidos para `~/.cache/ravi/plugins/`
-2. **Usuario** - Customizados em `~/ravi/plugins/`
+1. **Internos** - Embutidos no build, extraídos para `~/.cache/ravi/plugins/`
+2. **Usuário** - Customizados em `~/ravi/plugins/`
 
 **Build time:** `gen-plugins.ts` escaneia `src/plugins/internal/` e gera `internal-registry.ts`
-**Runtime:** `discoverPlugins()` extrai internos + escaneia user dir -> passa para SDK
+**Runtime:** `discoverPlugins()` extrai internos + escaneia user dir → passa para SDK
 
 ## Sistema de Hooks
 
 ### PreToolUse (bash/hook.ts)
-Intercepta chamadas Bash e valida permissoes via REBAC.
-Checa `agentCan(id, "execute", "executable", exec)` pra cada executavel parsed.
+Intercepta chamadas Bash e valida permissões via REBAC.
+Checa `agentCan(id, "execute", "executable", exec)` pra cada executável parsed.
 
 ### PreCompact (hooks/pre-compact.ts)
-Extrai memorias antes do SDK compactar contexto.
-Le `COMPACT_INSTRUCTIONS.md` do agent, roda modelo barato em background, atualiza `MEMORY.md`.
+Extrai memórias antes do SDK compactar contexto.
+Lê `COMPACT_INSTRUCTIONS.md` do agent, roda modelo barato em background, atualiza `MEMORY.md`.
 
 ## Infraestrutura CLI
 
@@ -220,7 +208,6 @@ class AgentCommands {
 ### Contexto (AsyncLocalStorage)
 ```typescript
 runWithContext({ sessionKey, agentId, source }, async () => {
-  // CLI tools acessam contexto sem parametros
   const ctx = getContext();
 });
 ```
@@ -230,19 +217,30 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 ```
 ~/ravi/ravi.db          - SQLite: agents, routes, sessions, contacts, settings
 ~/.ravi/.env            - API keys e env vars
+~/.ravi/omni-api-key    - API key para omni (auto-gerada)
+~/.ravi/jetstream/      - JetStream storage (nats-server)
 ~/.ravi/logs/           - Logs do daemon
-~/ravi/{agent-id}/      - Diretorios dos agents (CLAUDE.md, MEMORY.md)
-~/ravi/sessions/        - Sessoes dos canais (WhatsApp, Matrix)
-~/.cache/ravi/plugins/  - Plugins internos extraidos
+~/ravi/{agent-id}/      - Diretórios dos agents (CLAUDE.md, MEMORY.md)
+~/.cache/ravi/plugins/  - Plugins internos extraídos
 ~/.claude/sessions/     - SDK session files (JSONL)
 ```
 
-## Padroes Importantes
+## Env Vars Importantes
 
-1. **PubSub via NATS** - Tudo comunica via topics
-2. **Ghost detection** - `_emitId` + `_instanceId` previne duplicatas
-3. **Abort control** - AbortController por sessao, cleanup no stop
-4. **Debouncing** - Agrupa msgs rapidas por window configuravel
-5. **Outbound suppression** - Msgs de contatos outbound nao geram prompt duplicado
-6. **Silent token** - `@@SILENT@@` suprime emissao pro canal
-7. **Session resumption** - SDK sessions persistem entre mensagens
+```bash
+OMNI_DIR=/path/to/omni-v2      # obrigatório para canal WhatsApp/Discord/Telegram
+OMNI_API_PORT=8882              # default
+DATABASE_URL=postgresql://...   # banco do omni
+NATS_PORT=4222                  # default
+```
+
+## Padrões Importantes
+
+1. **JetStream pull consumers** - Mensagens inbound via durable consumers (ACK explícito)
+2. **PubSub via NATS** - Tudo comunica via topics internos
+3. **Ghost detection** - `_emitId` + `_instanceId` previne duplicatas
+4. **Abort control** - AbortController por sessão, cleanup no stop
+5. **Debouncing** - Agrupa msgs rápidas por window configurável
+6. **Outbound suppression** - Msgs de contatos outbound não geram prompt duplicado
+7. **Silent token** - `@@SILENT@@` suprime emissão pro canal
+8. **Session resumption** - SDK sessions persistem entre mensagens

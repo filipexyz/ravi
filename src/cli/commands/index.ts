@@ -13,7 +13,6 @@ export * from "./daemon.js";
 export * from "./events.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
-export * from "./matrix.js";
 export * from "./media.js";
 export * from "./outbound.js";
 export * from "./permissions.js";

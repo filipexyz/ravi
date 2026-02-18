@@ -104,6 +104,9 @@ export function resolveRoute(
   let agentId: string;
   if (route?.agent) {
     agentId = route.agent;
+  } else if (config.accountAgents?.[effectiveAccount]) {
+    // Account-agent mapping (from `account.<id>.agent` setting)
+    agentId = config.accountAgents[effectiveAccount];
   } else if (effectiveAccount === "default") {
     agentId = config.defaultAgent;
   } else {

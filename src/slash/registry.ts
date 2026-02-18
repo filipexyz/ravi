@@ -5,7 +5,6 @@
  * of slash commands intercepted at the gateway layer.
  */
 
-import type { ChannelPlugin } from "../channels/types.js";
 import type { RouterConfig } from "../router/types.js";
 import { getContact } from "../contacts.js";
 import { logger } from "../utils/logger.js";
@@ -32,9 +31,12 @@ export interface SlashContext {
   isGroup: boolean;
   args: string[];
   mentions?: string[];
-  plugin: ChannelPlugin;
+  /** Channel type identifier (e.g. "whatsapp-baileys") */
+  channelType: string;
   accountId: string;
   routerConfig: RouterConfig;
+  /** Send a message to the chat */
+  send: (accountId: string, chatId: string, text: string) => Promise<void>;
 }
 
 interface HandleInput {
@@ -44,9 +46,10 @@ interface HandleInput {
   chatId: string;
   isGroup: boolean;
   mentions?: string[];
-  plugin: ChannelPlugin;
+  channelType: string;
   accountId: string;
   routerConfig: RouterConfig;
+  send: (accountId: string, chatId: string, text: string) => Promise<void>;
 }
 
 // ============================================================================
@@ -128,22 +131,19 @@ export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
       isGroup: input.isGroup,
       args: parsed.args,
       mentions: input.mentions,
-      plugin: input.plugin,
+      channelType: input.channelType,
       accountId: input.accountId,
       routerConfig: input.routerConfig,
+      send: input.send,
     });
 
     // Send response if handler returned text
     if (response) {
-      await input.plugin.outbound.send(input.accountId, input.chatId, {
-        text: response,
-      });
+      await input.send(input.accountId, input.chatId, response);
     }
   } catch (err) {
     log.error("Slash command error", { command: parsed.name, error: err });
-    await input.plugin.outbound.send(input.accountId, input.chatId, {
-      text: `⚠️ Error executing /${parsed.name}`,
-    });
+    await input.send(input.accountId, input.chatId, `⚠️ Error executing /${parsed.name}`);
   }
 
   return true;

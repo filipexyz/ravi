@@ -8,8 +8,6 @@ import { resolve, basename, extname } from "path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
-import type { OutboundMedia } from "../../channels/types.js";
-
 /** Extension → mimetype map */
 const MIME_MAP: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -29,8 +27,10 @@ const MIME_MAP: Record<string, string> = {
   ".pdf": "application/pdf",
 };
 
+type MediaType = "image" | "video" | "audio" | "document";
+
 /** Detect media type from mimetype */
-function mediaType(mime: string): OutboundMedia["type"] {
+function mediaType(mime: string): MediaType {
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
