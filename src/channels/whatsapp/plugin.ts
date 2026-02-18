@@ -709,11 +709,25 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
           // Save as pending - use chatId for groups, senderId for DMs
           const pendingId = message.isGroup ? message.chatId : message.senderId;
           const pendingName = message.isGroup ? message.groupName ?? null : message.senderName ?? null;
-          savePendingContact(pendingId, pendingName);
+          const isNew = savePendingContact(pendingId, pendingName);
           log.info("Saved pending", {
             id: pendingId,
             isGroup: message.isGroup,
+            isNew,
           });
+          if (isNew) {
+            notif.emit("ravi.contacts.pending", {
+              type: "contact",
+              channel: "whatsapp",
+              accountId,
+              senderId: message.senderId,
+              senderName: message.senderName,
+              chatId: message.chatId,
+              isGroup: message.isGroup,
+              groupName: message.groupName,
+              reason: decision.reason,
+            }).catch(err => log.warn("Failed to emit pending notification", { error: err }));
+          }
         } else {
           log.debug(`Message blocked: ${decision.reason}`);
         }

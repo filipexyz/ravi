@@ -456,7 +456,7 @@ export function upsertContact(
 /**
  * Save a pending contact (updates name but doesn't change status if exists)
  */
-export function savePendingContact(phone: string, name?: string | null): void {
+export function savePendingContact(phone: string, name?: string | null): boolean {
   const normalized = normalizePhone(phone);
   const existing = resolveContact(normalized);
 
@@ -466,12 +466,14 @@ export function savePendingContact(phone: string, name?: string | null): void {
       db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
         .run(name, existing.id);
     }
+    return false;
   } else {
     // Create new pending contact
     const id = generateId();
     const platform = detectPlatform(normalized);
     stmts.upsertPending.run(id, name ?? null);
     stmts.insertIdentity.run(id, platform, normalized, 1);
+    return true;
   }
 }
 
@@ -992,7 +994,8 @@ export function saveAccountPending(
   accountId: string,
   phone: string,
   opts?: { name?: string | null; chatId?: string; isGroup?: boolean }
-): void {
+): boolean {
+  const exists = db.prepare("SELECT 1 FROM account_pending WHERE account_id = ? AND phone = ?").get(accountId, phone);
   const now = Date.now();
   db.prepare(`
     INSERT INTO account_pending (account_id, phone, name, chat_id, is_group, created_at, updated_at)
@@ -1010,6 +1013,7 @@ export function saveAccountPending(
     now,
     now
   );
+  return !exists;
 }
 
 /**

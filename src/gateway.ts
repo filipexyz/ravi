@@ -873,7 +873,7 @@ export class Gateway {
       // Save as per-account pending so user can see unrouted messages
       const acctId = message.accountId ?? "default";
       const pendingPhone = message.isGroup ? message.chatId : message.senderId;
-      saveAccountPending(acctId, pendingPhone, {
+      const isNew = saveAccountPending(acctId, pendingPhone, {
         name: message.isGroup ? message.groupName : message.senderName,
         chatId: message.chatId,
         isGroup: message.isGroup,
@@ -882,7 +882,20 @@ export class Gateway {
         channel: plugin.id,
         sender: message.senderId,
         accountId: acctId,
+        isNew,
       });
+      if (isNew) {
+        notif.emit("ravi.contacts.pending", {
+          type: "account",
+          channel: plugin.id,
+          accountId: acctId,
+          senderId: message.senderId,
+          senderName: message.senderName,
+          chatId: message.chatId,
+          isGroup: message.isGroup,
+          groupName: message.groupName,
+        }).catch(err => log.warn("Failed to emit pending notification", { error: err }));
+      }
       return;
     }
 
