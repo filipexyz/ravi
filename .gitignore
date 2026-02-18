@@ -27,3 +27,6 @@ npm-debug.log*
 
 # Test coverage
 coverage/
+
+# Genie workspace
+.genie/

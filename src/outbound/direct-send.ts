@@ -5,7 +5,7 @@
  * without going through the bot pipeline.
  */
 
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { isOptedOut, recordOutbound, getContact } from "../contacts.js";
 import { logger } from "../utils/logger.js";
 
@@ -30,7 +30,7 @@ export interface DirectSendResult {
 /**
  * Send a message directly to a contact.
  *
- * The actual sending is done by emitting a notif event that the
+ * The actual sending is done by emitting a NATS event that the
  * WhatsApp plugin picks up. This decouples direct-send from
  * the WhatsApp module internals.
  */
@@ -53,7 +53,7 @@ export async function directSend(input: DirectSendInput): Promise<DirectSendResu
   try {
     // Emit directly to the deliver topic
     // The gateway subscribes to this and routes to the correct plugin
-    await notif.emit("ravi.outbound.deliver", {
+    await nats.emit("ravi.outbound.deliver", {
       channel,
       accountId,
       to,

@@ -1,11 +1,16 @@
 # Ravi Bot
 
-Claude-powered bot with session routing via notif.sh.
+Claude-powered bot with session routing via notif.sh. Runs entirely locally with embedded infrastructure.
 
 ## Architecture
 
 ```
-┌─────────────┐                              ┌───────────────────────┐
+                                    ┌──────────────┐  ┌──────────────┐
+                                    │   pgserve    │  │    notifd     │
+                                    │  :8432 (PG)  │  │ :8080 (NATS) │
+                                    └──────┬───────┘  └──────┬───────┘
+                                           └───────┬─────────┘
+┌─────────────┐                              ┌─────┴─────────────────┐
 │    TUI      │──────────────────────────────│       notif.sh        │
 └─────────────┘                              │  ravi.{sessionKey}.*  │
                                              └───────────┬───────────┘
@@ -23,19 +28,24 @@ Claude-powered bot with session routing via notif.sh.
                                              └───────────────────────┘
 ```
 
+**Local Infrastructure:** The daemon auto-starts pgserve (embedded Postgres on :8432) and notifd (event bus on :8080 with embedded NATS). No external NOTIF_API_KEY needed -- the key is bootstrapped on first run and stored in `~/.ravi/local-api-key`. Process env vars `NOTIF_API_KEY` and `NOTIF_SERVER` are set automatically by the daemon.
+
 ## Quick Start
 
 ```bash
 # 1. Install dependencies
-npm install
+bun install
 
-# 2. Setup environment
-ravi daemon env   # Edit ~/.ravi/.env with API keys
+# 2. Run setup wizard (downloads notifd, configures auth, creates agent)
+ravi setup
 
-# 3. Start daemon (bot + gateway)
+# 3. Start daemon (local infra + bot + gateway)
 ravi daemon start
 
-# 4. Check status
+# 4. Connect WhatsApp
+ravi whatsapp connect
+
+# 5. Check status
 ravi daemon status
 ravi daemon logs
 ```
@@ -47,12 +57,17 @@ ravi.{sessionKey}.prompt    # User message (with source)
 ravi.{sessionKey}.response  # Bot response (with target) - streamed
 ravi.{sessionKey}.claude    # SDK events (system, assistant, result)
 ravi.{sessionKey}.tool      # Tool execution events (start/end)
+ravi.contacts.pending       # New pending contact/group notification
+ravi.audit.denied           # REBAC permission denial audit events
+ravi.config.changed         # Configuration changed via CLI
+ravi.triggers.refresh       # Hot-reload trigger subscriptions
 ```
 
 - **prompt**: `{ prompt, source: { channel, accountId, chatId } }`
 - **response**: `{ response, target: { channel, accountId, chatId } }`
 - **claude**: Raw SDK events (used for typing heartbeat)
 - **tool**: `{ event: "start"|"end", toolId, toolName, input?, output?, isError?, durationMs?, timestamp, sessionKey, agentId }`
+- **contacts.pending**: `{ type: "contact"|"account", phone?, accountId?, name? }`
 
 ## Session Keys
 
@@ -388,11 +403,11 @@ ravi settings set defaultTimezone America/Sao_Paulo
 **Agent Config:**
 - `cwd` - Working directory (CLAUDE.md, tools, etc)
 - `model` - Model override (default: sonnet)
+- `mode` - Operating mode: `active` (responds) or `sentinel` (observes silently)
 - `dmScope` - Session grouping for DMs
 - `debounceMs` - Message grouping window
-- `allowedTools` - Tool whitelist (undefined = all tools)
-- `bashConfig` - Bash CLI permissions (see Bash Permissions below)
 - `matrixAccount` - Matrix account username (for multi-account)
+- `contactScope` - Contact visibility: `own`, `tagged:<tag>`, `all`
 
 **DM Scopes:**
 - `main` - All DMs share one session
@@ -400,29 +415,30 @@ ravi settings set defaultTimezone America/Sao_Paulo
 - `per-channel-peer` - Isolated by channel+contact
 - `per-account-channel-peer` - Full isolation
 
-**Bash Permissions:**
+**REBAC Permissions:**
 
-Control which CLI commands agents can execute:
+Fine-grained relation-based access control for agents:
 
 ```bash
-ravi agents bash <id>                    # Show current config
-ravi agents bash <id> mode <mode>        # Set mode (bypass, allowlist, denylist)
-ravi agents bash <id> init               # Init denylist with dangerous CLIs
-ravi agents bash <id> init strict        # Init allowlist with safe CLIs only
-ravi agents bash <id> allow <cli>        # Add CLI to allowlist
-ravi agents bash <id> deny <cli>         # Add CLI to denylist
-ravi agents bash <id> remove <cli>       # Remove CLI from lists
-ravi agents bash <id> clear              # Reset to bypass mode
+ravi permissions grant agent:dev use tool:Bash
+ravi permissions grant agent:dev execute executable:git
+ravi permissions grant agent:dev execute group:contacts
+ravi permissions grant agent:dev access session:dev-*
+ravi permissions revoke agent:dev use tool:Bash
+ravi permissions check agent:dev execute group:contacts
+ravi permissions list --subject agent:dev
+ravi permissions init agent:dev full-access      # Template: all tools + executables
+ravi permissions init agent:dev sdk-tools        # Template: SDK tools only
+ravi permissions init agent:dev safe-executables # Template: safe CLIs only
+ravi permissions sync                            # Re-sync from config
+ravi permissions clear                           # Clear manual relations
 ```
 
-**Modes:**
-- `bypass` - All commands allowed (default)
-- `allowlist` - Only specified CLIs can run
-- `denylist` - Specified CLIs are blocked
+**Relations:** `admin`, `use` (tools), `execute` (executables/CLI groups), `access`/`modify` (sessions), `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`
 
-**Default Allowlist (init strict):** ls, cat, git, grep, node, npm, bun, python, make, etc.
+**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `tool`, `executable`, `cron`, `trigger`, `outbound`, `team`
 
-**Default Denylist (init):** rm, sudo, curl, wget, docker, kill, etc.
+**Enforcement:** New agents are closed-by-default (no permissions). Denied actions emit audit events to `ravi.audit.denied`.
 
 **Global Settings:**
 - `defaultAgent` - Default agent when no route matches
@@ -434,12 +450,24 @@ ravi agents bash <id> clear              # Reset to bypass mode
 **Agent Resolution:**
 
 Messages are routed to agents in this priority order:
-1. Contact's assigned agent (from contacts DB)
-2. Route match (from routes table)
-3. AccountId-as-agent (if accountId matches an existing agent ID)
-4. Default agent
+1. Account-agent mapping (from `account.<id>.agent` setting)
+2. Contact's assigned agent (from contacts DB)
+3. Route match (from routes table, scoped to account)
+4. AccountId-as-agent (if accountId matches an existing agent ID)
+5. Default agent
 
-The accountId-as-agent feature allows Matrix multi-account setups where each Matrix account maps directly to an agent with the same ID.
+The account-agent mapping is set via `ravi whatsapp connect --agent <id>` or `ravi whatsapp set --account <id> --agent <id>`.
+
+**Multi-Account WhatsApp:**
+
+Connect multiple WhatsApp accounts, each mapped to a different agent:
+
+```bash
+ravi whatsapp connect --account vendas --agent vendas --mode active
+ravi whatsapp connect --account suporte --agent suporte --mode sentinel
+```
+
+**Sentinel Mode:** Agents in sentinel mode observe messages silently without auto-replying. They can send messages explicitly via `ravi whatsapp dm send`. Useful for monitoring accounts where an agent only acts when instructed.
 
 **Contact Fields:**
 - `phone` - Normalized phone number (primary key)
@@ -466,6 +494,11 @@ The accountId-as-agent feature allows Matrix multi-account setups where each Mat
 
 ~/.ravi/
 ├── .env             # Environment variables (loaded by daemon)
+├── local-api-key    # Auto-generated notifd API key
+├── bin/
+│   └── notifd       # notifd binary (auto-downloaded)
+├── pgserve/         # Embedded Postgres data directory
+├── nats/            # Embedded NATS JetStream store
 ├── chat.db          # Message history
 ├── matrix/          # Matrix SDK storage (sync, crypto)
 └── logs/
@@ -475,8 +508,11 @@ The accountId-as-agent feature allows Matrix multi-account setups where each Mat
 ## CLI
 
 ```bash
+# Setup
+ravi setup             # Interactive setup wizard
+
 # Daemon (recommended)
-ravi daemon start      # Start bot + gateway as service
+ravi daemon start      # Start local infra + bot + gateway
 ravi daemon stop       # Stop daemon
 ravi daemon restart    # Restart daemon
 ravi daemon status     # Show status
@@ -491,13 +527,19 @@ ravi service start     # Start bot server only
 ravi service wa        # Start WhatsApp gateway only
 ravi service tui       # Start TUI
 
+# WhatsApp
+ravi whatsapp connect                # Connect account (QR code)
+ravi whatsapp connect --account <id> --agent <id> --mode sentinel
+ravi whatsapp status                 # Show connection status
+ravi whatsapp set --account <id> --agent <id>
+ravi whatsapp disconnect             # Disconnect account
+
 # Agents
 ravi agents list                    # List agents
 ravi agents show <id>               # Show agent details
 ravi agents create <id> <cwd>       # Create agent
 ravi agents set <id> <key> <value>  # Set property
 ravi agents debounce <id> <ms>      # Set debounce
-ravi agents tools <id>              # Manage tools
 
 # Contacts
 ravi contacts list                   # List contacts
@@ -563,6 +605,15 @@ ravi outbound add <queueId> <phone>  # Add entry
 ravi outbound status <entryId>       # Entry details
 ravi outbound run <id>               # Manual trigger
 
+# Permissions (REBAC)
+ravi permissions grant <subject> <relation> <object>
+ravi permissions revoke <subject> <relation> <object>
+ravi permissions check <subject> <permission> <object>
+ravi permissions list                # List all relations
+ravi permissions init <subject> <template>  # Apply template
+ravi permissions sync                # Re-sync from config
+ravi permissions clear               # Clear manual relations
+
 # Reactions
 ravi react send <messageId> <emoji>  # Send emoji reaction
 ```
@@ -603,14 +654,13 @@ agents_show      # ravi agents show <id>
 contacts_list    # ravi contacts list
 ```
 
-Manage agent tools:
+Tool and executable access is controlled via REBAC permissions:
 
 ```bash
-ravi agents tools test              # List tools with status
-ravi agents tools test init all     # Enable all tools
-ravi agents tools test allow Bash   # Enable specific tool
-ravi agents tools test deny Bash    # Disable specific tool
-ravi agents tools test clear        # Bypass mode (all allowed)
+ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
+ravi permissions grant agent:main execute executable:git  # Allow CLI executable
+ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
+ravi permissions init agent:main full-access              # All tools + executables
 ```
 
 ## Emoji Reactions
@@ -680,9 +730,13 @@ Images, videos, documents, and stickers are downloaded to `/tmp/ravi-media/` and
 ## Environment (~/.ravi/.env)
 
 ```bash
-# Required
-NOTIF_API_KEY=nsh_xxx
+# Required (one of these)
 CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# Auto-managed (set by daemon on startup, do NOT set manually)
+# NOTIF_API_KEY - bootstrapped from local notifd
+# NOTIF_SERVER  - http://localhost:8080
 
 # Optional
 OPENAI_API_KEY=sk-xxx   # For audio transcription
@@ -733,7 +787,7 @@ await notif.emit("topic", { data });
 for await (const event of notif.subscribe("topic.*")) { ... }
 ```
 
-Connection is shared across bot, gateway, plugins, and CLI. Closes automatically when process exits.
+Connection targets `NOTIF_SERVER` (default: local notifd at `http://localhost:8080`). Shared across bot, gateway, plugins, and CLI. Closes automatically when process exits.
 
 ## Matrix Integration
 
@@ -783,7 +837,7 @@ Matrix is configured via environment variables in `~/.ravi/.env`:
 End-to-end encryption requires the native `@matrix-org/matrix-sdk-crypto-nodejs` module:
 
 ```bash
-npm install @matrix-org/matrix-sdk-crypto-nodejs
+bun add @matrix-org/matrix-sdk-crypto-nodejs
 ```
 
 Then set `MATRIX_ENCRYPTION=true` in environment.
@@ -813,9 +867,9 @@ MatrixClient.sendMessage
 ## Development
 
 ```bash
-npm run build     # Compile TypeScript
-npm run dev       # Watch mode
-npm link          # Make `ravi` available globally
+bun run build     # Compile TypeScript
+bun run dev       # Watch mode
+bun link          # Make `ravi` available globally
 ```
 
 ### When to restart the daemon

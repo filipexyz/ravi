@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone } from "../../router/router-db.js";
@@ -200,7 +200,7 @@ export class CronCommands {
       const job = dbCreateCronJob(input);
 
       // Signal daemon to refresh timers
-      await notif.emit("ravi.cron.refresh", {});
+      await nats.emit("ravi.cron.refresh", {});
 
       console.log(`\n✓ Created job: ${job.id}`);
       console.log(`  Name:       ${job.name}`);
@@ -225,7 +225,7 @@ export class CronCommands {
       // Passing schedule triggers recalculation in dbUpdateCronJob
       dbUpdateCronJob(id, { enabled: true, schedule: { ...job.schedule } });
 
-      await notif.emit("ravi.cron.refresh", {});
+      await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id)!;
       console.log(`✓ Enabled job: ${id} (${job.name})`);
@@ -246,7 +246,7 @@ export class CronCommands {
 
     try {
       dbUpdateCronJob(id, { enabled: false });
-      await notif.emit("ravi.cron.refresh", {});
+      await nats.emit("ravi.cron.refresh", {});
       console.log(`✓ Disabled job: ${id} (${job.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -364,7 +364,7 @@ export class CronCommands {
       }
 
       // Signal daemon to refresh timers
-      await notif.emit("ravi.cron.refresh", {});
+      await nats.emit("ravi.cron.refresh", {});
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -381,7 +381,7 @@ export class CronCommands {
 
     try {
       // Send trigger signal to daemon
-      await notif.emit("ravi.cron.trigger", { jobId: id });
+      await nats.emit("ravi.cron.trigger", { jobId: id });
       console.log("✓ Job triggered");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {
@@ -398,7 +398,7 @@ export class CronCommands {
 
     try {
       dbDeleteCronJob(id);
-      await notif.emit("ravi.cron.refresh", {});
+      await nats.emit("ravi.cron.refresh", {});
       console.log(`✓ Deleted job: ${id} (${job.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

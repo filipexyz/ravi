@@ -417,7 +417,6 @@ export class DaemonCommands {
 # Edit and restart the daemon for changes to take effect.
 
 # Required
-NOTIF_API_KEY=
 ANTHROPIC_API_KEY=
 
 # Optional

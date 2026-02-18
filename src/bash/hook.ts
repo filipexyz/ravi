@@ -13,7 +13,7 @@
  * enforceScopeCheck() in the CLI process, not here.
  */
 
-import { spawn } from "node:child_process";
+import { publish } from "../nats.js";
 import {
   checkDangerousPatterns,
   parseBashCommand,
@@ -27,7 +27,7 @@ import { SDK_TOOLS } from "../cli/tool-registry.js";
 const log = logger.child("bash:hook");
 
 /**
- * Emit an audit event via notif (fire-and-forget).
+ * Emit an audit event via NATS (fire-and-forget).
  */
 function emitAudit(event: {
   type: string;
@@ -36,16 +36,7 @@ function emitAudit(event: {
   reason: string;
   detail?: string;
 }): void {
-  try {
-    const data = JSON.stringify(event);
-    const child = spawn("notif", ["emit", "ravi.audit.denied", data], {
-      stdio: "ignore",
-      detached: true,
-    });
-    child.unref();
-  } catch {
-    // Best-effort — don't break the hook if notif is unavailable
-  }
+  publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
 }
 
 /**

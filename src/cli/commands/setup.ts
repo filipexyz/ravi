@@ -161,17 +161,15 @@ async function stepEnvironment(): Promise<void> {
 
   const env = parseEnvFile(ENV_FILE);
 
-  // NOTIF_API_KEY
-  if (env.has("NOTIF_API_KEY")) {
-    skip("NOTIF_API_KEY");
-  } else {
-    const val = await ask("NOTIF_API_KEY");
-    if (val) {
-      appendEnvKey("NOTIF_API_KEY", val);
-      done("NOTIF_API_KEY salvo");
-    } else {
-      warning("Pulado — obrigatório para funcionar");
-    }
+  // nats-server binary (local infrastructure)
+  const { ensureNatsBinary } = await import("../../local/binary.js");
+  try {
+    await ensureNatsBinary({
+      onProgress: (msg) => info(msg),
+    });
+    done("nats-server instalado");
+  } catch (err: any) {
+    warning(`Falha ao baixar nats-server: ${err.message}`);
   }
 
   // Claude auth

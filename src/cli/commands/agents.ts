@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import {
   getAgent,
   getAllAgents,
@@ -29,7 +29,7 @@ import {
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
-  notif.emit("ravi.config.changed", {}).catch(() => {});
+  nats.emit("ravi.config.changed", {}).catch(() => {});
 }
 
 @Group({
@@ -319,9 +319,9 @@ export class AgentsCommands {
     const resetOne = async (key: string, name?: string): Promise<boolean> => {
       // Abort SDK streaming session in daemon (use session name for topic)
       if (name) {
-        await notif.emit("ravi.session.abort", { sessionName: name, sessionKey: key });
+        await nats.emit("ravi.session.abort", { sessionName: name, sessionKey: key });
       } else {
-        await notif.emit("ravi.session.abort", { sessionKey: key });
+        await nats.emit("ravi.session.abort", { sessionKey: key });
       }
       return deleteSession(key);
     };

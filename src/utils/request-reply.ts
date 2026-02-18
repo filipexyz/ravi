@@ -1,16 +1,16 @@
 /**
- * Request/Reply via notif
+ * Request/Reply via NATS
  *
- * Provides a request-reply pattern over notif PubSub.
+ * Provides a request-reply pattern over NATS pub/sub.
  * CLI commands emit a request with a unique replyTopic,
  * then wait for the gateway/daemon to send the result back.
  */
 
 import { randomUUID } from "node:crypto";
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 
 /**
- * Send a request and wait for a reply via notif.
+ * Send a request and wait for a reply via NATS.
  *
  * @param topic - Topic to emit the request to
  * @param data - Request payload (replyTopic is injected automatically)
@@ -25,10 +25,10 @@ export async function requestReply<T = Record<string, unknown>>(
   const replyTopic = `ravi._reply.${randomUUID()}`;
 
   // Start listening BEFORE emitting to avoid race condition
-  const stream = notif.subscribe(replyTopic);
+  const stream = nats.subscribe(replyTopic);
 
   // Emit the request with the reply topic
-  await notif.emit(topic, { ...data, replyTopic });
+  await nats.emit(topic, { ...data, replyTopic });
 
   // Wait for first event or timeout
   return new Promise<T>((resolve, reject) => {

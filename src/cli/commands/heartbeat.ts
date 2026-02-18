@@ -15,7 +15,7 @@ import {
   parseActiveHours,
   HEARTBEAT_PROMPT,
 } from "../../heartbeat/index.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 
@@ -104,7 +104,7 @@ export class HeartbeatCommands {
       updateAgentHeartbeatConfig(id, updates);
 
       // Signal daemon to refresh timers
-      await notif.emit("ravi.heartbeat.refresh", {});
+      await nats.emit("ravi.heartbeat.refresh", {});
 
       const hb = getAgentHeartbeatConfig(id)!;
       console.log(`✓ Heartbeat enabled: ${id}`);
@@ -125,7 +125,7 @@ export class HeartbeatCommands {
       updateAgentHeartbeatConfig(id, { enabled: false });
 
       // Signal daemon to refresh timers
-      await notif.emit("ravi.heartbeat.refresh", {});
+      await nats.emit("ravi.heartbeat.refresh", {});
 
       console.log(`✓ Heartbeat disabled: ${id}`);
     } catch (err) {
@@ -177,7 +177,7 @@ export class HeartbeatCommands {
       }
 
       // Signal daemon to refresh timers
-      await notif.emit("ravi.heartbeat.refresh", {});
+      await nats.emit("ravi.heartbeat.refresh", {});
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -214,7 +214,7 @@ export class HeartbeatCommands {
       // Send heartbeat prompt using session name
       const mainSession = getMainSession(id);
       const sessionName = mainSession?.name ?? id;
-      await notif.emit(`ravi.session.${sessionName}.prompt`, {
+      await nats.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: HEARTBEAT_PROMPT,
         _heartbeat: true,
         _agentId: id,

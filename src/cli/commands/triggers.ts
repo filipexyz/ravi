@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
@@ -214,7 +214,7 @@ export class TriggersCommands {
     try {
       const trigger = dbCreateTrigger(input);
 
-      await notif.emit("ravi.triggers.refresh", {});
+      await nats.emit("ravi.triggers.refresh", {});
 
       console.log(`\n✓ Created trigger: ${trigger.id}`);
       console.log(`  Name:       ${trigger.name}`);
@@ -237,7 +237,7 @@ export class TriggersCommands {
 
     try {
       dbUpdateTrigger(id, { enabled: true });
-      await notif.emit("ravi.triggers.refresh", {});
+      await nats.emit("ravi.triggers.refresh", {});
       console.log(`✓ Enabled trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -253,7 +253,7 @@ export class TriggersCommands {
 
     try {
       dbUpdateTrigger(id, { enabled: false });
-      await notif.emit("ravi.triggers.refresh", {});
+      await nats.emit("ravi.triggers.refresh", {});
       console.log(`✓ Disabled trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -344,7 +344,7 @@ export class TriggersCommands {
           );
       }
 
-      await notif.emit("ravi.triggers.refresh", {});
+      await nats.emit("ravi.triggers.refresh", {});
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -361,7 +361,7 @@ export class TriggersCommands {
     console.log(`  Topic: ${trigger.topic}`);
 
     try {
-      await notif.emit("ravi.triggers.test", { triggerId: id });
+      await nats.emit("ravi.triggers.test", { triggerId: id });
       console.log("✓ Test event sent");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {
@@ -382,7 +382,7 @@ export class TriggersCommands {
 
     try {
       dbDeleteTrigger(id);
-      await notif.emit("ravi.triggers.refresh", {});
+      await nats.emit("ravi.triggers.refresh", {});
       console.log(`✓ Deleted trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

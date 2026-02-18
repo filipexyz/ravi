@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import {
   listSessions,
   getSession,
@@ -291,7 +291,7 @@ export class SessionCommands {
 
     // Abort active SDK subprocess so it doesn't keep the old context
     try {
-      await notif.emit("ravi.session.abort", {
+      await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
         sessionName: s.name,
       });
@@ -319,7 +319,7 @@ export class SessionCommands {
 
     // Abort SDK subprocess first
     try {
-      await notif.emit("ravi.session.abort", {
+      await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
         sessionName: s.name,
       });
@@ -739,7 +739,7 @@ export class SessionCommands {
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
   }
 
   /**
@@ -754,8 +754,8 @@ export class SessionCommands {
   ): Promise<number> {
     let responseLength = 0;
 
-    const claudeStream = notif.subscribe(`ravi.session.${sessionName}.claude`);
-    const responseStream = notif.subscribe(`ravi.session.${sessionName}.response`);
+    const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
+    const responseStream = nats.subscribe(`ravi.session.${sessionName}.response`);
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -801,7 +801,7 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
 
     await completion;
     cleanup();

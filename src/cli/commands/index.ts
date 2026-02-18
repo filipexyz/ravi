@@ -10,6 +10,7 @@ export * from "./channels.js";
 export * from "./contacts.js";
 export * from "./cron.js";
 export * from "./daemon.js";
+export * from "./events.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
 export * from "./matrix.js";

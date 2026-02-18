@@ -7,7 +7,7 @@ import { existsSync } from "fs";
 import { resolve, basename, extname } from "path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import type { OutboundMedia } from "../../channels/types.js";
 
 /** Extension → mimetype map */
@@ -73,7 +73,7 @@ export class MediaCommands {
       fail("No channel context available — use --channel, --to, and --account to specify target");
     }
 
-    await notif.emit("ravi.media.send", {
+    await nats.emit("ravi.media.send", {
       channel: targetChannel,
       accountId: targetAccount,
       chatId: targetChat,

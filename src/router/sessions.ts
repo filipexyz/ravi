@@ -482,7 +482,7 @@ export function getSessionByName(name: string): SessionEntry | null {
 
 /**
  * Update session name.
- * Names must not contain dots (used as topic separator in notif).
+ * Names must not contain dots (used as topic separator in NATS).
  */
 export function updateSessionName(
   sessionKey: string,

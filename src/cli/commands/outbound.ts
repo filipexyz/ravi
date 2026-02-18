@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
 import { getDefaultTimezone, getDefaultAgentId, getDb } from "../../router/router-db.js";
@@ -258,7 +258,7 @@ export class OutboundCommands {
       nextRunAt: Date.now() + 1000, // Run almost immediately
     });
 
-    await notif.emit("ravi.outbound.refresh", {});
+    await nats.emit("ravi.outbound.refresh", {});
 
     console.log(`✓ Queue started: ${id} (${queue.name})`);
     console.log(`  ${pending} entries pending`);
@@ -271,7 +271,7 @@ export class OutboundCommands {
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     dbUpdateQueue(id, { status: "paused" });
-    await notif.emit("ravi.outbound.refresh", {});
+    await nats.emit("ravi.outbound.refresh", {});
 
     console.log(`✓ Queue paused: ${id} (${queue.name})`);
   }
@@ -379,7 +379,7 @@ export class OutboundCommands {
           fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds`);
       }
 
-      await notif.emit("ravi.outbound.refresh", {});
+      await nats.emit("ravi.outbound.refresh", {});
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -391,7 +391,7 @@ export class OutboundCommands {
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     dbDeleteQueue(id);
-    await notif.emit("ravi.outbound.refresh", {});
+    await nats.emit("ravi.outbound.refresh", {});
 
     console.log(`✓ Deleted queue: ${id} (${queue.name})`);
   }
@@ -781,7 +781,7 @@ export class OutboundCommands {
     console.log(`\nTriggering queue: ${queue.name}`);
 
     try {
-      await notif.emit("ravi.outbound.trigger", { queueId: id });
+      await nats.emit("ravi.outbound.trigger", { queueId: id });
       console.log("✓ Queue triggered");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {

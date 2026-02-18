@@ -4,7 +4,7 @@
  * Complete implementation of the WhatsApp channel using Baileys.
  */
 
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import type {
   ChannelPlugin,
   ChannelMeta,
@@ -452,7 +452,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
       const emoji = reactionMsg.text ?? "";
       const targetMessageId = reactionMsg.key.id;
       log.info("Inbound reaction", { accountId, emoji, targetMessageId });
-      notif.emit("ravi.inbound.reaction", {
+      nats.emit("ravi.inbound.reaction", {
         channel: "whatsapp",
         accountId,
         chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
@@ -473,7 +473,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         rawMessage.message?.conversation ??
         rawMessage.message?.extendedTextMessage?.text ??
         "";
-      notif.emit("ravi.inbound.reply", {
+      nats.emit("ravi.inbound.reply", {
         channel: "whatsapp",
         accountId,
         chatId: normalizePhone(rawMessage.key.remoteJid ?? ""),
@@ -716,7 +716,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
             isNew,
           });
           if (isNew) {
-            notif.emit("ravi.contacts.pending", {
+            nats.emit("ravi.contacts.pending", {
               type: "contact",
               channel: "whatsapp",
               accountId,
@@ -933,7 +933,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
         voters: selectedNames.includes(opt.optionName ?? "") ? [successVoter] : [],
       }));
 
-      await notif.emit("ravi.inbound.pollVote", {
+      await nats.emit("ravi.inbound.pollVote", {
         channel: "whatsapp",
         accountId,
         pollMessageId: pollMsgId,
@@ -949,7 +949,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
   }
 
   private emitMessage(message: InboundMessage): void {
-    // Strip media.data buffer before emitting (notif.sh has 64KB limit)
+    // Strip media.data buffer before emitting (keep payloads small)
     const emitPayload = {
       ...message,
       media: message.media ? { ...message.media, data: undefined } : undefined,
@@ -957,7 +957,7 @@ class WhatsAppGatewayAdapter implements GatewayAdapter<WhatsAppConfig> {
     };
 
     // Emit to channel-specific inbound topic
-    notif.emit(`whatsapp.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
+    nats.emit(`whatsapp.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
       .catch((err) => log.error("Failed to emit inbound message", err));
 
     // Also call local callbacks for backwards compatibility

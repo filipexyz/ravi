@@ -1,7 +1,7 @@
 /**
  * WhatsApp Bridge Entry Point
  *
- * Connects WhatsApp messages to RaviBot via notif.sh using the channel plugin architecture.
+ * Connects WhatsApp messages to RaviBot via NATS using the channel plugin architecture.
  */
 
 import { createGateway } from "./gateway.js";

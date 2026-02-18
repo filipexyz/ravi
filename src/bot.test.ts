@@ -58,11 +58,16 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
-mock.module("./notif.js", () => ({
-  notif: {
-    emit: mock(async () => ({ id: "mock", topic: "mock" })),
+mock.module("./nats.js", () => ({
+  nats: {
+    emit: mock(async () => {}),
     subscribe: mock(async function* () {}),
   },
+  publish: mock(async () => {}),
+  subscribe: mock(async function* () {}),
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  getNats: mock(() => ({})),
 }));
 
 mock.module("./db.js", () => ({

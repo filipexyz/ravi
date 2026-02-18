@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import qrcode from "qrcode-terminal";
 import { Group, Command, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { dbGetSetting, dbSetSetting, dbDeleteSetting, dbGetAgent, dbCreateAgent, dbUpdateAgent } from "../../router/router-db.js";
 import { homedir } from "node:os";
@@ -48,11 +48,11 @@ export class WhatsAppCommands {
       if (accountId !== "default") {
         dbSetSetting(`account.${accountId}.agent`, targetAgent);
       }
-      notif.emit("ravi.config.changed", {}).catch(() => {});
+      nats.emit("ravi.config.changed", {}).catch(() => {});
     } else if (agentId) {
       // Bind account → agent (explicit or auto-detected)
       dbSetSetting(`account.${accountId}.agent`, agentId);
-      notif.emit("ravi.config.changed", {}).catch(() => {});
+      nats.emit("ravi.config.changed", {}).catch(() => {});
     }
 
     const mappedAgent = dbGetSetting(`account.${accountId}.agent`);
@@ -62,10 +62,10 @@ export class WhatsAppCommands {
     console.log("Waiting for QR code...\n");
 
     // Subscribe to reply topic BEFORE emitting request
-    const stream = notif.subscribe(replyTopic);
+    const stream = nats.subscribe(replyTopic);
 
     // Emit connect request
-    await notif.emit("ravi.whatsapp.account.connect", {
+    await nats.emit("ravi.whatsapp.account.connect", {
       accountId,
       replyTopic,
     });
@@ -190,7 +190,7 @@ export class WhatsAppCommands {
         dbSetSetting(`account.${accountId}.agent`, agent);
         console.log(`✓ Account ${accountId}: agent → ${agent}`);
       }
-      notif.emit("ravi.config.changed", {}).catch(() => {});
+      nats.emit("ravi.config.changed", {}).catch(() => {});
     } else {
       fail("Specify a property to set. Example: ravi whatsapp set --agent main");
     }
@@ -202,7 +202,7 @@ export class WhatsAppCommands {
   ) {
     const accountId = account ?? "default";
 
-    await notif.emit("ravi.whatsapp.account.disconnect", { accountId });
+    await nats.emit("ravi.whatsapp.account.disconnect", { accountId });
     console.log(`✓ Disconnect signal sent for account: ${accountId}`);
   }
 }

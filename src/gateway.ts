@@ -4,7 +4,7 @@
  * Orchestrates channel plugins and routes messages to the bot.
  */
 
-import { notif } from "./notif.js";
+import { nats } from "./nats.js";
 import { pendingReplyCallbacks } from "./bot.js";
 import type { ChannelPlugin, InboundMessage, QuotedMessage, SendResult } from "./channels/types.js";
 import { dispatchGroupOp, type GroupOpName } from "./channels/whatsapp/group-ops.js";
@@ -315,7 +315,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of notif.subscribe(...topics)) {
+        for await (const event of nats.subscribe(...topics)) {
           if (!this.running) break;
           await handler(event);
         }
@@ -459,7 +459,7 @@ export class Gateway {
         if (data.replyTopic) {
           const cb = pendingReplyCallbacks.get(data.replyTopic);
           if (cb) cb({ messageId: undefined });
-          else notif.emit(data.replyTopic, { success: false, error: "No plugin" }).catch(() => {});
+          else nats.emit(data.replyTopic, { success: false, error: "No plugin" }).catch(() => {});
         }
         return;
       }
@@ -518,7 +518,7 @@ export class Gateway {
         if (data.replyTopic) {
           const cb = pendingReplyCallbacks.get(data.replyTopic);
           if (cb) cb({ messageId: sendResult.messageId });
-          else notif.emit(data.replyTopic, sendResult as unknown as Record<string, unknown>).catch(() => {});
+          else nats.emit(data.replyTopic, sendResult as unknown as Record<string, unknown>).catch(() => {});
         }
 
         const entry = dbFindActiveEntryByPhone(data.to);
@@ -532,7 +532,7 @@ export class Gateway {
         if (data.replyTopic) {
           const cb = pendingReplyCallbacks.get(data.replyTopic);
           if (cb) cb({ messageId: undefined });
-          else notif.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
+          else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
         }
       }
     });
@@ -671,14 +671,14 @@ export class Gateway {
         const result = await dispatchGroupOp(op, data);
 
         if (replyTopic) {
-          await notif.emit(replyTopic, result);
+          await nats.emit(replyTopic, result);
         }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         log.error("Group operation failed", { op, error });
 
         if (replyTopic) {
-          await notif.emit(replyTopic, { error });
+          await nats.emit(replyTopic, { error });
         }
       }
     });
@@ -698,7 +698,7 @@ export class Gateway {
       const plugin = this.pluginsById.get("whatsapp");
       if (!plugin) {
         if (replyTopic) {
-          await notif.emit(replyTopic, { type: "error", error: "WhatsApp plugin not registered" });
+          await nats.emit(replyTopic, { type: "error", error: "WhatsApp plugin not registered" });
         }
         return;
       }
@@ -711,7 +711,7 @@ export class Gateway {
             // Already connected — reply immediately
             if (existing?.state === "connected") {
               if (replyTopic) {
-                await notif.emit(replyTopic, {
+                await nats.emit(replyTopic, {
                   type: "connected",
                   phone: existing.phone,
                   name: existing.name,
@@ -729,14 +729,14 @@ export class Gateway {
             if (replyTopic) {
               const unsubQr = plugin.gateway.onQrCode((accId, qr) => {
                 if (accId !== accountId) return;
-                notif.emit(replyTopic, { type: "qr", qr }).catch(() => {});
+                nats.emit(replyTopic, { type: "qr", qr }).catch(() => {});
               });
 
               const unsubState = plugin.gateway.onStateChange((accId, state) => {
                 if (accId !== accountId) return;
                 if (state === "connected") {
                   const resolved = plugin.config.resolveAccount(accountId);
-                  notif.emit(replyTopic, {
+                  nats.emit(replyTopic, {
                     type: "connected",
                     phone: resolved?.phone,
                     name: resolved?.name,
@@ -745,7 +745,7 @@ export class Gateway {
                   unsubQr();
                   unsubState();
                 } else if (state === "disconnected") {
-                  notif.emit(replyTopic, { type: "disconnected", state }).catch(() => {});
+                  nats.emit(replyTopic, { type: "disconnected", state }).catch(() => {});
                 }
               });
 
@@ -770,12 +770,12 @@ export class Gateway {
             const resolved = plugin.config.resolveAccount(accountId);
             if (!resolved) {
               if (replyTopic) {
-                await notif.emit(replyTopic, { error: `Account "${accountId}" not found` });
+                await nats.emit(replyTopic, { error: `Account "${accountId}" not found` });
               }
               return;
             }
             if (replyTopic) {
-              await notif.emit(replyTopic, {
+              await nats.emit(replyTopic, {
                 accountId: resolved.id,
                 state: resolved.state,
                 phone: resolved.phone,
@@ -789,21 +789,21 @@ export class Gateway {
           case "disconnect": {
             await this.channelManager!.stopChannel("whatsapp", accountId);
             if (replyTopic) {
-              await notif.emit(replyTopic, { success: true });
+              await nats.emit(replyTopic, { success: true });
             }
             break;
           }
 
           default:
             if (replyTopic) {
-              await notif.emit(replyTopic, { type: "error", error: `Unknown operation: ${op}` });
+              await nats.emit(replyTopic, { type: "error", error: `Unknown operation: ${op}` });
             }
         }
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         log.error("WhatsApp account operation failed", { op, accountId, error });
         if (replyTopic) {
-          await notif.emit(replyTopic, { type: "error", error });
+          await nats.emit(replyTopic, { type: "error", error });
         }
       }
     });
@@ -854,7 +854,7 @@ export class Gateway {
         }
 
         // Notify runner to re-arm timer (queue may have been reactivated)
-        notif.emit("ravi.outbound.refresh", {}).catch(() => {});
+        nats.emit("ravi.outbound.refresh", {}).catch(() => {});
 
         return;
       }
@@ -885,7 +885,7 @@ export class Gateway {
         isNew,
       });
       if (isNew) {
-        notif.emit("ravi.contacts.pending", {
+        nats.emit("ravi.contacts.pending", {
           type: "account",
           channel: plugin.id,
           accountId: acctId,
@@ -996,7 +996,7 @@ export class Gateway {
     if (agentMode === "sentinel") {
       try {
         const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
-        await notif.emit(`ravi.session.${sessionName}.prompt`, {
+        await nats.emit(`ravi.session.${sessionName}.prompt`, {
           prompt: sentinelEnvelope,
           context,
         });
@@ -1021,7 +1021,7 @@ export class Gateway {
 
     // Emit prompt with source and context
     try {
-      await notif.emit(`ravi.session.${sessionName}.prompt`, {
+      await nats.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: envelope,
         source,
         context,

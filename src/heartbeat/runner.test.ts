@@ -6,8 +6,8 @@
  * because the emit is processed synchronously before the runner's
  * getOrCreateSession has a chance to run first.
  *
- * Root cause: notif.emit resolves subscribers inline (same event loop tick),
- * so the bot's handlePrompt runs INSIDE the runner's await notif.emit().
+ * Root cause: nats.emit resolves subscribers inline (same event loop tick),
+ * so the bot's handlePrompt runs INSIDE the runner's await nats.emit().
  * The bot doesn't find the session (runner hasn't created it yet because
  * the emit happens BEFORE getOrCreateSession in the original flow, or
  * the runner uses a different session_key than the bot).
@@ -28,7 +28,7 @@ const DB_PATH = join(RAVI_DIR, "ravi.db");
  * 1. Runner calls getOrCreateSession("agent:supervisor:main", "supervisor", cwd, {name: "supervisor"})
  *    → Creates session with key="agent:supervisor:main", name="supervisor", agent_id="supervisor"
  *
- * 2. Runner calls notif.emit("ravi.session.supervisor.prompt", ...)
+ * 2. Runner calls nats.emit("ravi.session.supervisor.prompt", ...)
  *    → Bot receives SYNCHRONOUSLY (same event loop tick)
  *
  * 3. Bot calls getSessionByName("supervisor")

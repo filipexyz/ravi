@@ -107,18 +107,9 @@ Criar trigger para monitorar erros:
 ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro e sugira correção" --cooldown 1m
 ```
 
-## Relação com notif.sh
+## Relação com NATS
 
-Triggers reagem a eventos do **notif.sh** (o barramento de eventos do Ravi). Para explorar eventos manualmente, buscar histórico, ou emitir eventos, use a skill `notif` (`notif --help`).
+Triggers reagem a eventos do **NATS** (o barramento de eventos do Ravi). Para entender os tópicos disponíveis, consulte a skill `events`.
 
-- **notif** = barramento de eventos (emitir, buscar, monitorar)
-- **triggers** = reações automáticas a eventos do notif
-
-Comandos úteis do notif para debug de triggers:
-```bash
-# Ver eventos recentes que casam com um topic pattern
-notif events list --topic "ravi.*.cli.outbound.qualify" --from 1h
-
-# Monitorar eventos em tempo real
-notif subscribe "ravi.*.tool"
-```
+- **NATS** = barramento de eventos (pub/sub direto)
+- **triggers** = reações automáticas a eventos NATS

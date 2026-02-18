@@ -5,7 +5,7 @@
  */
 
 import type { MatrixClient } from "@vector-im/matrix-bot-sdk";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import type {
   ChannelPlugin,
   ChannelMeta,
@@ -613,7 +613,7 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
   }
 
   private emitMessage(message: MatrixInbound): void {
-    // Strip media.data buffer before emitting (notif.sh has 64KB limit)
+    // Strip media.data buffer before emitting (keep payloads small)
     const emitPayload = {
       ...message,
       media: message.media ? { ...message.media, data: undefined } : undefined,
@@ -621,7 +621,7 @@ class MatrixGatewayAdapter implements GatewayAdapter<MatrixConfig> {
     };
 
     // Emit to channel-specific inbound topic
-    notif.emit(`matrix.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
+    nats.emit(`matrix.${message.accountId}.inbound`, emitPayload as unknown as Record<string, unknown>)
       .catch((err) => log.error("Failed to emit inbound message", err));
 
     // Also call local callbacks

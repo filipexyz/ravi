@@ -1,7 +1,7 @@
 /**
  * Trigger System Types
  *
- * Event-driven triggers that subscribe to notif topics
+ * Event-driven triggers that subscribe to NATS topics
  * and proactively fire agent prompts when events occur.
  */
 

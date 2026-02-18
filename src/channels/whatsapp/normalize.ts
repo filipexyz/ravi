@@ -161,7 +161,7 @@ export function phoneToJid(phone: string): string | null {
 }
 
 /**
- * Convert a JID to a session ID for notif.sh
+ * Convert a JID to a session ID for NATS topics
  *
  * @param jid - WhatsApp JID
  * @returns Session ID (e.g., wa-5511999999999)

@@ -3,7 +3,7 @@
  *
  * Generates human-readable, unique session names.
  * Names are slugified: lowercase, alphanumeric + hyphens, max 64 chars.
- * Names must NOT contain dots (used as topic separator in notif).
+ * Names must NOT contain dots (used as topic separator in NATS).
  */
 
 import { isNameTaken } from "./sessions.js";

@@ -5,7 +5,7 @@
  * Similar to heartbeat runner but for user-defined cron jobs.
  */
 
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
@@ -267,7 +267,7 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       source,
       _cron: true,
@@ -312,7 +312,7 @@ export class CronRunner {
       }
     }
 
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       source,
       _cron: true,
@@ -351,7 +351,7 @@ export class CronRunner {
     log.debug("Subscribing to config refresh", { topic });
 
     try {
-      for await (const _event of notif.subscribe(topic)) {
+      for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received cron config refresh signal");
         this.refreshTimers();
@@ -372,7 +372,7 @@ export class CronRunner {
     log.debug("Subscribing to trigger events", { topic });
 
     try {
-      for await (const event of notif.subscribe(topic)) {
+      for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
         const data = event.data as { jobId?: string };

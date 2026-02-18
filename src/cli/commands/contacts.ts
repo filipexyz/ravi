@@ -5,11 +5,11 @@
 import "reflect-metadata";
 import { Group, Command, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
-  notif.emit("ravi.config.changed", {}).catch(() => {});
+  nats.emit("ravi.config.changed", {}).catch(() => {});
 }
 import {
   getAllContacts,

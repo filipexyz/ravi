@@ -9,7 +9,7 @@ import makeWASocket, {
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
-import { notif } from "./notif.js";
+import { nats } from "./nats.js";
 import { logger } from "./utils/logger.js";
 import { isAllowed, savePendingContact, normalizePhone, isGroup } from "./contacts.js";
 import type { ResponseMessage } from "./bot.js";
@@ -22,12 +22,12 @@ export interface WhatsAppBridgeOptions {
 }
 
 /**
- * WhatsApp Bridge - Connects WhatsApp to RaviBot via notif.sh
+ * WhatsApp Bridge - Connects WhatsApp to RaviBot via NATS
  *
  * Flow:
- * WhatsApp Message → Bridge → notif.sh (ravi.wa-{jid}.prompt) → RaviBot
- *                                                                  ↓
- * WhatsApp Reply ← Bridge ← notif.sh (ravi.wa-{jid}.response) ←────┘
+ * WhatsApp Message → Bridge → NATS (ravi.wa-{jid}.prompt) → RaviBot
+ *                                                               ↓
+ * WhatsApp Reply ← Bridge ← NATS (ravi.wa-{jid}.response) ←───┘
  */
 export class WhatsAppBridge {
   private sock: ReturnType<typeof makeWASocket> | null = null;
@@ -206,9 +206,9 @@ export class WhatsAppBridge {
     // Subscribe to response for this session
     this.subscribeToResponse(sessionId, jid);
 
-    // Emit prompt to notif.sh
+    // Emit prompt to NATS
     try {
-      await notif.emit(`ravi.${sessionId}.prompt`, { prompt: text });
+      await nats.emit(`ravi.${sessionId}.prompt`, { prompt: text });
       log.debug("Emitted prompt", { sessionId });
     } catch (err) {
       log.error("Failed to emit prompt", err);
@@ -231,7 +231,7 @@ export class WhatsAppBridge {
 
     (async () => {
       try {
-        for await (const event of notif.subscribe(topic)) {
+        for await (const event of nats.subscribe(topic)) {
           if (controller.signal.aborted) break;
 
           const response = event.data as unknown as ResponseMessage;

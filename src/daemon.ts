@@ -14,7 +14,7 @@ import { createMatrixPlugin } from "./channels/matrix/index.js";
 import { isMatrixConfigured } from "./channels/matrix/config.js";
 import { loadAllCredentials as loadMatrixCredentials } from "./channels/matrix/credentials.js";
 import { loadConfig } from "./utils/config.js";
-import { notif } from "./notif.js";
+import { nats } from "./nats.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting, dbListSettings } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
@@ -24,6 +24,7 @@ import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
+import { startLocalServer, type LocalServer } from "./local/index.js";
 
 const log = logger.child("daemon");
 
@@ -83,6 +84,7 @@ process.on("unhandledRejection", (reason, promise) => {
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
 let shuttingDown = false;
+let localServer: LocalServer | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -113,6 +115,13 @@ async function shutdown(signal: string) {
     if (gateway) {
       await gateway.stop();
     }
+
+    // Stop local infrastructure last
+    if (localServer) {
+      log.info("Stopping local server...");
+      await localServer.stop();
+      log.info("Local server stopped");
+    }
   } catch (err) {
     log.error("Error during shutdown", err);
   }
@@ -122,6 +131,9 @@ async function shutdown(signal: string) {
 }
 
 export async function startDaemon() {
+  // Start local infrastructure (nats-server)
+  localServer = await startLocalServer();
+
   const config = loadConfig();
   logger.setLevel(config.logLevel);
 
@@ -209,7 +221,7 @@ export async function startDaemon() {
   log.info("Daemon ready");
 
   // Check for restart reason and notify main agent
-  // Delay to ensure bot's notif subscription is fully established
+  // Delay to ensure bot's NATS subscription is fully established
   setTimeout(() => notifyRestartReason(), 5000);
 }
 
@@ -254,11 +266,11 @@ async function notifyRestartReason() {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
-  // Retry emit — notif WebSocket may not be ready on first attempts
+  // Retry emit — NATS subscription may not be ready on first attempts
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       log.info("Emitting restart reason", { reason, topic, sessionName, attempt });
-      await notif.emit(topic, payload);
+      await nats.emit(topic, payload);
       log.info("Restart reason prompt emitted", { topic, attempt });
       return;
     } catch (err) {

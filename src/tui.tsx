@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { render, Box, Text, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
-import { notif } from "./notif.js";
+import { nats } from "./nats.js";
 
 interface MessageTarget {
   channel: string;
@@ -29,7 +29,7 @@ function App() {
     const subscribe = async () => {
       try {
         // Subscribe to ALL sessions
-        for await (const event of notif.subscribe("ravi.session.*.prompt", "ravi.session.*.response")) {
+        for await (const event of nats.subscribe("ravi.session.*.prompt", "ravi.session.*.response")) {
           // Extract session name from topic: ravi.session.{name}.prompt
           const parts = event.topic.split(".");
           const sessionKey = parts[2];
@@ -69,7 +69,7 @@ function App() {
     if (!prompt.trim() || loading) return;
     setInput("");
     try {
-      await notif.emit(`ravi.session.${SEND_TO}.prompt`, { prompt });
+      await nats.emit(`ravi.session.${SEND_TO}.prompt`, { prompt });
     } catch (err) {
       setMessages((prev) => [
         ...prev,

@@ -15,7 +15,7 @@ description: |
 
 Funcionalidades do WhatsApp expostas via Baileys. Permite gerenciar grupos, membros, convites e configurações diretamente pelo CLI.
 
-**Importante:** Todos os comandos precisam que o daemon esteja rodando com WhatsApp conectado. Os comandos se comunicam com o daemon via notif (request/reply).
+**Importante:** Todos os comandos precisam que o daemon esteja rodando com WhatsApp conectado. Os comandos se comunicam com o daemon via NATS (request/reply).
 
 ## Gerenciamento de Grupos
 

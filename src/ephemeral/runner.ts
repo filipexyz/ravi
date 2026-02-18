@@ -6,7 +6,7 @@
  * - On expiry: aborts SDK subprocess, deletes session
  */
 
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import {
   getExpiringSessions,
@@ -53,7 +53,7 @@ async function tick(): Promise<void> {
 Sem ação = sessão será excluída automaticamente.`;
 
       try {
-        await notif.emit(`ravi.session.${sessionName}.prompt`, { prompt });
+        await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt });
         warned.add(key);
         log.info("Sent ephemeral warning", { sessionName, minutesLeft });
       } catch (err) {
@@ -68,7 +68,7 @@ Sem ação = sessão será excluída automaticamente.`;
 
       // Abort SDK subprocess first
       try {
-        await notif.emit("ravi.session.abort", {
+        await nats.emit("ravi.session.abort", {
           sessionKey: session.sessionKey,
           sessionName: session.name,
         });

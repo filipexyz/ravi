@@ -1,5 +1,5 @@
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
-import { notif } from "./notif.js";
+import { nats } from "./nats.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
@@ -39,7 +39,7 @@ import { join } from "node:path";
 const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
-const MAX_NOTIF_BYTES = 60000; // leave margin for notif 64KB limit
+const MAX_PAYLOAD_BYTES = 60000; // keep payloads reasonable
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -56,11 +56,11 @@ function truncateOutput(output: unknown): unknown {
   return output;
 }
 
-/** Emit to notif, truncating payload if it exceeds the size limit */
+/** Emit to NATS, truncating payload if it exceeds the size limit */
 async function safeEmit(topic: string, data: Record<string, unknown>): Promise<void> {
   let json = JSON.stringify(data);
-  if (json.length <= MAX_NOTIF_BYTES) {
-    await notif.emit(topic, data);
+  if (json.length <= MAX_PAYLOAD_BYTES) {
+    await nats.emit(topic, data);
     return;
   }
   // Truncate the largest string values until it fits
@@ -77,12 +77,12 @@ async function safeEmit(topic: string, data: Record<string, unknown>): Promise<v
     }
   }
   json = JSON.stringify(truncated);
-  if (json.length > MAX_NOTIF_BYTES) {
+  if (json.length > MAX_PAYLOAD_BYTES) {
     // Still too big - emit minimal event
-    await notif.emit(topic, { _truncated: true, type: (data as any).type ?? (data as any).event ?? "unknown" });
+    await nats.emit(topic, { _truncated: true, type: (data as any).type ?? (data as any).event ?? "unknown" });
     return;
   }
-  await notif.emit(topic, truncated);
+  await nats.emit(topic, truncated);
 }
 
 /** Message context for structured prompts */
@@ -349,7 +349,7 @@ export class RaviBot {
   private async subscribeToInboundReactions(): Promise<void> {
     while (this.running) {
       try {
-        for await (const event of notif.subscribe("ravi.inbound.reaction")) {
+        for await (const event of nats.subscribe("ravi.inbound.reaction")) {
           if (!this.running) break;
           const data = event.data as {
             targetMessageId: string;
@@ -386,7 +386,7 @@ export class RaviBot {
   private async subscribeToInboundReplies(): Promise<void> {
     while (this.running) {
       try {
-        for await (const event of notif.subscribe("ravi.inbound.reply")) {
+        for await (const event of nats.subscribe("ravi.inbound.reply")) {
           if (!this.running) break;
           const data = event.data as {
             targetMessageId: string;
@@ -437,7 +437,7 @@ export class RaviBot {
   private async subscribeToInboundPollVotes(): Promise<void> {
     while (this.running) {
       try {
-        for await (const event of notif.subscribe("ravi.inbound.pollVote")) {
+        for await (const event of nats.subscribe("ravi.inbound.pollVote")) {
           if (!this.running) break;
           const data = event.data as {
             pollMessageId: string;
@@ -478,7 +478,7 @@ export class RaviBot {
   private async subscribeToSessionAborts(): Promise<void> {
     while (this.running) {
       try {
-        for await (const event of notif.subscribe("ravi.session.abort")) {
+        for await (const event of nats.subscribe("ravi.session.abort")) {
           if (!this.running) break;
           const data = event.data as { sessionKey?: string; sessionName?: string };
           // Try session name first (streaming sessions are keyed by name), then DB key
@@ -520,7 +520,7 @@ export class RaviBot {
       });
     });
 
-    await notif.emit("ravi.outbound.deliver", {
+    await nats.emit("ravi.outbound.deliver", {
       channel: source.channel,
       accountId: source.accountId,
       to: source.chatId,
@@ -573,7 +573,7 @@ export class RaviBot {
       });
     });
 
-    await notif.emit("ravi.outbound.deliver", {
+    await nats.emit("ravi.outbound.deliver", {
       channel: source.channel,
       accountId: source.accountId,
       to: source.chatId,
@@ -630,7 +630,7 @@ export class RaviBot {
     const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
     log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
 
-    notif.emit("ravi.approval.request", {
+    nats.emit("ravi.approval.request", {
       type: opts.type,
       sessionName: opts.sessionName,
       agentId: opts.agentId,
@@ -647,7 +647,7 @@ export class RaviBot {
 
     const result = await this.requestApproval(targetSource, approvalText);
 
-    notif.emit("ravi.approval.response", {
+    nats.emit("ravi.approval.response", {
       type: opts.type,
       sessionName: opts.sessionName,
       agentId: opts.agentId,
@@ -694,7 +694,7 @@ export class RaviBot {
     log.info(`Subscribing to ${topic}`);
 
     try {
-      for await (const event of notif.subscribe(topic)) {
+      for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
         this.promptsReceived++;
@@ -870,7 +870,7 @@ export class RaviBot {
     }
 
     // Session should already exist (created by resolver/CLI/heartbeat).
-    // If not (e.g. direct notif emit), create one using the name as both key and name.
+    // If not (e.g. direct NATS publish), create one using the name as both key and name.
     // If session exists but agent_id is wrong, getOrCreateSession with same key fixes it.
     let session: SessionEntry;
     if (sessionEntry && sessionEntry.agentId !== agentId) {
@@ -1023,7 +1023,7 @@ export class RaviBot {
 
       log.info("AskUserQuestion hook: sending polls", { sessionName, questionCount: questions.length, isDelegated });
 
-      notif.emit("ravi.approval.request", {
+      nats.emit("ravi.approval.request", {
         type: "question", sessionName, agentId: agent.id, delegated: isDelegated,
         channel: targetSource.channel, chatId: targetSource.chatId,
         questionCount: questions.length, timestamp: Date.now(),
@@ -1052,7 +1052,7 @@ export class RaviBot {
         }
       }
 
-      notif.emit("ravi.approval.response", {
+      nats.emit("ravi.approval.response", {
         type: "question", sessionName, agentId: agent.id,
         approved: true, answers, timestamp: Date.now(),
       }).catch(() => {});
@@ -1352,7 +1352,7 @@ export class RaviBot {
     const emitResponse = async (text: string) => {
       const emitId = Math.random().toString(36).slice(2, 8);
       log.info("Emitting response", { sessionName, emitId, textLen: text.length });
-      await notif.emit(`ravi.session.${sessionName}.response`, {
+      await nats.emit(`ravi.session.${sessionName}.response`, {
         response: text,
         target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
         _emitId: emitId,
@@ -1531,7 +1531,7 @@ export class RaviBot {
 
             // Notify the user that the session was reset (skip for sentinel)
             if (streaming.currentSource && streaming.agentMode !== "sentinel") {
-              notif.emit("ravi.outbound.deliver", {
+              nats.emit("ravi.outbound.deliver", {
                 channel: streaming.currentSource.channel,
                 accountId: streaming.currentSource.accountId,
                 to: streaming.currentSource.chatId,

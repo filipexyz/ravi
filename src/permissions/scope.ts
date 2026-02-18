@@ -5,14 +5,14 @@
  * Delegates all permission checks to the REBAC engine.
  */
 
-import { spawn } from "node:child_process";
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
+import { publish } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
 
 /**
- * Emit an audit event via notif (fire-and-forget).
+ * Emit an audit event via NATS (fire-and-forget).
  */
 function emitAudit(event: {
   type: string;
@@ -21,16 +21,7 @@ function emitAudit(event: {
   reason: string;
   command?: string;
 }): void {
-  try {
-    const data = JSON.stringify(event);
-    const child = spawn("notif", ["emit", "ravi.audit.denied", data], {
-      stdio: "ignore",
-      detached: true,
-    });
-    child.unref();
-  } catch {
-    // Best-effort
-  }
+  publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
 }
 
 // ============================================================================

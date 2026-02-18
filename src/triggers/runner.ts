@@ -1,12 +1,12 @@
 /**
  * Trigger Runner
  *
- * Manages event-driven trigger subscriptions on notif topics.
+ * Manages event-driven trigger subscriptions on NATS topics.
  * When an event fires on a matching topic, builds a prompt and
  * emits it to the agent session.
  */
 
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
@@ -26,7 +26,7 @@ import type { Trigger } from "./types.js";
 const log = logger.child("triggers:runner");
 
 /** Tracks a topic subscription stream for teardown */
-type TopicSub = ReturnType<typeof notif.subscribe>;
+type TopicSub = ReturnType<typeof nats.subscribe>;
 
 /**
  * TriggerRunner - manages event-driven trigger subscriptions
@@ -115,10 +115,10 @@ export class TriggerRunner {
   }
 
   /**
-   * Subscribe to a notif topic and fire matching triggers.
+   * Subscribe to a NATS topic and fire matching triggers.
    */
   private subscribeToTopic(topic: string, triggers: Trigger[]): void {
-    const stream = notif.subscribe(topic);
+    const stream = nats.subscribe(topic);
     this.topicSubs.push(stream);
 
     // Run subscription loop in background
@@ -242,7 +242,7 @@ export class TriggerRunner {
       hasSource: !!source,
     });
 
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       source,
       _trigger: true,
@@ -280,7 +280,7 @@ export class TriggerRunner {
     log.debug("Subscribing to config refresh", { topic });
 
     try {
-      for await (const _event of notif.subscribe(topic)) {
+      for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received triggers config refresh signal");
         await this.setupSubscriptions();
@@ -301,7 +301,7 @@ export class TriggerRunner {
     log.debug("Subscribing to test events", { topic });
 
     try {
-      for await (const event of notif.subscribe(topic)) {
+      for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
         const data = event.data as { triggerId?: string };

@@ -1,11 +1,14 @@
 # Ravi Bot
 
-A Claude-powered conversational bot with WhatsApp and Matrix integration, session routing, and message queuing.
+A Claude-powered conversational bot with WhatsApp and Matrix integration, session routing, and message queuing. Runs entirely locally with embedded infrastructure (pgserve + notifd).
 
 ## Features
 
-- **WhatsApp Integration** - Connect via Baileys (no API keys needed)
+- **Zero-Config Infrastructure** - Embedded Postgres (pgserve :8432) and notifd (:8080 with NATS) start automatically
+- **WhatsApp Integration** - Connect via Baileys (no API keys needed), multi-account support
 - **Matrix Integration** - Connect to any Matrix homeserver
+- **Multi-Account Routing** - Route WhatsApp accounts to different agents, sentinel mode for observation
+- **REBAC Permissions** - Fine-grained relation-based access control for tools, contacts, sessions
 - **Session Routing** - Route conversations to different agents based on rules
 - **Message Queue** - Smart interruption handling when tools are running
 - **Debounce** - Group rapid messages before processing
@@ -15,7 +18,6 @@ A Claude-powered conversational bot with WhatsApp and Matrix integration, sessio
 - **Outbound Queues** - Automated outreach campaigns with follow-ups and qualification
 - **Emoji Reactions** - Agents can react to messages with emojis
 - **Media Downloads** - Images, videos, documents saved to /tmp with paths in prompts
-- **Bash Permissions** - Control which CLI commands agents can execute
 - **Contact Management** - Tags, notes, opt-out, interaction tracking
 - **Multi-Agent** - Configure multiple agents with different capabilities
 - **Daemon Mode** - Run as a system service (launchd/systemd)
@@ -32,32 +34,33 @@ bun link   # Makes `ravi` command available globally
 
 ## Quick Start
 
-### 1. Configure Environment
+### 1. Setup
 
 ```bash
-ravi daemon env
+ravi setup
 ```
 
-Add your API keys to `~/.ravi/.env`:
+The setup wizard will:
+- Download the `notifd` binary (local event bus)
+- Configure Claude authentication (API key or OAuth token)
+- Create the default agent
+- Install and start the daemon
+
+No external services needed. The daemon auto-starts embedded Postgres (pgserve) and notifd on launch, bootstrapping an API key on first run.
+
+### 2. Connect WhatsApp
 
 ```bash
-NOTIF_API_KEY=nsh_xxx           # Get from notif.sh
-CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-xxx  # From claude auth
+ravi whatsapp connect
 ```
 
-### 2. Start the Daemon
+Scan the QR code to link your WhatsApp. For multi-account setups:
 
 ```bash
-ravi daemon start
+ravi whatsapp connect --account vendas --mode sentinel
 ```
 
-This starts both the bot server and WhatsApp gateway as a background service.
-
-### 3. Connect WhatsApp
-
-On first run, scan the QR code in the terminal to link your WhatsApp.
-
-### 4. Monitor
+### 3. Monitor
 
 ```bash
 ravi daemon status   # Check if running
@@ -79,6 +82,22 @@ ravi daemon install    # Install system service
 ravi daemon uninstall  # Remove system service
 ```
 
+### WhatsApp Account Management
+
+```bash
+ravi whatsapp connect                    # Connect default account (QR code)
+ravi whatsapp connect --account vendas   # Connect named account
+ravi whatsapp connect --account vendas --agent vendas --mode sentinel
+ravi whatsapp status                     # Show connection status
+ravi whatsapp status --account vendas    # Status for specific account
+ravi whatsapp set --account vendas --agent main  # Change agent mapping
+ravi whatsapp disconnect                 # Disconnect account
+```
+
+**Agent modes:**
+- `active` (default) - Agent responds to messages normally
+- `sentinel` - Agent observes silently, only sends when explicitly instructed via `ravi whatsapp dm send`
+
 ### Agent Configuration
 
 ```bash
@@ -86,9 +105,8 @@ ravi agents list                      # List all agents
 ravi agents show main                 # Show agent details
 ravi agents create mybot ~/ravi/mybot # Create new agent
 ravi agents set main model opus       # Set model
+ravi agents set main mode sentinel    # Set agent mode
 ravi agents debounce main 2000        # Set 2s debounce
-ravi agents tools main                # Manage tool whitelist
-ravi agents bash main                 # Manage bash permissions
 ravi agents reset main                # Reset main session
 ravi agents reset main all            # Reset ALL sessions
 ```
@@ -196,16 +214,34 @@ ravi outbound qualify <id> warm      # Set qualification
 ravi outbound reset <id>             # Reset to pending
 ```
 
-### Bash Permissions (Agent Security)
+### REBAC Permissions
+
+Fine-grained relation-based access control (replaced legacy allowedTools/bashConfig):
 
 ```bash
-ravi agents bash main                # Show current config
-ravi agents bash main init           # Init denylist (block dangerous CLIs)
-ravi agents bash main init strict    # Init allowlist (only safe CLIs)
-ravi agents bash main allow curl     # Add to allowlist
-ravi agents bash main deny rm        # Add to denylist
-ravi agents bash main clear          # Reset to bypass mode
+# Grant/revoke relations
+ravi permissions grant agent:dev use tool:Bash
+ravi permissions grant agent:dev execute executable:git
+ravi permissions grant agent:dev execute group:contacts
+ravi permissions grant agent:dev access session:dev-*
+ravi permissions revoke agent:dev use tool:Bash
+
+# Apply templates
+ravi permissions init agent:dev full-access      # All tools + executables
+ravi permissions init agent:dev sdk-tools        # SDK tools only
+ravi permissions init agent:dev safe-executables # Safe CLIs only
+
+# Check permissions
+ravi permissions check agent:dev execute group:contacts
+ravi permissions list --subject agent:dev
+
+# Sync from config
+ravi permissions sync
 ```
+
+**Relation types:** `admin`, `use` (tools), `execute` (executables/groups), `access`/`modify` (sessions), `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`
+
+**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `tool`, `executable`, `cron`, `trigger`, `outbound`, `team`
 
 ### Emoji Reactions
 
@@ -247,10 +283,11 @@ ravi settings set defaultTimezone America/Sao_Paulo
 |--------|-------------|
 | `cwd` | Working directory with CLAUDE.md and tools |
 | `model` | Model to use (sonnet, opus, haiku) |
+| `mode` | Operating mode: `active` (responds) or `sentinel` (observes silently) |
 | `dmScope` | How to group DM sessions |
 | `debounceMs` | Message grouping window in ms |
-| `allowedTools` | Whitelist of allowed tools |
-| `bashConfig` | Bash CLI permissions (bypass/allowlist/denylist) |
+| `matrixAccount` | Matrix account username (for multi-account) |
+| `contactScope` | Contact visibility: `own`, `tagged:<tag>`, `all` |
 
 ### DM Scopes
 
@@ -263,26 +300,36 @@ ravi settings set defaultTimezone America/Sao_Paulo
 ## Architecture
 
 ```
-┌─────────────┐                              ┌───────────────────────┐
+                                    ┌──────────────┐  ┌──────────────┐
+                                    │   pgserve    │  │    notifd     │
+                                    │  :8432 (PG)  │  │ :8080 (NATS) │
+                                    └──────┬───────┘  └──────┬───────┘
+                                           └───────┬─────────┘
+┌─────────────┐                              ┌─────┴─────────────────┐
 │    TUI      │──────────────────────────────│       notif.sh        │
 └─────────────┘                              │  ravi.{sessionKey}.*  │
                                              └───────────┬───────────┘
 ┌─────────────┐     ┌─────────────┐                      │
 │  WhatsApp   │────▶│   Gateway   │──────────────────────┤
 │   Plugin    │     │  (router)   │                      │
-└─────────────┘     └─────────────┘                      ▼
-                                             ┌───────────────────────┐
+└─────────────┘     └─────────────┘                      │
+┌─────────────┐            │                             │
+│   Matrix    │────────────┘                             │
+│   Plugin    │                                          ▼
+└─────────────┘                              ┌───────────────────────┐
                                              │       RaviBot         │
                                              │   Claude Agent SDK    │
                                              │   cwd: ~/ravi/{agent} │
                                              └───────────────────────┘
 ```
 
+**Local Infrastructure:** The daemon auto-starts pgserve (embedded Postgres on :8432) and notifd (event bus on :8080 with embedded NATS). No external services needed -- API keys are bootstrapped on first run and stored in `~/.ravi/local-api-key`.
+
 ### Message Flow
 
-1. **Inbound**: WhatsApp → Gateway → notif.sh → Bot
+1. **Inbound**: WhatsApp/Matrix → Gateway → notifd → Bot
 2. **Processing**: Bot uses Claude SDK with agent's working directory
-3. **Outbound**: Bot → notif.sh → Gateway → WhatsApp
+3. **Outbound**: Bot → notifd → Gateway → WhatsApp/Matrix
 
 ### Message Queue
 
@@ -304,6 +351,12 @@ When messages arrive while processing:
 
 ~/.ravi/                  # Ravi config directory
 ├── .env                  # Environment variables
+├── local-api-key         # Auto-generated notifd API key
+├── bin/
+│   └── notifd            # notifd binary (auto-downloaded)
+├── pgserve/              # Embedded Postgres data
+├── nats/                 # Embedded NATS JetStream store
+├── chat.db               # Message history
 ├── matrix/               # Matrix SDK storage
 └── logs/
     └── daemon.log        # Daemon logs
@@ -323,15 +376,20 @@ make quality     # Run lint + typecheck
 
 ```bash
 ravi daemon logs   # Check for errors
-ravi daemon env    # Verify API keys are set
+ravi daemon env    # Verify Claude auth is set
+```
+
+If notifd fails to start, check that ports 8080 and 8432 are free:
+```bash
+lsof -i :8080
+lsof -i :8432
 ```
 
 ### WhatsApp not connecting
 
-Delete the auth folder and restart to get a new QR code:
-
 ```bash
-rm -rf ~/.ravi/whatsapp-auth
+ravi whatsapp status                  # Check current state
+rm -rf ~/.ravi/whatsapp-auth          # Reset auth, get new QR
 ravi daemon restart
 ```
 
@@ -341,8 +399,16 @@ ravi daemon restart
 # Check bot is running
 ravi daemon status
 
-# Check notif.sh connection
+# Check notifd connection
 RAVI_LOG_LEVEL=debug ravi daemon restart
+```
+
+### Reset local infrastructure
+
+```bash
+ravi daemon stop
+rm -rf ~/.ravi/pgserve ~/.ravi/nats ~/.ravi/local-api-key
+ravi daemon start   # Will re-bootstrap
 ```
 
 ## License

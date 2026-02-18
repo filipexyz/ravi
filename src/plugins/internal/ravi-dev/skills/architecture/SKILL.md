@@ -14,7 +14,7 @@ description: |
 Ravi e um sistema multi-agent construido sobre o Claude Agent SDK que orquestra conversas em multiplas plataformas (WhatsApp, Matrix, TUI).
 
 **Repositorio:** `/Users/luis/dev/filipelabs/ravi.bot`
-**Runtime:** Bun | **DB:** SQLite | **PubSub:** notif.sh | **AI:** Claude SDK
+**Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS | **AI:** Claude SDK
 
 ## Fluxo Principal de Mensagens
 
@@ -22,9 +22,9 @@ Ravi e um sistema multi-agent construido sobre o Claude Agent SDK que orquestra 
 [WhatsApp/Matrix/TUI]
     -> Channel Plugin (normaliza mensagem)
     -> Gateway (formata envelope, resolve rota)
-    -> notif.emit("ravi.{sessionKey}.prompt")
+    -> nats.emit("ravi.{sessionKey}.prompt")
     -> RaviBot (Claude SDK query)
-    -> notif.emit("ravi.{sessionKey}.response")
+    -> nats.emit("ravi.{sessionKey}.response")
     -> Gateway (roteia para canal)
     -> [WhatsApp/Matrix/TUI]
 ```
@@ -239,7 +239,7 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 
 ## Padroes Importantes
 
-1. **PubSub via notif** - Tudo comunica via topics
+1. **PubSub via NATS** - Tudo comunica via topics
 2. **Ghost detection** - `_emitId` + `_instanceId` previne duplicatas
 3. **Abort control** - AbortController por sessao, cleanup no stop
 4. **Debouncing** - Agrupa msgs rapidas por window configuravel

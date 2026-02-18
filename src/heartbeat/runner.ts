@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { dbListAgents } from "../router/router-db.js";
 import { expandHome, getMainSession, getOrCreateSession, getSessionByName, generateSessionName, ensureUniqueName, updateSessionName } from "../router/index.js";
@@ -140,7 +140,7 @@ export class HeartbeatRunner {
     log.debug("Subscribing to config refresh", { topic });
 
     try {
-      for await (const _event of notif.subscribe(topic)) {
+      for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received heartbeat config refresh signal");
         this.refreshTimers();
@@ -240,7 +240,7 @@ export class HeartbeatRunner {
     const sessionName = mainSession.name ?? baseName;
 
     // Send heartbeat prompt with agent info
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt: HEARTBEAT_PROMPT,
       _heartbeat: true,
       _agentId: agentId,

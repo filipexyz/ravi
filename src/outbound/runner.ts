@@ -5,7 +5,7 @@
  * Follows the same pattern as CronRunner.
  */
 
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import {
@@ -291,7 +291,7 @@ export class OutboundRunner {
 
     // Send deferred read receipt if pending (only for THIS entry)
     if (entry.pendingReceipt) {
-      await notif.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
+      await nats.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
       dbClearPendingReceipt(entry.id);
       log.debug("Sent deferred read receipt", { entryId: entry.id });
     }
@@ -318,7 +318,7 @@ export class OutboundRunner {
     });
 
     // Emit prompt
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,
@@ -472,7 +472,7 @@ export class OutboundRunner {
 
     // Send deferred read receipt if pending
     if (entry.pendingReceipt) {
-      await notif.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
+      await nats.emit("ravi.outbound.receipt", { ...entry.pendingReceipt });
       dbClearPendingReceipt(entry.id);
       log.debug("Sent deferred read receipt", { entryId: entry.id });
     }
@@ -491,7 +491,7 @@ export class OutboundRunner {
       sessionName,
     });
 
-    await notif.emit(`ravi.session.${sessionName}.prompt`, {
+    await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,
@@ -612,7 +612,7 @@ export class OutboundRunner {
     log.debug("Subscribing to config refresh", { topic });
 
     try {
-      for await (const _event of notif.subscribe(topic)) {
+      for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received outbound config refresh signal");
         this.refreshTimers();
@@ -633,7 +633,7 @@ export class OutboundRunner {
     log.debug("Subscribing to trigger events", { topic });
 
     try {
-      for await (const event of notif.subscribe(topic)) {
+      for await (const event of nats.subscribe(topic)) {
         if (!this.running) break;
 
         const data = event.data as { queueId?: string };

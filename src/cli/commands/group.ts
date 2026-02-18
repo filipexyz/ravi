@@ -8,7 +8,7 @@ import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute } from "../../router/router-db.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
 import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
@@ -252,7 +252,7 @@ export class GroupCommands {
         const memberList = participants.join(", ");
         const inform = `[System] Inform: Você foi adicionado ao grupo WhatsApp "${name}" com os membros: ${memberList}. Se apresente brevemente.`;
 
-        await notif.emit(`ravi.session.${session.name ?? sessionName}.prompt`, {
+        await nats.emit(`ravi.session.${session.name ?? sessionName}.prompt`, {
           prompt: inform,
           source: {
             channel: "whatsapp",

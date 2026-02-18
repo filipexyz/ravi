@@ -13,7 +13,7 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
-import { notif } from "../notif.js";
+import { nats } from "../nats.js";
 import { getContext } from "./context.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 
@@ -252,7 +252,7 @@ function buildHandler(
 
     const text = output.join("\n").trim() || "(no output)";
 
-    notif
+    nats
       .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
         tool: toolName,
         input: truncateForEvent(toolArgs),

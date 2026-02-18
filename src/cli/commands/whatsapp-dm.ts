@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
 import { phoneToJid, jidToSessionId } from "../../channels/whatsapp/normalize.js";
 import { getRecentHistory } from "../../db.js";
@@ -61,7 +61,7 @@ export class WhatsAppDmCommands {
     // Strip common bash escape artifacts (e.g. Claude writes "oi\!" instead of "oi!")
     const cleanMessage = message.replace(/\\([!#$&*?])/g, "$1");
 
-    await notif.emit("ravi.outbound.deliver", {
+    await nats.emit("ravi.outbound.deliver", {
       channel: "whatsapp",
       accountId: account ?? "default",
       to: jid,
@@ -103,7 +103,7 @@ export class WhatsAppDmCommands {
       if (lastUserMsg) {
         const midMatch = lastUserMsg.content.match(/\[mid:([^\]]+)\]/);
         if (midMatch) {
-          await notif.emit("ravi.outbound.receipt", {
+          await nats.emit("ravi.outbound.receipt", {
             channel: "whatsapp",
             accountId: account ?? "default",
             chatId: jid,
@@ -124,7 +124,7 @@ export class WhatsAppDmCommands {
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
 
-    await notif.emit("ravi.outbound.receipt", {
+    await nats.emit("ravi.outbound.receipt", {
       channel: "whatsapp",
       accountId: account ?? "default",
       chatId: jid,

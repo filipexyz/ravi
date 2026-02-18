@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg } from "../decorators.js";
 import { getContext, fail } from "../context.js";
-import { notif } from "../../notif.js";
+import { nats } from "../../nats.js";
 
 @Group({
   name: "react",
@@ -27,7 +27,7 @@ export class ReactCommands {
 
     const { channel, accountId, chatId } = source;
 
-    await notif.emit("ravi.outbound.reaction", {
+    await nats.emit("ravi.outbound.reaction", {
       channel,
       accountId,
       chatId,

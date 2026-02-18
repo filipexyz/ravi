@@ -15,7 +15,7 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { notif } from "../notif.js";
+import { nats, isExplicitConnect } from "../nats.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 
 type CommandClass = new () => object;
@@ -198,7 +198,7 @@ function registerCommand(
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
     }
 
-    await notif
+    await nats
       .emit(`ravi._cli.cli.${groupName}.${cmdMeta.name}`, {
         tool: toolName,
         input: truncate(input),
@@ -208,6 +208,11 @@ function registerCommand(
         sessionKey: "_cli",
       })
       .catch(() => {});
+
+    // Close lazy NATS connections so the CLI process can exit
+    if (!isExplicitConnect()) {
+      await nats.close().catch(() => {});
+    }
 
     if (isError) process.exit(1);
   });
