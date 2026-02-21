@@ -1,66 +1,85 @@
 /**
- * Daemon Commands - Manage bot + gateway as system services
+ * Daemon Commands - Manage ravi via PM2
  */
 
 import "reflect-metadata";
 import { execSync, spawn } from "node:child_process";
-import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { homedir, platform } from "node:os";
+import { homedir } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
 import { hasContext, fail } from "../context.js";
+import {
+  isPm2Available,
+  runPm2,
+  isRaviRunning,
+  getRaviPid,
+  getPm2Processes,
+  PM2_PROCESS_NAME,
+} from "../../pm2.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
-const PID_FILE = join(RAVI_DIR, "daemon.pid");
-const LOG_FILE = join(RAVI_DIR, "logs", "daemon.log");
 const ENV_FILE = join(RAVI_DIR, ".env");
 const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
 
-// launchd plist path (macOS)
-const PLIST_PATH = join(homedir(), "Library/LaunchAgents/sh.ravi.daemon.plist");
-
-// systemd service path (Linux) - system-level, not user
-const SYSTEMD_PATH = "/etc/systemd/system/ravi.service";
-
-const IS_MACOS = platform() === "darwin";
-const IS_LINUX = platform() === "linux";
+function requirePm2() {
+  if (!isPm2Available()) {
+    fail("PM2 not found. Install it: bun add -g pm2");
+  }
+}
 
 @Group({
   name: "daemon",
-  description: "Manage bot + gateway as system service",
+  description: "Manage ravi via PM2",
   scope: "admin",
 })
 export class DaemonCommands {
-  @Command({ name: "start", description: "Start the daemon (bot + gateway)" })
+  @Command({ name: "start", description: "Start the daemon via PM2" })
   start() {
-    if (this.isRunning()) {
+    requirePm2();
+
+    if (isRaviRunning()) {
       console.log("Daemon is already running");
-      console.log(`PID: ${this.getPid()}`);
+      console.log(`PID: ${getRaviPid()}`);
       return;
     }
 
-    if (IS_MACOS) {
-      this.startMacOS();
-    } else if (IS_LINUX) {
-      this.startLinux();
+    // Clean up old launchd/systemd if present
+    this.cleanupLegacyServices();
+
+    const bundlePath = this.findBundlePath();
+    if (!bundlePath) {
+      fail("Bundle not found. Run: bun run build");
+    }
+
+    const { status } = runPm2([
+      "start", bundlePath,
+      "--name", PM2_PROCESS_NAME,
+      "--interpreter", "bun",
+      "--", "daemon", "run",
+    ]);
+
+    if (status === 0) {
+      console.log("Daemon started via PM2");
     } else {
-      this.startDirect();
+      fail("Failed to start daemon");
     }
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
   stop() {
-    if (!this.isRunning()) {
+    requirePm2();
+
+    if (!isRaviRunning()) {
       console.log("Daemon is not running");
       return;
     }
 
-    if (IS_MACOS) {
-      this.stopMacOS();
-    } else if (IS_LINUX) {
-      this.stopLinux();
+    const { status } = runPm2(["delete", PM2_PROCESS_NAME]);
+    if (status === 0) {
+      console.log("Daemon stopped");
     } else {
-      this.stopDirect();
+      fail("Failed to stop daemon");
     }
   }
 
@@ -69,8 +88,9 @@ export class DaemonCommands {
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean
   ) {
+    requirePm2();
+
     // When called inside daemon, spawn detached restart and return immediately
-    // This prevents deadlock since we'd be killing ourselves
     if (hasContext()) {
       if (!message) {
         fail("Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m \"motivo\"");
@@ -82,13 +102,9 @@ export class DaemonCommands {
       const restartData = JSON.stringify({ reason: message, sessionName });
       writeFileSync(RESTART_REASON_FILE, restartData);
 
-      // Spawn detached process to do the actual restart.
-      // CRITICAL: strip all RAVI_* env vars so the child process
-      // doesn't think it's inside the daemon (which would cause infinite fork).
-      // hasContext() checks both RAVI_SESSION_KEY and RAVI_SESSION_NAME.
+      // Spawn detached process to do the actual restart
       const args = ["daemon", "restart"];
       if (build) args.push("--build");
-      // Don't pass message again - already saved to file
 
       const cleanEnv = { ...process.env };
       for (const key of Object.keys(cleanEnv)) {
@@ -98,12 +114,12 @@ export class DaemonCommands {
       const child = spawn("ravi", args, {
         detached: true,
         stdio: "ignore",
-        cwd: this.findProjectRoot(),
+        cwd: this.findProjectRoot() ?? undefined,
         env: cleanEnv,
       });
       child.unref();
 
-      console.log("🔄 Restart scheduled (detached)");
+      console.log("Restart scheduled (detached)");
       return;
     }
 
@@ -113,12 +129,11 @@ export class DaemonCommands {
       try {
         execSync("bun run build", {
           stdio: "inherit",
-          cwd: this.findProjectRoot()
+          cwd: this.findProjectRoot() ?? undefined
         });
-        console.log("✓ Build completed");
-      } catch (err) {
-        console.error("Build failed, aborting restart");
-        process.exit(1);
+        console.log("Build completed");
+      } catch {
+        fail("Build failed, aborting restart");
       }
     }
 
@@ -126,164 +141,129 @@ export class DaemonCommands {
     if (message) {
       mkdirSync(RAVI_DIR, { recursive: true });
       writeFileSync(RESTART_REASON_FILE, message);
-      console.log(`Restart reason saved: ${message}`);
     }
 
-    if (IS_LINUX && this.isRunning()) {
-      // On Linux with systemd, this process is part of the service cgroup.
-      // systemctl stop kills the entire cgroup — including us — so we never reach start().
-      // Reason is already saved to file above; the new process reads it on boot.
-      try {
-        execSync("sudo systemctl restart ravi", { stdio: "inherit" });
-        console.log("✓ Daemon restarted");
-      } catch {
-        console.error("Failed to restart daemon");
+    if (isRaviRunning()) {
+      const { status } = runPm2(["restart", PM2_PROCESS_NAME]);
+      if (status === 0) {
+        console.log("Daemon restarted");
+      } else {
+        fail("Failed to restart daemon");
       }
-      return;
-    }
-
-    if (IS_MACOS && this.isRunning()) {
-      // On macOS with KeepAlive, unload/load causes race conditions.
-      // Use kickstart -k which atomically kills and restarts the service.
-      try {
-        const uid = execSync("id -u", { encoding: "utf-8" }).trim();
-        execSync(`launchctl kickstart -k gui/${uid}/sh.ravi.daemon`, { stdio: "inherit" });
-        console.log("✓ Daemon restarted");
-      } catch {
-        console.error("Failed to restart daemon via kickstart, falling back to stop/start");
-        this.stop();
-        this.start();
-      }
-      return;
-    }
-
-    if (this.isRunning()) {
-      this.stop();
-      // Wait for the old process to fully die before starting new one
-      const deadline = Date.now() + 15000;
-      process.stdout.write("Waiting for daemon to stop");
-      while (Date.now() < deadline) {
-        if (!this.isRunning()) {
-          console.log(" done");
-          break;
-        }
-        process.stdout.write(".");
-        try { execSync("sleep 0.5", { stdio: "pipe" }); } catch {}
-      }
-      if (this.isRunning()) {
-        console.warn("\nWarning: old daemon still running, forcing start anyway");
-      }
-    }
-    this.start();
-  }
-
-  @Command({ name: "status", description: "Show daemon status" })
-  status() {
-    const running = this.isRunning();
-    const pid = this.getPid();
-
-    console.log(`\nRavi Daemon Status`);
-    console.log(`──────────────────`);
-    console.log(`  Status: ${running ? "✓ Running" : "✗ Stopped"}`);
-    if (pid) {
-      console.log(`  PID:    ${pid}`);
-    }
-    console.log(`  Log:    ${LOG_FILE}`);
-    console.log();
-
-    if (IS_MACOS) {
-      console.log(`  Type:   launchd`);
-      console.log(`  Plist:  ${PLIST_PATH}`);
-    } else if (IS_LINUX) {
-      console.log(`  Type:   systemd (system)`);
-      console.log(`  Unit:   ${SYSTEMD_PATH}`);
     } else {
-      console.log(`  Type:   direct (no service manager)`);
+      this.start();
     }
   }
 
-  @Command({ name: "logs", description: "Show daemon logs" })
+  @Command({ name: "status", description: "Show daemon and infrastructure status" })
+  status() {
+    if (!isPm2Available()) {
+      console.log("\nPM2 not installed. Install: bun add -g pm2\n");
+      return;
+    }
+
+    const procs = getPm2Processes();
+    const ravi = procs.find((p) => p.name === PM2_PROCESS_NAME);
+    const omniApi = procs.find((p) => p.name === "omni-api");
+    const omniNats = procs.find((p) => p.name === "omni-nats");
+
+    console.log("\nRavi Daemon Status");
+    console.log("──────────────────");
+
+    if (ravi) {
+      const mem = (ravi.memory / 1024 / 1024).toFixed(1);
+      console.log(`  ravi:      ${ravi.status === "online" ? "online" : ravi.status}  (PID ${ravi.pid}, ${mem}MB)`);
+    } else {
+      console.log("  ravi:      stopped");
+    }
+
+    if (omniNats) {
+      console.log(`  omni-nats: ${omniNats.status === "online" ? "online" : omniNats.status}  (PID ${omniNats.pid})`);
+    } else {
+      console.log("  omni-nats: not managed by PM2");
+    }
+
+    if (omniApi) {
+      const mem = (omniApi.memory / 1024 / 1024).toFixed(1);
+      console.log(`  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`);
+    } else {
+      console.log("  omni-api:  not managed by PM2");
+    }
+
+    console.log();
+  }
+
+  @Command({ name: "logs", description: "Show daemon logs (PM2)" })
   logs(
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
     @Option({ flags: "-t, --tail <lines>", description: "Number of lines to show", defaultValue: "50" }) tail?: string,
-    @Option({ flags: "--clear", description: "Clear log file" }) clear?: boolean,
-    @Option({ flags: "--path", description: "Print log file path only" }) path?: boolean
+    @Option({ flags: "--clear", description: "Flush PM2 logs for ravi" }) clear?: boolean,
+    @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean
   ) {
-    // Just print path
-    if (path) {
-      console.log(LOG_FILE);
-      return;
-    }
+    requirePm2();
 
-    // Clear logs
-    if (clear) {
-      if (existsSync(LOG_FILE)) {
-        writeFileSync(LOG_FILE, "");
-        console.log("✓ Logs cleared");
-      } else {
-        console.log("No logs to clear");
+    if (path) {
+      try {
+        const info = execSync(`pm2 info ${PM2_PROCESS_NAME} --no-color 2>/dev/null | grep "out log path"`, {
+          encoding: "utf-8",
+        }).trim();
+        const logPath = info.split("│").pop()?.trim();
+        console.log(logPath || "Run 'pm2 info ravi' to find log path");
+      } catch {
+        console.log("Run 'pm2 info ravi' to find log path");
       }
       return;
     }
 
-    if (!existsSync(LOG_FILE)) {
-      console.log("No logs yet. Start the daemon first.");
+    if (clear) {
+      runPm2(["flush", PM2_PROCESS_NAME]);
+      console.log("Logs flushed");
       return;
     }
 
-    const lines = parseInt(tail || "50", 10);
+    const lines = tail || "50";
+    const args = ["logs", PM2_PROCESS_NAME, "--lines", lines];
+    if (!follow) args.push("--nostream");
+
+    const child = spawn("pm2", args, { stdio: "inherit" });
 
     if (follow) {
-      console.log(`Following ${LOG_FILE} (Ctrl+C to stop)\n`);
-      const child = spawn("tail", ["-n", String(lines), "-f", LOG_FILE], {
-        stdio: "inherit",
-      });
-
       process.on("SIGINT", () => {
         child.kill();
         process.exit(0);
       });
-    } else {
-      // Just show last N lines
-      const child = spawn("tail", ["-n", String(lines), LOG_FILE], {
-        stdio: "inherit",
-      });
-
-      child.on("close", (code) => {
-        process.exit(code || 0);
-      });
     }
+
+    child.on("close", (code) => {
+      process.exit(code || 0);
+    });
   }
 
-  @Command({ name: "install", description: "Install system service (launchd/systemd)" })
+  @Command({ name: "install", description: "Save PM2 process list and suggest startup" })
   install() {
-    if (IS_MACOS) {
-      this.installMacOS();
-    } else if (IS_LINUX) {
-      this.installLinux();
-    } else {
-      console.log("System service not supported on this platform.");
-      console.log("Use 'ravi daemon start' to run directly.");
-    }
+    requirePm2();
+    runPm2(["save"]);
+    console.log("\nPM2 process list saved.");
+    console.log("To start on boot, run: pm2 startup");
   }
 
-  @Command({ name: "uninstall", description: "Uninstall system service" })
+  @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
   uninstall() {
-    if (IS_MACOS) {
-      this.uninstallMacOS();
-    } else if (IS_LINUX) {
-      this.uninstallLinux();
-    } else {
-      console.log("No system service installed.");
+    requirePm2();
+
+    if (isRaviRunning()) {
+      runPm2(["delete", PM2_PROCESS_NAME]);
     }
+    runPm2(["save"]);
+
+    // Clean up old launchd/systemd if present
+    this.cleanupLegacyServices();
+
+    console.log("Ravi removed from PM2");
   }
 
-  @Command({ name: "run", description: "Run daemon in foreground (used by system services)" })
+  @Command({ name: "run", description: "Run daemon in foreground (used by PM2)" })
   async run() {
-    // Kill any orphaned daemon processes before starting
-    // This prevents ghost responses from duplicate daemons
-    this.killOrphanedDaemons();
-
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
   }
@@ -292,11 +272,10 @@ export class DaemonCommands {
   async dev() {
     const projectRoot = this.findProjectRoot();
     if (!projectRoot) {
-      console.error("Could not find project root (package.json with ravi.bot)");
-      process.exit(1);
+      fail("Could not find project root (package.json with ravi.bot)");
     }
 
-    console.log(`🔧 Dev mode - watching ${projectRoot}/src`);
+    console.log(`Dev mode - watching ${projectRoot}/src`);
     console.log("Auto-rebuild on changes. Use 'ravi daemon restart' to apply.\n");
     console.log("Press Ctrl+C to stop\n");
 
@@ -304,17 +283,16 @@ export class DaemonCommands {
     console.log("Building...");
     try {
       execSync("bun run build", { stdio: "inherit", cwd: projectRoot });
-      console.log("✓ Build completed\n");
+      console.log("Build completed\n");
     } catch {
-      console.error("Initial build failed");
-      process.exit(1);
+      fail("Initial build failed");
     }
 
     const rebuild = () => {
-      console.log("\n📦 Rebuilding...");
+      console.log("\nRebuilding...");
       try {
         execSync("bun run build", { stdio: "inherit", cwd: projectRoot });
-        console.log("✓ Build completed - run 'ravi daemon restart' to apply");
+        console.log("Build completed - run 'ravi daemon restart' to apply");
       } catch {
         console.error("Build failed");
       }
@@ -330,23 +308,21 @@ export class DaemonCommands {
 
     const watchDir = (dir: string) => {
       try {
-        watch(dir, { recursive: true }, (eventType, filename) => {
+        watch(dir, { recursive: true }, (_eventType, filename) => {
           if (!filename || !filename.endsWith(".ts")) return;
 
-          // Ignore auto-generated files to prevent build loops
           const normalizedPath = filename.replace(/\\/g, "/");
           const ignoredFiles = [
-            "cli/commands/index.ts",        // gen:commands
-            "plugins/internal-registry.ts", // gen:plugins
+            "cli/commands/index.ts",
+            "plugins/internal-registry.ts",
           ];
           if (ignoredFiles.some(f => normalizedPath === f || normalizedPath.endsWith(`/${f}`))) {
             return;
           }
 
-          // Debounce multiple rapid changes
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
-            console.log(`\n📝 Changed: ${filename}`);
+            console.log(`\nChanged: ${filename}`);
             rebuild();
           }, debounceMs);
         });
@@ -356,70 +332,38 @@ export class DaemonCommands {
     };
 
     watchDir(srcDir);
-    console.log(`👀 Watching ${srcDir} for changes...\n`);
+    console.log(`Watching ${srcDir} for changes...\n`);
 
-    // Handle Ctrl+C
     process.on("SIGINT", () => {
       console.log("\n\nStopping dev mode...");
       process.exit(0);
     });
 
-    // Keep process alive
     await new Promise(() => {});
-  }
-
-  /**
-   * Kill any existing daemon processes (except ourselves).
-   * Prevents duplicate daemons which cause ghost responses.
-   */
-  private killOrphanedDaemons() {
-    const myPid = process.pid;
-
-    try {
-      // Find all "daemon run" processes
-      const result = execSync('pgrep -f "daemon run"', {
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      });
-
-      const pids = result
-        .trim()
-        .split("\n")
-        .map(p => parseInt(p, 10))
-        .filter(p => !isNaN(p) && p !== myPid);
-
-      if (pids.length > 0) {
-        console.log(`[daemon] Killing ${pids.length} orphaned daemon(s): ${pids.join(", ")}`);
-        for (const pid of pids) {
-          try {
-            process.kill(pid, "SIGKILL");
-          } catch {
-            // Process may have already exited
-          }
-        }
-        // Give them a moment to die
-        execSync("sleep 1", { stdio: "pipe" });
-      }
-    } catch {
-      // No other daemons found (pgrep returns non-zero)
-    }
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
   env() {
-    // Ensure directory exists
     mkdirSync(RAVI_DIR, { recursive: true });
 
-    // Create default .env if it doesn't exist
     if (!existsSync(ENV_FILE)) {
       const defaultEnv = `# Ravi Daemon Environment
 # This file is loaded when the daemon starts.
 # Edit and restart the daemon for changes to take effect.
 
-# Required
+# Required (one of these)
 ANTHROPIC_API_KEY=
+# CLAUDE_CODE_OAUTH_TOKEN=
+
+# NATS connection (default: nats://127.0.0.1:4222)
+# NATS_URL=nats://127.0.0.1:4222
+
+# Omni overrides (default: read from ~/.omni/config.json)
+# OMNI_API_URL=http://127.0.0.1:8882
+# OMNI_API_KEY=
 
 # Optional
+# OPENAI_API_KEY=
 # RAVI_MODEL=sonnet
 # RAVI_LOG_LEVEL=info
 `;
@@ -427,7 +371,6 @@ ANTHROPIC_API_KEY=
       console.log(`Created ${ENV_FILE}`);
     }
 
-    // Open in editor
     const editor = process.env.EDITOR || "nano";
     try {
       execSync(`${editor} ${ENV_FILE}`, { stdio: "inherit" });
@@ -437,246 +380,28 @@ ANTHROPIC_API_KEY=
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // macOS (launchd)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private installMacOS() {
-    const raviBin = this.findRaviBin();
-
-    // Ensure logs directory exists
-    mkdirSync(join(RAVI_DIR, "logs"), { recursive: true });
-
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>sh.ravi.daemon</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>${raviBin}</string>
-    <string>daemon</string>
-    <string>run</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>${homedir()}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>${process.env.PATH || "/usr/local/bin:/usr/bin:/bin"}</string>
-    <key>HOME</key>
-    <string>${homedir()}</string>
-  </dict>
-  <key>StandardOutPath</key>
-  <string>${LOG_FILE}</string>
-  <key>StandardErrorPath</key>
-  <string>${LOG_FILE}</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-</dict>
-</plist>`;
-
-    writeFileSync(PLIST_PATH, plist);
-    console.log(`✓ Installed launchd service: ${PLIST_PATH}`);
-    console.log(`\nEnvironment loaded from: ~/.ravi/.env`);
-    console.log("To start: ravi daemon start");
-  }
-
-  private uninstallMacOS() {
-    if (this.isRunning()) {
-      this.stopMacOS();
-    }
-
-    if (existsSync(PLIST_PATH)) {
-      unlinkSync(PLIST_PATH);
-      console.log(`✓ Uninstalled launchd service`);
-    } else {
-      console.log("Service not installed.");
-    }
-  }
-
-  private startMacOS() {
-    if (!existsSync(PLIST_PATH)) {
-      console.log("Service not installed. Installing...");
-      this.installMacOS();
-    }
-
-    try {
-      execSync(`launchctl load ${PLIST_PATH}`, { stdio: "inherit" });
-      console.log("✓ Daemon started");
-    } catch {
-      console.error("Failed to start daemon");
-    }
-  }
-
-  private stopMacOS() {
-    try {
-      execSync(`launchctl unload ${PLIST_PATH}`, { stdio: "inherit" });
-      console.log("✓ Daemon stopped");
-    } catch {
-      console.error("Failed to stop daemon");
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Linux (systemd)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private installLinux() {
-    // Find the ravi binary
-    const raviBin = this.findRaviBin();
-    const currentUser = process.env.USER || process.env.LOGNAME || "ravi";
-
-    // Ensure logs directory exists
-    mkdirSync(join(RAVI_DIR, "logs"), { recursive: true });
-
-    // Use a clean PATH (filter out Windows paths and invalid entries)
-    const cleanPath = (process.env.PATH || "")
-      .split(":")
-      .filter(p => p.startsWith("/") && !p.includes("\\"))
-      .join(":") || "/usr/local/bin:/usr/bin:/bin";
-
-    const unit = `[Unit]
-Description=Ravi Bot Daemon
-After=network.target
-
-[Service]
-Type=simple
-User=${currentUser}
-Group=${currentUser}
-ExecStart=${raviBin} daemon run
-WorkingDirectory=${homedir()}
-Restart=always
-RestartSec=10
-StandardOutput=append:${LOG_FILE}
-StandardError=append:${LOG_FILE}
-Environment=HOME=${homedir()}
-Environment=PATH=${cleanPath}
-
-[Install]
-WantedBy=multi-user.target
-`;
-
-    // Write to temp file then move with sudo
-    const tmpFile = join(RAVI_DIR, "ravi.service.tmp");
-    writeFileSync(tmpFile, unit);
-
-    try {
-      execSync(`sudo mv ${tmpFile} ${SYSTEMD_PATH}`, { stdio: "inherit" });
-      execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
-      console.log(`✓ Installed systemd service: ${SYSTEMD_PATH}`);
-      console.log(`\nEnvironment loaded from: ~/.ravi/.env`);
-      console.log("To start: ravi daemon start");
-      console.log("To enable on boot: sudo systemctl enable ravi");
-    } catch {
-      // Clean up temp file
-      if (existsSync(tmpFile)) unlinkSync(tmpFile);
-      throw new Error("Failed to install service. Make sure you have sudo access.");
-    }
-  }
-
-  private uninstallLinux() {
-    if (this.isRunning()) {
-      this.stopLinux();
-    }
-
-    try {
-      execSync("sudo systemctl disable ravi", { stdio: "pipe" });
-    } catch {
-      // Ignore if not enabled
-    }
-
-    if (existsSync(SYSTEMD_PATH)) {
-      execSync(`sudo rm ${SYSTEMD_PATH}`, { stdio: "inherit" });
-      execSync("sudo systemctl daemon-reload", { stdio: "inherit" });
-      console.log(`✓ Uninstalled systemd service`);
-    } else {
-      console.log("Service not installed.");
-    }
-  }
-
-  private startLinux() {
-    if (!existsSync(SYSTEMD_PATH)) {
-      console.log("Service not installed. Installing...");
-      this.installLinux();
-    }
-
-    try {
-      execSync("sudo systemctl start ravi", { stdio: "inherit" });
-      console.log("✓ Daemon started");
-    } catch {
-      console.error("Failed to start daemon");
-    }
-  }
-
-  private stopLinux() {
-    try {
-      execSync("sudo systemctl stop ravi", { stdio: "inherit" });
-      console.log("✓ Daemon stopped");
-    } catch {
-      console.error("Failed to stop daemon");
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Direct (fallback - no service manager)
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private startDirect() {
-    const raviBin = this.findRaviBin();
-    const child = spawn(raviBin, ["daemon", "run"], {
-      detached: true,
-      stdio: ["ignore", "pipe", "pipe"],
-      cwd: homedir(),
-    });
-
-    // Write PID
-    writeFileSync(PID_FILE, String(child.pid));
-
-    child.unref();
-    console.log(`✓ Daemon started (PID: ${child.pid})`);
-    console.log(`  Logs: ${LOG_FILE}`);
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
 
-  private findRaviBin(): string {
-    // Try to find ravi in PATH
-    try {
-      const which = execSync("which ravi", { encoding: "utf-8" }).trim();
-      if (which) return which;
-    } catch {
-      // Not in PATH
-    }
-
-    // Try common locations
+  private findBundlePath(): string | null {
+    // Try known locations
     const locations = [
-      join(homedir(), ".bun/bin/ravi"),
-      join(homedir(), ".local/bin/ravi"),
-      "/usr/local/bin/ravi",
-      "/usr/bin/ravi",
+      join(this.findProjectRoot() ?? "", "dist", "bundle", "index.js"),
     ];
 
     for (const loc of locations) {
       if (existsSync(loc)) return loc;
     }
 
-    // Fallback to assuming it's in PATH
-    return "ravi";
+    return null;
   }
 
   private findProjectRoot(): string | null {
-    // Known location
     const knownPath = "/Users/luis/dev/filipelabs/ravi.bot";
     if (existsSync(join(knownPath, "package.json"))) {
       return knownPath;
     }
 
-    // Try to find from current directory going up
     let dir = process.cwd();
     while (dir !== "/") {
       const pkgPath = join(dir, "package.json");
@@ -693,96 +418,35 @@ WantedBy=multi-user.target
       dir = join(dir, "..");
     }
 
-    // Fallback to known path
     return knownPath;
   }
 
-  private stopDirect() {
-    const pid = this.getPid();
-    if (pid) {
+  /**
+   * Remove old launchd plist or systemd unit if they exist.
+   */
+  private cleanupLegacyServices() {
+    const plistPath = join(homedir(), "Library/LaunchAgents/sh.ravi.daemon.plist");
+    const systemdPath = "/etc/systemd/system/ravi.service";
+
+    if (existsSync(plistPath)) {
       try {
-        process.kill(pid, "SIGTERM");
-        if (existsSync(PID_FILE)) {
-          unlinkSync(PID_FILE);
-        }
-        console.log("✓ Daemon stopped");
-      } catch {
-        console.error("Failed to stop daemon");
-      }
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Helpers
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private isRunning(): boolean {
-    if (IS_MACOS) {
+        execSync(`launchctl unload ${plistPath} 2>/dev/null`, { stdio: "pipe" });
+      } catch { /* ignore */ }
       try {
-        const result = execSync("launchctl list | grep sh.ravi.daemon", {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        return result.includes("sh.ravi.daemon");
-      } catch {
-        return false;
-      }
+        const { unlinkSync } = require("node:fs");
+        unlinkSync(plistPath);
+        console.log("Removed old launchd service");
+      } catch { /* ignore */ }
     }
 
-    if (IS_LINUX) {
+    if (existsSync(systemdPath)) {
       try {
-        execSync("systemctl is-active ravi", { stdio: "pipe" });
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    // Direct mode - check PID
-    const pid = this.getPid();
-    if (!pid) return false;
-
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private getPid(): number | null {
-    if (IS_MACOS) {
-      try {
-        const result = execSync("launchctl list | grep sh.ravi.daemon", {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        const parts = result.trim().split(/\s+/);
-        const pid = parseInt(parts[0], 10);
-        return isNaN(pid) ? null : pid;
-      } catch {
-        return null;
-      }
-    }
-
-    if (IS_LINUX) {
-      try {
-        const result = execSync("systemctl show ravi --property=MainPID", {
-          encoding: "utf-8",
-        });
-        const pid = parseInt(result.replace("MainPID=", "").trim(), 10);
-        return pid > 0 ? pid : null;
-      } catch {
-        return null;
-      }
-    }
-
-    // Direct mode
-    if (!existsSync(PID_FILE)) return null;
-    try {
-      return parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
-    } catch {
-      return null;
+        execSync("sudo systemctl stop ravi 2>/dev/null", { stdio: "pipe" });
+        execSync("sudo systemctl disable ravi 2>/dev/null", { stdio: "pipe" });
+        execSync(`sudo rm ${systemdPath} 2>/dev/null`, { stdio: "pipe" });
+        execSync("sudo systemctl daemon-reload 2>/dev/null", { stdio: "pipe" });
+        console.log("Removed old systemd service");
+      } catch { /* ignore */ }
     }
   }
 }

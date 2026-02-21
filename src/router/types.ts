@@ -128,6 +128,9 @@ export interface RouterConfig {
 
   /** Channel account → agent mapping (e.g., WhatsApp account "vendas" → agent "vendas") */
   accountAgents: Record<string, string>;
+
+  /** Reverse lookup: instanceId (UUID) → account name (e.g., "default") */
+  instanceToAccount: Record<string, string>;
 }
 
 // ============================================================================

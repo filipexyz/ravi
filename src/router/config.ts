@@ -60,12 +60,22 @@ export function loadRouterConfig(): RouterConfig {
   // Build account→agent mapping from settings (e.g., "account.vendas.agent" → "vendas")
   const allSettings = dbListSettings();
   const accountAgents: Record<string, string> = {};
+  const instanceToAccount: Record<string, string> = {};
   const prefix = "account.";
   const suffix = ".agent";
   for (const [key, value] of Object.entries(allSettings)) {
     if (key.startsWith(prefix) && key.endsWith(suffix) && value) {
       const accountId = key.slice(prefix.length, -suffix.length);
       accountAgents[accountId] = value;
+    }
+  }
+
+  // Build instanceId → account name reverse map (e.g., "ef5a692e-..." → "default")
+  const instanceIdSuffix = ".instanceId";
+  for (const [key, value] of Object.entries(allSettings)) {
+    if (key.startsWith(prefix) && key.endsWith(instanceIdSuffix) && value) {
+      const accountName = key.slice(prefix.length, -instanceIdSuffix.length);
+      instanceToAccount[value] = accountName;
     }
   }
 
@@ -81,6 +91,7 @@ export function loadRouterConfig(): RouterConfig {
     defaultAgent: getDefaultAgentId(),
     defaultDmScope: getDefaultDmScope(),
     accountAgents,
+    instanceToAccount,
   };
 
   log.debug("Loaded router config", {

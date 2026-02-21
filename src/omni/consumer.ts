@@ -363,7 +363,12 @@ export class OmniConsumer {
     const isNonDmChannel = rawIsDm === false
       && (channelType === "slack" || channelType === "discord");
     const peerKind = isNonDmChannel ? "channel" as const : undefined;
-    const routeAccountId = instanceId;
+    // Resolve instanceId (UUID) → account name (e.g., "default") for route matching
+    const effectiveAccountId = this.routerConfig.instanceToAccount[instanceId];
+    if (!effectiveAccountId) {
+      log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
+      return;
+    }
 
     // Thread detection:
     // - Slack: isThreadReply + threadTs
@@ -402,7 +407,7 @@ export class OmniConsumer {
     const resolved = resolveRoute(this.routerConfig, {
       phone: routePhone,
       channel: channelType,
-      accountId: routeAccountId,
+      accountId: effectiveAccountId,
       isGroup,
       groupId: isGroup ? chatJid : undefined,
       threadId,
@@ -410,18 +415,18 @@ export class OmniConsumer {
     });
 
     if (!resolved) {
-      const isNew = saveAccountPending(instanceId, routePhone, {
+      const isNew = saveAccountPending(effectiveAccountId, routePhone, {
         chatId: chatJid,
         isGroup,
       });
       log.info("No route for message, saved as pending", {
-        instanceId, channelType, routePhone, isNew,
+        instanceId, accountId: effectiveAccountId, channelType, routePhone, isNew,
       });
       if (isNew) {
         nats.emit("ravi.contacts.pending", {
           type: "account",
           channel: channelType,
-          accountId: instanceId,
+          accountId: effectiveAccountId,
           senderId: senderPhone,
           chatId: chatJid,
           isGroup,
@@ -447,7 +452,7 @@ export class OmniConsumer {
     const senderName = pushName || getContactName(senderPhone) || senderPhone;
 
     // Resolve group name from contacts DB
-    const groupName = isGroup ? getContactName(chatJid) : undefined;
+    const groupName = isGroup ? (getContactName(chatJid) ?? undefined) : undefined;
 
     // Build message envelope text
     const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp, threadId);
@@ -458,7 +463,7 @@ export class OmniConsumer {
         const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
         await nats.emit(`ravi.session.${sessionName}.prompt`, {
           prompt: sentinelEnvelope,
-          context: this.buildContext(channelType, instanceId, payload, isGroup, senderPhone, chatJid, event),
+          context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
         });
       } catch (err) {
         log.error("Failed to emit sentinel prompt", err);
@@ -475,9 +480,9 @@ export class OmniConsumer {
         chatId: chatJid,
         isGroup,
         channelType,
-        accountId: instanceId,
+        accountId: effectiveAccountId,
         routerConfig: this.routerConfig,
-        send: async (accId, cId, text) => { await this.sender.send(accId, cId, text); },
+        send: async (_accId, cId, text) => { await this.sender.send(instanceId, cId, text); },
       });
       if (handled) return;
     }
@@ -485,7 +490,7 @@ export class OmniConsumer {
     // Active mode: send typing indicator, emit prompt with source
     const source: MessageTarget = {
       channel: channelType,
-      accountId: instanceId,
+      accountId: effectiveAccountId,
       chatId: chatJid,
     };
 
@@ -501,7 +506,7 @@ export class OmniConsumer {
       await nats.emit(`ravi.session.${sessionName}.prompt`, {
         prompt: envelope,
         source,
-        context: this.buildContext(channelType, instanceId, payload, isGroup, senderPhone, chatJid, event),
+        context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
       });
     } catch (err) {
       log.error("Failed to emit prompt", err);
@@ -615,6 +620,7 @@ export class OmniConsumer {
 
   private buildContext(
     channelType: string,
+    accountId: string,
     instanceId: string,
     payload: MessageReceivedPayload,
     isGroup: boolean,
@@ -625,7 +631,8 @@ export class OmniConsumer {
     return {
       channelId: channelType,
       channelName: this.channelDisplayName(channelType),
-      accountId: instanceId,
+      accountId,
+      instanceId,
       chatId: chatJid,
       messageId: payload.externalId,
       senderId: senderPhone,

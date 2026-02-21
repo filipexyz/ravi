@@ -150,8 +150,101 @@ function appendEnvKey(key: string, value: string): void {
 // Wizard steps
 // ============================================================================
 
+async function stepOmni(): Promise<void> {
+  heading(1, 5, "Omni Infrastructure", "nats-server + omni API via PM2");
+
+  // Check pm2
+  let hasPm2 = false;
+  try {
+    execSync("which pm2", { stdio: "pipe" });
+    hasPm2 = true;
+    done("pm2 encontrado");
+  } catch {
+    info("Instalando pm2...");
+    try {
+      execSync("bun add -g pm2", { stdio: "pipe" });
+      done("pm2 instalado");
+      hasPm2 = true;
+    } catch {
+      warning("Falha ao instalar pm2 — instale manualmente: bun add -g pm2");
+    }
+  }
+
+  // Check omni
+  let hasOmni = false;
+  try {
+    execSync("which omni", { stdio: "pipe" });
+    hasOmni = true;
+    done("omni encontrado");
+  } catch {
+    info("Instalando omni...");
+    try {
+      execSync("bun add -g @automagik/omni", { stdio: "pipe" });
+      done("omni instalado");
+      hasOmni = true;
+    } catch {
+      warning("Falha ao instalar omni — instale manualmente: bun add -g @automagik/omni");
+    }
+  }
+
+  if (!hasOmni || !hasPm2) {
+    warning("Omni ou PM2 não disponíveis — configure manualmente depois");
+    return;
+  }
+
+  // Check if omni is already healthy
+  let healthy = false;
+  try {
+    const res = await fetch("http://127.0.0.1:8882/health", {
+      signal: AbortSignal.timeout(3000),
+    });
+    healthy = res.status < 500;
+  } catch { /* not running */ }
+
+  if (healthy) {
+    done("omni API já rodando (porta 8882)");
+    return;
+  }
+
+  // Check if omni is installed but stopped
+  const omniConfigPath = join(homedir(), ".omni", "config.json");
+  if (existsSync(omniConfigPath)) {
+    info("omni instalado mas parado — iniciando...");
+    try {
+      execSync("omni start", { stdio: "inherit" });
+      done("omni iniciado");
+    } catch {
+      warning("Falha ao iniciar omni — execute: omni start");
+    }
+  } else {
+    // Fresh install
+    info("Configurando omni pela primeira vez...");
+    try {
+      execSync("omni install --non-interactive", { stdio: "inherit" });
+      done("omni instalado e iniciado");
+    } catch {
+      warning("Falha ao instalar omni — execute: omni install");
+    }
+  }
+
+  // Verify health after start
+  await new Promise((r) => setTimeout(r, 2000));
+  try {
+    const res = await fetch("http://127.0.0.1:8882/health", {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.status < 500) {
+      done("omni API respondendo");
+    } else {
+      warning("omni API retornou erro — verifique: omni status");
+    }
+  } catch {
+    warning("omni API não respondeu — verifique: omni status");
+  }
+}
+
 async function stepEnvironment(): Promise<void> {
-  heading(1, 4, "Ambiente", "~/.ravi/.env");
+  heading(2, 5, "Ambiente", "~/.ravi/.env");
 
   mkdirSync(RAVI_DOT_DIR, { recursive: true });
 
@@ -160,17 +253,6 @@ async function stepEnvironment(): Promise<void> {
   }
 
   const env = parseEnvFile(ENV_FILE);
-
-  // nats-server binary (local infrastructure)
-  const { ensureNatsBinary } = await import("../../local/binary.js");
-  try {
-    await ensureNatsBinary({
-      onProgress: (msg) => info(msg),
-    });
-    done("nats-server instalado");
-  } catch (err: any) {
-    warning(`Falha ao baixar nats-server: ${err.message}`);
-  }
 
   // Claude auth
   const hasAnthropicKey = env.has("ANTHROPIC_API_KEY");
@@ -223,7 +305,7 @@ async function stepEnvironment(): Promise<void> {
 }
 
 async function stepAgent(): Promise<void> {
-  heading(2, 4, "Agente", "~/ravi/main");
+  heading(3, 5, "Agente", "~/ravi/main");
 
   const { dbListAgents, dbCreateAgent, dbSetSetting } = await import("../../router/router-db.js");
   const { ensureAgentDirs, loadRouterConfig } = await import("../../router/config.js");
@@ -255,7 +337,7 @@ async function stepAgent(): Promise<void> {
 }
 
 async function stepSettings(): Promise<void> {
-  heading(3, 4, "Configurações", "fuso horário, políticas");
+  heading(4, 5, "Configurações", "fuso horário, políticas");
 
   const { dbGetSetting, dbSetSetting } = await import("../../router/router-db.js");
 
@@ -292,18 +374,11 @@ async function stepSettings(): Promise<void> {
 }
 
 async function stepDaemon(): Promise<void> {
-  heading(4, 4, "Daemon", "instalar + iniciar");
-
-  try {
-    execSync("ravi daemon install", { stdio: "pipe" });
-    done("Serviço instalado");
-  } catch {
-    warning("Não foi possível instalar — execute: ravi daemon install");
-  }
+  heading(5, 5, "Daemon", "iniciar via PM2");
 
   try {
     execSync("ravi daemon start", { stdio: "pipe" });
-    done("Daemon iniciado");
+    done("Daemon iniciado via PM2");
   } catch (err: any) {
     const msg = err?.stderr?.toString() || err?.stdout?.toString() || "";
     if (msg.includes("already running")) {
@@ -311,6 +386,14 @@ async function stepDaemon(): Promise<void> {
     } else {
       warning("Não foi possível iniciar — execute: ravi daemon start");
     }
+  }
+
+  // Save PM2 state
+  try {
+    execSync("pm2 save", { stdio: "pipe" });
+    done("PM2 state salvo");
+  } catch {
+    info("Execute: pm2 save && pm2 startup");
   }
 }
 
@@ -323,6 +406,7 @@ export async function runSetup(): Promise<void> {
   console.log(`  ${c.bold}Ravi Bot${c.reset} ${c.gray}— setup${c.reset}`);
   console.log(`  ${c.gray}${"─".repeat(30)}${c.reset}`);
 
+  await stepOmni();
   await stepEnvironment();
   await stepAgent();
   await stepSettings();
@@ -332,8 +416,9 @@ export async function runSetup(): Promise<void> {
   console.log(`  ${c.green}${c.bold}Configuração completa!${c.reset}`);
   console.log();
   console.log(`  ${c.gray}Próximos passos:${c.reset}`);
-  console.log(`    ${bullet} ${c.white}ravi daemon logs -f${c.reset}       ${c.gray}Ver QR code do WhatsApp${c.reset}`);
+  console.log(`    ${bullet} ${c.white}ravi daemon logs -f${c.reset}       ${c.gray}Ver logs do daemon${c.reset}`);
+  console.log(`    ${bullet} ${c.white}ravi whatsapp connect${c.reset}     ${c.gray}Conectar WhatsApp${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi agents chat main${c.reset}     ${c.gray}Testar o agente${c.reset}`);
-  console.log(`    ${bullet} ${c.white}ravi contacts pending${c.reset}     ${c.gray}Aprovar contatos pendentes${c.reset}`);
+  console.log(`    ${bullet} ${c.white}pm2 startup${c.reset}              ${c.gray}Iniciar no boot${c.reset}`);
   console.log();
 }

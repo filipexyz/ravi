@@ -17,7 +17,7 @@ import { nats } from "./nats.js";
 import { pendingReplyCallbacks } from "./bot.js";
 import { loadRouterConfig, type RouterConfig } from "./router/index.js";
 import { logger } from "./utils/logger.js";
-import type { ResponseMessage, MessageTarget } from "./bot.js";
+import type { ResponseMessage } from "./bot.js";
 import {
   dbFindActiveEntryByPhone,
   dbUpdateEntry,
@@ -46,14 +46,14 @@ function normalizeOutboundJid(chatId: string): string {
   return chatId;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Resolve accountId to omni instance UUID.
- * Old sessions store friendly names like "default" or "luis" instead of UUIDs.
+ * Sessions store friendly names like "default" or "vendas" instead of UUIDs.
  */
 function resolveInstanceId(accountId: string): string {
-  // Already a UUID
-  if (accountId.includes("-") && accountId.length > 30) return accountId;
-  // Lookup: account.<name>.instanceId → UUID
+  if (UUID_RE.test(accountId)) return accountId;
   const resolved = dbGetSetting(`account.${accountId}.instanceId`);
   if (resolved) return resolved;
   return accountId;
@@ -253,7 +253,7 @@ export class Gateway {
         // Auto sentinel humanization
         const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
         if (isSentinelAuto && data.text) {
-          const mappedAgentId = this.routerConfig.accountAgents[instanceId] ?? this.routerConfig.accountAgents[data.accountId];
+          const mappedAgentId = this.routerConfig.accountAgents[data.accountId];
           const mappedAgent = mappedAgentId ? this.routerConfig.agents[mappedAgentId] : undefined;
           if (mappedAgent?.mode === "sentinel") {
             const len = data.text.length;

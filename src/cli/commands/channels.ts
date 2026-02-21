@@ -6,20 +6,13 @@
 
 import "reflect-metadata";
 import { Group, Command } from "../decorators.js";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { createOmniClient } from "@omni/sdk";
-
-const OMNI_API_KEY_FILE = join(homedir(), ".ravi", "omni-api-key");
-const DEFAULT_OMNI_API_URL = `http://127.0.0.1:${process.env.OMNI_API_PORT ?? "8882"}`;
+import { resolveOmniConnection } from "../../omni-config.js";
 
 function getOmniClient() {
-  const apiUrl = process.env.OMNI_API_URL ?? DEFAULT_OMNI_API_URL;
-  if (!existsSync(OMNI_API_KEY_FILE)) return null;
-  const apiKey = readFileSync(OMNI_API_KEY_FILE, "utf-8").trim();
-  if (!apiKey) return null;
-  return createOmniClient({ baseUrl: apiUrl, apiKey });
+  const conn = resolveOmniConnection();
+  if (!conn) return null;
+  return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
 }
 
 @Group({

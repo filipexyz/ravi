@@ -3,8 +3,7 @@
  */
 
 import "reflect-metadata";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
 import { Group, Command, Option } from "../decorators.js";
@@ -19,23 +18,14 @@ import {
   dbCreateAgent,
   dbUpdateAgent,
 } from "../../router/router-db.js";
-import { mkdirSync } from "node:fs";
-
-const OMNI_API_KEY_FILE = join(homedir(), ".ravi", "omni-api-key");
-const DEFAULT_OMNI_API_URL = `http://127.0.0.1:${process.env.OMNI_API_PORT ?? "8882"}`;
+import { resolveOmniConnection } from "../../omni-config.js";
 
 function getOmniClient() {
-  const apiUrl = process.env.OMNI_API_URL ?? DEFAULT_OMNI_API_URL;
-
-  if (!existsSync(OMNI_API_KEY_FILE)) {
-    fail("Omni API key not found. Is the daemon running? (ravi daemon start)");
+  const conn = resolveOmniConnection();
+  if (!conn) {
+    fail("Omni not configured. Is omni running? (omni status)");
   }
-  const apiKey = readFileSync(OMNI_API_KEY_FILE, "utf-8").trim();
-  if (!apiKey) {
-    fail("Omni API key is empty. Try restarting the daemon.");
-  }
-
-  return createOmniClient({ baseUrl: apiUrl, apiKey });
+  return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
 }
 
 /**

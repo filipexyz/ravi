@@ -20,29 +20,47 @@ let connecting: Promise<void> | null = null;
 let explicitConnect = false;
 
 /**
- * Explicitly connect to NATS. Used by daemon after starting nats-server.
+ * Explicitly connect to NATS. Used by daemon on startup.
+ *
+ * With retry enabled (default for daemon), retries up to 30 times with 2s intervals
+ * to handle PM2 parallel startup where NATS might not be ready yet.
  */
 export async function connectNats(
   url = DEFAULT_URL,
-  opts?: { explicit?: boolean }
+  opts?: { explicit?: boolean; retry?: boolean }
 ): Promise<void> {
-  nc = await connect({
-    servers: url,
-    reconnect: true,
-    maxReconnectAttempts: -1,
-  });
+  const maxRetries = opts?.retry !== false && opts?.explicit ? 30 : 1;
+  const retryInterval = 2000;
 
-  if (opts?.explicit) explicitConnect = true;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      nc = await connect({
+        servers: url,
+        reconnect: true,
+        maxReconnectAttempts: -1,
+      });
 
-  log.info("Connected to NATS", { server: url });
+      if (opts?.explicit) explicitConnect = true;
 
-  // Log status changes (only for long-lived daemon connections)
-  if (opts?.explicit) {
-    (async () => {
-      for await (const s of nc!.status()) {
-        log.debug("NATS status", { type: s.type, data: s.data });
+      log.info("Connected to NATS", { server: url, attempt });
+
+      // Log status changes (only for long-lived daemon connections)
+      if (opts?.explicit) {
+        (async () => {
+          for await (const s of nc!.status()) {
+            log.debug("NATS status", { type: s.type, data: s.data });
+          }
+        })().catch(() => {});
       }
-    })().catch(() => {});
+      return;
+    } catch (err) {
+      if (attempt === maxRetries) {
+        log.error("Failed to connect to NATS after all retries", { url, attempts: maxRetries });
+        throw err;
+      }
+      log.info("NATS not ready, retrying...", { url, attempt, maxRetries });
+      await new Promise((r) => setTimeout(r, retryInterval));
+    }
   }
 }
 
