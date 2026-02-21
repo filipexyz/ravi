@@ -11,7 +11,7 @@ import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
 import { OmniSender, OmniConsumer } from "./omni/index.js";
 import { loadConfig } from "./utils/config.js";
-import { nats } from "./nats.js";
+import { nats, connectNats } from "./nats.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
@@ -21,7 +21,7 @@ import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
-import { startLocalServer, startOmniServer, type LocalServer, type OmniServer } from "./local/index.js";
+import { startLocalServer, startOmniServer, getOrCreateOmniApiKey, type LocalServer, type OmniServer } from "./local/index.js";
 
 const log = logger.child("daemon");
 
@@ -148,25 +148,41 @@ async function shutdown(signal: string) {
 
 export async function startDaemon() {
   // Step 1: Start local infrastructure (nats-server with JetStream)
-  localServer = await startLocalServer();
+  // Skip if OMNI_API_URL is set (external omni manages its own NATS)
+  if (process.env.OMNI_API_URL && !process.env.OMNI_DIR) {
+    const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
+    log.info("Connecting to external NATS", { natsUrl });
+    await connectNats(natsUrl, { explicit: true });
+  } else {
+    if (process.env.OMNI_API_URL && process.env.OMNI_DIR) {
+      log.warn("Both OMNI_API_URL and OMNI_DIR set — using embedded omni (OMNI_DIR takes precedence)");
+    }
+    localServer = await startLocalServer();
+  }
 
   const config = loadConfig();
   logger.setLevel(config.logLevel);
 
   log.info("Starting Ravi daemon...");
 
-  // Step 2: Start omni API server (if OMNI_DIR is configured)
+  // Step 2: Start omni API server (embedded) or connect to external
+  let omniApiUrl: string | undefined;
   let omniApiKey: string | undefined;
   if (process.env.OMNI_DIR) {
     try {
       omniServer = await startOmniServer();
+      omniApiUrl = omniServer.apiUrl;
       omniApiKey = omniServer.apiKey;
-      log.info("Omni server started", { apiUrl: omniServer.apiUrl });
+      log.info("Omni server started (embedded)", { apiUrl: omniApiUrl });
     } catch (err) {
       log.error("Failed to start omni server — continuing without channel support", err);
     }
+  } else if (process.env.OMNI_API_URL) {
+    omniApiUrl = process.env.OMNI_API_URL;
+    omniApiKey = getOrCreateOmniApiKey();
+    log.info("Using external omni server", { apiUrl: omniApiUrl });
   } else {
-    log.warn("OMNI_DIR not set — omni server not started. Set OMNI_DIR in ~/.ravi/.env");
+    log.warn("Neither OMNI_DIR nor OMNI_API_URL set — no channel support");
   }
 
   // Step 3: Sync REBAC relations from agent configs
@@ -178,8 +194,8 @@ export async function startDaemon() {
   log.info("Bot started");
 
   // Step 5: Set up omni sender + consumer + gateway
-  if (omniServer && omniApiKey) {
-    const sender = new OmniSender(omniServer.apiUrl, omniApiKey);
+  if (omniApiUrl && omniApiKey) {
+    const sender = new OmniSender(omniApiUrl, omniApiKey);
     omniConsumer = new OmniConsumer(sender);
 
     try {

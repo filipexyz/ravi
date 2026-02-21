@@ -272,10 +272,15 @@ export class OmniConsumer {
               try {
                 const raw = sc.decode(msg.data);
                 const event = JSON.parse(raw) as OmniEvent;
-                await handler(msg.subject, event);
+                // Ack immediately so the consume loop is never blocked by slow
+                // handlers (e.g. HTTP timeouts to omni sender). Handlers are
+                // fire-and-forget — errors are logged but don't stall the stream.
                 msg.ack();
+                handler(msg.subject, event).catch((err) => {
+                  log.error("Error handling event", { stream, subject: msg.subject, error: err });
+                });
               } catch (err) {
-                log.error("Error handling event", { stream, subject: msg.subject, error: err });
+                log.error("Error parsing event", { stream, subject: msg.subject, error: err });
                 msg.nak();
               }
             }
@@ -343,14 +348,37 @@ export class OmniConsumer {
     }
 
     // Derive phone and group status from JIDs
-    const isGroup = payload.chatId.endsWith("@g.us");
+    const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
+    // isDm: Slack uses lowercase "isDm", Discord uses "isDM"
+    const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
+    const isGroup = payload.chatId.endsWith("@g.us")
+      || (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
     const senderPhone = stripJid(payload.from);
     const chatJid = payload.chatId;
     // For routing: use phone for DMs, chatJid for groups
     const routePhone = isGroup ? chatJid : senderPhone;
 
+    // Channel detection: Slack/Discord non-DM channels use "channel" peerKind.
+    // accountId is still included in the session key for full isolation.
+    const isNonDmChannel = rawIsDm === false
+      && (channelType === "slack" || channelType === "discord");
+    const peerKind = isNonDmChannel ? "channel" as const : undefined;
+    const routeAccountId = instanceId;
+
+    // Thread detection:
+    // - Slack: isThreadReply + threadTs
+    // - Discord: isThread + threadId (in rawPayload)
+    let threadId: string | undefined;
+    if (rawPayload?.isThreadReply === true && rawPayload.threadTs) {
+      threadId = String(rawPayload.threadTs);
+    } else if (rawPayload?.isThread === true && rawPayload.threadId) {
+      threadId = String(rawPayload.threadId);
+    }
+
     log.debug("Message received", {
       instanceId, channelType, from: senderPhone, chatId: chatJid, isGroup,
+      ...(peerKind ? { peerKind } : {}),
+      ...(threadId ? { threadId } : {}),
     });
 
     // Check for active outbound entry — if so, record response and suppress prompt
@@ -374,9 +402,11 @@ export class OmniConsumer {
     const resolved = resolveRoute(this.routerConfig, {
       phone: routePhone,
       channel: channelType,
-      accountId: instanceId,
+      accountId: routeAccountId,
       isGroup,
       groupId: isGroup ? chatJid : undefined,
+      threadId,
+      peerKind,
     });
 
     if (!resolved) {
@@ -420,7 +450,7 @@ export class OmniConsumer {
     const groupName = isGroup ? getContactName(chatJid) : undefined;
 
     // Build message envelope text
-    const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp);
+    const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp, threadId);
 
     if (agentMode === "sentinel") {
       // Sentinel: observe silently, no typing indicator, no source
@@ -556,7 +586,8 @@ export class OmniConsumer {
     senderName: string,
     groupName: string | undefined,
     chatJid: string,
-    timestamp: number
+    timestamp: number,
+    threadId?: string
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -571,10 +602,11 @@ export class OmniConsumer {
 
     const content = this.formatContent(payload);
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
+    const threadTag = threadId ? ` thread:${threadId}` : "";
 
     if (isGroup) {
       const groupLabel = groupName || stripJid(chatJid);
-      return `[${channelName} ${groupLabel} id:${chatJid}${midTag} ${ts} ${dow}] ${senderName}: ${content}`;
+      return `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}: ${content}`;
     } else {
       const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
       return `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}] ${content}`;
@@ -607,6 +639,7 @@ export class OmniConsumer {
       "whatsapp-baileys": "WhatsApp",
       "discord": "Discord",
       "telegram": "Telegram",
+      "slack": "Slack",
     };
     return map[channelType] ?? channelType;
   }

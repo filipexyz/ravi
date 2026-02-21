@@ -32,6 +32,8 @@ export interface SessionNameOpts {
   suffix?: string;
   /** Whether this is the "main" session for the agent */
   isMain?: boolean;
+  /** Thread ID (e.g. Slack threadTs) — appended as suffix */
+  threadId?: string;
 }
 
 /**
@@ -62,6 +64,10 @@ export function generateSessionName(
     context = slugify(opts.suffix);
   } else if (opts.groupName) {
     context = slugify(opts.groupName);
+  } else if (opts.peerKind === "channel" && opts.peerId) {
+    // Slack channels etc. — take last 8 chars of ID
+    const cleanId = opts.peerId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase();
+    context = `channel-${cleanId}`;
   } else if (opts.peerKind === "group" && opts.peerId) {
     // Strip "group:" prefix if present, take last 8 chars
     const cleanId = opts.peerId.replace(/^group:/, "");
@@ -72,6 +78,11 @@ export function generateSessionName(
     context = `dm-${cleanPhone.slice(-6)}`;
   } else {
     context = `session-${Date.now().toString(36)}`;
+  }
+
+  // Append thread suffix if present
+  if (opts.threadId) {
+    context = `${context}-t-${opts.threadId.replace(/\./g, "")}`;
   }
 
   const name = `${agent}-${context}`.slice(0, 64);

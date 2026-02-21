@@ -31,6 +31,22 @@ import { dbGetSetting } from "./router/router-db.js";
 const log = logger.child("gateway");
 
 /**
+ * Normalize a chatId to a valid WhatsApp JID for the omni API.
+ *
+ * Handles ravi-internal formats:
+ *   "group:120363407390920496"  → "120363407390920496@g.us"
+ *   "120363407390920496@g.us"   → unchanged
+ *   "178035101794451@lid"       → unchanged
+ *   "5511999@s.whatsapp.net"    → unchanged
+ */
+function normalizeOutboundJid(chatId: string): string {
+  if (chatId.startsWith("group:")) {
+    return chatId.slice(6) + "@g.us";
+  }
+  return chatId;
+}
+
+/**
  * Resolve accountId to omni instance UUID.
  * Old sessions store friendly names like "default" or "luis" instead of UUIDs.
  */
@@ -119,7 +135,11 @@ export class Gateway {
       try {
         for await (const event of nats.subscribe(...topics)) {
           if (!this.running) break;
-          await handler(event);
+          // Fire-and-forget: don't block the subscription loop on slow handlers
+          // (e.g. omni sender timeouts shouldn't stall all other events)
+          handler(event).catch((err) => {
+            log.error(`${key} handler error`, { error: err });
+          });
         }
       } catch (err) {
         if (this.running) {
@@ -146,7 +166,7 @@ export class Gateway {
       if (!target) return;
 
       const instanceId = resolveInstanceId(target.accountId);
-      const { chatId } = target;
+      const chatId = normalizeOutboundJid(target.chatId);
 
       const text = response.error
         ? `Error: ${response.error}`
@@ -165,6 +185,7 @@ export class Gateway {
           return;
         }
 
+        const t0 = Date.now();
         log.info("Sending response", {
           sessionName, instanceId, chatId, textLen: text.length,
           emitId: response._emitId,
@@ -172,6 +193,7 @@ export class Gateway {
 
         try {
           await this.omniSender.send(instanceId, chatId, text);
+          log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
         } catch (err) {
           log.error("Failed to send response", { instanceId, chatId, error: err });
         }
@@ -190,7 +212,7 @@ export class Gateway {
       if (data.type === "result" || data.type === "silent") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), target.chatId, false);
+          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), normalizeOutboundJid(target.chatId), false);
           this.omniConsumer.clearActiveTarget(sessionName);
         }
         return;
@@ -199,7 +221,7 @@ export class Gateway {
       if (data.type === "system" || data.type === "assistant") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), target.chatId, true);
+          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), normalizeOutboundJid(target.chatId), true);
         }
       }
     });
@@ -222,7 +244,7 @@ export class Gateway {
       };
 
       const instanceId = resolveInstanceId(data.accountId);
-      const to = data.to;
+      const to = normalizeOutboundJid(data.to);
 
       try {
         let typingDelayMs = data.typingDelayMs ?? 0;
@@ -260,6 +282,7 @@ export class Gateway {
             messageId = res.messageId;
           }
         } else if (data.text) {
+          const sendStart = Date.now();
           if (typingDelayMs > 0) {
             await this.omniSender.sendTyping(instanceId, to, true);
             await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
@@ -270,6 +293,7 @@ export class Gateway {
             const res = await this.omniSender.send(instanceId, to, data.text);
             messageId = res.messageId;
           }
+          log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
         }
 
         log.info("Direct send delivered", { to, instanceId, messageId });
@@ -309,8 +333,9 @@ export class Gateway {
       };
 
       try {
-        await this.omniSender.sendReaction(resolveInstanceId(data.accountId), data.chatId, data.messageId, data.emoji);
-        log.info("Reaction sent", { chatId: data.chatId, messageId: data.messageId, emoji: data.emoji });
+        const reactionChatId = normalizeOutboundJid(data.chatId);
+        await this.omniSender.sendReaction(resolveInstanceId(data.accountId), reactionChatId, data.messageId, data.emoji);
+        log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
       } catch (err) {
         log.error("Failed to send reaction", { error: err });
       }
@@ -334,15 +359,16 @@ export class Gateway {
       };
 
       try {
+        const mediaChatId = normalizeOutboundJid(data.chatId);
         await this.omniSender.sendMedia(
           resolveInstanceId(data.accountId),
-          data.chatId,
+          mediaChatId,
           data.filePath,
           data.type,
           data.filename,
           data.caption
         );
-        log.info("Media sent", { chatId: data.chatId, type: data.type, filename: data.filename });
+        log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
       } catch (err) {
         log.error("Failed to send media", { error: err });
       }

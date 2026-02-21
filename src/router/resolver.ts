@@ -61,7 +61,8 @@ export function findRoute(
   routes: RouteConfig[],
   accountId?: string
 ): RouteConfig | null {
-  // Filter by account if specified (strict — no cross-account fallback)
+  // Strict account scoping — no cross-account fallback (security: prevents
+  // messages on one account from silently routing to another account's agent)
   const candidates = accountId
     ? routes.filter(r => r.accountId === accountId)
     : routes;
@@ -89,13 +90,16 @@ export function resolveRoute(
     accountId?: string;
     isGroup?: boolean;
     groupId?: string;
+    threadId?: string;
+    peerKind?: string;
   }
 ): ResolvedRoute | null {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
   // Find matching route — scoped to the account that received the message
-  // For groups, match against groupId; for DMs, match against phone
-  const routeTarget = isGroup ? groupId ?? phone : phone;
+  // For groups, match against "group:<id>" pattern (strip @g.us suffix)
+  const normalizedGroupId = groupId ? `group:${groupId.replace(/@.*$/, "")}` : undefined;
+  const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
   const effectiveAccount = accountId ?? "default";
   const route = findRoute(routeTarget, config.routes, effectiveAccount);
 
@@ -127,13 +131,15 @@ export function resolveRoute(
     route?.dmScope ?? agent.dmScope ?? config.defaultDmScope;
 
   // Build session key (kept for backwards compat in DB PK)
+  const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
   const sessionKey = buildSessionKey({
     agentId,
     channel,
     accountId,
-    peerKind: isGroup ? "group" : "dm",
+    peerKind: resolvedPeerKind,
     peerId: isGroup ? groupId : phone,
     dmScope,
+    threadId: params.threadId,
   });
 
   // Resolve or generate session name
@@ -148,9 +154,10 @@ export function resolveRoute(
     const nameOpts = {
       isMain,
       chatType: isGroup ? "group" as const : "dm" as const,
-      peerKind: isGroup ? "group" as const : "dm" as const,
+      peerKind: resolvedPeerKind,
       peerId: isGroup ? groupId : phone,
       groupName: existing.displayName ?? existing.subject ?? undefined,
+      threadId: params.threadId,
     };
     const baseName = generateSessionName(agentId, nameOpts);
     sessionName = ensureUniqueName(baseName);

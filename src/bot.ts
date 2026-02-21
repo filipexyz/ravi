@@ -7,6 +7,7 @@ import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
   loadRouterConfig,
   getOrCreateSession,
+  getSession,
   getSessionByName,
   updateSdkSessionId,
   updateTokens,
@@ -1216,12 +1217,27 @@ export class RaviBot {
     // Note: Spec MCP tools are not affected by REBAC tool permissions.
     // The PreToolUse hook only checks SDK_TOOLS, so MCP tools pass through.
 
+    // Fork: new thread session → copy context from parent session
+    let forkFromSdkId: string | undefined;
+    if (!session.sdkSessionId && dbSessionKey.includes(":thread:")) {
+      const parentKey = dbSessionKey.replace(/:thread:.*$/, "");
+      const parentSession = getSession(parentKey);
+      if (parentSession?.sdkSessionId) {
+        forkFromSdkId = parentSession.sdkSessionId;
+        log.info("Forking thread session from parent", {
+          threadKey: dbSessionKey, parentKey,
+          parentSdkId: forkFromSdkId,
+        });
+      }
+    }
+
     const queryResult = query({
       prompt: messageGenerator,
       options: {
         model,
         cwd: agentCwd,
-        resume: session.sdkSessionId,
+        resume: forkFromSdkId ?? session.sdkSessionId,
+        ...(forkFromSdkId ? { forkSession: true } : {}),
         abortController,
         ...permissionOptions,
         canUseTool,

@@ -31,7 +31,7 @@ export interface OmniServer {
  * Get or create the omni API key.
  * Stored in ~/.ravi/omni-api-key across restarts.
  */
-function getOrCreateOmniApiKey(): string {
+export function getOrCreateOmniApiKey(): string {
   const raviDir = join(homedir(), ".ravi");
   mkdirSync(raviDir, { recursive: true });
 
@@ -210,11 +210,11 @@ export async function startOmniServer(opts?: {
 
   omniProc.stdout?.on("data", (d: Buffer) => {
     const msg = d.toString().trim();
-    if (msg) log.debug(`[omni] ${msg}`);
+    if (msg) log.info(`[omni] ${msg}`);
   });
   omniProc.stderr?.on("data", (d: Buffer) => {
     const msg = d.toString().trim();
-    if (msg) log.debug(`[omni] ${msg}`);
+    if (msg) log.info(`[omni] ${msg}`);
   });
 
   let stopped = false;
