@@ -181,7 +181,7 @@ export class CronCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
-    // Capture reply session from caller context (e.g., agent:comm:whatsapp:default:group:123)
+    // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = ctx?.sessionKey;
 
     // Create job

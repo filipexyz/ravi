@@ -154,7 +154,7 @@ function createBot(): RaviBot {
 function makePrompt(text: string): PromptMessage {
   return {
     prompt: text,
-    source: { channel: "whatsapp", accountId: "default", chatId: "test" },
+    source: { channel: "whatsapp", accountId: "main", chatId: "test" },
   };
 }
 
@@ -192,7 +192,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
       abortController: new AbortController(),
       pushMessage: (_msg: any) => { wokenUp = true; },
       pendingMessages: [] as any[],
-      currentSource: { channel: "whatsapp", accountId: "default", chatId: "test" },
+      currentSource: { channel: "whatsapp", accountId: "main", chatId: "test" },
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
@@ -245,7 +245,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
       abortController: new AbortController(),
       pushMessage: (_msg: any) => {},
       pendingMessages: [] as any[],
-      currentSource: { channel: "whatsapp", accountId: "default", chatId: "old" },
+      currentSource: { channel: "whatsapp", accountId: "main", chatId: "old" },
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
@@ -255,7 +255,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     (bot as any).streamingSessions.set(sessionKey, streamingSession);
 
     const prompt = makePrompt("update source");
-    prompt.source = { channel: "whatsapp", accountId: "default", chatId: "new-chat" };
+    prompt.source = { channel: "whatsapp", accountId: "main", chatId: "new-chat" };
 
     await (bot as any).handlePromptImmediate(sessionKey, prompt);
 

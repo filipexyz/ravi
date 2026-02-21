@@ -254,7 +254,7 @@ export class CronRunner {
         sessionName = resolved;
         const session = resolveSession(job.replySession);
         if (session?.lastChannel && session.lastTo) {
-          source = { channel: session.lastChannel, accountId: session.lastAccountId ?? "default", chatId: session.lastTo };
+          source = { channel: session.lastChannel, accountId: session.lastAccountId ?? "", chatId: session.lastTo };
         }
       } else {
         // Fallback: derive source from old-style key and use main session
@@ -306,7 +306,7 @@ export class CronRunner {
     if (job.replySession) {
       const replyResolved = resolveSession(job.replySession);
       if (replyResolved?.lastChannel && replyResolved.lastTo) {
-        source = { channel: replyResolved.lastChannel, accountId: replyResolved.lastAccountId ?? "default", chatId: replyResolved.lastTo };
+        source = { channel: replyResolved.lastChannel, accountId: replyResolved.lastAccountId ?? "", chatId: replyResolved.lastTo };
       } else {
         source = deriveSourceFromSessionKey(job.replySession) ?? undefined;
       }

@@ -686,11 +686,11 @@ export class SessionCommands {
     let context: ChannelContext | undefined;
 
     if (channelOverride && toOverride) {
-      source = { channel: channelOverride, accountId: "default", chatId: toOverride };
+      source = { channel: channelOverride, accountId: "", chatId: toOverride };
     } else if (session.lastChannel && session.lastTo) {
       source = {
         channel: session.lastChannel,
-        accountId: session.lastAccountId ?? "default",
+        accountId: session.lastAccountId ?? "",
         chatId: session.lastTo,
       };
     } else {
@@ -717,7 +717,7 @@ export class SessionCommands {
     if (callerSession?.lastChannel && callerSession.lastTo) {
       return {
         channel: callerSession.lastChannel,
-        accountId: callerSession.lastAccountId ?? "default",
+        accountId: callerSession.lastAccountId ?? "",
         chatId: callerSession.lastTo,
       };
     }

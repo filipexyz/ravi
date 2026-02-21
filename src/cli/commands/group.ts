@@ -7,7 +7,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
-import { dbCreateRoute } from "../../router/router-db.js";
+import { dbCreateRoute, getFirstAccountName } from "../../router/router-db.js";
 import { nats } from "../../nats.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
@@ -63,9 +63,10 @@ async function groupRequest<T = Record<string, unknown>>(
   account?: string
 ): Promise<T> {
   const timeout = SLOW_OPS.has(op) ? 45000 : 15000;
+  const acctName = account ?? getFirstAccountName() ?? "";
   return requestReply<T>(`${TOPIC_PREFIX}.${op}`, {
     ...data,
-    accountId: account ?? "default",
+    accountId: acctName,
   }, timeout);
 }
 
@@ -204,8 +205,9 @@ export class GroupCommands {
     console.log(`  Contact:      approved`);
 
     if (agent) {
+      const routeAcct = account ?? getFirstAccountName() ?? "";
       try {
-        dbCreateRoute({ pattern: `group:${groupId}`, agent, accountId: account ?? "default", priority: 0 });
+        dbCreateRoute({ pattern: `group:${groupId}`, agent, accountId: routeAcct, priority: 0 });
         console.log(`  Route:        ${agent}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -216,7 +218,7 @@ export class GroupCommands {
       const sessionKey = buildSessionKey({
         agentId: agent,
         channel: "whatsapp",
-        accountId: account ?? "default",
+        accountId: routeAcct,
         peerKind: "group",
         peerId: `group:${groupId}`,
       });
@@ -224,7 +226,7 @@ export class GroupCommands {
       const agentConfig = getAgent(agent);
       if (agentConfig) {
         const agentCwd = expandHome(agentConfig.cwd);
-        const acctId = account ?? "default";
+        const acctId = routeAcct;
 
         // Generate a human-readable session name
         const baseName = generateSessionName(agent, { groupName: name });

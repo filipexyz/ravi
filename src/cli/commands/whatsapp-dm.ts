@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
+import { getFirstAccountName } from "../../router/router-db.js";
 import { phoneToJid, jidToSessionId } from "../../utils/phone.js";
 import { getRecentHistory } from "../../db.js";
 
@@ -63,7 +64,7 @@ export class WhatsAppDmCommands {
 
     await nats.emit("ravi.outbound.deliver", {
       channel: "whatsapp",
-      accountId: account ?? "default",
+      accountId: account ?? getFirstAccountName() ?? "",
       to: jid,
       text: cleanMessage,
     });
@@ -105,7 +106,7 @@ export class WhatsAppDmCommands {
         if (midMatch) {
           await nats.emit("ravi.outbound.receipt", {
             channel: "whatsapp",
-            accountId: account ?? "default",
+            accountId: account ?? getFirstAccountName() ?? "",
             chatId: jid,
             senderId: jid,
             messageIds: [midMatch[1]],
@@ -126,7 +127,7 @@ export class WhatsAppDmCommands {
 
     await nats.emit("ravi.outbound.receipt", {
       channel: "whatsapp",
-      accountId: account ?? "default",
+      accountId: account ?? getFirstAccountName() ?? "",
       chatId: jid,
       senderId: jid,
       messageIds: [messageId],

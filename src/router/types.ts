@@ -11,7 +11,7 @@ export type DmScope =
   | "main"                    // All DMs share one session: agent:X:main
   | "per-peer"                // Isolated by contact: agent:X:dm:PHONE
   | "per-channel-peer"        // Isolated by channel+contact: agent:X:whatsapp:dm:PHONE
-  | "per-account-channel-peer"; // Full isolation: agent:X:whatsapp:default:dm:PHONE
+  | "per-account-channel-peer"; // Full isolation: agent:X:whatsapp:main:dm:PHONE
 
 // ============================================================================
 // Heartbeat Configuration
@@ -96,7 +96,7 @@ export interface RouteConfig {
   /** Phone pattern (exact match or glob with *) */
   pattern: string;
 
-  /** Account ID this route belongs to (default: "default") */
+  /** Account ID this route belongs to (omni instance name) */
   accountId: string;
 
   /** Agent ID to route to */
@@ -129,7 +129,7 @@ export interface RouterConfig {
   /** Channel account → agent mapping (e.g., WhatsApp account "vendas" → agent "vendas") */
   accountAgents: Record<string, string>;
 
-  /** Reverse lookup: instanceId (UUID) → account name (e.g., "default") */
+  /** Reverse lookup: instanceId (UUID) → account name (e.g., "main") */
   instanceToAccount: Record<string, string>;
 }
 

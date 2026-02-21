@@ -363,7 +363,7 @@ export class OmniConsumer {
     const isNonDmChannel = rawIsDm === false
       && (channelType === "slack" || channelType === "discord");
     const peerKind = isNonDmChannel ? "channel" as const : undefined;
-    // Resolve instanceId (UUID) → account name (e.g., "default") for route matching
+    // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
     const effectiveAccountId = this.routerConfig.instanceToAccount[instanceId];
     if (!effectiveAccountId) {
       log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
@@ -403,13 +403,19 @@ export class OmniConsumer {
       }
     }
 
+    // Normalize for stable session keys:
+    // - Strip channel implementation suffix (whatsapp-baileys → whatsapp)
+    // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
+    const sessionChannel = channelType.replace(/-baileys$/, "");
+    const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
+
     // Resolve route to get session key
     const resolved = resolveRoute(this.routerConfig, {
       phone: routePhone,
-      channel: channelType,
+      channel: sessionChannel,
       accountId: effectiveAccountId,
       isGroup,
-      groupId: isGroup ? chatJid : undefined,
+      groupId: sessionGroupId,
       threadId,
       peerKind,
     });

@@ -39,7 +39,7 @@ export interface CronJob {
 
   schedule: CronSchedule;
   sessionTarget: SessionTarget;
-  /** Session key to emit prompt to (e.g., agent:comm:whatsapp:default:group:123) */
+  /** Session key to emit prompt to (e.g., agent:comm:whatsapp:main:group:123) */
   replySession?: string;
   /** The prompt text to send to the agent */
   message: string;

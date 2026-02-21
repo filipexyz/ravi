@@ -61,23 +61,70 @@ async function resolveInstanceId(name: string): Promise<string | null> {
 export class WhatsAppCommands {
   @Command({ name: "connect", description: "Connect a WhatsApp account (scan QR code)" })
   async connect(
-    @Option({ flags: "--account <id>", description: 'Account name (default: "default")' }) account?: string,
+    @Option({ flags: "--name <name>", description: "Instance name in omni (default: auto-detect or prompt)" }) name?: string,
     @Option({ flags: "--agent <id>", description: "Agent to route messages to" }) agent?: string,
     @Option({ flags: "--mode <mode>", description: "Agent mode: active or sentinel" }) mode?: string
   ) {
-    const accountName = account ?? "default";
     const TIMEOUT_MS = 120_000;
-
     const omni = getOmniClient();
 
-    // Resolve agent: explicit --agent > accountName-as-agent > defaultAgent (for default account)
+    // Resolve or create omni instance
+    let instanceId: string;
+    let instanceName: string;
+
+    if (name) {
+      // Explicit name: find or create
+      instanceId = (await resolveInstanceId(name)) ?? "";
+      instanceName = name;
+    } else {
+      // Auto-detect: find first WhatsApp instance in omni
+      try {
+        const result = await omni.instances.list({ channel: "whatsapp-baileys" });
+        const first = result.items[0] as { id?: string; name?: string } | undefined;
+        if (first?.id && first?.name) {
+          instanceId = first.id;
+          instanceName = first.name;
+        } else {
+          instanceId = "";
+          instanceName = "";
+        }
+      } catch {
+        instanceId = "";
+        instanceName = "";
+      }
+    }
+
+    if (!instanceId) {
+      if (!instanceName) {
+        fail("No WhatsApp instance found in omni. Create one with: ravi whatsapp connect --name <name>");
+        return;
+      }
+      // Create a new instance in omni
+      console.log(`Creating WhatsApp instance "${instanceName}"...`);
+      try {
+        const instance = await omni.instances.create({
+          name: instanceName,
+          channel: "whatsapp-baileys",
+        });
+        instanceId = instance.id ?? "";
+        console.log(`✓ Instance created: ${instanceId}`);
+      } catch (err) {
+        fail(`Failed to create WhatsApp instance: ${err instanceof Error ? err.message : String(err)}`);
+        return;
+      }
+    }
+
+    // Cache instanceId → name mapping
+    dbSetSetting(`account.${instanceName}.instanceId`, instanceId);
+
+    // Resolve agent: explicit --agent > agent with same name as instance > defaultAgent
     const agentId = agent
-      ?? (accountName !== "default" && dbGetAgent(accountName) ? accountName : undefined)
-      ?? (accountName === "default" ? (dbGetSetting("defaultAgent") ?? undefined) : undefined);
+      ?? (dbGetAgent(instanceName) ? instanceName : undefined)
+      ?? (dbGetSetting("defaultAgent") ?? undefined);
 
     // Auto-create or update agent if --mode provided
     if (mode && (mode === "sentinel" || mode === "active")) {
-      const targetAgent = agentId ?? accountName;
+      const targetAgent = agentId ?? instanceName;
       if (!dbGetAgent(targetAgent)) {
         const cwd = `${homedir()}/ravi/${targetAgent}`;
         mkdirSync(cwd, { recursive: true });
@@ -86,54 +133,21 @@ export class WhatsAppCommands {
       } else {
         dbUpdateAgent(targetAgent, { mode: mode as "active" | "sentinel" });
       }
-      if (accountName !== "default") {
-        dbSetSetting(`account.${accountName}.agent`, targetAgent);
-      }
+      dbSetSetting(`account.${instanceName}.agent`, targetAgent);
       nats.emit("ravi.config.changed", {}).catch(() => {});
     } else if (agentId) {
-      dbSetSetting(`account.${accountName}.agent`, agentId);
+      dbSetSetting(`account.${instanceName}.agent`, agentId);
       nats.emit("ravi.config.changed", {}).catch(() => {});
     }
 
-    const mappedAgent = dbGetSetting(`account.${accountName}.agent`);
+    const mappedAgent = dbGetSetting(`account.${instanceName}.agent`);
     const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
     const modeLabel = agentConfig?.mode === "sentinel" ? " (sentinel)" : "";
     console.log(
-      `Connecting WhatsApp account: ${accountName}${
+      `Connecting: ${instanceName}${
         mappedAgent ? ` → agent ${mappedAgent}${modeLabel}` : " → default agent"
       }`
     );
-
-    // Find or create the omni instance
-    let instanceId = await resolveInstanceId(accountName);
-
-    if (!instanceId) {
-      // Create a new instance in omni
-      console.log("Creating WhatsApp instance...");
-      try {
-        const instance = await omni.instances.create({
-          name: accountName,
-          channel: "whatsapp-baileys",
-        });
-        instanceId = instance.id ?? "";
-        dbSetSetting(`account.${accountName}.instanceId`, instanceId);
-
-        // Also bind instanceId → agent for router lookups
-        if (mappedAgent) {
-          dbSetSetting(`account.${instanceId}.agent`, mappedAgent);
-        }
-
-        console.log(`✓ Instance created: ${instanceId}`);
-      } catch (err) {
-        fail(`Failed to create WhatsApp instance: ${err instanceof Error ? err.message : String(err)}`);
-        return;
-      }
-    } else {
-      // Ensure agent binding is up to date
-      if (mappedAgent) {
-        dbSetSetting(`account.${instanceId}.agent`, mappedAgent);
-      }
-    }
 
     // Check if already connected
     try {
@@ -207,28 +221,40 @@ export class WhatsAppCommands {
 
   @Command({ name: "status", description: "Show WhatsApp account status" })
   async status(
-    @Option({ flags: "--account <id>", description: 'Account ID (default: "default")' }) account?: string
+    @Option({ flags: "--name <name>", description: "Instance name in omni" }) name?: string
   ) {
-    const accountName = account ?? "default";
+    const omni = getOmniClient();
 
-    const instanceId = await resolveInstanceId(accountName);
+    // Resolve instance: explicit name or auto-detect first
+    let instanceId: string | null = null;
+    let instanceName = name ?? "";
+
+    if (name) {
+      instanceId = await resolveInstanceId(name);
+    } else {
+      try {
+        const result = await omni.instances.list({ channel: "whatsapp-baileys" });
+        const first = result.items[0] as { id?: string; name?: string } | undefined;
+        if (first?.id && first?.name) {
+          instanceId = first.id;
+          instanceName = first.name;
+        }
+      } catch { /* */ }
+    }
+
     if (!instanceId) {
-      fail(`No WhatsApp instance found for account: ${accountName}. Run "ravi whatsapp connect" first.`);
+      fail(`No WhatsApp instance found${name ? `: ${name}` : ""}. Run "ravi whatsapp connect --name <name>" first.`);
       return;
     }
 
     try {
-      const omni = getOmniClient();
-      const [instance, status] = await Promise.all([
-        omni.instances.get(instanceId),
-        omni.instances.status(instanceId),
-      ]);
+      const status = await omni.instances.status(instanceId);
 
-      const mappedAgent = dbGetSetting(`account.${accountName}.agent`);
+      const mappedAgent = dbGetSetting(`account.${instanceName}.agent`);
       const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
       const modeLabel = agentConfig?.mode ? ` (${agentConfig.mode})` : "";
 
-      console.log(`\nWhatsApp Account: ${accountName}\n`);
+      console.log(`\nWhatsApp: ${instanceName}\n`);
       console.log(`  Instance ID: ${instanceId}`);
       console.log(`  State:       ${status.state}`);
       console.log(`  Connected:   ${status.isConnected}`);
@@ -267,29 +293,27 @@ export class WhatsAppCommands {
     }
   }
 
-  @Command({ name: "set", description: "Set account property (e.g., agent)" })
+  @Command({ name: "set", description: "Set instance property (e.g., agent)" })
   async set(
-    @Option({ flags: "--account <id>", description: 'Account name (default: "default")' }) account?: string,
+    @Option({ flags: "--name <name>", description: "Instance name in omni" }) name?: string,
     @Option({ flags: "--agent <id>", description: "Agent to route messages to (use '-' to clear)" }) agent?: string
   ) {
-    const accountName = account ?? "default";
+    const instanceName = name ?? await this.autoDetectInstanceName();
+    if (!instanceName) {
+      fail("No WhatsApp instance found. Specify --name or connect one first.");
+      return;
+    }
 
     if (agent !== undefined) {
       if (agent === "-" || agent === "null") {
-        dbDeleteSetting(`account.${accountName}.agent`);
-        // Also clear instanceId-based binding
-        const instanceId = dbGetSetting(`account.${accountName}.instanceId`);
-        if (instanceId) dbDeleteSetting(`account.${instanceId}.agent`);
-        console.log(`✓ Account ${accountName}: agent mapping cleared`);
+        dbDeleteSetting(`account.${instanceName}.agent`);
+        console.log(`✓ ${instanceName}: agent mapping cleared`);
       } else {
         if (!dbGetAgent(agent)) {
           fail(`Agent not found: ${agent}`);
         }
-        dbSetSetting(`account.${accountName}.agent`, agent);
-        // Also bind instanceId → agent for router
-        const instanceId = dbGetSetting(`account.${accountName}.instanceId`);
-        if (instanceId) dbSetSetting(`account.${instanceId}.agent`, agent);
-        console.log(`✓ Account ${accountName}: agent → ${agent}`);
+        dbSetSetting(`account.${instanceName}.agent`, agent);
+        console.log(`✓ ${instanceName}: agent → ${agent}`);
       }
       nats.emit("ravi.config.changed", {}).catch(() => {});
     } else {
@@ -299,22 +323,38 @@ export class WhatsAppCommands {
 
   @Command({ name: "disconnect", description: "Disconnect a WhatsApp account" })
   async disconnect(
-    @Option({ flags: "--account <id>", description: 'Account name (default: "default")' }) account?: string
+    @Option({ flags: "--name <name>", description: "Instance name in omni" }) name?: string
   ) {
-    const accountName = account ?? "default";
+    const instanceName = name ?? await this.autoDetectInstanceName();
+    if (!instanceName) {
+      fail("No WhatsApp instance found. Specify --name or connect one first.");
+      return;
+    }
 
-    const instanceId = await resolveInstanceId(accountName);
+    const instanceId = await resolveInstanceId(instanceName);
     if (!instanceId) {
-      fail(`No WhatsApp instance found for account: ${accountName}`);
+      fail(`No WhatsApp instance found: ${instanceName}`);
       return;
     }
 
     try {
       const omni = getOmniClient();
       await omni.instances.disconnect(instanceId);
-      console.log(`✓ Disconnected account: ${accountName}`);
+      console.log(`✓ Disconnected: ${instanceName}`);
     } catch (err) {
       fail(`Failed to disconnect: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Auto-detect first WhatsApp instance name from omni */
+  private async autoDetectInstanceName(): Promise<string | null> {
+    try {
+      const omni = getOmniClient();
+      const result = await omni.instances.list({ channel: "whatsapp-baileys" });
+      const first = result.items[0] as { name?: string } | undefined;
+      return first?.name ?? null;
+    } catch {
+      return null;
     }
   }
 }

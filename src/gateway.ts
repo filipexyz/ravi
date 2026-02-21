@@ -50,13 +50,20 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /**
  * Resolve accountId to omni instance UUID.
- * Sessions store friendly names like "default" or "vendas" instead of UUIDs.
+ * Sessions store omni instance names like "main" or "vendas" instead of UUIDs.
  */
-function resolveInstanceId(accountId: string): string {
+function resolveInstanceId(accountId: string): string | undefined {
+  if (!accountId) {
+    log.warn("Cannot resolve instance: accountId is empty (session has no account context)");
+    return undefined;
+  }
   if (UUID_RE.test(accountId)) return accountId;
   const resolved = dbGetSetting(`account.${accountId}.instanceId`);
-  if (resolved) return resolved;
-  return accountId;
+  if (!resolved) {
+    log.warn(`Cannot resolve instance for account "${accountId}" — no account.${accountId}.instanceId setting found`);
+    return undefined;
+  }
+  return resolved;
 }
 
 /** Silent reply token — when response contains this, don't send to channel */
@@ -166,6 +173,7 @@ export class Gateway {
       if (!target) return;
 
       const instanceId = resolveInstanceId(target.accountId);
+      if (!instanceId) return;
       const chatId = normalizeOutboundJid(target.chatId);
 
       const text = response.error
@@ -212,7 +220,8 @@ export class Gateway {
       if (data.type === "result" || data.type === "silent") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), normalizeOutboundJid(target.chatId), false);
+          const iid = resolveInstanceId(target.accountId);
+          if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), false);
           this.omniConsumer.clearActiveTarget(sessionName);
         }
         return;
@@ -221,7 +230,8 @@ export class Gateway {
       if (data.type === "system" || data.type === "assistant") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          await this.omniSender.sendTyping(resolveInstanceId(target.accountId), normalizeOutboundJid(target.chatId), true);
+          const iid = resolveInstanceId(target.accountId);
+          if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), true);
         }
       }
     });
@@ -244,6 +254,14 @@ export class Gateway {
       };
 
       const instanceId = resolveInstanceId(data.accountId);
+      if (!instanceId) {
+        if (data.replyTopic) {
+          const cb = pendingReplyCallbacks.get(data.replyTopic);
+          if (cb) cb({ messageId: undefined });
+          else nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
+        }
+        return;
+      }
       const to = normalizeOutboundJid(data.to);
 
       try {
@@ -333,8 +351,10 @@ export class Gateway {
       };
 
       try {
+        const reactionInstanceId = resolveInstanceId(data.accountId);
+        if (!reactionInstanceId) return;
         const reactionChatId = normalizeOutboundJid(data.chatId);
-        await this.omniSender.sendReaction(resolveInstanceId(data.accountId), reactionChatId, data.messageId, data.emoji);
+        await this.omniSender.sendReaction(reactionInstanceId, reactionChatId, data.messageId, data.emoji);
         log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
       } catch (err) {
         log.error("Failed to send reaction", { error: err });
@@ -359,9 +379,11 @@ export class Gateway {
       };
 
       try {
+        const mediaInstanceId = resolveInstanceId(data.accountId);
+        if (!mediaInstanceId) return;
         const mediaChatId = normalizeOutboundJid(data.chatId);
         await this.omniSender.sendMedia(
-          resolveInstanceId(data.accountId),
+          mediaInstanceId,
           mediaChatId,
           data.filePath,
           data.type,

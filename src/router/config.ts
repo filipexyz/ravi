@@ -70,7 +70,7 @@ export function loadRouterConfig(): RouterConfig {
     }
   }
 
-  // Build instanceId → account name reverse map (e.g., "ef5a692e-..." → "default")
+  // Build instanceId → account name reverse map (e.g., "ef5a692e-..." → "main")
   const instanceIdSuffix = ".instanceId";
   for (const [key, value] of Object.entries(allSettings)) {
     if (key.startsWith(prefix) && key.endsWith(instanceIdSuffix) && value) {

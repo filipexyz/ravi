@@ -893,7 +893,7 @@ export class RaviBot {
     if (!resolvedSource && session.lastChannel && session.lastTo) {
       resolvedSource = {
         channel: session.lastChannel,
-        accountId: session.lastAccountId ?? "default",
+        accountId: session.lastAccountId ?? "",
         chatId: session.lastTo,
       };
     }

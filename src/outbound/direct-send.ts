@@ -35,7 +35,7 @@ export interface DirectSendResult {
  * the WhatsApp module internals.
  */
 export async function directSend(input: DirectSendInput): Promise<DirectSendResult> {
-  const { to, text, accountId = "default" } = input;
+  const { to, text, accountId = "" } = input;
 
   // Check opt-out
   if (isOptedOut(to)) {

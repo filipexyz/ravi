@@ -20,6 +20,7 @@ import {
   dbGetAgent,
   dbListAgents,
   DmScopeSchema,
+  getFirstAccountName,
 } from "../../router/router-db.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
 import { getContact, removeAccountPending, type ContactStatus } from "../../contacts.js";
@@ -45,7 +46,7 @@ function deleteConflictingSessions(pattern: string, targetAgent: string): number
   for (const session of sessions) {
     // Check if session key contains the pattern
     // Pattern examples: "group:123456", "5511*", "lid:123"
-    // Session key examples: "agent:main:whatsapp:default:group:123456"
+    // Session key examples: "agent:main:whatsapp:main:group:123456"
 
     // For group patterns, check if session contains the group ID
     if (pattern.startsWith("group:")) {
@@ -122,12 +123,17 @@ export class RoutesCommands {
   @Command({ name: "show", description: "Show route details" })
   show(
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
-    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+    @Option({ flags: "-a, --account <id>", description: "Account (omni instance name)" }) account?: string
   ) {
-    const route = dbGetRoute(pattern, account ?? "default");
+    const acct = account ?? getFirstAccountName();
+    if (!acct) {
+      fail("No account configured. Use --account <name> or run 'ravi whatsapp connect' first.");
+    }
+
+    const route = dbGetRoute(pattern, acct);
 
     if (!route) {
-      fail(`Route not found: ${pattern} (account: ${account ?? "default"})`);
+      fail(`Route not found: ${pattern} (account: ${acct})`);
     }
 
     console.log(`\nRoute: ${route.pattern}`);
@@ -141,20 +147,24 @@ export class RoutesCommands {
   add(
     @Arg("pattern", { description: "Route pattern (e.g., group:123456)" }) pattern: string,
     @Arg("agent", { description: "Agent ID" }) agent: string,
-    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+    @Option({ flags: "-a, --account <id>", description: "Account (omni instance name)" }) account?: string
   ) {
+    const acct = account ?? getFirstAccountName();
+    if (!acct) {
+      fail("No account configured. Use --account <name> or run 'ravi whatsapp connect' first.");
+    }
+
     // Verify agent exists
     if (!dbGetAgent(agent)) {
       fail(`Agent not found: ${agent}. Available: ${dbListAgents().map(a => a.id).join(", ")}`);
     }
 
     try {
-      dbCreateRoute({ pattern, agent, accountId: account ?? "default", priority: 0 });
-      console.log(`✓ Route added: ${pattern} -> ${agent} (account: ${account ?? "default"})`);
+      dbCreateRoute({ pattern, agent, accountId: acct, priority: 0 });
+      console.log(`✓ Route added: ${pattern} -> ${agent} (account: ${acct})`);
       emitConfigChanged();
 
       // Remove from account pending if it was there (try pattern + linked identities)
-      const acct = account ?? "default";
       let removedPending = removeAccountPending(acct, pattern);
       if (!removedPending) {
         // Pattern might be a phone but pending was saved with LID (or vice versa)
@@ -185,14 +195,19 @@ export class RoutesCommands {
   @Command({ name: "remove", description: "Remove a route" })
   remove(
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
-    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+    @Option({ flags: "-a, --account <id>", description: "Account (omni instance name)" }) account?: string
   ) {
-    const deleted = dbDeleteRoute(pattern, account ?? "default");
+    const acct = account ?? getFirstAccountName();
+    if (!acct) {
+      fail("No account configured. Use --account <name> or run 'ravi whatsapp connect' first.");
+    }
+
+    const deleted = dbDeleteRoute(pattern, acct);
     if (deleted) {
-      console.log(`✓ Route removed: ${pattern} (account: ${account ?? "default"})`);
+      console.log(`✓ Route removed: ${pattern} (account: ${acct})`);
       emitConfigChanged();
     } else {
-      fail(`Route not found: ${pattern} (account: ${account ?? "default"})`);
+      fail(`Route not found: ${pattern} (account: ${acct})`);
     }
   }
 
@@ -201,9 +216,12 @@ export class RoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: "Property key (agent, priority, dmScope)" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
-    @Option({ flags: "-a, --account <id>", description: "Account ID", defaultValue: "default" }) account?: string
+    @Option({ flags: "-a, --account <id>", description: "Account (omni instance name)" }) account?: string
   ) {
-    const acct = account ?? "default";
+    const acct = account ?? getFirstAccountName();
+    if (!acct) {
+      fail("No account configured. Use --account <name> or run 'ravi whatsapp connect' first.");
+    }
     const route = dbGetRoute(pattern, acct);
     if (!route) {
       fail(`Route not found: ${pattern} (account: ${acct})`);

@@ -51,7 +51,7 @@ export const AgentInputSchema = z.object({
 
 export const RouteInputSchema = z.object({
   pattern: z.string().min(1),
-  accountId: z.string().min(1).default("default"),
+  accountId: z.string().min(1),
   agent: z.string().min(1),
   dmScope: DmScopeSchema.optional(),
   priority: z.number().int().default(0),
@@ -170,7 +170,7 @@ function getDb(): Database {
     CREATE TABLE IF NOT EXISTS routes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pattern TEXT NOT NULL,
-      account_id TEXT NOT NULL DEFAULT 'default',
+      account_id TEXT NOT NULL,
       agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       priority INTEGER DEFAULT 0,
@@ -601,7 +601,7 @@ function getDb(): Database {
         CREATE TABLE routes_new (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           pattern TEXT NOT NULL,
-          account_id TEXT NOT NULL DEFAULT 'default',
+          account_id TEXT NOT NULL,
           agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
           dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
           priority INTEGER DEFAULT 0,
@@ -610,7 +610,7 @@ function getDb(): Database {
           UNIQUE(pattern, account_id)
         );
         INSERT INTO routes_new (id, pattern, account_id, agent_id, dm_scope, priority, created_at, updated_at)
-          SELECT id, pattern, 'default', agent_id, dm_scope, priority, created_at, updated_at FROM routes;
+          SELECT id, pattern, 'unknown', agent_id, dm_scope, priority, created_at, updated_at FROM routes;
         DROP TABLE routes;
         ALTER TABLE routes_new RENAME TO routes;
         CREATE INDEX IF NOT EXISTS idx_routes_priority ON routes(priority DESC);
@@ -1098,7 +1098,7 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
 /**
  * Get route by pattern and account
  */
-export function dbGetRoute(pattern: string, accountId: string = "default"): (RouteConfig & { id: number }) | null {
+export function dbGetRoute(pattern: string, accountId: string): (RouteConfig & { id: number }) | null {
   const s = getStatements();
   const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
   return row ? rowToRoute(row) : null;
@@ -1118,7 +1118,7 @@ export function dbListRoutes(accountId?: string): (RouteConfig & { id: number })
 /**
  * Update an existing route
  */
-export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, accountId: string = "default"): RouteConfig {
+export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, accountId: string): RouteConfig {
   const s = getStatements();
   const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
 
@@ -1153,7 +1153,7 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
 /**
  * Delete a route
  */
-export function dbDeleteRoute(pattern: string, accountId: string = "default"): boolean {
+export function dbDeleteRoute(pattern: string, accountId: string): boolean {
   const s = getStatements();
   s.deleteRoute.run(pattern, accountId);
   if (getDbChanges() > 0) {
@@ -1246,6 +1246,19 @@ export function getDefaultDmScope(): DmScope {
  */
 export function getDefaultTimezone(): string | undefined {
   return dbGetSetting("defaultTimezone") ?? undefined;
+}
+
+/**
+ * Get the first registered account name (from account.*.instanceId settings).
+ * Used by CLI commands when --account is not specified.
+ */
+export function getFirstAccountName(): string | undefined {
+  const settings = dbListSettings();
+  for (const key of Object.keys(settings)) {
+    const match = key.match(/^account\.(.+)\.instanceId$/);
+    if (match) return match[1];
+  }
+  return undefined;
 }
 
 /**

@@ -13,7 +13,7 @@ import type { SessionKeyParams } from "./types.js";
  * - "agent:main:main"                           (all DMs in one session)
  * - "agent:main:dm:5511999999999"               (per-peer)
  * - "agent:main:whatsapp:dm:5511999999999"      (per-channel-peer)
- * - "agent:main:whatsapp:default:dm:5511999999999" (per-account-channel-peer)
+ * - "agent:main:whatsapp:main:dm:5511999999999"     (per-account-channel-peer)
  * - "agent:main:whatsapp:group:123456789"       (group)
  * - "agent:main:slack:channel:C123:thread:1234" (thread)
  */
@@ -192,7 +192,7 @@ export function deriveSourceFromSessionKey(
 
   return {
     channel: parsed.channel,
-    accountId: parsed.accountId ?? "default",
+    accountId: parsed.accountId ?? "",
     chatId,
   };
 }

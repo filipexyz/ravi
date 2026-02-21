@@ -100,21 +100,19 @@ export function resolveRoute(
   // For groups, match against "group:<id>" pattern (strip @g.us suffix)
   const normalizedGroupId = groupId ? `group:${groupId.replace(/@.*$/, "")}` : undefined;
   const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
-  const effectiveAccount = accountId ?? "default";
+  const effectiveAccount = accountId;
   const route = findRoute(routeTarget, config.routes, effectiveAccount);
 
-  // Resolve agent: route > default (only for default account)
-  // No bypasses — every message must match a route (or be on the default account)
+  // Resolve agent: route > account-agent mapping > defaultAgent
   let agentId: string;
   if (route?.agent) {
     agentId = route.agent;
-  } else if (config.accountAgents?.[effectiveAccount]) {
-    // Account-agent mapping (from `account.<id>.agent` setting)
+  } else if (effectiveAccount && config.accountAgents?.[effectiveAccount]) {
     agentId = config.accountAgents[effectiveAccount];
-  } else if (effectiveAccount === "default") {
+  } else if (!effectiveAccount || config.accountAgents?.[effectiveAccount] !== undefined) {
     agentId = config.defaultAgent;
   } else {
-    // Non-default account with no route match → skip (saved as account pending by gateway)
+    // Account with no route match → skip (saved as account pending by consumer)
     log.debug("No route for account, skipping", { phone, accountId });
     return null;
   }

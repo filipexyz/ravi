@@ -67,7 +67,7 @@ try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_identities_contact ON contact_identities(contact_id)`);
 } catch { /* exists */ }
 
-// Per-account pending: tracks contacts that messaged a non-default account without a route
+// Per-account pending: tracks contacts that messaged an account without a matching route
 db.exec(`
   CREATE TABLE IF NOT EXISTS account_pending (
     account_id TEXT NOT NULL,

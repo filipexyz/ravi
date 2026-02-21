@@ -197,7 +197,7 @@ export class ContactsCommands {
       console.log("Block:   ravi contacts block <id>");
     }
 
-    // Per-account pending (unrouted messages on non-default accounts)
+    // Per-account pending (unrouted messages on accounts without matching routes)
     const accountPending = listAccountPending(account);
     if (accountPending.length > 0) {
       console.log(`\nAccount pending (${accountPending.length}):\n`);
