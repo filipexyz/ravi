@@ -11,6 +11,7 @@ export type {
   RouterConfig,
   SessionKeyParams,
   SessionEntry,
+  MatchedRoute,
   ResolvedRoute,
 } from "./types.js";
 
@@ -27,6 +28,7 @@ export {
 export {
   matchPattern,
   findRoute,
+  matchRoute,
   resolveRoute,
   expandHome,
   getAgentCwd,

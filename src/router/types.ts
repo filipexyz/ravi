@@ -27,6 +27,9 @@ export interface HeartbeatConfig {
   /** Model to use for heartbeat (null = use agent's model) */
   model?: string;
 
+  /** Explicit account ID for outbound routing (overrides session.lastAccountId) */
+  accountId?: string;
+
   /** Active hours start time (HH:MM format) */
   activeStart?: string;
 
@@ -62,6 +65,9 @@ export interface AgentConfig {
 
   /** Debounce time in ms - groups messages arriving within this window */
   debounceMs?: number;
+
+  /** Debounce time in ms for group sessions (overrides debounceMs for groups) */
+  groupDebounceMs?: number;
 
   /** Matrix account username (references matrix_accounts table) */
   matrixAccount?: string;
@@ -208,6 +214,18 @@ export interface SessionEntry {
   // Ephemeral sessions
   ephemeral?: boolean;
   expiresAt?: number;
+}
+
+// ============================================================================
+// Matched Route (pure routing, no side effects)
+// ============================================================================
+
+export interface MatchedRoute {
+  agentId: string;
+  agent: AgentConfig;
+  dmScope: DmScope;
+  sessionKey: string;
+  route?: RouteConfig;
 }
 
 // ============================================================================

@@ -254,7 +254,7 @@ export class CronRunner {
         sessionName = resolved;
         const session = resolveSession(job.replySession);
         if (session?.lastChannel && session.lastTo) {
-          source = { channel: session.lastChannel, accountId: session.lastAccountId ?? "", chatId: session.lastTo };
+          source = { channel: session.lastChannel, accountId: job.accountId ?? session.lastAccountId ?? "", chatId: session.lastTo };
         }
       } else {
         // Fallback: derive source from old-style key and use main session
@@ -263,6 +263,11 @@ export class CronRunner {
       }
     } else {
       sessionName = this.resolveMainSessionName(agentId);
+    }
+
+    // Override accountId in source if job has explicit accountId
+    if (source && job.accountId) {
+      source.accountId = job.accountId;
     }
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
@@ -306,10 +311,15 @@ export class CronRunner {
     if (job.replySession) {
       const replyResolved = resolveSession(job.replySession);
       if (replyResolved?.lastChannel && replyResolved.lastTo) {
-        source = { channel: replyResolved.lastChannel, accountId: replyResolved.lastAccountId ?? "", chatId: replyResolved.lastTo };
+        source = { channel: replyResolved.lastChannel, accountId: job.accountId ?? replyResolved.lastAccountId ?? "", chatId: replyResolved.lastTo };
       } else {
         source = deriveSourceFromSessionKey(job.replySession) ?? undefined;
       }
+    }
+
+    // Override accountId in source if job has explicit accountId
+    if (source && job.accountId) {
+      source.accountId = job.accountId;
     }
 
     await nats.emit(`ravi.session.${sessionName}.prompt`, {

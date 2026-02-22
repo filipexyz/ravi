@@ -32,6 +32,8 @@ export interface CronSchedule {
 export interface CronJob {
   id: string;
   agentId?: string;
+  /** Explicit account ID for outbound routing (overrides session.lastAccountId) */
+  accountId?: string;
   name: string;
   description?: string;
   enabled: boolean;
@@ -60,6 +62,8 @@ export interface CronJob {
  */
 export interface CronJobInput {
   agentId?: string;
+  /** Explicit account ID for outbound routing */
+  accountId?: string;
   name: string;
   description?: string;
   enabled?: boolean;

@@ -5,7 +5,6 @@ import type { Config } from "./utils/config.js";
 import { saveMessage, close as closeDb } from "./db.js";
 import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
-  loadRouterConfig,
   getOrCreateSession,
   getSession,
   getSessionByName,
@@ -23,10 +22,10 @@ import {
   ensureUniqueName,
   dbGetSetting,
   dbListSettings,
-  type RouterConfig,
   type SessionEntry,
   type AgentConfig,
 } from "./router/index.js";
+import { configStore } from "./config-store.js";
 import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook, createToolPermissionHook } from "./bash/index.js";
@@ -41,6 +40,7 @@ const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 60000; // keep payloads reasonable
+const MAX_CONCURRENT_SESSIONS = 8;
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -204,6 +204,13 @@ export interface RaviBotOptions {
   config: Config;
 }
 
+/** Pending session start request — queued when concurrency limit is reached */
+interface PendingStart {
+  sessionName: string;
+  prompt: PromptMessage;
+  resolve: () => void;
+}
+
 /** Pending approval waiting for a reaction or reply */
 interface PendingApproval {
   resolve: (result: { approved: boolean; reason?: string }) => void;
@@ -226,7 +233,6 @@ export const pendingReplyCallbacks = new Map<string, (data: { messageId?: string
 
 export class RaviBot {
   private config: Config;
-  private routerConfig: RouterConfig;
   private running = false;
   private streamingSessions = new Map<string, StreamingSession>();
   private debounceStates = new Map<string, DebounceState>();
@@ -235,6 +241,8 @@ export class RaviBot {
   private pendingApprovals = new Map<string, PendingApproval>();
   /** Pending poll questions keyed by poll messageId */
   private pendingPollQuestions = new Map<string, PendingPollQuestion>();
+  /** Queued session starts waiting for a concurrency slot */
+  private pendingStarts: PendingStart[] = [];
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
   /** Subscriber health: incremented on every prompt received */
@@ -244,7 +252,6 @@ export class RaviBot {
 
   constructor(options: RaviBotOptions) {
     this.config = options.config;
-    this.routerConfig = loadRouterConfig();
     logger.setLevel(options.config.logLevel);
   }
 
@@ -260,7 +267,7 @@ export class RaviBot {
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
-      agents: Object.keys(this.routerConfig.agents),
+      agents: Object.keys(configStore.getConfig().agents),
     });
   }
 
@@ -272,6 +279,12 @@ export class RaviBot {
     if (this.subscriberHealthTimer) {
       clearInterval(this.subscriberHealthTimer);
       this.subscriberHealthTimer = null;
+    }
+
+    // Clear pending session start queue
+    if (this.pendingStarts.length > 0) {
+      log.info("Clearing pending session starts", { count: this.pendingStarts.length });
+      this.pendingStarts.length = 0;
     }
 
     // Abort ALL streaming sessions
@@ -721,16 +734,18 @@ export class RaviBot {
   }
 
   private async handlePrompt(sessionName: string, prompt: PromptMessage): Promise<void> {
-    // Reload config to get latest settings
-    this.routerConfig = loadRouterConfig();
+    const routerConfig = configStore.getConfig();
 
     // Look up session by name to get agentId
     // _agentId from heartbeat overrides DB (fixes race condition)
     const sessionEntry = getSessionByName(sessionName);
-    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
-    const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
-    const debounceMs = agent?.debounceMs;
-    log.debug("handlePrompt", { sessionName, agentId, debounceMs });
+    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
+    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+
+    // Use group-specific debounce when available and session is a group
+    const isGroup = sessionEntry?.chatType === "group" || sessionName.includes(":group:");
+    const debounceMs = (isGroup && agent?.groupDebounceMs) ? agent.groupDebounceMs : agent?.debounceMs;
+    log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
 
     // If debounce is configured, use debounce flow
     if (debounceMs && debounceMs > 0) {
@@ -841,12 +856,32 @@ export class RaviBot {
 
   /** Start a new streaming session with an AsyncGenerator that stays alive */
   private async startStreamingSession(sessionName: string, prompt: PromptMessage): Promise<void> {
+    // Check concurrency limit — queue if at capacity
+    if (this.streamingSessions.size >= MAX_CONCURRENT_SESSIONS) {
+      log.warn("Session start queued — concurrency limit reached", {
+        sessionName,
+        active: this.streamingSessions.size,
+        queued: this.pendingStarts.length + 1,
+        max: MAX_CONCURRENT_SESSIONS,
+      });
+      await new Promise<void>((resolve) => {
+        this.pendingStarts.push({ sessionName, prompt, resolve });
+      });
+      log.info("Pending session start resumed", {
+        sessionName,
+        active: this.streamingSessions.size,
+        queued: this.pendingStarts.length,
+        max: MAX_CONCURRENT_SESSIONS,
+      });
+    }
+
     // Look up agent from DB by session name
     // _agentId from heartbeat/cross-session overrides DB value (fixes race where bot
     // creates session with default agent before the runner's session is committed)
+    const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
-    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? this.routerConfig.defaultAgent;
-    const agent = this.routerConfig.agents[agentId] ?? this.routerConfig.agents[this.routerConfig.defaultAgent];
+    const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
+    const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
 
     if (!agent) {
       log.error("No agent found", { sessionName, agentId });
@@ -1596,6 +1631,21 @@ export class RaviBot {
       }
 
       this.streamingSessions.delete(sessionName);
+      this.drainPendingStarts();
+    }
+  }
+
+  /** Dequeue and start the next pending session if a slot is available */
+  private drainPendingStarts(): void {
+    if (this.pendingStarts.length > 0 && this.streamingSessions.size < MAX_CONCURRENT_SESSIONS) {
+      const next = this.pendingStarts.shift()!;
+      log.info("Dequeuing pending session start", {
+        sessionName: next.sessionName,
+        active: this.streamingSessions.size,
+        queued: this.pendingStarts.length,
+        max: MAX_CONCURRENT_SESSIONS,
+      });
+      next.resolve();
     }
   }
 

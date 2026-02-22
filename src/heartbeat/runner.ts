@@ -239,9 +239,16 @@ export class HeartbeatRunner {
 
     const sessionName = mainSession.name ?? baseName;
 
+    // Build source with explicit accountId if configured, else fall back to session state
+    const hbAccountId = agent.heartbeat?.accountId ?? mainSession.lastAccountId;
+    const source = hbAccountId && mainSession.lastChannel && mainSession.lastTo
+      ? { channel: mainSession.lastChannel, accountId: hbAccountId, chatId: mainSession.lastTo }
+      : undefined;
+
     // Send heartbeat prompt with agent info
     await nats.emit(`ravi.session.${sessionName}.prompt`, {
       prompt: HEARTBEAT_PROMPT,
+      source,
       _heartbeat: true,
       _agentId: agentId,
     });

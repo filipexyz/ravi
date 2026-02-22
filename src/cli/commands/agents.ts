@@ -81,6 +81,7 @@ export class AgentsCommands {
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
     console.log(`  Mode:          ${agent.mode ?? "active"}`);
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
+    console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
     console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
     console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
@@ -139,9 +140,25 @@ export class AgentsCommands {
       fail(`Agent not found: ${id}`);
     }
 
-    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources", "mode"];
+    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources", "mode", "groupDebounceMs"];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
+    }
+
+    // Parse groupDebounceMs as integer
+    if (key === "groupDebounceMs") {
+      const parsed = parseInt(value, 10);
+      if (isNaN(parsed) || parsed < 0) {
+        fail(`Invalid groupDebounceMs: ${value}. Must be a positive integer (ms) or 0 to disable`);
+      }
+      try {
+        updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
+        console.log(parsed === 0 ? `\u2713 groupDebounceMs disabled: ${id}` : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`);
+        emitConfigChanged();
+      } catch (err) {
+        fail(`Error: ${err instanceof Error ? err.message : err}`);
+      }
+      return;
     }
 
     // Validate dmScope values

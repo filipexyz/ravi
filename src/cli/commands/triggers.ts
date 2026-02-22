@@ -8,6 +8,7 @@ import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
+import { getAccountForAgent } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import {
   dbCreateTrigger,
@@ -91,6 +92,7 @@ export class TriggersCommands {
     console.log(`\nTrigger: ${trigger.name}\n`);
     console.log(`  ID:              ${trigger.id}`);
     console.log(`  Agent:           ${trigger.agentId ?? "(default)"}`);
+    console.log(`  Account:         ${trigger.accountId ?? "(auto)"}`);
     console.log(`  Enabled:         ${trigger.enabled ? "yes" : "no"}`);
     console.log(`  Topic:           ${trigger.topic}`);
     console.log(`  Session:         ${trigger.session}`);
@@ -139,6 +141,11 @@ export class TriggersCommands {
       description: "Agent ID (default: default agent)",
     })
     agent?: string,
+    @Option({
+      flags: "--account <name>",
+      description: "Account for outbound routing (auto-detected from agent)",
+    })
+    account?: string,
     @Option({
       flags: "--cooldown <duration>",
       description: "Cooldown between fires (e.g., 5s, 30s, 1m)",
@@ -190,6 +197,9 @@ export class TriggersCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
+    // Resolve account: explicit flag > auto-detect from agent's account mapping
+    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+
     // Capture reply session from caller context for source routing
     const replySession = ctx?.sessionKey;
 
@@ -206,6 +216,7 @@ export class TriggersCommands {
       topic,
       message,
       agentId: resolvedAgent,
+      accountId: resolvedAccount,
       replySession,
       session: sessionTarget,
       cooldownMs,
@@ -265,7 +276,7 @@ export class TriggersCommands {
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
       description:
-        "Property: name, message, topic, agent, session, cooldown",
+        "Property: name, message, topic, agent, account, session, cooldown",
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string
@@ -315,6 +326,13 @@ export class TriggersCommands {
           break;
         }
 
+        case "account": {
+          const accountId = value === "null" || value === "-" ? undefined : value;
+          dbUpdateTrigger(id, { accountId });
+          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          break;
+        }
+
         case "session": {
           const validValues = ["main", "isolated"];
           if (!validValues.includes(value)) {
@@ -340,7 +358,7 @@ export class TriggersCommands {
 
         default:
           fail(
-            `Unknown property: ${key}. Valid: name, message, topic, agent, session, cooldown`
+            `Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown`
           );
       }
 

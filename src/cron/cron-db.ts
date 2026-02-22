@@ -27,6 +27,7 @@ const log = logger.child("cron:db");
 interface CronJobRow {
   id: string;
   agent_id: string | null;
+  account_id: string | null;
   name: string;
   description: string | null;
   enabled: number;
@@ -79,6 +80,7 @@ function rowToJob(row: CronJobRow): CronJob {
   };
 
   if (row.agent_id !== null) job.agentId = row.agent_id;
+  if (row.account_id !== null) job.accountId = row.account_id;
   if (row.description !== null) job.description = row.description;
   if (row.reply_session !== null) job.replySession = row.reply_session;
   if (row.next_run_at !== null) job.nextRunAt = row.next_run_at;
@@ -107,17 +109,18 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
 
   const stmt = db.prepare(`
     INSERT INTO cron_jobs (
-      id, agent_id, name, description, enabled, delete_after_run,
+      id, agent_id, account_id, name, description, enabled, delete_after_run,
       schedule_type, schedule_at, schedule_every, schedule_cron, schedule_timezone,
       session_target, reply_session, payload_text,
       next_run_at,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     input.agentId ?? null,
+    input.accountId ?? null,
     input.name,
     input.description ?? null,
     input.enabled !== false ? 1 : 0,
@@ -180,6 +183,10 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   if (updates.agentId !== undefined) {
     fields.push("agent_id = ?");
     values.push(updates.agentId ?? null);
+  }
+  if (updates.accountId !== undefined) {
+    fields.push("account_id = ?");
+    values.push(updates.accountId ?? null);
   }
   if (updates.name !== undefined) {
     fields.push("name = ?");

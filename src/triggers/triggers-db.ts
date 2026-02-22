@@ -19,6 +19,7 @@ interface TriggerRow {
   id: string;
   name: string;
   agent_id: string | null;
+  account_id: string | null;
   topic: string;
   message: string;
   session: string;
@@ -50,6 +51,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
   };
 
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
+  if (row.account_id !== null) trigger.accountId = row.account_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
 
@@ -70,15 +72,16 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
 
   const stmt = db.prepare(`
     INSERT INTO triggers (
-      id, name, agent_id, topic, message, session, reply_session, enabled, cooldown_ms,
+      id, name, agent_id, account_id, topic, message, session, reply_session, enabled, cooldown_ms,
       fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
     id,
     input.name,
     input.agentId ?? null,
+    input.accountId ?? null,
     input.topic,
     input.message,
     input.session ?? "isolated",
@@ -141,6 +144,10 @@ export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger 
   if (updates.agentId !== undefined) {
     fields.push("agent_id = ?");
     values.push(updates.agentId ?? null);
+  }
+  if (updates.accountId !== undefined) {
+    fields.push("account_id = ?");
+    values.push(updates.accountId ?? null);
   }
   if (updates.topic !== undefined) {
     fields.push("topic = ?");

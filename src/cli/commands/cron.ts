@@ -8,7 +8,7 @@ import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
-import { getDefaultTimezone } from "../../router/router-db.js";
+import { getDefaultTimezone, getAccountForAgent } from "../../router/router-db.js";
 import {
   dbCreateCronJob,
   dbGetCronJob,
@@ -81,6 +81,7 @@ export class CronCommands {
     console.log(`\nCron Job: ${job.name}\n`);
     console.log(`  ID:              ${job.id}`);
     console.log(`  Agent:           ${job.agentId ?? "(default)"}`);
+    console.log(`  Account:         ${job.accountId ?? "(auto)"}`);
     console.log(`  Enabled:         ${job.enabled ? "yes" : "no"}`);
     console.log(`  Schedule:        ${describeSchedule(job.schedule)}`);
     console.log(`  Session:         ${job.sessionTarget}`);
@@ -126,6 +127,7 @@ export class CronCommands {
     @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
+    @Option({ flags: "--account <name>", description: "Account for outbound routing (auto-detected from agent)" }) account?: string,
     @Option({ flags: "--description <text>", description: "Job description" }) description?: string
   ) {
     // Validate message is provided
@@ -181,6 +183,9 @@ export class CronCommands {
     const ctx = getContext();
     const resolvedAgent = agent ?? ctx?.agentId;
 
+    // Resolve account: explicit flag > auto-detect from agent's account mapping
+    const resolvedAccount = account ?? (resolvedAgent ? getAccountForAgent(resolvedAgent) : undefined);
+
     // Capture reply session from caller context (e.g., agent:comm:whatsapp:main:group:123)
     const replySession = ctx?.sessionKey;
 
@@ -190,6 +195,7 @@ export class CronCommands {
       schedule,
       message,
       agentId: resolvedAgent,
+      accountId: resolvedAccount,
       replySession,
       description,
       sessionTarget: isolated ? "isolated" : "main",
@@ -256,7 +262,7 @@ export class CronCommands {
   @Command({ name: "set", description: "Set job property" })
   async set(
     @Arg("id", { description: "Job ID" }) id: string,
-    @Arg("key", { description: "Property: name, message, cron, every, tz, agent, description, session, reply-session, delete-after" }) key: string,
+    @Arg("key", { description: "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after" }) key: string,
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const job = dbGetCronJob(id);
@@ -327,6 +333,13 @@ export class CronCommands {
           break;
         }
 
+        case "account": {
+          const accountId = value === "null" || value === "-" ? undefined : value;
+          dbUpdateCronJob(id, { accountId });
+          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          break;
+        }
+
         case "description":
           dbUpdateCronJob(id, { description: value === "null" || value === "-" ? undefined : value });
           console.log(`✓ Description set: ${id}`);
@@ -360,7 +373,7 @@ export class CronCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, description, session, reply-session, delete-after`);
+          fail(`Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after`);
       }
 
       // Signal daemon to refresh timers

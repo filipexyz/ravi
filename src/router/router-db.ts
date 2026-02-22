@@ -45,6 +45,7 @@ export const AgentInputSchema = z.object({
   dmScope: DmScopeSchema.optional(),
   systemPromptAppend: z.string().optional(),
   debounceMs: z.number().int().min(0).optional(),
+  groupDebounceMs: z.number().int().min(0).optional(),
   matrixAccount: z.string().optional(),
   mode: AgentModeSchema.optional(),
 });
@@ -69,6 +70,7 @@ interface AgentRow {
   dm_scope: string | null;
   system_prompt_append: string | null;
   debounce_ms: number | null;
+  group_debounce_ms: number | null;
   matrix_account: string | null;
   setting_sources: string | null;
   // Heartbeat columns
@@ -78,6 +80,7 @@ interface AgentRow {
   heartbeat_active_start: string | null;
   heartbeat_active_end: string | null;
   heartbeat_last_run_at: number | null;
+  heartbeat_account_id: string | null;
   // Scope isolation columns
   spec_mode: number;
   contact_scope: string | null;
@@ -325,6 +328,12 @@ function getDb(): Database {
   if (!agentColumns.some(c => c.name === "agent_mode")) {
     db.exec("ALTER TABLE agents ADD COLUMN agent_mode TEXT");
     log.info("Added agent_mode column to agents table");
+  }
+
+  // Migration: add group_debounce_ms column to agents if not exists
+  if (!agentColumns.some(c => c.name === "group_debounce_ms")) {
+    db.exec("ALTER TABLE agents ADD COLUMN group_debounce_ms INTEGER");
+    log.info("Added group_debounce_ms column to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -590,6 +599,23 @@ function getDb(): Database {
     db.exec("ALTER TABLE triggers ADD COLUMN reply_session TEXT");
     log.info("Added reply_session column to triggers table");
   }
+  if (!triggerColumns.some(c => c.name === "account_id")) {
+    db.exec("ALTER TABLE triggers ADD COLUMN account_id TEXT");
+    log.info("Added account_id column to triggers table");
+  }
+
+  // Migration: add account_id column to cron_jobs
+  const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
+  if (!cronColumns.some(c => c.name === "account_id")) {
+    db.exec("ALTER TABLE cron_jobs ADD COLUMN account_id TEXT");
+    log.info("Added account_id column to cron_jobs table");
+  }
+
+  // Migration: add heartbeat_account_id column to agents
+  if (!agentColumns.some(c => c.name === "heartbeat_account_id")) {
+    db.exec("ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT");
+    log.info("Added heartbeat_account_id column to agents table");
+  }
 
   // Migration: add account_id column to routes (recreate table for UNIQUE constraint change)
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
@@ -698,13 +724,13 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, debounce_ms, matrix_account, setting_sources,
-        heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end,
+      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+        heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -714,6 +740,7 @@ function getStatements(): PreparedStatements {
         dm_scope = ?,
         system_prompt_append = ?,
         debounce_ms = ?,
+        group_debounce_ms = ?,
         matrix_account = ?,
         setting_sources = ?,
         heartbeat_enabled = ?,
@@ -721,6 +748,7 @@ function getStatements(): PreparedStatements {
         heartbeat_model = ?,
         heartbeat_active_start = ?,
         heartbeat_active_end = ?,
+        heartbeat_account_id = ?,
         spec_mode = ?,
         contact_scope = ?,
         allowed_sessions = ?,
@@ -815,6 +843,7 @@ function rowToAgent(row: AgentRow): AgentConfig {
   }
   if (row.system_prompt_append !== null) result.systemPromptAppend = row.system_prompt_append;
   if (row.debounce_ms !== null) result.debounceMs = row.debounce_ms;
+  if (row.group_debounce_ms !== null) result.groupDebounceMs = row.group_debounce_ms;
   if (row.matrix_account !== null) result.matrixAccount = row.matrix_account;
   if (row.setting_sources !== null) {
     try {
@@ -829,6 +858,7 @@ function rowToAgent(row: AgentRow): AgentConfig {
     enabled: row.heartbeat_enabled === 1,
     intervalMs: row.heartbeat_interval_ms ?? 1800000,
     model: row.heartbeat_model ?? undefined,
+    accountId: row.heartbeat_account_id ?? undefined,
     activeStart: row.heartbeat_active_start ?? undefined,
     activeEnd: row.heartbeat_active_end ?? undefined,
     lastRunAt: row.heartbeat_last_run_at ?? undefined,
@@ -903,6 +933,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.dmScope ?? null,
       validated.systemPromptAppend ?? null,
       validated.debounceMs ?? null,
+      validated.groupDebounceMs ?? null,
       validated.matrixAccount ?? null,
       validated.settingSources ? JSON.stringify(validated.settingSources) : null,
       // Heartbeat fields (defaults)
@@ -911,6 +942,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // heartbeat_model
       null, // heartbeat_active_start
       null, // heartbeat_active_end
+      null, // heartbeat_account_id
       0, // spec_mode (disabled by default)
       null, // contact_scope (no restriction by default)
       null, // allowed_sessions (no cross-session by default)
@@ -980,6 +1012,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
     updates.systemPromptAppend !== undefined ? updates.systemPromptAppend ?? null : row.system_prompt_append,
     updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
+    updates.groupDebounceMs !== undefined ? updates.groupDebounceMs ?? null : row.group_debounce_ms,
     updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
     updates.settingSources !== undefined
       ? updates.settingSources ? JSON.stringify(updates.settingSources) : null
@@ -990,6 +1023,7 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     hb?.model !== undefined ? hb.model ?? null : row.heartbeat_model,
     hb?.activeStart !== undefined ? hb.activeStart ?? null : row.heartbeat_active_start,
     hb?.activeEnd !== undefined ? hb.activeEnd ?? null : row.heartbeat_active_end,
+    hb?.accountId !== undefined ? hb.accountId ?? null : row.heartbeat_account_id,
     // Spec mode
     updates.specMode !== undefined ? (updates.specMode ? 1 : 0) : row.spec_mode,
     // Scope isolation
@@ -1259,6 +1293,20 @@ export function getFirstAccountName(): string | undefined {
     if (match) return match[1];
   }
   return undefined;
+}
+
+/**
+ * Get the account name mapped to a specific agent.
+ * Looks up settings like account.<name>.agent = <agentId>.
+ * Falls back to getFirstAccountName() if no mapping found.
+ */
+export function getAccountForAgent(agentId: string): string | undefined {
+  const settings = dbListSettings();
+  for (const [key, value] of Object.entries(settings)) {
+    const match = key.match(/^account\.(.+)\.agent$/);
+    if (match && value === agentId) return match[1];
+  }
+  return getFirstAccountName();
 }
 
 /**

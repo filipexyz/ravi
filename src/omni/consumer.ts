@@ -15,11 +15,10 @@ import { handleSlashCommand } from "../slash/index.js";
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 import {
   expandHome,
-  loadRouterConfig,
   resolveRoute,
   dbSaveMessageMeta,
-  type RouterConfig,
 } from "../router/index.js";
+import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName } from "../contacts.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
@@ -124,7 +123,6 @@ function parseSubject(subject: string): { channelType: string; instanceId: strin
 
 export class OmniConsumer {
   private running = false;
-  private routerConfig: RouterConfig;
   /** Active targets for typing heartbeat: sessionName → MessageTarget */
   private activeTargets = new Map<string, MessageTarget>();
   /** Stored JetStreamManager for use inside consume loops */
@@ -132,9 +130,7 @@ export class OmniConsumer {
   /** Startup timestamp (ms) — messages older than this are history sync, skip them */
   private readonly startedAt = Date.now();
 
-  constructor(private sender: OmniSender) {
-    this.routerConfig = loadRouterConfig();
-  }
+  constructor(private sender: OmniSender) {}
 
   /**
    * Start the consumer.
@@ -150,9 +146,6 @@ export class OmniConsumer {
     const nc = getNats();
     const js = nc.jetstream();
     this.jsm = await nc.jetstreamManager();
-
-    // Start config subscription with auto-reconnect
-    this.runConfigSubscription();
 
     // Start consume loops and wait until both consumers are ready
     await Promise.all([
@@ -298,28 +291,6 @@ export class OmniConsumer {
   }
 
   /**
-   * Subscribe to ravi config changes to refresh router config.
-   * Reconnects automatically if the subscription errors.
-   */
-  private runConfigSubscription(): void {
-    (async () => {
-      while (this.running) {
-        try {
-          for await (const _event of nats.subscribe("ravi.config.changed")) {
-            if (!this.running) break;
-            this.routerConfig = loadRouterConfig();
-            log.debug("Router config refreshed");
-          }
-        } catch (err) {
-          if (!this.running) break;
-          log.warn("Config subscription error, reconnecting in 2s", { error: err });
-          await new Promise((r) => setTimeout(r, 2000));
-        }
-      }
-    })();
-  }
-
-  /**
    * Handle message.received event from omni.
    */
   private async handleMessageEvent(subject: string, event: OmniEvent): Promise<void> {
@@ -364,7 +335,7 @@ export class OmniConsumer {
       && (channelType === "slack" || channelType === "discord");
     const peerKind = isNonDmChannel ? "channel" as const : undefined;
     // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
-    const effectiveAccountId = this.routerConfig.instanceToAccount[instanceId];
+    const effectiveAccountId = configStore.resolveAccountName(instanceId);
     if (!effectiveAccountId) {
       log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
       return;
@@ -410,7 +381,8 @@ export class OmniConsumer {
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
 
     // Resolve route to get session key
-    const resolved = resolveRoute(this.routerConfig, {
+    const routerConfig = configStore.getConfig();
+    const resolved = resolveRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,
       accountId: effectiveAccountId,
@@ -487,7 +459,7 @@ export class OmniConsumer {
         isGroup,
         channelType,
         accountId: effectiveAccountId,
-        routerConfig: this.routerConfig,
+        routerConfig,
         send: async (_accId, cId, text) => { await this.sender.send(instanceId, cId, text); },
       });
       if (handled) return;

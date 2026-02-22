@@ -77,6 +77,7 @@ export class HeartbeatCommands {
     console.log(`  Enabled:        ${hb.enabled ? "yes" : "no"}`);
     console.log(`  Interval:       ${formatDuration(hb.intervalMs)}`);
     console.log(`  Model:          ${hb.model ?? "(agent default)"}`);
+    console.log(`  Account:        ${hb.accountId ?? "(auto)"}`);
     console.log(`  Active Hours:   ${hb.activeStart && hb.activeEnd ? `${hb.activeStart}-${hb.activeEnd}` : "always"}`);
     console.log(`  Last Run:       ${hb.lastRunAt ? new Date(hb.lastRunAt).toLocaleString() : "-"}`);
     console.log(`  Workspace:      ${agent.cwd}`);
@@ -136,7 +137,7 @@ export class HeartbeatCommands {
   @Command({ name: "set", description: "Set heartbeat property" })
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("key", { description: "Property: interval, model, active-hours" }) key: string,
+    @Arg("key", { description: "Property: interval, model, account, active-hours" }) key: string,
     @Arg("value", { description: "Property value" }) value: string
   ) {
     const agent = getAgent(id);
@@ -160,6 +161,13 @@ export class HeartbeatCommands {
           break;
         }
 
+        case "account": {
+          const accountId = value === "null" || value === "-" ? undefined : value;
+          updateAgentHeartbeatConfig(id, { accountId });
+          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          break;
+        }
+
         case "active-hours": {
           if (value === "null" || value === "-" || value === "always") {
             updateAgentHeartbeatConfig(id, { activeStart: undefined, activeEnd: undefined });
@@ -173,7 +181,7 @@ export class HeartbeatCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid properties: interval, model, active-hours`);
+          fail(`Unknown property: ${key}. Valid properties: interval, model, account, active-hours`);
       }
 
       // Signal daemon to refresh timers

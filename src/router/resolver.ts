@@ -8,12 +8,13 @@ import type {
   RouterConfig,
   AgentConfig,
   RouteConfig,
+  MatchedRoute,
   ResolvedRoute,
   DmScope,
 } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName } from "./session-name.js";
-import { getOrCreateSession, findSessionByAttributes, updateSessionName } from "./sessions.js";
+import { getOrCreateSession, updateSessionName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 
@@ -80,9 +81,10 @@ export function findRoute(
 }
 
 /**
- * Resolve a phone number to an agent and session key
+ * Pure routing: match a phone/group to an agent, DM scope, and session key.
+ * No database access or session creation — safe for testing and dry-run contexts.
  */
-export function resolveRoute(
+export function matchRoute(
   config: RouterConfig,
   params: {
     phone: string;
@@ -93,7 +95,7 @@ export function resolveRoute(
     threadId?: string;
     peerKind?: string;
   }
-): ResolvedRoute | null {
+): MatchedRoute | null {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
   // Find matching route — scoped to the account that received the message
@@ -140,14 +142,44 @@ export function resolveRoute(
     threadId: params.threadId,
   });
 
-  // Resolve or generate session name
-  // Check if session already exists (has a name)
+  return {
+    agentId,
+    agent,
+    dmScope,
+    sessionKey,
+    route: route ?? undefined,
+  };
+}
+
+/**
+ * Resolve a phone number to an agent, session key, and session name.
+ * Calls matchRoute() for pure routing, then creates/resolves the session (DB side effect).
+ */
+export function resolveRoute(
+  config: RouterConfig,
+  params: {
+    phone: string;
+    channel?: string;
+    accountId?: string;
+    isGroup?: boolean;
+    groupId?: string;
+    threadId?: string;
+    peerKind?: string;
+  }
+): ResolvedRoute | null {
+  const match = matchRoute(config, params);
+  if (!match) return null;
+
+  const { agentId, agent, dmScope, sessionKey, route } = match;
+  const { isGroup, groupId, phone } = params;
+
+  // Resolve or generate session name (DB side effect)
   const agentCwd = expandHome(agent.cwd);
   const existing = getOrCreateSession(sessionKey, agentId, agentCwd);
   let sessionName = existing.name;
 
   if (!sessionName) {
-    // Generate a name for this session
+    const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
     const nameOpts = {
       isMain,
@@ -159,7 +191,6 @@ export function resolveRoute(
     };
     const baseName = generateSessionName(agentId, nameOpts);
     sessionName = ensureUniqueName(baseName);
-    // Persist the name
     updateSessionName(sessionKey, sessionName);
   }
 
@@ -177,7 +208,7 @@ export function resolveRoute(
     dmScope,
     sessionKey,
     sessionName,
-    route: route ?? undefined,
+    route,
   };
 }
 

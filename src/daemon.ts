@@ -13,6 +13,7 @@ import { createGateway } from "./gateway.js";
 import { OmniSender, OmniConsumer } from "./omni/index.js";
 import { loadConfig } from "./utils/config.js";
 import { nats, connectNats, closeNats } from "./nats.js";
+import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
@@ -120,6 +121,9 @@ async function shutdown(signal: string) {
       await omniConsumer.stop();
     }
 
+    // Stop config store refresh
+    configStore.stop();
+
     // Close NATS connection
     await closeNats();
   } catch (err) {
@@ -142,7 +146,10 @@ export async function startDaemon() {
 
   log.info("Starting Ravi daemon...");
 
-  // Step 2: Resolve omni connection
+  // Step 2: Start config store (NATS sub + periodic refresh)
+  await configStore.startRefresh();
+
+  // Step 3: Resolve omni connection
   let omniApiUrl: string | undefined;
   let omniApiKey: string | undefined;
 
@@ -155,15 +162,15 @@ export async function startDaemon() {
     log.warn("Omni not configured — no channel support (install omni: bun add -g @automagik/omni)");
   }
 
-  // Step 3: Sync REBAC relations from agent configs
+  // Step 4: Sync REBAC relations from agent configs
   syncRelationsFromConfig();
 
-  // Step 4: Start bot
+  // Step 5: Start bot
   bot = new RaviBot({ config });
   await bot.start();
   log.info("Bot started");
 
-  // Step 5: Set up omni sender + consumer + gateway
+  // Step 6: Set up omni sender + consumer + gateway
   if (omniApiUrl && omniApiKey) {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
     omniConsumer = new OmniConsumer(sender);
@@ -195,7 +202,7 @@ export async function startDaemon() {
   await gateway.start();
   log.info("Gateway started");
 
-  // Step 6: Start runners
+  // Step 7: Start runners
   await startHeartbeatRunner();
   log.info("Heartbeat runner started");
 

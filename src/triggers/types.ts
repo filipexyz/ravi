@@ -14,6 +14,8 @@ export interface Trigger {
   id: string;
   name: string;
   agentId?: string;
+  /** Explicit account ID for outbound routing (overrides session.lastAccountId) */
+  accountId?: string;
   topic: string;
   message: string;
   session: SessionTarget;
@@ -35,6 +37,8 @@ export interface Trigger {
 export interface TriggerInput {
   name: string;
   agentId?: string;
+  /** Explicit account ID for outbound routing */
+  accountId?: string;
   topic: string;
   message: string;
   session?: SessionTarget;

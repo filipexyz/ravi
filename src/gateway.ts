@@ -15,18 +15,15 @@
 
 import { nats } from "./nats.js";
 import { pendingReplyCallbacks } from "./bot.js";
-import { loadRouterConfig, type RouterConfig } from "./router/index.js";
+import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import type { ResponseMessage } from "./bot.js";
 import {
   dbFindActiveEntryByPhone,
   dbUpdateEntry,
 } from "./outbound/index.js";
-import { readFile } from "fs/promises";
-import path from "path";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
-import { dbGetSetting } from "./router/router-db.js";
 
 const log = logger.child("gateway");
 
@@ -46,26 +43,6 @@ function normalizeOutboundJid(chatId: string): string {
   return chatId;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/**
- * Resolve accountId to omni instance UUID.
- * Sessions store omni instance names like "main" or "vendas" instead of UUIDs.
- */
-function resolveInstanceId(accountId: string): string | undefined {
-  if (!accountId) {
-    log.warn("Cannot resolve instance: accountId is empty (session has no account context)");
-    return undefined;
-  }
-  if (UUID_RE.test(accountId)) return accountId;
-  const resolved = dbGetSetting(`account.${accountId}.instanceId`);
-  if (!resolved) {
-    log.warn(`Cannot resolve instance for account "${accountId}" — no account.${accountId}.instanceId setting found`);
-    return undefined;
-  }
-  return resolved;
-}
-
 /** Silent reply token — when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
 
@@ -76,15 +53,12 @@ export interface GatewayOptions {
 }
 
 export class Gateway {
-  private routerConfig: RouterConfig;
   private running = false;
   private omniSender: OmniSender;
   private omniConsumer: OmniConsumer;
   private activeSubscriptions = new Set<string>();
-  private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: GatewayOptions) {
-    this.routerConfig = loadRouterConfig();
     this.omniSender = options.omniSender;
     this.omniConsumer = options.omniConsumer;
     if (options.logLevel) {
@@ -103,24 +77,12 @@ export class Gateway {
     this.subscribeToMediaSend();
     this.subscribeToConfigChanges();
 
-    // Periodic config refresh as safety net
-    this.configRefreshTimer = setInterval(() => {
-      if (!this.running) return;
-      this.routerConfig = loadRouterConfig();
-    }, 60_000);
-
     log.info("Gateway started");
   }
 
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
-
-    if (this.configRefreshTimer) {
-      clearInterval(this.configRefreshTimer);
-      this.configRefreshTimer = null;
-    }
-
     log.info("Gateway stopped");
   }
 
@@ -172,7 +134,7 @@ export class Gateway {
       const target = response.target;
       if (!target) return;
 
-      const instanceId = resolveInstanceId(target.accountId);
+      const instanceId = configStore.resolveInstanceId(target.accountId);
       if (!instanceId) return;
       const chatId = normalizeOutboundJid(target.chatId);
 
@@ -220,7 +182,7 @@ export class Gateway {
       if (data.type === "result" || data.type === "silent") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          const iid = resolveInstanceId(target.accountId);
+          const iid = configStore.resolveInstanceId(target.accountId);
           if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), false);
           this.omniConsumer.clearActiveTarget(sessionName);
         }
@@ -230,7 +192,7 @@ export class Gateway {
       if (data.type === "system" || data.type === "assistant") {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          const iid = resolveInstanceId(target.accountId);
+          const iid = configStore.resolveInstanceId(target.accountId);
           if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), true);
         }
       }
@@ -253,7 +215,7 @@ export class Gateway {
         replyTopic?: string;
       };
 
-      const instanceId = resolveInstanceId(data.accountId);
+      const instanceId = configStore.resolveInstanceId(data.accountId);
       if (!instanceId) {
         if (data.replyTopic) {
           const cb = pendingReplyCallbacks.get(data.replyTopic);
@@ -271,8 +233,9 @@ export class Gateway {
         // Auto sentinel humanization
         const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
         if (isSentinelAuto && data.text) {
-          const mappedAgentId = this.routerConfig.accountAgents[data.accountId];
-          const mappedAgent = mappedAgentId ? this.routerConfig.agents[mappedAgentId] : undefined;
+          const routerConfig = configStore.getConfig();
+          const mappedAgentId = routerConfig.accountAgents[data.accountId];
+          const mappedAgent = mappedAgentId ? routerConfig.agents[mappedAgentId] : undefined;
           if (mappedAgent?.mode === "sentinel") {
             const len = data.text.length;
             pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
@@ -351,7 +314,7 @@ export class Gateway {
       };
 
       try {
-        const reactionInstanceId = resolveInstanceId(data.accountId);
+        const reactionInstanceId = configStore.resolveInstanceId(data.accountId);
         if (!reactionInstanceId) return;
         const reactionChatId = normalizeOutboundJid(data.chatId);
         await this.omniSender.sendReaction(reactionInstanceId, reactionChatId, data.messageId, data.emoji);
@@ -379,7 +342,7 @@ export class Gateway {
       };
 
       try {
-        const mediaInstanceId = resolveInstanceId(data.accountId);
+        const mediaInstanceId = configStore.resolveInstanceId(data.accountId);
         if (!mediaInstanceId) return;
         const mediaChatId = normalizeOutboundJid(data.chatId);
         await this.omniSender.sendMedia(
@@ -402,10 +365,9 @@ export class Gateway {
    */
   private subscribeToConfigChanges(): void {
     this.subscribe("config", ["ravi.config.changed"], async () => {
-      this.routerConfig = loadRouterConfig();
       const { syncRelationsFromConfig } = await import("./permissions/relations.js");
       syncRelationsFromConfig();
-      log.info("Router config reloaded");
+      log.info("REBAC relations synced");
     });
   }
 }
