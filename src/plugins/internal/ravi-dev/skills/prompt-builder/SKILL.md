@@ -87,7 +87,7 @@ Formatacao adaptada por plataforma:
 ### 5. Reactions (quando tem contexto de canal)
 Instrucoes de quando usar emoji reactions vs texto:
 - Prefira emoji sobre "ok", "entendi", "beleza"
-- Use `react_send` com o `[mid:ID]` da mensagem
+- O `[mid:ID]` no header identifica a mensagem
 - Nao reaja E responda ao mesmo tempo
 
 ### 6. Contexto de Grupo (quando isGroup=true)

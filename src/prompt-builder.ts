@@ -176,7 +176,7 @@ Tabelas com caracteres | - + funcionam bem no terminal.`;
  * Build reactions section for system prompt
  */
 function reactionsText(): string {
-  return `Mensagens incluem \`mid:ID\` no header (dentro dos colchetes). Esse é o ID da mensagem — use com \`react_send\` para enviar reações.
+  return `Mensagens incluem \`mid:ID\` no header (dentro dos colchetes). Esse é o ID da mensagem — use para contexto ao reagir.
 
 O header também inclui o dia da semana abreviado em inglês (mon, tue, wed, thu, fri, sat, sun) ao final do timestamp. Use para contexto temporal.
 
