@@ -17,9 +17,10 @@ import {
   expandHome,
   resolveRoute,
   dbSaveMessageMeta,
+  dbGetSetting,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
-import { isContactAllowedForAgent, saveAccountPending, getContactName } from "../contacts.js";
+import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../bot.js";
@@ -31,8 +32,8 @@ import {
   dbUpdateEntry,
 } from "../outbound/index.js";
 import type { OmniSender } from "./sender.js";
-import { mkdir, rename } from "fs/promises";
-import path from "path";
+import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
+import { transcribeAudio } from "../transcribe/openai.js";
 
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
@@ -130,7 +131,11 @@ export class OmniConsumer {
   /** Startup timestamp (ms) — messages older than this are history sync, skip them */
   private readonly startedAt = Date.now();
 
-  constructor(private sender: OmniSender) {}
+  constructor(
+    private sender: OmniSender,
+    private omniApiUrl: string,
+    private omniApiKey: string,
+  ) {}
 
   /**
    * Start the consumer.
@@ -413,6 +418,40 @@ export class OmniConsumer {
       return;
     }
 
+    // -- Group policy enforcement --
+    if (isGroup) {
+      const groupPolicy = dbGetSetting("whatsapp.groupPolicy") ?? "open";
+      if (groupPolicy === "closed") {
+        log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
+        return;
+      }
+      if (groupPolicy === "allowlist") {
+        const contact = getContact(chatJid);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, chatJid, {
+            chatId: chatJid,
+            isGroup: true,
+            name: getContactName(chatJid) ?? undefined,
+          });
+          log.info("Group not in allowlist, saved as pending", {
+            chatJid, accountId: effectiveAccountId, isNew,
+          });
+          if (isNew) {
+            nats.emit("ravi.contacts.pending", {
+              type: "account",
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: true,
+            }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+          }
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
     const { sessionName, agent } = resolved;
     const agentMode = agent.mode ?? "active";
 
@@ -432,8 +471,12 @@ export class OmniConsumer {
     // Resolve group name from contacts DB
     const groupName = isGroup ? (getContactName(chatJid) ?? undefined) : undefined;
 
+    // Process media (download from omni disk → agent attachments, transcribe audio)
+    const agentCwd = expandHome(agent.cwd);
+    const mediaResult = await this.processMedia(payload, agentCwd);
+
     // Build message envelope text
-    const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp, threadId);
+    const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp, threadId, mediaResult);
 
     if (agentMode === "sentinel") {
       // Sentinel: observe silently, no typing indicator, no source
@@ -547,18 +590,91 @@ export class OmniConsumer {
   // Helpers
   // ============================================================================
 
-  private formatContent(payload: MessageReceivedPayload): string {
+  /**
+   * Process media: fetch from omni HTTP API, save to agent attachments, transcribe audio.
+   */
+  private async processMedia(
+    payload: MessageReceivedPayload,
+    agentCwd: string,
+  ): Promise<{ localPath?: string; transcript?: string } | null> {
+    const { content } = payload;
+    if (!content.mediaUrl || content.type === "text" || !content.type) return null;
+
+    const mimeType = content.mimeType ?? "application/octet-stream";
+    const isAudio = content.type === "audio" || content.type === "voice";
+    const maxBytes = isAudio ? MAX_AUDIO_BYTES : undefined;
+
+    const buffer = await fetchOmniMedia(content.mediaUrl, this.omniApiUrl, this.omniApiKey, maxBytes);
+    if (!buffer) return null;
+
+    // Audio: transcribe, save to attachments as fallback
+    if (isAudio) {
+      try {
+        const result = await transcribeAudio(buffer, mimeType);
+        return { transcript: result.text };
+      } catch (err) {
+        log.warn("Audio transcription failed, saving file instead", { error: err });
+        try {
+          const dest = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
+          return { localPath: dest };
+        } catch { return null; }
+      }
+    }
+
+    // Images, videos, documents, stickers: save to agent attachments
+    try {
+      const dest = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
+      return { localPath: dest };
+    } catch (err) {
+      log.warn("Failed to save media to agent attachments", { error: err });
+      return null;
+    }
+  }
+
+  /**
+   * Format message content as text for the prompt.
+   * mediaResult comes from processMedia() — undefined for text-only messages.
+   */
+  private formatContent(
+    payload: MessageReceivedPayload,
+    mediaResult?: { localPath?: string; transcript?: string } | null,
+  ): string {
     const { content } = payload;
     if (content.type === "text" || !content.type) {
       return content.text ?? "[message]";
     }
-    if (content.type === "audio" || content.type === "voice") {
-      return `[Audio]${content.localPath ? `\nfile: ${content.localPath}` : ""}`;
+
+    const isAudio = content.type === "audio" || content.type === "voice";
+
+    // Audio with transcript
+    if (isAudio && mediaResult?.transcript) {
+      return `[Audio]\nTranscript:\n${mediaResult.transcript}`;
     }
+
+    // Audio without transcript but with file
+    if (isAudio && mediaResult?.localPath) {
+      return `[Audio]\nfile: ${mediaResult.localPath}`;
+    }
+
+    if (isAudio) {
+      return "[Audio]";
+    }
+
+    // Other media (image, video, document, sticker)
+    const parts: string[] = [];
+    const label = content.type.charAt(0).toUpperCase() + content.type.slice(1);
+
+    if (mediaResult?.localPath) {
+      parts.push(`[${label}: ${mediaResult.localPath}]`);
+    } else {
+      parts.push(`[${label}]`);
+    }
+
     if (content.text) {
-      return `[${content.type}] ${content.text}`;
+      parts.push(content.text);
     }
-    return `[${content.type}]`;
+
+    return parts.join("\n");
   }
 
   private formatEnvelope(
@@ -570,7 +686,8 @@ export class OmniConsumer {
     groupName: string | undefined,
     chatJid: string,
     timestamp: number,
-    threadId?: string
+    threadId?: string,
+    mediaResult?: { localPath?: string; transcript?: string } | null,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -583,7 +700,7 @@ export class OmniConsumer {
       timeZone: "America/Sao_Paulo", weekday: "short"
     }).toLowerCase();
 
-    const content = this.formatContent(payload);
+    const content = this.formatContent(payload, mediaResult);
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
     const threadTag = threadId ? ` thread:${threadId}` : "";
 
