@@ -11,6 +11,7 @@ export const SDK_TOOLS = [
   "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
   "ExitPlanMode", "EnterPlanMode", "AskUserQuestion", "Skill",
   "TaskOutput", "KillShell", "TaskStop", "LSP",
+  "TeamCreate", "TeamDelete", "SendMessage",
 ];
 
 // CLI tool names registry (populated lazily or by registerCliTools)

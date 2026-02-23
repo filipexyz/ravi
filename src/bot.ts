@@ -30,6 +30,7 @@ import { runWithContext } from "./cli/context.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
 import { createBashPermissionHook, createToolPermissionHook } from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
+import { createSanitizeBashHook } from "./hooks/sanitize-bash.js";
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
 import { discoverPlugins } from "./plugins/index.js";
@@ -962,6 +963,7 @@ export class RaviBot {
     hooks.PreToolUse = [
       createToolPermissionHook(hookOpts),   // SDK tools (dynamic REBAC)
       createBashPermissionHook(hookOpts),    // Bash executables
+      createSanitizeBashHook(),              // Strip secrets from Bash env
     ];
 
     // Auto-approve all permission requests for subagents (teams/tasks).
@@ -1276,7 +1278,7 @@ export class RaviBot {
         abortController,
         ...permissionOptions,
         canUseTool,
-        env: { ...process.env, ...raviEnv },
+        env: { ...process.env, ...raviEnv, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
         ...(specServer ? { mcpServers: { spec: specServer } } : {}),
         systemPrompt: {
           type: "preset",
