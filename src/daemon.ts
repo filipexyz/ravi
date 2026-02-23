@@ -173,7 +173,7 @@ export async function startDaemon() {
   // Step 6: Set up omni sender + consumer + gateway
   if (omniApiUrl && omniApiKey) {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
-    omniConsumer = new OmniConsumer(sender);
+    omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey);
 
     try {
       await omniConsumer.start();
