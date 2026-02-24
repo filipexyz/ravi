@@ -244,6 +244,8 @@ export class RaviBot {
   private pendingPollQuestions = new Map<string, PendingPollQuestion>();
   /** Queued session starts waiting for a concurrency slot */
   private pendingStarts: PendingStart[] = [];
+  /** Messages stashed from aborted sessions — re-injected on next prompt */
+  private stashedMessages = new Map<string, string[]>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
   /** Subscriber health: incremented on every prompt received */
@@ -350,6 +352,13 @@ export class RaviBot {
       });
       session.pendingAbort = true;
       return true;
+    }
+
+    // Stash pending messages so they're re-injected on next prompt
+    if (session.pendingMessages.length > 0) {
+      const texts = session.pendingMessages.map(m => m.message.content);
+      log.info("Stashing aborted messages", { sessionName, count: texts.length });
+      this.stashedMessages.set(sessionName, texts);
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done });
@@ -1320,6 +1329,19 @@ export class RaviBot {
     firstMessage: string,
     session: StreamingSession
   ): AsyncGenerator<UserMessage> {
+    // Re-inject stashed messages from a previous abort
+    const stashed = this.stashedMessages.get(sessionName);
+    if (stashed && stashed.length > 0) {
+      log.info("Re-injecting stashed messages", { sessionName, count: stashed.length });
+      for (const text of stashed) {
+        session.pendingMessages.push({
+          type: "user" as const,
+          message: { role: "user" as const, content: text },
+        });
+      }
+      this.stashedMessages.delete(sessionName);
+    }
+
     // First message goes directly into queue so the same drain logic handles it
     session.pendingMessages.push({
       type: "user" as const,
@@ -1562,6 +1584,11 @@ export class RaviBot {
 
               // Execute deferred abort now that unsafe tool has completed
               if (streaming.pendingAbort) {
+                if (streaming.pendingMessages.length > 0) {
+                  const texts = streaming.pendingMessages.map(m => m.message.content);
+                  log.info("Stashing aborted messages (deferred)", { sessionName, count: texts.length });
+                  this.stashedMessages.set(sessionName, texts);
+                }
                 log.info("Executing deferred abort after unsafe tool completed", { sessionName });
                 streaming.abortController.abort();
                 this.streamingSessions.delete(sessionName);

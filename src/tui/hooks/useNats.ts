@@ -44,6 +44,7 @@ export interface UseNatsResult {
   isTyping: boolean;
   isCompacting: boolean;
   isWorking: boolean;
+  stopWorking: () => void;
   totalTokens: TokenUsage;
 }
 
@@ -335,6 +336,13 @@ export function useNats(sessionName: string): UseNatsResult {
     });
   }, []);
 
+  const stopWorking = useCallback(() => {
+    setIsWorking(false);
+    setIsTyping(false);
+    // Remove in-progress streaming message
+    setMessages((prev) => prev.filter((m) => m.id !== STREAMING_ID));
+  }, []);
+
   return {
     messages,
     sendMessage,
@@ -344,6 +352,7 @@ export function useNats(sessionName: string): UseNatsResult {
     isTyping,
     isCompacting,
     isWorking,
+    stopWorking,
     totalTokens,
   };
 }

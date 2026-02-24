@@ -3,10 +3,14 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import type { TextareaRenderable } from "@opentui/core";
 import { SlashMenu, filterCommands } from "./SlashMenu.js";
+import { inputHistory } from "../lib/input-history.js";
 
 interface InputBarProps {
   onSend: (text: string) => void;
   onSlashCommand: (cmd: string) => void;
+  onAbort: () => void;
+  /** Whether the agent is currently working */
+  isWorking?: boolean;
   /** When true, aggressively keeps focus on the input */
   active?: boolean;
   /** Extra rows above the input bar (e.g. ravigating indicator) */
@@ -32,6 +36,8 @@ const textareaKeyBindings = [
 export function InputBar({
   onSend,
   onSlashCommand,
+  onAbort,
+  isWorking = false,
   active = true,
   extraOffset = 0,
 }: InputBarProps) {
@@ -41,7 +47,13 @@ export function InputBar({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [lineCount, setLineCount] = useState(1);
 
+  // Input history navigation
+  const historyIndexRef = useRef(-1); // -1 = composing new text
+  const draftRef = useRef(""); // saves current draft when entering history
+
   // Refs so the handleKeyPress closure always sees current values
+  const onAbortRef = useRef(onAbort);
+  const isWorkingRef = useRef(isWorking);
   const slashOpenRef = useRef(false);
   const filteredRef = useRef<ReturnType<typeof filterCommands>>([]);
   const selectedIndexRef = useRef(0);
@@ -49,6 +61,8 @@ export function InputBar({
   const filtered = useMemo(() => filterCommands(slashQuery), [slashQuery]);
 
   // Keep refs in sync
+  onAbortRef.current = onAbort;
+  isWorkingRef.current = isWorking;
   slashOpenRef.current = slashOpen;
   filteredRef.current = filtered;
   selectedIndexRef.current = selectedIndex;
@@ -86,6 +100,53 @@ export function InputBar({
         }
       }
 
+      // Escape: empty → abort; has text → save to history + clear
+      if (key.name === "escape" && !slashOpenRef.current) {
+        const text = ta.plainText.trim();
+        if (text) {
+          inputHistory.push(text);
+          ta.clear();
+          setLineCount(1);
+        } else if (isWorkingRef.current) {
+          onAbortRef.current();
+        }
+        historyIndexRef.current = -1;
+        draftRef.current = "";
+        return true;
+      }
+
+      // Up/Down: navigate input history (single-line only, not in slash menu)
+      if (!slashOpenRef.current && ta.lineCount === 1) {
+        const items = inputHistory.list();
+        if (key.name === "up" && items.length > 0) {
+          if (historyIndexRef.current === -1) {
+            draftRef.current = ta.plainText;
+            historyIndexRef.current = items.length - 1;
+          } else if (historyIndexRef.current > 0) {
+            historyIndexRef.current--;
+          }
+          ta.clear();
+          ta.insertText(items[historyIndexRef.current]!);
+          setLineCount(ta.lineCount);
+          return true;
+        }
+        if (key.name === "down") {
+          if (historyIndexRef.current >= 0) {
+            if (historyIndexRef.current < items.length - 1) {
+              historyIndexRef.current++;
+              ta.clear();
+              ta.insertText(items[historyIndexRef.current]!);
+            } else {
+              historyIndexRef.current = -1;
+              ta.clear();
+              if (draftRef.current) ta.insertText(draftRef.current);
+            }
+            setLineCount(ta.lineCount);
+            return true;
+          }
+        }
+      }
+
       if (key.sequence === "\\") {
         ta.newLine();
         setLineCount(ta.lineCount);
@@ -93,6 +154,12 @@ export function InputBar({
       }
       const result = origHandleKeyPress(key);
       setLineCount(ta.lineCount);
+
+      // Any typing resets history navigation
+      if (historyIndexRef.current >= 0 && key.sequence && key.sequence.length === 1) {
+        historyIndexRef.current = -1;
+        draftRef.current = "";
+      }
 
       // Slash detection (textarea has no onInput event)
       const text = ta.plainText;
@@ -130,6 +197,9 @@ export function InputBar({
 
       const trimmed = text.trim();
       if (!trimmed) return;
+      inputHistory.push(trimmed);
+      historyIndexRef.current = -1;
+      draftRef.current = "";
       onSend(trimmed);
       ta.clear();
       setLineCount(1);

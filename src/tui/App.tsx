@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { InputBar } from "./components/InputBar.js";
@@ -38,9 +38,24 @@ function RavigatingIndicator() {
 }
 
 export function App() {
+  const renderer = useRenderer();
   const [sessionName, setSessionName] = useState(initialSessionName);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { sessions, refresh: refreshSessions } = useSessions();
+
+  // Auto-copy selected text to clipboard via OSC 52
+  useEffect(() => {
+    const onSelection = () => {
+      const sel = renderer.getSelection();
+      if (!sel) return;
+      const text = sel.getSelectedText();
+      if (text) {
+        renderer.copyToClipboardOSC52(text);
+      }
+    };
+    renderer.on("selection", onSelection);
+    return () => { renderer.off("selection", onSelection); };
+  }, [renderer]);
 
   const {
     messages,
@@ -51,6 +66,7 @@ export function App() {
     isTyping,
     isCompacting,
     isWorking,
+    stopWorking,
     totalTokens,
   } = useNats(sessionName);
 
@@ -88,6 +104,22 @@ export function App() {
   const handleClosePalette = useCallback(() => {
     setPaletteOpen(false);
   }, []);
+
+  const handleAbort = useCallback(() => {
+    if (!isWorking) return;
+    const sk = currentSession?.sessionKey;
+    if (sk) {
+      publish("ravi.session.abort", { sessionKey: sk, sessionName }).catch(() => {});
+    }
+    stopWorking();
+    pushMessage({
+      id: `system-${Date.now()}`,
+      type: "chat",
+      role: "assistant",
+      content: "Aborted.",
+      timestamp: Date.now(),
+    });
+  }, [currentSession, sessionName, isWorking, stopWorking, pushMessage]);
 
   const handleSlashCommand = useCallback(
     (cmd: string) => {
@@ -157,6 +189,8 @@ export function App() {
       <InputBar
         onSend={sendMessage}
         onSlashCommand={handleSlashCommand}
+        onAbort={handleAbort}
+        isWorking={isWorking}
         active={!paletteOpen}
         extraOffset={isCompacting || isWorking ? 1 : 0}
       />
