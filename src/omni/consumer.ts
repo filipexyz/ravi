@@ -41,10 +41,12 @@ const sc = StringCodec();
 /** Durable consumer names */
 const MSG_CONSUMER = "ravi-messages";
 const INSTANCE_CONSUMER = "ravi-instances";
+const REACTION_CONSUMER = "ravi-reactions";
 
 /** Stream names (must match omni's stream config) */
 const MESSAGE_STREAM = "MESSAGE";
 const INSTANCE_STREAM = "INSTANCE";
+const REACTION_STREAM = "REACTION";
 
 /**
  * Omni event envelope (wraps all events published to JetStream).
@@ -96,6 +98,14 @@ interface InstanceConnectedPayload {
   ownerIdentifier?: string;
 }
 
+/** Omni reaction.received payload */
+interface ReactionReceivedPayload {
+  messageId: string;
+  chatId: string;
+  from: string;
+  emoji: string;
+}
+
 /**
  * Strip @-suffix from JID to get the phone/id portion.
  * "5511999999999@s.whatsapp.net" → "5511999999999"
@@ -130,6 +140,9 @@ export class OmniConsumer {
   private jsm: JetStreamManager | null = null;
   /** Startup timestamp (ms) — messages older than this are history sync, skip them */
   private readonly startedAt = Date.now();
+  /** Dedup set for recently processed event IDs (prevents double-processing) */
+  private readonly processedEvents = new Set<string>();
+  private readonly DEDUP_MAX = 500;
 
   constructor(
     private sender: OmniSender,
@@ -152,13 +165,16 @@ export class OmniConsumer {
     const js = nc.jetstream();
     this.jsm = await nc.jetstreamManager();
 
-    // Start consume loops and wait until both consumers are ready
+    // Start consume loops and wait until all consumers are ready
     await Promise.all([
       this.consumeLoop(js, MESSAGE_STREAM, MSG_CONSUMER, "message.received.>", (subject, event) =>
         this.handleMessageEvent(subject, event)
       ),
       this.consumeLoop(js, INSTANCE_STREAM, INSTANCE_CONSUMER, "instance.>", (subject, event) =>
         this.handleInstanceEvent(subject, event)
+      ),
+      this.consumeLoop(js, REACTION_STREAM, REACTION_CONSUMER, "reaction.received.>", (subject, event) =>
+        this.handleReactionEvent(subject, event)
       ),
     ]);
 
@@ -309,6 +325,9 @@ export class OmniConsumer {
 
     const { channelType, instanceId } = parsed;
     const payload = event.payload as MessageReceivedPayload;
+
+    // Skip reaction messages — these are handled by the REACTION stream consumer
+    if (payload.content.type === "reaction") return;
 
     // Skip messages from Baileys history sync.
     // Omni sets ingestMode='history-sync' for messages replayed during reconnect.
@@ -515,6 +534,15 @@ export class OmniConsumer {
       chatId: chatJid,
     };
 
+    // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
+    if (payload.replyToId && payload.content.text) {
+      nats.emit("ravi.inbound.reply", {
+        targetMessageId: payload.replyToId,
+        text: payload.content.text,
+        senderId: senderPhone,
+      }).catch(() => {});
+    }
+
     this.activeTargets.set(sessionName, source);
     await this.sender.sendTyping(instanceId, chatJid, true);
 
@@ -570,6 +598,43 @@ export class OmniConsumer {
         profileName: payload.profileName,
       });
     }
+  }
+
+  /**
+   * Handle reaction.received events from omni.
+   * Emits ravi.inbound.reaction for approval/poll resolution.
+   */
+  private async handleReactionEvent(_subject: string, event: OmniEvent): Promise<void> {
+    if (event.type !== "reaction.received") return;
+
+    // Skip old reactions (before this daemon started)
+    const reactionTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
+    if (reactionTs < this.startedAt - 5_000) return;
+
+    const payload = event.payload as ReactionReceivedPayload;
+    const senderId = stripJid(payload.from);
+
+    // Dedup: omni publishes duplicate events with different IDs for the same reaction
+    const dedupKey = `${payload.messageId}:${payload.emoji}:${senderId}`;
+    if (this.processedEvents.has(dedupKey)) return;
+    this.processedEvents.add(dedupKey);
+    if (this.processedEvents.size > this.DEDUP_MAX) {
+      const first = this.processedEvents.values().next().value;
+      if (first) this.processedEvents.delete(first);
+    }
+
+    log.info("Reaction received", {
+      messageId: payload.messageId,
+      emoji: payload.emoji,
+      senderId,
+      chatId: payload.chatId,
+    });
+
+    await nats.emit("ravi.inbound.reaction", {
+      targetMessageId: payload.messageId,
+      emoji: payload.emoji,
+      senderId,
+    });
   }
 
   /**

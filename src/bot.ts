@@ -527,7 +527,7 @@ export class RaviBot {
       const timeout = setTimeout(() => {
         pendingReplyCallbacks.delete(replyTopic);
         resolve({});
-      }, 5000);
+      }, 5 * 60 * 1000);
       pendingReplyCallbacks.set(replyTopic, (data) => {
         clearTimeout(timeout);
         pendingReplyCallbacks.delete(replyTopic);
@@ -546,7 +546,7 @@ export class RaviBot {
     const sendResult = await sendResultPromise;
 
     if (!sendResult.messageId) {
-      log.warn("Failed to get messageId for approval message — rejecting by default");
+      log.warn("Failed to get messageId for approval/poll message (send timeout)");
       return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
     }
 
@@ -580,7 +580,7 @@ export class RaviBot {
       const timeout = setTimeout(() => {
         pendingReplyCallbacks.delete(replyTopic);
         resolve({});
-      }, 5000);
+      }, 5 * 60 * 1000);
       pendingReplyCallbacks.set(replyTopic, (data) => {
         clearTimeout(timeout);
         pendingReplyCallbacks.delete(replyTopic);
