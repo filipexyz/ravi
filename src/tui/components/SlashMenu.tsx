@@ -7,7 +7,7 @@ export interface SlashCommand {
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "switch", description: "Switch session (Ctrl+K)" },
-  { name: "clear", description: "Clear chat messages" },
+  { name: "reset", description: "Reset session (clear context)" },
   { name: "help", description: "Show available commands" },
   { name: "model", description: "Change model" },
 ];

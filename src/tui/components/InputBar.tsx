@@ -9,6 +9,8 @@ interface InputBarProps {
   onSlashCommand: (cmd: string) => void;
   /** When true, aggressively keeps focus on the input */
   active?: boolean;
+  /** Extra rows above the input bar (e.g. ravigating indicator) */
+  extraOffset?: number;
 }
 
 const textareaKeyBindings = [
@@ -31,6 +33,7 @@ export function InputBar({
   onSend,
   onSlashCommand,
   active = true,
+  extraOffset = 0,
 }: InputBarProps) {
   const textareaRef = useRef<TextareaRenderable>(null);
   const [slashOpen, setSlashOpen] = useState(false);
@@ -146,7 +149,7 @@ export function InputBar({
       borderFocusedColor="cyan"
     >
       {slashOpen && (
-        <SlashMenu query={slashQuery} selectedIndex={selectedIndex} parentHeight={barHeight} />
+        <SlashMenu query={slashQuery} selectedIndex={selectedIndex} parentHeight={barHeight + extraOffset} />
       )}
       <textarea
         ref={textareaRef}

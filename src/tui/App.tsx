@@ -11,6 +11,8 @@ import { useNats } from "./hooks/useNats.js";
 import { useSessions } from "./hooks/useSessions.js";
 import { dbGetAgent } from "../router/router-db.js";
 import { loadConfig } from "../utils/config.js";
+import { publish } from "../nats.js";
+import { resetSession } from "../router/sessions.js";
 
 const initialSessionName = process.argv[2] || "main";
 
@@ -94,9 +96,22 @@ export function App() {
           refreshSessions();
           setPaletteOpen(true);
           break;
-        case "clear":
+        case "reset": {
+          const sk = currentSession?.sessionKey;
+          if (sk) {
+            publish("ravi.session.abort", { sessionKey: sk, sessionName }).catch(() => {});
+            resetSession(sk);
+          }
           clearMessages();
+          pushMessage({
+            id: `system-${Date.now()}`,
+            type: "chat",
+            role: "assistant",
+            content: "Session reset.",
+            timestamp: Date.now(),
+          });
           break;
+        }
         case "help": {
           const lines = SLASH_COMMANDS.map(
             (c) => `  /${c.name}  — ${c.description}`,
@@ -121,7 +136,7 @@ export function App() {
           break;
       }
     },
-    [refreshSessions, clearMessages, pushMessage],
+    [refreshSessions, clearMessages, pushMessage, currentSession, sessionName],
   );
 
   return (
@@ -143,6 +158,7 @@ export function App() {
         onSend={sendMessage}
         onSlashCommand={handleSlashCommand}
         active={!paletteOpen}
+        extraOffset={isCompacting || isWorking ? 1 : 0}
       />
 
       {/* Status bar (footer) */}
