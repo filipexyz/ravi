@@ -197,6 +197,9 @@ export class EventsCommands {
         (data as Record<string, unknown>)._heartbeat === true
       )) continue;
 
+      // Always hide noisy omni events (presence typing, unread counters)
+      if (topic.includes("presence.typing") || topic.includes("chat.unread-updated")) continue;
+
       count++;
       const ts    = formatTimestamp();
       const col   = topicColor(topic);
