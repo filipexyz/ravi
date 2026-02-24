@@ -9,9 +9,11 @@
  *   3. Direct relation? → check (agent, <id>, <permission>, <objectType>, <objectId>)
  *   4. Wildcard? → check (agent, <id>, <permission>, <objectType>, *)
  *   5. Pattern match? → check relations with glob patterns (e.g., dev-*)
+ *   6. Tool group? → check if tool belongs to a granted toolgroup
  */
 
 import { hasRelation, listRelations } from "./relations.js";
+import { resolveToolGroup } from "../cli/tool-registry.js";
 
 // ============================================================================
 // Core Engine
@@ -62,6 +64,20 @@ export function can(
       if (rel.objectId.includes("*") && matchPattern(rel.objectId, objectId)) {
         return true;
       }
+    }
+  }
+
+  // 5. Tool group resolution: check if tool belongs to a granted group
+  if (permission === "use" && objectType === "tool" && objectId !== "*") {
+    const groupRelations = listRelations({
+      subjectType,
+      subjectId,
+      relation: "use",
+      objectType: "toolgroup",
+    });
+    for (const gr of groupRelations) {
+      const members = resolveToolGroup(gr.objectId);
+      if (members?.includes(objectId)) return true;
     }
   }
 

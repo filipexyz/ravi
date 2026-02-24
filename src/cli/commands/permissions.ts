@@ -15,7 +15,7 @@ import {
   type RelationFilter,
 } from "../../permissions/relations.js";
 import { can } from "../../permissions/engine.js";
-import { SDK_TOOLS } from "../tool-registry.js";
+import { SDK_TOOLS, TOOL_GROUPS, resolveToolGroup } from "../tool-registry.js";
 import { getDefaultAllowlist } from "../../bash/permissions.js";
 
 @Group({
@@ -33,6 +33,10 @@ export class PermissionsCommands {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
     validateRelation(relation);
+    if (objectType === "toolgroup" && objectId !== "*" && !TOOL_GROUPS[objectId]) {
+      fail(`Unknown tool group: "${objectId}". Available: ${Object.keys(TOOL_GROUPS).join(", ")}`);
+      return;
+    }
 
     grantRelation(subjectType, subjectId, relation, objectType, objectId, "manual");
     console.log(`✓ Granted: (${subject}) ${relation} (${object})`);
@@ -57,6 +61,10 @@ export class PermissionsCommands {
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
+    if (objectType === "toolgroup" && objectId !== "*" && !TOOL_GROUPS[objectId]) {
+      fail(`Unknown tool group: "${objectId}". Available: ${Object.keys(TOOL_GROUPS).join(", ")}`);
+      return;
+    }
 
     const deleted = revokeRelation(subjectType, subjectId, relation, objectType, objectId);
     if (deleted) {
@@ -134,7 +142,12 @@ export class PermissionsCommands {
     for (const r of relations) {
       const sub = `${r.subjectType}:${r.subjectId}`.padEnd(19);
       const rel = r.relation.padEnd(20);
-      const obj = `${r.objectType}:${r.objectId}`.padEnd(20);
+      let objStr = `${r.objectType}:${r.objectId}`;
+      if (r.objectType === "toolgroup" && r.objectId !== "*") {
+        const members = resolveToolGroup(r.objectId);
+        if (members) objStr += ` (${members.join(", ")})`;
+      }
+      const obj = objStr.padEnd(20);
       const src = r.source;
       console.log(`  ${sub}  ${rel}  ${obj}  ${src}`);
     }
@@ -150,7 +163,7 @@ export class PermissionsCommands {
   @Command({ name: "init", description: "Apply a permission template to an agent" })
   init(
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
-    @Arg("template", { description: "Template: sdk-tools, all-tools, safe-executables, full-access" }) template: string
+    @Arg("template", { description: "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups" }) template: string
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
 
@@ -179,6 +192,14 @@ export class PermissionsCommands {
         grantRelation(subjectType, subjectId, "use", "tool", "*", "manual");
         grantRelation(subjectType, subjectId, "execute", "executable", "*", "manual");
         return 2;
+      },
+      "tool-groups": () => {
+        let count = 0;
+        for (const groupName of Object.keys(TOOL_GROUPS)) {
+          grantRelation(subjectType, subjectId, "use", "toolgroup", groupName, "manual");
+          count++;
+        }
+        return count;
       },
     };
 
@@ -225,7 +246,7 @@ const VALID_RELATIONS = new Set([
 const VALID_ENTITY_TYPES = new Set([
   "agent", "system", "group", "session", "contact",
   "cron", "trigger", "outbound", "team",
-  "tool", "executable",
+  "tool", "executable", "toolgroup",
 ]);
 
 /**

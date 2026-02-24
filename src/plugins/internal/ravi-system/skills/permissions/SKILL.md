@@ -164,7 +164,7 @@ ravi permissions grant agent:dev use tool:Bash           # SDK tools usam "use"
 
 ### SDK Tools (use tool:*)
 
-Controla quais SDK tools (Bash, Read, Edit, Write, etc.) um agent pode usar:
+Controla quais SDK tools um agent pode usar:
 
 ```bash
 # Permitir tool específica
@@ -178,7 +178,40 @@ ravi permissions grant agent:dev use tool:*
 ravi permissions check agent:dev use tool:Bash
 ```
 
-SDK tools disponíveis: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TodoRead`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`.
+SDK tools disponíveis: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
+
+### Tool Groups (use toolgroup:*)
+
+Em vez de dar grant tool por tool, use **tool groups** pra conceder acesso a um conjunto de tools de uma vez:
+
+```bash
+# Conceder um grupo
+ravi permissions grant agent:dev use toolgroup:read-only
+
+# Conceder todos os grupos
+ravi permissions init agent:dev tool-groups
+
+# Revocar um grupo
+ravi permissions revoke agent:dev use toolgroup:read-only
+
+# Verificar — o check resolve transparentemente
+ravi permissions check agent:dev use tool:Read   # ✓ se tem toolgroup:read-only
+```
+
+**Grupos disponíveis:**
+
+| Grupo | Tools |
+|---|---|
+| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
+| `write` | Edit, Write, NotebookEdit |
+| `execute` | Bash, Task, TaskOutput, TaskStop |
+| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
+| `teams` | TeamCreate, TeamDelete, SendMessage |
+| `navigate` | EnterWorktree, Skill |
+
+**Como funciona:** Quando o engine checa `can(agent:X, use, tool, Read)`, se não encontra grant direto pra `tool:Read`, verifica se o agent tem algum `toolgroup` que inclui `Read`. Se sim, permite.
+
+**Combina com grants individuais:** Um agent pode ter `toolgroup:read-only` + `tool:Bash` — os dois se somam.
 
 ### Executáveis do sistema (execute executable:*)
 
@@ -200,11 +233,14 @@ ravi permissions check agent:dev execute executable:git
 ### Templates (atalhos)
 
 ```bash
-# SDK tools padrão (Bash, Read, Edit, Write, etc.)
+# SDK tools padrão (uma relação por tool)
 ravi permissions init agent:dev sdk-tools
 
-# Todas as SDK tools
+# Todas as SDK tools (wildcard)
 ravi permissions init agent:dev all-tools
+
+# Todos os tool groups (read-only, write, execute, plan, teams, navigate)
+ravi permissions init agent:dev tool-groups
 
 # Executáveis seguros (git, node, bun, ravi, etc.)
 ravi permissions init agent:dev safe-executables
@@ -297,4 +333,5 @@ Quando o engine verifica `can(agent:dev, execute, group:daemon)`:
 2. Relação direta? → checa `(agent:dev, execute, group:daemon)` → sim = allowed
 3. Wildcard? → checa `(agent:dev, execute, group:*)` → sim = allowed
 4. Pattern match? → checa patterns como `group:dae*` → match = allowed
-5. Nenhum match → denied
+5. **Tool group?** → se objectType é `tool`, checa se o agent tem algum `toolgroup` que contém essa tool → sim = allowed
+6. Nenhum match → denied
