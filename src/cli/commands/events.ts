@@ -36,6 +36,7 @@ function topicColor(topic: string): string {
   if (topic.includes("cron"))       return c.magenta;
   if (topic.includes("trigger"))    return c.yellow;
   if (topic.includes("approval"))   return c.red;
+  if (topic.includes("reaction"))   return c.yellow;
   return c.gray;
 }
 
@@ -87,13 +88,26 @@ function formatData(data: Record<string, unknown>, topic: string): string {
     return `${c.bold}${response}${c.reset}${target}`;
   }
 
-  // For tool events, show name + event type
+  // For tool events, show name + event type + input/output summary
   if (topic.includes(".tool") && data.toolName) {
     const event  = data.event ?? data.type ?? "?";
     const name   = data.toolName as string;
     const dur    = data.durationMs ? ` ${c.dim}${data.durationMs}ms${c.reset}` : "";
     const err    = data.isError ? ` ${c.red}ERROR${c.reset}` : "";
-    return `${c.bold}${name}${c.reset} ${c.dim}${event}${c.reset}${dur}${err}`;
+    let detail   = "";
+
+    if (event === "start" && data.input) {
+      const input = data.input as Record<string, unknown>;
+      if (name === "Bash" && input.command) {
+        detail = ` ${c.dim}$ ${truncate(String(input.command), 80)}${c.reset}`;
+      } else if (input.file_path) {
+        detail = ` ${c.dim}${truncate(String(input.file_path), 60)}${c.reset}`;
+      } else if (input.pattern) {
+        detail = ` ${c.dim}${truncate(String(input.pattern), 60)}${c.reset}`;
+      }
+    }
+
+    return `${c.bold}${name}${c.reset} ${c.dim}${event}${c.reset}${dur}${err}${detail}`;
   }
 
   // For claude SDK events, show type
@@ -103,6 +117,9 @@ function formatData(data: Record<string, unknown>, topic: string): string {
       const usage = (data as Record<string, unknown>).usage as Record<string, number> | undefined;
       const tokens = usage ? ` ${c.dim}in=${usage.input_tokens} out=${usage.output_tokens}${c.reset}` : "";
       return `${c.bold}result${c.reset}${tokens}`;
+    }
+    if (type === "silent") {
+      return `${c.magenta}${c.bold}SILENT${c.reset}`;
     }
     return `${c.dim}${type}${c.reset}`;
   }
@@ -120,13 +137,31 @@ function formatData(data: Record<string, unknown>, topic: string): string {
 }
 
 function formatTopic(topic: string): string {
-  // Shorten long session keys: ravi.session.agent:main:dm:5511999.prompt → ravi.session.[dm:5511999].prompt
-  return topic.replace(/ravi\.session\.(agent:[^.]+):/, (_, key) => {
-    const parts = key.split(":");
-    // Keep only the last meaningful segment for display
-    const short = parts.slice(2).join(":") || key;
-    return `ravi.session.[${short}].`;
-  });
+  // Session events: ravi.session.agent:main:dm:5511999.prompt → [dm:5511999] prompt
+  const sessionMatch = topic.match(/ravi\.session\.(agent:[^.]+):(.+)\.(\w+)$/);
+  if (sessionMatch) {
+    const sessionKey = sessionMatch[2]; // dm:5511999 or dev-ravi-dev
+    const eventType = sessionMatch[3];  // prompt, response, tool, claude
+    return `[${sessionKey}] ${eventType}`;
+  }
+
+  // CLI events: ravi._cli.cli.daemon.restart → cli daemon.restart
+  if (topic.startsWith("ravi._cli.cli.")) {
+    return `cli ${topic.slice("ravi._cli.cli.".length)}`;
+  }
+
+  // Internal events: ravi.inbound.reaction → inbound.reaction
+  if (topic.startsWith("ravi.")) {
+    return topic.slice("ravi.".length);
+  }
+
+  // Omni JetStream: message.received.whatsapp-baileys.UUID → msg.received
+  const omniMatch = topic.match(/^(message|reaction|instance)\.(\w[\w-]*)\.whatsapp/);
+  if (omniMatch) {
+    return `${omniMatch[1]}.${omniMatch[2]}`;
+  }
+
+  return topic;
 }
 
 function matches(topic: string, filter: string): boolean {
@@ -197,8 +232,18 @@ export class EventsCommands {
         (data as Record<string, unknown>)._heartbeat === true
       )) continue;
 
-      // Always hide noisy omni events (presence typing, unread counters)
-      if (topic.includes("presence.typing") || topic.includes("chat.unread-updated")) continue;
+      // Always hide noisy events (omni JetStream, streaming chunks, stream_event)
+      if (
+        topic.includes("presence.typing") ||
+        topic.includes("chat.unread-updated") ||
+        topic.includes(".stream") ||
+        topic.startsWith("message.") ||
+        topic.startsWith("reaction.") ||
+        topic.startsWith("instance.")
+      ) continue;
+
+      // Hide stream_event from claude events
+      if (topic.includes(".claude") && (data as Record<string, unknown>).type === "stream_event") continue;
 
       count++;
       const ts    = formatTimestamp();
@@ -208,8 +253,7 @@ export class EventsCommands {
       const body  = formatData(data as Record<string, unknown>, topic);
 
       process.stdout.write(
-        `${c.dim}${ts}${c.reset}  ${col}${icon} ${c.bold}${short}${c.reset}\n` +
-        `         ${body}\n\n`
+        `${c.dim}${ts}${c.reset} ${col}${icon}${c.reset} ${col}${short}${c.reset}  ${body}\n`
       );
     }
 

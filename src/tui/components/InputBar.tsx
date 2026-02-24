@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useEffect, useState, useMemo } from "react";
 import { useKeyboard } from "@opentui/react";
-import type { InputRenderable } from "@opentui/core";
+import type { TextareaRenderable } from "@opentui/core";
 import { SlashMenu, filterCommands } from "./SlashMenu.js";
 
 interface InputBarProps {
@@ -12,9 +12,20 @@ interface InputBarProps {
   active?: boolean;
 }
 
+const textareaKeyBindings = [
+  // Enter = submit (override default newline)
+  { name: "return", action: "submit" as const },
+  // Shift+Enter = newline (Kitty-capable terminals: iTerm2, WezTerm, Ghostty, Kitty)
+  { name: "return", shift: true, action: "newline" as const },
+  // Option/Alt+Enter = newline (works when "Option as Meta/Esc+" is enabled)
+  { name: "return", meta: true, action: "newline" as const },
+  // linefeed (0x0A) = newline (some terminals send this for Shift+Enter)
+  { name: "linefeed", action: "newline" as const },
+];
+
 /**
  * Input bar for typing and sending messages.
- * Enter submits the message, input clears after submit.
+ * Enter submits. Newline via: Shift+Enter, Option+Enter, or `\`.
  * Typing `/` opens a slash command dropdown.
  */
 export function InputBar({
@@ -22,29 +33,78 @@ export function InputBar({
   onSlashCommand,
   active = true,
 }: InputBarProps) {
-  const inputRef = useRef<InputRenderable>(null);
+  const textareaRef = useRef<TextareaRenderable>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [lineCount, setLineCount] = useState(1);
 
   const filtered = useMemo(() => filterCommands(slashQuery), [slashQuery]);
 
-  // Aggressively keep focus on input when active
+  // Aggressively keep focus on textarea when active
   useEffect(() => {
     if (!active) return;
     const id = setInterval(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
+      textareaRef.current?.focus();
     }, 100);
     return () => clearInterval(id);
   }, [active]);
 
-  // Track input value for slash detection
-  const handleInput = useCallback((value: string) => {
-    if (value.startsWith("/")) {
+  // Intercept `\` key to insert newline + sync lineCount after every keypress
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const origHandleKeyPress = ta.handleKeyPress.bind(ta);
+    ta.handleKeyPress = (key: any) => {
+      if (key.sequence === "\\") {
+        ta.newLine();
+        setLineCount(ta.lineCount);
+        return true;
+      }
+      const result = origHandleKeyPress(key);
+      setLineCount(ta.lineCount);
+      return result;
+    };
+  }, []);
+
+  // Wire up submit handler
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.onSubmit = () => {
+      const text = ta.plainText;
+
+      // Slash command selection
+      if (slashOpen && filtered.length > 0) {
+        const clamped = Math.min(selectedIndex, filtered.length - 1);
+        const cmd = filtered[clamped];
+        if (cmd) {
+          onSlashCommand(cmd.name);
+        }
+        setSlashOpen(false);
+        ta.clear();
+        setLineCount(1);
+        return;
+      }
+
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      onSend(trimmed);
+      ta.clear();
+      setLineCount(1);
+    };
+  });
+
+  // Track input for slash detection + line count
+  const handleInput = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const text = ta.plainText;
+    setLineCount(ta.lineCount);
+
+    if (text.startsWith("/") && !text.includes("\n")) {
       setSlashOpen(true);
-      setSlashQuery(value.slice(1));
+      setSlashQuery(text.slice(1));
       setSelectedIndex(0);
     } else {
       setSlashOpen(false);
@@ -57,7 +117,11 @@ export function InputBar({
       if (!slashOpen) return;
       if (key.name === "escape") {
         setSlashOpen(false);
-        if (inputRef.current) inputRef.current.value = "";
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.clear();
+          setLineCount(1);
+        }
       }
       if (key.name === "up" || (key.ctrl && key.name === "p")) {
         setSelectedIndex((prev) => Math.max(0, prev - 1));
@@ -68,34 +132,13 @@ export function InputBar({
     },
   );
 
-  const handleSubmit = useCallback(
-    (value: string) => {
-      // Slash command selection
-      if (slashOpen && filtered.length > 0) {
-        const clamped = Math.min(selectedIndex, filtered.length - 1);
-        const cmd = filtered[clamped];
-        if (cmd) {
-          onSlashCommand(cmd.name);
-        }
-        setSlashOpen(false);
-        if (inputRef.current) inputRef.current.value = "";
-        return;
-      }
-
-      // Normal message send
-      const text = value.trim();
-      if (!text) return;
-      onSend(text);
-      if (inputRef.current) {
-        inputRef.current.value = "";
-      }
-    },
-    [slashOpen, filtered, selectedIndex, onSlashCommand, onSend],
-  );
+  // Dynamic height: border(2) + visible lines, capped at 8 lines
+  const visibleLines = Math.min(lineCount, 8);
+  const barHeight = visibleLines + 2;
 
   return (
     <box
-      height={3}
+      height={barHeight}
       width="100%"
       border={["top", "bottom"]}
       borderColor="gray"
@@ -104,14 +147,14 @@ export function InputBar({
       {slashOpen && (
         <SlashMenu query={slashQuery} selectedIndex={selectedIndex} />
       )}
-      <input
-        ref={inputRef}
+      <textarea
+        ref={textareaRef}
         focused
         flexGrow={1}
-        placeholder="Type a message... (/ for commands)"
+        placeholder="Type a message... (\ for newline)"
+        keyBindings={textareaKeyBindings}
         onInput={handleInput}
-        onSubmit={handleSubmit}
-        fg="white"
+        textColor="white"
       />
     </box>
   );

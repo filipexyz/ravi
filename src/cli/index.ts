@@ -41,5 +41,27 @@ program
     await runSetup();
   });
 
+// TUI - full-screen terminal interface
+program
+  .command("tui")
+  .description("Open the terminal UI (connects via NATS)")
+  .argument("[session]", "Session name to connect to", "main")
+  .action(async (session: string) => {
+    // Dynamic import to avoid loading OpenTUI for non-TUI commands
+    const { spawn } = await import("node:child_process");
+    const { existsSync } = await import("node:fs");
+    // __dirname points to dist/bundle/ when running from built CLI,
+    // so resolve from package.json location instead
+    const projectRoot = join(__dirname, "../..");
+    const tuiPath = existsSync(join(projectRoot, "src/tui/index.tsx"))
+      ? join(projectRoot, "src/tui/index.tsx")
+      : join(projectRoot, "dist/tui/index.tsx");
+    const child = spawn("bun", [tuiPath, session], {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("exit", (code) => process.exit(code ?? 0));
+  });
+
 // Parse and execute
 program.parse();
