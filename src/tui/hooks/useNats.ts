@@ -6,6 +6,7 @@ export interface ChatMessage {
   type: "chat";
   role: "user" | "assistant";
   content: string;
+  streaming?: boolean;
   timestamp: number;
 }
 
@@ -41,17 +42,20 @@ export interface UseNatsResult {
 }
 
 const MAX_MESSAGES = 500;
+const STREAMING_ID = "streaming-assistant";
 
 /**
  * React hook that manages NATS connection and message state for a session.
  *
  * Subscribes to:
  *  - ravi.session.{name}.prompt   (user messages)
- *  - ravi.session.{name}.response (assistant messages)
+ *  - ravi.session.{name}.response (complete assistant messages)
+ *  - ravi.session.{name}.stream   (text delta chunks for live streaming)
  *  - ravi.session.{name}.tool     (tool start/end events)
  *  - ravi.session.{name}.claude   (SDK events: typing, compacting)
  *
- * Provides sendMessage() to publish to the prompt topic.
+ * Streaming: `.stream` chunks are accumulated into a single in-progress
+ * message. A final `.response` event replaces it with the complete text.
  */
 export function useNats(sessionName: string): UseNatsResult {
   const [messages, setMessages] = useState<TimelineEntry[]>([]);
@@ -63,9 +67,14 @@ export function useNats(sessionName: string): UseNatsResult {
     output: 0,
   });
   const abortRef = useRef(false);
+  // Accumulate streaming text in a ref to avoid stale closures
+  const streamBuf = useRef("");
+  const streamDone = useRef(false);
 
   useEffect(() => {
     abortRef.current = false;
+    streamBuf.current = "";
+    streamDone.current = false;
     setMessages([]);
     setIsConnected(false);
     setIsTyping(false);
@@ -74,6 +83,7 @@ export function useNats(sessionName: string): UseNatsResult {
 
     const promptTopic = `ravi.session.${sessionName}.prompt`;
     const responseTopic = `ravi.session.${sessionName}.response`;
+    const streamTopic = `ravi.session.${sessionName}.stream`;
     const toolTopic = `ravi.session.${sessionName}.tool`;
     const claudeTopic = `ravi.session.${sessionName}.claude`;
 
@@ -84,6 +94,7 @@ export function useNats(sessionName: string): UseNatsResult {
         for await (const event of subscribe(
           promptTopic,
           responseTopic,
+          streamTopic,
           toolTopic,
           claudeTopic,
         )) {
@@ -94,6 +105,9 @@ export function useNats(sessionName: string): UseNatsResult {
           if (topic === promptTopic) {
             const prompt = (data as { prompt?: string }).prompt;
             if (!prompt) continue;
+            // New turn — allow streaming again
+            streamDone.current = false;
+            streamBuf.current = "";
             const msg: ChatMessage = {
               id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               type: "chat",
@@ -107,6 +121,36 @@ export function useNats(sessionName: string): UseNatsResult {
                 ? next.slice(next.length - MAX_MESSAGES)
                 : next;
             });
+
+          } else if (topic === streamTopic) {
+            // Streaming text delta chunk — ignore stale chunks after response
+            if (streamDone.current) continue;
+            const chunk = (data as { chunk?: string }).chunk;
+            if (!chunk) continue;
+            streamBuf.current += chunk;
+            const text = streamBuf.current;
+            setIsTyping(true);
+            setMessages((prev) => {
+              const existing = prev.findIndex((m) => m.id === STREAMING_ID);
+              const entry: ChatMessage = {
+                id: STREAMING_ID,
+                type: "chat",
+                role: "assistant",
+                content: text,
+                streaming: true,
+                timestamp: Date.now(),
+              };
+              if (existing >= 0) {
+                const next = [...prev];
+                next[existing] = entry;
+                return next;
+              }
+              const next = [...prev, entry];
+              return next.length > MAX_MESSAGES
+                ? next.slice(next.length - MAX_MESSAGES)
+                : next;
+            });
+
           } else if (topic === responseTopic) {
             const responseData = data as {
               response?: string;
@@ -130,21 +174,25 @@ export function useNats(sessionName: string): UseNatsResult {
               }
             }
 
-            const msg: ChatMessage = {
+            // Replace streaming placeholder with final message
+            streamBuf.current = "";
+            streamDone.current = true;
+            const finalMsg: ChatMessage = {
               id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               type: "chat",
               role: "assistant",
               content: response,
               timestamp: Date.now(),
             };
-            // Response received means typing is done
             setIsTyping(false);
             setMessages((prev) => {
-              const next = [...prev, msg];
+              const filtered = prev.filter((m) => m.id !== STREAMING_ID);
+              const next = [...filtered, finalMsg];
               return next.length > MAX_MESSAGES
                 ? next.slice(next.length - MAX_MESSAGES)
                 : next;
             });
+
           } else if (topic === toolTopic) {
             const toolData = data as {
               event?: string;
@@ -157,6 +205,8 @@ export function useNats(sessionName: string): UseNatsResult {
             };
 
             if (toolData.event === "start" && toolData.toolId) {
+              // Tool starting — clear any streaming message and buffer
+              streamBuf.current = "";
               const entry: ToolMessage = {
                 id: `tool-${toolData.toolId}`,
                 type: "tool",
@@ -167,13 +217,13 @@ export function useNats(sessionName: string): UseNatsResult {
                 timestamp: Date.now(),
               };
               setMessages((prev) => {
-                const next = [...prev, entry];
+                const filtered = prev.filter((m) => m.id !== STREAMING_ID);
+                const next = [...filtered, entry];
                 return next.length > MAX_MESSAGES
                   ? next.slice(next.length - MAX_MESSAGES)
                   : next;
               });
             } else if (toolData.event === "end" && toolData.toolId) {
-              // Update existing tool entry with output/duration
               setMessages((prev) =>
                 prev.map((m) => {
                   if (m.type === "tool" && m.toolId === toolData.toolId) {
@@ -189,6 +239,7 @@ export function useNats(sessionName: string): UseNatsResult {
                 }),
               );
             }
+
           } else if (topic === claudeTopic) {
             const claudeData = data as {
               type?: string;
@@ -197,6 +248,7 @@ export function useNats(sessionName: string): UseNatsResult {
             };
 
             if (claudeData.type === "assistant") {
+              streamDone.current = false;
               setIsTyping(true);
             } else if (claudeData.type === "result") {
               setIsTyping(false);

@@ -8,25 +8,22 @@ import type { TimelineEntry } from "../hooks/useNats.js";
 
 interface ChatViewProps {
   messages: TimelineEntry[];
-  isTyping: boolean;
-  isCompacting: boolean;
 }
 
 /**
- * Scrollable chat view containing message list, tool blocks, and status indicators.
+ * Scrollable chat view containing message list and tool blocks.
  * Uses stickyScroll to auto-scroll to bottom on new messages.
- * Scrolling up pauses follow mode; new content restores it.
  */
-export function ChatView({ messages, isTyping, isCompacting }: ChatViewProps) {
+export function ChatView({ messages }: ChatViewProps) {
   const scrollRef = useRef<ScrollBoxRenderable>(null);
 
-  // Auto-scroll to bottom when new messages arrive or status changes
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     const scrollBox = scrollRef.current;
     if (scrollBox) {
       scrollBox.stickyScroll = true;
     }
-  }, [messages.length, isTyping, isCompacting]);
+  }, [messages.length]);
 
   return (
     <scrollbox
@@ -49,7 +46,7 @@ export function ChatView({ messages, isTyping, isCompacting }: ChatViewProps) {
           ].join("\n")} fg="cyan" />
         </box>
 
-        {messages.length === 0 && !isTyping && !isCompacting ? (
+        {messages.length === 0 ? (
           <text content="No messages yet" fg="gray" />
         ) : (
           messages.map((entry) => {
@@ -59,20 +56,6 @@ export function ChatView({ messages, isTyping, isCompacting }: ChatViewProps) {
             return <MessageBubble key={entry.id} message={entry} />;
           })
         )}
-
-        {/* Compacting indicator */}
-        {isCompacting ? (
-          <box width="100%" marginTop={1}>
-            <text content={"\u27F3 compacting context..."} fg="yellow" />
-          </box>
-        ) : null}
-
-        {/* Typing indicator */}
-        {isTyping && !isCompacting ? (
-          <box width="100%" marginTop={1}>
-            <text content={"\u22EF typing..."} fg="cyan" />
-          </box>
-        ) : null}
       </box>
     </scrollbox>
   );

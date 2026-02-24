@@ -103,11 +103,18 @@ export function App() {
   return (
     <box flexDirection="column" width="100%" height="100%">
       {/* Chat area */}
-      <ChatView
-        messages={messages}
-        isTyping={isTyping}
-        isCompacting={isCompacting}
-      />
+      <ChatView messages={messages} />
+
+      {/* Typing / compacting indicator */}
+      {isCompacting ? (
+        <box height={1} width="100%">
+          <text content=" ⟳ compacting context..." fg="yellow" />
+        </box>
+      ) : isTyping ? (
+        <box height={1} width="100%">
+          <text content=" ⋯ typing..." fg="cyan" />
+        </box>
+      ) : null}
 
       {/* Input bar */}
       <InputBar

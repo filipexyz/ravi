@@ -1278,6 +1278,7 @@ export class RaviBot {
         abortController,
         ...permissionOptions,
         canUseTool,
+        includePartialMessages: true,
         env: { ...process.env, ...raviEnv, CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1" },
         ...(specServer ? { mcpServers: { spec: specServer } } : {}),
         systemPrompt: {
@@ -1415,13 +1416,20 @@ export class RaviBot {
       });
     };
 
+    const emitChunk = async (text: string) => {
+      await safeEmit(`ravi.session.${sessionName}.stream`, {
+        chunk: text,
+      });
+    };
+
     try {
       for await (const message of queryResult) {
         sdkEventCount++;
         streaming.lastActivity = Date.now();
 
-        // Log SDK events
-        log.info("SDK event", {
+        // Log SDK events (stream_event is debug-level to avoid noise)
+        const logLevel = message.type === "stream_event" ? "debug" : "info";
+        log[logLevel]("SDK event", {
           runId,
           seq: sdkEventCount,
           type: message.type,
@@ -1437,6 +1445,15 @@ export class RaviBot {
             sessionId: (message as any).session_id,
           } : {}),
         });
+
+        // Stream text deltas to TUI — skip emitSdkEvent for stream events (noisy, not needed)
+        if (message.type === "stream_event") {
+          const evt = (message as any).event;
+          if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
+            await emitChunk(evt.delta.text);
+          }
+          continue;
+        }
 
         // Emit all SDK events for typing heartbeat etc.
         await emitSdkEvent(message as unknown as Record<string, unknown>);

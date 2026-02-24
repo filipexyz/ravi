@@ -25,7 +25,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     <box width="100%" marginBottom={1} flexDirection="row">
       <text content="⏺ " fg="green" />
       <box flexDirection="column" flexGrow={1}>
-        <markdown content={message.content} conceal />
+        {message.streaming ? (
+          <text content={message.content} fg="white" />
+        ) : (
+          <markdown content={message.content} conceal />
+        )}
       </box>
     </box>
   );
