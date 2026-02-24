@@ -49,6 +49,7 @@ export function App() {
     isTyping,
     isCompacting,
     isWorking,
+    totalTokens,
   } = useNats(sessionName);
 
   // Resolve agent info from session list
@@ -152,6 +153,7 @@ export function App() {
         model={model}
         isTyping={isTyping}
         isCompacting={isCompacting}
+        totalTokens={totalTokens}
       />
 
       {/* Session picker overlay */}

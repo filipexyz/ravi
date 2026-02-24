@@ -21,29 +21,33 @@ export function filterCommands(query: string): SlashCommand[] {
 interface SlashMenuProps {
   query: string;
   selectedIndex: number;
+  /** Height of the parent InputBar box, so we can position flush above it */
+  parentHeight?: number;
 }
 
 /**
  * Dropdown overlay that appears above the input bar when the user types `/`.
  * Pure visual component — keyboard handling lives in InputBar.
  */
-export function SlashMenu({ query, selectedIndex }: SlashMenuProps) {
+export function SlashMenu({ query, selectedIndex, parentHeight = 3 }: SlashMenuProps) {
   const filtered = filterCommands(query);
   if (filtered.length === 0) return null;
 
   const clamped = Math.min(selectedIndex, filtered.length - 1);
+  const menuHeight = filtered.length + 2;
 
   return (
     <box
       position="absolute"
-      bottom={3}
+      bottom={parentHeight - 1}
       left={0}
       width="40%"
-      height={filtered.length + 2}
+      height={menuHeight}
       flexDirection="column"
       border
       borderColor="cyan"
-      bg="black"
+      backgroundColor="black"
+      shouldFill
     >
       {filtered.map((cmd, i) => {
         const isSelected = i === clamped;

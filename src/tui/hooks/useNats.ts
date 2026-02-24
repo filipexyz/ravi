@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { subscribe, publish } from "../../nats.js";
+import { getRecentHistory } from "../../db.js";
 
 export interface ChatMessage {
   id: string;
@@ -28,6 +29,10 @@ export type TimelineEntry = ChatMessage | ToolMessage;
 export interface TokenUsage {
   input: number;
   output: number;
+  cacheRead: number;
+  cacheCreation: number;
+  /** input_tokens from the last turn (= current context size) */
+  contextTokens: number;
 }
 
 export interface UseNatsResult {
@@ -67,6 +72,9 @@ export function useNats(sessionName: string): UseNatsResult {
   const [totalTokens, setTotalTokens] = useState<TokenUsage>({
     input: 0,
     output: 0,
+    cacheRead: 0,
+    cacheCreation: 0,
+    contextTokens: 0,
   });
   const abortRef = useRef(false);
   // Accumulate streaming text in a ref to avoid stale closures
@@ -77,12 +85,26 @@ export function useNats(sessionName: string): UseNatsResult {
     abortRef.current = false;
     streamBuf.current = "";
     streamDone.current = false;
-    setMessages([]);
     setIsConnected(false);
     setIsTyping(false);
     setIsCompacting(false);
     setIsWorking(false);
-    setTotalTokens({ input: 0, output: 0 });
+    setTotalTokens({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, contextTokens: 0 });
+
+    // Load recent chat history from SQLite
+    try {
+      const history = getRecentHistory(sessionName, 50);
+      const restored: TimelineEntry[] = history.map((msg, i) => ({
+        id: `history-${msg.id}-${i}`,
+        type: "chat" as const,
+        role: msg.role,
+        content: msg.content,
+        timestamp: new Date(msg.created_at).getTime(),
+      }));
+      setMessages(restored);
+    } catch {
+      setMessages([]);
+    }
 
     const promptTopic = `ravi.session.${sessionName}.prompt`;
     const responseTopic = `ravi.session.${sessionName}.response`;
@@ -156,27 +178,9 @@ export function useNats(sessionName: string): UseNatsResult {
             });
 
           } else if (topic === responseTopic) {
-            const responseData = data as {
-              response?: string;
-              usage?: {
-                input_tokens?: number;
-                output_tokens?: number;
-              };
-            };
+            const responseData = data as { response?: string };
             const response = responseData.response;
             if (!response) continue;
-
-            // Accumulate token usage if present
-            if (responseData.usage) {
-              const inputTok = responseData.usage.input_tokens ?? 0;
-              const outputTok = responseData.usage.output_tokens ?? 0;
-              if (inputTok > 0 || outputTok > 0) {
-                setTotalTokens((prev) => ({
-                  input: prev.input + inputTok,
-                  output: prev.output + outputTok,
-                }));
-              }
-            }
 
             // Replace streaming placeholder with final message
             streamBuf.current = "";
@@ -250,6 +254,12 @@ export function useNats(sessionName: string): UseNatsResult {
               type?: string;
               subtype?: string;
               status?: string;
+              usage?: {
+                input_tokens?: number;
+                output_tokens?: number;
+                cache_read_input_tokens?: number;
+                cache_creation_input_tokens?: number;
+              };
             };
 
             if (claudeData.type === "assistant") {
@@ -258,6 +268,21 @@ export function useNats(sessionName: string): UseNatsResult {
             } else if (claudeData.type === "result") {
               setIsTyping(false);
               setIsCompacting(false);
+
+              // Extract token usage from SDK result
+              if (claudeData.usage) {
+                const inp = claudeData.usage.input_tokens ?? 0;
+                const out = claudeData.usage.output_tokens ?? 0;
+                const cr = claudeData.usage.cache_read_input_tokens ?? 0;
+                const cc = claudeData.usage.cache_creation_input_tokens ?? 0;
+                setTotalTokens((prev) => ({
+                  input: prev.input + inp,
+                  output: prev.output + out,
+                  cacheRead: prev.cacheRead + cr,
+                  cacheCreation: prev.cacheCreation + cc,
+                  contextTokens: inp + cr + cc,
+                }));
+              }
             } else if (
               claudeData.type === "system" &&
               claudeData.subtype === "status"

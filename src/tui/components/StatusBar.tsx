@@ -1,5 +1,7 @@
 /** @jsxImportSource @opentui/react */
 
+import type { TokenUsage } from "../hooks/useNats.js";
+
 export interface StatusBarProps {
   sessionName: string;
   agentId: string;
@@ -7,14 +9,21 @@ export interface StatusBarProps {
   model: string | null;
   isTyping: boolean;
   isCompacting: boolean;
+  totalTokens: TokenUsage;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
 }
 
 /**
  * Fixed-height status bar (footer).
  *
  * Layout (single line, flexDirection="row", space-between):
- *   Left:   session name + (agentId)
- *   Right:  typing/compacting badge | Ctrl+K helper | NATS status dot
+ *   Left:   session name + (agentId) + model
+ *   Right:  context tokens | compacting badge | NATS status dot
  */
 export function StatusBar({
   sessionName,
@@ -23,9 +32,12 @@ export function StatusBar({
   model,
   isTyping,
   isCompacting,
+  totalTokens,
 }: StatusBarProps) {
   const statusDot = isConnected ? "\u25CF" : "\u25CB";
   const modelLabel = model ?? "unknown";
+
+  const ctx = totalTokens.contextTokens;
 
   return (
     <box
@@ -43,6 +55,9 @@ export function StatusBar({
       <box flexDirection="row">
         {isCompacting && (
           <text content="compacting  " fg="magenta" bold />
+        )}
+        {ctx > 0 && (
+          <text content={`\u25A6 ${formatTokens(ctx)} `} fg="cyan" />
         )}
         <text
           content={`${statusDot} `}
