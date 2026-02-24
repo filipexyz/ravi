@@ -49,11 +49,18 @@ export function ChatView({ messages }: ChatViewProps) {
         {messages.length === 0 ? (
           <text content="No messages yet" fg="gray" />
         ) : (
-          messages.map((entry) => {
+          messages.map((entry, i) => {
+            const prev = i > 0 ? messages[i - 1] : null;
+            const needsSpacer = prev?.type === "tool" && entry.type === "chat";
             if (entry.type === "tool") {
               return <ToolBlock key={entry.id} tool={entry} />;
             }
-            return <MessageBubble key={entry.id} message={entry} />;
+            return (
+              <>
+                {needsSpacer && <box key={`spacer-${entry.id}`} height={1} width="100%" />}
+                <MessageBubble key={entry.id} message={entry} />
+              </>
+            );
           })
         )}
       </box>

@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useKeyboard } from "@opentui/react";
 import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
@@ -10,8 +10,30 @@ import { SLASH_COMMANDS } from "./components/SlashMenu.js";
 import { useNats } from "./hooks/useNats.js";
 import { useSessions } from "./hooks/useSessions.js";
 import { dbGetAgent } from "../router/router-db.js";
+import { loadConfig } from "../utils/config.js";
 
 const initialSessionName = process.argv[2] || "main";
+
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function RavigatingIndicator() {
+  const [frame, setFrame] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval>>();
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => {
+      setFrame((f) => (f + 1) % SPINNER.length);
+    }, 80);
+    return () => clearInterval(timerRef.current);
+  }, []);
+
+  return (
+    <box height={1} width="100%" flexDirection="row">
+      <text content={` ${SPINNER[frame]} `} fg="cyan" bold />
+      <text content="ravigating..." fg="cyan" />
+    </box>
+  );
+}
 
 export function App() {
   const [sessionName, setSessionName] = useState(initialSessionName);
@@ -26,6 +48,7 @@ export function App() {
     isConnected,
     isTyping,
     isCompacting,
+    isWorking,
   } = useNats(sessionName);
 
   // Resolve agent info from session list
@@ -35,9 +58,9 @@ export function App() {
   );
   const agentId = currentSession?.agentId ?? "unknown";
   const model = useMemo(() => {
-    if (agentId === "unknown") return null;
+    if (agentId === "unknown") return loadConfig().model;
     const agent = dbGetAgent(agentId);
-    return agent?.model ?? null;
+    return agent?.model ?? loadConfig().model;
   }, [agentId]);
 
   // Toggle command palette with Ctrl+K
@@ -110,10 +133,8 @@ export function App() {
         <box height={1} width="100%">
           <text content=" ⟳ compacting context..." fg="yellow" />
         </box>
-      ) : isTyping ? (
-        <box height={1} width="100%">
-          <text content=" ⋯ typing..." fg="cyan" />
-        </box>
+      ) : isWorking ? (
+        <RavigatingIndicator />
       ) : null}
 
       {/* Input bar */}

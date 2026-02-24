@@ -38,6 +38,7 @@ export interface UseNatsResult {
   isConnected: boolean;
   isTyping: boolean;
   isCompacting: boolean;
+  isWorking: boolean;
   totalTokens: TokenUsage;
 }
 
@@ -62,6 +63,7 @@ export function useNats(sessionName: string): UseNatsResult {
   const [isConnected, setIsConnected] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [isWorking, setIsWorking] = useState(false);
   const [totalTokens, setTotalTokens] = useState<TokenUsage>({
     input: 0,
     output: 0,
@@ -79,6 +81,7 @@ export function useNats(sessionName: string): UseNatsResult {
     setIsConnected(false);
     setIsTyping(false);
     setIsCompacting(false);
+    setIsWorking(false);
     setTotalTokens({ input: 0, output: 0 });
 
     const promptTopic = `ravi.session.${sessionName}.prompt`;
@@ -108,6 +111,7 @@ export function useNats(sessionName: string): UseNatsResult {
             // New turn — allow streaming again
             streamDone.current = false;
             streamBuf.current = "";
+            setIsWorking(true);
             const msg: ChatMessage = {
               id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               type: "chat",
@@ -185,6 +189,7 @@ export function useNats(sessionName: string): UseNatsResult {
               timestamp: Date.now(),
             };
             setIsTyping(false);
+            setIsWorking(false);
             setMessages((prev) => {
               const filtered = prev.filter((m) => m.id !== STREAMING_ID);
               const next = [...filtered, finalMsg];
@@ -313,6 +318,7 @@ export function useNats(sessionName: string): UseNatsResult {
     isConnected,
     isTyping,
     isCompacting,
+    isWorking,
     totalTokens,
   };
 }

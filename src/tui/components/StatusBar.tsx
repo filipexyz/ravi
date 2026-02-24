@@ -25,7 +25,7 @@ export function StatusBar({
   isCompacting,
 }: StatusBarProps) {
   const statusDot = isConnected ? "\u25CF" : "\u25CB";
-  const modelLabel = model ?? "sonnet";
+  const modelLabel = model ?? "unknown";
 
   return (
     <box
@@ -43,9 +43,6 @@ export function StatusBar({
       <box flexDirection="row">
         {isCompacting && (
           <text content="compacting  " fg="magenta" bold />
-        )}
-        {isTyping && !isCompacting && (
-          <text content="typing...  " fg="yellow" bold />
         )}
         <text
           content={`${statusDot} `}
