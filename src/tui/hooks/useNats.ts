@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { subscribe, publish } from "../../nats.js";
-import { getRecentHistory } from "../../db.js";
+import { getRecentSessionHistory } from "../../db.js";
 
 export interface ChatMessage {
   id: string;
@@ -93,7 +93,7 @@ export function useNats(sessionName: string): UseNatsResult {
 
     // Load recent chat history from SQLite
     try {
-      const history = getRecentHistory(sessionName, 50);
+      const history = getRecentSessionHistory(sessionName, 50);
       const restored: TimelineEntry[] = history.map((msg, i) => ({
         id: `history-${msg.id}-${i}`,
         type: "chat" as const,

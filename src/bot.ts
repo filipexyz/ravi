@@ -2,7 +2,7 @@ import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { nats } from "./nats.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
-import { saveMessage, close as closeDb } from "./db.js";
+import { saveMessage, backfillSdkSessionId, close as closeDb } from "./db.js";
 import { buildSystemPrompt, SILENT_TOKEN } from "./prompt-builder.js";
 import {
   getOrCreateSession,
@@ -807,7 +807,7 @@ export class RaviBot {
       if (entry) {
         this.updateSessionMetadata(entry.sessionKey, prompt);
       }
-      saveMessage(sessionName, "user", prompt.prompt);
+      saveMessage(sessionName, "user", prompt.prompt, entry?.sdkSessionId);
 
       // Update source for response routing
       if (prompt.source) {
@@ -938,7 +938,7 @@ export class RaviBot {
     const approvalSource = prompt._approvalSource;
 
     this.updateSessionMetadata(dbSessionKey, prompt);
-    saveMessage(sessionName, "user", prompt.prompt);
+    saveMessage(sessionName, "user", prompt.prompt, session.sdkSessionId);
 
     const model = session.modelOverride ?? agent.model ?? this.config.model;
 
@@ -1590,6 +1590,7 @@ export class RaviBot {
 
           if ("session_id" in message && message.session_id) {
             updateSdkSessionId(session.sessionKey, message.session_id);
+            backfillSdkSessionId(sessionName, message.session_id);
           }
           updateTokens(session.sessionKey, inputTokens, outputTokens);
 
@@ -1614,7 +1615,8 @@ export class RaviBot {
           }
 
           if (!streaming.interrupted && responseText.trim()) {
-            saveMessage(sessionName, "assistant", responseText.trim());
+            const sdkId = ("session_id" in message && message.session_id) ? message.session_id : undefined;
+            saveMessage(sessionName, "assistant", responseText.trim(), sdkId);
           }
 
           // Reset for next turn
