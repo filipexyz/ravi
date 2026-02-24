@@ -133,14 +133,27 @@ export function App() {
         isCompacting={isCompacting}
       />
 
-      {/* Command palette overlay */}
+      {/* Session picker overlay */}
       {paletteOpen && (
-        <CommandPalette
-          sessions={sessions}
-          currentSessionName={sessionName}
-          onSelect={handleSelectSession}
-          onClose={handleClosePalette}
-        />
+        <>
+          <box
+            position="absolute"
+            top={0}
+            left={0}
+            width="100%"
+            height="100%"
+            backgroundColor="black"
+            shouldFill
+            opacity={0.5}
+            zIndex={99}
+          />
+          <CommandPalette
+            sessions={sessions}
+            currentSessionName={sessionName}
+            onSelect={handleSelectSession}
+            onClose={handleClosePalette}
+          />
+        </>
       )}
     </box>
   );

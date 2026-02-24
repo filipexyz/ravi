@@ -13,12 +13,7 @@ export interface CommandPaletteProps {
 }
 
 /**
- * Command palette overlay for session switching.
- *
- * - Centered on screen (vertical + horizontal)
- * - Single-line entries: name (model) or name
- * - Auto-scrolls to keep selected item visible
- * - Arrow up/down, Enter, Escape
+ * Session picker overlay, centered on screen.
  */
 export function CommandPalette({
   sessions,
@@ -32,7 +27,6 @@ export function CommandPalette({
   const scrollRef = useRef<ScrollBoxRenderable>(null);
   const renderer = useRenderer();
 
-  // Filter sessions by substring match on name, agentId, or model
   const filtered = useMemo(() => {
     if (!query) return sessions;
     const lower = query.toLowerCase();
@@ -44,10 +38,12 @@ export function CommandPalette({
     );
   }, [sessions, query]);
 
-  // Clamp selectedIndex when filtered list changes
   const clampedIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1));
 
-  // Auto-scroll to keep selected item visible
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     const sb = scrollRef.current;
     if (!sb || filtered.length === 0) return;
@@ -88,7 +84,6 @@ export function CommandPalette({
     },
   );
 
-  // Layout: title(1) + search(3) + help(1) = 5 fixed rows + border(2) + padding(2) = 9 chrome
   const maxVisible = Math.min(filtered.length, 15, Math.max(1, Math.floor(renderer.height / 2) - 9));
   const overlayHeight = maxVisible + 9;
   const overlayWidth = Math.floor(renderer.width * 0.6);
@@ -103,14 +98,14 @@ export function CommandPalette({
       flexDirection="column"
       border
       borderColor="cyan"
-      bg="black"
+      backgroundColor="black"
+      shouldFill
       padding={1}
+      zIndex={100}
     >
-      {/* Title */}
-      <text content="Switch Session (Ctrl+K)" fg="cyan" bold />
+      <text content="Switch Session (Ctrl+K)" fg="cyan" bg="black" bold />
 
-      {/* Search input */}
-      <box height={3} width="100%" border borderColor="gray">
+      <box height={3} width="100%" border borderColor="gray" backgroundColor="black">
         <input
           ref={inputRef}
           focused
@@ -118,14 +113,14 @@ export function CommandPalette({
           placeholder="Search sessions..."
           onInput={handleInput}
           fg="white"
+          backgroundColor="black"
         />
       </box>
 
-      {/* Session list — single line per entry */}
-      <scrollbox ref={scrollRef} flexGrow={1} width="100%" scrollY>
-        <box flexDirection="column" width="100%">
+      <scrollbox ref={scrollRef} flexGrow={1} width="100%" scrollY backgroundColor="black">
+        <box flexDirection="column" width="100%" backgroundColor="black">
           {filtered.length === 0 ? (
-            <text content="  No sessions found" fg="gray" />
+            <text content="  No sessions found" fg="gray" bg="black" />
           ) : (
             filtered.map((session, index) => {
               const isSelected = index === clampedIndex;
@@ -135,17 +130,19 @@ export function CommandPalette({
               const nameFg = isSelected ? "cyan" : isCurrent ? "green" : "white";
 
               return (
-                <box key={session.sessionKey} flexDirection="row" width="100%">
+                <box key={session.sessionKey} flexDirection="row" width="100%" backgroundColor="black">
                   <text
                     content={`${prefix}${session.name}`}
                     fg={nameFg}
+                    bg="black"
                     bold={isSelected}
                   />
                   <text
                     content={` (${session.agentId})`}
                     fg="gray"
+                    bg="black"
                   />
-                  {suffix ? <text content={suffix} fg={nameFg} /> : null}
+                  {suffix ? <text content={suffix} fg={nameFg} bg="black" /> : null}
                 </box>
               );
             })
@@ -153,11 +150,11 @@ export function CommandPalette({
         </box>
       </scrollbox>
 
-      {/* Help line — fixed height so it doesn't eat into scrollbox */}
-      <box height={1} width="100%">
+      <box height={1} width="100%" backgroundColor="black">
         <text
           content="  arrows: navigate | enter: select | esc: close"
           fg="gray"
+          bg="black"
         />
       </box>
     </box>

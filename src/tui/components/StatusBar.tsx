@@ -47,7 +47,6 @@ export function StatusBar({
         {isTyping && !isCompacting && (
           <text content="typing...  " fg="yellow" bold />
         )}
-        <text content="Ctrl+K " fg="gray" />
         <text
           content={`${statusDot} `}
           fg={isConnected ? "green" : "red"}
