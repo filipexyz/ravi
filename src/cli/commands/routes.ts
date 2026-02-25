@@ -139,6 +139,7 @@ export class RoutesCommands {
     console.log(`\nRoute: ${route.pattern}`);
     console.log(`  Account:   ${route.accountId}`);
     console.log(`  Agent:     ${route.agent}`);
+    console.log(`  Session:   ${route.session ?? "(auto)"}`);
     console.log(`  Priority:  ${route.priority ?? 0}`);
     console.log(`  DM Scope:  ${route.dmScope ?? "-"}`);
   }
@@ -227,7 +228,7 @@ export class RoutesCommands {
       fail(`Route not found: ${pattern} (account: ${acct})`);
     }
 
-    const validKeys = ["agent", "priority", "dmScope"];
+    const validKeys = ["agent", "priority", "dmScope", "session"];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
@@ -251,6 +252,10 @@ export class RoutesCommands {
       if (isNaN(priority)) {
         fail(`Invalid priority: ${value}. Priority must be an integer`);
       }
+    }
+
+    if (key === "session" && value.includes(".")) {
+      fail(`Session name must not contain dots: "${value}"`);
     }
 
     try {

@@ -55,6 +55,7 @@ export const RouteInputSchema = z.object({
   accountId: z.string().min(1),
   agent: z.string().min(1),
   dmScope: DmScopeSchema.optional(),
+  session: z.string().optional(),
   priority: z.number().int().default(0),
 });
 
@@ -97,6 +98,7 @@ interface RouteRow {
   account_id: string;
   agent_id: string;
   dm_scope: string | null;
+  session_name: string | null;
   priority: number;
   created_at: number;
   updated_at: number;
@@ -652,6 +654,13 @@ function getDb(): Database {
   // Ensure account index exists (for fresh DBs that skip migration)
   db.exec("CREATE INDEX IF NOT EXISTS idx_routes_account ON routes(account_id)");
 
+  // Migration: add session_name column to routes
+  const routeColumnsAfter = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  if (!routeColumnsAfter.some(c => c.name === "session_name")) {
+    db.exec("ALTER TABLE routes ADD COLUMN session_name TEXT");
+    log.info("Added session_name column to routes table");
+  }
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {
@@ -765,13 +774,14 @@ function getStatements(): PreparedStatements {
 
     // Routes
     insertRoute: database.prepare(`
-      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, priority, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, session_name, priority, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateRoute: database.prepare(`
       UPDATE routes SET
         agent_id = ?,
         dm_scope = ?,
+        session_name = ?,
         priority = ?,
         updated_at = ?
       WHERE pattern = ? AND account_id = ?
@@ -899,6 +909,10 @@ function rowToRoute(row: RouteRow): RouteConfig & { id: number } {
     if (parsed.success) {
       result.dmScope = parsed.data;
     }
+  }
+
+  if (row.session_name !== null) {
+    result.session = row.session_name;
   }
 
   return result;
@@ -1114,6 +1128,7 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       validated.accountId,
       validated.agent,
       validated.dmScope ?? null,
+      validated.session ?? null,
       validated.priority,
       now,
       now
@@ -1174,6 +1189,7 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
   s.updateRoute.run(
     updates.agent ?? row.agent_id,
     updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
+    updates.session !== undefined ? updates.session ?? null : row.session_name,
     updates.priority ?? row.priority,
     now,
     pattern,

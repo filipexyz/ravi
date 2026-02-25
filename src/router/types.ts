@@ -111,6 +111,9 @@ export interface RouteConfig {
   /** Override DM scope for this route */
   dmScope?: DmScope;
 
+  /** Force a specific session name for this route (bypasses auto-generation) */
+  session?: string;
+
   /** Priority (higher = checked first, default 0) */
   priority?: number;
 }

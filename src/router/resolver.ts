@@ -178,7 +178,11 @@ export function resolveRoute(
   const existing = getOrCreateSession(sessionKey, agentId, agentCwd);
   let sessionName = existing.name;
 
-  if (!sessionName) {
+  // Route-forced session name takes precedence
+  if (route?.session && existing.name !== route.session) {
+    sessionName = route.session;
+    updateSessionName(sessionKey, sessionName);
+  } else if (!sessionName) {
     const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
     const nameOpts = {
