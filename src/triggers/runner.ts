@@ -147,6 +147,12 @@ export class TriggerRunner {
               continue;
             }
 
+            // Set cooldown immediately to prevent race condition:
+            // Without this, multiple events arriving in rapid succession
+            // all pass the cooldown check before the first fireTrigger
+            // completes and updates lastFiredAt.
+            trigger.lastFiredAt = Date.now();
+
             this.fireTrigger(trigger, event).catch((err) => {
               log.error("Error firing trigger", {
                 triggerId: trigger.id,
