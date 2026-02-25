@@ -8,6 +8,7 @@
 export * from "./agents.js";
 export * from "./channels.js";
 export * from "./contacts.js";
+export * from "./copilot.js";
 export * from "./cron.js";
 export * from "./daemon.js";
 export * from "./events.js";
