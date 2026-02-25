@@ -438,7 +438,10 @@ export class OmniConsumer {
     }
 
     // -- Group policy enforcement --
-    if (isGroup) {
+    // Skip policy check if the group has an explicit route (not wildcard) —
+    // having a specific route is an implicit approval.
+    const hasExplicitRoute = resolved.route && resolved.route.pattern !== "*";
+    if (isGroup && !hasExplicitRoute) {
       const groupPolicy = dbGetSetting("whatsapp.groupPolicy") ?? "open";
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });

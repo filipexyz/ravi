@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName } from "./session-name.js";
-import { getOrCreateSession, updateSessionName } from "./sessions.js";
+import { getOrCreateSession, updateSessionName, isNameTaken, getSessionByName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 
@@ -180,8 +180,21 @@ export function resolveRoute(
 
   // Route-forced session name takes precedence
   if (route?.session && existing.name !== route.session) {
-    sessionName = route.session;
-    updateSessionName(sessionKey, sessionName);
+    // Check if the desired name is already taken by another session
+    const conflict = getSessionByName(route.session);
+    if (!conflict || conflict.sessionKey === sessionKey) {
+      sessionName = route.session;
+      updateSessionName(sessionKey, sessionName);
+    } else {
+      // Name taken by another session — use it anyway as the resolved name
+      // but don't update DB (avoid UNIQUE conflict)
+      log.warn("Route session name conflict, skipping rename", {
+        desired: route.session,
+        conflictKey: conflict.sessionKey,
+        currentKey: sessionKey,
+      });
+      sessionName = existing.name ?? route.session;
+    }
   } else if (!sessionName) {
     const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
