@@ -22,6 +22,7 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { startInboxWatcher, stopInboxWatcher } from "./copilot/inbox-watcher.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 
@@ -105,6 +106,7 @@ async function shutdown(signal: string) {
     }
 
     // Stop runners
+    stopInboxWatcher();
     await stopEphemeralRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
@@ -217,6 +219,9 @@ export async function startDaemon() {
 
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
+
+  startInboxWatcher();
+  log.info("Inbox watcher started");
 
   log.info("Daemon ready");
 

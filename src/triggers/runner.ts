@@ -37,9 +37,6 @@ export class TriggerRunner {
   /** Topic streams (NOT including refresh/test — those are long-lived) */
   private topicSubs: TopicSub[] = [];
   private running = false;
-  /** Prevents concurrent setupSubscriptions() calls from corrupting topicSubs */
-  private setupInProgress = false;
-  private setupQueued = false;
 
   /**
    * Start the trigger runner.
@@ -85,26 +82,27 @@ export class TriggerRunner {
     this.topicSubs = [];
   }
 
+  // Mutex to prevent concurrent setupSubscriptions calls
+  private setupInProgress = false;
+  private setupQueued = false;
+
   /**
    * Set up subscriptions for all enabled triggers.
+   * Serialized: concurrent calls are collapsed into one queued re-run.
    */
   private async setupSubscriptions(): Promise<void> {
-    // Serialize: if already running, queue one more execution and return.
-    // Any additional calls while queued are no-ops — they'll be covered by the queued run.
     if (this.setupInProgress) {
       this.setupQueued = true;
       return;
     }
     this.setupInProgress = true;
-
     try {
       await this._doSetupSubscriptions();
     } finally {
       this.setupInProgress = false;
       if (this.setupQueued) {
         this.setupQueued = false;
-        // Process the queued request (tail-recursive, but setupInProgress is false now)
-        await this.setupSubscriptions();
+        this.setupSubscriptions();
       }
     }
   }
@@ -123,15 +121,13 @@ export class TriggerRunner {
       byTopic.set(t.topic, list);
     }
 
-    // Internal session topics that must never be trigger sources (loop risk).
-    // Pattern: ravi.session.<name>.prompt / .response / .claude
-    // We block by prefix "ravi.session." to avoid false positives on external
-    // topics like ravi.copilot.prompt that legitimately contain ".prompt".
+    // Internal bot topics that must never be trigger sources (loop risk)
+    // Use prefix match to avoid blocking external topics like ravi.copilot.prompt
     const blockedPrefixes = ["ravi.session."];
 
     for (const [topic, trigs] of byTopic) {
       if (blockedPrefixes.some((p) => topic.startsWith(p))) {
-        log.warn("Skipping trigger on internal session topic (anti-loop)", { topic });
+        log.warn("Skipping trigger on internal topic (anti-loop)", { topic });
         continue;
       }
       this.subscribeToTopic(topic, trigs);
@@ -276,16 +272,21 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
-    // The hook envelope wraps the original CC payload under a nested "data" key.
-    // Use the inner payload for template resolution so {{data.cwd}}, {{data.last_assistant_message}}
-    // etc. work as expected. Fall back to the raw event data if no inner payload.
+    // Resolve template variables — inner payload (event.data.data) takes priority
     const eventData = event.data as Record<string, unknown> | undefined;
-    const templateData = (eventData?.data ?? eventData) as unknown;
-
-    const prompt = resolveTemplate(trigger.message, {
+    const templateData = (eventData?.data as Record<string, unknown> | undefined) ?? eventData ?? {};
+    const resolvedMessage = resolveTemplate(trigger.message, {
       topic: event.topic,
       data: templateData,
     });
+
+    const prompt = [
+      `[Trigger: ${trigger.name}]`,
+      `Topic: ${event.topic}`,
+      `Data: ${JSON.stringify(event.data, null, 2)}`,
+      ``,
+      resolvedMessage,
+    ].join("\n");
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
@@ -336,7 +337,6 @@ export class TriggerRunner {
       for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received triggers config refresh signal");
-        // setupSubscriptions is serialized internally: concurrent calls collapse into one queued run
         await this.setupSubscriptions();
       }
     } catch (err) {
