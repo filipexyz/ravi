@@ -36,6 +36,9 @@ export class TriggerRunner {
   /** Topic streams (NOT including refresh/test — those are long-lived) */
   private topicSubs: TopicSub[] = [];
   private running = false;
+  /** Prevents concurrent setupSubscriptions() calls from corrupting topicSubs */
+  private setupInProgress = false;
+  private setupQueued = false;
 
   /**
    * Start the trigger runner.
@@ -85,6 +88,27 @@ export class TriggerRunner {
    * Set up subscriptions for all enabled triggers.
    */
   private async setupSubscriptions(): Promise<void> {
+    // Serialize: if already running, queue one more execution and return.
+    // Any additional calls while queued are no-ops — they'll be covered by the queued run.
+    if (this.setupInProgress) {
+      this.setupQueued = true;
+      return;
+    }
+    this.setupInProgress = true;
+
+    try {
+      await this._doSetupSubscriptions();
+    } finally {
+      this.setupInProgress = false;
+      if (this.setupQueued) {
+        this.setupQueued = false;
+        // Process the queued request (tail-recursive, but setupInProgress is false now)
+        await this.setupSubscriptions();
+      }
+    }
+  }
+
+  private async _doSetupSubscriptions(): Promise<void> {
     // Tear down existing
     this.teardownSubscriptions();
 
@@ -305,6 +329,7 @@ export class TriggerRunner {
       for await (const _event of nats.subscribe(topic)) {
         if (!this.running) break;
         log.info("Received triggers config refresh signal");
+        // setupSubscriptions is serialized internally: concurrent calls collapse into one queued run
         await this.setupSubscriptions();
       }
     } catch (err) {
