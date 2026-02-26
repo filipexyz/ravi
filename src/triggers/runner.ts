@@ -22,6 +22,7 @@ import {
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
 import { evaluateFilter } from "./filter.js";
+import { resolveTemplate } from "./template.js";
 import type { Trigger } from "./types.js";
 
 const log = logger.child("triggers:runner");
@@ -275,13 +276,10 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
-    const prompt = [
-      `[Trigger: ${trigger.name}]`,
-      `Topic: ${event.topic}`,
-      `Data: ${JSON.stringify(event.data, null, 2)}`,
-      ``,
-      trigger.message,
-    ].join("\n");
+    const prompt = resolveTemplate(trigger.message, {
+      topic: event.topic,
+      data: event.data,
+    });
 
     log.info("Firing trigger", {
       triggerId: trigger.id,
