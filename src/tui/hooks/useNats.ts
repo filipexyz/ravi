@@ -316,7 +316,7 @@ export function useNats(sessionName: string): UseNatsResult {
   const sendMessage = useCallback(
     (text: string) => {
       const topic = `ravi.session.${sessionName}.prompt`;
-      publish(topic, { prompt: text }).catch(() => {
+      publish(topic, { prompt: text, source: { channel: "tui", accountId: "", chatId: "" } }).catch(() => {
         // publish failed silently
       });
     },

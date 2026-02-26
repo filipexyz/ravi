@@ -942,6 +942,8 @@ export class RaviBot {
         chatId: session.lastTo,
       };
     }
+    // TUI prompts must not route to external channels
+    if (resolvedSource?.channel === "tui") resolvedSource = undefined;
 
     // Approval source for cascading approvals (from delegating agent's channel)
     const approvalSource = prompt._approvalSource;
