@@ -122,12 +122,15 @@ export class TriggerRunner {
       byTopic.set(t.topic, list);
     }
 
-    // Internal bot topics that must never be trigger sources (loop risk)
-    const blockedPatterns = [".prompt", ".response", ".claude"];
+    // Internal session topics that must never be trigger sources (loop risk).
+    // Pattern: ravi.session.<name>.prompt / .response / .claude
+    // We block by prefix "ravi.session." to avoid false positives on external
+    // topics like ravi.copilot.prompt that legitimately contain ".prompt".
+    const blockedPrefixes = ["ravi.session."];
 
     for (const [topic, trigs] of byTopic) {
-      if (blockedPatterns.some((p) => topic.includes(p))) {
-        log.warn("Skipping trigger on internal topic (anti-loop)", { topic });
+      if (blockedPrefixes.some((p) => topic.startsWith(p))) {
+        log.warn("Skipping trigger on internal session topic (anti-loop)", { topic });
         continue;
       }
       this.subscribeToTopic(topic, trigs);
