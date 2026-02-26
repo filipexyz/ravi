@@ -44,7 +44,7 @@ ravi triggers disable <id>
 ```bash
 ravi triggers set <id> <key> <value>
 ```
-Keys: name, message, topic, agent, session, cooldown
+Keys: name, message, topic, agent, session, cooldown, filter
 
 ### Testar trigger
 ```bash
@@ -93,7 +93,46 @@ Patterns usam wildcards (`*`):
 | `ravi.outbound.receipt` | Read receipts enviados |
 | `ravi.outbound.refresh` | Refresh de filas outbound |
 
-**Bloqueados (anti-loop):** Triggers em `.prompt`, `.response` e `.claude` são rejeitados para evitar loops.
+**Bloqueados (anti-loop):** Triggers em tópicos `ravi.session.*` são rejeitados para evitar loops internos.
+
+## Filtros
+
+Triggers suportam filtros opcionais que impedem o disparo quando o evento não casa com a expressão:
+
+```bash
+ravi triggers add "..." --filter 'data.cwd startsWith "/Users/luis/ravi"'
+ravi triggers set <id> filter 'data.cwd != "/Users/luis/Dev/fm"'
+ravi triggers set <id> filter 'data.permission_mode == "bypassPermissions"'
+```
+
+**Sintaxe:** `data.<path> <operador> "<valor>"`
+
+Operadores: `==`, `!=`, `startsWith`, `endsWith`, `includes`
+
+Filtro inválido = fail open (trigger dispara mesmo assim, log de warning).
+
+## Template Variables
+
+Mensagens de triggers suportam `{{variável}}` resolvidos com os dados do evento:
+
+```
+data.cwd startsWith "/Users/luis/ravi"
+```
+
+| Variável | Descrição |
+|----------|-----------|
+| `{{topic}}` | Tópico NATS que disparou o trigger |
+| `{{data.cwd}}` | Diretório de trabalho da sessão |
+| `{{data.last_assistant_message}}` | Última mensagem do CC (truncada em 300 chars) |
+| `{{data.prompt}}` | Prompt enviado pelo usuário (UserPromptSubmit) |
+| `{{data.<campo>}}` | Qualquer campo do payload do evento |
+
+Variáveis não resolvidas ficam como estão (`{{data.inexistente}}`).
+
+**Exemplo de message com templates:**
+```
+CC parou em {{data.cwd}}. Última msg: "{{data.last_assistant_message}}". Informe o Luis se relevante, senão @@SILENT@@.
+```
 
 ## Exemplos
 
