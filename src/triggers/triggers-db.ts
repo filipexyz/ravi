@@ -26,6 +26,7 @@ interface TriggerRow {
   reply_session: string | null;
   enabled: number;
   cooldown_ms: number;
+  filter: string | null;
   last_fired_at: number | null;
   fire_count: number;
   created_at: number;
@@ -53,6 +54,7 @@ function rowToTrigger(row: TriggerRow): Trigger {
   if (row.agent_id !== null) trigger.agentId = row.agent_id;
   if (row.account_id !== null) trigger.accountId = row.account_id;
   if (row.reply_session !== null) trigger.replySession = row.reply_session;
+  if (row.filter !== null) trigger.filter = row.filter;
   if (row.last_fired_at !== null) trigger.lastFiredAt = row.last_fired_at;
 
   return trigger;
@@ -73,8 +75,8 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
   const stmt = db.prepare(`
     INSERT INTO triggers (
       id, name, agent_id, account_id, topic, message, session, reply_session, enabled, cooldown_ms,
-      fire_count, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      filter, fire_count, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -88,6 +90,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.replySession ?? null,
     input.enabled !== false ? 1 : 0,
     input.cooldownMs ?? 5000,
+    input.filter ?? null,
     0,
     now,
     now
@@ -172,6 +175,10 @@ export function dbUpdateTrigger(id: string, updates: Partial<Trigger>): Trigger 
   if (updates.cooldownMs !== undefined) {
     fields.push("cooldown_ms = ?");
     values.push(updates.cooldownMs);
+  }
+  if (updates.filter !== undefined) {
+    fields.push("filter = ?");
+    values.push(updates.filter ?? null);
   }
 
   if (fields.length === 0) {

@@ -100,6 +100,9 @@ export class TriggersCommands {
       console.log(`  Reply session:   ${trigger.replySession}`);
     }
     console.log(`  Cooldown:        ${formatDurationMs(trigger.cooldownMs)}`);
+    if (trigger.filter) {
+      console.log(`  Filter:          ${trigger.filter}`);
+    }
     console.log("");
     console.log(`  Message:`);
     console.log(`    ${trigger.message.split("\n").join("\n    ")}`);
@@ -155,7 +158,12 @@ export class TriggersCommands {
       flags: "--session <type>",
       description: "Session: main or isolated (default: isolated)",
     })
-    session?: string
+    session?: string,
+    @Option({
+      flags: "--filter <expression>",
+      description: 'Filter expression (e.g. \'data.cwd == "/Users/luis/ravi"\')',
+    })
+    filter?: string
   ) {
     if (!topic) {
       fail("--topic is required");
@@ -220,6 +228,7 @@ export class TriggersCommands {
       replySession,
       session: sessionTarget,
       cooldownMs,
+      filter,
     };
 
     try {
@@ -356,9 +365,16 @@ export class TriggersCommands {
           break;
         }
 
+        case "filter": {
+          const filterValue = value === "null" || value === "-" ? undefined : value;
+          dbUpdateTrigger(id, { filter: filterValue });
+          console.log(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);
+          break;
+        }
+
         default:
           fail(
-            `Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown`
+            `Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter`
           );
       }
 

@@ -21,6 +21,7 @@ import {
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
 import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-db.js";
+import { evaluateFilter } from "./filter.js";
 import type { Trigger } from "./types.js";
 
 const log = logger.child("triggers:runner");
@@ -143,6 +144,16 @@ export class TriggerRunner {
               log.debug("Trigger cooldown active, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
+              });
+              continue;
+            }
+
+            // Filter check: evaluate trigger's filter expression against event data
+            if (!evaluateFilter(trigger.filter, event.data)) {
+              log.debug("Trigger filter did not match, skipping", {
+                triggerId: trigger.id,
+                triggerName: trigger.name,
+                filter: trigger.filter,
               });
               continue;
             }

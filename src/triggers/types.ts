@@ -22,6 +22,8 @@ export interface Trigger {
   replySession?: string;
   enabled: boolean;
   cooldownMs: number;
+  /** Optional filter expression. If set, trigger only fires when event data matches. */
+  filter?: string;
 
   // State
   lastFiredAt?: number;
@@ -45,4 +47,6 @@ export interface TriggerInput {
   replySession?: string;
   enabled?: boolean;
   cooldownMs?: number;
+  /** Optional filter expression. If set, trigger only fires when event data matches. */
+  filter?: string;
 }
