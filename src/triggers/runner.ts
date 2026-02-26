@@ -276,9 +276,15 @@ export class TriggerRunner {
       source.accountId = trigger.accountId;
     }
 
+    // The hook envelope wraps the original CC payload under a nested "data" key.
+    // Use the inner payload for template resolution so {{data.cwd}}, {{data.last_assistant_message}}
+    // etc. work as expected. Fall back to the raw event data if no inner payload.
+    const eventData = event.data as Record<string, unknown> | undefined;
+    const templateData = (eventData?.data ?? eventData) as unknown;
+
     const prompt = resolveTemplate(trigger.message, {
       topic: event.topic,
-      data: event.data,
+      data: templateData,
     });
 
     log.info("Firing trigger", {
