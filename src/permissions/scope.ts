@@ -7,12 +7,27 @@
 
 import { getContext } from "../cli/context.js";
 import { agentCan } from "./engine.js";
-import { publish } from "../nats.js";
+import { publish, closeNats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
 import type { ScopeType } from "../cli/decorators.js";
 
+/** Pending audit publishes — flushed before process exits */
+const pendingAudits: Promise<void>[] = [];
+
 /**
- * Emit an audit event via NATS (fire-and-forget).
+ * Flush pending audit events and exit the process.
+ * Must be called instead of process.exit() when audit events may be in flight.
+ */
+export async function flushAuditAndExit(code: number): Promise<never> {
+  if (pendingAudits.length > 0) {
+    await Promise.allSettled(pendingAudits);
+    await closeNats();
+  }
+  process.exit(code);
+}
+
+/**
+ * Emit an audit event via NATS (fire-and-forget, flushed on exit).
  */
 function emitAudit(event: {
   type: string;
@@ -21,7 +36,10 @@ function emitAudit(event: {
   reason: string;
   command?: string;
 }): void {
-  publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
+  const p = publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch((err) => {
+    console.error("[audit] emitAudit failed", err);
+  });
+  pendingAudits.push(p);
 }
 
 // ============================================================================

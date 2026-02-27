@@ -182,7 +182,9 @@ function registerCommand(
     const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
     if (!scopeResult.allowed) {
       console.error(scopeResult.errorMessage);
-      process.exit(1);
+      // Drain NATS before exiting so audit events are flushed
+      const { flushAuditAndExit } = await import("../permissions/scope.js");
+      await flushAuditAndExit(1);
     }
 
     // Execute and emit single event with input + output

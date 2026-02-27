@@ -1,8 +1,7 @@
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
 import { StringCodec } from "nats";
 import { nats, getNats } from "./nats.js";
-import { SESSION_STREAM, makeConsumerName, ensureSessionConsumer } from "./omni/session-stream.js";
-import { daemonId } from "./leader/index.js";
+import { SESSION_STREAM, getConsumerName, ensureSessionConsumer } from "./omni/session-stream.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, backfillSdkSessionId, close as closeDb } from "./db.js";
@@ -728,8 +727,8 @@ export class RaviBot {
 
       // Each daemon registers its own consumer so NATS distributes prompts across all daemons.
       // WorkQueuePolicy ensures each prompt is delivered to exactly one consumer (one daemon).
-      const consumerName = makeConsumerName(daemonId);
-      await ensureSessionConsumer(jsm, consumerName);
+      const consumerName = getConsumerName();
+      await ensureSessionConsumer(jsm);
 
       const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
       const messages = await consumer.consume();

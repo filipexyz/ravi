@@ -8,6 +8,10 @@
  *   - Each message is delivered to exactly one consumer
  *   - Message is deleted from stream after ack
  *   - If daemon crashes before ack, message is redelivered after ack_wait
+ *
+ * A single shared consumer ("ravi-prompts") is used by all daemons.
+ * NATS automatically distributes messages across active pull subscribers
+ * on the same consumer — no per-daemon consumers needed.
  */
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
@@ -20,16 +24,11 @@ const sc = StringCodec();
 export const SESSION_STREAM = "SESSION_PROMPTS";
 export const SESSION_SUBJECT_FILTER = "ravi.session.*.prompt";
 
-/**
- * Each daemon registers its own durable consumer on SESSION_PROMPTS.
- * NATS WorkQueuePolicy distributes messages across all active consumers —
- * each message goes to exactly one consumer (one daemon).
- *
- * Consumer name includes daemonId to ensure uniqueness per instance.
- * Unlike a shared consumer, this enables true parallel distribution.
- */
-export function makeConsumerName(daemonId: string): string {
-  return `ravi-prompts-${daemonId}`;
+/** Shared consumer name — all daemons pull from this single consumer. */
+const CONSUMER_NAME = "ravi-prompts";
+
+export function getConsumerName(): string {
+  return CONSUMER_NAME;
 }
 
 /**
@@ -67,24 +66,49 @@ export async function ensureSessionPromptsStream(): Promise<void> {
 }
 
 /**
- * Ensure a per-daemon durable consumer exists on SESSION_PROMPTS.
- * Called during bot startup. Safe to call multiple times.
- *
- * Each daemon uses a unique consumer name (ravi-prompts-{daemonId}) so that
- * NATS distributes messages across all running daemons simultaneously.
- * WorkQueuePolicy guarantees each message is delivered to exactly one consumer.
+ * Clean up stale per-daemon consumers from previous code.
+ * Old versions created consumers named "ravi-prompts-{pid}-{random}".
+ * WorkQueue only allows one consumer — delete them before creating the shared one.
  */
-export async function ensureSessionConsumer(jsm: JetStreamManager, consumerName: string): Promise<void> {
+async function cleanupLegacyConsumers(jsm: JetStreamManager): Promise<void> {
   try {
-    await jsm.consumers.info(SESSION_STREAM, consumerName);
-    log.debug("Session consumer already exists", { consumerName });
+    const consumers = await jsm.consumers.list(SESSION_STREAM).next();
+    for (const c of consumers) {
+      if (c.name !== CONSUMER_NAME && c.name.startsWith("ravi-prompts")) {
+        try {
+          await jsm.consumers.delete(SESSION_STREAM, c.name);
+          log.info("Deleted legacy consumer", { name: c.name });
+        } catch (err) {
+          log.warn("Failed to delete legacy consumer", { name: c.name, error: err });
+        }
+      }
+    }
+  } catch (err) {
+    log.warn("Failed to list consumers for cleanup", { error: err });
+  }
+}
+
+/**
+ * Ensure the shared durable consumer exists on SESSION_PROMPTS.
+ * Called during bot startup. Safe to call multiple times — idempotent.
+ *
+ * All daemons share this single consumer. NATS distributes messages
+ * across active pull subscribers automatically (round-robin).
+ */
+export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void> {
+  // One-time migration: delete old per-daemon consumers (non-blocking — don't delay startup)
+  cleanupLegacyConsumers(jsm).catch(err => log.warn("Legacy consumer cleanup failed", { error: err }));
+
+  try {
+    await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
+    log.debug("Session consumer already exists", { consumerName: CONSUMER_NAME });
     return;
   } catch {
     // Consumer doesn't exist — create it
   }
 
   await jsm.consumers.add(SESSION_STREAM, {
-    durable_name: consumerName,
+    durable_name: CONSUMER_NAME,
     ack_policy: AckPolicy.Explicit,
     deliver_policy: DeliverPolicy.All,
     // ack_wait: 5 minutes (in nanoseconds) — long turns shouldn't timeout
@@ -93,7 +117,7 @@ export async function ensureSessionConsumer(jsm: JetStreamManager, consumerName:
 
   log.info("Created session JetStream consumer", {
     stream: SESSION_STREAM,
-    consumerName,
+    consumerName: CONSUMER_NAME,
     ack_wait_s: 300,
   });
 }

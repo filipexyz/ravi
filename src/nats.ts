@@ -154,21 +154,44 @@ export async function* subscribe(
 
   const subOpts = opts?.queue ? { queue: opts.queue } : undefined;
 
+  // Content-based dedup: JetStream streams can cause `>` wildcard subscribers to
+  // receive the same message twice (original publish + consumer delivery with $JS.ACK reply).
+  // Track recently seen subject+payload fingerprints within a short window.
+  const _dedup = new Map<string, number>();
+  const DEDUP_WINDOW_MS = 250;
+  let _dedupOps = 0;
+
+  function isDuplicate(subject: string, raw: string): boolean {
+    const key = subject + "\0" + raw.slice(0, 256);
+    const now = Date.now();
+    const prev = _dedup.get(key);
+    if (prev !== undefined && now - prev < DEDUP_WINDOW_MS) return true;
+    _dedup.set(key, now);
+    if (++_dedupOps >= 500) {
+      _dedupOps = 0;
+      for (const [k, t] of _dedup) {
+        if (now - t > DEDUP_WINDOW_MS) _dedup.delete(k);
+      }
+    }
+    return false;
+  }
+
   if (patternList.length === 1) {
     // Fast path: single subscription
     const sub = conn.subscribe(patternList[0], subOpts);
     for await (const msg of sub) {
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
+      // Skip JetStream consumer deliveries (reply=$JS.ACK...) — these are duplicates
+      // of messages already received via core pub/sub when a stream captures the subject
+      if (msg.reply?.startsWith("$JS.ACK.")) continue;
       try {
         const raw = sc.decode(msg.data);
+        if (isDuplicate(msg.subject, raw)) continue;
         const data = JSON.parse(raw) as Record<string, unknown>;
         yield { topic: msg.subject, data };
-      } catch (err) {
-        log.warn("Failed to parse NATS message", {
-          subject: msg.subject,
-          error: err,
-        });
+      } catch {
+        // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
       }
     }
     return;
@@ -188,16 +211,16 @@ export async function* subscribe(
       if (done) return;
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
+      // Skip JetStream consumer deliveries (duplicates of core pub/sub)
+      if (msg.reply?.startsWith("$JS.ACK.")) continue;
       try {
         const raw = sc.decode(msg.data);
+        if (isDuplicate(msg.subject, raw)) continue;
         const data = JSON.parse(raw) as Record<string, unknown>;
         queue.push({ topic: msg.subject, data });
         resolve?.();
-      } catch (err) {
-        log.warn("Failed to parse NATS message", {
-          subject: msg.subject,
-          error: err,
-        });
+      } catch {
+        // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
       }
     }
   });
