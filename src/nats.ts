@@ -160,15 +160,15 @@ export async function* subscribe(
     for await (const msg of sub) {
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
-      // Skip JetStream consumer deliveries (reply=$JS.ACK...) — these are duplicates
-      // of messages already received via core pub/sub when a stream captures the subject
-      if (msg.reply?.startsWith("$JS.ACK.")) continue;
       try {
         const raw = sc.decode(msg.data);
         const data = JSON.parse(raw) as Record<string, unknown>;
         yield { topic: msg.subject, data };
-      } catch {
-        // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
+      } catch (err) {
+        log.warn("Failed to parse NATS message", {
+          subject: msg.subject,
+          error: err,
+        });
       }
     }
     return;
@@ -188,15 +188,16 @@ export async function* subscribe(
       if (done) return;
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
-      // Skip JetStream consumer deliveries (duplicates of core pub/sub)
-      if (msg.reply?.startsWith("$JS.ACK.")) continue;
       try {
         const raw = sc.decode(msg.data);
         const data = JSON.parse(raw) as Record<string, unknown>;
         queue.push({ topic: msg.subject, data });
         resolve?.();
-      } catch {
-        // Silently skip non-JSON messages (e.g. JetStream headers, binary payloads)
+      } catch (err) {
+        log.warn("Failed to parse NATS message", {
+          subject: msg.subject,
+          error: err,
+        });
       }
     }
   });
