@@ -56,6 +56,12 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 | `ravi.approval.request` | Pedido de aprovação cascading (`sessionName`, `type`, `text`) |
 | `ravi.approval.response` | Resposta de aprovação (`approved`, `reason`) |
 
+### Instâncias
+
+| Tópico | Conteúdo |
+|--------|----------|
+| `ravi.instances.unregistered` | Instância omni não registrada no ravi (cooldown 5min por instanceId). Payload: `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` |
+
 ### Sistema e Config
 
 | Tópico | Conteúdo |
