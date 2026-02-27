@@ -369,7 +369,16 @@ export class OmniConsumer {
       const lastEmit = unregisteredCooldowns.get(instanceId) ?? 0;
       if (now - lastEmit >= UNREGISTERED_COOLDOWN_MS) {
         unregisteredCooldowns.set(instanceId, now);
-        publish("ravi.instances.unregistered", { instanceId, channelType, subject }).catch(() => {});
+        publish("ravi.instances.unregistered", {
+          instanceId,
+          channelType,
+          subject,
+          from: senderPhone,
+          chatId: chatJid,
+          isGroup,
+          contentType: payload.content?.type,
+          timestamp: event.timestamp,
+        }).catch(() => {});
       }
       return;
     }

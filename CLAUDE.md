@@ -63,7 +63,7 @@ ravi.instances.unregistered # Omni instance not registered in ravi (5min cooldow
 - **claude**: Raw SDK events (used for typing heartbeat)
 - **tool**: `{ event: "start"|"end", toolId, toolName, input?, output?, isError?, durationMs?, timestamp, sessionKey, agentId }`
 - **contacts.pending**: `{ type: "contact"|"account", phone?, accountId?, name? }`
-- **instances.unregistered**: `{ instanceId, channelType, subject }`
+- **instances.unregistered**: `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }`
 
 **omni NATS subjects (JetStream stream: MESSAGE):**
 - `message.received.{channelType}.{instanceId}` — inbound message
