@@ -16,6 +16,7 @@ import {
   HEARTBEAT_PROMPT,
 } from "../../heartbeat/index.js";
 import { nats } from "../../nats.js";
+import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 
@@ -222,7 +223,7 @@ export class HeartbeatCommands {
       // Send heartbeat prompt using session name
       const mainSession = getMainSession(id);
       const sessionName = mainSession?.name ?? id;
-      await nats.emit(`ravi.session.${sessionName}.prompt`, {
+      await publishSessionPrompt(sessionName, {
         prompt: HEARTBEAT_PROMPT,
         _heartbeat: true,
         _agentId: id,

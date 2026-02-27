@@ -7,6 +7,7 @@
  */
 
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
@@ -296,7 +297,7 @@ export class TriggerRunner {
       hasSource: !!source,
     });
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       source,
       _trigger: true,

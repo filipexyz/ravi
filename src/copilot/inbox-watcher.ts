@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getAgent } from "../router/config.js";
 import {
@@ -159,7 +160,7 @@ export class InboxWatcher {
 
     log.debug("Firing inbox message to session", { team, agentId, sessionName });
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       _trigger: true,
       _source: "inbox-watcher",

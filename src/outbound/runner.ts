@@ -6,6 +6,7 @@
  */
 
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import {
@@ -318,7 +319,7 @@ export class OutboundRunner {
     });
 
     // Emit prompt
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,
@@ -491,7 +492,7 @@ export class OutboundRunner {
       sessionName,
     });
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       _outbound: true,
       _outboundSystemContext: systemContext,

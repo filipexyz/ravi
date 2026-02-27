@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
+import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
   listSessions,
   getSession,
@@ -739,7 +740,7 @@ export class SessionCommands {
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
   }
 
   /**
@@ -801,7 +802,7 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
 
     await completion;
     cleanup();

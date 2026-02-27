@@ -10,6 +10,7 @@
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
 import { getNats } from "../nats.js";
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "./session-stream.js";
 import { handleSlashCommand } from "../slash/index.js";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
@@ -504,12 +505,12 @@ export class OmniConsumer {
       // Sentinel: observe silently, no typing indicator, no source
       try {
         const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
-        await nats.emit(`ravi.session.${sessionName}.prompt`, {
+        await publishSessionPrompt(sessionName, {
           prompt: sentinelEnvelope,
           context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
         });
       } catch (err) {
-        log.error("Failed to emit sentinel prompt", err);
+        log.error("Failed to publish sentinel prompt", err);
       }
       return;
     }
@@ -555,13 +556,13 @@ export class OmniConsumer {
     }
 
     try {
-      await nats.emit(`ravi.session.${sessionName}.prompt`, {
+      await publishSessionPrompt(sessionName, {
         prompt: envelope,
         source,
         context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
       });
     } catch (err) {
-      log.error("Failed to emit prompt", err);
+      log.error("Failed to publish prompt", err);
       await this.sender.sendTyping(instanceId, chatJid, false);
       this.activeTargets.delete(sessionName);
     }

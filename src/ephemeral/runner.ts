@@ -7,6 +7,7 @@
  */
 
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import {
   getExpiringSessions,
@@ -53,7 +54,7 @@ async function tick(): Promise<void> {
 Sem ação = sessão será excluída automaticamente.`;
 
       try {
-        await nats.emit(`ravi.session.${sessionName}.prompt`, { prompt });
+        await publishSessionPrompt(sessionName, { prompt });
         warned.add(key);
         log.info("Sent ephemeral warning", { sessionName, minutesLeft });
       } catch (err) {

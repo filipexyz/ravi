@@ -9,6 +9,7 @@ import { requestReply } from "../../utils/request-reply.js";
 import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute, getFirstAccountName } from "../../router/router-db.js";
 import { nats } from "../../nats.js";
+import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
 import { generateSessionName, ensureUniqueName } from "../../router/session-name.js";
@@ -254,7 +255,7 @@ export class GroupCommands {
         const memberList = participants.join(", ");
         const inform = `[System] Inform: Você foi adicionado ao grupo WhatsApp "${name}" com os membros: ${memberList}. Se apresente brevemente.`;
 
-        await nats.emit(`ravi.session.${session.name ?? sessionName}.prompt`, {
+        await publishSessionPrompt(session.name ?? sessionName, {
           prompt: inform,
           source: {
             channel: "whatsapp",

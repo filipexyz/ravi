@@ -25,6 +25,8 @@ import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js"
 import { startInboxWatcher, stopInboxWatcher } from "./copilot/inbox-watcher.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
+import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
+import { tryAcquireLeadership, startLeadershipRenewal, watchForLeadershipVacancy, releaseLeadership } from "./leader/index.js";
 
 const log = logger.child("daemon");
 
@@ -105,13 +107,14 @@ async function shutdown(signal: string) {
       log.info("Bot stopped");
     }
 
-    // Stop runners
+    // Stop runners and release leadership so another daemon can take over
     stopInboxWatcher();
     await stopEphemeralRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
+    await releaseLeadership("runners");
 
     // Stop gateway
     if (gateway) {
@@ -164,10 +167,17 @@ export async function startDaemon() {
     log.warn("Omni not configured — no channel support (install omni: bun add -g @automagik/omni)");
   }
 
-  // Step 4: Sync REBAC relations from agent configs
+  // Step 4: Ensure SESSION_PROMPTS JetStream stream exists
+  // This stream replaces NATS core pub/sub for session routing,
+  // enabling work queue semantics — each prompt delivered to exactly one daemon.
+  log.info("Ensuring SESSION_PROMPTS JetStream stream...");
+  await ensureSessionPromptsStream();
+  log.info("SESSION_PROMPTS stream ready");
+
+  // Step 5: Sync REBAC relations from agent configs
   syncRelationsFromConfig();
 
-  // Step 5: Start bot
+  // Step 6: Start bot
   bot = new RaviBot({ config });
   await bot.start();
   log.info("Bot started");
@@ -204,12 +214,25 @@ export async function startDaemon() {
   await gateway.start();
   log.info("Gateway started");
 
-  // Step 7: Start runners
-  await startHeartbeatRunner();
-  log.info("Heartbeat runner started");
+  // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
+  // Outbound, trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
+  const isLeader = await tryAcquireLeadership("runners");
 
-  await startCronRunner();
-  log.info("Cron runner started");
+  if (isLeader) {
+    startLeadershipRenewal("runners");
+    await startHeartbeatRunner();
+    log.info("Heartbeat runner started (leader)");
+    await startCronRunner();
+    log.info("Cron runner started (leader)");
+  } else {
+    log.info("Not leader — heartbeat and cron runners skipped (another daemon is running them)");
+    watchForLeadershipVacancy("runners", async () => {
+      log.info("Leadership vacancy detected — starting heartbeat and cron runners");
+      await startHeartbeatRunner();
+      await startCronRunner();
+      log.info("Heartbeat and cron runners started (new leader)");
+    }).catch(err => log.error("Leadership watcher failed", err));
+  }
 
   await startOutboundRunner();
   log.info("Outbound runner started");
@@ -292,24 +315,23 @@ async function notifyRestartReason() {
     sessionName = fallbackSession?.name ?? defaultAgent;
   }
 
-  const topic = `ravi.session.${sessionName}.prompt`;
   const payload = {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      log.info("Emitting restart reason", { reason, topic, sessionName, attempt });
-      await nats.emit(topic, payload);
-      log.info("Restart reason prompt emitted", { topic, attempt });
+      log.info("Publishing restart reason", { reason, sessionName, attempt });
+      await publishSessionPrompt(sessionName, payload);
+      log.info("Restart reason prompt published", { sessionName, attempt });
       return;
     } catch (err) {
-      log.warn("Restart reason emit failed, retrying", { attempt, error: err });
+      log.warn("Restart reason publish failed, retrying", { attempt, error: err });
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
 
-  log.error("Failed to emit restart reason after 3 attempts");
+  log.error("Failed to publish restart reason after 3 attempts");
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command

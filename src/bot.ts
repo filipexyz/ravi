@@ -1,5 +1,8 @@
 import { query, type Query } from "@anthropic-ai/claude-agent-sdk";
-import { nats } from "./nats.js";
+import { StringCodec } from "nats";
+import { nats, getNats } from "./nats.js";
+import { SESSION_STREAM, makeConsumerName, ensureSessionConsumer } from "./omni/session-stream.js";
+import { daemonId } from "./leader/index.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, backfillSdkSessionId, close as closeDb } from "./db.js";
@@ -714,18 +717,47 @@ export class RaviBot {
     }
     this.promptSubscriptionActive = true;
 
-    const topic = "ravi.session.*.prompt";
-    log.info(`Subscribing to ${topic}`);
+    log.info("Subscribing to SESSION_PROMPTS JetStream stream");
+
+    const sc = StringCodec();
 
     try {
-      for await (const event of nats.subscribe(topic)) {
-        if (!this.running) break;
+      const nc = getNats();
+      const jsm = await nc.jetstreamManager();
+      const js = nc.jetstream();
 
+      // Each daemon registers its own consumer so NATS distributes prompts across all daemons.
+      // WorkQueuePolicy ensures each prompt is delivered to exactly one consumer (one daemon).
+      const consumerName = makeConsumerName(daemonId);
+      await ensureSessionConsumer(jsm, consumerName);
+
+      const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
+      const messages = await consumer.consume();
+
+      for await (const msg of messages) {
+        if (!this.running) {
+          msg.nak();
+          break;
+        }
+
+        let prompt: PromptMessage;
+        try {
+          const raw = sc.decode(msg.data);
+          prompt = JSON.parse(raw) as PromptMessage;
+        } catch (err) {
+          log.error("Failed to parse session prompt", { error: err, subject: msg.subject });
+          msg.nak();
+          continue;
+        }
+
+        // Ack immediately — signals this daemon has claimed the prompt.
+        // Another daemon won't receive it. If we crash mid-turn the user
+        // will need to resend (acceptable trade-off vs blocking the stream).
+        msg.ack();
         this.promptsReceived++;
 
-        // Extract session name from topic: ravi.session.{name}.prompt
-        const sessionName = event.topic.split(".")[2];
-        const prompt = event.data as unknown as PromptMessage;
+        // Extract session name from subject: ravi.session.{name}.prompt
+        const sessionName = msg.subject.split(".")[2];
 
         // Don't await - handle concurrently
         this.handlePrompt(sessionName, prompt).catch(err => {
@@ -1424,7 +1456,13 @@ export class RaviBot {
     let responseText = "";
 
     const emitSdkEvent = async (event: Record<string, unknown>) => {
-      await safeEmit(`ravi.session.${sessionName}.claude`, event);
+      // Include _source on turn-ending events so any gateway daemon can stop typing.
+      // In multi-daemon mode the daemon that processes the prompt may differ from
+      // the daemon that received the inbound message (which set activeTargets locally).
+      const augmented = (event.type === "result" || event.type === "silent") && streaming.currentSource
+        ? { ...event, _source: streaming.currentSource }
+        : event;
+      await safeEmit(`ravi.session.${sessionName}.claude`, augmented);
     };
 
     const emitResponse = async (text: string) => {

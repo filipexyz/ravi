@@ -115,22 +115,48 @@ export async function publish(
   conn.publish(topic, sc.encode(JSON.stringify(data)));
 }
 
+export interface SubscribeOptions {
+  /** NATS queue group name. When set, only one subscriber in the group receives each message. */
+  queue?: string;
+}
+
 /**
  * Subscribe to one or more topic patterns.
  * Drop-in replacement for nats.subscribe()
  *
  * Supports variadic patterns: subscribe("a.*", "b.*") merges both into one stream.
  * NATS '*' = single-token wildcard, '>' = multi-level wildcard.
+ *
+ * For queue groups, pass an options object as the last argument:
+ *   subscribe("ravi.session.*.response", { queue: "ravi-gateway" })
+ *   subscribe(["ravi.a.*", "ravi.b.*"], { queue: "ravi-gateway" })
+ *
+ * Queue groups ensure only one subscriber in the group receives each message —
+ * essential for multi-daemon deployments.
  */
 export async function* subscribe(
-  ...patterns: string[]
+  ...args: [...string[], SubscribeOptions] | string[]
 ): AsyncGenerator<{ topic: string; data: Record<string, unknown> }> {
   const conn = await ensureConnected();
-  if (patterns.length === 0) return;
 
-  if (patterns.length === 1) {
+  // Parse args: last element may be an options object (not a string)
+  let patternList: string[];
+  let opts: SubscribeOptions | undefined;
+  const last = args[args.length - 1];
+  if (args.length > 0 && typeof last === "object" && last !== null && !Array.isArray(last)) {
+    opts = last as SubscribeOptions;
+    patternList = args.slice(0, -1) as string[];
+  } else {
+    patternList = args as string[];
+  }
+
+  if (patternList.length === 0) return;
+
+  const subOpts = opts?.queue ? { queue: opts.queue } : undefined;
+
+  if (patternList.length === 1) {
     // Fast path: single subscription
-    const sub = conn.subscribe(patterns[0]);
+    const sub = conn.subscribe(patternList[0], subOpts);
     for await (const msg of sub) {
       // Skip NATS internal subjects (JetStream replies, API calls, advisories)
       if (msg.subject.startsWith("_INBOX.") || msg.subject.startsWith("$")) continue;
@@ -154,7 +180,7 @@ export async function* subscribe(
   let resolve: (() => void) | null = null;
   let done = false;
 
-  const subs = patterns.map((p) => conn.subscribe(p));
+  const subs = patternList.map((p) => conn.subscribe(p, subOpts));
 
   // Pump each subscription into the shared queue
   const pumps = subs.map(async (sub) => {
@@ -212,6 +238,6 @@ export async function closeNats(): Promise<void> {
  */
 export const nats = {
   emit: publish,
-  subscribe,
+  subscribe: (...args: [...string[], SubscribeOptions] | string[]) => subscribe(...(args as Parameters<typeof subscribe>)),
   close: closeNats,
 };

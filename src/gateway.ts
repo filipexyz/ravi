@@ -88,11 +88,16 @@ export class Gateway {
 
   /**
    * Generic subscription helper with auto-reconnect.
+   *
+   * Pass queue to enable NATS queue group — only one daemon in the group processes each message.
+   * Use this for any subscription where duplicate processing across daemons would cause side effects
+   * (e.g. sending a message twice to the user).
    */
   private subscribe(
     key: string,
     topics: string[],
-    handler: (event: { topic: string; data: unknown }) => Promise<void>
+    handler: (event: { topic: string; data: unknown }) => Promise<void>,
+    opts?: { queue?: string }
   ): void {
     if (this.activeSubscriptions.has(key)) {
       log.warn(`${key} subscription already active, skipping duplicate`);
@@ -102,7 +107,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of nats.subscribe(...topics)) {
+        for await (const event of nats.subscribe(...topics, ...(opts?.queue ? [{ queue: opts.queue }] : []) as [])) {
           if (!this.running) break;
           // Fire-and-forget: don't block the subscription loop on slow handlers
           // (e.g. omni sender timeouts shouldn't stall all other events)
@@ -117,7 +122,7 @@ export class Gateway {
       } finally {
         this.activeSubscriptions.delete(key);
         if (this.running) {
-          setTimeout(() => this.subscribe(key, topics, handler), 1000);
+          setTimeout(() => this.subscribe(key, topics, handler, opts), 1000);
         }
       }
     })();
@@ -125,6 +130,7 @@ export class Gateway {
 
   /**
    * Subscribe to bot responses and send via omni.
+   * Queue group: only one gateway daemon sends each response.
    */
   private subscribeToResponses(): void {
     this.subscribe("responses", ["ravi.session.*.response"], async (event) => {
@@ -168,7 +174,7 @@ export class Gateway {
           log.error("Failed to send response", { instanceId, chatId, error: err });
         }
       }
-    });
+    }, { queue: "ravi-gateway" });
   }
 
   /**
@@ -177,10 +183,11 @@ export class Gateway {
   private subscribeToClaudeEvents(): void {
     this.subscribe("claude", ["ravi.session.*.claude"], async (event) => {
       const sessionName = event.topic.split(".")[2];
-      const data = event.data as { type?: string };
+      const data = event.data as { type?: string; _source?: { channel: string; accountId: string; chatId: string } };
 
       if (data.type === "result" || data.type === "silent") {
-        const target = this.omniConsumer.getActiveTarget(sessionName);
+        // Prefer _source from event (works cross-daemon), fallback to local activeTargets
+        const target = data._source ?? this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
           const iid = configStore.resolveInstanceId(target.accountId);
           if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), false);
@@ -201,6 +208,7 @@ export class Gateway {
 
   /**
    * Subscribe to direct send events from the outbound module.
+   * Queue group: only one gateway daemon processes each deliver event.
    */
   private subscribeToDirectSend(): void {
     this.subscribe("directSend", ["ravi.outbound.deliver"], async (event) => {
@@ -297,11 +305,12 @@ export class Gateway {
           else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
         }
       }
-    });
+    }, { queue: "ravi-gateway" });
   }
 
   /**
    * Subscribe to emoji reaction events from agents.
+   * Queue group: only one gateway daemon sends each reaction.
    */
   private subscribeToReactions(): void {
     this.subscribe("reactions", ["ravi.outbound.reaction"], async (event) => {
@@ -322,11 +331,12 @@ export class Gateway {
       } catch (err) {
         log.error("Failed to send reaction", { error: err });
       }
-    });
+    }, { queue: "ravi-gateway" });
   }
 
   /**
    * Subscribe to media send events from agents.
+   * Queue group: only one gateway daemon sends each media file.
    */
   private subscribeToMediaSend(): void {
     this.subscribe("mediaSend", ["ravi.media.send"], async (event) => {
@@ -357,11 +367,12 @@ export class Gateway {
       } catch (err) {
         log.error("Failed to send media", { error: err });
       }
-    });
+    }, { queue: "ravi-gateway" });
   }
 
   /**
    * Subscribe to config changes for cache invalidation and REBAC sync.
+   * Fan-out intentional: all daemons must sync their own config cache.
    */
   private subscribeToConfigChanges(): void {
     this.subscribe("config", ["ravi.config.changed"], async () => {

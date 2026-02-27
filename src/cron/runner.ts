@@ -6,6 +6,7 @@
  */
 
 import { nats } from "../nats.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getDefaultAgentId } from "../router/router-db.js";
 import { deriveSourceFromSessionKey } from "../router/session-key.js";
@@ -272,7 +273,7 @@ export class CronRunner {
 
     const prompt = `[Cron: ${job.name} ${this.formatNow()}]\n${job.message}`;
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       source,
       _cron: true,
@@ -322,7 +323,7 @@ export class CronRunner {
       source.accountId = job.accountId;
     }
 
-    await nats.emit(`ravi.session.${sessionName}.prompt`, {
+    await publishSessionPrompt(sessionName, {
       prompt,
       source,
       _cron: true,
