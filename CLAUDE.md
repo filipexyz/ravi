@@ -55,6 +55,7 @@ ravi.contacts.pending       # New pending contact/group notification
 ravi.audit.denied           # REBAC permission denial audit events
 ravi.config.changed         # Configuration changed via CLI
 ravi.triggers.refresh       # Hot-reload trigger subscriptions
+ravi.instances.unregistered # Omni instance not registered in ravi (5min cooldown)
 ```
 
 - **prompt**: `{ prompt, source: { channel, accountId, chatId } }`
@@ -62,6 +63,7 @@ ravi.triggers.refresh       # Hot-reload trigger subscriptions
 - **claude**: Raw SDK events (used for typing heartbeat)
 - **tool**: `{ event: "start"|"end", toolId, toolName, input?, output?, isError?, durationMs?, timestamp, sessionKey, agentId }`
 - **contacts.pending**: `{ type: "contact"|"account", phone?, accountId?, name? }`
+- **instances.unregistered**: `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }`
 
 **omni NATS subjects (JetStream stream: MESSAGE):**
 - `message.received.{channelType}.{instanceId}` — inbound message
