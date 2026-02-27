@@ -721,8 +721,8 @@ function getDb(): Database {
   }
 
   // Migration: add account_id column to routes (recreate table for UNIQUE constraint change)
-  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
-  if (!routeColumns.some(c => c.name === "account_id")) {
+  const routeColumnsV1 = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  if (!routeColumnsV1.some(c => c.name === "account_id")) {
     db.exec("PRAGMA foreign_keys=OFF");
     try {
       db.exec(`

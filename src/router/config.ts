@@ -22,6 +22,8 @@ import {
   getDefaultDmScope,
   getRaviDir,
   dbListSettings,
+  dbListInstances,
+  type InstanceConfig,
 } from "./router-db.js";
 
 const log = logger.child("router:config");
@@ -50,6 +52,7 @@ export {
 export function loadRouterConfig(): RouterConfig {
   const agents = dbListAgents();
   const routes = dbListRoutes();
+  const instanceList = dbListInstances();
 
   // Build agents record
   const agentsRecord: Record<string, AgentConfig> = {};
@@ -57,25 +60,32 @@ export function loadRouterConfig(): RouterConfig {
     agentsRecord[agent.id] = agent;
   }
 
-  // Build account→agent mapping from settings (e.g., "account.vendas.agent" → "vendas")
-  const allSettings = dbListSettings();
-  const accountAgents: Record<string, string> = {};
-  const instanceToAccount: Record<string, string> = {};
-  const prefix = "account.";
-  const suffix = ".agent";
-  for (const [key, value] of Object.entries(allSettings)) {
-    if (key.startsWith(prefix) && key.endsWith(suffix) && value) {
-      const accountId = key.slice(prefix.length, -suffix.length);
-      accountAgents[accountId] = value;
-    }
+  // Build instances record
+  const instancesRecord: Record<string, InstanceConfig> = {};
+  for (const inst of instanceList) {
+    instancesRecord[inst.name] = inst;
   }
 
-  // Build instanceId → account name reverse map (e.g., "ef5a692e-..." → "main")
-  const instanceIdSuffix = ".instanceId";
+  // Build account→agent and instanceId→account from instances table (primary)
+  const accountAgents: Record<string, string> = {};
+  const instanceToAccount: Record<string, string> = {};
+  for (const inst of instanceList) {
+    if (inst.agent) accountAgents[inst.name] = inst.agent;
+    if (inst.instanceId) instanceToAccount[inst.instanceId] = inst.name;
+  }
+
+  // Legacy fallback: also read from account.* settings (for backwards compat)
+  const allSettings = dbListSettings();
+  const prefix = "account.";
   for (const [key, value] of Object.entries(allSettings)) {
-    if (key.startsWith(prefix) && key.endsWith(instanceIdSuffix) && value) {
-      const accountName = key.slice(prefix.length, -instanceIdSuffix.length);
-      instanceToAccount[value] = accountName;
+    if (!value) continue;
+    if (key.startsWith(prefix) && key.endsWith(".agent")) {
+      const accountId = key.slice(prefix.length, -".agent".length);
+      if (!accountAgents[accountId]) accountAgents[accountId] = value;
+    }
+    if (key.startsWith(prefix) && key.endsWith(".instanceId")) {
+      const accountName = key.slice(prefix.length, -".instanceId".length);
+      if (!instanceToAccount[value]) instanceToAccount[value] = accountName;
     }
   }
 
@@ -88,11 +98,13 @@ export function loadRouterConfig(): RouterConfig {
       dmScope: r.dmScope,
       session: r.session,
       priority: r.priority,
+      policy: r.policy,
     })),
     defaultAgent: getDefaultAgentId(),
     defaultDmScope: getDefaultDmScope(),
     accountAgents,
     instanceToAccount,
+    instances: instancesRecord,
   };
 
   log.debug("Loaded router config", {

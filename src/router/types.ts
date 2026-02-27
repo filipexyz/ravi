@@ -116,6 +116,9 @@ export interface RouteConfig {
 
   /** Priority (higher = checked first, default 0) */
   priority?: number;
+
+  /** Policy override for this route (overrides instance-level policy) */
+  policy?: string;
 }
 
 // ============================================================================
@@ -140,6 +143,9 @@ export interface RouterConfig {
 
   /** Reverse lookup: instanceId (UUID) → account name (e.g., "main") */
   instanceToAccount: Record<string, string>;
+
+  /** Instance configs keyed by name */
+  instances: Record<string, import("./router-db.js").InstanceConfig>;
 }
 
 // ============================================================================

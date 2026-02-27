@@ -99,11 +99,20 @@ export function matchRoute(
   const { phone, channel, accountId, isGroup, groupId } = params;
 
   // Find matching route — scoped to the account that received the message
-  // For groups, match against "group:<id>" pattern (strip @g.us suffix)
+  // Priority order: thread:* > group:* > phone/*
   const normalizedGroupId = groupId ? `group:${groupId.replace(/@.*$/, "")}` : undefined;
-  const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
+  const normalizedThreadId = params.threadId ? `thread:${params.threadId}` : undefined;
   const effectiveAccount = accountId;
-  const route = findRoute(routeTarget, config.routes, effectiveAccount);
+
+  // Try thread-specific route first (most specific)
+  let route = normalizedThreadId
+    ? findRoute(normalizedThreadId, config.routes, effectiveAccount)
+    : null;
+  // Fall back to group route
+  if (!route) {
+    const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
+    route = findRoute(routeTarget, config.routes, effectiveAccount);
+  }
 
   // Resolve agent: route > account-agent mapping > defaultAgent
   let agentId: string;

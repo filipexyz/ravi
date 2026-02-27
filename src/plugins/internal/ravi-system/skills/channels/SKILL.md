@@ -4,33 +4,56 @@ description: |
   Gerencia canais de comunicação do Ravi via omni. Use quando o usuário quiser:
   - Ver status das instâncias WhatsApp, Discord, Telegram
   - Conectar ou desconectar contas
+  - Configurar policies de DM e grupo por instância
   - Verificar QR code de pareamento
   - Troubleshoot problemas de conexão
 ---
 
 # Channels Manager
 
-Canais são gerenciados pelo omni API server (processo filho do daemon). Ravi se comunica com omni via HTTP REST e recebe eventos via NATS JetStream.
+Canais são gerenciados pelo omni API server (processo filho do daemon). Cada conta conectada é uma **instância** — a entidade central de configuração do Ravi.
 
-## WhatsApp
+## Instâncias (central config)
 
-### Conectar conta
+### Listar instâncias
 ```bash
-ravi whatsapp connect                        # conta "default"
-ravi whatsapp connect --account vendas       # conta nomeada
-ravi whatsapp connect --account vendas --agent vendas --mode active
-ravi whatsapp connect --account suporte --agent suporte --mode sentinel
+ravi instances list
+ravi instances show <name>
 ```
 
-### Ver status
+### Conectar nova conta (WhatsApp)
 ```bash
-ravi whatsapp status
-ravi whatsapp list
+ravi instances connect <name>                         # cria instância + conecta
+ravi instances connect vendas --agent vendas-agent
+```
+
+### Configurar instância
+```bash
+ravi instances set <name> agent <agent-id>
+ravi instances set <name> dmPolicy pairing        # open | pairing | closed
+ravi instances set <name> groupPolicy allowlist   # open | allowlist | closed
+ravi instances set <name> dmScope per-peer
 ```
 
 ### Desconectar
 ```bash
-ravi whatsapp disconnect
+ravi instances disconnect <name>
+```
+
+### Ver status omni
+```bash
+ravi instances status <name>
+```
+
+## WhatsApp (comandos legados)
+
+Os comandos abaixo ainda funcionam mas são equivalentes aos `ravi instances` acima:
+
+```bash
+ravi whatsapp connect                        # conta "default"
+ravi whatsapp connect --account vendas       # conta nomeada
+ravi whatsapp status
+ravi whatsapp list
 ravi whatsapp disconnect --account vendas
 ```
 
@@ -45,19 +68,39 @@ ravi whatsapp dm read <phone>
 - `active` - Agent responde automaticamente
 - `sentinel` - Agent observa silenciosamente, responde só quando instruído
 
-## Multi-Account
+## Policies por Instância
+
+Cada instância pode ter política independente de acesso:
+
+| Policy | Contexto | Comportamento |
+|--------|----------|---------------|
+| `dmPolicy=open` | DMs | Aceita qualquer DM |
+| `dmPolicy=pairing` | DMs | Só aceita contatos aprovados |
+| `dmPolicy=closed` | DMs | Rejeita todos os DMs |
+| `groupPolicy=open` | Grupos | Aceita qualquer grupo |
+| `groupPolicy=allowlist` | Grupos | Só aceita grupos com rota explícita |
+| `groupPolicy=closed` | Grupos | Rejeita todos os grupos |
 
 ```bash
-ravi whatsapp connect --account vendas --agent vendas --mode active
-ravi whatsapp connect --account suporte --agent suporte --mode sentinel
+ravi instances set main dmPolicy pairing
+ravi instances set vendas groupPolicy allowlist
+```
+
+## Multi-Instância
+
+```bash
+ravi instances connect vendas --agent vendas-agent
+ravi instances connect suporte --agent suporte-agent
+ravi instances set vendas dmPolicy open
+ravi instances set suporte groupPolicy allowlist
 ```
 
 ## Troubleshooting
 
 ### WhatsApp não conecta
 ```bash
-ravi whatsapp status          # Ver estado das instâncias
-ravi whatsapp connect         # Reconectar (mostra QR se necessário)
+ravi instances status main    # Ver estado da instância
+ravi instances connect main   # Reconectar (mostra QR se necessário)
 ravi daemon logs              # Ver logs do daemon e omni
 ```
 

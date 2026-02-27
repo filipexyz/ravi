@@ -104,10 +104,15 @@ Processa prompts usando Claude Agent SDK.
 ### router/ - Sistema de Roteamento
 
 **Resolução de rota (prioridade):**
-1. `account.{id}.agent` setting
-2. Agent atribuído ao contato
-3. Rota com pattern match
+1. Rota `thread:ID` — mais específica (thread dentro de grupo)
+2. Rota `group:ID` ou padrão de telefone
+3. Mapeamento `instance.agent` (tabela `instances`)
 4. Agent default
+
+**Policy resolution (por mensagem):**
+```
+route.policy → instance.dmPolicy/groupPolicy → legacy account.* settings → "open"
+```
 
 **Session keys:**
 ```
@@ -115,15 +120,30 @@ agent:{agentId}:{scope}:{peerId}
 agent:main:main                          # Todas DMs (scope=main)
 agent:main:dm:5511999                    # Por contato
 agent:main:whatsapp:group:123456         # Grupo
+agent:main:whatsapp:main:group:123456:thread:abc  # Thread
 agent:main:outbound:queueId:phone        # Outbound
 ```
 
+**Instâncias (tabela `instances`):**
+Entidade central que une canal + agent + policies. Substitui namespace `account.*` de settings.
+```typescript
+interface InstanceConfig {
+  name: string;        // nome da conta omni (ex: "main", "vendas")
+  instanceId?: string; // UUID do omni
+  channel: string;     // "whatsapp" | "matrix" | ...
+  agent?: string;      // agent padrão desta instância
+  dmPolicy: "open" | "pairing" | "closed";
+  groupPolicy: "open" | "allowlist" | "closed";
+  dmScope?: DmScope;
+}
+```
+
 **Arquivos:**
-- `router/resolver.ts` - Resolve rota → session key
+- `router/resolver.ts` - Resolve rota → session key (matchRoute, findRoute)
 - `router/session-key.ts` - Constrói/parseia session keys
 - `router/sessions.ts` - CRUD de sessões (SQLite)
-- `router/config.ts` - Carrega config de agents/routes
-- `router/router-db.ts` - Camada de banco
+- `router/config.ts` - Carrega RouterConfig (agents + routes + instances)
+- `router/router-db.ts` - Camada de banco (CRUD agents, routes, instances, settings)
 
 ## Subsistemas de Automação
 

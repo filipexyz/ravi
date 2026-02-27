@@ -456,14 +456,20 @@ export class OmniConsumer {
     }
 
     // -- Policy resolution helper --
-    // Lookup order: account.<id>.<channel>.<policy> → account.<id>.<policy> → <channel>.<policy> → default
-    const resolvePolicy = (policyName: "groupPolicy" | "dmPolicy", defaultValue: string): string => {
-      const ch = sessionChannel; // normalized channel (whatsapp, telegram, discord, slack…)
+    // Lookup order: route.policy → instance config → legacy settings → default
+    const resolvePolicy = (policyName: "groupPolicy" | "dmPolicy", routePolicy: string | undefined, defaultValue: string): string => {
+      // 1. Explicit override on the matched route
+      if (routePolicy) return routePolicy;
+      // 2. Instance config (from instances table via RouterConfig)
+      const instance = routerConfig.instances?.[effectiveAccountId];
+      if (instance) {
+        const val = policyName === "groupPolicy" ? instance.groupPolicy : instance.dmPolicy;
+        if (val) return val;
+      }
+      // 3. Legacy settings fallback
       return (
-        dbGetSetting(`account.${effectiveAccountId}.${ch}.${policyName}`) ??
         dbGetSetting(`account.${effectiveAccountId}.${policyName}`) ??
-        dbGetSetting(`${ch}.${policyName}`) ??
-        dbGetSetting(`whatsapp.${policyName}`) ?? // legacy global fallback
+        dbGetSetting(`whatsapp.${policyName}`) ??
         defaultValue
       );
     };
@@ -473,7 +479,7 @@ export class OmniConsumer {
     // having a specific route is an implicit approval.
     const hasExplicitRoute = resolved.route && resolved.route.pattern !== "*";
     if (isGroup && !hasExplicitRoute) {
-      const groupPolicy = resolvePolicy("groupPolicy", "open");
+      const groupPolicy = resolvePolicy("groupPolicy", resolved.route?.policy, "open");
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
         return;
@@ -507,7 +513,7 @@ export class OmniConsumer {
 
     // -- DM policy enforcement --
     if (!isGroup) {
-      const dmPolicy = resolvePolicy("dmPolicy", "open");
+      const dmPolicy = resolvePolicy("dmPolicy", resolved.route?.policy, "open");
       if (dmPolicy === "closed") {
         log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
         return;

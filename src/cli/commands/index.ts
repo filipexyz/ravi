@@ -14,6 +14,7 @@ export * from "./daemon.js";
 export * from "./events.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
+export * from "./instances.js";
 export * from "./media.js";
 export * from "./outbound.js";
 export * from "./permissions.js";
