@@ -131,6 +131,8 @@ export interface MessageTarget {
   channel: string;
   accountId: string;
   chatId: string;
+  /** Thread/topic ID for platforms that support it (Telegram topics, Slack threads, Discord threads) */
+  threadId?: string;
 }
 
 /** Prompt message structure */

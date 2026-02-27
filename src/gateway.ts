@@ -168,7 +168,7 @@ export class Gateway {
         });
 
         try {
-          await this.omniSender.send(instanceId, chatId, text);
+          await this.omniSender.send(instanceId, chatId, text, target.threadId);
           log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
         } catch (err) {
           log.error("Failed to send response", { instanceId, chatId, error: err });

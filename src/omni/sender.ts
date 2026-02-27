@@ -60,10 +60,10 @@ export class OmniSender {
   /**
    * Send a text message via omni.
    */
-  async send(instanceId: string, to: string, text: string): Promise<{ messageId?: string }> {
+  async send(instanceId: string, to: string, text: string, threadId?: string): Promise<{ messageId?: string }> {
     try {
       const result = await this.withRetry(
-        () => this.client.messages.send({ instanceId, to, text }),
+        () => this.client.messages.send({ instanceId, to, text, ...(threadId ? { threadId } : {}) }),
         `send(${instanceId})`
       ) as { messageId?: string };
       return { messageId: result.messageId };

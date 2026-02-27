@@ -389,10 +389,13 @@ export class OmniConsumer {
     // Thread detection:
     // - Slack: isThreadReply + threadTs
     // - Discord: isThread + threadId (in rawPayload)
+    // - Telegram: threadId (set directly when is_topic_message === true)
     let threadId: string | undefined;
     if (rawPayload?.isThreadReply === true && rawPayload.threadTs) {
       threadId = String(rawPayload.threadTs);
     } else if (rawPayload?.isThread === true && rawPayload.threadId) {
+      threadId = String(rawPayload.threadId);
+    } else if (rawPayload?.threadId) {
       threadId = String(rawPayload.threadId);
     }
 
@@ -608,6 +611,7 @@ export class OmniConsumer {
       channel: channelType,
       accountId: effectiveAccountId,
       chatId: chatJid,
+      ...(threadId ? { threadId } : {}),
     };
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
