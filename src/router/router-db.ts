@@ -57,6 +57,20 @@ export const RouteInputSchema = z.object({
   dmScope: DmScopeSchema.optional(),
   session: z.string().optional(),
   priority: z.number().int().default(0),
+  policy: z.string().optional(),
+});
+
+export const GroupPolicySchema = z.enum(["open", "allowlist", "closed"]);
+export const DmPolicySchema = z.enum(["open", "pairing", "closed"]);
+
+export const InstanceInputSchema = z.object({
+  name: z.string().min(1),
+  instanceId: z.string().optional(),
+  channel: z.string().default("whatsapp"),
+  agent: z.string().optional(),
+  dmPolicy: DmPolicySchema.default("open"),
+  groupPolicy: GroupPolicySchema.default("open"),
+  dmScope: DmScopeSchema.optional(),
 });
 
 // ============================================================================
@@ -99,9 +113,34 @@ interface RouteRow {
   agent_id: string;
   dm_scope: string | null;
   session_name: string | null;
+  policy: string | null;
   priority: number;
   created_at: number;
   updated_at: number;
+}
+
+interface InstanceRow {
+  name: string;
+  instance_id: string | null;
+  channel: string;
+  agent: string | null;
+  dm_policy: string;
+  group_policy: string;
+  dm_scope: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface InstanceConfig {
+  name: string;
+  instanceId?: string;
+  channel: string;
+  agent?: string;
+  dmPolicy: "open" | "pairing" | "closed";
+  groupPolicy: "open" | "allowlist" | "closed";
+  dmScope?: DmScope;
+  createdAt: number;
+  updatedAt: number;
 }
 
 interface SettingRow {
@@ -255,6 +294,19 @@ function getDb(): Database {
       created_at INTEGER NOT NULL
     );
 
+    -- Instances: central config entity (one per omni connection)
+    CREATE TABLE IF NOT EXISTS instances (
+      name         TEXT PRIMARY KEY,
+      instance_id  TEXT UNIQUE,
+      channel      TEXT NOT NULL DEFAULT 'whatsapp',
+      agent        TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      dm_policy    TEXT NOT NULL DEFAULT 'open' CHECK(dm_policy IN ('open','pairing','closed')),
+      group_policy TEXT NOT NULL DEFAULT 'open' CHECK(group_policy IN ('open','allowlist','closed')),
+      dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
+      created_at   INTEGER NOT NULL,
+      updated_at   INTEGER NOT NULL
+    );
+
     -- Matrix accounts (all users - both regular users and agents)
     CREATE TABLE IF NOT EXISTS matrix_accounts (
       username TEXT PRIMARY KEY,
@@ -354,6 +406,51 @@ function getDb(): Database {
   if (!sessionColumns.some(c => c.name === "last_context")) {
     db.exec("ALTER TABLE sessions ADD COLUMN last_context TEXT");
     log.info("Added last_context column to sessions table");
+  }
+
+  // Migration: add policy column to routes if not exists
+  const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
+  if (!routeColumns.some(c => c.name === "policy")) {
+    db.exec("ALTER TABLE routes ADD COLUMN policy TEXT");
+    log.info("Added policy column to routes table");
+  }
+
+  // Migration: seed instances table from account.* settings (one-time)
+  const instanceCount = (db.prepare("SELECT COUNT(*) as n FROM instances").get() as { n: number }).n;
+  if (instanceCount === 0) {
+    const settingRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'account.%'").all() as Array<{ key: string; value: string }>;
+    const instanceData: Record<string, Partial<InstanceConfig>> = {};
+
+    for (const { key, value } of settingRows) {
+      const m = key.match(/^account\.([^.]+)\.(.+)$/);
+      if (!m) continue;
+      const [, name, field] = m;
+      if (!instanceData[name]) instanceData[name] = { name };
+      if (field === "instanceId") instanceData[name].instanceId = value;
+      else if (field === "agent") instanceData[name].agent = value;
+      else if (field === "dmPolicy" && (value === "open" || value === "pairing" || value === "closed")) instanceData[name].dmPolicy = value;
+      else if (field === "groupPolicy" && (value === "open" || value === "allowlist" || value === "closed")) instanceData[name].groupPolicy = value;
+    }
+
+    const insertInstance = db.prepare(`
+      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const now = Date.now();
+    for (const inst of Object.values(instanceData)) {
+      if (!inst.name) continue;
+      insertInstance.run(
+        inst.name,
+        inst.instanceId ?? null,
+        "whatsapp",
+        inst.agent ?? null,
+        inst.dmPolicy ?? "open",
+        inst.groupPolicy ?? "open",
+        now,
+        now
+      );
+      log.info("Migrated instance from settings", { name: inst.name });
+    }
   }
 
   // Migration: add ephemeral session columns
@@ -720,6 +817,13 @@ interface PreparedStatements {
   upsertMessageMeta: Statement;
   getMessageMeta: Statement;
   cleanupMessageMeta: Statement;
+  // Instances
+  upsertInstance: Statement;
+  getInstanceByName: Statement;
+  getInstanceByInstanceId: Statement;
+  listInstances: Statement;
+  deleteInstance: Statement;
+  updateInstance: Statement;
 }
 
 let stmts: PreparedStatements | null = null;
@@ -778,14 +882,15 @@ function getStatements(): PreparedStatements {
 
     // Routes
     insertRoute: database.prepare(`
-      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, session_name, priority, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, session_name, policy, priority, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateRoute: database.prepare(`
       UPDATE routes SET
         agent_id = ?,
         dm_scope = ?,
         session_name = ?,
+        policy = ?,
         priority = ?,
         updated_at = ?
       WHERE pattern = ? AND account_id = ?
@@ -831,6 +936,34 @@ function getStatements(): PreparedStatements {
     `),
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
+    // Instances
+    upsertInstance: database.prepare(`
+      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(name) DO UPDATE SET
+        instance_id  = excluded.instance_id,
+        channel      = excluded.channel,
+        agent        = excluded.agent,
+        dm_policy    = excluded.dm_policy,
+        group_policy = excluded.group_policy,
+        dm_scope     = excluded.dm_scope,
+        updated_at   = excluded.updated_at
+    `),
+    getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ?"),
+    getInstanceByInstanceId: database.prepare("SELECT * FROM instances WHERE instance_id = ?"),
+    listInstances: database.prepare("SELECT * FROM instances ORDER BY name"),
+    deleteInstance: database.prepare("DELETE FROM instances WHERE name = ?"),
+    updateInstance: database.prepare(`
+      UPDATE instances SET
+        instance_id  = ?,
+        channel      = ?,
+        agent        = ?,
+        dm_policy    = ?,
+        group_policy = ?,
+        dm_scope     = ?,
+        updated_at   = ?
+      WHERE name = ?
+    `),
   };
 
   return stmts;
@@ -919,6 +1052,28 @@ function rowToRoute(row: RouteRow): RouteConfig & { id: number } {
     result.session = row.session_name;
   }
 
+  if ((row as RouteRow & { policy?: string | null }).policy != null) {
+    result.policy = (row as RouteRow & { policy?: string | null }).policy!;
+  }
+
+  return result;
+}
+
+function rowToInstance(row: InstanceRow): InstanceConfig {
+  const result: InstanceConfig = {
+    name: row.name,
+    channel: row.channel,
+    dmPolicy: (row.dm_policy ?? "open") as InstanceConfig["dmPolicy"],
+    groupPolicy: (row.group_policy ?? "open") as InstanceConfig["groupPolicy"],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+  if (row.instance_id) result.instanceId = row.instance_id;
+  if (row.agent) result.agent = row.agent;
+  if (row.dm_scope) {
+    const parsed = DmScopeSchema.safeParse(row.dm_scope);
+    if (parsed.success) result.dmScope = parsed.data;
+  }
   return result;
 }
 
@@ -1133,6 +1288,7 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       validated.agent,
       validated.dmScope ?? null,
       validated.session ?? null,
+      validated.policy ?? null,
       validated.priority,
       now,
       now
@@ -1194,6 +1350,7 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
     updates.agent ?? row.agent_id,
     updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
     updates.session !== undefined ? updates.session ?? null : row.session_name,
+    updates.policy !== undefined ? updates.policy ?? null : row.policy,
     updates.priority ?? row.priority,
     now,
     pattern,
@@ -1273,6 +1430,81 @@ export function dbListSettings(): Record<string, string> {
 }
 
 // ============================================================================
+// Instance CRUD
+// ============================================================================
+
+export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): InstanceConfig {
+  const validated = InstanceInputSchema.parse(input);
+  if (validated.agent && !dbGetAgent(validated.agent)) {
+    throw new Error(`Agent not found: ${validated.agent}`);
+  }
+  const s = getStatements();
+  const now = Date.now();
+  s.upsertInstance.run(
+    validated.name,
+    validated.instanceId ?? null,
+    validated.channel,
+    validated.agent ?? null,
+    validated.dmPolicy,
+    validated.groupPolicy,
+    validated.dmScope ?? null,
+    now,
+    now
+  );
+  log.info("Upserted instance", { name: validated.name });
+  return dbGetInstance(validated.name)!;
+}
+
+export function dbGetInstance(name: string): InstanceConfig | null {
+  const s = getStatements();
+  const row = s.getInstanceByName.get(name) as InstanceRow | undefined;
+  return row ? rowToInstance(row) : null;
+}
+
+export function dbGetInstanceByInstanceId(instanceId: string): InstanceConfig | null {
+  const s = getStatements();
+  const row = s.getInstanceByInstanceId.get(instanceId) as InstanceRow | undefined;
+  return row ? rowToInstance(row) : null;
+}
+
+export function dbListInstances(): InstanceConfig[] {
+  const s = getStatements();
+  const rows = s.listInstances.all() as InstanceRow[];
+  return rows.map(rowToInstance);
+}
+
+export function dbUpdateInstance(name: string, updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt">>): InstanceConfig {
+  const s = getStatements();
+  const row = s.getInstanceByName.get(name) as InstanceRow | undefined;
+  if (!row) throw new Error(`Instance not found: ${name}`);
+  if (updates.agent && !dbGetAgent(updates.agent)) {
+    throw new Error(`Agent not found: ${updates.agent}`);
+  }
+  if (updates.dmScope) DmScopeSchema.parse(updates.dmScope);
+  if (updates.dmPolicy) DmPolicySchema.parse(updates.dmPolicy);
+  if (updates.groupPolicy) GroupPolicySchema.parse(updates.groupPolicy);
+  const now = Date.now();
+  s.updateInstance.run(
+    updates.instanceId !== undefined ? updates.instanceId ?? null : row.instance_id,
+    updates.channel ?? row.channel,
+    updates.agent !== undefined ? updates.agent ?? null : row.agent,
+    updates.dmPolicy ?? row.dm_policy,
+    updates.groupPolicy ?? row.group_policy,
+    updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
+    now,
+    name
+  );
+  log.info("Updated instance", { name, ...updates });
+  return dbGetInstance(name)!;
+}
+
+export function dbDeleteInstance(name: string): boolean {
+  const s = getStatements();
+  s.deleteInstance.run(name);
+  return getDbChanges() > 0;
+}
+
+// ============================================================================
 // Convenience Getters
 // ============================================================================
 
@@ -1303,10 +1535,13 @@ export function getDefaultTimezone(): string | undefined {
 }
 
 /**
- * Get the first registered account name (from account.*.instanceId settings).
- * Used by CLI commands when --account is not specified.
+ * Get the first registered instance name.
+ * Reads from instances table first, falls back to account.*.instanceId settings.
  */
 export function getFirstAccountName(): string | undefined {
+  const instances = dbListInstances();
+  if (instances.length > 0) return instances[0].name;
+  // Legacy fallback: settings namespace
   const settings = dbListSettings();
   for (const key of Object.keys(settings)) {
     const match = key.match(/^account\.(.+)\.instanceId$/);
@@ -1316,11 +1551,14 @@ export function getFirstAccountName(): string | undefined {
 }
 
 /**
- * Get the account name mapped to a specific agent.
- * Looks up settings like account.<name>.agent = <agentId>.
- * Falls back to getFirstAccountName() if no mapping found.
+ * Get the instance name mapped to a specific agent.
+ * Reads from instances table first, falls back to account.*.agent settings.
  */
 export function getAccountForAgent(agentId: string): string | undefined {
+  const instances = dbListInstances();
+  const found = instances.find(i => i.agent === agentId);
+  if (found) return found.name;
+  // Legacy fallback
   const settings = dbListSettings();
   for (const [key, value] of Object.entries(settings)) {
     const match = key.match(/^account\.(.+)\.agent$/);
