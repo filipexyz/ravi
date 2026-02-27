@@ -15,7 +15,7 @@
  */
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
-import { getNats } from "../nats.js";
+import { getNats, ensureConnected } from "../nats.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("session-stream");
@@ -130,7 +130,7 @@ export async function publishSessionPrompt(
   sessionName: string,
   payload: Record<string, unknown>,
 ): Promise<void> {
-  const nc = getNats();
+  const nc = await ensureConnected();
   const js = nc.jetstream();
   await js.publish(
     `ravi.session.${sessionName}.prompt`,

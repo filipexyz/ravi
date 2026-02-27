@@ -73,7 +73,7 @@ export function isExplicitConnect(): boolean {
  * Lazy connect — called automatically on first emit/subscribe.
  * Allows CLI commands to work without explicit connectNats().
  */
-async function ensureConnected(): Promise<NatsConnection> {
+export async function ensureConnected(): Promise<NatsConnection> {
   if (nc) return nc;
   if (!connecting) {
     connecting = connectNats(DEFAULT_URL).finally(() => { connecting = null; });
