@@ -347,9 +347,12 @@ export class OmniConsumer {
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
-    // isDm: Slack uses lowercase "isDm", Discord uses "isDM"
+    // isDm: Slack uses lowercase "isDm", Discord/Telegram use "isDM"
     const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
+    // rawPayload.isGroup: Telegram sets this explicitly
+    const rawIsGroup = rawPayload?.isGroup;
     const isGroup = payload.chatId.endsWith("@g.us")
+      || rawIsGroup === true
       || (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
     const senderPhone = stripJid(payload.from);
     const chatJid = payload.chatId;
