@@ -762,8 +762,8 @@ export class SessionCommands {
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
-      claudeStream.close();
-      responseStream.close();
+      claudeStream.return(undefined);
+      responseStream.return(undefined);
     };
 
     const completion = new Promise<void>((resolve) => {

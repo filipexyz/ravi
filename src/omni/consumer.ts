@@ -8,12 +8,14 @@
  */
 
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
-import { getNats } from "../nats.js";
+import { getNats, publish } from "../nats.js";
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { handleSlashCommand } from "../slash/index.js";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
+const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
+const unregisteredCooldowns = new Map<string, number>();
 import {
   expandHome,
   resolveRoute,
@@ -363,6 +365,12 @@ export class OmniConsumer {
     const effectiveAccountId = configStore.resolveAccountName(instanceId);
     if (!effectiveAccountId) {
       log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
+      const now = Date.now();
+      const lastEmit = unregisteredCooldowns.get(instanceId) ?? 0;
+      if (now - lastEmit >= UNREGISTERED_COOLDOWN_MS) {
+        unregisteredCooldowns.set(instanceId, now);
+        publish("ravi.instances.unregistered", { instanceId, channelType, subject }).catch(() => {});
+      }
       return;
     }
 
@@ -438,12 +446,25 @@ export class OmniConsumer {
       return;
     }
 
+    // -- Policy resolution helper --
+    // Lookup order: account.<id>.<channel>.<policy> → account.<id>.<policy> → <channel>.<policy> → default
+    const resolvePolicy = (policyName: "groupPolicy" | "dmPolicy", defaultValue: string): string => {
+      const ch = sessionChannel; // normalized channel (whatsapp, telegram, discord, slack…)
+      return (
+        dbGetSetting(`account.${effectiveAccountId}.${ch}.${policyName}`) ??
+        dbGetSetting(`account.${effectiveAccountId}.${policyName}`) ??
+        dbGetSetting(`${ch}.${policyName}`) ??
+        dbGetSetting(`whatsapp.${policyName}`) ?? // legacy global fallback
+        defaultValue
+      );
+    };
+
     // -- Group policy enforcement --
     // Skip policy check if the group has an explicit route (not wildcard) —
     // having a specific route is an implicit approval.
     const hasExplicitRoute = resolved.route && resolved.route.pattern !== "*";
     if (isGroup && !hasExplicitRoute) {
-      const groupPolicy = dbGetSetting("whatsapp.groupPolicy") ?? "open";
+      const groupPolicy = resolvePolicy("groupPolicy", "open");
       if (groupPolicy === "closed") {
         log.info("Group rejected by policy (closed)", { chatJid, accountId: effectiveAccountId });
         return;
@@ -467,6 +488,39 @@ export class OmniConsumer {
               senderId: senderPhone,
               chatId: chatJid,
               isGroup: true,
+            }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+          }
+          return;
+        }
+      }
+      // "open" → falls through normally
+    }
+
+    // -- DM policy enforcement --
+    if (!isGroup) {
+      const dmPolicy = resolvePolicy("dmPolicy", "open");
+      if (dmPolicy === "closed") {
+        log.info("DM rejected by policy (closed)", { senderPhone, accountId: effectiveAccountId });
+        return;
+      }
+      if (dmPolicy === "pairing") {
+        const contact = getContact(senderPhone);
+        if (!contact || contact.status !== "allowed") {
+          const isNew = saveAccountPending(effectiveAccountId, senderPhone, {
+            chatId: chatJid,
+            isGroup: false,
+          });
+          log.info("DM contact not approved (pairing policy), saved as pending", {
+            senderPhone, accountId: effectiveAccountId, isNew,
+          });
+          if (isNew) {
+            nats.emit("ravi.contacts.pending", {
+              type: "account",
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: false,
             }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
           }
           return;

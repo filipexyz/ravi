@@ -78,6 +78,35 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   },
 };
 
+// Pattern-based validators for dynamic settings (per-account, per-channel)
+type PatternValidator = { pattern: RegExp; description: string; validate: (value: string) => void };
+const PATTERN_VALIDATORS: PatternValidator[] = [
+  {
+    // account.<name>.groupPolicy  OR  account.<name>.<channel>.groupPolicy
+    pattern: /^account\.[^.]+(\.[^.]+)?\.groupPolicy$/,
+    description: `Per-account group policy (${GROUP_POLICIES.join(", ")})`,
+    validate: (value: string) => {
+      if (!GROUP_POLICIES.includes(value as typeof GROUP_POLICIES[number])) {
+        throw new Error(`Invalid value. Must be one of: ${GROUP_POLICIES.join(", ")}`);
+      }
+    },
+  },
+  {
+    // account.<name>.dmPolicy  OR  account.<name>.<channel>.dmPolicy
+    pattern: /^account\.[^.]+(\.[^.]+)?\.dmPolicy$/,
+    description: `Per-account DM policy (${DM_POLICIES.join(", ")})`,
+    validate: (value: string) => {
+      if (!DM_POLICIES.includes(value as typeof DM_POLICIES[number])) {
+        throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
+      }
+    },
+  },
+];
+
+function findPatternValidator(key: string): PatternValidator | undefined {
+  return PATTERN_VALIDATORS.find(p => p.pattern.test(key));
+}
+
 
 @Group({
   name: "settings",
@@ -98,11 +127,22 @@ export class SettingsCommands {
       console.log(`    ${meta.description}\n`);
     }
 
-    // Show any additional custom settings
+    // Show any additional custom settings (split: pattern-known vs truly custom)
     const customKeys = Object.keys(settings).filter(k => !KNOWN_SETTINGS[k]);
-    if (customKeys.length > 0) {
+    const knownPatternKeys = customKeys.filter(k => findPatternValidator(k));
+    const unknownKeys = customKeys.filter(k => !findPatternValidator(k));
+
+    if (knownPatternKeys.length > 0) {
+      console.log("  Per-account policies:");
+      for (const key of knownPatternKeys) {
+        console.log(`    ${key}: ${settings[key]}`);
+      }
+      console.log();
+    }
+
+    if (unknownKeys.length > 0) {
       console.log("  Custom settings:");
-      for (const key of customKeys) {
+      for (const key of unknownKeys) {
         console.log(`    ${key}: ${settings[key]}`);
       }
       console.log();
@@ -133,11 +173,13 @@ export class SettingsCommands {
     @Arg("key", { description: "Setting key" }) key: string,
     @Arg("value", { description: "Setting value" }) value: string
   ) {
-    // Validate known settings
+    // Validate known settings (exact match first, then pattern-based)
     const meta = KNOWN_SETTINGS[key];
-    if (meta?.validate) {
+    const patternMeta = meta ? undefined : findPatternValidator(key);
+    const validator = meta?.validate ?? patternMeta?.validate;
+    if (validator) {
       try {
-        meta.validate(value);
+        validator(value);
       } catch (err) {
         const hint = key === "defaultAgent"
           ? `. Available: ${dbListAgents().map(a => a.id).join(", ")}`
