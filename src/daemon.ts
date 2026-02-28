@@ -311,18 +311,19 @@ async function notifyRestartReason() {
 
   if (!reason) return;
 
-  // Resolve target session — if origin session is TUI (Claude Code), fall back to main
-  // because TUI sessions have no outbound channel and responses would be silently dropped.
-  const defaultAgent = dbGetSetting("defaultAgent") || "main";
+  // Resolve target session.
+  // If origin session has no external channel (e.g. TUI / Claude Code), redirect to the
+  // "main" agent's primary session so the response reaches the user via WhatsApp.
   if (!sessionName) {
+    const defaultAgent = dbGetSetting("defaultAgent") || "main";
     const fallbackSession = getMainSession(defaultAgent);
     sessionName = fallbackSession?.name ?? defaultAgent;
   } else {
-    // Check if the origin session has an external channel; if it's TUI, redirect to main
-    const originSession = sessionName ? getSessionByName(sessionName) : null;
+    const originSession = getSessionByName(sessionName);
     if (!originSession?.lastChannel || originSession.lastChannel === "tui") {
-      const mainSession = getMainSession(defaultAgent);
-      const mainName = mainSession?.name ?? defaultAgent;
+      // Prefer the "main" agent session — it has the user's WhatsApp channel
+      const mainSession = getMainSession("main");
+      const mainName = mainSession?.name ?? "main";
       log.info("Origin session is TUI — redirecting inform to main session", {
         originSession: sessionName,
         targetSession: mainName,
