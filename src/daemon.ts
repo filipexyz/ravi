@@ -248,8 +248,13 @@ export async function startDaemon() {
 
   log.info("Daemon ready");
 
-  // Notify restart reason only after consumer is active and ready to receive
-  bot.consumerReady.then(() => notifyRestartReason()).catch(err => {
+  // Notify restart reason after consumer is ready + delay to let sessions reconnect first.
+  // The TUI sends "Continue from where you left off" on reconnect — we wait for that turn
+  // to start before publishing the inform, so it arrives between turns (not concatenated).
+  bot.consumerReady.then(async () => {
+    await new Promise(r => setTimeout(r, 3000));
+    await notifyRestartReason();
+  }).catch(err => {
     log.error("Failed to notify restart reason", err);
   });
 }
@@ -322,29 +327,13 @@ async function notifyRestartReason() {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
-  const PUBLISH_TIMEOUT_MS = 10_000;
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      log.info("Publishing restart reason", { reason, sessionName, attempt });
-      // Race against timeout — js.publish() can hang indefinitely if NATS is initializing
-      await Promise.race([
-        publishSessionPrompt(sessionName, payload),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error(`publish timeout after ${PUBLISH_TIMEOUT_MS}ms`)), PUBLISH_TIMEOUT_MS)
-        ),
-      ]);
-      log.info("Restart reason prompt published", { sessionName, attempt });
-      return;
-    } catch (err) {
-      log.warn("Restart reason publish failed, retrying", { attempt, error: err });
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
+  try {
+    log.info("Publishing restart reason", { reason, sessionName });
+    await publishSessionPrompt(sessionName, payload);
+    log.info("Restart reason prompt published", { sessionName });
+  } catch (err) {
+    log.error("Failed to publish restart reason", { error: err });
   }
-
-  log.error("Failed to publish restart reason after 3 attempts");
 }
 
 // Note: startDaemon() is called by CLI's "daemon run" command
