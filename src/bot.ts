@@ -22,8 +22,7 @@ import {
   getAnnounceCompaction,
   generateSessionName,
   ensureUniqueName,
-  dbGetSetting,
-  dbListSettings,
+  getAccountForAgent,
   type SessionEntry,
   type AgentConfig,
 } from "./router/index.js";
@@ -1263,21 +1262,9 @@ export class RaviBot {
       raviEnv.RAVI_ACCOUNT_ID = prompt.context.accountId;
       if (prompt.context.channelId) raviEnv.RAVI_CHANNEL = prompt.context.channelId;
     } else if (agent.mode === "sentinel") {
-      // Sentinel heartbeat/cross-send: resolve accountId from settings mapping
-      // Settings format: account.<accountId>.agent = <agentId>
-      // Common case: accountId = agentId (e.g., account.luis.agent = luis)
-      if (dbGetSetting(`account.${agent.id}.agent`) === agent.id) {
-        raviEnv.RAVI_ACCOUNT_ID = agent.id;
-      } else {
-        // Reverse lookup when accountId ≠ agentId
-        const allSettings = dbListSettings();
-        for (const [key, value] of Object.entries(allSettings)) {
-          if (key.startsWith("account.") && key.endsWith(".agent") && value === agent.id) {
-            raviEnv.RAVI_ACCOUNT_ID = key.slice("account.".length, -".agent".length);
-            break;
-          }
-        }
-      }
+      // Sentinel heartbeat/cross-send: resolve accountId from instances table
+      const accountId = getAccountForAgent(agent.id);
+      if (accountId) raviEnv.RAVI_ACCOUNT_ID = accountId;
     }
     if (prompt.context) {
       raviEnv.RAVI_SENDER_ID = prompt.context.senderId;

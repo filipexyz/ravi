@@ -65,6 +65,7 @@ export {
   getDefaultAgentId,
   getDefaultDmScope,
   getAnnounceCompaction,
+  getAccountForAgent,
   // Schema (for validation)
   DmScopeSchema,
   // Database management

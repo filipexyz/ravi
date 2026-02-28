@@ -11,12 +11,13 @@ import { fail } from "../context.js";
 import { nats } from "../../nats.js";
 import { createOmniClient } from "@omni/sdk";
 import {
-  dbGetSetting,
-  dbSetSetting,
-  dbDeleteSetting,
   dbGetAgent,
   dbCreateAgent,
   dbUpdateAgent,
+  dbGetInstance,
+  dbUpsertInstance,
+  dbUpdateInstance,
+  getDefaultAgentId,
 } from "../../router/router-db.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 
@@ -29,13 +30,14 @@ function getOmniClient() {
 }
 
 /**
- * Find or create a WhatsApp instance by name in omni.
+ * Find a WhatsApp instance by name.
+ * Checks instances table first, then queries omni and upserts into instances table.
  * Returns the instance UUID.
  */
 async function resolveInstanceId(name: string): Promise<string | null> {
-  // First check ravi settings for cached instanceId
-  const cached = dbGetSetting(`account.${name}.instanceId`);
-  if (cached) return cached;
+  // Check instances table first
+  const inst = dbGetInstance(name);
+  if (inst?.instanceId) return inst.instanceId;
 
   // Query omni for existing instance with this name
   try {
@@ -43,7 +45,8 @@ async function resolveInstanceId(name: string): Promise<string | null> {
     const result = await omni.instances.list({ channel: "whatsapp-baileys" });
     const existing = result.items.find((i: { name?: string | null; id?: string | null }) => i.name === name);
     if (existing?.id) {
-      dbSetSetting(`account.${name}.instanceId`, existing.id);
+      // Persist into instances table
+      dbUpsertInstance({ name, instanceId: existing.id, channel: "whatsapp" });
       return existing.id;
     }
   } catch {
@@ -114,13 +117,13 @@ export class WhatsAppCommands {
       }
     }
 
-    // Cache instanceId → name mapping
-    dbSetSetting(`account.${instanceName}.instanceId`, instanceId);
+    // Persist instanceId into instances table
+    dbUpsertInstance({ name: instanceName, instanceId, channel: "whatsapp" });
 
     // Resolve agent: explicit --agent > agent with same name as instance > defaultAgent
     const agentId = agent
       ?? (dbGetAgent(instanceName) ? instanceName : undefined)
-      ?? (dbGetSetting("defaultAgent") ?? undefined);
+      ?? getDefaultAgentId();
 
     // Auto-create or update agent if --mode provided
     if (mode && (mode === "sentinel" || mode === "active")) {
@@ -133,14 +136,15 @@ export class WhatsAppCommands {
       } else {
         dbUpdateAgent(targetAgent, { mode: mode as "active" | "sentinel" });
       }
-      dbSetSetting(`account.${instanceName}.agent`, targetAgent);
+      dbUpdateInstance(instanceName, { agent: targetAgent });
       nats.emit("ravi.config.changed", {}).catch(() => {});
     } else if (agentId) {
-      dbSetSetting(`account.${instanceName}.agent`, agentId);
+      dbUpdateInstance(instanceName, { agent: agentId });
       nats.emit("ravi.config.changed", {}).catch(() => {});
     }
 
-    const mappedAgent = dbGetSetting(`account.${instanceName}.agent`);
+    const inst = dbGetInstance(instanceName);
+    const mappedAgent = inst?.agent ?? null;
     const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
     const modeLabel = agentConfig?.mode === "sentinel" ? " (sentinel)" : "";
     console.log(
@@ -250,7 +254,7 @@ export class WhatsAppCommands {
     try {
       const status = await omni.instances.status(instanceId);
 
-      const mappedAgent = dbGetSetting(`account.${instanceName}.agent`);
+      const mappedAgent = dbGetInstance(instanceName)?.agent ?? null;
       const agentConfig = mappedAgent ? dbGetAgent(mappedAgent) : null;
       const modeLabel = agentConfig?.mode ? ` (${agentConfig.mode})` : "";
 
@@ -306,13 +310,13 @@ export class WhatsAppCommands {
 
     if (agent !== undefined) {
       if (agent === "-" || agent === "null") {
-        dbDeleteSetting(`account.${instanceName}.agent`);
+        dbUpdateInstance(instanceName, { agent: null });
         console.log(`✓ ${instanceName}: agent mapping cleared`);
       } else {
         if (!dbGetAgent(agent)) {
           fail(`Agent not found: ${agent}`);
         }
-        dbSetSetting(`account.${instanceName}.agent`, agent);
+        dbUpdateInstance(instanceName, { agent });
         console.log(`✓ ${instanceName}: agent → ${agent}`);
       }
       nats.emit("ravi.config.changed", {}).catch(() => {});

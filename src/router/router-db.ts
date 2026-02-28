@@ -1536,35 +1536,19 @@ export function getDefaultTimezone(): string | undefined {
 
 /**
  * Get the first registered instance name.
- * Reads from instances table first, falls back to account.*.instanceId settings.
  */
 export function getFirstAccountName(): string | undefined {
   const instances = dbListInstances();
-  if (instances.length > 0) return instances[0].name;
-  // Legacy fallback: settings namespace
-  const settings = dbListSettings();
-  for (const key of Object.keys(settings)) {
-    const match = key.match(/^account\.(.+)\.instanceId$/);
-    if (match) return match[1];
-  }
-  return undefined;
+  return instances[0]?.name;
 }
 
 /**
  * Get the instance name mapped to a specific agent.
- * Reads from instances table first, falls back to account.*.agent settings.
+ * Falls back to first instance name if no mapping found.
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  const found = instances.find(i => i.agent === agentId);
-  if (found) return found.name;
-  // Legacy fallback
-  const settings = dbListSettings();
-  for (const [key, value] of Object.entries(settings)) {
-    const match = key.match(/^account\.(.+)\.agent$/);
-    if (match && value === agentId) return match[1];
-  }
-  return getFirstAccountName();
+  return instances.find(i => i.agent === agentId)?.name ?? instances[0]?.name;
 }
 
 /**

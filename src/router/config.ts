@@ -21,7 +21,6 @@ import {
   getDefaultAgentId,
   getDefaultDmScope,
   getRaviDir,
-  dbListSettings,
   dbListInstances,
   type InstanceConfig,
 } from "./router-db.js";
@@ -72,21 +71,6 @@ export function loadRouterConfig(): RouterConfig {
   for (const inst of instanceList) {
     if (inst.agent) accountAgents[inst.name] = inst.agent;
     if (inst.instanceId) instanceToAccount[inst.instanceId] = inst.name;
-  }
-
-  // Legacy fallback: also read from account.* settings (for backwards compat)
-  const allSettings = dbListSettings();
-  const prefix = "account.";
-  for (const [key, value] of Object.entries(allSettings)) {
-    if (!value) continue;
-    if (key.startsWith(prefix) && key.endsWith(".agent")) {
-      const accountId = key.slice(prefix.length, -".agent".length);
-      if (!accountAgents[accountId]) accountAgents[accountId] = value;
-    }
-    if (key.startsWith(prefix) && key.endsWith(".instanceId")) {
-      const accountName = key.slice(prefix.length, -".instanceId".length);
-      if (!instanceToAccount[value]) instanceToAccount[value] = accountName;
-    }
   }
 
   const config: RouterConfig = {

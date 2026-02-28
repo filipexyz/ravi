@@ -20,7 +20,6 @@ import {
   expandHome,
   resolveRoute,
   dbSaveMessageMeta,
-  dbGetSetting,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
@@ -462,7 +461,7 @@ export class OmniConsumer {
     }
 
     // -- Policy resolution helper --
-    // Lookup order: route.policy → instance config → legacy settings → default
+    // Lookup order: route.policy → instance config → default
     const resolvePolicy = (policyName: "groupPolicy" | "dmPolicy", routePolicy: string | undefined, defaultValue: string): string => {
       // 1. Explicit override on the matched route
       if (routePolicy) return routePolicy;
@@ -472,12 +471,7 @@ export class OmniConsumer {
         const val = policyName === "groupPolicy" ? instance.groupPolicy : instance.dmPolicy;
         if (val) return val;
       }
-      // 3. Legacy settings fallback
-      return (
-        dbGetSetting(`account.${effectiveAccountId}.${policyName}`) ??
-        dbGetSetting(`whatsapp.${policyName}`) ??
-        defaultValue
-      );
+      return defaultValue;
     };
 
     // -- Group policy enforcement --
