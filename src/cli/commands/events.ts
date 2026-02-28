@@ -121,6 +121,9 @@ function formatData(data: Record<string, unknown>, topic: string): string {
     if (type === "silent") {
       return `${c.magenta}${c.bold}SILENT${c.reset}`;
     }
+    if (type === "system" && (data as any).subtype === "init" && (data as any).model) {
+      return `${c.dim}system${c.reset} ${c.dim}${(data as any).model}${c.reset}`;
+    }
     return `${c.dim}${type}${c.reset}`;
   }
 
