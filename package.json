@@ -37,7 +37,13 @@
     "lint": "bunx biome check src/",
     "lint:fix": "bunx biome check --write src/",
     "test": "bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ && bun test src/bot.test.ts",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks",
+    "docs:dev": "cd docs && bunx mintlify dev",
+    "docs:list": "bun scripts/docs-list.js",
+    "docs:check-links": "bun scripts/docs-link-audit.mjs",
+    "lint:docs": "bunx markdownlint-cli2",
+    "lint:docs:fix": "bunx markdownlint-cli2 --fix",
+    "check:docs": "bun run lint:docs && bun run docs:check-links"
   },
   "keywords": [
     "claude",

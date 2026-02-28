@@ -1,0 +1,190 @@
+---
+title: Development
+description: Build, test, and contribute to Ravi.
+---
+
+## Prerequisites
+
+- [Bun](https://bun.sh) >= 1.0
+- TypeScript knowledge
+- NATS server (downloaded by `ravi setup`)
+
+## Setup
+
+```bash
+git clone https://github.com/filipexyz/ravi.git
+cd ravi
+bun install
+bun run build
+bun link    # Makes `ravi` available globally
+```
+
+## Build
+
+```bash
+bun run build     # Compile TypeScript (runs prebuild hooks first)
+```
+
+The build process:
+
+1. `prebuild` → `gen:commands` (generates CLI command registry) + `gen:plugins` (generates plugin manifest)
+2. `bun build` → Bundles `src/cli/index.ts` into `dist/bundle/` with minification
+
+## Dev Mode
+
+```bash
+bun run dev       # Watch mode — auto-restarts on source changes
+ravi daemon dev   # Daemon dev mode — watches src/ and auto-rebuilds
+```
+
+## Running Locally
+
+```bash
+# Run CLI commands directly (without building)
+bun src/cli/index.ts -- agents list
+
+# Start daemon in foreground
+bun src/cli/index.ts -- daemon run
+
+# Start TUI
+bun src/tui/index.tsx
+```
+
+## Testing
+
+```bash
+bun test          # Run all tests
+```
+
+Tests cover: bash tool, hooks, router, heartbeat, permissions, triggers, omni consumer, and bot.
+
+## Quality Checks
+
+```bash
+make quality      # Lint + typecheck (no auto-fix)
+make lint         # Biome check only
+make typecheck    # tsc --noEmit only
+```
+
+Or individually:
+
+```bash
+bun run lint          # biome check src/
+bun run lint:fix      # biome check --write src/
+bun run typecheck     # tsc --noEmit
+```
+
+## Documentation
+
+```bash
+bun run docs:dev          # Start Mintlify dev server
+bun run docs:list         # List all docs with summaries
+bun run docs:check-links  # Validate internal links
+bun run lint:docs         # Markdown lint
+bun run check:docs        # lint:docs + check-links
+```
+
+Or via Makefile:
+
+```bash
+make docs         # Start docs dev server
+make docs-check   # Lint + check links
+```
+
+## When to Restart the Daemon
+
+**Restart required:**
+- After `bun run build` (code changes need the new bundle)
+- After modifying `src/` files (daemon runs the built bundle)
+
+**No restart needed:**
+- After any CLI config command (`ravi agents set`, `ravi outbound reset`, etc.)
+- CLI writes directly to SQLite and emits NATS refresh signals
+- The running daemon picks up changes automatically
+
+## Git Hooks
+
+The project uses git hooks via `.githooks/`:
+
+```bash
+bun run prepare   # Configure git to use .githooks/ directory
+```
+
+Never use `--no-verify` on commits or pushes.
+
+## Project Structure
+
+```
+src/
+├── cli/              # CLI commands (decorators, groups)
+│   ├── commands/     # One file per command group
+│   └── index.ts      # Entry point
+├── bot.ts            # RaviBot — Claude Agent SDK sessions
+├── daemon.ts         # Daemon startup/shutdown
+├── gateway.ts        # Gateway — response routing
+├── nats.ts           # NATS connection singleton
+├── omni/             # Omni integration (consumer, sender, config)
+├── router/           # Router, session keys, config store
+├── permissions/      # REBAC permission engine
+├── leader/           # Leader election via NATS KV
+├── heartbeat/        # Heartbeat runner
+├── cron/             # Cron job runner
+├── triggers/         # Event trigger runner
+├── outbound/         # Outbound queue runner
+├── ephemeral/        # Ephemeral session cleanup
+├── copilot/          # Claude Code inbox watcher
+├── audio/            # TTS generation (ElevenLabs)
+├── transcribe/       # Audio transcription (Groq/OpenAI)
+├── image/            # Image generation (Gemini)
+├── video/            # Video analysis (Gemini)
+├── spec/             # Spec mode MCP server
+├── plugins/          # Plugin system
+│   └── internal/     # Built-in plugins (skills, tools)
+├── tui/              # Terminal UI (Ink/React)
+├── prompt-builder.ts # System prompt construction
+└── pm2.ts            # PM2 process management
+```
+
+## Adding CLI Commands
+
+CLI commands use decorators. Each command group is a file in `src/cli/commands/`:
+
+```typescript
+@group("mygroup")
+@description("My command group")
+class MyGroup {
+  @command("list")
+  @describe("List items")
+  async list() {
+    // implementation
+  }
+
+  @command("show")
+  @describe("Show item details")
+  @arg("id", "Item ID")
+  async show(id: string) {
+    // implementation
+  }
+}
+```
+
+After adding/modifying commands, run `bun run gen:commands` to regenerate the command registry.
+
+## Adding Skills
+
+Skills are SKILL.md files in `src/plugins/internal/ravi-system/skills/`:
+
+```
+src/plugins/internal/ravi-system/skills/
+├── agents/SKILL.md
+├── contacts/SKILL.md
+├── cron/SKILL.md
+├── heartbeat/SKILL.md
+├── outbound/SKILL.md
+├── triggers/SKILL.md
+└── ...
+```
+
+Each SKILL.md has YAML frontmatter (`name`, `description`) and markdown content that gets loaded into agent context when relevant.
+
+After adding/modifying skills, run `bun run gen:plugins` to regenerate the plugin manifest.

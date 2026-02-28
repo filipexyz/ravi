@@ -1,0 +1,192 @@
+---
+title: NATS Debugging
+description: How to inspect JetStream streams, consumers, and messages using the nats CLI.
+---
+
+## Prerequisites
+
+Install the NATS CLI:
+
+```bash
+brew install nats-io/nats-tools/nats
+```
+
+Connection shortcut:
+
+```bash
+alias nats-local='nats --server nats://127.0.0.1:4222'
+```
+
+## Streams Overview
+
+```bash
+nats stream ls --server nats://127.0.0.1:4222
+```
+
+Streams: `MESSAGE`, `INSTANCE`, `REACTION`, `SESSION_PROMPTS`.
+
+## Inspect a Stream
+
+```bash
+nats stream info MESSAGE --server nats://127.0.0.1:4222
+```
+
+Shows subjects, retention policy, message count, consumer count, and first/last sequence.
+
+## Read Messages
+
+### Last message on a subject
+
+```bash
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>"
+```
+
+### Specific sequence number
+
+```bash
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5
+```
+
+### Pretty-print JSON payload
+
+```bash
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --seq 5 | python3 -c "
+import sys, json
+raw = sys.stdin.read()
+start = raw.find('{')
+if start >= 0:
+    d = json.loads(raw[start:])
+    print('METADATA:', json.dumps(d.get('metadata', {}), indent=2))
+    print('PAYLOAD:', json.dumps(d.get('payload', {}), indent=2))
+"
+```
+
+## Consumer Status
+
+### All consumers with positions
+
+```bash
+nats consumer report MESSAGE --server nats://127.0.0.1:4222
+```
+
+The "ack floor" shows the last processed sequence number.
+
+### Ravi consumers
+
+```bash
+nats consumer report MESSAGE --server nats://127.0.0.1:4222 | grep ravi
+nats consumer report INSTANCE --server nats://127.0.0.1:4222 | grep ravi
+```
+
+Consumer names: `ravi-messages` (MESSAGE), `ravi-instances` (INSTANCE), `ravi-reactions` (REACTION), `ravi-prompts` (SESSION_PROMPTS).
+
+## Live Subscribe
+
+Watch events in real time (plain NATS pub/sub, not JetStream):
+
+```bash
+# All message events
+nats sub "message.received.>" --server nats://127.0.0.1:4222
+
+# Specific instance
+nats sub "message.received.whatsapp-baileys.<instanceId>" --server nats://127.0.0.1:4222
+
+# Instance events (connect, disconnect, qr_code)
+nats sub "instance.>" --server nats://127.0.0.1:4222
+
+# All ravi internal events
+nats sub "ravi.>" --server nats://127.0.0.1:4222
+
+# Session responses
+nats sub "ravi.session.*.response" --server nats://127.0.0.1:4222
+
+# Tool executions
+nats sub "ravi.session.*.tool" --server nats://127.0.0.1:4222
+```
+
+## Replay Messages
+
+### Create a temporary consumer
+
+Subscribe and receive all messages from a specific sequence:
+
+```bash
+nats consumer sub MESSAGE \
+  --server nats://127.0.0.1:4222 \
+  --filter "message.received.>" \
+  --deliver-start-sequence 20 \
+  --ack
+```
+
+Or from the beginning:
+
+```bash
+nats consumer sub MESSAGE \
+  --server nats://127.0.0.1:4222 \
+  --filter "message.received.>" \
+  --deliver-all \
+  --ack
+```
+
+### Force reprocessing
+
+Delete the ravi consumer and restart the daemon. Ravi recreates consumers with `DeliverPolicy.New` on startup:
+
+```bash
+nats consumer rm MESSAGE ravi-messages --server nats://127.0.0.1:4222
+ravi daemon restart
+```
+
+This only reprocesses new messages arriving after restart.
+
+## Check IngestMode
+
+New messages should have `ingestMode: "realtime"`. History-sync messages have `ingestMode: "history-sync"` and are skipped by ravi.
+
+```bash
+nats stream get MESSAGE --server nats://127.0.0.1:4222 --last-for "message.received.>" | \
+  python3 -c "import sys,json; raw=sys.stdin.read(); d=json.loads(raw[raw.find('{'):]); print(d['metadata'].get('ingestMode','NOT SET'))"
+```
+
+## Using `ravi events stream`
+
+Ravi has a built-in event streaming command that wraps NATS subscriptions with formatting:
+
+```bash
+# Stream all events
+ravi events stream
+
+# Filter by pattern
+ravi events stream -f "ravi.session.*"
+
+# Hide noisy events
+ravi events stream --no-claude --no-heartbeat
+
+# Only show specific types
+ravi events stream --only tool
+ravi events stream --only prompt
+ravi events stream --only audit
+```
+
+## Common Debugging Scenarios
+
+### Messages not arriving
+
+1. Check if omni is publishing: `nats sub "message.received.>" --server nats://127.0.0.1:4222`
+2. Check consumer position: `nats consumer report MESSAGE --server nats://127.0.0.1:4222`
+3. Check ingestMode: history-sync messages are skipped
+4. Check daemon logs: `ravi daemon logs -f`
+
+### Bot not responding
+
+1. Check if prompts are being published: `nats sub "ravi.session.*.prompt" --server nats://127.0.0.1:4222`
+2. Check SESSION_PROMPTS consumer: `nats consumer report SESSION_PROMPTS --server nats://127.0.0.1:4222`
+3. Check if responses are being emitted: `nats sub "ravi.session.*.response" --server nats://127.0.0.1:4222`
+4. Check Gateway delivery: `ravi daemon logs -f | grep gateway`
+
+### Trigger not firing
+
+1. Check if events match the topic: `nats sub "<trigger-topic>" --server nats://127.0.0.1:4222`
+2. Check cooldown: trigger may be in cooldown window
+3. Check blocked topics: `.prompt`, `.response`, `.claude` topics are blocked
+4. Test manually: `ravi triggers test <id>`

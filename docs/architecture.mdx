@@ -1,0 +1,338 @@
+---
+title: Architecture
+description: System architecture — daemon, Gateway, NATS JetStream, omni integration, session routing, and message flow.
+---
+
+## Overview
+
+Ravi is a Claude-powered bot with multi-channel messaging. The daemon connects to external NATS and omni services, manages agent sessions via the Claude Agent SDK, and coordinates background runners for cron jobs, heartbeat, outbound campaigns, and event triggers.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  PM2 (process manager)                                      │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  ravi daemon                                          │  │
+│  │  ├── ConfigStore     (cached router config + NATS sub)│  │
+│  │  ├── RaviBot         (Claude Agent SDK sessions)      │  │
+│  │  ├── OmniConsumer    (JetStream pull consumers)       │  │
+│  │  ├── Gateway         (response routing + typing)      │  │
+│  │  ├── OmniSender      (HTTP client → omni REST API)    │  │
+│  │  └── Runners                                          │  │
+│  │       ├── HeartbeatRunner  (leader-elected)           │  │
+│  │       ├── CronRunner       (leader-elected)           │  │
+│  │       ├── OutboundRunner   (per-daemon)               │  │
+│  │       ├── TriggerRunner    (per-daemon)               │  │
+│  │       ├── EphemeralRunner  (per-daemon)               │  │
+│  │       └── InboxWatcher     (per-daemon)               │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                          │                                   │
+│               NATS :4222 (external)                          │
+│                          │                                   │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  omni API :8882 (external)                            │  │
+│  │  ├── WhatsApp (Baileys)                               │  │
+│  │  ├── Telegram                                         │  │
+│  │  ├── Discord                                          │  │
+│  │  └── Slack                                            │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Daemon
+
+The daemon is the main long-running process, managed by PM2. It does **not** spawn child processes — it connects to external NATS and omni services that are started independently.
+
+**Startup sequence** (`startDaemon()` in `src/daemon.ts`):
+
+1. **Connect to NATS** — Retries up to 30 times with 2s intervals to handle PM2 parallel startup where NATS might not be ready yet.
+2. **Start ConfigStore** — Subscribes to `ravi.config.changed` for immediate cache invalidation, plus a 30-second periodic refresh as a safety net.
+3. **Resolve omni connection** — Reads omni API URL and API key from configuration. If omni is not configured, the daemon runs without channel support (a stub sender/consumer is used).
+4. **Ensure SESSION_PROMPTS stream** — Creates the JetStream work queue stream for session prompt routing.
+5. **Sync REBAC permissions** — Loads relation-based access control rules from agent configs into memory.
+6. **Start RaviBot** — Initializes the Claude Agent SDK, subscribes to the session prompts consumer, and starts processing messages.
+7. **Start OmniConsumer + Gateway** — Consumer pulls from omni JetStream streams; Gateway subscribes to internal NATS events for response delivery.
+8. **Start runners** — Leader election determines which daemon runs heartbeat and cron; outbound, trigger, ephemeral, and inbox runners are per-daemon.
+
+**Shutdown** is graceful with a 15-second timeout. The bot is stopped first (aborting SDK subprocesses), then runners release leadership, then Gateway and consumer stop, and finally the NATS connection is drained.
+
+### PM2 Management
+
+The daemon process is named `ravi` in PM2. The `src/pm2.ts` module provides utilities for checking process status, reading PIDs, and running PM2 commands. CLI commands like `ravi daemon start` and `ravi daemon stop` delegate to PM2 under the hood.
+
+## Gateway
+
+The Gateway (`src/gateway.ts`) is the bridge between the bot's internal NATS events and the omni channel backend. It subscribes to internal NATS topics and routes messages to the appropriate omni instance via the OmniSender.
+
+**Subscriptions:**
+
+| NATS Topic | Purpose | Queue Group |
+|---|---|---|
+| `ravi.session.*.response` | Deliver bot responses to channels via omni HTTP | `ravi-gateway` |
+| `ravi.session.*.claude` | Typing indicator heartbeat (start/stop) | — |
+| `ravi.outbound.deliver` | Direct send from outbound module (with humanized delays) | `ravi-gateway` |
+| `ravi.outbound.reaction` | Emoji reactions from agents | `ravi-gateway` |
+| `ravi.media.send` | Media file delivery (images, videos, audio, documents) | `ravi-gateway` |
+| `ravi.config.changed` | Reload router config cache and sync REBAC relations | — |
+
+**Queue groups** ensure that in multi-daemon deployments, only one daemon processes each outbound message. Subscriptions without a queue group are fan-out — all daemons receive the event (e.g., config changes must be applied everywhere).
+
+**Key behaviors:**
+
+- **Silent token** — If a bot response contains `@@SILENT@@`, the Gateway suppresses it and does not send to the channel.
+- **Ghost response detection** — Responses without a `_emitId` are dropped and logged as ghost responses.
+- **Sentinel humanization** — When an agent is in sentinel mode and sends via `ravi.outbound.deliver`, the Gateway auto-calculates typing delay and pause times to simulate human-like behavior.
+- **Auto-reconnect** — Each subscription has automatic reconnection with a 1-second retry delay if the NATS connection drops.
+
+## NATS
+
+### Connection
+
+The NATS singleton (`src/nats.ts`) supports two connection modes:
+
+- **Explicit** (daemon) — `connectNats()` is called at startup with retry logic (30 attempts, 2s intervals). The connection monitors status changes and auto-reconnects indefinitely.
+- **Lazy** (CLI) — First call to `emit()` or `subscribe()` triggers a one-shot connection. CLI commands work without explicitly connecting first.
+
+The module exposes a `nats` convenience object with `emit()` (publish JSON), `subscribe()` (async generator with topic pattern matching), and `close()` (drain and disconnect).
+
+**Subscribe features:**
+- Variadic patterns: `subscribe("a.*", "b.*")` merges multiple subscriptions
+- Queue groups: `subscribe("topic", { queue: "group-name" })` for load-balanced consumption
+- Built-in dedup: filters duplicate messages from JetStream stream captures within a 250ms window
+
+### JetStream Streams
+
+Ravi interacts with four JetStream streams:
+
+| Stream | Consumer | Filter | Source |
+|---|---|---|---|
+| `MESSAGE` | `ravi-messages` | `message.received.>` | omni (channel inbound) |
+| `INSTANCE` | `ravi-instances` | `instance.>` | omni (connection events) |
+| `REACTION` | `ravi-reactions` | `reaction.received.>` | omni (emoji reactions) |
+| `SESSION_PROMPTS` | `ravi-prompts` | `ravi.session.*.prompt` | ravi (internal routing) |
+
+The first three streams (`MESSAGE`, `INSTANCE`, `REACTION`) are created by omni. The `SESSION_PROMPTS` stream is created by ravi itself.
+
+**SESSION_PROMPTS** is a work queue stream (`RetentionPolicy.Workqueue`) with in-memory storage and a 60-second max age. It guarantees:
+- Each prompt is delivered to exactly one daemon
+- Messages are deleted after acknowledgment
+- Unacknowledged messages (daemon crash) are redelivered after a 5-minute ack wait
+
+All daemons share a single durable consumer (`ravi-prompts`). NATS automatically distributes messages across active pull subscribers in round-robin fashion.
+
+### Internal NATS Topics (Pub/Sub)
+
+Beyond JetStream, ravi uses plain NATS pub/sub for internal coordination:
+
+| Topic Pattern | Purpose |
+|---|---|
+| `ravi.session.*.response` | Bot responses for Gateway delivery |
+| `ravi.session.*.claude` | Claude SDK lifecycle events (typing) |
+| `ravi.outbound.deliver` | Direct message send requests |
+| `ravi.outbound.reaction` | Emoji reaction send requests |
+| `ravi.outbound.refresh` | Outbound runner reload signal |
+| `ravi.media.send` | Media file send requests |
+| `ravi.config.changed` | Config cache invalidation (fan-out) |
+| `ravi.contacts.pending` | New pending contact notification |
+| `ravi.inbound.reply` | Quote-reply from channel (approval/poll resolution) |
+| `ravi.inbound.reaction` | Inbound emoji reaction (approval/poll resolution) |
+| `ravi.whatsapp.qr.*` | QR code relay for CLI pairing |
+| `ravi.whatsapp.connected.*` | Instance connected relay |
+| `ravi.instances.unregistered` | Unregistered instance detection |
+| `ravi.triggers.refresh` | Trigger runner hot-reload signal |
+
+## OmniConsumer
+
+The OmniConsumer (`src/omni/consumer.ts`) pulls events from omni's JetStream streams and translates them into session prompts.
+
+**Consume loops** run in the background for each stream. Each loop:
+1. Ensures the durable consumer exists (retries until the stream appears — omni may still be initializing)
+2. Pulls messages and acknowledges immediately (fire-and-forget handlers)
+3. Auto-restarts with a 2-second delay on errors
+
+### Message Processing Pipeline
+
+When a `message.received` event arrives:
+
+1. **Filter** — Skip history-sync messages (via `ingestMode` flag or timestamp), skip reaction-type messages.
+2. **Parse subject** — Extract `channelType` and `instanceId` from the NATS subject (`message.received.{channelType}.{instanceId}`).
+3. **Resolve account** — Map omni `instanceId` (UUID) to a ravi account name via ConfigStore.
+4. **Outbound check** — If the sender has an active outbound entry, record the response and suppress the prompt.
+5. **Route resolution** — ConfigStore resolves the message to a session key and agent based on routing rules (account-agent mapping, route patterns, default agent).
+6. **Policy enforcement** — Apply group policy (`open`/`allowlist`/`closed`) and DM policy (`open`/`pairing`/`closed`). Unallowed contacts are saved as pending.
+7. **Contact scoping** — Per-agent contact visibility check (`own`/`tagged`/`all`).
+8. **Slash commands** — Check for `/` prefixed commands before agent processing.
+9. **Media processing** — Download media from omni HTTP API, save to agent attachments directory, transcribe audio via OpenAI Whisper.
+10. **Format envelope** — Build the message envelope with sender info, timestamps, media, and thread context.
+11. **Publish prompt** — Publish to `SESSION_PROMPTS` JetStream stream for exactly-once delivery to a daemon.
+
+**Active mode** messages include a `source` (channel routing info) and trigger a typing indicator. **Sentinel mode** messages are observed silently with no typing and no source.
+
+### Instance Events
+
+- `instance.qr_code` — Relayed to `ravi.whatsapp.qr.{instanceId}` for CLI QR pairing
+- `instance.connected` — Relayed to `ravi.whatsapp.connected.{instanceId}` for connection confirmation
+
+### Reaction Events
+
+Inbound reactions are deduplicated and emitted to `ravi.inbound.reaction` for approval and poll resolution workflows.
+
+## OmniSender
+
+The OmniSender (`src/omni/sender.ts`) is an HTTP client wrapping the `@omni/sdk`. It provides:
+
+- **send()** — Send text messages (with optional thread ID) via omni REST API. Retries up to 3 times with exponential backoff for server errors.
+- **sendTyping()** — Start/stop typing presence indicators (best-effort, no retries).
+- **sendReaction()** — Send emoji reactions to messages.
+- **sendMedia()** — Send media files (image, video, audio, document) as base64-encoded payloads.
+- **markRead()** — Mark messages as read (blue checkmarks, best-effort).
+
+## RaviBot
+
+The RaviBot (`src/bot.ts`) manages Claude Agent SDK sessions. It subscribes to the `SESSION_PROMPTS` JetStream consumer and processes prompts through streaming SDK sessions.
+
+**Key properties:**
+- **Concurrency limit** — Maximum 8 concurrent sessions (`MAX_CONCURRENT_SESSIONS`). Additional prompts are queued as pending starts.
+- **Streaming sessions** — Each session is a persistent SDK subprocess that accepts messages via AsyncGenerator. Sessions are keyed by session name.
+- **Debounce** — Messages arriving within a configurable window are combined before processing.
+- **Message interrupts** — New messages can interrupt running sessions (waits for safe tool completion, then interrupts).
+
+**Subscriptions:**
+- JetStream `SESSION_PROMPTS` consumer (prompt processing)
+- `ravi.inbound.reaction` (approval/poll resolution via emoji)
+- `ravi.inbound.reply` (approval/poll resolution via quote-reply)
+- `ravi.session.*.abort` (session abort signals)
+
+## ConfigStore
+
+The ConfigStore (`src/config-store.ts`) is a singleton cache for router configuration loaded from SQLite.
+
+**Refresh strategy:**
+1. **NATS subscription** — Listens on `ravi.config.changed` for immediate invalidation when any CLI command modifies config.
+2. **Periodic timer** — 30-second refresh as a safety net in case NATS events are missed.
+
+**Key methods:**
+- `getConfig()` — Returns cached `RouterConfig`, loading from DB on first call.
+- `resolveInstanceId(accountName)` — Maps account name to omni instance UUID.
+- `resolveAccountName(instanceId)` — Maps omni instance UUID to account name.
+
+## Leader Election
+
+Distributed leader election (`src/leader/index.ts`) uses a NATS JetStream KV store to coordinate which daemon runs singleton tasks (heartbeat and cron runners).
+
+**Mechanism:**
+1. Daemon attempts an atomic `create` on the KV key for the role — succeeds only if the key does not exist.
+2. **Winner** starts leadership renewal (every 10 seconds) and runs the associated runners.
+3. **Loser** polls the KV key every 10 seconds watching for vacancy.
+4. If the leader dies, its KV entry expires after the 30-second TTL. A polling daemon detects the missing key, wins `create`, and takes over.
+5. On graceful shutdown, the leader explicitly deletes the key so takeover is immediate.
+
+**Leader-elected runners:** HeartbeatRunner, CronRunner.
+**Per-daemon runners** (no election needed): OutboundRunner, TriggerRunner, EphemeralRunner, InboxWatcher.
+
+## Session Keys
+
+Session keys (`src/router/session-key.ts`) are hierarchical strings that determine conversation isolation. The format depends on the DM scope and peer type.
+
+### DM Session Keys
+
+| DM Scope | Format | Example |
+|---|---|---|
+| `main` | `agent:{agentId}:main` | `agent:main:main` |
+| `per-peer` | `agent:{agentId}:dm:{phone}` | `agent:main:dm:5511999999999` |
+| `per-channel-peer` | `agent:{agentId}:{channel}:dm:{phone}` | `agent:main:whatsapp:dm:5511999999999` |
+| `per-account-channel-peer` | `agent:{agentId}:{channel}:{account}:dm:{phone}` | `agent:main:whatsapp:main:dm:5511999999999` |
+
+### Group and Channel Session Keys
+
+Groups and channels are always fully isolated:
+
+```
+agent:{agentId}:{channel}:{account}:group:{groupId}
+agent:{agentId}:{channel}:{account}:channel:{channelId}
+```
+
+Threads append `:thread:{threadId}` to the session key.
+
+### Special Session Keys
+
+| Type | Format | Example |
+|---|---|---|
+| Cron job | `agent:{agentId}:cron:{jobId}` | `agent:main:cron:abc123` |
+| Event trigger | `agent:{agentId}:trigger:{triggerId}` | `agent:main:trigger:a1b2c3d4` |
+| Outbound | `agent:{agentId}:outbound:{queueId}:{phone}` | `agent:main:outbound:q1:5511999` |
+
+## Message Flow
+
+### Inbound (Channel to Agent)
+
+```
+Channel (WhatsApp/Telegram/Discord/Slack)
+  │
+  ▼
+omni API ──publish──▶ NATS JetStream (MESSAGE stream)
+  │                        │
+  │                        ▼
+  │                  OmniConsumer (pull consumer: ravi-messages)
+  │                        │
+  │                  ┌─────┴──────────────────────┐
+  │                  │ Filter history-sync          │
+  │                  │ Resolve account + route      │
+  │                  │ Enforce policies             │
+  │                  │ Process media + transcribe   │
+  │                  │ Format envelope              │
+  │                  └─────┬──────────────────────┘
+  │                        │
+  │                        ▼
+  │                  SESSION_PROMPTS stream (JetStream work queue)
+  │                        │
+  │                        ▼
+  │                  RaviBot (pull consumer: ravi-prompts)
+  │                        │
+  │                  ┌─────┴──────────────────────┐
+  │                  │ Debounce window              │
+  │                  │ Resolve/create SDK session   │
+  │                  │ Claude Agent SDK processing  │
+  │                  │ Emit response to NATS        │
+  │                  └─────┬──────────────────────┘
+  │                        │
+  │                        ▼
+  │                  ravi.session.{name}.response (NATS pub/sub)
+  │                        │
+  │                        ▼
+  │                  Gateway (queue group: ravi-gateway)
+  │                        │
+  │                        ▼
+  └──── OmniSender ◀──────┘
+          │
+          ▼
+    omni REST API ──▶ Channel
+```
+
+### Outbound (Agent to Channel)
+
+Agents send messages by emitting to internal NATS topics. The Gateway picks up the event and delivers via OmniSender:
+
+- **Bot responses**: `ravi.session.*.response` → Gateway → OmniSender
+- **Direct sends**: `ravi.outbound.deliver` → Gateway → OmniSender (with optional typing delay and pause)
+- **Reactions**: `ravi.outbound.reaction` → Gateway → OmniSender
+- **Media**: `ravi.media.send` → Gateway → OmniSender
+
+## Storage
+
+```
+~/ravi/
+├── ravi.db              # Router config, sessions, contacts (SQLite)
+└── {agentId}/           # Agent working directory
+    ├── CLAUDE.md        # Agent system instructions
+    ├── HEARTBEAT.md     # Pending tasks for heartbeat (optional)
+    └── attachments/     # Downloaded media files
+
+~/.ravi/
+├── .env                 # Environment variables (loaded by daemon)
+├── omni-api-key         # Auto-generated omni API key
+├── jetstream/           # NATS JetStream data
+├── bin/
+│   └── nats-server      # nats-server binary (auto-downloaded)
+└── logs/
+    └── daemon.log       # Daemon logs (PM2 managed)
+```

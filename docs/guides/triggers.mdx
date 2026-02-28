@@ -1,0 +1,466 @@
+---
+title: Event Triggers
+description: Configure event-driven triggers that subscribe to NATS topics and fire agent prompts when events occur.
+---
+
+## Overview
+
+Triggers are automated reactions to system events. When an event fires on a NATS topic that matches a trigger's pattern, the trigger builds a prompt with the event data and sends it to an agent session for processing.
+
+```
+NATS Event → Topic Match → Filter Check → Cooldown Check → Prompt → Agent Session
+```
+
+Triggers are stored in the database and managed via CLI. The daemon's TriggerRunner subscribes to all enabled trigger topics and handles firing automatically.
+
+## Architecture
+
+The trigger system works through these components:
+
+1. **TriggerRunner** — A singleton that runs inside the daemon. It subscribes to NATS topics for all enabled triggers and manages the subscription lifecycle.
+2. **Topic subscriptions** — Triggers sharing the same topic share a single NATS subscription. When an event arrives, each matching trigger is evaluated independently.
+3. **Filter evaluator** — An optional expression that gates trigger firing based on event data fields.
+4. **Template engine** — Resolves `{{variable}}` placeholders in the trigger message using event data before sending to the agent.
+5. **Config refresh** — When triggers are added, removed, or modified via CLI, a `ravi.triggers.refresh` signal is emitted. The runner tears down all subscriptions and rebuilds them.
+
+## Creating a Trigger
+
+```bash
+ravi triggers add "<name>" \
+  --topic "<pattern>" \
+  --message "<prompt>" \
+  [--agent <id>] \
+  [--cooldown <duration>] \
+  [--session <main|isolated>] \
+  [--filter '<expression>']
+```
+
+### Required options
+
+- `--topic` — NATS topic pattern to subscribe to (supports `*` wildcards)
+- `--message` — Prompt the agent receives when the trigger fires
+
+### Optional settings
+
+- `--agent` — Target agent (defaults to the caller's agent or the system default)
+- `--cooldown` — Minimum time between fires (default: `5s`). Supports: `5s`, `30s`, `1m`, `5m`, `1h`
+- `--session` — `main` (shared session) or `isolated` (dedicated session per trigger, default)
+- `--filter` — Expression that must match for the trigger to fire
+- `--account` — Account for outbound routing (auto-detected from agent if not set)
+
+## Available Topics
+
+### Inbound Messages and Channels
+
+| Pattern | Description |
+|---------|-------------|
+| `whatsapp.*.inbound` | WhatsApp messages received |
+| `matrix.*.inbound` | Matrix messages received |
+| `ravi.inbound.reaction` | Emoji reactions received |
+| `ravi.inbound.reply` | Replies to bot messages |
+| `ravi.inbound.pollVote` | Poll vote events |
+
+### Contacts and Approvals
+
+| Pattern | Description |
+|---------|-------------|
+| `ravi.contacts.pending` | New contact or group pending approval |
+| `ravi.approval.request` | Cascading approval request |
+| `ravi.approval.response` | Approval response |
+
+### Agent and Tool Events
+
+| Pattern | Description |
+|---------|-------------|
+| `ravi.*.cli.{group}.{command}` | CLI tool executions (e.g., `ravi.*.cli.contacts.add`) |
+| `ravi.*.tool` | SDK tool executions (Bash, Read, etc.) |
+
+### Outbound
+
+| Pattern | Description |
+|---------|-------------|
+| `ravi.outbound.deliver` | Messages sent to channels |
+| `ravi.outbound.receipt` | Read receipts sent |
+| `ravi.outbound.refresh` | Outbound queue refresh |
+
+### Audit
+
+| Pattern | Description |
+|---------|-------------|
+| `ravi.audit.denied` | Permission denied events |
+
+## Anti-Loop Protection
+
+The trigger system includes multiple layers of protection against infinite loops:
+
+### 1. Blocked Topic Prefixes
+
+Topics starting with `ravi.session.` are rejected at subscription time. This prevents triggers from reacting to internal session events that could create prompt-trigger-prompt loops.
+
+### 2. Session Filter
+
+Events originating from trigger sessions (topics containing `:trigger:`) are automatically skipped. This prevents a trigger's own actions from firing other triggers.
+
+### 3. Data Flag
+
+Events with `_trigger: true` in their data payload are skipped. This flag is set on all prompts emitted by the trigger runner.
+
+### 4. Cooldown
+
+Each trigger has a configurable cooldown (default: 5 seconds). After a trigger fires, it will not fire again until the cooldown period elapses, regardless of how many matching events arrive.
+
+### Warning on Risky Topics
+
+When creating or updating a trigger with a topic containing `.prompt`, `.response`, or `.claude`, the CLI warns about potential loop risk:
+
+```
+Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops
+```
+
+## Filter Syntax
+
+Filters are optional expressions that evaluate against the event data. If the filter does not match, the trigger is silently skipped.
+
+### Format
+
+```
+data.<path> <operator> "<value>"
+```
+
+### Operators
+
+| Operator | Description |
+|----------|-------------|
+| `==` | Exact string equality |
+| `!=` | String inequality |
+| `startsWith` | Value starts with the given prefix |
+| `endsWith` | Value ends with the given suffix |
+| `includes` | Value contains the given substring |
+
+### Path Resolution
+
+The `data.<path>` notation uses dot-separated keys to traverse into the event data object. For example, `data.cwd` resolves the `cwd` field in the event payload, and `data.hook_event_name` resolves the `hook_event_name` field.
+
+Values are coerced to strings for comparison. If the path does not exist in the event data, the filter evaluates to false (trigger does not fire).
+
+### Fail-Open Behavior
+
+If a filter expression has invalid syntax (does not match the expected format), the trigger fires anyway and a warning is logged. This prevents misconfigured filters from silently disabling triggers.
+
+### Filter Examples
+
+```bash
+# Only fire for events in a specific directory
+ravi triggers set <id> filter 'data.cwd startsWith "/Users/luis/ravi"'
+
+# Exclude events from a directory
+ravi triggers set <id> filter 'data.cwd != "/Users/luis/Dev/fm"'
+
+# Match a specific event type
+ravi triggers set <id> filter 'data.permission_mode == "bypassPermissions"'
+
+# Match events containing a keyword
+ravi triggers set <id> filter 'data.output includes "error"'
+
+# Match events ending with a suffix
+ravi triggers set <id> filter 'data.tool endsWith "_list"'
+
+# Remove a filter
+ravi triggers set <id> filter -
+```
+
+## Message Templates
+
+Trigger messages support `{{variable}}` placeholders that are resolved with event data before being sent to the agent.
+
+### Available Variables
+
+| Variable | Description |
+|----------|-------------|
+| `{{topic}}` | NATS topic that fired the trigger |
+| `{{data.<path>}}` | Any field from the event payload (dot-notation) |
+| `{{data.cwd}}` | Working directory of the session |
+| `{{data.last_assistant_message}}` | Last assistant message (truncated to 300 characters) |
+| `{{data.prompt}}` | User prompt (for prompt submission events) |
+
+Unresolved variables (paths that do not exist in the event data) are left as-is in the message. String values longer than 300 characters are automatically truncated with `...`.
+
+### Template Examples
+
+```bash
+# Simple template
+ravi triggers add "Session Monitor" \
+  --topic "ravi.*.tool" \
+  --message "Tool executed in {{data.cwd}}. Check if the result looks correct."
+
+# Template with truncated content
+ravi triggers add "Copilot Watcher" \
+  --topic "ravi.copilot.stop" \
+  --message 'CC stopped in {{data.cwd}}. Last message: "{{data.last_assistant_message}}". Notify me if relevant, otherwise @@SILENT@@.'
+```
+
+## Prompt Format
+
+When a trigger fires, the agent receives a prompt with this structure:
+
+```
+[Trigger: Lead Qualificado]
+Topic: ravi.agent:main:main.cli.outbound.qualify
+Data: {
+  "event": "end",
+  "tool": "outbound_qualify",
+  "output": "Qualification set: abc123 -> warm"
+}
+
+Analyze the qualification and notify the group.
+```
+
+The `Data` section contains the full event payload as JSON, giving the agent context about what happened.
+
+## Session Types
+
+### Isolated (Default)
+
+Each trigger gets its own session: `agent:<agentId>:trigger:<triggerId>`. This isolates trigger conversations from the agent's main context.
+
+```bash
+ravi triggers add "Error Alert" --topic "ravi.*.tool" --message "..." --session isolated
+```
+
+### Main
+
+The trigger fires into the agent's shared main session. Use this when you want the agent to have full context of ongoing conversations.
+
+```bash
+ravi triggers add "Contact Alert" --topic "ravi.contacts.pending" --message "..." --session main
+```
+
+When a trigger has a `replySession` (captured from the caller context when creating the trigger), responses are routed back to that session's channel, even in main mode.
+
+## Cooldown
+
+Cooldown prevents a trigger from firing too rapidly. The default is 5 seconds.
+
+```bash
+# Set cooldown when creating
+ravi triggers add "Monitor" --topic "ravi.*.tool" --message "..." --cooldown 1m
+
+# Update cooldown on existing trigger
+ravi triggers set <id> cooldown 30s
+```
+
+Supported durations: `5s`, `10s`, `30s`, `1m`, `5m`, `10m`, `30m`, `1h`.
+
+The cooldown is tracked in memory with immediate update. When an event passes the cooldown check, the trigger's `lastFiredAt` is set immediately (before the prompt is even published) to prevent race conditions where multiple events arriving in rapid succession all pass the cooldown check.
+
+## CLI Reference
+
+### List triggers
+
+```bash
+ravi triggers list
+```
+
+Shows all triggers with their ID, name, enabled status, topic, and fire count.
+
+### Show trigger details
+
+```bash
+ravi triggers show <id>
+```
+
+Displays full trigger configuration including message, filter, cooldown, fire count, and last fired time.
+
+### Create a trigger
+
+```bash
+ravi triggers add "<name>" --topic "<pattern>" --message "<prompt>" [options]
+```
+
+### Enable / Disable
+
+```bash
+ravi triggers enable <id>
+ravi triggers disable <id>
+```
+
+Disabled triggers keep their configuration but stop subscribing to events.
+
+### Update properties
+
+```bash
+ravi triggers set <id> name "New Name"
+ravi triggers set <id> message "New prompt text"
+ravi triggers set <id> topic "ravi.*.cli.contacts.*"
+ravi triggers set <id> agent vendas
+ravi triggers set <id> session main
+ravi triggers set <id> cooldown 30s
+ravi triggers set <id> filter 'data.cwd startsWith "/Users/luis/ravi"'
+ravi triggers set <id> filter -          # Remove filter
+```
+
+### Test a trigger
+
+Fires the trigger with synthetic event data, bypassing the normal event flow:
+
+```bash
+ravi triggers test <id>
+```
+
+The test event contains:
+
+```json
+{
+  "_test": true,
+  "message": "Test event fired via CLI",
+  "timestamp": "2026-02-28T12:00:00.000Z"
+}
+```
+
+Check results with `ravi daemon logs -f`.
+
+### Delete a trigger
+
+```bash
+ravi triggers rm <id>
+```
+
+## Practical Examples
+
+### Alert on Tool Failure
+
+Monitor SDK tool executions and alert when something goes wrong:
+
+```bash
+ravi triggers add "Tool Error Alert" \
+  --topic "ravi.*.tool" \
+  --message "A tool execution may have failed. Review the event data and notify me if action is needed." \
+  --cooldown 1m \
+  --session isolated
+```
+
+### Monitor Contact Changes
+
+Track when contacts are added or modified:
+
+```bash
+ravi triggers add "Contact Audit" \
+  --topic "ravi.*.cli.contacts.*" \
+  --message "A contact was modified. Log the change for auditing." \
+  --session isolated
+```
+
+### Track Outbound Qualification
+
+React when an outbound lead is qualified:
+
+```bash
+ravi triggers add "Lead Qualificado" \
+  --topic "ravi.*.cli.outbound.qualify" \
+  --message "A lead was qualified. Update the CRM and notify the sales channel." \
+  --agent main \
+  --cooldown 30s
+```
+
+### Permission Denied Monitor
+
+Alert when an agent gets a permission denied error:
+
+```bash
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "Permission denied for {{data.agentId}} on {{data.denied}}. Review if this agent needs additional permissions." \
+  --cooldown 5m
+```
+
+### Directory-Scoped Watcher with Filter
+
+Only fire for events in a specific project directory:
+
+```bash
+ravi triggers add "Project Watcher" \
+  --topic "ravi.*.tool" \
+  --message "Activity detected in the project. Last action: {{data.last_assistant_message}}" \
+  --filter 'data.cwd startsWith "/Users/luis/ravi/copilot"' \
+  --cooldown 30s
+```
+
+### WhatsApp Message Logger
+
+Log all incoming WhatsApp messages:
+
+```bash
+ravi triggers add "WhatsApp Logger" \
+  --topic "whatsapp.*.inbound" \
+  --message "New WhatsApp message received. Process and log accordingly." \
+  --session isolated \
+  --cooldown 5s
+```
+
+## Debugging Triggers
+
+### Check if triggers are active
+
+```bash
+ravi triggers list
+```
+
+Verify that the trigger shows `ENABLED: yes` and that the topic pattern is correct.
+
+### Watch for trigger events in real time
+
+Subscribe to the trigger's topic directly with NATS:
+
+```bash
+nats sub "ravi.*.cli.contacts.*" --server nats://127.0.0.1:4223
+```
+
+### Check daemon logs
+
+Trigger fires and errors are logged by the daemon:
+
+```bash
+ravi daemon logs -f
+```
+
+Look for log entries from `triggers:runner`:
+- `"Firing trigger"` — trigger matched and is being processed
+- `"Trigger cooldown active, skipping"` — event matched but cooldown is active
+- `"Trigger filter did not match, skipping"` — event matched but filter excluded it
+- `"Trigger filter: invalid syntax, failing open"` — filter has bad syntax (trigger fires anyway)
+
+### Force subscription refresh
+
+If triggers seem stuck, force a refresh:
+
+```bash
+ravi triggers disable <id>
+ravi triggers enable <id>
+```
+
+This emits `ravi.triggers.refresh`, causing the runner to tear down and rebuild all subscriptions.
+
+### Test without real events
+
+Use the test command to fire a trigger with synthetic data:
+
+```bash
+ravi triggers test <id>
+ravi daemon logs -f
+```
+
+### Verify filter syntax
+
+The filter must match the regex pattern `data.<path> <operator> "<value>"`. Double or single quotes around the value are both accepted:
+
+```bash
+# Valid
+data.cwd == "/Users/luis/ravi"
+data.tool startsWith "outbound"
+data.output includes 'error'
+
+# Invalid (will fail open with a warning)
+cwd == "/Users/luis"          # Missing data. prefix
+data.cwd = "/Users/luis"      # Single = is not valid
+data.cwd == /Users/luis       # Missing quotes around value
+```

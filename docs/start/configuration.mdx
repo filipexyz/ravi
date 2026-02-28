@@ -1,0 +1,380 @@
+---
+title: Configuration
+description: Environment variables, agents, instances, routes, settings, and permissions.
+---
+
+## Environment Variables
+
+All environment variables are loaded from `~/.ravi/.env`. The file is read on daemon startup and CLI invocation. Existing environment variables are never overridden — values set in the shell take precedence.
+
+Edit with:
+
+```bash
+ravi daemon env
+```
+
+### Authentication (required — one of these)
+
+| Variable | Description |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude access |
+| `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token (alternative to API key) |
+
+### Omni Connection (required for channel support)
+
+Ravi discovers omni via two methods, checked in order:
+
+1. **Environment variables** — `OMNI_API_URL` and `OMNI_API_KEY`
+2. **Omni config file** — `~/.omni/config.json` (written by omni CLI)
+
+| Variable | Description |
+| --- | --- |
+| `OMNI_API_URL` | Omni API base URL (e.g., `http://127.0.0.1:8882`) |
+| `OMNI_API_KEY` | Omni API key for authentication |
+
+If neither source is available, the daemon starts without channel support (no WhatsApp/Telegram/Discord).
+
+### NATS
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NATS_URL` | `nats://127.0.0.1:4222` | NATS server URL. The daemon retries connection up to 30 times on startup (2s intervals) |
+
+### AI Services (optional)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | — | OpenAI Whisper for audio transcription (fallback if Groq unavailable) |
+| `GROQ_API_KEY` | — | Groq API for audio transcription (preferred over OpenAI — uses `whisper-large-v3-turbo`) |
+| `GEMINI_API_KEY` | — | Google Gemini for video analysis and image generation |
+| `ELEVENLABS_API_KEY` | — | ElevenLabs for text-to-speech generation |
+| `ELEVENLABS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` | ElevenLabs voice ID for TTS |
+
+### Model Overrides (optional)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RAVI_MODEL` | `sonnet` | Default Claude model for agents |
+| `RAVI_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+| `GEMINI_VIDEO_MODEL` | `gemini-2.5-flash` | Gemini model for video analysis |
+| `GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image-preview` | Gemini model for image generation |
+
+### Example `.env` File
+
+```bash
+# Authentication
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# Omni
+OMNI_API_URL=http://127.0.0.1:8882
+OMNI_API_KEY=your-omni-api-key
+
+# NATS
+NATS_URL=nats://127.0.0.1:4222
+
+# Optional services
+OPENAI_API_KEY=sk-xxx
+GROQ_API_KEY=gsk_xxx
+GEMINI_API_KEY=AIza...
+ELEVENLABS_API_KEY=sk_xxx
+
+# Defaults
+RAVI_MODEL=sonnet
+RAVI_LOG_LEVEL=info
+```
+
+## Agents
+
+Agents are the core processing units in Ravi. Each agent has its own working directory, model, session scoping, and permissions.
+
+### Creating Agents
+
+```bash
+ravi agents create <id> <cwd>
+ravi agents list
+ravi agents show <id>
+```
+
+### Agent Configuration Fields
+
+All fields are set via `ravi agents set <id> <key> <value>`.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `id` | string | — | Agent identifier, used in session keys |
+| `name` | string | — | Display name |
+| `cwd` | string | — | Working directory (CLAUDE.md, tools, etc.) |
+| `model` | string | `sonnet` | Model override (e.g., `sonnet`, `haiku`, `opus`) |
+| `mode` | `active` \| `sentinel` | `active` | `active` responds to messages; `sentinel` observes silently |
+| `dmScope` | DmScope | per-peer | How DMs are grouped into sessions (see below) |
+| `debounceMs` | number | `0` | Message grouping window in ms for DM sessions |
+| `groupDebounceMs` | number | — | Message grouping window in ms for group sessions (overrides `debounceMs`) |
+| `systemPromptAppend` | string | — | Text appended to the system prompt |
+| `contactScope` | string | — | Contact visibility: `own`, `tagged:<tag>`, or `all` |
+| `allowedSessions` | string[] | `[]` | Session name patterns this agent can access beyond its own |
+| `settingSources` | string[] | `["project"]` | Claude SDK setting sources: `user`, `project` |
+| `memoryModel` | string | `haiku` | Model for memory extraction during context compaction |
+| `specMode` | boolean | `false` | Enable spec mode tools for this agent |
+| `matrixAccount` | string | — | Matrix account username (references matrix_accounts table) |
+| `defaults` | JSON | — | Generic key-value defaults for CLI tools (e.g., TTS voice, image mode) |
+
+### DM Scopes
+
+Controls how direct messages are grouped into sessions.
+
+| Scope | Session Key Pattern | Description |
+| --- | --- | --- |
+| `main` | `agent:X:main` | All DMs share one session |
+| `per-peer` | `agent:X:dm:PHONE` | Isolated by contact |
+| `per-channel-peer` | `agent:X:whatsapp:dm:PHONE` | Isolated by channel + contact |
+| `per-account-channel-peer` | `agent:X:whatsapp:main:dm:PHONE` | Full isolation by account + channel + contact |
+
+### Agent Modes
+
+| Mode | Behavior |
+| --- | --- |
+| `active` | Agent responds to messages automatically |
+| `sentinel` | Agent observes messages silently without auto-replying |
+
+## Instances
+
+Instances represent channel connections (WhatsApp accounts, Telegram bots, etc). Each instance has its own policies, agent mapping, and routes.
+
+### Managing Instances
+
+```bash
+ravi instances list
+ravi instances create <name> --channel whatsapp --agent main
+ravi instances show <name>
+ravi instances set <name> <key> <value>
+ravi instances connect <name>
+ravi instances disconnect <name>
+ravi instances status <name>
+ravi instances delete <name>
+ravi instances restore <name>
+```
+
+### Instance Fields
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | string | — | Instance identifier |
+| `channel` | string | `whatsapp` | Channel type (`whatsapp`, `telegram`, etc.) |
+| `instanceId` | string | — | Omni instance UUID (set automatically on connect) |
+| `agent` | string | — | Default agent for this instance |
+| `dmPolicy` | `open` \| `pairing` \| `closed` | `open` | DM access policy |
+| `groupPolicy` | `open` \| `allowlist` \| `closed` | `open` | Group access policy |
+| `dmScope` | DmScope | — | DM scope override for this instance |
+
+### Policies
+
+**DM Policies:**
+
+| Policy | Behavior |
+| --- | --- |
+| `open` | Accept messages from anyone |
+| `pairing` | Require pairing/approval before accepting |
+| `closed` | Reject messages from unknown contacts |
+
+**Group Policies:**
+
+| Policy | Behavior |
+| --- | --- |
+| `open` | Join and respond in any group |
+| `allowlist` | Only respond in explicitly allowed groups |
+| `closed` | Ignore all group messages |
+
+### Multi-Account Setup
+
+Connect multiple accounts, each mapped to a different agent:
+
+```bash
+ravi instances create vendas --channel whatsapp --agent vendas
+ravi instances create suporte --channel whatsapp --agent suporte
+ravi instances connect vendas
+ravi instances connect suporte
+```
+
+## Routes
+
+Routes control which agent handles messages matching a pattern. Routes belong to instances and are checked in priority order.
+
+### Managing Routes
+
+```bash
+ravi instances routes list <instance>
+ravi instances routes add <instance> <pattern> <agent> [options]
+ravi instances routes show <instance> <pattern>
+ravi instances routes set <instance> <pattern> <key> <value>
+ravi instances routes remove <instance> <pattern>
+ravi instances routes restore <instance> <pattern>
+```
+
+### Route Fields
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `pattern` | string | — | Match pattern: phone number, `group:ID`, glob with `*`, or `thread:*` |
+| `agent` | string | — | Agent to route matched messages to |
+| `priority` | number | `0` | Higher priority routes are checked first |
+| `policy` | string | — | Policy override (`open`, `pairing`, `closed`, `allowlist`) |
+| `dmScope` | DmScope | — | DM scope override for this route |
+| `session` | string | — | Force a specific session name (bypasses auto-generation) |
+| `channel` | string | — | Limit route to a specific channel type |
+
+### Route Examples
+
+```bash
+# Route a specific contact to a dedicated agent
+ravi instances routes add main 5511999999999 vendas
+
+# Route all groups to a group-handler agent
+ravi instances routes add main "group:*" group-bot --priority 10
+
+# Route with policy override
+ravi instances routes add main "*" support --policy closed
+```
+
+### Agent Resolution Order
+
+Messages are routed to agents in this priority:
+
+1. **Route match** — highest priority matching route for the instance
+2. **Instance agent** — default agent configured on the instance
+3. **Default agent** — global `defaultAgent` setting
+
+## Settings
+
+Global settings are stored in SQLite and managed via CLI.
+
+```bash
+ravi settings list
+ravi settings get <key>
+ravi settings set <key> <value>
+ravi settings delete <key>
+```
+
+### Available Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `defaultAgent` | `main` | Default agent when no route matches |
+| `defaultDmScope` | `per-peer` | Default DM scope for new agents |
+| `defaultTimezone` | — | Default timezone for cron jobs (e.g., `America/Sao_Paulo`) |
+| `whatsapp.groupPolicy` | `open` | Global WhatsApp group policy: `open`, `allowlist`, `closed` |
+| `whatsapp.dmPolicy` | `open` | Global WhatsApp DM policy: `open`, `pairing`, `closed` |
+
+### Per-Account Policy Overrides
+
+Override policies for specific accounts using dot-notation:
+
+```bash
+ravi settings set account.vendas.dmPolicy pairing
+ravi settings set account.vendas.groupPolicy closed
+ravi settings set account.vendas.whatsapp.dmPolicy closed
+```
+
+## Permissions (REBAC)
+
+Fine-grained relation-based access control. New agents are **closed by default** (no permissions). The `main` agent is automatically granted superadmin.
+
+### Managing Permissions
+
+```bash
+ravi permissions grant <subject> <relation> <object>
+ravi permissions revoke <subject> <relation> <object>
+ravi permissions check <subject> <permission> <object>
+ravi permissions list [--subject agent:dev] [--relation execute]
+ravi permissions sync      # Re-sync from agent configs
+ravi permissions clear     # Clear manual relations
+```
+
+### Relations
+
+| Relation | Object Type | Example | Description |
+| --- | --- | --- | --- |
+| `admin` | `system:*` | `(agent:main, admin, system:*)` | Superadmin — bypasses all checks |
+| `use` | `tool:<name>` | `(agent:dev, use, tool:Bash)` | Allow use of a specific SDK tool |
+| `use` | `toolgroup:<name>` | `(agent:dev, use, toolgroup:read-only)` | Allow use of all tools in a group |
+| `execute` | `executable:<name>` | `(agent:dev, execute, executable:git)` | Allow running a CLI executable |
+| `execute` | `group:<name>` | `(agent:dev, execute, group:contacts)` | Allow running a CLI command group |
+| `access` | `session:<pattern>` | `(agent:dev, access, session:dev-*)` | Allow access to sessions matching pattern |
+| `modify` | `session:<pattern>` | `(agent:dev, modify, session:dev-*)` | Allow modifying sessions matching pattern |
+| `write_contacts` | `system:*` | `(agent:dev, write_contacts, system:*)` | Full contact read/write access |
+| `read_own_contacts` | `system:*` | `(agent:dev, read_own_contacts, system:*)` | Read only own contacts |
+| `read_tagged_contacts` | `system:<tag>` | `(agent:dev, read_tagged_contacts, system:leads)` | Read contacts with a specific tag |
+| `read_contact` | `contact:<id>` | `(agent:dev, read_contact, contact:5511999)` | Read a specific contact |
+| `view` | `agent:<id>` | `(agent:dev, view, agent:main)` | View another agent's info |
+
+### Entity Types
+
+Subjects and objects use `type:id` notation. Valid types:
+
+`agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `outbound`, `team`, `tool`, `executable`, `toolgroup`
+
+### Resolution Order
+
+Permission checks resolve in this order:
+
+1. **No agent context** (CLI direct) — always allowed
+2. **Superadmin** — check `(agent, admin, system, *)`
+3. **Direct relation** — exact match on subject, relation, object
+4. **Wildcard** — `object:*` covers all objects of that type
+5. **Pattern match** — glob patterns like `session:dev-*`
+6. **Tool group** — check if tool belongs to a granted toolgroup
+
+### Permission Templates
+
+Apply predefined permission sets with `ravi permissions init <subject> <template>`:
+
+| Template | Description |
+| --- | --- |
+| `full-access` | All tools (`tool:*`) + all executables (`executable:*`) |
+| `all-tools` | All SDK tools (`tool:*`) |
+| `sdk-tools` | Individual grants for each SDK tool |
+| `safe-executables` | Common safe CLIs: `ls`, `cat`, `git`, `grep`, `curl`, `ravi`, etc. |
+| `tool-groups` | All named tool groups |
+
+### Tool Groups
+
+Groups of SDK tools for bulk permission grants:
+
+| Group | Tools |
+| --- | --- |
+| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
+| `write` | Edit, Write, NotebookEdit |
+| `execute` | Bash, Task, TaskOutput, TaskStop |
+| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
+| `teams` | TeamCreate, TeamDelete, SendMessage |
+| `navigate` | EnterWorktree, Skill |
+
+### Config-Synced Permissions
+
+Some agent config fields automatically generate REBAC relations on daemon boot:
+
+| Agent Field | Generated Relation |
+| --- | --- |
+| `id: "main"` | `(agent:main, admin, system:*)` |
+| `contactScope: "all"` | `(agent:X, write_contacts, system:*)` |
+| `contactScope: "own"` | `(agent:X, read_own_contacts, system:*)` |
+| `contactScope: "tagged:leads"` | `(agent:X, read_tagged_contacts, system:leads)` |
+| `allowedSessions: ["dev-*"]` | `(agent:X, access, session:dev-*)` |
+
+These relations have source `config` and are re-synced on every daemon start. Manual relations (source `manual`) are preserved.
+
+## Storage
+
+```
+~/ravi/
+├── ravi.db              # Config and sessions (SQLite)
+└── <agent-id>/          # Agent working directory
+    └── CLAUDE.md        # Agent instructions
+
+~/.ravi/
+├── .env                 # Environment variables
+└── logs/
+    └── daemon.log       # Daemon logs
+
+~/.omni/
+└── config.json          # Omni config (auto-discovered)
+```

@@ -1,0 +1,474 @@
+---
+title: CLI Reference
+description: Complete command reference for the ravi CLI — all groups, subcommands, arguments, and options extracted from source.
+---
+
+## Setup
+
+```bash
+ravi setup                                    # Interactive setup wizard (omni, env, agent, settings, daemon)
+```
+
+## Daemon
+
+Manage the ravi daemon process via PM2.
+
+```bash
+ravi daemon start                             # Start daemon via PM2
+ravi daemon stop                              # Stop daemon
+ravi daemon restart                           # Restart daemon
+ravi daemon restart -m "reason"               # Restart with reason (required when called by agent)
+ravi daemon restart --build                   # Build before restarting
+ravi daemon status                            # Show daemon + infra status (ravi, omni-nats, omni-api)
+ravi daemon logs                              # Show last 50 lines
+ravi daemon logs -f                           # Follow log output
+ravi daemon logs -t 100                       # Show last 100 lines
+ravi daemon logs --clear                      # Flush PM2 logs
+ravi daemon logs --path                       # Print PM2 log file path
+ravi daemon env                               # Edit ~/.ravi/.env in $EDITOR
+ravi daemon install                           # Save PM2 process list (pm2 save + startup hint)
+ravi daemon uninstall                         # Remove ravi from PM2
+ravi daemon run                               # Run daemon in foreground (used by PM2 internally)
+ravi daemon dev                               # Dev mode — watch src/ and auto-rebuild on changes
+```
+
+## Agents
+
+Agent lifecycle and configuration.
+
+```bash
+ravi agents list                              # List all agents
+ravi agents show <id>                         # Show agent details (model, mode, permissions, defaults)
+ravi agents create <id> <cwd>                 # Create a new agent
+ravi agents delete <id>                       # Delete an agent
+ravi agents set <id> <key> <value>            # Set property (name, cwd, model, dmScope, mode, defaults, ...)
+ravi agents debounce <id> [ms]                # Set/show message debounce (0 to disable)
+ravi agents spec-mode <id> [true|false]       # Enable/disable spec mode
+ravi agents session <id>                      # Show all sessions for agent
+ravi agents reset <id> [nameOrKey|all]        # Reset session (omit for main, "all" for all sessions)
+ravi agents debug <id> [nameOrKey] [-n count] # Show last N turns of a session transcript
+```
+
+**Agent `set` keys:** `name`, `cwd`, `model`, `dmScope`, `systemPromptAppend`, `matrixAccount`, `settingSources`, `mode` (active|sentinel), `groupDebounceMs`, `defaults` (JSON object).
+
+## Instances
+
+Central configuration entity for channels/accounts. Each instance maps to one omni connection.
+
+```bash
+ravi instances list                           # List all instances with status
+ravi instances show <name>                    # Show instance details + routes
+ravi instances create <name>                  # Create instance
+  --channel <channel>                         #   Channel type (default: whatsapp)
+  --agent <id>                                #   Default agent
+  --dm-policy <open|pairing|closed>           #   DM policy (default: open)
+  --group-policy <open|allowlist|closed>      #   Group policy (default: open)
+ravi instances get <name> <key>               # Get instance property
+ravi instances set <name> <key> <value>       # Set instance property (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel)
+ravi instances delete <name>                  # Soft-delete instance
+ravi instances restore <name>                 # Restore soft-deleted instance
+ravi instances deleted                        # List soft-deleted instances
+ravi instances connect <name>                 # Connect to omni (QR code for WhatsApp)
+  --channel <channel>                         #   Channel type
+  --agent <id>                                #   Agent to route messages to
+ravi instances disconnect <name>              # Disconnect from omni
+ravi instances status <name>                  # Show connection status
+```
+
+### Instance Routes
+
+Per-instance routing rules that map patterns to agents.
+
+```bash
+ravi instances routes list <name>             # List routes for instance
+ravi instances routes show <name> <pattern>   # Show route details
+ravi instances routes add <name> <pattern> <agent>  # Add route
+  --priority <n>                              #   Route priority (default: 0)
+  --policy <open|pairing|closed|allowlist>    #   Policy override
+  --session <name>                            #   Force session name
+  --dm-scope <scope>                          #   DM scope override
+  --channel <channel>                         #   Limit to specific channel
+ravi instances routes remove <name> <pattern> # Soft-delete route
+ravi instances routes restore <name> <pattern># Restore soft-deleted route
+ravi instances routes deleted [name]          # List soft-deleted routes
+ravi instances routes set <name> <pattern> <key> <value>  # Set route property (agent, priority, dmScope, session, policy, channel)
+```
+
+### Instance Pending
+
+Manage unrouted contacts/groups waiting for approval.
+
+```bash
+ravi instances pending list <name>            # List pending contacts/groups
+ravi instances pending approve <name> <contact>  # Approve pending contact
+ravi instances pending reject <name> <contact>   # Reject and remove pending contact
+```
+
+## Contacts
+
+Contact management with multi-platform identities.
+
+```bash
+ravi contacts list [--status <status>]        # List all contacts (filter by status)
+ravi contacts pending [-a <account>]          # List pending contacts (global + per-account)
+ravi contacts add <identity> [name]           # Add/allow a contact (phone, LID, or group ID)
+  --agent <ids>                               #   Restrict to agent(s), comma-separated
+ravi contacts approve <contact> [mode]        # Approve pending contact (mode: auto|mention)
+  --agent <ids>                               #   Restrict to agent(s)
+ravi contacts remove <contact>                # Remove a contact
+ravi contacts allow <contact>                 # Allow a contact
+ravi contacts block <contact>                 # Block a contact
+ravi contacts info <contact>                  # Show contact details with all identities
+ravi contacts check <contact>                 # Alias for info
+ravi contacts find <query> [--tag]            # Search by name/phone or by tag
+ravi contacts set <contact> <key> <value>     # Set property (mode, email, name, tags, notes, opt-out, source, allowed-agents)
+ravi contacts tag <contact> <tag>             # Add tag
+ravi contacts untag <contact> <tag>           # Remove tag
+ravi contacts group-tag <contact> <group> <tag>    # Set tag in a specific group
+ravi contacts group-untag <contact> <group>        # Remove tag from a specific group
+ravi contacts identity-add <contact> <platform> <value>  # Add identity (phone, whatsapp_lid, whatsapp_group, matrix, telegram)
+ravi contacts identity-remove <platform> <value>         # Remove identity
+ravi contacts merge <target> <source>         # Merge contacts (move identities, delete source)
+```
+
+## Sessions
+
+Manage agent sessions, cross-session messaging, and ephemeral TTLs.
+
+```bash
+ravi sessions list [--agent <id>] [--ephemeral]  # List sessions
+ravi sessions info <nameOrKey>                    # Show session details
+ravi sessions rename <nameOrKey> <displayName>    # Set display name
+ravi sessions set-model <nameOrKey> <model>       # Set model override (sonnet, opus, haiku, clear)
+ravi sessions set-thinking <nameOrKey> <level>    # Set thinking level (off, normal, verbose, clear)
+ravi sessions reset <nameOrKey>                   # Reset session (fresh start)
+ravi sessions delete <nameOrKey>                  # Delete session permanently
+ravi sessions read <nameOrKey> [-n count]         # Read message history (default: 20)
+```
+
+### Ephemeral Sessions
+
+```bash
+ravi sessions set-ttl <nameOrKey> <duration>      # Make session ephemeral (e.g. 5h, 30m, 1d)
+ravi sessions extend <nameOrKey> [duration]       # Extend TTL (default: 5h)
+ravi sessions keep <nameOrKey>                    # Make ephemeral session permanent
+```
+
+### Cross-Session Messaging
+
+```bash
+ravi sessions send <nameOrKey> [prompt]           # Send prompt (fire-and-forget)
+  -w, --wait                                      #   Wait for and stream response
+  -i, --interactive                               #   Interactive chat mode
+  -a, --agent <id>                                #   Agent for creating new session
+  --channel <channel>                             #   Override delivery channel
+  --to <chatId>                                   #   Override delivery target
+ravi sessions ask <target> <message> [sender]     # Ask a question to another session
+ravi sessions answer <target> <message> [sender]  # Answer a question from another session
+ravi sessions execute <target> <message>          # Send execute command to another session
+ravi sessions inform <target> <message>           # Send informational message to another session
+```
+
+## Settings
+
+Global configuration stored in SQLite.
+
+```bash
+ravi settings list                            # List all settings with descriptions
+ravi settings get <key>                       # Get a setting value
+ravi settings set <key> <value>               # Set a setting value
+ravi settings delete <key>                    # Delete a setting
+```
+
+**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Also supports per-account patterns like `account.<name>.dmPolicy`.
+
+## Permissions
+
+REBAC (Relation-Based Access Control) permission management.
+
+```bash
+ravi permissions grant <subject> <relation> <object>   # Grant a relation
+ravi permissions revoke <subject> <relation> <object>  # Revoke a relation
+ravi permissions check <subject> <permission> <object> # Check if allowed
+ravi permissions list                                  # List all relations
+  --subject <s>                                        #   Filter by subject
+  --object <o>                                         #   Filter by object
+  --relation <r>                                       #   Filter by relation
+  --source <src>                                       #   Filter by source (config|manual)
+ravi permissions init <subject> <template>             # Apply template (sdk-tools, all-tools, safe-executables, full-access, tool-groups)
+ravi permissions sync                                  # Re-sync relations from agent configs
+ravi permissions clear [--all]                         # Clear manual relations (--all includes config)
+```
+
+**Entity format:** `type:id` (e.g. `agent:dev`, `tool:Bash`, `group:contacts`, `system:*`).
+
+**Relations:** `admin`, `use`, `execute`, `access`, `modify`, `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`, `view`.
+
+**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `outbound`, `team`, `tool`, `executable`, `toolgroup`.
+
+## Cron
+
+Scheduled job management.
+
+```bash
+ravi cron list                                # List all jobs
+ravi cron show <id>                           # Show job details
+ravi cron add <name>                          # Add a new job
+  --cron <expr>                               #   Cron expression (e.g. "0 9 * * *")
+  --every <interval>                          #   Interval (e.g. 30m, 1h)
+  --at <datetime>                             #   One-shot ISO datetime
+  --tz <timezone>                             #   Timezone (for --cron)
+  --message <text>                            #   Prompt message (required)
+  --agent <id>                                #   Target agent
+  --account <name>                            #   Account for outbound routing
+  --isolated                                  #   Run in isolated session
+  --delete-after                              #   Delete job after first run
+  --description <text>                        #   Job description
+ravi cron enable <id>                         # Enable a job
+ravi cron disable <id>                        # Disable a job
+ravi cron set <id> <key> <value>              # Set property (name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after)
+ravi cron run <id>                            # Manually trigger a job
+ravi cron rm <id>                             # Delete a job
+```
+
+## Heartbeat
+
+Proactive agent runs that check HEARTBEAT.md for pending tasks.
+
+```bash
+ravi heartbeat status                         # Show status for all agents
+ravi heartbeat show <id>                      # Show config for an agent
+ravi heartbeat enable <id> [interval]         # Enable heartbeat (e.g. 30m, 1h)
+ravi heartbeat disable <id>                   # Disable heartbeat
+ravi heartbeat set <id> <key> <value>         # Set property (interval, model, account, active-hours)
+ravi heartbeat trigger <id>                   # Manually trigger heartbeat
+```
+
+## Triggers
+
+Event-driven triggers that subscribe to NATS topics and fire agent prompts.
+
+```bash
+ravi triggers list                            # List all triggers
+ravi triggers show <id>                       # Show trigger details
+ravi triggers add <name>                      # Add a new trigger
+  --topic <pattern>                           #   NATS topic pattern (required)
+  --message <text>                            #   Prompt message (required)
+  --agent <id>                                #   Target agent
+  --account <name>                            #   Account for outbound routing
+  --cooldown <duration>                       #   Cooldown between fires (default: 5s)
+  --session <main|isolated>                   #   Session type (default: isolated)
+  --filter <expression>                       #   Filter expression
+ravi triggers enable <id>                     # Enable trigger
+ravi triggers disable <id>                    # Disable trigger
+ravi triggers set <id> <key> <value>          # Set property (name, message, topic, agent, account, session, cooldown, filter)
+ravi triggers test <id>                       # Test with fake event data
+ravi triggers rm <id>                         # Delete trigger
+```
+
+## Outbound
+
+Automated outreach queues with pipeline stages and follow-ups.
+
+```bash
+ravi outbound list                            # List all queues
+ravi outbound show <id>                       # Show queue details
+ravi outbound create <name>                   # Create queue
+  --instructions <text>                       #   Agent instructions (required)
+  --every <interval>                          #   Interval between entries (required)
+  --stages <json>                             #   Pipeline stages JSON (required)
+  --agent <id>                                #   Target agent
+  --description <text>                        #   Queue description
+  --active-start <time>                       #   Active hours start (e.g. 09:00)
+  --active-end <time>                         #   Active hours end (e.g. 22:00)
+  --tz <timezone>                             #   Timezone
+  --max-rounds <n>                            #   Maximum rounds per entry
+ravi outbound start <id>                      # Activate queue
+ravi outbound pause <id>                      # Pause queue
+ravi outbound set <id> <key> <value>          # Set property (name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds)
+ravi outbound run <id>                        # Manually trigger queue
+ravi outbound rm <id>                         # Delete queue
+ravi outbound report [queueId]               # Full report (all queues or specific)
+```
+
+### Outbound Entries
+
+```bash
+ravi outbound add <queueId> <phone>           # Add entry to queue
+  --name <name>                               #   Contact name
+  --email <email>                             #   Contact email
+  --tag <tag>                                 #   Add all contacts with this tag
+  --context <json>                            #   Extra context JSON
+ravi outbound entries <queueId>               # List entries in queue
+ravi outbound status <entryId>                # Show entry details
+ravi outbound qualify <entryId> <stage>       # Set pipeline stage
+ravi outbound context <entryId> <json>        # Update entry context (merge)
+ravi outbound done <entryId>                  # Mark entry as done
+ravi outbound complete <entryId>              # Complete entry (alias for done)
+ravi outbound skip <entryId>                  # Skip entry
+ravi outbound reset <entryId> [--full]        # Reset entry to pending (--full clears context)
+ravi outbound chat <entryId>                  # Show chat history
+  --limit <n>                                 #   Number of messages
+  --offset <n>                                #   Skip first N messages
+ravi outbound send <entryId> <message>        # Send message to entry's contact
+  --account <id>                              #   WhatsApp account
+  --typing-delay <ms>                         #   Typing indicator delay
+  --pause <ms>                                #   Pause before typing
+```
+
+## WhatsApp Groups
+
+WhatsApp group management (requires connected instance).
+
+```bash
+ravi whatsapp.group list [--account <id>]                    # List all groups
+ravi whatsapp.group info <groupId> [--account <id>]          # Show group metadata + participants
+ravi whatsapp.group create <name> <participants>             # Create group (comma-separated phones)
+  --account <id>                                             #   WhatsApp account
+  --agent <id>                                               #   Auto-route to agent
+ravi whatsapp.group add <groupId> <participants>             # Add participants
+ravi whatsapp.group remove <groupId> <participants>          # Remove participants
+ravi whatsapp.group promote <groupId> <participants>         # Promote to admin
+ravi whatsapp.group demote <groupId> <participants>          # Demote from admin
+ravi whatsapp.group invite <groupId>                         # Get invite link
+ravi whatsapp.group revoke-invite <groupId>                  # Revoke invite link
+ravi whatsapp.group join <code>                              # Join group via invite
+ravi whatsapp.group leave <groupId>                          # Leave group
+ravi whatsapp.group rename <groupId> <name>                  # Rename group
+ravi whatsapp.group description <groupId> <text>             # Update description
+ravi whatsapp.group settings <groupId> <setting>             # Update settings (announcement, not_announcement, locked, unlocked)
+```
+
+## WhatsApp DMs
+
+Send direct messages and manage read receipts.
+
+```bash
+ravi whatsapp.dm send <contact> <message>     # Send a DM (resolves LID or phone)
+  --account <id>                              #   WhatsApp account
+ravi whatsapp.dm read <contact>               # Read recent messages
+  --last <n>                                  #   Number of messages (default: 10)
+  --no-ack                                    #   Don't send read receipt
+  --account <id>                              #   WhatsApp account
+ravi whatsapp.dm ack <contact> <messageId>    # Send read receipt for specific message
+  --account <id>                              #   WhatsApp account
+```
+
+## Media
+
+Send media files through connected channels.
+
+```bash
+ravi media send <filePath>                    # Send media file (image, video, audio, document)
+  --caption <text>                            #   Caption for media
+  --channel <channel>                         #   Target channel
+  --to <chatId>                               #   Target chat ID
+  --account <id>                              #   Account ID
+  --ptt                                       #   Send audio as voice note (PTT)
+```
+
+## Audio
+
+Generate speech via ElevenLabs TTS.
+
+```bash
+ravi audio generate <text>                    # Generate speech from text
+  --voice <id>                                #   ElevenLabs voice ID
+  --model <model>                             #   TTS model (eleven_multilingual_v2, eleven_turbo_v2_5, etc.)
+  --speed <0.5-2.0>                           #   Speech speed (default: 1.0)
+  --lang <code>                               #   Language code (default: pt-br)
+  --format <format>                           #   Output format (mp3_44100_128, mp3_22050_32, pcm_16000)
+  -o, --output <path>                         #   Output directory (default: /tmp)
+  --send                                      #   Auto-send to current chat
+  --caption <text>                            #   Caption when sending
+```
+
+## Image
+
+Generate images via Gemini.
+
+```bash
+ravi image generate <prompt>                  # Generate image from text prompt
+  --mode <fast|quality>                       #   Model: fast (Flash) or quality (Pro). Default: fast
+  --source <path>                             #   Source image for editing/reference
+  -o, --output <path>                         #   Output directory (default: /tmp)
+  --aspect <ratio>                            #   Aspect ratio (1:1, 2:3, 3:2, 3:4, 4:3, 9:16, 16:9, 21:9)
+  --size <1K|2K|4K>                           #   Image size (default: 1K)
+  --send                                      #   Auto-send to current chat
+  --caption <text>                            #   Caption when sending
+```
+
+## Video
+
+Analyze videos via Gemini API.
+
+```bash
+ravi video analyze <url>                      # Analyze YouTube URL or local file
+  -o, --output <path>                         #   Output file path (default: auto-generated)
+  -p, --prompt <text>                         #   Custom analysis prompt
+```
+
+## Transcribe
+
+Audio transcription via OpenAI Whisper.
+
+```bash
+ravi transcribe file <path>                   # Transcribe a local audio file
+  --lang <code>                               #   Language code (default: pt)
+```
+
+Supported formats: `.ogg`, `.opus`, `.mp3`, `.m4a`, `.mp4`, `.wav`, `.webm`.
+
+## React
+
+Emoji reactions on messages.
+
+```bash
+ravi react send <messageId> <emoji>           # Send emoji reaction (messageId from [mid:ID] tags)
+```
+
+## Events
+
+Live stream of NATS events for debugging.
+
+```bash
+ravi events stream                            # Stream all events in real-time
+  -f, --filter <pattern>                      #   Topic glob filter (e.g. "ravi.session.*")
+  --no-claude                                 #   Hide raw Claude SDK events
+  --no-heartbeat                              #   Hide heartbeat events
+  --only <type>                               #   Only show: prompt, response, tool, claude, cli, audit
+```
+
+## Copilot
+
+Bridge ravi to Claude Code team mailboxes.
+
+```bash
+ravi copilot send <teamName> <message>        # Send message to a team inbox
+  --from <name>                               #   Sender name (default: ravi)
+  --summary <text>                            #   Short summary title
+  --color <color>                             #   Message color
+ravi copilot teams                            # List discovered Claude Code teams
+```
+
+## Tools
+
+Inspect and export CLI tools as SDK tool definitions.
+
+```bash
+ravi tools list                               # List all available CLI tools (as SDK tools)
+ravi tools show <name>                        # Show tool details + JSON schema
+ravi tools manifest                           # Export as JSON manifest
+ravi tools schema                             # Export as JSON Schema
+ravi tools test <name> [argsJson]             # Test a tool execution
+```
+
+## Service
+
+Low-level bot service management.
+
+```bash
+ravi service start                            # Start bot server (foreground)
+ravi service tui [session]                    # Start TUI interface
+ravi service wa                               # (Deprecated) Use "ravi daemon start" instead
+```

@@ -1,0 +1,127 @@
+---
+title: Claude Code Integration
+description: Bidirectional bridge between Ravi and Claude Code sessions via hooks and NATS.
+---
+
+## How It Works
+
+```
+CC → Ravi:  Global hooks → ravi-copilot.sh → nats pub ravi.copilot.*
+Ravi → CC:  ravi copilot send <team> "msg" → ~/.claude/teams/{team}/inboxes/team-lead.json
+```
+
+1. **Global hooks** in `~/.claude/settings.json` fire on every Claude Code event
+2. **Hook script** `~/.claude/hooks/ravi-copilot.sh` reads the JSON, wraps it in an envelope, and publishes to NATS
+3. **Ravi triggers** subscribe to `ravi.copilot.*` topics and react
+4. **Mailbox injection** — Ravi writes to CC's inbox JSON to communicate back (CC must be in team mode)
+
+## Commands
+
+### Send message to CC session
+
+```bash
+ravi copilot send <teamName> "message"
+ravi copilot send <teamName> "message" --from jarvis
+ravi copilot send <teamName> "message" --summary "Alert" --color red
+```
+
+### List CC teams
+
+```bash
+ravi copilot teams
+```
+
+## NATS Topics
+
+| Topic | CC Event | Description |
+|-------|----------|-------------|
+| `ravi.copilot.session.start` | SessionStart | CC session opened |
+| `ravi.copilot.session.end` | SessionEnd | CC session closed |
+| `ravi.copilot.prompt` | UserPromptSubmit | User sent prompt |
+| `ravi.copilot.tool.pre` | PreToolUse | Tool about to execute |
+| `ravi.copilot.tool.post` | PostToolUse | Tool executed |
+| `ravi.copilot.tool.fail` | PostToolUseFailure | Tool failed |
+| `ravi.copilot.stop` | Stop | Claude finished generating |
+| `ravi.copilot.subagent.start` | SubagentStart | Subagent created |
+| `ravi.copilot.subagent.stop` | SubagentStop | Subagent finished |
+| `ravi.copilot.notification` | Notification | CC notification |
+| `ravi.copilot.teammate.idle` | TeammateIdle | Teammate went idle |
+| `ravi.copilot.config.change` | ConfigChange | CC config changed |
+| `ravi.copilot.compact.pre` | PreCompact | Context compaction |
+| `ravi.copilot.task.completed` | TaskCompleted | Delegated task completed |
+
+### Payload Envelope
+
+```json
+{
+  "session_id": "abc-123",
+  "session_type": "main",
+  "cwd": "/path/to/project",
+  "event": "PostToolUse",
+  "timestamp": "2026-02-25T17:30:00Z",
+  "data": { }
+}
+```
+
+## Trigger Examples
+
+### Alert on tool failure
+
+```bash
+ravi triggers add "CC Tool Failure" \
+  --topic "ravi.copilot.tool.fail" \
+  --message "A tool failed in Claude Code. Analyze the error and alert if critical." \
+  --agent main --cooldown 30s --session isolated
+```
+
+### Monitor new sessions
+
+```bash
+ravi triggers add "CC Session Start" \
+  --topic "ravi.copilot.session.start" \
+  --message "New Claude Code session started. Log the CWD and session_id." \
+  --agent main --cooldown 10s --session isolated
+```
+
+### Monitor dangerous Bash commands
+
+```bash
+ravi triggers add "CC Bash Monitor" \
+  --topic "ravi.copilot.tool.post" \
+  --message "Tool executed in CC. If Bash with dangerous command (rm -rf, push --force, DROP TABLE), alert immediately. Otherwise @@SILENT@@." \
+  --agent main --cooldown 5s --session isolated
+```
+
+### Notify on session end
+
+```bash
+ravi triggers add "CC Session End" \
+  --topic "ravi.copilot.session.end" \
+  --message "Claude Code session ended. Update TASKS.md if relevant. @@SILENT@@ if nothing to do." \
+  --agent main --cooldown 10s --session isolated
+```
+
+## Setup
+
+1. Install nats CLI: `nats --version` (or `brew install nats-io/nats-tools/nats`)
+2. Daemon running: `ravi daemon status`
+3. Hook script executable: `ls -la ~/.claude/hooks/ravi-copilot.sh`
+4. Hooks registered: `cat ~/.claude/settings.json | grep -c "ravi-copilot.sh"` (should show 14)
+5. Test: `nats sub "ravi.copilot.>" --server nats://127.0.0.1:4222`
+6. Open a CC session — events should appear in the subscriber
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `~/.claude/settings.json` | CC global hooks |
+| `~/.claude/hooks/ravi-copilot.sh` | Script that publishes to NATS |
+| `~/.claude/teams/{name}/config.json` | CC team config |
+| `~/.claude/teams/{name}/inboxes/*.json` | Team member mailboxes |
+
+## Notes
+
+- CC must be in **team mode** to receive messages from Ravi (inbox poller only runs with an active team)
+- Hook script requires `jq` and `nats` in PATH — fails silently if missing
+- Publishes in background (`&`) — never blocks CC
+- Triggers have anti-loop: events from trigger sessions are ignored

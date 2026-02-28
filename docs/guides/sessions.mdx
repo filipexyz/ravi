@@ -1,0 +1,278 @@
+---
+title: Sessions
+description: Manage agent sessions, ephemeral TTLs, cross-session messaging, and multi-agent coordination.
+---
+
+## Overview
+
+A session is a persistent conversation between an agent and a user (or system). Each session has a unique key, an associated agent, and optional channel routing for message delivery. Sessions store conversation history, token counts, model overrides, and metadata.
+
+## Session Types
+
+### Permanent Sessions
+
+The default type. Permanent sessions persist indefinitely until explicitly reset or deleted.
+
+### Ephemeral Sessions
+
+Sessions with a time-to-live (TTL). When the TTL expires, the session is automatically deleted. Ten minutes before expiration, the agent receives a system notification with CLI commands to extend, keep, or delete the session.
+
+The ephemeral lifecycle:
+
+1. A session is made ephemeral with `set-ttl`
+2. The countdown starts from the current time
+3. At T-10 minutes, the agent receives a `[System] Inform:` warning
+4. The agent can `extend` (add more time), `keep` (make permanent), or `delete`
+5. If no action is taken, the session is automatically deleted by the runner
+
+## Session Keys
+
+Every session is identified by a hierarchical key that encodes the agent, channel, scope, and peer.
+
+### Key Format
+
+```
+agent:{agentId}:{scope}
+```
+
+The scope portion varies based on the DM scope setting:
+
+| DM Scope | Key Format | Example |
+|----------|------------|---------|
+| `main` | `agent:X:main` | `agent:main:main` |
+| `per-peer` | `agent:X:dm:{phone}` | `agent:main:dm:5511999999999` |
+| `per-channel-peer` | `agent:X:{channel}:dm:{phone}` | `agent:main:whatsapp:dm:5511999999999` |
+| `per-account-channel-peer` | `agent:X:{channel}:{account}:dm:{phone}` | `agent:main:whatsapp:vendas:dm:5511999999999` |
+
+### Group and Thread Keys
+
+Groups and threads are always fully isolated regardless of DM scope:
+
+```
+agent:main:whatsapp:vendas:group:120363123456@g.us
+agent:main:slack:channel:C123:thread:1234567890
+```
+
+### Special Session Keys
+
+Certain features create their own isolated sessions:
+
+| Feature | Key Format | Example |
+|---------|------------|---------|
+| Cron jobs | `agent:{agentId}:cron:{jobId}` | `agent:main:cron:abc123` |
+| Event triggers | `agent:{agentId}:trigger:{triggerId}` | `agent:main:trigger:a1b2c3d4` |
+| Outbound campaigns | `agent:{agentId}:outbound:{queueId}:{phone}` | `agent:main:outbound:queue1:5511999` |
+
+## Listing Sessions
+
+```bash
+# List all sessions
+ravi sessions list
+
+# Filter by agent
+ravi sessions list --agent main
+
+# Show only ephemeral sessions
+ravi sessions list --ephemeral
+```
+
+The list shows session name, agent, token usage, last activity, type (permanent/ephemeral), expiration date, and display name.
+
+## Session Details
+
+```bash
+ravi sessions info <name>
+```
+
+Shows the full session record: key, display name, agent, model override, thinking level, SDK session ID, token breakdown (input/output/total/context), channel routing, ephemeral status, queue configuration, compaction count, and timestamps.
+
+## Reading History
+
+```bash
+# Read last 20 messages (default)
+ravi sessions read <name>
+
+# Read last 50 messages
+ravi sessions read <name> -n 50
+```
+
+Returns normalized message history (user and assistant messages only, no tool calls). Messages are read from the SDK transcript JSONL file. Silent responses (`@@SILENT@@`) are excluded.
+
+## Managing Sessions
+
+### Rename
+
+```bash
+ravi sessions rename <name> "Customer Support Chat"
+```
+
+Sets the display name shown in listings.
+
+### Model Override
+
+```bash
+# Set model for a specific session
+ravi sessions set-model <name> opus
+
+# Clear override (use agent default)
+ravi sessions set-model <name> clear
+```
+
+Takes effect on the next session start (after reset or daemon restart).
+
+### Thinking Level
+
+```bash
+# Set thinking level
+ravi sessions set-thinking <name> verbose
+
+# Options: off, normal, verbose, clear
+ravi sessions set-thinking <name> clear
+```
+
+Also takes effect on the next session start.
+
+### Reset
+
+```bash
+ravi sessions reset <name>
+```
+
+Clears the conversation history but preserves the session configuration (name, routing, model, etc.). The next message starts a fresh conversation. The active SDK subprocess is aborted first.
+
+### Delete
+
+```bash
+ravi sessions delete <name>
+```
+
+Permanently removes the session. The SDK subprocess is aborted, then the session record is deleted from the database.
+
+## Ephemeral Sessions
+
+### Make a Session Ephemeral
+
+```bash
+# Set a 5-hour TTL
+ravi sessions set-ttl <name> 5h
+```
+
+Supported duration formats: `30m`, `5h`, `1d`.
+
+### Extend
+
+```bash
+# Extend by default 5 hours
+ravi sessions extend <name>
+
+# Extend by a specific duration
+ravi sessions extend <name> 2h
+```
+
+The extension is added on top of the current expiration time (or the current time, whichever is later).
+
+### Make Permanent
+
+```bash
+ravi sessions keep <name>
+```
+
+Converts an ephemeral session back to a permanent one, removing the TTL and expiration.
+
+## Cross-Session Messaging
+
+Sessions can communicate with each other using five message types. This enables multi-agent coordination, task delegation, and information sharing.
+
+### Message Types
+
+| Type | CLI Command | Behavior |
+|------|-------------|----------|
+| **send** | `ravi sessions send` | Delivers a prompt; supports wait mode and interactive mode |
+| **inform** | `ravi sessions inform` | Fire-and-forget context; agent may reply or silently acknowledge |
+| **execute** | `ravi sessions execute` | Fire-and-forget task; agent performs the work using tools |
+| **ask** | `ravi sessions ask` | Sends a question; agent answers in-chat if unknown or replies directly if known |
+| **answer** | `ravi sessions answer` | Delivers a response to a previous ask; agent always processes it |
+
+### Send
+
+The most versatile command. Supports three modes:
+
+```bash
+# Fire-and-forget (default): send and return immediately
+ravi sessions send <name> "Generate the weekly report"
+
+# Wait mode: send and stream the response to your terminal
+ravi sessions send <name> "What is the current status?" -w
+
+# Interactive mode: open a chat loop with the target session
+ravi sessions send <name> -i
+```
+
+Use `-a <agent>` to auto-create the session if it does not exist:
+
+```bash
+ravi sessions send new-task -a main "Process this data"
+```
+
+Interactive mode supports `/reset`, `/info`, and `/exit` commands.
+
+### Inform
+
+Send context information. The agent can silently acknowledge (`@@SILENT@@`) if the information is not relevant:
+
+```bash
+ravi sessions inform <name> "The deploy completed successfully at 14:30"
+```
+
+### Execute
+
+Send a task for the agent to perform. The agent uses tools and completes the work without necessarily responding:
+
+```bash
+ravi sessions execute <name> "Run the database backup and report the result"
+```
+
+### Ask / Answer Workflow
+
+The ask/answer pattern enables structured multi-agent coordination:
+
+```bash
+# Agent A asks Agent B a question
+ravi sessions ask agent:sales:main "What is the pricing for the enterprise plan?" "customer:5511999"
+
+# Agent B receives the question with source attribution:
+# [System] Ask: [from: agent:main:main, sender: customer:5511999] What is the pricing...
+
+# If Agent B knows the answer, it replies directly:
+ravi sessions answer agent:main:main "Enterprise plan starts at $499/month" "customer:5511999"
+
+# If Agent B does not know, it asks in the chat and forwards replies back as they come
+```
+
+The ask command includes instructions for the target agent to:
+- Answer immediately if it already knows
+- Otherwise, ask the question in its chat and relay answers back
+- Keep forwarding related follow-ups (not just the first reply)
+
+### Channel Overrides
+
+All messaging commands support channel and target overrides:
+
+```bash
+ravi sessions send <name> "message" --channel whatsapp --to 5511999999999
+```
+
+### Source Attribution
+
+All cross-session messages include a `[from: <sessionKey>]` tag so the receiving agent knows who sent it. For ask/answer, an optional sender parameter provides end-user attribution.
+
+## Scope Isolation
+
+Sessions respect REBAC permissions. When scope enforcement is active:
+
+- `sessions list` only shows accessible sessions
+- `sessions info` returns "not found" for inaccessible sessions
+- `sessions send/ask/answer` cannot target sessions outside the caller's scope
+- Modify operations (rename, reset, delete, set-model, set-thinking, set-ttl, extend, keep) require modify permission
+
+This prevents agents from enumerating or interfering with sessions they should not access.

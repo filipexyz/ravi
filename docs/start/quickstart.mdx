@@ -1,0 +1,75 @@
+---
+title: Quick Start
+description: Install and run Ravi from scratch.
+---
+
+## Prerequisites
+
+- [Bun](https://bun.sh) >= 1.0
+- A Claude API key (`ANTHROPIC_API_KEY`)
+- NATS server running (downloaded automatically by `ravi setup`)
+- omni API running (for channel support — optional for CLI-only usage)
+
+## Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/filipexyz/ravi.git
+cd ravi
+
+# Install dependencies
+bun install
+
+# Run setup wizard (downloads nats-server, configures auth, creates agent)
+ravi setup
+```
+
+## Configuration
+
+Configure environment in `~/.ravi/.env`:
+
+```bash
+# Required
+ANTHROPIC_API_KEY=sk-ant-xxx
+
+# Omni connection (required for WhatsApp/Telegram/Discord)
+OMNI_API_URL=http://127.0.0.1:8882
+OMNI_API_KEY=your-omni-api-key
+
+# NATS (default: nats://127.0.0.1:4222)
+NATS_URL=nats://127.0.0.1:4222
+```
+
+See [Configuration](/start/configuration) for all environment variables.
+
+## Start the Daemon
+
+```bash
+# Start the daemon (managed by PM2)
+ravi daemon start
+
+# Check status
+ravi daemon status
+
+# View logs
+ravi daemon logs -f
+```
+
+## Connect WhatsApp
+
+```bash
+# Create and connect an instance
+ravi instances connect main
+```
+
+Scan the QR code with WhatsApp on your phone.
+
+## Test Your Agent
+
+```bash
+# Send a prompt
+ravi agents run main "oi, tudo bem?"
+
+# Interactive chat
+ravi agents chat main
+```

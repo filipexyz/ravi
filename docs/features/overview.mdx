@@ -1,0 +1,463 @@
+---
+title: Features
+description: Complete reference for Ravi's automation features — heartbeat, cron, triggers, outbound pipelines, TTS, image generation, video analysis, transcription, spec mode, ephemeral sessions, cross-session messaging, reactions, and media pipeline.
+---
+
+## Heartbeat
+
+Proactive agent runs that periodically check a task file (`HEARTBEAT.md`) in the agent's working directory and prompt the agent to act on pending items.
+
+**How it works:**
+
+1. A per-agent interval timer fires at the configured frequency
+2. The runner checks active hours, then reads `~/ravi/{agent}/HEARTBEAT.md`
+3. If the file exists and is non-empty, a heartbeat prompt is published to the agent's main session
+4. If the agent responds with only `HEARTBEAT_OK`, the message is suppressed (no channel delivery)
+5. Config changes are picked up automatically via NATS refresh signals (`ravi.heartbeat.refresh`)
+
+**Key behaviors:**
+
+- Timers are managed per-agent and automatically recreated when intervals change
+- Active hours are enforced: heartbeats outside the window are silently skipped
+- The heartbeat uses the agent's main session, reusing the last known channel routing for delivery
+- Manual triggers bypass the enabled check but still respect active hours
+
+```bash
+# Enable heartbeat (runs every 30 minutes)
+ravi heartbeat enable main 30m
+
+# Configure active hours
+ravi heartbeat set main active-hours 09:00-22:00
+
+# Use a cheaper model for heartbeat runs
+ravi heartbeat set main model haiku
+
+# Manual trigger
+ravi heartbeat trigger main
+
+# Check status
+ravi heartbeat status
+ravi heartbeat show main
+
+# Disable
+ravi heartbeat disable main
+```
+
+---
+
+## Cron Jobs
+
+Scheduled jobs that send prompts to agents at specified times. Uses a timer-based approach where the runner arms a single `setTimeout` for the next due job, then re-arms after execution.
+
+**Schedule types:**
+
+- `--cron "0 9 * * *"` — Standard cron expression (with optional `--tz` for timezone)
+- `--every 30m` — Interval-based (supports `30s`, `5m`, `1h`, `2d`). Uses anti-drift: next run is calculated from the scheduled time, not from when execution finishes
+- `--at "2025-02-01T15:00"` — One-shot at a specific ISO datetime. Automatically deleted after execution
+
+**Session targets:**
+
+- `main` (default) — Runs in the agent's shared session. If `replySession` is set, the prompt is delivered there instead
+- `isolated` — Dedicated session per job (`agent:{agentId}:cron:{jobId}`)
+
+**Prompt format:** Each prompt is prefixed with `[Cron: {name} {timestamp}]` followed by the configured message.
+
+```bash
+# Add recurring job with cron expression
+ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate daily summary"
+
+# Add interval job
+ravi cron add "Check emails" --every 30m --message "Check for new emails"
+
+# Add one-shot job
+ravi cron add "Reminder" --at "2025-02-01T15:00" --message "Meeting in 10 min"
+
+# Target a specific agent and session type
+ravi cron add "Cleanup" --every 1h --message "Run cleanup" --agent jarvis --isolated
+
+# Auto-delete after first run
+ravi cron add "One-time" --every 5m --message "Do once" --delete-after
+
+# Manual trigger (ignores schedule)
+ravi cron run <id>
+
+# Manage
+ravi cron list
+ravi cron show <id>
+ravi cron enable <id>
+ravi cron disable <id>
+ravi cron set <id> message "New message"
+ravi cron rm <id>
+```
+
+---
+
+## Event Triggers
+
+Event-driven triggers that subscribe to NATS topics and fire agent prompts when matching events occur. Supports filters and message templates.
+
+**How it works:**
+
+1. The runner subscribes to all enabled trigger topics, grouping by topic to share subscriptions
+2. When an event fires, the runner checks cooldown, evaluates the filter expression, and resolves message templates
+3. The prompt is published to the target session with full event data included
+
+**Anti-loop protection:**
+
+- Blocked prefixes: topics starting with `ravi.session.` are rejected at subscription time
+- Session filter: events from trigger sessions (`:trigger:` in topic) are skipped
+- Data flag: events with `_trigger: true` are skipped
+- Cooldown: per-trigger cooldown (default 5s) prevents rapid re-firing. Cooldown is set in-memory immediately on first match to prevent race conditions with concurrent events
+
+### Trigger Filters
+
+A restricted expression syntax for filtering events. No `eval` or `new Function()` — uses a safe regex-based parser.
+
+**Syntax:** `data.<path> <operator> "<value>"`
+
+**Operators:** `==`, `!=`, `startsWith`, `endsWith`, `includes`
+
+```
+data.cwd == "/Users/luis/Dev/fm"
+data.permission_mode != "bypassPermissions"
+data.cwd startsWith "/Users/luis/ravi"
+data.hook_event_name endsWith "Submit"
+data.tool includes "Bash"
+```
+
+If the filter is empty or missing, the trigger always fires. If the filter syntax is invalid, it fails open (fires with a warning logged). If the data path doesn't exist, the filter returns false (no match).
+
+### Message Templates
+
+Trigger messages support `{{variable}}` placeholders resolved against event data.
+
+**Available variables:**
+
+- `{{topic}}` — The NATS topic that fired the trigger
+- `{{data.<path>}}` — Dot-notation path into the event data (e.g., `{{data.cwd}}`, `{{data.prompt}}`)
+
+String values longer than 300 characters are automatically truncated. Unresolved variables are left as-is in the output.
+
+```bash
+# Add trigger with filter and template
+ravi triggers add "Deploy Alert" \
+  --topic "ravi.*.cli.deploy.*" \
+  --message "Deploy on {{data.environment}}: {{data.status}}" \
+  --filter 'data.status == "success"' \
+  --cooldown 1m
+
+# Basic trigger
+ravi triggers add "Lead Qualificado" \
+  --topic "ravi.*.cli.outbound.qualify" \
+  --message "Um lead foi qualificado. Notifica o grupo."
+
+# Manage
+ravi triggers list
+ravi triggers show <id>
+ravi triggers enable <id>
+ravi triggers disable <id>
+ravi triggers set <id> cooldown 30s
+ravi triggers test <id>           # Fire with synthetic event data
+ravi triggers rm <id>
+```
+
+---
+
+## Outbound Queues
+
+Automated outreach campaigns with round-robin processing, multi-stage pipelines, follow-ups, and humanized delivery.
+
+**Processing priority (per cycle):**
+
+1. **Response entries** — Contacts who replied get processed first (event-driven path)
+2. **Follow-up entries** — Contacts who were contacted but didn't respond, based on per-stage delay configuration and max rounds
+3. **Initial outreach** — New pending entries at round 0 (timer path, advances `currentIndex`)
+
+**Pipeline stages:** Queues support configurable stages (e.g., `cold -> warm -> interested -> qualified -> rejected`). The agent advances entries through stages using `ravi outbound qualify`. Stage delays control how long to wait before follow-up for each stage.
+
+**Prompt structure:** The runner builds two separate parts:
+
+- **System context** (invisible to user): Queue instructions, available pipeline stages, available CLI actions, workflow guidelines, and entry metadata
+- **User prompt** (visible): Contact info for initial outreach, response text for follow-ups, or elapsed time + contact info for no-response follow-ups
+
+**Humanized delivery:** Outbound sends support simulated reading pauses and typing delays. Sentinel-mode agents automatically get humanized timing based on message length (3-5s pause + 2-8s typing).
+
+**Session isolation:** Each entry runs in its own session: `agent:{agentId}:outbound:{queueId}:{phone}`
+
+**Active hours:** Queues respect configurable active hours with timezone support.
+
+**Queue completion:** When all entries reach `done` or `skipped` status, the queue automatically transitions to `completed`.
+
+```bash
+# Create a queue with pipeline stages
+ravi outbound create "Prospecting" \
+  --instructions "Reach out to this lead..." \
+  --every 5m \
+  --agent main \
+  --follow-up '{"cold":120,"warm":30}' \
+  --max-rounds 3
+
+# Add entries
+ravi outbound add <queueId> <phone> --name "Joao Silva"
+ravi outbound add <queueId> <phone> --tag leads
+
+# Manage queues
+ravi outbound list
+ravi outbound show <id>
+ravi outbound start <id>
+ravi outbound pause <id>
+ravi outbound run <id>              # Manual trigger
+
+# Agent actions (used during outbound sessions)
+ravi outbound send <entryId> "Hello!" --typing-delay 3000
+ravi outbound qualify <entryId> warm
+ravi outbound context <entryId> '{"note":"Interested in product X"}'
+ravi outbound done <entryId>
+ravi outbound skip <entryId>
+
+# Reports
+ravi outbound entries <queueId>
+ravi outbound status <entryId>
+ravi outbound chat <entryId>
+ravi outbound report
+```
+
+---
+
+## Text-to-Speech (TTS)
+
+Generates audio from text using the ElevenLabs API. Supports multiple voices, models, and output formats including WhatsApp-compatible voice notes (PTT).
+
+**Key capabilities:**
+
+- Multilingual support via `eleven_multilingual_v2` model (default)
+- Configurable voice ID, speed (0.5-2.0), and language code
+- Output formats: MP3 (default), PCM, WAV
+- WhatsApp PTT mode: converts output to OGG/Opus via ffmpeg for push-to-talk voice notes
+
+**Environment:**
+
+```
+ELEVENLABS_API_KEY=...           # Required
+ELEVENLABS_VOICE_ID=...         # Optional (overrides default voice)
+```
+
+**Requires:** `ffmpeg` installed locally for PTT conversion.
+
+---
+
+## Image Generation
+
+Generates images from text prompts using Google Gemini models. Supports image editing with a source image input.
+
+**Models:**
+
+- `fast` — Gemini 3.1 Flash Image Preview (default)
+- `quality` — Gemini 3 Pro Image Preview
+
+**Key capabilities:**
+
+- Text-to-image generation with aspect ratio control (`1:1`, `16:9`, `9:16`, etc.)
+- Image size: `1K`, `2K`, `4K`
+- Image editing: provide a source image (PNG, JPEG, WebP, GIF) along with a text prompt
+- Multiple images can be returned per generation
+
+**Environment:**
+
+```
+GEMINI_API_KEY=...               # Required
+GEMINI_IMAGE_MODEL=...          # Optional (overrides default)
+```
+
+---
+
+## Video Analysis
+
+Analyzes videos using Google Gemini, supporting both YouTube URLs and local video files. Returns structured analysis with title, duration, summary, topics, transcript, and timestamped visual descriptions.
+
+**Supported inputs:**
+
+- YouTube URLs (analyzed directly via Gemini's file data API)
+- Local video files: MP4, MPEG, MOV, AVI, FLV, WebM, WMV, 3GPP (uploaded to Gemini Files API first)
+
+**Output structure:**
+
+- Title, Duration, Summary (2-3 paragraphs)
+- Topics (bullet list)
+- Complete transcript with speaker labels
+- Timestamped visual descriptions (`[MM:SS-MM:SS]` format)
+- Full markdown document combining all sections
+
+**Environment:**
+
+```
+GEMINI_API_KEY=...               # Required
+GEMINI_VIDEO_MODEL=...          # Optional (default: gemini-2.5-flash)
+```
+
+---
+
+## Audio Transcription
+
+Transcribes audio using Groq (preferred) or OpenAI Whisper. Automatically chunks long audio files for reliable transcription.
+
+**Provider selection:** Groq is preferred when `GROQ_API_KEY` is set (uses `whisper-large-v3-turbo`). Falls back to OpenAI (`whisper-1`) if only `OPENAI_API_KEY` is available.
+
+**Chunking behavior:**
+
+- Audio under 10 minutes: transcribed directly in a single API call
+- Audio over 10 minutes: split into 10-minute segments with 15-second overlap using ffmpeg, then transcribed chunk-by-chunk and concatenated
+- Duration detection uses ffprobe; if detection fails, direct transcription is attempted
+
+**Supported formats:** OGG/Opus, MP3, M4A, WAV, WebM
+
+**Environment:**
+
+```
+GROQ_API_KEY=...                 # Preferred (faster, free tier)
+OPENAI_API_KEY=...              # Fallback
+```
+
+**Requires:** `ffmpeg` and `ffprobe` installed locally for chunking and duration detection.
+
+---
+
+## Spec Mode
+
+A collaborative specification mode implemented as an in-process MCP server. When activated, destructive tools (Edit, Write, Bash) are blocked — the agent can only explore code and ask questions until the spec is approved.
+
+**Three tools:**
+
+- `enter_spec_mode` — Activates spec mode and loads the spec prompt (from `SPEC_INSTRUCTIONS.md` in the agent's CWD, or a built-in default)
+- `update_spec` — Registers progress (0-100%) with a summary. Maintains a history of all progress updates with timestamps
+- `exit_spec_mode` — Generates the final spec and requests user approval. If approved, destructive tools are unblocked. If rejected, the agent stays in spec mode to revise
+
+**State tracking:** Per-session state stored in a Map, including active flag, progress percentage, summary, and full history of updates.
+
+**Custom instructions:** Place a `SPEC_INSTRUCTIONS.md` file in the agent's working directory to override the default spec prompt.
+
+---
+
+## Ephemeral Sessions
+
+Sessions with a time-to-live (TTL) that are automatically cleaned up after expiry. The ephemeral runner checks every 60 seconds for expiring and expired sessions.
+
+**Lifecycle:**
+
+1. A session is marked ephemeral with a TTL via `ravi sessions set-ttl`
+2. 10 minutes before expiry: a warning prompt is sent to the session with options to extend, keep, or delete
+3. On expiry: the SDK subprocess is aborted and the session is deleted from the database
+4. Message metadata older than 7 days is also cleaned up in each cycle
+
+```bash
+# Make a session ephemeral (5 hours)
+ravi sessions set-ttl <session> 5h
+
+# Extend an ephemeral session (+5 hours by default)
+ravi sessions extend <session>
+ravi sessions extend <session> 2h
+
+# Make permanent (remove TTL)
+ravi sessions keep <session>
+
+# List ephemeral sessions
+ravi sessions list --ephemeral
+
+# Delete immediately
+ravi sessions delete <session>
+```
+
+---
+
+## Cross-Session Messaging
+
+Typed messaging between agent sessions, enabling multi-agent coordination and inter-session communication.
+
+**Message types:**
+
+| Type | Prefix | Behavior |
+|------|--------|----------|
+| `send` | `[System] Inform:` | Fire-and-forget informational message. Includes `[from: session]` attribution |
+| `ask` | `[System] Ask:` | Ask another session a question. The target is instructed to answer back via `sessions answer` |
+| `answer` | `[System] Answer:` | Deliver a response to a previous ask. Includes sender attribution |
+| `execute` | `[System] Execute:` | Send a task for the target to perform using tools |
+| `inform` | `[System] Inform:` | Send contextual information (same as send) |
+
+**Features:**
+
+- Self-send detection prevents deadlocks (sending to your own session is blocked)
+- Channel routing is inherited from the target session's last known channel/account
+- Channel and target overrides via `--channel` and `--to` flags
+- Interactive mode (`-i`) for back-and-forth conversation
+- Wait mode (`-w`) streams the response back to the caller
+- Approval source cascading: when agent A sends to agent B, A's channel becomes B's approval source
+- Scope isolation: sessions are filtered by REBAC permissions
+
+```bash
+# Fire-and-forget inform
+ravi sessions send <session> "Reminder message"
+
+# Wait for response (streaming)
+ravi sessions send <session> -w "What is the status?"
+
+# Interactive mode
+ravi sessions send <session> -i
+
+# Ask/answer flow
+ravi sessions ask <target> "What is the deploy status?"
+ravi sessions answer <target> "Deploy completed successfully"
+
+# Execute a task
+ravi sessions execute <target> "Run the daily backup"
+
+# Read session history
+ravi sessions read <session> -n 50
+```
+
+---
+
+## Reactions
+
+Agents can send emoji reactions to messages. Inbound messages include `[mid:ID]` tags that identify the message for reactions.
+
+The gateway subscribes to `ravi.outbound.reaction` events and delivers them via the omni sender API. Queue group (`ravi-gateway`) ensures only one gateway daemon sends each reaction.
+
+```bash
+ravi react send <messageId> <emoji>
+```
+
+---
+
+## Media Pipeline
+
+The gateway handles media file delivery from agents to channels via the `ravi.media.send` NATS topic.
+
+**Supported media types:** `image`, `video`, `audio`, `document`
+
+**Media send payload:**
+
+- `filePath` — Local path to the file
+- `mimetype` — MIME type
+- `type` — Media category (image/video/audio/document)
+- `filename` — Display filename
+- `caption` — Optional caption text
+- `voiceNote` — Boolean flag for push-to-talk audio (OGG/Opus)
+
+The gateway also handles typing indicators: it subscribes to `ravi.session.*.claude` events and sends typing-on during agent processing, typing-off when the agent produces a result or goes silent.
+
+---
+
+## Leader Election
+
+Distributed leader election via NATS JetStream KV for daemon coordination. Only one daemon per role runs singleton workloads (heartbeat runner, cron runner, etc.).
+
+**How it works:**
+
+1. Daemon tries atomic `create` on a KV key with its daemon ID — succeeds only if key doesn't exist
+2. Success: this daemon is leader, starts runners, begins renewing the lease every 10 seconds
+3. Failure: another daemon is leader. This daemon polls every 10 seconds for vacancy
+4. Leader lease TTL is 30 seconds. If the leader dies without renewing, the key expires
+5. On vacancy detection: the polling daemon attempts to acquire leadership
+6. On graceful shutdown: leader explicitly deletes the KV key for faster failover
+
+**KV bucket:** `ravi-leader` with 30-second TTL and history depth of 1.

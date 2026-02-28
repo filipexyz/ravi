@@ -1,0 +1,298 @@
+---
+title: Instances
+description: Configure channel connections, access policies, routing, and multi-account setups.
+---
+
+## Overview
+
+An instance is the central configuration entity in Ravi. Each instance represents a connected channel account (WhatsApp, Telegram, Discord, Matrix) with its own agent, access policies, and routing rules. Instances are stored in SQLite and managed entirely through the CLI.
+
+## Creating an Instance
+
+```bash
+ravi instances create main --channel whatsapp --agent main
+```
+
+Options:
+
+- `--channel` — Channel type: `whatsapp`, `matrix`, `telegram`, `discord` (default: `whatsapp`)
+- `--agent` — Default agent for this instance
+- `--dm-policy` — DM access policy (default: `open`)
+- `--group-policy` — Group access policy (default: `open`)
+
+If the specified agent does not exist, the command will fail. Create the agent first with `ravi agents create`.
+
+## Connecting to a Channel
+
+```bash
+ravi instances connect main
+```
+
+This creates the instance in omni (if needed), then waits for a QR code to pair WhatsApp. Once scanned, the instance is connected and begins receiving messages.
+
+You can also specify an agent during connection:
+
+```bash
+ravi instances connect vendas --agent vendas-agent
+```
+
+If the agent does not exist, it will be auto-created with a working directory at `~/ravi/<agentId>`.
+
+### Check Status
+
+```bash
+ravi instances status main
+```
+
+Shows the connection state, profile name, channel, agent, and policies.
+
+### Disconnect
+
+```bash
+ravi instances disconnect main
+```
+
+## Access Policies
+
+Policies control who can interact with the bot on a given instance. There are two independent policies: one for DMs and one for groups.
+
+### DM Policy
+
+| Policy | Behavior |
+|--------|----------|
+| `open` | Accepts messages from any contact |
+| `pairing` | Only accepts contacts that are pre-approved or have been explicitly allowed |
+| `closed` | Rejects all incoming DMs |
+
+### Group Policy
+
+| Policy | Behavior |
+|--------|----------|
+| `open` | Responds in any group the account is added to |
+| `allowlist` | Only responds in groups with an explicit route (`ravi instances routes add`) |
+| `closed` | Ignores all group messages |
+
+### Setting Policies
+
+```bash
+ravi instances set main dmPolicy pairing
+ravi instances set vendas groupPolicy allowlist
+```
+
+## Pending Contacts
+
+When `dmPolicy=pairing` or `groupPolicy=allowlist`, unknown contacts and groups that send messages are placed in a pending queue instead of being rejected.
+
+### List Pending
+
+```bash
+ravi instances pending list main
+```
+
+Shows the phone/ID, type (DM or group), and name for each pending entry.
+
+### Approve
+
+```bash
+ravi instances pending approve main 5511999999999
+```
+
+Approving a contact allows it and removes it from the pending list. The contact can now message the bot.
+
+### Reject
+
+```bash
+ravi instances pending reject main 5511999999999
+```
+
+Rejecting removes the entry from the pending list without allowing it.
+
+## Per-Instance Routes
+
+Routes define which agent handles messages from specific contacts, groups, or phone prefixes within an instance. Routes also support policy overrides and priority ordering.
+
+### Route Patterns
+
+| Pattern | Description |
+|---------|-------------|
+| `5511*` | Phone prefix match (all numbers starting with 5511) |
+| `group:123456` | Specific group by ID |
+| `thread:abc123` | Specific thread within a group (highest priority) |
+| `lid:abc123` | Specific contact by LID |
+| `*` | Catch-all (lowest priority) |
+
+### Adding Routes
+
+```bash
+ravi instances routes add main "group:120363123456@g.us" support-agent
+```
+
+Options:
+
+- `--priority <n>` — Higher priority routes are matched first (default: 0)
+- `--policy <policy>` — Override the instance policy for this route: `open`, `pairing`, `closed`, `allowlist`
+- `--session <name>` — Force a specific session name
+- `--dm-scope <scope>` — Override DM scope for this route
+- `--channel <channel>` — Limit route to a specific channel (omit for all channels)
+
+When a route is added, any conflicting sessions (same pattern, different agent) are automatically cleaned up.
+
+### Managing Routes
+
+```bash
+# List all routes for an instance
+ravi instances routes list main
+
+# Show route details
+ravi instances routes show main "group:120363123456@g.us"
+
+# Update a route property
+ravi instances routes set main "5511*" agent new-agent
+ravi instances routes set main "5511*" priority 10
+
+# Remove a route (soft-delete)
+ravi instances routes remove main "5511*"
+
+# Restore a removed route
+ravi instances routes restore main "5511*"
+
+# List deleted routes
+ravi instances routes deleted
+```
+
+Settable route properties: `agent`, `priority`, `dmScope`, `session`, `policy`, `channel`.
+
+## Agent Resolution Order
+
+When a message arrives, Ravi resolves which agent handles it using this priority:
+
+1. **Route match** — The highest-priority route whose pattern matches the sender (scoped to the instance)
+2. **Instance agent** — The default agent configured on the instance (`ravi instances set main agent <id>`)
+3. **Default agent** — The global default agent from settings
+
+If no agent can be resolved, the message is dropped.
+
+## DM Scope
+
+DM scope controls how sessions are grouped for direct messages. It can be set at the instance level or overridden per route.
+
+| Scope | Session Key | Behavior |
+|-------|-------------|----------|
+| `main` | `agent:X:main` | All DMs share a single session |
+| `per-peer` | `agent:X:dm:5511999` | One session per contact |
+| `per-channel-peer` | `agent:X:whatsapp:dm:5511999` | One session per channel + contact |
+| `per-account-channel-peer` | `agent:X:whatsapp:main:dm:5511999` | Full isolation: channel + account + contact |
+
+```bash
+ravi instances set main dmScope per-peer
+```
+
+## Active vs Sentinel Mode
+
+Agent mode is configured at the agent level, but it directly affects how instances behave:
+
+- **Active mode** — The agent responds to messages automatically. This is the default.
+- **Sentinel mode** — The agent observes messages silently without auto-replying. Useful for monitoring accounts where the agent only acts when explicitly instructed.
+
+```bash
+ravi agents set suporte mode sentinel
+```
+
+A sentinel-mode agent will still receive and process messages (including tool use), but it will not send unsolicited responses back to the channel.
+
+## Instance Lifecycle
+
+Instances follow a lifecycle that supports recovery:
+
+1. **Create** — `ravi instances create` registers the instance locally
+2. **Connect** — `ravi instances connect` creates the omni instance and initiates pairing
+3. **Active** — Messages flow through the instance, routed to agents
+4. **Disconnect** — `ravi instances disconnect` disconnects from the channel
+5. **Delete (soft)** — `ravi instances delete` marks the instance as deleted but keeps the data
+6. **Restore** — `ravi instances restore` recovers a soft-deleted instance
+
+```bash
+# Soft-delete an instance
+ravi instances delete vendas
+
+# List deleted instances
+ravi instances deleted
+
+# Restore
+ravi instances restore vendas
+```
+
+Routes also support soft-delete and restore.
+
+## Configurable Properties
+
+```bash
+ravi instances set <name> <key> <value>
+```
+
+| Key | Description | Values |
+|-----|-------------|--------|
+| `agent` | Default agent for this instance | Any agent ID |
+| `dmPolicy` | DM access policy | `open`, `pairing`, `closed` |
+| `groupPolicy` | Group access policy | `open`, `allowlist`, `closed` |
+| `dmScope` | DM session grouping | `main`, `per-peer`, `per-channel-peer`, `per-account-channel-peer` |
+| `instanceId` | Omni instance UUID (usually auto-set) | UUID string |
+| `channel` | Channel type | `whatsapp`, `matrix`, etc. |
+
+Use `-` or `null` as the value to clear a property.
+
+## Multi-Account Setup
+
+Run multiple channel accounts, each routed to a different agent:
+
+```bash
+# Create instances for each account
+ravi instances create vendas --agent vendas-agent --channel whatsapp
+ravi instances create suporte --agent suporte-agent --channel whatsapp
+
+# Configure policies per account
+ravi instances set vendas dmPolicy open
+ravi instances set suporte dmPolicy pairing
+ravi instances set suporte groupPolicy allowlist
+
+# Connect both
+ravi instances connect vendas
+ravi instances connect suporte
+
+# Add routes for the support instance
+ravi instances routes add suporte "group:120363123456@g.us" suporte-agent
+ravi instances routes add suporte "5511*" suporte-agent --priority 10
+
+# Check pending contacts on the restricted instance
+ravi instances pending list suporte
+ravi instances pending approve suporte 5511888888888
+```
+
+### Example: Public Bot
+
+Accept all messages, no restrictions:
+
+```bash
+ravi instances create bot --agent main --channel whatsapp
+ravi instances set bot dmPolicy open
+ravi instances set bot groupPolicy open
+ravi instances connect bot
+```
+
+### Example: Controlled Access
+
+Only pre-approved contacts and allowlisted groups:
+
+```bash
+ravi instances create private --agent main --channel whatsapp
+ravi instances set private dmPolicy pairing
+ravi instances set private groupPolicy allowlist
+ravi instances connect private
+```
+
+New senders appear in the pending list for review:
+
+```bash
+ravi instances pending list private
+ravi instances pending approve private 5511999999999
+```

@@ -1,0 +1,53 @@
+{
+  "globs": ["docs/**/*.md", "docs/**/*.mdx", "README.md"],
+  "ignores": ["docs/cross-send-acl.md", "docs/plan-instances.md"],
+  "config": {
+    "MD013": false,
+    "MD024": { "siblings_only": true },
+    "MD022": false,
+    "MD025": false,
+    "MD029": false,
+    "MD031": false,
+    "MD032": false,
+    "MD036": false,
+    "MD040": false,
+    "MD041": false,
+    "MD046": false,
+    "MD060": false,
+    "MD033": {
+      "allowed_elements": [
+        "Card",
+        "CardGroup",
+        "Cards",
+        "Columns",
+        "Column",
+        "Steps",
+        "Step",
+        "Tabs",
+        "Tab",
+        "Accordion",
+        "AccordionGroup",
+        "Callout",
+        "CodeGroup",
+        "Frame",
+        "Icon",
+        "Note",
+        "Tip",
+        "Warning",
+        "Info",
+        "Check",
+        "Snippet",
+        "ResponseField",
+        "Expandable",
+        "ParamField",
+        "br",
+        "div",
+        "img",
+        "a",
+        "p",
+        "sup",
+        "sub"
+      ]
+    }
+  }
+}

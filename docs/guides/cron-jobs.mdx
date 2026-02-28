@@ -1,0 +1,316 @@
+---
+title: Cron Jobs
+description: Schedule recurring and one-shot tasks for your agents using cron expressions, intervals, or specific datetimes.
+---
+
+## Overview
+
+Cron jobs are scheduled tasks that send prompts to agents at specified times. They support three schedule types: standard cron expressions, fixed intervals, and one-shot datetimes. The daemon manages all timers and executes jobs automatically.
+
+## Schedule Types
+
+### Cron Expressions
+
+Standard five-field cron syntax for precise recurring schedules.
+
+```
+ +-------------- minute (0-59)
+ | +------------ hour (0-23)
+ | | +---------- day of month (1-31)
+ | | | +-------- month (1-12)
+ | | | | +------ day of week (0-6, 0 = Sunday)
+ | | | | |
+ * * * * *
+```
+
+Create a cron-based job with `--cron`:
+
+```bash
+ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate the daily summary report"
+```
+
+**Common expressions:**
+
+| Expression | Description |
+|---|---|
+| `0 9 * * *` | Every day at 9:00 AM |
+| `0 9 * * 1-5` | Weekdays at 9:00 AM |
+| `0 9 * * 1` | Every Monday at 9:00 AM |
+| `*/15 * * * *` | Every 15 minutes |
+| `0 0 1 * *` | First day of the month at midnight |
+| `0 18 * * 5` | Every Friday at 6:00 PM |
+| `30 8,12,18 * * *` | At 8:30, 12:30, and 18:30 every day |
+
+### Intervals
+
+Fixed-duration intervals using a compact duration syntax. Supported units: `s` (seconds), `m` (minutes), `h` (hours), `d` (days).
+
+```bash
+ravi cron add "Health Check" --every 30m --message "Check system status and report anomalies"
+```
+
+**Duration examples:**
+
+| Duration | Meaning |
+|---|---|
+| `30s` | Every 30 seconds |
+| `5m` | Every 5 minutes |
+| `1h` | Every hour |
+| `2d` | Every 2 days |
+
+### One-Shot Datetime
+
+Run a job exactly once at a specific ISO 8601 datetime. Accepts formats like `2025-02-01T15:00`, `2025-02-01T15:00:00Z`, or `2025-02-01T15:00:00-03:00`.
+
+```bash
+ravi cron add "Meeting Reminder" \
+  --at "2025-02-01T14:45" \
+  --message "Reminder: meeting starts in 15 minutes" \
+  --delete-after
+```
+
+One-shot jobs are automatically deleted after execution. The `--delete-after` flag is optional here since `--at` jobs are deleted by default, but it makes the intent explicit.
+
+## Timezone Handling
+
+Cron expressions are evaluated in a specific timezone. Use `--tz` to set it:
+
+```bash
+ravi cron add "Weekly Report" \
+  --cron "0 9 * * 1" \
+  --message "Generate weekly report" \
+  --tz "America/Sao_Paulo"
+```
+
+If `--tz` is omitted, the default timezone from `ravi settings` is used (configured via `ravi settings set defaultTimezone America/Sao_Paulo`).
+
+<Note>
+The `--tz` flag only applies to cron expressions. Interval and one-shot schedules are timezone-independent.
+</Note>
+
+You can change the timezone of an existing job:
+
+```bash
+ravi cron set <id> tz America/New_York
+```
+
+## Session Targets
+
+Jobs run in one of two session modes:
+
+### Main Session (default)
+
+The job prompt is sent to the agent's shared main session, the same session used by WhatsApp, Telegram, and CLI interactions. Responses are delivered to the channel the job was created from.
+
+```bash
+ravi cron add "Status Check" --every 1h --message "What is the current status?"
+```
+
+### Isolated Session
+
+Each job gets its own dedicated session (`agent:{agentId}:cron:{jobId}`), completely separate from the main conversation. Useful for background tasks that should not mix with user conversations.
+
+```bash
+ravi cron add "Background Sync" \
+  --every 30m \
+  --message "Sync data from external API" \
+  --isolated
+```
+
+In isolated sessions, the agent can use `cross_send` to deliver results to a specific channel or user when needed.
+
+## Prompt Format
+
+When a cron job fires, the agent receives the message prefixed with a header that includes the job name and current timestamp:
+
+```
+[Cron: Daily Report 28/02/2026, 09:00]
+Generate the daily summary report
+```
+
+This prefix helps the agent understand the context of the prompt — that it originated from a scheduled job rather than a user message.
+
+## Anti-Drift
+
+For interval-based jobs, the next run time is calculated from the **originally scheduled time**, not from when execution finishes. This prevents timing drift caused by variable execution durations.
+
+For example, with a `--every 30m` job scheduled at 09:00:
+- If execution takes 2 minutes (finishes at 09:02), the next run is still 09:30
+- If execution takes 10 minutes (finishes at 09:10), the next run is still 09:30
+
+For cron expressions, the next occurrence is calculated using the [croner](https://github.com/hexagon/croner) library with full timezone support.
+
+## Job Properties
+
+Each cron job has the following properties:
+
+| Property | Description | Settable via `set` |
+|---|---|---|
+| `name` | Human-readable job name | Yes |
+| `message` | Prompt text sent to the agent | Yes |
+| `schedule` | Schedule configuration (cron/every/at) | Via `cron` or `every` keys |
+| `agent` | Agent that executes the job | Yes |
+| `account` | Account ID for outbound routing | Yes |
+| `session` | Session target: `main` or `isolated` | Yes |
+| `reply-session` | Session key for routing responses | Yes |
+| `description` | Optional description | Yes |
+| `delete-after` | Delete job after first successful run | Yes |
+| `tz` | Timezone for cron expressions | Yes |
+| `enabled` | Whether the job is active | Via `enable`/`disable` |
+
+**State fields** (read-only, visible in `ravi cron show`):
+
+| Field | Description |
+|---|---|
+| `nextRunAt` | Next scheduled execution time |
+| `lastRunAt` | Last execution time |
+| `lastStatus` | `ok` or `error` |
+| `lastDurationMs` | Execution time in milliseconds |
+| `lastError` | Error message if last run failed |
+
+## CLI Workflows
+
+### Creating Jobs
+
+```bash
+# Cron expression with timezone
+ravi cron add "Morning Brief" \
+  --cron "0 8 * * 1-5" \
+  --message "Prepare the morning brief for the team" \
+  --tz "America/Sao_Paulo" \
+  --agent main
+
+# Interval
+ravi cron add "Monitor Inbox" --every 15m --message "Check for urgent emails"
+
+# One-shot reminder
+ravi cron add "Deploy Reminder" \
+  --at "2026-03-01T14:00" \
+  --message "Deploy v2.0 to production" \
+  --delete-after
+```
+
+### Listing and Inspecting
+
+```bash
+# List all jobs
+ravi cron list
+
+# Show full details for a job
+ravi cron show <id>
+```
+
+### Enabling and Disabling
+
+```bash
+# Disable a job (keeps config, stops execution)
+ravi cron disable <id>
+
+# Re-enable (recalculates next run time)
+ravi cron enable <id>
+```
+
+When a job is re-enabled, its `nextRunAt` is recalculated from the current time so it does not immediately fire for all missed runs.
+
+### Updating Properties
+
+```bash
+ravi cron set <id> message "Updated prompt text"
+ravi cron set <id> cron "0 10 * * *"
+ravi cron set <id> every 1h
+ravi cron set <id> tz America/New_York
+ravi cron set <id> session isolated
+ravi cron set <id> agent jarvis
+ravi cron set <id> delete-after true
+```
+
+### Manual Execution
+
+Run a job immediately, ignoring its schedule:
+
+```bash
+ravi cron run <id>
+```
+
+This sends a trigger signal to the daemon. The job executes with the same prompt and session as a normal scheduled run. The schedule is not affected.
+
+### Deleting Jobs
+
+```bash
+ravi cron rm <id>
+```
+
+## Practical Examples
+
+### Daily standup report (weekdays at 9am)
+
+```bash
+ravi cron add "Standup Report" \
+  --cron "0 9 * * 1-5" \
+  --message "Generate a standup report: list yesterday's completed tasks, today's plan, and any blockers." \
+  --tz "America/Sao_Paulo" \
+  --agent main
+```
+
+### Periodic health check (every 2 hours)
+
+```bash
+ravi cron add "System Health" \
+  --every 2h \
+  --message "Run a health check on all connected services. Report any issues." \
+  --isolated
+```
+
+### One-time reminder
+
+```bash
+ravi cron add "Client Call" \
+  --at "2026-03-05T15:45" \
+  --message "Reminder: client call with Acme Corp in 15 minutes. Review the proposal notes." \
+  --delete-after
+```
+
+### Weekly metrics every Monday morning
+
+```bash
+ravi cron add "Weekly Metrics" \
+  --cron "0 9 * * 1" \
+  --message "Pull the weekly metrics and send a summary to the team channel." \
+  --tz "America/Sao_Paulo"
+```
+
+### Email check every 15 minutes during business hours
+
+```bash
+ravi cron add "Check Emails" \
+  --cron "*/15 9-18 * * 1-5" \
+  --message "Check for new emails and flag anything urgent." \
+  --tz "America/Sao_Paulo" \
+  --isolated
+```
+
+## Troubleshooting
+
+### Job not firing
+
+1. **Check if enabled:** `ravi cron show <id>` -- verify `Enabled: yes`
+2. **Check next run time:** The `Next run` field shows when the job is scheduled to fire next
+3. **Daemon running:** `ravi daemon status` -- the daemon must be running to execute jobs
+4. **Check logs:** `ravi daemon logs -f` -- look for `cron:runner` entries
+5. **Manual test:** `ravi cron run <id>` -- triggers immediately to verify the job works
+
+### Timing seems off
+
+- Verify the timezone: `ravi cron show <id>` displays the schedule including timezone
+- For cron expressions without `--tz`, the system default timezone is used. Check with `ravi settings list`
+- Interval jobs use anti-drift: if a job was disabled and re-enabled, `nextRunAt` resets to "now + interval"
+
+### Job runs but no response appears
+
+- **Main session:** The response routes to the channel the job was created from. If the job was created from CLI, responses go to the agent's main session
+- **Isolated session:** The agent must use `cross_send` to deliver results to a channel. Without it, the response stays in the isolated session
+- Check agent logs: `ravi daemon logs -f | grep cron`
+
+### One-shot job shows "(expired)"
+
+One-shot jobs (`--at`) whose datetime has passed show `(expired)` in the list. They will not fire again. If the job has `delete-after` enabled (the default for `--at`), it is automatically deleted after execution.

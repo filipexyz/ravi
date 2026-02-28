@@ -1,0 +1,117 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Ravi",
+  "description": "Claude-powered bot with multi-channel messaging",
+  "theme": "mint",
+  "colors": {
+    "primary": "#06B6D4",
+    "dark": "#0891B2",
+    "light": "#22D3EE"
+  },
+  "font": {
+    "body": "Fragment Mono",
+    "heading": "DM Sans"
+  },
+    "logo": {
+    "light": "/logo-light.svg",
+    "dark": "/logo-dark.svg"
+  },
+  "favicon": "/favicon.png",
+  "cname": "docs.ravi.bot",
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/filipexyz/ravi"
+      }
+    ]
+  },
+  "icons": {
+    "style": "lucide",
+    "library": "lucide"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Get Started",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": ["index", "start/quickstart", "start/configuration"]
+          }
+        ]
+      },
+      {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": ["cli/overview"]
+          }
+        ]
+      },
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Messaging",
+            "pages": [
+              "guides/contacts",
+              "guides/sessions",
+              "guides/instances",
+              "guides/whatsapp-groups"
+            ]
+          },
+          {
+            "group": "Automation",
+            "pages": [
+              "guides/outbound",
+              "guides/cron-jobs",
+              "guides/triggers"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "guides/permissions"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "guides/copilot"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "guides/nats-debugging",
+              "guides/development"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Features",
+            "pages": ["features/overview"]
+          },
+          {
+            "group": "Architecture",
+            "pages": ["architecture"]
+          },
+          {
+            "group": "NATS",
+            "pages": ["reference/nats-events"]
+          },
+          {
+            "group": "Media",
+            "pages": ["reference/media"]
+          }
+        ]
+      }
+    ]
+  }
+}

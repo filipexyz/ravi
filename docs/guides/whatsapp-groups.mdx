@@ -1,0 +1,293 @@
+---
+title: WhatsApp Groups
+description: Creating, managing, and routing WhatsApp groups with Ravi.
+---
+
+## Overview
+
+Ravi can create and manage WhatsApp groups programmatically through the CLI. Groups are managed via the `ravi whatsapp group` commands, which communicate with the WhatsApp instance through NATS request/reply. All commands require the daemon to be running with a connected WhatsApp account.
+
+## Prerequisites
+
+- Daemon running: `ravi daemon start`
+- WhatsApp connected: `ravi whatsapp connect`
+- Participants must exist as contacts before being added to groups
+
+## Creating Groups
+
+### Basic Group Creation
+
+```bash
+ravi whatsapp group create "Team Marketing" "5511999999999,5511888888888"
+```
+
+Participants are specified as a comma-separated list of phone numbers. Every participant must already exist in your contacts database -- the command validates this before creating the group and will fail with suggestions if any number is unknown.
+
+### Group Creation with Agent Routing
+
+The `--agent` flag is the recommended approach. It creates the group, approves the group contact, sets up the route, creates the session, and sends an introductory prompt to the agent -- all in one command:
+
+```bash
+ravi whatsapp group create "Finance Team" "5511999999999" --agent financas
+```
+
+This single command:
+1. Creates the WhatsApp group
+2. Registers the group as an approved contact
+3. Creates a route mapping the group to the specified agent
+4. Creates a named session for the group
+5. Sends an `[System] Inform` so the agent introduces itself to the group
+
+Output:
+```
+Group created: Finance Team
+  ID:           120363405113391144@g.us
+  Participants: 2
+  Contact:      approved
+  Route:        financas
+  Session:      financas/finance-team
+  Inform:       sent
+```
+
+### Group Creation Without Agent
+
+Without `--agent`, the group contact is still auto-approved, but routing must be configured manually:
+
+```bash
+ravi whatsapp group create "Ad-hoc Group" "5511999999999"
+ravi instances routes add main "group:120363405113391144" my-agent
+```
+
+### Admin Auto-Promotion
+
+When creating a group, Ravi automatically promotes any contacts tagged with `admin` to group admin. This happens silently after group creation:
+
+```bash
+# Tag a contact as admin first
+ravi contacts tag 5511999999999 admin
+
+# This contact will be auto-promoted when added to any new group
+ravi whatsapp group create "New Project" "5511999999999,5511888888888"
+```
+
+## Managing Members
+
+### Adding Participants
+
+```bash
+ravi whatsapp group add group:120363425628305127 "5511999999999,5511888888888"
+```
+
+Participants are validated against your contacts database before being added.
+
+### Removing Participants
+
+```bash
+ravi whatsapp group remove group:120363425628305127 "5511999999999"
+```
+
+### Promoting to Admin
+
+```bash
+ravi whatsapp group promote group:120363425628305127 "5511999999999"
+```
+
+### Demoting from Admin
+
+```bash
+ravi whatsapp group demote group:120363425628305127 "5511999999999"
+```
+
+## Group Info and Listing
+
+### List All Groups
+
+```bash
+ravi whatsapp group list
+```
+
+Shows all groups the bot participates in, including group ID, name, and member count. Communities are excluded from the main list.
+
+### View Group Details
+
+```bash
+ravi whatsapp group info group:120363425628305127
+```
+
+Returns full metadata:
+- Group ID, owner, and size
+- Creation date
+- Announcement mode (admins-only messaging)
+- Restrict mode (locked info editing)
+- Description
+- Ephemeral message timer (if set)
+- Full participant list with admin status
+
+### Group ID Formats
+
+Commands accept two formats for group IDs:
+
+| Format | Example |
+|---|---|
+| Full JID | `120363425628305127@g.us` |
+| Normalized | `group:120363425628305127` |
+
+## Invite Links
+
+### Generate an Invite Link
+
+```bash
+ravi whatsapp group invite group:120363425628305127
+# -> https://chat.whatsapp.com/ABC123...
+```
+
+### Revoke and Regenerate
+
+Revoking invalidates the current invite link and generates a new one:
+
+```bash
+ravi whatsapp group revoke-invite group:120363425628305127
+# -> New link: https://chat.whatsapp.com/XYZ789...
+```
+
+### Join via Invite Link
+
+```bash
+# Full link
+ravi whatsapp group join "https://chat.whatsapp.com/ABC123"
+
+# Or just the code
+ravi whatsapp group join ABC123
+```
+
+## Group Settings
+
+### Announcement Mode
+
+Controls who can send messages in the group:
+
+```bash
+# Only admins can send messages
+ravi whatsapp group settings group:120363425628305127 announcement
+
+# Everyone can send messages
+ravi whatsapp group settings group:120363425628305127 not_announcement
+```
+
+### Locked Mode
+
+Controls who can edit group info (name, description, picture):
+
+```bash
+# Only admins can edit group info
+ravi whatsapp group settings group:120363425628305127 locked
+
+# Everyone can edit group info
+ravi whatsapp group settings group:120363425628305127 unlocked
+```
+
+### Renaming a Group
+
+```bash
+ravi whatsapp group rename group:120363425628305127 "New Group Name"
+```
+
+### Updating the Description
+
+```bash
+ravi whatsapp group description group:120363425628305127 "Updated description for the group"
+```
+
+## Leaving a Group
+
+```bash
+ravi whatsapp group leave group:120363425628305127
+```
+
+## Group Routing
+
+Groups are routed to agents through the same mechanism as direct messages -- via routes on the instance.
+
+### Automatic Routing (Recommended)
+
+Use `--agent` when creating the group:
+
+```bash
+ravi whatsapp group create "Support Team" "5511999999999" --agent suporte
+```
+
+### Manual Routing
+
+Add a route for an existing group:
+
+```bash
+ravi instances routes add main "group:120363425628305127" suporte
+```
+
+### Routing Priority
+
+Group messages follow the same resolution order as DMs:
+
+1. Route match on the instance (pattern `group:<id>`)
+2. Account-agent mapping
+3. Default agent
+
+## Multi-Account Support
+
+All group commands accept `--account` to specify which WhatsApp account to use. This is essential when running multiple WhatsApp instances:
+
+```bash
+# List groups on the "business" account
+ravi whatsapp group list --account business
+
+# Create a group on a specific account
+ravi whatsapp group create "Sales Team" "5511999999999" --account business --agent vendas
+
+# Manage members on a specific account
+ravi whatsapp group add group:120363425628305127 "5511888888888" --account business
+```
+
+When `--account` is omitted, the first connected WhatsApp instance is used.
+
+## Common Workflows
+
+### Set Up a Project Group
+
+```bash
+# 1. Ensure participants are contacts
+ravi contacts add 5511999999999 "Alice"
+ravi contacts add 5511888888888 "Bob"
+
+# 2. Create the group with agent routing
+ravi whatsapp group create "Project Alpha" "5511999999999,5511888888888" --agent main
+
+# 3. Lock down group settings
+ravi whatsapp group settings group:120363405113391144 locked
+```
+
+### Distribute a Temporary Invite
+
+```bash
+# Generate invite
+ravi whatsapp group invite group:120363425628305127
+# -> https://chat.whatsapp.com/ABC123
+
+# After everyone joins, revoke to prevent further access
+ravi whatsapp group revoke-invite group:120363425628305127
+```
+
+### Reorganize Group Members
+
+```bash
+# Check current members
+ravi whatsapp group info group:120363425628305127
+
+# Remove a member
+ravi whatsapp group remove group:120363425628305127 "5511777777777"
+
+# Add a replacement
+ravi whatsapp group add group:120363425628305127 "5511666666666"
+
+# Promote the new member to admin
+ravi whatsapp group promote group:120363425628305127 "5511666666666"
+```

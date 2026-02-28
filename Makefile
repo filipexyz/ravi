@@ -1,4 +1,4 @@
-.PHONY: quality lint typecheck build clean install dev
+.PHONY: quality lint typecheck build clean install dev docs docs-check
 
 # Quality check - lint + typecheck (no auto-fix)
 quality: lint typecheck
@@ -36,6 +36,14 @@ dev:
 daemon:
 	@bun run cli -- daemon start
 
+# Docs dev server
+docs:
+	@bun run docs:dev
+
+# Docs lint + link check
+docs-check:
+	@bun run check:docs
+
 # Help
 help:
 	@echo "Available targets:"
@@ -47,3 +55,5 @@ help:
 	@echo "  install   - Install dependencies"
 	@echo "  dev       - Run in dev mode"
 	@echo "  daemon    - Start ravi daemon"
+	@echo "  docs      - Start docs dev server"
+	@echo "  docs-check - Lint + check doc links"

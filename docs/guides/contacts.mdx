@@ -1,0 +1,348 @@
+---
+title: Contacts
+description: Managing contacts, identities, tags, approval workflows, and agent scoping.
+---
+
+## Overview
+
+Contacts are the core identity layer in Ravi. Every person or group that interacts with your agents is tracked as a contact, with one or more identities (phone numbers, WhatsApp LIDs, Telegram IDs, etc.) linked to a single record. Contacts control who can message your agents, how messages are routed, and what level of access each person has.
+
+## Contact Lifecycle
+
+Every contact follows a status lifecycle:
+
+| Status | Description |
+|---|---|
+| `discovered` | Seen in a group or mentioned, but never messaged directly. Created automatically when Ravi encounters unknown participants. |
+| `pending` | Sent a message but hasn't been approved yet. Awaiting manual approval. |
+| `allowed` | Approved to interact with agents normally. |
+| `blocked` | Blocked. All messages from this contact are silently ignored. |
+
+The typical flow is:
+
+```
+discovered -> pending -> allowed
+                      -> blocked
+```
+
+- **Discovered contacts** are created automatically when Ravi encounters group members it hasn't seen before. They have `source: "discovered"`.
+- **Pending contacts** are created when someone sends a message and Ravi doesn't have them as allowed. They have `source: "inbound"`.
+- **Manually added contacts** skip directly to `allowed` with `source: "manual"`.
+
+## Multi-Identity System
+
+A single contact can have multiple identities across platforms. This allows Ravi to recognize the same person whether they message from a phone number, a WhatsApp LID, or a group.
+
+### Supported Platforms
+
+| Platform | Format | Example |
+|---|---|---|
+| `phone` | International number | `5511999999999` |
+| `whatsapp_lid` | WhatsApp Linked ID | `lid:12345678901234` |
+| `whatsapp_group` | WhatsApp Group | `group:120363425628305127` |
+| `telegram` | Telegram user ID | *(platform-specific)* |
+| `matrix` | Matrix user ID | *(platform-specific)* |
+
+### Managing Identities
+
+Add an identity to link a new platform to an existing contact:
+
+```bash
+# Link a WhatsApp LID to an existing phone contact
+ravi contacts identity-add 5511999999999 whatsapp_lid "lid:12345678901234"
+
+# Link a group identity
+ravi contacts identity-add 5511999999999 whatsapp_group "group:120363425628305127"
+```
+
+Remove an identity:
+
+```bash
+ravi contacts identity-remove whatsapp_lid "lid:12345678901234"
+```
+
+### Auto-Linking
+
+When Ravi detects that a phone number and a WhatsApp LID belong to the same person (e.g., from message metadata), it automatically links them. If both exist as separate contacts, Ravi merges them -- keeping the contact with the higher-priority status (`allowed` > `pending` > `discovered` > `blocked`).
+
+### Viewing Identities
+
+Use `info` to see all identities for a contact:
+
+```bash
+ravi contacts info 5511999999999
+```
+
+Output includes all linked identities with their platform and primary marker.
+
+## Contact Properties
+
+Each contact has the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Auto-generated 12-character UUID |
+| `name` | string | Contact name |
+| `email` | string | Email address |
+| `status` | enum | `allowed`, `pending`, `blocked`, `discovered` |
+| `reply_mode` | enum | `auto` or `mention` |
+| `tags` | string[] | Array of arbitrary tags |
+| `notes` | object | Free-form JSON metadata |
+| `opt_out` | boolean | Whether the contact has opted out |
+| `source` | enum | `inbound`, `outbound`, `manual`, `discovered` |
+| `allowed_agents` | string[] | Restrict which agents can interact (null = all) |
+| `interaction_count` | number | Total message count (inbound + outbound) |
+| `last_inbound_at` | datetime | Timestamp of last received message |
+| `last_outbound_at` | datetime | Timestamp of last sent message |
+
+### Setting Properties
+
+```bash
+ravi contacts set 5511999999999 name "Joao Silva"
+ravi contacts set 5511999999999 email "joao@example.com"
+ravi contacts set 5511999999999 mode mention
+ravi contacts set 5511999999999 tags '["lead","vip"]'
+ravi contacts set 5511999999999 notes '{"empresa":"TechCorp","cargo":"CTO"}'
+ravi contacts set 5511999999999 opt-out true
+ravi contacts set 5511999999999 source outbound
+ravi contacts set 5511999999999 allowed-agents '["main","vendas"]'
+```
+
+Use `-` to clear a field:
+
+```bash
+ravi contacts set 5511999999999 email -
+ravi contacts set 5511999999999 allowed-agents -
+```
+
+## Reply Modes
+
+Each contact has a reply mode that controls when the agent responds:
+
+| Mode | Behavior |
+|---|---|
+| `auto` | Agent responds to every message from this contact (default) |
+| `mention` | Agent only responds when explicitly mentioned in the message |
+
+This is particularly useful for groups where you don't want the agent to respond to every message:
+
+```bash
+# Set a contact to mention-only
+ravi contacts set 5511999999999 mode mention
+
+# Or set it during approval
+ravi contacts approve abc123def456 mention
+```
+
+## Approval Workflow
+
+When a new contact messages your bot and is not yet registered, Ravi creates them as `pending`. You can review and approve pending contacts:
+
+### List Pending Contacts
+
+```bash
+ravi contacts pending
+```
+
+This shows two sections:
+- **Global pending**: Contacts awaiting approval across all accounts
+- **Account pending**: Contacts that messaged a specific account but no route matched
+
+### Approve a Contact
+
+```bash
+# Simple approval
+ravi contacts approve abc123def456
+
+# Approve with mention-only mode
+ravi contacts approve abc123def456 mention
+
+# Approve and restrict to specific agents
+ravi contacts approve abc123def456 --agent main,vendas
+```
+
+### Block a Contact
+
+```bash
+ravi contacts block abc123def456
+```
+
+### Allow a Previously Blocked Contact
+
+```bash
+ravi contacts allow abc123def456
+```
+
+## Tags and Search
+
+Tags are arbitrary string labels attached to contacts. They are used for filtering, grouping, and REBAC-based contact scoping.
+
+### Adding and Removing Tags
+
+```bash
+# Add a tag
+ravi contacts tag 5511999999999 lead
+ravi contacts tag 5511999999999 vip
+
+# Remove a tag
+ravi contacts untag 5511999999999 lead
+
+# Set all tags at once (replaces existing)
+ravi contacts set 5511999999999 tags '["lead","vip","enterprise"]'
+```
+
+### Group-Specific Tags
+
+You can assign per-group tags to a contact. This lets you label someone differently in each group they belong to (e.g., "manager" in one group, "observer" in another):
+
+```bash
+# Set a tag for a contact within a specific group
+ravi contacts group-tag 5511999999999 group:120363425628305127 manager
+
+# Remove a group-specific tag
+ravi contacts group-untag 5511999999999 group:120363425628305127
+```
+
+Group tags are stored in the contact's `notes.groupTags` object.
+
+### Searching
+
+```bash
+# Search by tag
+ravi contacts find lead --tag
+
+# Search by name, email, or identity
+ravi contacts find "Joao"
+ravi contacts find "techcorp"
+```
+
+## Agent Assignment and Contact Scoping
+
+### Restricting Contacts to Agents
+
+Use `allowed_agents` to restrict which agents can interact with a contact. When set, only the listed agents will receive messages from that contact:
+
+```bash
+# Restrict to specific agents
+ravi contacts set 5511999999999 allowed-agents '["vendas","suporte"]'
+
+# Remove restriction (all agents can interact)
+ravi contacts set 5511999999999 allowed-agents -
+```
+
+### Contact Scoping via REBAC
+
+Agents have scoped visibility into the contacts database, controlled by REBAC permissions:
+
+| Permission | Effect |
+|---|---|
+| `write_contacts` | Full read/write access to all contacts |
+| `read_own_contacts` | Can see contacts routed to this agent's sessions |
+| `read_tagged_contacts` | Can see contacts with a specific tag |
+| `read_contact` | Can see a specific contact by ID |
+
+Configure with:
+
+```bash
+# Agent can see all contacts routed to it
+ravi permissions grant agent:vendas read_own_contacts system:*
+
+# Agent can see contacts tagged "lead"
+ravi permissions grant agent:vendas read_tagged_contacts system:lead
+
+# Agent can see a specific contact
+ravi permissions grant agent:vendas read_contact contact:abc123def456
+```
+
+### Routing Priority
+
+When a message arrives, the agent is resolved in this order:
+
+1. `contact.allowed_agents` -- if set, only these agents receive the message
+2. Route match via `ravi instances routes` -- pattern-based routing
+3. Account-agent mapping -- from `ravi whatsapp connect --agent`
+4. Default agent -- fallback
+
+## Merging Duplicate Contacts
+
+When the same person exists as two separate contacts (e.g., one created from a phone number and another from a WhatsApp LID), you can merge them:
+
+```bash
+ravi contacts merge <target-id> <source-id>
+```
+
+This operation:
+- Moves all identities from the source contact to the target
+- Fills in blank fields on the target (name, email) from the source
+- Merges tags and notes if the target has none
+- Sums interaction counts
+- Deletes the source contact
+
+The target contact is preserved; the source contact is removed.
+
+## CLI Reference
+
+### Core Commands
+
+```bash
+# List all contacts
+ravi contacts list
+ravi contacts list --status pending
+
+# Add a contact (immediately allowed)
+ravi contacts add 5511999999999 "Joao Silva"
+ravi contacts add 5511999999999 "Joao" --agent main,vendas
+
+# View contact details
+ravi contacts info 5511999999999
+ravi contacts check 5511999999999   # alias for info
+
+# Remove a contact entirely
+ravi contacts remove abc123def456
+```
+
+### Status Management
+
+```bash
+ravi contacts approve abc123def456
+ravi contacts approve abc123def456 mention --agent vendas
+ravi contacts allow abc123def456
+ravi contacts block abc123def456
+```
+
+### Tags
+
+```bash
+ravi contacts tag 5511999999999 lead
+ravi contacts untag 5511999999999 lead
+ravi contacts group-tag 5511999999999 group:120363 manager
+ravi contacts group-untag 5511999999999 group:120363
+```
+
+### Search
+
+```bash
+ravi contacts find "Joao"
+ravi contacts find lead --tag
+```
+
+### Identity Management
+
+```bash
+ravi contacts identity-add abc123 whatsapp_lid "lid:12345"
+ravi contacts identity-remove whatsapp_lid "lid:12345"
+ravi contacts merge <target-id> <source-id>
+```
+
+### Properties
+
+```bash
+ravi contacts set 5511999999999 name "New Name"
+ravi contacts set 5511999999999 email "new@email.com"
+ravi contacts set 5511999999999 mode mention
+ravi contacts set 5511999999999 tags '["tag1","tag2"]'
+ravi contacts set 5511999999999 notes '{"key":"value"}'
+ravi contacts set 5511999999999 opt-out true
+ravi contacts set 5511999999999 source manual
+ravi contacts set 5511999999999 allowed-agents '["main"]'
+```

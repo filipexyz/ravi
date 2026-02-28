@@ -1,0 +1,468 @@
+---
+title: Permissions (REBAC)
+description: Relation-based access control for agents — concepts, configuration, templates, and troubleshooting.
+---
+
+## Overview
+
+Ravi uses a **Relation-Based Access Control** (REBAC) model. Every permission is a relation:
+
+```
+(subject) has (relation) on (object)
+```
+
+For example, `(agent:dev) execute (group:contacts)` means the agent `dev` can run CLI commands in the `contacts` group.
+
+New agents are **closed by default** — they have no permissions until explicitly granted. Denied actions emit audit events to `ravi.audit.denied`.
+
+## Core Concepts
+
+### Subjects
+
+A subject is the entity requesting access. In Ravi, subjects are always agents:
+
+| Format | Example |
+|--------|---------|
+| `agent:<id>` | `agent:dev`, `agent:main`, `agent:vendas` |
+
+### Relations
+
+Relations define what kind of access is being granted:
+
+| Relation | Purpose | Object Type |
+|----------|---------|-------------|
+| `admin` | Superadmin — full system access | `system:*` |
+| `use` | Use an SDK tool or tool group | `tool:<name>` or `toolgroup:<name>` |
+| `execute` | Run a CLI command group or system executable | `group:<name>` or `executable:<name>` |
+| `access` | Read/send to a session | `session:<pattern>` |
+| `modify` | Reset/delete/rename a session | `session:<pattern>` |
+| `write_contacts` | Create, approve, block contacts | `system:*` |
+| `read_own_contacts` | Read contacts from own sessions | `system:*` |
+| `read_tagged_contacts` | Read contacts with a specific tag | `system:<tag>` |
+| `read_contact` | Read a specific contact | `contact:<id>` |
+| `view` | View another agent's details | `agent:<id>` |
+
+### Objects
+
+Objects are the resources being accessed:
+
+| Type | Examples | Used With |
+|------|----------|-----------|
+| `system` | `system:*` | `admin`, `write_contacts`, `read_own_contacts` |
+| `group` | `group:contacts`, `group:daemon` | `execute` |
+| `tool` | `tool:Bash`, `tool:Read` | `use` |
+| `toolgroup` | `toolgroup:read-only`, `toolgroup:write` | `use` |
+| `executable` | `executable:git`, `executable:node` | `execute` |
+| `session` | `session:dev-*`, `session:main` | `access`, `modify` |
+| `contact` | `contact:5511999999999` | `read_contact` |
+| `agent` | `agent:main` | `view` |
+| `cron` | `cron:<id>` | Resource ownership |
+| `trigger` | `trigger:<id>` | Resource ownership |
+| `outbound` | `outbound:<id>` | Resource ownership |
+| `team` | `team:<id>` | Team membership |
+
+## Permission Resolution
+
+When the engine evaluates `can(agent:dev, execute, group:daemon)`, it checks in this order:
+
+1. **Superadmin** — Does `(agent:dev, admin, system:*)` exist? If yes, allowed.
+2. **Direct relation** — Does `(agent:dev, execute, group:daemon)` exist? If yes, allowed.
+3. **Wildcard** — Does `(agent:dev, execute, group:*)` exist? If yes, allowed.
+4. **Pattern match** — Does any relation like `(agent:dev, execute, group:dae*)` match? If yes, allowed.
+5. **Tool group** — If checking a `tool`, does the agent have a `toolgroup` that includes it? If yes, allowed.
+6. **Denied** — No match found.
+
+When no agent context exists (direct CLI call, not from an agent session), all checks return allowed.
+
+### Wildcards
+
+Wildcards only work as a **trailing suffix** on the object ID:
+
+```bash
+# Valid patterns
+group:*           # All groups
+session:dev-*     # Sessions starting with "dev-"
+executable:*      # All executables
+
+# Invalid patterns (will be rejected)
+session:*-dev     # Leading wildcard
+group:a*b         # Wildcard in the middle
+```
+
+## CLI Command Groups
+
+Groups with `scope: admin` require an `execute` grant. Use `group:<name>` as the object:
+
+```bash
+ravi permissions grant agent:dev execute group:daemon       # daemon restart/status/logs
+ravi permissions grant agent:dev execute group:agents       # agents create/set/list
+ravi permissions grant agent:dev execute group:sessions     # sessions list/send/read
+ravi permissions grant agent:dev execute group:contacts     # contacts add/approve/block
+ravi permissions grant agent:dev execute group:routes       # routes add/remove/list
+ravi permissions grant agent:dev execute group:settings     # settings get/set
+ravi permissions grant agent:dev execute group:channels     # channels start/stop
+ravi permissions grant agent:dev execute group:heartbeat    # heartbeat set/enable
+ravi permissions grant agent:dev execute group:matrix       # matrix rooms/send
+ravi permissions grant agent:dev execute group:whatsapp.group  # WhatsApp group mgmt
+ravi permissions grant agent:dev execute group:service      # service install/start
+```
+
+### Subcommand Access
+
+Grant access to a single command within a group:
+
+```bash
+ravi permissions grant agent:dev execute group:agents_list    # Only agents list
+ravi permissions grant agent:dev execute group:daemon_restart # Only daemon restart
+```
+
+### Open Groups (No Grant Required)
+
+These groups work for any agent without explicit permissions:
+
+- `sessions` (open) — but modification commands check session scope inline
+- `media`, `react`, `tools`, `transcribe`, `video`, `whatsapp.dm` (open)
+- `cron`, `triggers`, `outbound` (resource) — check resource ownership
+
+## SDK Tools
+
+Control which SDK tools an agent can use with the `use` relation:
+
+```bash
+# Individual tools
+ravi permissions grant agent:dev use tool:Bash
+ravi permissions grant agent:dev use tool:Read
+ravi permissions grant agent:dev use tool:Edit
+
+# All tools (wildcard)
+ravi permissions grant agent:dev use tool:*
+```
+
+Available SDK tools: `Bash`, `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, `TaskOutput`, `TaskStop`, `TodoWrite`, `NotebookEdit`, `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `EnterWorktree`, `Skill`, `TeamCreate`, `TeamDelete`, `SendMessage`, `LSP`, `ToolSearch`.
+
+## Tool Groups
+
+Instead of granting tools one by one, use tool groups for bulk access:
+
+```bash
+ravi permissions grant agent:dev use toolgroup:read-only
+ravi permissions grant agent:dev use toolgroup:execute
+```
+
+| Group | Tools |
+|-------|-------|
+| `read-only` | Read, Glob, Grep, WebFetch, WebSearch, LSP, ToolSearch |
+| `write` | Edit, Write, NotebookEdit |
+| `execute` | Bash, Task, TaskOutput, TaskStop |
+| `plan` | EnterPlanMode, ExitPlanMode, AskUserQuestion, TodoWrite |
+| `teams` | TeamCreate, TeamDelete, SendMessage |
+| `navigate` | EnterWorktree, Skill |
+
+Tool groups combine with individual grants. An agent with `toolgroup:read-only` and `tool:Bash` has access to all read-only tools plus Bash.
+
+When the engine checks `can(agent:dev, use, tool, Read)`, if no direct `tool:Read` grant exists, it checks whether any granted `toolgroup` includes `Read`.
+
+## System Executables
+
+Control which system binaries an agent can invoke through Bash:
+
+```bash
+ravi permissions grant agent:dev execute executable:git
+ravi permissions grant agent:dev execute executable:node
+ravi permissions grant agent:dev execute executable:*     # All executables
+```
+
+## Templates
+
+Templates apply a preset of permissions in one command:
+
+```bash
+# Individual SDK tool grants (one relation per tool)
+ravi permissions init agent:dev sdk-tools
+
+# Wildcard SDK tool access (tool:*)
+ravi permissions init agent:dev all-tools
+
+# All tool groups (read-only, write, execute, plan, teams, navigate)
+ravi permissions init agent:dev tool-groups
+
+# Safe system executables (git, node, bun, grep, etc.)
+ravi permissions init agent:dev safe-executables
+
+# Full access: all tools + all executables
+ravi permissions init agent:dev full-access
+```
+
+### Safe Executables List
+
+The `safe-executables` template grants access to commonly needed development binaries: `ls`, `cat`, `head`, `tail`, `find`, `mkdir`, `cp`, `mv`, `touch`, `git`, `grep`, `rg`, `awk`, `sed`, `jq`, `node`, `npm`, `bun`, `python3`, `make`, `cargo`, `go`, `jest`, `vitest`, `eslint`, `prettier`, `echo`, `date`, `pwd`, `which`, and others.
+
+## Config-Synced Permissions
+
+Some permissions are automatically derived from agent configuration fields and synced on daemon boot. These use `source=config` and are regenerated by `ravi permissions sync`.
+
+| Agent Config | Generated Relation |
+|--------------|--------------------|
+| Agent ID is `main` | `(agent:main, admin, system:*)` |
+| `contactScope: "all"` | `(agent:<id>, write_contacts, system:*)` |
+| `contactScope: "own"` | `(agent:<id>, read_own_contacts, system:*)` |
+| `contactScope: "tagged:leads"` | `(agent:<id>, read_tagged_contacts, system:leads)` |
+| `allowedSessions: ["dev-*"]` | `(agent:<id>, access, session:dev-*)` |
+
+Manual grants (`source=manual`) are never affected by sync.
+
+## Relation Sources
+
+Every relation has a source that indicates how it was created:
+
+| Source | Description |
+|--------|-------------|
+| `config` | Auto-generated from agent configuration. Regenerated on boot and `sync`. |
+| `manual` | Created via CLI. Persists across restarts and syncs. |
+
+## Audit Events
+
+When a permission check fails, an audit event is published to the NATS topic `ravi.audit.denied`:
+
+```json
+{
+  "type": "scope",
+  "agentId": "dev",
+  "denied": "group:daemon",
+  "reason": "Permission denied: agent:dev requires execute on group:daemon",
+  "command": "daemon restart"
+}
+```
+
+You can subscribe to these events for monitoring:
+
+```bash
+nats sub "ravi.audit.denied" --server nats://127.0.0.1:4223
+```
+
+Or create a trigger to react to denied events:
+
+```bash
+ravi triggers add "Permission Alert" \
+  --topic "ravi.audit.denied" \
+  --message "A permission was denied. Review the event and notify me if it needs attention."
+```
+
+## CLI Reference
+
+### Grant a permission
+
+```bash
+ravi permissions grant <subject> <relation> <object>
+
+# Examples
+ravi permissions grant agent:dev execute group:contacts
+ravi permissions grant agent:dev use tool:Bash
+ravi permissions grant agent:dev access session:dev-*
+```
+
+### Revoke a permission
+
+```bash
+ravi permissions revoke <subject> <relation> <object>
+
+# Examples
+ravi permissions revoke agent:dev execute group:contacts
+ravi permissions revoke agent:dev use toolgroup:write
+```
+
+### Check a permission
+
+Evaluates the full resolution chain (superadmin, direct, wildcard, pattern, tool group):
+
+```bash
+ravi permissions check <subject> <permission> <object>
+
+# Examples
+ravi permissions check agent:dev execute group:daemon
+# -> DENIED: (agent:dev) execute (group:daemon)
+
+ravi permissions check agent:main admin system:*
+# -> ALLOWED: (agent:main) admin (system:*)
+
+ravi permissions check agent:dev use tool:Read
+# -> ALLOWED (if agent has toolgroup:read-only)
+```
+
+### List relations
+
+```bash
+# All relations
+ravi permissions list
+
+# Filter by subject
+ravi permissions list --subject agent:dev
+
+# Filter by object
+ravi permissions list --object group:contacts
+
+# Filter by relation type
+ravi permissions list --relation access
+
+# Filter by source
+ravi permissions list --source manual
+```
+
+### Sync from agent configs
+
+Regenerates `source=config` relations from current agent settings. Manual relations are preserved.
+
+```bash
+ravi permissions sync
+```
+
+### Apply a template
+
+```bash
+ravi permissions init agent:dev full-access
+ravi permissions init agent:dev sdk-tools
+ravi permissions init agent:dev tool-groups
+ravi permissions init agent:dev safe-executables
+ravi permissions init agent:dev all-tools
+```
+
+### Clear relations
+
+```bash
+# Clear manual relations only
+ravi permissions clear
+
+# Clear ALL relations (run sync afterwards to restore config relations)
+ravi permissions clear --all
+ravi permissions sync
+```
+
+## Practical Examples
+
+### Full Admin Agent
+
+An agent with unrestricted access to everything:
+
+```bash
+ravi permissions grant agent:main admin system:*
+```
+
+### Restricted Developer Agent
+
+An agent that can read files, run git, and manage its own sessions:
+
+```bash
+# Tool groups for safe development
+ravi permissions grant agent:dev use toolgroup:read-only
+ravi permissions grant agent:dev use tool:Bash
+
+# Only safe executables
+ravi permissions init agent:dev safe-executables
+
+# Access to its own sessions
+ravi permissions grant agent:dev access session:dev-*
+ravi permissions grant agent:dev modify session:dev-*
+
+# Can view contacts but not modify
+ravi permissions grant agent:dev read_own_contacts system:*
+```
+
+### Read-Only Observer Agent
+
+An agent that can only read files, search, and view data:
+
+```bash
+ravi permissions grant agent:observer use toolgroup:read-only
+ravi permissions grant agent:observer execute group:agents_list
+ravi permissions grant agent:observer execute group:contacts
+```
+
+### Sales Agent with Limited Scope
+
+An agent that manages outbound campaigns for tagged contacts:
+
+```bash
+ravi permissions init agent:vendas tool-groups
+ravi permissions init agent:vendas safe-executables
+ravi permissions grant agent:vendas execute group:contacts
+ravi permissions grant agent:vendas read_tagged_contacts system:leads
+ravi permissions grant agent:vendas access session:vendas-*
+```
+
+## Troubleshooting
+
+### "Permission denied" errors
+
+1. **Check what permission is required** — the error message tells you:
+   ```
+   Permission denied: agent:dev requires execute on group:daemon
+   ```
+
+2. **Verify current permissions:**
+   ```bash
+   ravi permissions list --subject agent:dev
+   ```
+
+3. **Check with the engine:**
+   ```bash
+   ravi permissions check agent:dev execute group:daemon
+   ```
+
+4. **Grant the missing permission:**
+   ```bash
+   ravi permissions grant agent:dev execute group:daemon
+   ```
+
+### Common Mistakes
+
+**Wrong object type for CLI groups:**
+```bash
+# WRONG — engine checks group:daemon, not system:daemon
+ravi permissions grant agent:dev execute system:daemon
+
+# CORRECT
+ravi permissions grant agent:dev execute group:daemon
+```
+
+**Using `admin` for specific groups:**
+```bash
+# WRONG — admin only works with system:*
+ravi permissions grant agent:dev admin group:daemon
+
+# CORRECT — use execute for groups
+ravi permissions grant agent:dev execute group:daemon
+```
+
+**Confusing `group` and `executable`:**
+```bash
+# These are different object types
+ravi permissions grant agent:dev execute group:*        # CLI command groups
+ravi permissions grant agent:dev execute executable:*   # System binaries
+```
+
+**Wrong relation for executables:**
+```bash
+# WRONG — "use" is for SDK tools
+ravi permissions grant agent:dev use executable:git
+
+# CORRECT — executables use "execute"
+ravi permissions grant agent:dev execute executable:git
+```
+
+### Redundant grants
+
+The CLI warns about redundant grants:
+
+```bash
+ravi permissions grant agent:dev use tool:*
+# -> Granted: (agent:dev) use (tool:*)
+# -> 5 individual relation(s) are now redundant (covered by wildcard)
+```
+
+### Permissions not applying after config change
+
+Config-synced permissions are regenerated on daemon boot. If you changed an agent's `contactScope` or `allowedSessions`:
+
+```bash
+ravi permissions sync
+```

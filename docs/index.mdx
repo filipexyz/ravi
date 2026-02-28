@@ -1,0 +1,43 @@
+---
+title: Ravi
+description: Claude-powered bot with multi-channel messaging.
+---
+
+<CardGroup cols={2}>
+
+<Card title="Quick Start" href="/start/quickstart">
+  Install and run Ravi in minutes.
+</Card>
+
+<Card title="CLI Reference" href="/cli/overview">
+  Full command reference for the ravi CLI.
+</Card>
+
+<Card title="Architecture" href="/architecture">
+  How the daemon, NATS, omni, and agents fit together.
+</Card>
+
+<Card title="Features" href="/features/overview">
+  Heartbeat, cron, triggers, outbound, TTS, and more.
+</Card>
+
+</CardGroup>
+
+## Quick Start
+
+```bash
+# Install dependencies
+bun install
+
+# Run setup wizard
+ravi setup
+
+# Start daemon
+ravi daemon start
+
+# Connect a WhatsApp instance
+ravi instances connect main
+
+# Check status
+ravi daemon status
+```

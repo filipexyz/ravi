@@ -1,0 +1,200 @@
+---
+title: Outbound Campaigns
+description: Step-by-step guide to creating and managing automated outreach campaigns.
+---
+
+## Overview
+
+Outbound queues automate proactive outreach — sending messages to contacts on a schedule, tracking responses, and managing follow-ups through a pipeline.
+
+## Create a Queue
+
+```bash
+ravi outbound create "Prospecting" \
+  --instructions "You are a sales agent. Reach out to this lead, introduce our product, and gauge interest." \
+  --every 5m \
+  --stages '[{"name":"cold"},{"name":"engaged","delay":30},{"name":"meeting_booked","delay":1440},{"name":"proposal","delay":4320},{"name":"closed"},{"name":"lost"}]' \
+  --agent main \
+  --active-start 09:00 \
+  --active-end 22:00 \
+  --tz America/Sao_Paulo \
+  --max-rounds 3
+```
+
+### Required options
+
+- `--instructions` — Prompt the agent receives when processing each entry
+- `--every` — Interval between processing entries (e.g., `5m`, `1h`)
+- `--stages` — Pipeline stages as JSON array
+
+### Pipeline Stages
+
+Each queue defines its own pipeline. The `delay` field (in minutes) controls how long to wait before automatic follow-up at that stage:
+
+```json
+[
+  { "name": "cold" },
+  { "name": "engaged", "delay": 30 },
+  { "name": "meeting_booked", "delay": 1440 },
+  { "name": "proposal", "delay": 4320 },
+  { "name": "closed" },
+  { "name": "lost" }
+]
+```
+
+Stages without `delay` don't trigger automatic follow-ups.
+
+### Stage Examples
+
+**B2B Sales:**
+```json
+[{"name":"cold"},{"name":"engaged","delay":30},{"name":"meeting_booked","delay":1440},{"name":"proposal","delay":4320},{"name":"closed"},{"name":"lost"}]
+```
+
+**Recruiting:**
+```json
+[{"name":"new"},{"name":"replied","delay":30},{"name":"interested","delay":60},{"name":"interview_scheduled","delay":1440},{"name":"hired"},{"name":"declined"}]
+```
+
+**Collections:**
+```json
+[{"name":"notice"},{"name":"reminder","delay":1440},{"name":"urgent","delay":2880},{"name":"final_notice","delay":4320},{"name":"defaulted"}]
+```
+
+## Add Contacts
+
+### Individual entries
+
+```bash
+ravi outbound add <queueId> 5511999999999 --name "João Silva"
+ravi outbound add <queueId> 5511888888888 --name "Maria" --context '{"company":"Acme","role":"CTO"}'
+```
+
+### Bulk by tag
+
+```bash
+ravi outbound add <queueId> - --tag leads
+```
+
+## Activate the Queue
+
+```bash
+ravi outbound start <queueId>
+```
+
+## Processing Priority
+
+Each processing cycle handles entries in this order:
+
+1. **Response entries** — Contacts who replied (event-driven, highest priority)
+2. **Follow-up entries** — Contacted but no response, based on stage delay and max rounds
+3. **Initial outreach** — New pending entries at round 0 (timer-driven)
+
+## Agent Workflow
+
+During outbound sessions, the agent receives:
+
+- **System context** (invisible to contact): Queue instructions, available pipeline stages, CLI actions, entry metadata
+- **User prompt** (visible): Contact info for initial outreach, response text for follow-ups, or elapsed time for no-response follow-ups
+
+The agent can use these tools during the session:
+
+```bash
+# Send a message (with humanized delivery)
+ravi outbound send <entryId> "Hello João! I wanted to reach out about..." --typing-delay 3000 --pause 1000
+
+# Qualify/advance the lead
+ravi outbound qualify <entryId> engaged
+
+# Add context notes
+ravi outbound context <entryId> '{"note":"Interested in enterprise plan"}'
+
+# Mark as done
+ravi outbound done <entryId>
+
+# Skip entry
+ravi outbound skip <entryId>
+```
+
+## Humanized Delivery
+
+Outbound sends simulate natural human behavior:
+
+- `--typing-delay <ms>` — Show typing indicator before sending
+- `--pause <ms>` — Pause before typing (simulates reading time)
+
+Sentinel-mode agents automatically get humanized timing based on message length (3-5s pause + 2-8s typing).
+
+## Monitor Progress
+
+```bash
+# Queue overview
+ravi outbound show <queueId>
+
+# List entries with status
+ravi outbound entries <queueId>
+
+# Entry details
+ravi outbound status <entryId>
+
+# Chat history
+ravi outbound chat <entryId>
+ravi outbound chat <entryId> --limit 10
+
+# Full report
+ravi outbound report              # All queues
+ravi outbound report <queueId>    # Specific queue
+```
+
+## Manage Entries
+
+```bash
+# Reset entry to pending (try again)
+ravi outbound reset <entryId>
+ravi outbound reset <entryId> --full   # Also clears context
+
+# Manually trigger queue
+ravi outbound run <queueId>
+
+# Pause queue
+ravi outbound pause <queueId>
+
+# Delete queue
+ravi outbound rm <queueId>
+```
+
+## Session Isolation
+
+Each entry runs in its own isolated session:
+
+```
+agent:{agentId}:outbound:{queueId}:{phone}
+```
+
+This ensures conversation context is maintained per-contact without cross-contamination.
+
+## Active Hours
+
+Queues respect active hours and timezone:
+
+```bash
+ravi outbound set <queueId> active-start 09:00
+ravi outbound set <queueId> active-end 22:00
+ravi outbound set <queueId> tz America/Sao_Paulo
+```
+
+Processing is paused outside active hours.
+
+## Queue Completion
+
+When all entries reach `done` or `skipped` status, the queue automatically transitions to `completed`.
+
+## Entry Statuses
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Waiting to be processed |
+| `active` | Currently being processed |
+| `done` | Completed successfully |
+| `skipped` | Manually skipped |
+| `error` | Failed during processing |

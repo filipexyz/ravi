@@ -1,0 +1,413 @@
+---
+title: Media Pipeline
+description: Audio generation, transcription, image generation, video analysis, and media delivery across channels.
+---
+
+## Overview
+
+Ravi provides a full media pipeline: generate audio from text (TTS), transcribe audio to text, generate images from prompts, analyze videos, and send any media file through connected channels. Each capability is available as a CLI command and as an agent tool.
+
+## Audio Generation (TTS)
+
+Generate speech from text using the ElevenLabs Text-to-Speech API.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `ELEVENLABS_API_KEY` | Yes | ElevenLabs API key |
+| `ELEVENLABS_VOICE_ID` | No | Default voice ID (overrides built-in default) |
+
+### Models
+
+| Model | Description |
+|---|---|
+| `eleven_multilingual_v2` | Default. High quality, supports multiple languages, more expressive |
+| `eleven_turbo_v2_5` | Faster generation, lower latency, less expressive |
+
+### CLI Usage
+
+```bash
+# Basic generation
+ravi audio generate "Hello, this is a test message"
+
+# Specify voice and speed
+ravi audio generate "Fast narration" --voice JBFqnCBsd6RMkjVDRZzb --speed 1.5
+
+# Force language for better pronunciation
+ravi audio generate "Bom dia a todos" --lang pt
+
+# Generate and send directly to the current chat
+ravi audio generate "Voice message content" --send
+
+# With custom caption when sending
+ravi audio generate "Important update" --send --caption "Listen to this"
+
+# Use turbo model for faster output
+ravi audio generate "Quick response" --model eleven_turbo_v2_5
+
+# Save to specific directory
+ravi audio generate "Narration" -o /tmp/audios
+```
+
+### Options
+
+| Flag | Description | Default |
+|---|---|---|
+| `--voice <id>` | ElevenLabs voice ID | `ELEVENLABS_VOICE_ID` env or built-in default |
+| `--model <model>` | TTS model | `eleven_multilingual_v2` |
+| `--speed <speed>` | Speech speed (0.5 to 2.0) | `1.0` |
+| `--lang <code>` | ISO 639-1 language code (`pt`, `en`, `es`) | Auto-detect |
+| `--format <fmt>` | Output format: `mp3_44100_128`, `mp3_22050_32`, `pcm_16000` | `mp3_44100_128` |
+| `-o, --output <dir>` | Output directory | `/tmp` |
+| `--send` | Send to the current chat automatically | `false` |
+| `--caption <text>` | Caption when using `--send` | First 100 chars of text |
+
+### Voice Note (PTT) Mode
+
+When `--send` is used, the audio is automatically converted to OGG/Opus format for WhatsApp Push-to-Talk (voice note) delivery. This requires `ffmpeg` installed on the system.
+
+The conversion pipeline:
+1. ElevenLabs generates MP3
+2. ffmpeg converts to OGG/Opus (64kbps, 48kHz, mono)
+3. Original MP3 is deleted
+4. OGG file is sent as a voice note
+
+If ffmpeg is not available, the original MP3 is sent as a regular audio attachment instead.
+
+### Output
+
+```
+Generating audio...
+
+✓ Audio saved: /tmp/ravi-audio-1709123456789.mp3
+  Send to chat: ravi media send "/tmp/ravi-audio-1709123456789.mp3"
+
+Text: Hello, this is a test message
+```
+
+## Audio Transcription
+
+Transcribe audio files to text using Groq (preferred) or OpenAI Whisper.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `GROQ_API_KEY` | No* | Groq API key (preferred provider) |
+| `OPENAI_API_KEY` | No* | OpenAI API key (fallback provider) |
+
+<Note>
+At least one of `GROQ_API_KEY` or `OPENAI_API_KEY` must be configured. Groq is preferred when both are available due to faster inference.
+</Note>
+
+### Provider Selection
+
+| Priority | Provider | Model | Notes |
+|---|---|---|---|
+| 1 | Groq | `whisper-large-v3-turbo` | Faster, preferred |
+| 2 | OpenAI | `whisper-1` | Fallback |
+
+### Supported Formats
+
+| Extension | MIME Type |
+|---|---|
+| `.ogg` | `audio/ogg` |
+| `.opus` | `audio/ogg; codecs=opus` |
+| `.mp3` | `audio/mpeg` |
+| `.m4a` | `audio/mp4` |
+| `.mp4` | `audio/mp4` |
+| `.wav` | `audio/wav` |
+| `.webm` | `audio/webm` |
+
+### Auto-Chunking for Long Audio
+
+Audio files longer than **10 minutes** (600 seconds) are automatically split into overlapping chunks for transcription:
+
+- **Chunk duration:** 10 minutes each
+- **Overlap:** 15 seconds between chunks (prevents word loss at boundaries)
+- **Splitting tool:** ffmpeg (required for chunking)
+- **Duration detection:** ffprobe
+
+The chunks are transcribed individually and joined into a single continuous transcript.
+
+### CLI Usage
+
+```bash
+# Transcribe a local audio file
+ravi transcribe file /path/to/recording.ogg
+
+# Transcribe an MP3
+ravi transcribe file /tmp/meeting-recording.mp3
+```
+
+### Output
+
+```
+Transcribing /tmp/recording.ogg (2.5MB, audio/ogg)...
+
+✓ Transcribed (45s)
+
+The transcribed text appears here...
+```
+
+For chunked transcriptions:
+
+```
+✓ Transcribed in 3 chunks (1800s total)
+
+The full combined transcript...
+```
+
+### Inbound Auto-Transcription
+
+Voice messages received through WhatsApp, Telegram, or other channels are automatically transcribed. The transcript is included in the agent's prompt:
+
+```
+[+5511999 30/01/2026, 14:30]
+[Audio]
+Transcript:
+The transcribed text from the voice message
+```
+
+## Image Generation
+
+Generate images from text prompts using Google Gemini models.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `GEMINI_IMAGE_MODEL` | No | Override model selection (ignores `--mode`) |
+
+### Models
+
+| Mode | Model | Description |
+|---|---|---|
+| `fast` (default) | `gemini-3.1-flash-image-preview` | Fast generation, good for iteration |
+| `quality` | `gemini-3-pro-image-preview` | Higher detail, slower |
+
+### CLI Usage
+
+```bash
+# Basic generation
+ravi image generate "a purple cat floating in space"
+
+# Quality mode (slower, more detail)
+ravi image generate "product photo of sneakers" --mode quality
+
+# Set aspect ratio and size
+ravi image generate "instagram story background" --aspect 9:16 --size 2K
+
+# 4K landscape wallpaper
+ravi image generate "mountain landscape at sunset" --aspect 16:9 --size 4K
+
+# Edit an existing image
+ravi image generate "remove the background and add a sunset" --source /tmp/photo.png
+
+# Generate and send to chat
+ravi image generate "coffee shop interior" --send
+
+# Save to specific directory
+ravi image generate "product mockup" -o /tmp/mockups
+```
+
+### Options
+
+| Flag | Description | Default |
+|---|---|---|
+| `--mode <type>` | `fast` (Flash) or `quality` (Pro) | `fast` |
+| `--source <path>` | Source image for editing | -- |
+| `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` | Auto |
+| `--size <size>` | `1K`, `2K`, `4K` | `1K` |
+| `-o, --output <dir>` | Output directory | `/tmp` |
+| `--send` | Send to the current chat | `false` |
+| `--caption <text>` | Caption when using `--send` | The prompt text |
+
+### Source Image Editing
+
+Pass an existing image with `--source` to use it as a reference for editing. Supported input formats: PNG, JPEG, WebP, GIF.
+
+```bash
+ravi image generate "make this photo look like a watercolor painting" --source /tmp/photo.jpg
+```
+
+The source image is sent to Gemini alongside the text prompt, allowing the model to transform, edit, or use the image as reference.
+
+### Output
+
+```
+Generating image (fast)...
+
+✓ Image saved: /tmp/ravi-image-1709123456789.png
+  Send to chat: ravi media send "/tmp/ravi-image-1709123456789.png"
+
+Prompt: a purple cat floating in space
+Mode: fast | Aspect: auto | Size: 1K
+```
+
+## Video Analysis
+
+Analyze videos from YouTube URLs or local files using Google Gemini. Extracts title, summary, topics, full transcript, and timestamped visual descriptions.
+
+### Environment Variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `GEMINI_VIDEO_MODEL` | No | Override the default model |
+
+The default model is `gemini-2.5-flash`.
+
+### CLI Usage
+
+```bash
+# Analyze a YouTube video
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID"
+
+# Save to specific file
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./analysis.md
+
+# Custom analysis prompt
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Focus on the technical arguments"
+
+# Analyze a local video file
+ravi video analyze /path/to/video.mp4
+```
+
+### Supported Formats
+
+**YouTube:** Public videos only (private and unlisted are not supported).
+
+**Local files:**
+
+| Extension | MIME Type |
+|---|---|
+| `.mp4` | `video/mp4` |
+| `.mpeg` | `video/mpeg` |
+| `.mov` | `video/mov` |
+| `.avi` | `video/avi` |
+| `.flv` | `video/x-flv` |
+| `.webm` | `video/webm` |
+| `.wmv` | `video/wmv` |
+| `.3gpp` | `video/3gpp` |
+
+Local files are uploaded to the Gemini Files API before analysis.
+
+### Output Structure
+
+The analysis is saved as a markdown file with these sections:
+
+- **Title** -- Video title or auto-generated descriptive title
+- **Duration** -- Estimated duration in MM:SS format
+- **Summary** -- 2-3 paragraph comprehensive summary
+- **Topics** -- Bullet list of main topics covered
+- **Transcript** -- Complete transcription of spoken content with speaker labels
+- **Visual Description** -- Timestamped descriptions of visual content (`[MM:SS-MM:SS]` format)
+
+The output language matches the video's spoken language.
+
+### Limitations
+
+- YouTube videos must be public
+- Videos longer than 1 hour may exceed token limits or take a long time
+- Analysis quality depends on video clarity and audio quality
+
+## Sending Media
+
+Send any media file (image, video, audio, document) through a connected channel.
+
+### CLI Usage
+
+```bash
+# Send from a chat context (channel auto-detected)
+ravi media send "/tmp/ravi-image-123.png"
+
+# With caption
+ravi media send "/tmp/photo.jpg" --caption "Check this out"
+
+# Send as voice note (audio only)
+ravi media send "/tmp/recording.ogg" --ptt
+
+# Explicit target (when not in a chat context)
+ravi media send "/tmp/report.pdf" \
+  --channel whatsapp-baileys \
+  --account default \
+  --to "5511999999999@s.whatsapp.net"
+```
+
+### Options
+
+| Flag | Description |
+|---|---|
+| `--caption <text>` | Caption for the media |
+| `--channel <channel>` | Target channel type |
+| `--to <chatId>` | Target chat ID |
+| `--account <id>` | Account ID |
+| `--ptt` | Send audio as voice note (PTT) |
+
+### Supported File Types
+
+The media type is auto-detected from the file extension:
+
+| Type | Extensions |
+|---|---|
+| Image | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` |
+| Video | `.mp4`, `.mov`, `.avi`, `.mkv` |
+| Audio | `.mp3`, `.ogg`, `.wav`, `.m4a`, `.opus` |
+| Document | `.pdf` (and any other extension) |
+
+## Inbound Media
+
+When a message arrives with media (images, videos, documents, stickers, audio), ravi automatically downloads the file and includes the local path in the agent's prompt.
+
+### Download Behavior
+
+- **Download location:** Agent's `attachments/` directory under its CWD (e.g., `~/ravi/main/attachments/`)
+- **Max file size:** 20 MB (larger files are skipped with a note)
+- **Naming convention:** `{timestamp}-{messageId}.{ext}`
+- **Supported types:** Images, videos, PDFs, documents, audio, stickers
+
+### Prompt Format
+
+Downloaded media appears in the agent's prompt with the local file path:
+
+```
+[+5511999 30/01/2026, 14:30]
+[Image: /home/user/ravi/main/attachments/1706619000000-ABC123.jpg]
+```
+
+Voice messages include the transcription:
+
+```
+[+5511999 30/01/2026, 14:30]
+[Audio]
+Transcript:
+The transcribed content of the voice message
+```
+
+## Environment Variables Summary
+
+| Variable | Used By | Required |
+|---|---|---|
+| `ELEVENLABS_API_KEY` | Audio generation (TTS) | For TTS |
+| `ELEVENLABS_VOICE_ID` | Audio generation (TTS) | No |
+| `GROQ_API_KEY` | Audio transcription | For transcription* |
+| `OPENAI_API_KEY` | Audio transcription (fallback) | For transcription* |
+| `GEMINI_API_KEY` | Image generation, video analysis | For image/video |
+| `GEMINI_IMAGE_MODEL` | Image generation | No |
+| `GEMINI_VIDEO_MODEL` | Video analysis | No |
+
+<Note>
+*At least one of `GROQ_API_KEY` or `OPENAI_API_KEY` is required for transcription. Both audio generation and image generation require their respective API keys independently.
+</Note>
+
+### System Dependencies
+
+| Dependency | Used By | Required |
+|---|---|---|
+| `ffmpeg` | PTT conversion, audio chunking | For voice notes and long audio transcription |
+| `ffprobe` | Audio duration detection | For chunked transcription |
+
+Install with: `brew install ffmpeg` (macOS) or `apt install ffmpeg` (Linux).

@@ -1,0 +1,164 @@
+---
+title: NATS Event Bus
+description: Complete reference for all NATS topics, payloads, and event flow in Ravi.
+---
+
+NATS is Ravi's central pub/sub backbone. All messages, prompts, tool calls, and responses flow through it as events on hierarchical topics.
+
+## Concepts
+
+- **Topic/Subject** — Hierarchical namespace separated by `.` (e.g., `ravi.session.main.prompt`)
+- **Event** — JSON payload published to a subject
+- **Wildcards** — `*` matches one level, `>` matches multiple levels
+- **Connection** — Direct TCP to `nats://127.0.0.1:4222` (no HTTP/WebSocket intermediary)
+
+## Session Events
+
+Events scoped to a session name (e.g., `agent-main-abc123`).
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.session.{name}.prompt` | `{ prompt, source?, context?, _agentId?, _outbound?, _queueId?, _entryId? }` |
+| `ravi.session.{name}.response` | `{ response, target?, _emitId, _instanceId, _pid, _v: 2 }` |
+| `ravi.session.{name}.claude` | Raw Claude SDK event: `{ type: "system"/"assistant"/"result"/"silent"/... }` |
+| `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` |
+| `ravi.session.{name}.tool` | End: `{ event: "end", toolId, toolName, output, isError, durationMs, timestamp, sessionName, agentId }` |
+| `ravi.session.{name}.stream` | `{ chunk }` — text delta streaming for TUI |
+| `ravi.session.abort` | `{ sessionKey?, sessionName? }` — abort ephemeral session |
+
+The prompt topic goes via JetStream WorkQueue stream (`SESSION_PROMPTS`). All others are plain NATS pub/sub.
+
+## Inbound Events (Channels to Bot)
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.inbound.reaction` | `{ targetMessageId, emoji, senderId }` |
+| `ravi.inbound.reply` | `{ targetMessageId, text, senderId }` |
+| `ravi.inbound.pollVote` | `{ pollMessageId, votes: [{ name, voters[] }] }` |
+
+Channel messages arrive via omni JetStream on `message.received.{channelType}.{instanceId}`, not via ravi pub/sub. The OmniConsumer translates these into session prompts.
+
+## Outbound Events (Bot to Gateway)
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
+| `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
+| `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` |
+| `ravi.outbound.refresh` | `{}` — outbound queue refresh signal |
+| `ravi.outbound.trigger` | `{ queueId }` — manual queue trigger |
+
+## Media Events
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.media.send` | `{ channel, accountId, chatId, filePath, mimetype, type, filename, caption?, voiceNote? }` |
+
+Type values: `image`, `video`, `audio`, `document`.
+
+## Contact and Approval Events
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.contacts.pending` | `{ type: "account", channel, accountId, senderId, chatId, isGroup }` |
+| `ravi.approval.request` | `{ type: "plan"/"spec"/"question", sessionName, agentId, delegated, channel, chatId, timestamp }` |
+| `ravi.approval.response` | `{ type: "plan"/"spec"/"question", sessionName, agentId, approved, reason?, answers? }` |
+
+## Instance Events
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.instances.unregistered` | `{ instanceId, channelType, subject, from, chatId, isGroup, contentType, timestamp }` |
+| `ravi.whatsapp.qr.{instanceId}` | `{ type: "qr", instanceId, qr, channelType }` |
+| `ravi.whatsapp.connected.{instanceId}` | `{ type: "connected", instanceId, channelType, profileName, ownerIdentifier }` |
+| `ravi.whatsapp.group.{op}` | `{ accountId, replyTopic, ... }` — ops: list, info, create, leave, add, remove, join |
+
+## Audit Events
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.audit.denied` | `{ type: "env_spoofing"/"executable"/"session_scope"/"tool"/"group", agentId, denied, reason, detail? }` |
+
+## System and Config Events
+
+| Topic | Payload |
+|-------|---------|
+| `ravi.config.changed` | `{}` — config changed via CLI |
+| `ravi.triggers.refresh` | `{}` — trigger subscription refresh |
+| `ravi.triggers.test` | `{ triggerId }` — manual trigger test |
+| `ravi.cron.refresh` | `{}` — cron timer refresh |
+| `ravi.cron.trigger` | `{ jobId }` — manual cron trigger |
+| `ravi.heartbeat.refresh` | `{}` — heartbeat timer refresh |
+| `ravi.copilot.watch` | `{ team, agentId }` — copilot inbox watcher |
+
+## CLI Tool Events
+
+When agents execute CLI tools, events are emitted:
+
+```
+ravi.{sessionKey}.cli.{group}.{command}
+```
+
+Example: `ravi.agent:main:main.cli.contacts.add`
+
+## Copilot Events (Claude Code Bridge)
+
+Events from Claude Code sessions, published by the hook script:
+
+| Topic | CC Event | Description |
+|-------|----------|-------------|
+| `ravi.copilot.session.start` | SessionStart | CC session opened |
+| `ravi.copilot.session.end` | SessionEnd | CC session closed |
+| `ravi.copilot.prompt` | UserPromptSubmit | User sent prompt |
+| `ravi.copilot.tool.pre` | PreToolUse | Tool about to execute |
+| `ravi.copilot.tool.post` | PostToolUse | Tool executed |
+| `ravi.copilot.tool.fail` | PostToolUseFailure | Tool failed |
+| `ravi.copilot.stop` | Stop | Claude finished generating |
+| `ravi.copilot.subagent.start` | SubagentStart | Subagent created |
+| `ravi.copilot.subagent.stop` | SubagentStop | Subagent finished |
+| `ravi.copilot.notification` | Notification | CC notification |
+| `ravi.copilot.teammate.idle` | TeammateIdle | Teammate went idle |
+| `ravi.copilot.config.change` | ConfigChange | CC config changed |
+| `ravi.copilot.compact.pre` | PreCompact | Context compaction |
+| `ravi.copilot.task.completed` | TaskCompleted | Delegated task completed |
+
+### Copilot Payload Envelope
+
+```json
+{
+  "session_id": "abc-123",
+  "session_type": "main",
+  "cwd": "/path/to/project",
+  "event": "PostToolUse",
+  "timestamp": "2026-02-25T17:30:00Z",
+  "data": { }
+}
+```
+
+## JetStream Streams
+
+| Stream | Consumer | Filter | Source |
+|--------|----------|--------|--------|
+| `MESSAGE` | `ravi-messages` | `message.received.>` | omni (channel inbound) |
+| `INSTANCE` | `ravi-instances` | `instance.>` | omni (connection events) |
+| `REACTION` | `ravi-reactions` | `reaction.received.>` | omni (emoji reactions) |
+| `SESSION_PROMPTS` | `ravi-prompts` | `ravi.session.*.prompt` | ravi (internal routing) |
+
+## Programmatic API
+
+```typescript
+import { nats } from "./nats.js";
+
+// Publish event
+await nats.emit("ravi.session.main.prompt", { prompt: "oi" });
+
+// Subscribe (wildcards)
+for await (const event of nats.subscribe("ravi.session.*.prompt")) {
+  console.log(event.topic, event.data);
+}
+
+// Multiple topics
+for await (const event of nats.subscribe("ravi.session.*.response", "ravi.session.*.tool")) {
+  console.log(event.topic, event.data);
+}
+```
