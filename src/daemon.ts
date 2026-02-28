@@ -16,7 +16,7 @@ import { nats, connectNats, closeNats } from "./nats.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
-import { getMainSession } from "./router/sessions.js";
+import { getMainSession, getSessionByName } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
@@ -311,25 +311,49 @@ async function notifyRestartReason() {
 
   if (!reason) return;
 
+  // Resolve target session — if origin session is TUI (Claude Code), fall back to main
+  // because TUI sessions have no outbound channel and responses would be silently dropped.
+  const defaultAgent = dbGetSetting("defaultAgent") || "main";
   if (!sessionName) {
-    const defaultAgent = dbGetSetting("defaultAgent") || "main";
     const fallbackSession = getMainSession(defaultAgent);
     sessionName = fallbackSession?.name ?? defaultAgent;
+  } else {
+    // Check if the origin session has an external channel; if it's TUI, redirect to main
+    const originSession = sessionName ? getSessionByName(sessionName) : null;
+    if (!originSession?.lastChannel || originSession.lastChannel === "tui") {
+      const mainSession = getMainSession(defaultAgent);
+      const mainName = mainSession?.name ?? defaultAgent;
+      log.info("Origin session is TUI — redirecting inform to main session", {
+        originSession: sessionName,
+        targetSession: mainName,
+      });
+      sessionName = mainName;
+    }
   }
 
   const payload = {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
+  const PUBLISH_TIMEOUT_MS = 10_000;
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       log.info("Publishing restart reason", { reason, sessionName, attempt });
-      await publishSessionPrompt(sessionName, payload);
+      // Race against timeout — js.publish() can hang indefinitely if NATS is initializing
+      await Promise.race([
+        publishSessionPrompt(sessionName, payload),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`publish timeout after ${PUBLISH_TIMEOUT_MS}ms`)), PUBLISH_TIMEOUT_MS)
+        ),
+      ]);
       log.info("Restart reason prompt published", { sessionName, attempt });
       return;
     } catch (err) {
       log.warn("Restart reason publish failed, retrying", { attempt, error: err });
-      await new Promise((r) => setTimeout(r, 2000));
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 2000));
+      }
     }
   }
 
