@@ -23,7 +23,7 @@ ravi instances show <name>
 
 ### Conectar nova conta (WhatsApp)
 ```bash
-ravi instances connect <name>                         # cria instância + conecta
+ravi instances connect <name>                         # cria instância + conecta (mostra QR)
 ravi instances connect vendas --agent vendas-agent
 ```
 
@@ -43,24 +43,6 @@ ravi instances disconnect <name>
 ### Ver status omni
 ```bash
 ravi instances status <name>
-```
-
-## WhatsApp (comandos legados)
-
-Os comandos abaixo ainda funcionam mas são equivalentes aos `ravi instances` acima:
-
-```bash
-ravi whatsapp connect                        # conta "default"
-ravi whatsapp connect --account vendas       # conta nomeada
-ravi whatsapp status
-ravi whatsapp list
-ravi whatsapp disconnect --account vendas
-```
-
-### Enviar mensagem direta
-```bash
-ravi whatsapp dm send <phone> "Mensagem"
-ravi whatsapp dm read <phone>
 ```
 
 ## Modos de Operação

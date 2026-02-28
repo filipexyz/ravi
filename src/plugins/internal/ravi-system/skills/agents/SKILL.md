@@ -32,7 +32,7 @@ Existem duas formas de rotear:
 
 **Por rota (padrão de grupo/contato):**
 ```bash
-ravi routes add <pattern> <agent>
+ravi instances routes add <instance> <pattern> <agent>
 ```
 
 Patterns suportados:
@@ -59,8 +59,8 @@ Grupos novos precisam ser **aprovados** antes de funcionar.
 **Depois, VOCÊ (o agent) deve executar:**
 ```bash
 ravi contacts pending                            # Checar pendentes — o grupo aparece aqui
-ravi contacts approve <group-id> <agent>         # Aprovar e associar ao agent
-ravi routes add <group-id> <agent>               # Criar rota pro grupo
+ravi contacts approve <group-id> <agent>                       # Aprovar e associar ao agent
+ravi instances routes add main <group-id> <agent>              # Criar rota pro grupo
 ```
 
 **IMPORTANTE:** Não peça o ID do grupo pro usuário. Rode `ravi contacts pending` pra descobrir o ID automaticamente. O usuário já mandou a mensagem — o grupo já está lá.
@@ -250,7 +250,7 @@ ravi contacts pending
 ravi contacts approve <group-id>
 
 # Criar rota pro agent
-ravi routes add <group-id> <agent-id>
+ravi instances routes add main <group-id> <agent-id>
 ```
 
 O `group-id` tem formato `group:120363406060070449`.
@@ -275,7 +275,7 @@ ravi agents create comm ~/ravi/comm
 # 5. Aprovar e rotear
 ravi contacts pending                          # Encontra group:120363406060070449
 ravi contacts approve group:120363406060070449  # Aprova
-ravi routes add group:120363406060070449 comm   # Roteia pro comm
+ravi instances routes add main group:120363406060070449 comm   # Roteia pro comm
 ```
 
 ## Exemplos Práticos
@@ -291,7 +291,7 @@ mkdir -p ~/ravi/atendimento
 ravi agents create atendimento ~/ravi/atendimento
 
 # 3. Rotear grupo pro agent
-ravi routes add group:120363425628305127 atendimento
+ravi instances routes add main group:120363425628305127 atendimento
 
 # 4. Configurar permissões (via REBAC)
 ravi permissions init agent:atendimento sdk-tools       # SDK tools padrão
@@ -316,9 +316,9 @@ ravi contacts approve 5511999999999 atendimento mention
 
 ```bash
 # Rota específica (prioridade alta)
-ravi routes add group:123456789 vendas
-ravi routes set group:123456789 priority 10
+ravi instances routes add main group:123456789 vendas
+ravi instances routes set main group:123456789 priority 10
 
 # Rota catch-all (prioridade baixa)
-ravi routes add "*" main
+ravi instances routes add main "*" main
 ```

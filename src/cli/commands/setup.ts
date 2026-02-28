@@ -417,7 +417,7 @@ export async function runSetup(): Promise<void> {
   console.log();
   console.log(`  ${c.gray}Próximos passos:${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi daemon logs -f${c.reset}       ${c.gray}Ver logs do daemon${c.reset}`);
-  console.log(`    ${bullet} ${c.white}ravi whatsapp connect${c.reset}     ${c.gray}Conectar WhatsApp${c.reset}`);
+  console.log(`    ${bullet} ${c.white}ravi instances connect <name>${c.reset}  ${c.gray}Conectar WhatsApp${c.reset}`);
   console.log(`    ${bullet} ${c.white}ravi agents chat main${c.reset}     ${c.gray}Testar o agente${c.reset}`);
   console.log(`    ${bullet} ${c.white}pm2 startup${c.reset}              ${c.gray}Iniciar no boot${c.reset}`);
   console.log();

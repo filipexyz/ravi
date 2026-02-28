@@ -10,26 +10,26 @@ description: |
 
 # Routes Manager
 
-Rotas direcionam mensagens para agents baseado em padrões. Podem ser gerenciadas via `ravi routes` (standalone) ou via `ravi instances routes` (agrupadas por instância).
+Rotas direcionam mensagens para agents baseado em padrões. São sempre gerenciadas via `ravi instances routes <name>` — rotas pertencem a uma instância.
 
 ## Comandos
 
 ### Listar rotas
 ```bash
-ravi routes list
-ravi routes list --account vendas    # filtrar por instância
+ravi instances routes list <name>
 ```
 
 ### Ver detalhes
 ```bash
-ravi routes show <pattern>
-ravi routes show <pattern> --account vendas
+ravi instances routes show <name> <pattern>
 ```
 
 ### Adicionar rota
 ```bash
-ravi routes add <pattern> <agent>
-ravi routes add <pattern> <agent> --account vendas
+ravi instances routes add <name> <pattern> <agent>
+ravi instances routes add vendas "5511*" vendas-agent --priority 10
+ravi instances routes add vendas "group:123456" suporte --policy closed
+ravi instances routes add vendas "*" main --channel whatsapp   # só pra um canal
 ```
 
 Exemplos de padrões:
@@ -39,14 +39,16 @@ Exemplos de padrões:
 - `thread:abc123` - Thread específica dentro de um grupo
 - `*` - Catch-all (fallback)
 
-### Remover rota
+### Remover rota (soft-delete, recuperável)
 ```bash
-ravi routes remove <pattern>
+ravi instances routes remove <name> <pattern>
+ravi instances routes restore <name> <pattern>   # recuperar
+ravi instances routes deleted [name]             # ver deletadas
 ```
 
 ### Configurar propriedades
 ```bash
-ravi routes set <pattern> <key> <value>
+ravi instances routes set <name> <pattern> <key> <value>
 ```
 
 Keys disponíveis:
@@ -54,7 +56,8 @@ Keys disponíveis:
 - `priority` - Prioridade (maior = mais prioritário)
 - `dmScope` - Escopo de DM (main, per-peer, per-channel-peer, per-account-channel-peer)
 - `session` - Nome fixo de sessão (bypassa auto-geração)
-- `policy` - Policy override para esta rota (open, pairing, closed, allowlist)
+- `policy` - Policy override (open, pairing, closed, allowlist)
+- `channel` - Limitar a canal específico (whatsapp, telegram, etc). `-` pra limpar.
 
 ## Prioridade de Resolução
 
@@ -64,46 +67,39 @@ Keys disponíveis:
 4. Mapeamento agent da instância (`ravi instances set <name> agent <agent>`)
 5. Agent default
 
+Dentro do mesmo nível: rotas com `channel` específico ganham de rotas sem channel, depois desempata por `priority` DESC.
+
 ## Herança de Policy
 
-A `policy` de uma rota sobrescreve a policy da instância:
 ```
-route.policy → instance.dmPolicy/groupPolicy → legacy settings → "open"
+route.policy → instance.dmPolicy/groupPolicy → "open"
 ```
 
 ## Exemplos
 
 Rotear grupo para agent especializado:
 ```bash
-ravi routes add "group:120363123456789" projeto-x
+ravi instances routes add main "group:120363123456789" projeto-x
 ```
 
 Rotear thread específica dentro de um grupo:
 ```bash
-ravi routes add "thread:msg-abc123" suporte-vip
+ravi instances routes add main "thread:msg-abc123" suporte-vip
 ```
 
 Rotear todos de SP para agent:
 ```bash
-ravi routes add "5511*" vendas
+ravi instances routes add main "5511*" vendas
 ```
 
 Definir política restrita em rota específica:
 ```bash
-ravi routes set "group:123456" policy closed
+ravi instances routes set main "group:123456" policy closed
 ```
 
 Definir fallback:
 ```bash
-ravi routes add "*" main
-```
-
-## Relação com Instances
-
-Rotas pertencem sempre a uma instância (account). Para gerenciar rotas de uma instância específica de forma semântica, use `ravi instances routes`:
-```bash
-ravi instances routes list vendas
-ravi instances routes add vendas "5511*" vendas-agent
+ravi instances routes add main "*" main
 ```
 
 Para gerenciar contacts: use a skill `ravi-system:contacts`

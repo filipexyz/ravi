@@ -17,6 +17,8 @@ Funcionalidades do WhatsApp expostas via Baileys. Permite gerenciar grupos, memb
 
 **Importante:** Todos os comandos precisam que o daemon esteja rodando com WhatsApp conectado. Os comandos se comunicam com o daemon via NATS (request/reply).
 
+**Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, status, policies).
+
 ## Gerenciamento de Grupos
 
 ### Listar grupos
@@ -127,7 +129,7 @@ Settings disponíveis:
 
 ## Multi-account
 
-Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp usar. Default: `default`.
+Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp usar. Default: primeira instância.
 
 ```bash
 ravi whatsapp group list --account business
@@ -142,10 +144,10 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
 ```
 
-Sem `--agent`, o grupo é criado e aprovado automaticamente, mas sem rota — precisa rotear manualmente:
+Sem `--agent`, precisa rotear manualmente:
 ```bash
 ravi whatsapp group create "Grupo Avulso" "5511999999999"
-ravi routes add group:<id> meu-agent
+ravi instances routes add main "group:<id>" meu-agent
 ```
 
 ### Gerenciar membros de equipe

@@ -214,7 +214,7 @@ export class ContactsCommands {
         const since = new Date(entry.updatedAt).toISOString().split("T")[0];
         console.log(`  ${acct}  ${name}  ${identities}   ${since}`);
       }
-      console.log("\nAdd route: ravi routes add <pattern> <agent> --account <id>");
+      console.log("\nAdd route: ravi instances routes add <instance> <pattern> <agent>");
     }
 
     if (contacts.length === 0 && accountPending.length === 0) {
@@ -324,7 +324,7 @@ export class ContactsCommands {
     }
 
     if (key === "agent") {
-      fail("agent is no longer set on contacts. Use 'ravi routes add <pattern> <agent>' instead.");
+      fail("agent is no longer set on contacts. Use 'ravi instances routes add <instance> <pattern> <agent>' instead.");
     } else if (key === "mode") {
       if (value !== "auto" && value !== "mention") {
         fail("Mode must be 'auto' or 'mention'");
