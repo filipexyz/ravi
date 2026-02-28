@@ -198,28 +198,34 @@ export function resolveRoute(
   const { agentId, agent, dmScope, sessionKey, route } = match;
   const { isGroup, groupId, phone } = params;
 
-  // Resolve or generate session name (DB side effect)
+  // If route forces a session name that already exists, route directly to it
+  // without creating a new session. This enables sharing sessions across sources.
   const agentCwd = expandHome(agent.cwd);
+  if (route?.session) {
+    const target = getSessionByName(route.session);
+    if (target && target.sessionKey !== sessionKey) {
+      log.info("Route redirecting to existing session", {
+        routeSession: route.session,
+        targetKey: target.sessionKey,
+        sourceKey: sessionKey,
+      });
+      return {
+        agent,
+        dmScope,
+        sessionKey: target.sessionKey,
+        sessionName: route.session,
+        route,
+      };
+    }
+  }
+
   const existing = getOrCreateSession(sessionKey, agentId, agentCwd);
   let sessionName = existing.name;
 
   // Route-forced session name takes precedence
   if (route?.session && existing.name !== route.session) {
-    // Check if the desired name is already taken by another session
-    const conflict = getSessionByName(route.session);
-    if (!conflict || conflict.sessionKey === sessionKey) {
-      sessionName = route.session;
-      updateSessionName(sessionKey, sessionName);
-    } else {
-      // Name taken by another session — use it anyway as the resolved name
-      // but don't update DB (avoid UNIQUE conflict)
-      log.warn("Route session name conflict, skipping rename", {
-        desired: route.session,
-        conflictKey: conflict.sessionKey,
-        currentKey: sessionKey,
-      });
-      sessionName = existing.name ?? route.session;
-    }
+    sessionName = route.session;
+    updateSessionName(sessionKey, sessionName);
   } else if (!sessionName) {
     const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
     const isMain = dmScope === "main";
