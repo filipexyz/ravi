@@ -16,7 +16,7 @@ import { nats, connectNats, closeNats } from "./nats.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
-import { getMainSession, getSessionByName } from "./router/sessions.js";
+import { getMainSession } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
@@ -312,27 +312,13 @@ async function notifyRestartReason() {
   if (!reason) return;
 
   // Resolve target session.
-  // If origin session has no external channel (e.g. TUI / Claude Code), redirect to the
-  // "main" agent's primary session so the response reaches the user via WhatsApp.
   if (!sessionName) {
     const defaultAgent = dbGetSetting("defaultAgent") || "main";
     const fallbackSession = getMainSession(defaultAgent);
     sessionName = fallbackSession?.name ?? defaultAgent;
-  } else {
-    const originSession = getSessionByName(sessionName);
-    if (!originSession?.lastChannel || originSession.lastChannel === "tui") {
-      // Prefer the "main" agent session — it has the user's WhatsApp channel
-      const mainSession = getMainSession("main");
-      const mainName = mainSession?.name ?? "main";
-      log.info("Origin session is TUI — redirecting inform to main session", {
-        originSession: sessionName,
-        targetSession: mainName,
-      });
-      sessionName = mainName;
-    }
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
   };
 
