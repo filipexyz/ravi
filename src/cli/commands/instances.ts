@@ -53,9 +53,41 @@ import {
 } from "../../router/router-db.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 import { getContact, listAccountPending, removeAccountPending, allowContact, type AccountPendingEntry } from "../../contacts.js";
+import { listSessions, deleteSession } from "../../router/sessions.js";
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function deleteConflictingSessions(pattern: string, targetAgent: string): number {
+  const sessions = listSessions();
+  let deleted = 0;
+  for (const session of sessions) {
+    if (pattern.startsWith("group:")) {
+      const groupId = pattern.replace("group:", "");
+      if (session.sessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    } else if (pattern.startsWith("lid:")) {
+      const lid = pattern.replace("lid:", "");
+      if (session.sessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    } else if (pattern.includes("*")) {
+      const regex = new RegExp(pattern.replace(/\*/g, ".*"));
+      const match = session.sessionKey.match(/dm:(\d+)/);
+      if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
+        deleteSession(session.sessionKey);
+        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        deleted++;
+      }
+    }
+  }
+  return deleted;
 }
 
 function getOmniClient() {
@@ -564,6 +596,22 @@ export class InstancesRoutesCommands {
       const channelLabel = channel ? ` [channel:${channel}]` : "";
       console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
       emitConfigChanged();
+
+      // Remove from pending if applicable
+      let removedPending = removeAccountPending(name, pattern);
+      if (!removedPending) {
+        const contact = getContact(pattern);
+        if (contact) {
+          for (const id of contact.identities) {
+            if (removeAccountPending(name, id.value)) { removedPending = true; break; }
+          }
+        }
+      }
+      if (removedPending) console.log(`✓ Removed from pending`);
+
+      // Clean conflicting sessions
+      const cleaned = deleteConflictingSessions(pattern, agent);
+      if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -655,6 +703,11 @@ export class InstancesRoutesCommands {
       dbUpdateRoute(pattern, updates, name);
       console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
       emitConfigChanged();
+
+      if (key === "agent") {
+        const cleaned = deleteConflictingSessions(pattern, value);
+        if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
+      }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }

@@ -19,7 +19,6 @@ export * from "./media.js";
 export * from "./outbound.js";
 export * from "./permissions.js";
 export * from "./react.js";
-export * from "./routes.js";
 export * from "./service.js";
 export * from "./sessions.js";
 export * from "./settings.js";
