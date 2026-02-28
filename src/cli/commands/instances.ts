@@ -33,6 +33,8 @@ import {
   dbUpsertInstance,
   dbUpdateInstance,
   dbDeleteInstance,
+  dbRestoreInstance,
+  dbListDeletedInstances,
   dbGetAgent,
   dbCreateAgent,
   dbListAgents,
@@ -41,6 +43,9 @@ import {
   dbCreateRoute,
   dbUpdateRoute,
   dbDeleteRoute,
+  dbRestoreRoute,
+  dbListDeletedRoutes,
+  dbListAuditLog,
   DmScopeSchema,
   DmPolicySchema,
   GroupPolicySchema,
@@ -255,7 +260,7 @@ export class InstancesCommands {
   // --------------------------------------------------------------------------
   // delete
   // --------------------------------------------------------------------------
-  @Command({ name: "delete", description: "Delete an instance" })
+  @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
   delete(
     @Arg("name", { description: "Instance name" }) name: string
   ) {
@@ -263,11 +268,45 @@ export class InstancesCommands {
     if (!inst) fail(`Instance not found: ${name}`);
     const deleted = dbDeleteInstance(name);
     if (deleted) {
-      console.log(`✓ Instance deleted: ${name}`);
+      console.log(`✓ Instance deleted: ${name} (recoverable with: ravi instances restore ${name})`);
       emitConfigChanged();
     } else {
       fail(`Failed to delete instance: ${name}`);
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // restore
+  // --------------------------------------------------------------------------
+  @Command({ name: "restore", description: "Restore a soft-deleted instance" })
+  restore(
+    @Arg("name", { description: "Instance name" }) name: string
+  ) {
+    const ok = dbRestoreInstance(name);
+    if (ok) {
+      console.log(`✓ Instance restored: ${name}`);
+      emitConfigChanged();
+    } else {
+      fail(`Instance not found in deleted records: ${name}`);
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // deleted
+  // --------------------------------------------------------------------------
+  @Command({ name: "deleted", description: "List soft-deleted instances" })
+  deleted() {
+    const instances = dbListDeletedInstances();
+    if (instances.length === 0) {
+      console.log("No deleted instances.");
+      return;
+    }
+    console.log("\nDeleted Instances:\n");
+    for (const inst of instances) {
+      const deletedAt = new Date(inst.deletedAt!).toLocaleString();
+      console.log(`  ${inst.name.padEnd(20)} channel: ${inst.channel.padEnd(12)} deleted: ${deletedAt}`);
+    }
+    console.log(`\nRestore with: ravi instances restore <name>`);
   }
 
   // --------------------------------------------------------------------------
@@ -525,7 +564,7 @@ export class InstancesRoutesCommands {
     }
   }
 
-  @Command({ name: "remove", description: "Remove a route from an instance" })
+  @Command({ name: "remove", description: "Remove a route (soft-delete, recoverable)" })
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string
@@ -533,11 +572,41 @@ export class InstancesRoutesCommands {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
-      console.log(`✓ Route removed: ${pattern} (instance: ${name})`);
+      console.log(`✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`);
       emitConfigChanged();
     } else {
       fail(`Route not found: ${pattern} (instance: ${name})`);
     }
+  }
+
+  @Command({ name: "restore", description: "Restore a soft-deleted route" })
+  restore(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Arg("pattern", { description: "Route pattern" }) pattern: string
+  ) {
+    const ok = dbRestoreRoute(pattern, name);
+    if (ok) {
+      console.log(`✓ Route restored: ${pattern} (instance: ${name})`);
+      emitConfigChanged();
+    } else {
+      fail(`Route not found in deleted records: ${pattern} (instance: ${name})`);
+    }
+  }
+
+  @Command({ name: "deleted", description: "List soft-deleted routes" })
+  deleted(
+    @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string
+  ) {
+    const routes = dbListDeletedRoutes(name);
+    if (routes.length === 0) {
+      console.log("No deleted routes.");
+      return;
+    }
+    console.log("\nDeleted Routes:\n");
+    for (const r of routes) {
+      console.log(`  ${r.accountId.padEnd(16)} ${r.pattern.padEnd(24)} → ${r.agent}`);
+    }
+    console.log(`\nRestore with: ravi instances routes restore <instance> "<pattern>"`);
   }
 
   @Command({ name: "set", description: "Set a route property" })

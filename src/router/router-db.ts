@@ -117,6 +117,7 @@ interface RouteRow {
   priority: number;
   created_at: number;
   updated_at: number;
+  deleted_at: number | null;
 }
 
 interface InstanceRow {
@@ -129,6 +130,7 @@ interface InstanceRow {
   dm_scope: string | null;
   created_at: number;
   updated_at: number;
+  deleted_at: number | null;
 }
 
 export interface InstanceConfig {
@@ -141,6 +143,7 @@ export interface InstanceConfig {
   dmScope?: DmScope;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
 }
 
 interface SettingRow {
@@ -762,6 +765,29 @@ function getDb(): Database {
     log.info("Added session_name column to routes table");
   }
 
+  // Migration: soft-delete columns for routes and instances + audit_log table
+  if (!routeColumnsAfter.some(c => c.name === "deleted_at")) {
+    db.exec("ALTER TABLE routes ADD COLUMN deleted_at INTEGER");
+    log.info("Added deleted_at column to routes table");
+  }
+  const instanceColumnsNow = db.prepare("PRAGMA table_info(instances)").all() as Array<{ name: string }>;
+  if (!instanceColumnsNow.some(c => c.name === "deleted_at")) {
+    db.exec("ALTER TABLE instances ADD COLUMN deleted_at INTEGER");
+    log.info("Added deleted_at column to instances table");
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      action     TEXT NOT NULL,
+      entity     TEXT NOT NULL,
+      entity_id  TEXT NOT NULL,
+      old_value  TEXT,
+      actor      TEXT NOT NULL DEFAULT 'daemon',
+      ts         INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id, ts DESC);
+  `);
+
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
   if (count.count === 0) {
@@ -827,6 +853,16 @@ interface PreparedStatements {
   getMessageMeta: Statement;
   cleanupMessageMeta: Statement;
   cleanupExpiredSessions: Statement;
+  // Audit log
+  insertAuditLog: Statement;
+  // Soft-delete
+  softDeleteRoute: Statement;
+  restoreRoute: Statement;
+  listDeletedRoutes: Statement;
+  listDeletedRoutesByAccount: Statement;
+  softDeleteInstance: Statement;
+  restoreInstance: Statement;
+  listDeletedInstances: Statement;
   // Instances
   upsertInstance: Statement;
   getInstanceByName: Statement;
@@ -906,9 +942,9 @@ function getStatements(): PreparedStatements {
       WHERE pattern = ? AND account_id = ?
     `),
     deleteRoute: database.prepare("DELETE FROM routes WHERE pattern = ? AND account_id = ?"),
-    getRoute: database.prepare("SELECT * FROM routes WHERE pattern = ? AND account_id = ?"),
-    listRoutes: database.prepare("SELECT * FROM routes ORDER BY priority DESC, id"),
-    listRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? ORDER BY priority DESC, id"),
+    getRoute: database.prepare("SELECT * FROM routes WHERE pattern = ? AND account_id = ? AND deleted_at IS NULL"),
+    listRoutes: database.prepare("SELECT * FROM routes WHERE deleted_at IS NULL ORDER BY priority DESC, id"),
+    listRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NULL ORDER BY priority DESC, id"),
 
     // Settings
     upsertSetting: database.prepare(`
@@ -947,6 +983,17 @@ function getStatements(): PreparedStatements {
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
     cleanupExpiredSessions: database.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"),
+    // Audit log
+    insertAuditLog: database.prepare("INSERT INTO audit_log (action, entity, entity_id, old_value, actor, ts) VALUES (?, ?, ?, ?, ?, ?)"),
+    // Soft-delete: routes
+    softDeleteRoute: database.prepare("UPDATE routes SET deleted_at = ? WHERE pattern = ? AND account_id = ? AND deleted_at IS NULL"),
+    restoreRoute: database.prepare("UPDATE routes SET deleted_at = NULL WHERE pattern = ? AND account_id = ?"),
+    listDeletedRoutes: database.prepare("SELECT * FROM routes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
+    listDeletedRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
+    // Soft-delete: instances
+    softDeleteInstance: database.prepare("UPDATE instances SET deleted_at = ? WHERE name = ? AND deleted_at IS NULL"),
+    restoreInstance: database.prepare("UPDATE instances SET deleted_at = NULL WHERE name = ?"),
+    listDeletedInstances: database.prepare("SELECT * FROM instances WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
     // Instances
     upsertInstance: database.prepare(`
       INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
@@ -960,9 +1007,9 @@ function getStatements(): PreparedStatements {
         dm_scope     = excluded.dm_scope,
         updated_at   = excluded.updated_at
     `),
-    getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ?"),
-    getInstanceByInstanceId: database.prepare("SELECT * FROM instances WHERE instance_id = ?"),
-    listInstances: database.prepare("SELECT * FROM instances ORDER BY name"),
+    getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
+    getInstanceByInstanceId: database.prepare("SELECT * FROM instances WHERE instance_id = ? AND deleted_at IS NULL"),
+    listInstances: database.prepare("SELECT * FROM instances WHERE deleted_at IS NULL ORDER BY name"),
     deleteInstance: database.prepare("DELETE FROM instances WHERE name = ?"),
     updateInstance: database.prepare(`
       UPDATE instances SET
@@ -1085,6 +1132,7 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
     const parsed = DmScopeSchema.safeParse(row.dm_scope);
     if (parsed.success) result.dmScope = parsed.data;
   }
+  if (row.deleted_at) result.deletedAt = row.deleted_at;
   return result;
 }
 
@@ -1373,16 +1421,46 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
 }
 
 /**
- * Delete a route
+ * Soft-delete a route (sets deleted_at, keeps row for audit/recovery).
  */
 export function dbDeleteRoute(pattern: string, accountId: string): boolean {
   const s = getStatements();
-  s.deleteRoute.run(pattern, accountId);
+  const route = dbGetRoute(pattern, accountId);
+  if (!route) return false;
+  const now = Date.now();
+  s.softDeleteRoute.run(now, pattern, accountId);
   if (getDbChanges() > 0) {
-    log.info("Deleted route", { pattern, accountId });
+    s.insertAuditLog.run("route.deleted", "route", `${pattern}@${accountId}`, JSON.stringify(route), process.env.USER ?? "daemon", now);
+    log.info("Soft-deleted route", { pattern, accountId });
     return true;
   }
   return false;
+}
+
+/**
+ * Restore a soft-deleted route.
+ */
+export function dbRestoreRoute(pattern: string, accountId: string): boolean {
+  const s = getStatements();
+  const now = Date.now();
+  s.restoreRoute.run(pattern, accountId);
+  if (getDbChanges() > 0) {
+    s.insertAuditLog.run("route.restored", "route", `${pattern}@${accountId}`, null, process.env.USER ?? "daemon", now);
+    log.info("Restored route", { pattern, accountId });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * List soft-deleted routes (for recovery/audit).
+ */
+export function dbListDeletedRoutes(accountId?: string): RouteConfig[] {
+  const s = getStatements();
+  const rows = (accountId
+    ? s.listDeletedRoutesByAccount.all(accountId)
+    : s.listDeletedRoutes.all()) as RouteRow[];
+  return rows.map(rowToRoute);
 }
 
 // ============================================================================
@@ -1509,10 +1587,44 @@ export function dbUpdateInstance(name: string, updates: Partial<Omit<InstanceCon
   return dbGetInstance(name)!;
 }
 
+/**
+ * Soft-delete an instance (sets deleted_at, keeps row for audit/recovery).
+ */
 export function dbDeleteInstance(name: string): boolean {
   const s = getStatements();
-  s.deleteInstance.run(name);
-  return getDbChanges() > 0;
+  const inst = dbGetInstance(name);
+  if (!inst) return false;
+  const now = Date.now();
+  s.softDeleteInstance.run(now, name);
+  if (getDbChanges() > 0) {
+    s.insertAuditLog.run("instance.deleted", "instance", name, JSON.stringify(inst), process.env.USER ?? "daemon", now);
+    log.info("Soft-deleted instance", { name });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Restore a soft-deleted instance.
+ */
+export function dbRestoreInstance(name: string): boolean {
+  const s = getStatements();
+  const now = Date.now();
+  s.restoreInstance.run(name);
+  if (getDbChanges() > 0) {
+    s.insertAuditLog.run("instance.restored", "instance", name, null, process.env.USER ?? "daemon", now);
+    log.info("Restored instance", { name });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * List soft-deleted instances (for recovery/audit).
+ */
+export function dbListDeletedInstances(): InstanceConfig[] {
+  const s = getStatements();
+  return (s.listDeletedInstances.all() as InstanceRow[]).map(rowToInstance);
 }
 
 // ============================================================================
@@ -1776,4 +1888,39 @@ export function dbCleanupExpiredSessions(): number {
   const s = getStatements();
   s.cleanupExpiredSessions.run(Date.now());
   return getDbChanges();
+}
+
+// ============================================================================
+// Audit Log
+// ============================================================================
+
+export interface AuditEntry {
+  id: number;
+  action: string;
+  entity: string;
+  entityId: string;
+  oldValue: unknown | null;
+  actor: string;
+  ts: number;
+}
+
+/**
+ * Read recent audit log entries.
+ * @param entity  Filter by entity type ("route" | "instance"). Omit for all.
+ * @param limit   Max rows to return (default 100).
+ */
+export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
+  const db = getDb();
+  const rows = entity
+    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{ id: number; action: string; entity: string; entity_id: string; old_value: string | null; actor: string; ts: number }>)
+    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{ id: number; action: string; entity: string; entity_id: string; old_value: string | null; actor: string; ts: number }>);
+  return rows.map(r => ({
+    id: r.id,
+    action: r.action,
+    entity: r.entity,
+    entityId: r.entity_id,
+    oldValue: r.old_value ? JSON.parse(r.old_value) : null,
+    actor: r.actor,
+    ts: r.ts,
+  }));
 }

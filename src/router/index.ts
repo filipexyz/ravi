@@ -57,6 +57,8 @@ export {
   dbListRoutes,
   dbUpdateRoute,
   dbDeleteRoute,
+  dbRestoreRoute,
+  dbListDeletedRoutes,
   // Settings
   dbGetSetting,
   dbSetSetting,
@@ -77,6 +79,9 @@ export {
   type MessageMetadata,
   // Session cleanup
   dbCleanupExpiredSessions,
+  // Audit log
+  dbListAuditLog,
+  type AuditEntry,
 } from "./router-db.js";
 
 // Session Name
