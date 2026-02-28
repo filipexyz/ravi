@@ -740,8 +740,10 @@ export class RaviBot {
       const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
       const messages = await consumer.consume();
 
-      // Signal that consumer is active and ready to receive messages
-      this.resolveConsumerReady();
+      // Signal ready after a short delay — consume() establishes the pull subscription
+      // but the first pull request is sent asynchronously. The 500ms gives the NATS
+      // client time to send the initial fetch before notifyRestartReason publishes.
+      setTimeout(() => this.resolveConsumerReady(), 500);
 
       for await (const msg of messages) {
         if (!this.running) {
