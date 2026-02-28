@@ -58,6 +58,7 @@ export const RouteInputSchema = z.object({
   session: z.string().optional(),
   priority: z.number().int().default(0),
   policy: z.string().optional(),
+  channel: z.string().optional(),
 });
 
 export const GroupPolicySchema = z.enum(["open", "allowlist", "closed"]);
@@ -115,6 +116,7 @@ interface RouteRow {
   session_name: string | null;
   policy: string | null;
   priority: number;
+  channel: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -765,6 +767,15 @@ function getDb(): Database {
     log.info("Added session_name column to routes table");
   }
 
+  // Migration: add channel column to routes (null = applies to all channels)
+  if (!routeColumnsAfter.some(c => c.name === "channel")) {
+    db.exec("ALTER TABLE routes ADD COLUMN channel TEXT");
+    // Drop old unique index and recreate including channel
+    db.exec("DROP INDEX IF EXISTS idx_routes_unique_pattern");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_unique ON routes(pattern, account_id, COALESCE(channel, ''))");
+    log.info("Added channel column to routes table");
+  }
+
   // Migration: soft-delete columns for routes and instances + audit_log table
   if (!routeColumnsAfter.some(c => c.name === "deleted_at")) {
     db.exec("ALTER TABLE routes ADD COLUMN deleted_at INTEGER");
@@ -928,8 +939,8 @@ function getStatements(): PreparedStatements {
 
     // Routes
     insertRoute: database.prepare(`
-      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, session_name, policy, priority, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO routes (pattern, account_id, agent_id, dm_scope, session_name, policy, priority, channel, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateRoute: database.prepare(`
       UPDATE routes SET
@@ -938,6 +949,7 @@ function getStatements(): PreparedStatements {
         session_name = ?,
         policy = ?,
         priority = ?,
+        channel = ?,
         updated_at = ?
       WHERE pattern = ? AND account_id = ?
     `),
@@ -1112,6 +1124,10 @@ function rowToRoute(row: RouteRow): RouteConfig & { id: number } {
 
   if ((row as RouteRow & { policy?: string | null }).policy != null) {
     result.policy = (row as RouteRow & { policy?: string | null }).policy!;
+  }
+
+  if (row.channel !== null) {
+    result.channel = row.channel;
   }
 
   return result;
@@ -1349,15 +1365,17 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       validated.session ?? null,
       validated.policy ?? null,
       validated.priority,
+      validated.channel ?? null,
       now,
       now
     );
 
-    log.info("Created route", { pattern: normalizedPattern, account: validated.accountId, agent: validated.agent });
+    log.info("Created route", { pattern: normalizedPattern, account: validated.accountId, agent: validated.agent, channel: validated.channel ?? "*" });
     return dbGetRoute(normalizedPattern, validated.accountId)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
-      throw new Error(`Route already exists: ${validated.pattern} (account: ${validated.accountId})`);
+      const channelSuffix = validated.channel ? ` [${validated.channel}]` : "";
+      throw new Error(`Route already exists: ${validated.pattern} (account: ${validated.accountId}${channelSuffix})`);
     }
     throw err;
   }
@@ -1411,6 +1429,7 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
     updates.session !== undefined ? updates.session ?? null : row.session_name,
     updates.policy !== undefined ? updates.policy ?? null : row.policy,
     updates.priority ?? row.priority,
+    updates.channel !== undefined ? updates.channel ?? null : row.channel,
     now,
     pattern,
     accountId

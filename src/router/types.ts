@@ -119,6 +119,9 @@ export interface RouteConfig {
 
   /** Policy override for this route (overrides instance-level policy) */
   policy?: string;
+
+  /** Channel filter (null = applies to all channels on this account) */
+  channel?: string;
 }
 
 // ============================================================================

@@ -56,11 +56,13 @@ export function matchPattern(phone: string, pattern: string): boolean {
 /**
  * Find the best matching route for a phone number.
  * When accountId is provided, only routes for that exact account are considered.
+ * When channel is provided, channel-specific routes are preferred over channel-agnostic ones.
  */
 export function findRoute(
   phone: string,
   routes: RouteConfig[],
-  accountId?: string
+  accountId?: string,
+  channel?: string
 ): RouteConfig | null {
   // Strict account scoping — no cross-account fallback (security: prevents
   // messages on one account from silently routing to another account's agent)
@@ -68,8 +70,22 @@ export function findRoute(
     ? routes.filter(r => r.accountId === accountId)
     : routes;
 
-  // Sort by priority (higher first)
-  const sorted = [...candidates].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  // Filter to routes that apply to this channel:
+  // - routes with matching channel (exact)
+  // - routes with no channel (applies to all)
+  // Channel-specific routes take priority over channel-agnostic ones
+  const channelCandidates = channel
+    ? candidates.filter(r => !r.channel || r.channel === channel)
+    : candidates;
+
+  // Sort: channel-specific first, then by priority (higher first)
+  const sorted = [...channelCandidates].sort((a, b) => {
+    // Channel-specific routes beat channel-agnostic ones
+    const aSpecific = channel && a.channel === channel ? 1 : 0;
+    const bSpecific = channel && b.channel === channel ? 1 : 0;
+    if (bSpecific !== aSpecific) return bSpecific - aSpecific;
+    return (b.priority ?? 0) - (a.priority ?? 0);
+  });
 
   for (const route of sorted) {
     if (matchPattern(phone, route.pattern)) {
@@ -106,12 +122,12 @@ export function matchRoute(
 
   // Try thread-specific route first (most specific)
   let route = normalizedThreadId
-    ? findRoute(normalizedThreadId, config.routes, effectiveAccount)
+    ? findRoute(normalizedThreadId, config.routes, effectiveAccount, channel)
     : null;
   // Fall back to group route
   if (!route) {
     const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
-    route = findRoute(routeTarget, config.routes, effectiveAccount);
+    route = findRoute(routeTarget, config.routes, effectiveAccount, channel);
   }
 
   // Resolve agent: route > account-agent mapping > defaultAgent

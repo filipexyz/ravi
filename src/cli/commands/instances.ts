@@ -67,7 +67,7 @@ function getOmniClient() {
 const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel"] as const;
 type SettableKey = typeof SETTABLE_KEYS[number];
 
-const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy"] as const;
+const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
 
 // ============================================================================
 // Main group
@@ -504,7 +504,8 @@ export class InstancesRoutesCommands {
         : "\x1b[36m○\x1b[0m";
       const policy = route.policy ?? "-";
       const session = route.session ?? "-";
-      console.log(`  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}`);
+      const channelLabel = route.channel ? ` [${route.channel}]` : "";
+      console.log(`  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`);
     }
 
     console.log(`\n  Total: ${routes.length}`);
@@ -525,6 +526,7 @@ export class InstancesRoutesCommands {
     console.log(`  Policy:    ${route.policy ?? "(inherits from instance)"}`);
     console.log(`  DM Scope:  ${route.dmScope ?? "(inherits)"}`);
     console.log(`  Session:   ${route.session ?? "(auto)"}`);
+    console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
   }
 
   @Command({ name: "add", description: "Add a route to an instance" })
@@ -536,6 +538,7 @@ export class InstancesRoutesCommands {
     @Option({ flags: "--policy <policy>", description: "Policy override: open|pairing|closed|allowlist" }) policy?: string,
     @Option({ flags: "--session <name>", description: "Force session name" }) session?: string,
     @Option({ flags: "--dm-scope <scope>", description: "DM scope override" }) dmScope?: string,
+    @Option({ flags: "--channel <channel>", description: "Limit route to a specific channel (e.g. whatsapp, telegram). Omit for all channels." }) channel?: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
     if (!dbGetAgent(agent)) fail(`Agent not found: ${agent}. Available: ${dbListAgents().map(a => a.id).join(", ")}`);
@@ -555,9 +558,11 @@ export class InstancesRoutesCommands {
         policy: policy ?? undefined,
         session: session ?? undefined,
         dmScope: dmScope as typeof DmScopeSchema._type | undefined,
+        channel: channel ?? undefined,
       });
       const policyLabel = policy ? ` [policy:${policy}]` : "";
-      console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}`);
+      const channelLabel = channel ? ` [channel:${channel}]` : "";
+      console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -642,6 +647,8 @@ export class InstancesRoutesCommands {
       updates.session = clear ? null : value;
     } else if (key === "policy") {
       updates.policy = clear ? null : value;
+    } else if (key === "channel") {
+      updates.channel = clear ? null : value;
     }
 
     try {
