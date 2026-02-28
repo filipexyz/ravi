@@ -738,12 +738,12 @@ export class RaviBot {
       await ensureSessionConsumer(jsm);
 
       const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
-      const messages = await consumer.consume();
+      // expires: 2s — consumer renews pull requests every 2s, so published messages
+      // are picked up within 2s instead of the default 30s window.
+      const messages = await consumer.consume({ expires: 2000 });
 
-      // Signal ready after a short delay — consume() establishes the pull subscription
-      // but the first pull request is sent asynchronously. The 500ms gives the NATS
-      // client time to send the initial fetch before notifyRestartReason publishes.
-      setTimeout(() => this.resolveConsumerReady(), 500);
+      // Signal ready immediately — the pull request is sent synchronously by consume()
+      this.resolveConsumerReady();
 
       for await (const msg of messages) {
         if (!this.running) {
