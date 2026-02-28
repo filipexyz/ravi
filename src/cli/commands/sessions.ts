@@ -429,11 +429,12 @@ export class SessionCommands {
   // Messaging Commands
   // ===========================================================================
 
-  @Command({ name: "send", description: "Send a prompt to a session (use -i for interactive)" })
+  @Command({ name: "send", description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive." })
   async send(
     @Arg("nameOrKey", { description: "Session name" }) nameOrKey: string,
     @Arg("prompt", { description: "Prompt to send (omit for interactive mode)", required: false }) prompt?: string,
     @Option({ flags: "-i, --interactive", description: "Interactive mode" }) interactive?: boolean,
+    @Option({ flags: "-w, --wait", description: "Wait for response (chat mode)" }) wait?: boolean,
     @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
@@ -454,14 +455,20 @@ export class SessionCommands {
       return this.interactiveMode(sessionName, session, channel, to);
     }
 
-    console.log(`\n📤 Sending to ${sessionName}\n`);
-    console.log(`Prompt: ${prompt}\n`);
-    console.log("─".repeat(50));
+    const origin = getContext()?.sessionKey ?? "unknown";
+    const fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
 
-    const chars = await this.streamToSession(sessionName, prompt, session, channel, to);
-
-    console.log("\n" + "─".repeat(50));
-    console.log(`\n✅ Done (${chars} chars)`);
+    if (wait) {
+      console.log(`\n📤 Sending to ${sessionName}\n`);
+      console.log(`Prompt: ${prompt}\n`);
+      console.log("─".repeat(50));
+      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to);
+      console.log("\n" + "─".repeat(50));
+      console.log(`\n✅ Done (${chars} chars)`);
+    } else {
+      await this.emitToSession(sessionName, fullPrompt, session, channel, to);
+      console.log(`📤 Sent to ${sessionName}`);
+    }
   }
 
   @Command({ name: "ask", description: "Ask a question to another session (fire-and-forget)" })
@@ -682,17 +689,20 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string
-  ): { source?: { channel: string; accountId: string; chatId: string }; context?: ChannelContext } {
-    let source: { channel: string; accountId: string; chatId: string } | undefined;
+  ): { source?: { channel: string; accountId: string; chatId: string; threadId?: string }; context?: ChannelContext } {
+    let source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
     let context: ChannelContext | undefined;
 
     if (channelOverride && toOverride) {
       source = { channel: channelOverride, accountId: "", chatId: toOverride };
     } else if (session.lastChannel && session.lastTo) {
+      // Derive threadId from session key (lastTo doesn't carry it)
+      const derived = deriveSourceFromSessionKey(session.sessionKey);
       source = {
         channel: session.lastChannel,
         accountId: session.lastAccountId ?? "",
         chatId: session.lastTo,
+        ...(derived?.threadId ? { threadId: derived.threadId } : {}),
       };
     } else {
       const derived = deriveSourceFromSessionKey(session.sessionKey);

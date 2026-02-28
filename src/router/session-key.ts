@@ -184,7 +184,7 @@ export function matchSessionKey(key: string, pattern: string): boolean {
  */
 export function deriveSourceFromSessionKey(
   key: string
-): { channel: string; accountId: string; chatId: string } | null {
+): { channel: string; accountId: string; chatId: string; threadId?: string } | null {
   const parsed = parseSessionKey(key);
   if (!parsed?.channel || !parsed.peerKind || !parsed.peerId) return null;
 
@@ -194,6 +194,7 @@ export function deriveSourceFromSessionKey(
     channel: parsed.channel,
     accountId: parsed.accountId ?? "",
     chatId,
+    ...(parsed.threadId ? { threadId: parsed.threadId } : {}),
   };
 }
 
