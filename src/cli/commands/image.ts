@@ -8,6 +8,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
 import { generateImage } from "../../image/generator.js";
+import { getAgent } from "../../router/config.js";
 
 @Group({
   name: "image",
@@ -37,13 +38,21 @@ export class ImageCommands {
     @Option({ flags: "--caption <text>", description: "Caption when sending (used with --send)" })
     caption?: string,
   ) {
-    const modeVal = mode === "quality" ? "quality" : "fast";
-    console.log(`Generating image (${modeVal})...`);
+    // Resolve agent defaults (CLI flags take precedence)
+    const agentId = getContext()?.agentId;
+    const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
+
+    const modeVal = mode ?? (defaults?.image_mode as string) ?? "fast";
+    const resolvedMode = modeVal === "quality" ? "quality" : "fast";
+    const resolvedAspect = aspect ?? (defaults?.image_aspect as string);
+    const resolvedSize = size ?? (defaults?.image_size as string);
+
+    console.log(`Generating image (${resolvedMode})...`);
 
     const results = await generateImage(prompt, {
-      mode: modeVal,
-      aspect,
-      size,
+      mode: resolvedMode,
+      aspect: resolvedAspect,
+      size: resolvedSize,
       source: source ? resolve(source) : undefined,
       outputDir: output ? resolve(output) : undefined,
     });
@@ -55,7 +64,7 @@ export class ImageCommands {
 
     console.log(`\nPrompt: ${prompt}`);
     if (source) console.log(`Source: ${source}`);
-    console.log(`Mode: ${modeVal} | Aspect: ${aspect ?? "auto"} | Size: ${size ?? "1K"}`);
+    console.log(`Mode: ${resolvedMode} | Aspect: ${resolvedAspect ?? "auto"} | Size: ${resolvedSize ?? "1K"}`);
 
     if (send && results.length > 0) {
       const ctx = getContext()?.source;

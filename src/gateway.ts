@@ -368,6 +368,7 @@ export class Gateway {
           type: "image" | "video" | "audio" | "document";
           filename: string;
           caption?: string;
+          voiceNote?: boolean;
         };
 
         try {
@@ -381,6 +382,7 @@ export class Gateway {
             data.type,
             data.filename,
             data.caption,
+            data.voiceNote,
           );
           log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
         } catch (err) {

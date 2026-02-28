@@ -50,6 +50,7 @@ export class MediaCommands {
     @Option({ flags: "--channel <channel>", description: "Target channel (e.g. whatsapp, matrix)" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Target chat ID" }) to?: string,
     @Option({ flags: "--account <id>", description: "Account ID" }) account?: string,
+    @Option({ flags: "--ptt", description: "Send audio as voice note (PTT)" }) ptt?: boolean,
   ) {
     const absPath = resolve(filePath);
 
@@ -82,6 +83,7 @@ export class MediaCommands {
       type,
       filename,
       caption,
+      ...(ptt && type === "audio" ? { voiceNote: true } : {}),
     });
 
     console.log(`✓ ${type} queued: ${filename}`);

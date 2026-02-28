@@ -114,6 +114,7 @@ export class OmniSender {
     type: "image" | "video" | "audio" | "document",
     filename: string,
     caption?: string,
+    voiceNote?: boolean,
   ): Promise<{ messageId?: string }> {
     try {
       const data = readFileSync(localPath);
@@ -125,6 +126,7 @@ export class OmniSender {
         base64,
         filename,
         caption,
+        ...(voiceNote ? { voiceNote: true } : {}),
       });
       return { messageId: result.messageId };
     } catch (err) {
