@@ -6,7 +6,6 @@
  */
 
 export * from "./agents.js";
-export * from "./channels.js";
 export * from "./contacts.js";
 export * from "./copilot.js";
 export * from "./cron.js";
@@ -28,4 +27,3 @@ export * from "./transcribe.js";
 export * from "./triggers.js";
 export * from "./video.js";
 export * from "./whatsapp-dm.js";
-export * from "./whatsapp.js";
