@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
 import { nats } from "../../nats.js";
 import {
   getAgent,
@@ -39,7 +40,8 @@ function emitConfigChanged() {
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
   list() {
-    const agents = getAllAgents();
+    const ctx = getScopeContext();
+    const agents = filterVisibleAgents(ctx, getAllAgents());
     const config = loadRouterConfig();
 
     if (agents.length === 0) {
@@ -65,6 +67,10 @@ export class AgentsCommands {
 
   @Command({ name: "show", description: "Show agent details" })
   show(@Arg("id", { description: "Agent ID" }) id: string) {
+    const ctx = getScopeContext();
+    if (!canViewAgent(ctx, id)) {
+      fail(`Agent not found: ${id}`);
+    }
     const agent = getAgent(id);
     const config = loadRouterConfig();
 

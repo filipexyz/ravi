@@ -175,6 +175,39 @@ export function canAccessContact(
   return false;
 }
 
+// ============================================================================
+// Agent Visibility
+// ============================================================================
+
+/**
+ * Check if the current context can view a specific agent.
+ *
+ * Allowed when:
+ * 1. No agent context (CLI direct) → always allowed
+ * 2. Agent is viewing itself
+ * 3. Agent has 'view' relation on agent:<targetId>
+ */
+export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean {
+  if (!ctx.agentId) return true;
+
+  // Own agent
+  if (ctx.agentId === targetAgentId) return true;
+
+  return agentCan(ctx.agentId, "view", "agent", targetAgentId);
+}
+
+/**
+ * Filter a list of agents to only those visible by the current context.
+ */
+export function filterVisibleAgents<T extends { id: string }>(
+  ctx: ScopeContext,
+  agents: T[]
+): T[] {
+  if (!ctx.agentId) return agents;
+
+  return agents.filter((a) => canViewAgent(ctx, a.id));
+}
+
 /**
  * Check if the current context can write contacts (add/approve/block/delete).
  */

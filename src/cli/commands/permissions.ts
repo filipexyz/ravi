@@ -240,6 +240,7 @@ const VALID_RELATIONS = new Set([
   "read_own_contacts",      // contacts: (agent, read_own_contacts, system, *)
   "read_tagged_contacts",   // contacts: (agent, read_tagged_contacts, system, tag)
   "read_contact",           // contacts: (agent, read_contact, contact, id)
+  "view",                   // agents: (agent, view, agent, id)
 ]);
 
 /** Valid entity types for relations */
