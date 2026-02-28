@@ -119,10 +119,7 @@ export function startLeadershipRenewal(role: string): void {
  * Poll interval is set to RENEWAL_INTERVAL_MS so we detect vacancies within
  * one renewal cycle (≤ 10s after the leader's lease expires).
  */
-export async function watchForLeadershipVacancy(
-  role: string,
-  onVacancy: () => Promise<void>,
-): Promise<void> {
+export async function watchForLeadershipVacancy(role: string, onVacancy: () => Promise<void>): Promise<void> {
   log.info("Polling for leadership vacancy", { role, pollIntervalMs: RENEWAL_INTERVAL_MS });
 
   (async () => {

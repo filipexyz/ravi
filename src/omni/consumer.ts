@@ -8,31 +8,19 @@
  */
 
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
-import { getNats, publish } from "../nats.js";
-import { nats } from "../nats.js";
+import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { handleSlashCommand } from "../slash/index.js";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
 const unregisteredCooldowns = new Map<string, number>();
-import {
-  expandHome,
-  resolveRoute,
-  dbSaveMessageMeta,
-} from "../router/index.js";
+import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
-import { getOrCreateSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../bot.js";
-import {
-  dbGetEntry,
-  dbFindActiveEntryByPhone,
-  dbRecordEntryResponse,
-  dbSetEntrySenderId,
-  dbUpdateEntry,
-} from "../outbound/index.js";
+import { dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId } from "../outbound/index.js";
 import type { OmniSender } from "./sender.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
@@ -62,7 +50,7 @@ interface OmniEvent {
     channelType?: string;
     personId?: string;
     source?: string;
-    ingestMode?: 'realtime' | 'history-sync';
+    ingestMode?: "realtime" | "history-sync";
   };
   timestamp: number;
 }
@@ -170,13 +158,13 @@ export class OmniConsumer {
     // Start consume loops and wait until all consumers are ready
     await Promise.all([
       this.consumeLoop(js, MESSAGE_STREAM, MSG_CONSUMER, "message.received.>", (subject, event) =>
-        this.handleMessageEvent(subject, event)
+        this.handleMessageEvent(subject, event),
       ),
       this.consumeLoop(js, INSTANCE_STREAM, INSTANCE_CONSUMER, "instance.>", (subject, event) =>
-        this.handleInstanceEvent(subject, event)
+        this.handleInstanceEvent(subject, event),
       ),
       this.consumeLoop(js, REACTION_STREAM, REACTION_CONSUMER, "reaction.received.>", (subject, event) =>
-        this.handleReactionEvent(subject, event)
+        this.handleReactionEvent(subject, event),
       ),
     ]);
 
@@ -198,7 +186,7 @@ export class OmniConsumer {
     stream: string,
     name: string,
     filterSubject: string,
-    timeoutMs = CONSUMER_READY_TIMEOUT
+    timeoutMs = CONSUMER_READY_TIMEOUT,
   ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
 
@@ -245,7 +233,7 @@ export class OmniConsumer {
     stream: string,
     consumerName: string,
     filterSubject: string,
-    handler: (subject: string, event: OmniEvent) => Promise<void>
+    handler: (subject: string, event: OmniEvent) => Promise<void>,
   ): Promise<void> {
     return new Promise<void>((resolveReady) => {
       let notifiedReady = false;
@@ -335,7 +323,10 @@ export class OmniConsumer {
     // Omni sets ingestMode='history-sync' for messages replayed during reconnect.
     // Fallback: also filter by timestamp for older omni versions without the flag.
     if (event.metadata?.ingestMode === "history-sync") {
-      log.debug("Skipping history sync message (ingestMode flag)", { instanceId, externalId: (event.payload as MessageReceivedPayload)?.externalId });
+      log.debug("Skipping history sync message (ingestMode flag)", {
+        instanceId,
+        externalId: (event.payload as MessageReceivedPayload)?.externalId,
+      });
       return;
     }
     const msgTs = event.timestamp > 1e12 ? event.timestamp : event.timestamp * 1000;
@@ -350,9 +341,10 @@ export class OmniConsumer {
     const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
     // rawPayload.isGroup: Telegram sets this explicitly
     const rawIsGroup = rawPayload?.isGroup;
-    const isGroup = payload.chatId.endsWith("@g.us")
-      || rawIsGroup === true
-      || (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
+    const isGroup =
+      payload.chatId.endsWith("@g.us") ||
+      rawIsGroup === true ||
+      (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
     const senderPhone = stripJid(payload.from);
     const chatJid = payload.chatId;
     // For routing: use phone for DMs, chatJid for groups
@@ -360,9 +352,8 @@ export class OmniConsumer {
 
     // Channel detection: Slack/Discord non-DM channels use "channel" peerKind.
     // accountId is still included in the session key for full isolation.
-    const isNonDmChannel = rawIsDm === false
-      && (channelType === "slack" || channelType === "discord");
-    const peerKind = isNonDmChannel ? "channel" as const : undefined;
+    const isNonDmChannel = rawIsDm === false && (channelType === "slack" || channelType === "discord");
+    const peerKind = isNonDmChannel ? ("channel" as const) : undefined;
     // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
     const effectiveAccountId = configStore.resolveAccountName(instanceId);
     if (!effectiveAccountId) {
@@ -399,7 +390,11 @@ export class OmniConsumer {
     }
 
     log.debug("Message received", {
-      instanceId, channelType, from: senderPhone, chatId: chatJid, isGroup,
+      instanceId,
+      channelType,
+      from: senderPhone,
+      chatId: chatJid,
+      isGroup,
       ...(peerKind ? { peerKind } : {}),
       ...(threadId ? { threadId } : {}),
     });
@@ -409,7 +404,8 @@ export class OmniConsumer {
       const activeEntry = dbFindActiveEntryByPhone(senderPhone);
       if (activeEntry && activeEntry.id && activeEntry.status !== "agent") {
         log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
-          senderPhone, entryId: activeEntry.id,
+          senderPhone,
+          entryId: activeEntry.id,
         });
         const content = this.formatContent(payload);
         dbRecordEntryResponse(activeEntry.id, content);
@@ -445,24 +441,34 @@ export class OmniConsumer {
         isGroup,
       });
       log.info("No route for message, saved as pending", {
-        instanceId, accountId: effectiveAccountId, channelType, routePhone, isNew,
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+        routePhone,
+        isNew,
       });
       if (isNew) {
-        nats.emit("ravi.contacts.pending", {
-          type: "account",
-          channel: channelType,
-          accountId: effectiveAccountId,
-          senderId: senderPhone,
-          chatId: chatJid,
-          isGroup,
-        }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+        nats
+          .emit("ravi.contacts.pending", {
+            type: "account",
+            channel: channelType,
+            accountId: effectiveAccountId,
+            senderId: senderPhone,
+            chatId: chatJid,
+            isGroup,
+          })
+          .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
       }
       return;
     }
 
     // -- Policy resolution helper --
     // Lookup order: route.policy → instance config → default
-    const resolvePolicy = (policyName: "groupPolicy" | "dmPolicy", routePolicy: string | undefined, defaultValue: string): string => {
+    const resolvePolicy = (
+      policyName: "groupPolicy" | "dmPolicy",
+      routePolicy: string | undefined,
+      defaultValue: string,
+    ): string => {
       // 1. Explicit override on the matched route
       if (routePolicy) return routePolicy;
       // 2. Instance config (from instances table via RouterConfig)
@@ -493,17 +499,21 @@ export class OmniConsumer {
             name: getContactName(chatJid) ?? undefined,
           });
           log.info("Group not in allowlist, saved as pending", {
-            chatJid, accountId: effectiveAccountId, isNew,
+            chatJid,
+            accountId: effectiveAccountId,
+            isNew,
           });
           if (isNew) {
-            nats.emit("ravi.contacts.pending", {
-              type: "account",
-              channel: channelType,
-              accountId: effectiveAccountId,
-              senderId: senderPhone,
-              chatId: chatJid,
-              isGroup: true,
-            }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+            nats
+              .emit("ravi.contacts.pending", {
+                type: "account",
+                channel: channelType,
+                accountId: effectiveAccountId,
+                senderId: senderPhone,
+                chatId: chatJid,
+                isGroup: true,
+              })
+              .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
           }
           return;
         }
@@ -526,17 +536,21 @@ export class OmniConsumer {
             isGroup: false,
           });
           log.info("DM contact not approved (pairing policy), saved as pending", {
-            senderPhone, accountId: effectiveAccountId, isNew,
+            senderPhone,
+            accountId: effectiveAccountId,
+            isNew,
           });
           if (isNew) {
-            nats.emit("ravi.contacts.pending", {
-              type: "account",
-              channel: channelType,
-              accountId: effectiveAccountId,
-              senderId: senderPhone,
-              chatId: chatJid,
-              isGroup: false,
-            }).catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+            nats
+              .emit("ravi.contacts.pending", {
+                type: "account",
+                channel: channelType,
+                accountId: effectiveAccountId,
+                senderId: senderPhone,
+                chatId: chatJid,
+                isGroup: false,
+              })
+              .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
           }
           return;
         }
@@ -568,7 +582,18 @@ export class OmniConsumer {
     const mediaResult = await this.processMedia(payload, agentCwd);
 
     // Build message envelope text
-    const envelope = this.formatEnvelope(channelType, payload, isGroup, senderPhone, senderName, groupName, chatJid, event.timestamp, threadId, mediaResult);
+    const envelope = this.formatEnvelope(
+      channelType,
+      payload,
+      isGroup,
+      senderPhone,
+      senderName,
+      groupName,
+      chatJid,
+      event.timestamp,
+      threadId,
+      mediaResult,
+    );
 
     if (agentMode === "sentinel") {
       // Sentinel: observe silently, no typing indicator, no source
@@ -576,7 +601,16 @@ export class OmniConsumer {
         const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
           prompt: sentinelEnvelope,
-          context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
+          context: this.buildContext(
+            channelType,
+            effectiveAccountId,
+            instanceId,
+            payload,
+            isGroup,
+            senderPhone,
+            chatJid,
+            event,
+          ),
         });
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
@@ -595,7 +629,9 @@ export class OmniConsumer {
         channelType,
         accountId: effectiveAccountId,
         routerConfig,
-        send: async (_accId, cId, text) => { await this.sender.send(instanceId, cId, text); },
+        send: async (_accId, cId, text) => {
+          await this.sender.send(instanceId, cId, text);
+        },
       });
       if (handled) return;
     }
@@ -610,11 +646,13 @@ export class OmniConsumer {
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
     if (payload.replyToId && payload.content.text) {
-      nats.emit("ravi.inbound.reply", {
-        targetMessageId: payload.replyToId,
-        text: payload.content.text,
-        senderId: senderPhone,
-      }).catch(() => {});
+      nats
+        .emit("ravi.inbound.reply", {
+          targetMessageId: payload.replyToId,
+          text: payload.content.text,
+          senderId: senderPhone,
+        })
+        .catch(() => {});
     }
 
     this.activeTargets.set(sessionName, source);
@@ -629,7 +667,16 @@ export class OmniConsumer {
       await publishSessionPrompt(sessionName, {
         prompt: envelope,
         source,
-        context: this.buildContext(channelType, effectiveAccountId, instanceId, payload, isGroup, senderPhone, chatJid, event),
+        context: this.buildContext(
+          channelType,
+          effectiveAccountId,
+          instanceId,
+          payload,
+          isGroup,
+          senderPhone,
+          chatJid,
+          event,
+        ),
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
@@ -756,7 +803,9 @@ export class OmniConsumer {
         try {
           const dest = await saveToAgentAttachments(buffer, agentCwd, payload.externalId, mimeType);
           return { localPath: dest };
-        } catch { return null; }
+        } catch {
+          return null;
+        }
       }
     }
 
@@ -832,12 +881,18 @@ export class OmniConsumer {
     const dt = new Date(timestamp);
     const ts = dt.toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     });
-    const dow = dt.toLocaleDateString("en-US", {
-      timeZone: "America/Sao_Paulo", weekday: "short"
-    }).toLowerCase();
+    const dow = dt
+      .toLocaleDateString("en-US", {
+        timeZone: "America/Sao_Paulo",
+        weekday: "short",
+      })
+      .toLowerCase();
 
     const content = this.formatContent(payload, mediaResult);
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
@@ -860,7 +915,7 @@ export class OmniConsumer {
     isGroup: boolean,
     senderPhone: string,
     chatJid: string,
-    event: OmniEvent
+    event: OmniEvent,
   ): Record<string, unknown> {
     return {
       channelId: channelType,
@@ -878,9 +933,9 @@ export class OmniConsumer {
   private channelDisplayName(channelType: string): string {
     const map: Record<string, string> = {
       "whatsapp-baileys": "WhatsApp",
-      "discord": "Discord",
-      "telegram": "Telegram",
-      "slack": "Slack",
+      discord: "Discord",
+      telegram: "Telegram",
+      slack: "Slack",
     };
     return map[channelType] ?? channelType;
   }

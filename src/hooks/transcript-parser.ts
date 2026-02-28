@@ -196,8 +196,8 @@ function extractToolResults(blocks: ContentBlock[]): string[] {
         text = block.content;
       } else if (Array.isArray(block.content)) {
         text = block.content
-          .filter(b => b.type === "text" && b.text)
-          .map(b => b.text)
+          .filter((b) => b.type === "text" && b.text)
+          .map((b) => b.text)
           .join("\n");
       }
       if (text) {
@@ -213,10 +213,7 @@ function extractToolResults(blocks: ContentBlock[]): string[] {
 /**
  * Format parsed messages into a readable transcript for LLM.
  */
-export function formatTranscript(
-  messages: ParsedMessage[],
-  options: { includeTools?: boolean } = {}
-): string {
+export function formatTranscript(messages: ParsedMessage[], options: { includeTools?: boolean } = {}): string {
   const { includeTools = false } = options;
 
   const lines: string[] = [];

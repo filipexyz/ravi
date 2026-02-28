@@ -86,8 +86,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
       // Normalize dot-separated group names to underscores for tool names
       const normalizedGroup = groupMeta.name.replace(/\./g, "_");
 
-      const effectiveScope: ScopeType =
-        scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
+      const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -100,7 +99,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           `${normalizedGroup}_${cmdMeta.name}`,
           normalizedGroup,
           cmdMeta.name,
-          effectiveScope
+          effectiveScope,
         ),
         metadata: {
           group: normalizedGroup,
@@ -159,9 +158,7 @@ const MAX_INPUT_LENGTH = 500;
 
 function truncateForEvent(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.length > MAX_INPUT_LENGTH
-      ? value.slice(0, MAX_INPUT_LENGTH) + "…"
-      : value;
+    return value.length > MAX_INPUT_LENGTH ? value.slice(0, MAX_INPUT_LENGTH) + "…" : value;
   }
   if (value && typeof value === "object") {
     const truncated: Record<string, unknown> = {};
@@ -184,7 +181,7 @@ function buildHandler(
   toolName: string,
   group: string,
   command: string,
-  scope: ScopeType
+  scope: ScopeType,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
     // Scope enforcement (before method execution)
@@ -271,4 +268,3 @@ function buildHandler(
     };
   };
 }
-

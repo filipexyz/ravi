@@ -70,7 +70,7 @@ export function getCommand(name: string): SlashCommand | undefined {
 export function listCommands(isAdmin: boolean): SlashCommand[] {
   const all = Array.from(commands.values());
   if (isAdmin) return all;
-  return all.filter(c => c.permission === "all");
+  return all.filter((c) => c.permission === "all");
 }
 
 // ============================================================================

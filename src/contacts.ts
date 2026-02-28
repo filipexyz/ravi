@@ -65,7 +65,9 @@ db.exec(`
 // Index for looking up all identities of a contact
 try {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_identities_contact ON contact_identities(contact_id)`);
-} catch { /* exists */ }
+} catch {
+  /* exists */
+}
 
 // Per-account pending: tracks contacts that messaged an account without a matching route
 db.exec(`
@@ -87,16 +89,16 @@ db.exec(`
 
 function migrateFromV1(): void {
   // Check if old table exists
-  const oldTable = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'"
-  ).get() as { name: string } | undefined;
+  const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'").get() as
+    | { name: string }
+    | undefined;
 
   if (!oldTable) return;
 
   // Check if already migrated (contacts_legacy exists)
-  const legacyTable = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name='contacts_legacy'"
-  ).get() as { name: string } | undefined;
+  const legacyTable = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts_legacy'")
+    .get() as { name: string } | undefined;
 
   if (legacyTable) return;
 
@@ -168,7 +170,7 @@ migrateFromV1();
 
 // Migration: add allowed_agents column
 const contactCols = db.prepare("PRAGMA table_info(contacts_v2)").all() as Array<{ name: string }>;
-if (!contactCols.some(c => c.name === "allowed_agents")) {
+if (!contactCols.some((c) => c.name === "allowed_agents")) {
   db.exec("ALTER TABLE contacts_v2 ADD COLUMN allowed_agents TEXT");
 }
 
@@ -256,7 +258,9 @@ const stmts = {
     WHERE ci.identity_value = ? COLLATE NOCASE
     LIMIT 1
   `),
-  getIdentities: db.prepare("SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at"),
+  getIdentities: db.prepare(
+    "SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at",
+  ),
   getAllContacts: db.prepare("SELECT * FROM contacts_v2 ORDER BY status, name, id"),
   getContactsByStatus: db.prepare("SELECT * FROM contacts_v2 WHERE status = ? ORDER BY name, id"),
   deleteContact: db.prepare("DELETE FROM contacts_v2 WHERE id = ?"),
@@ -275,8 +279,12 @@ const stmts = {
     INSERT INTO contacts_v2 (id, name, status, source, updated_at)
     VALUES (?, ?, 'pending', 'inbound', datetime('now'))
   `),
-  recordInbound: db.prepare("UPDATE contacts_v2 SET last_inbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?"),
-  recordOutbound: db.prepare("UPDATE contacts_v2 SET last_outbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?"),
+  recordInbound: db.prepare(
+    "UPDATE contacts_v2 SET last_inbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
+  ),
+  recordOutbound: db.prepare(
+    "UPDATE contacts_v2 SET last_outbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
+  ),
   searchContacts: db.prepare(`
     SELECT DISTINCT c.* FROM contacts_v2 c
     LEFT JOIN contact_identities ci ON ci.contact_id = c.id
@@ -296,7 +304,7 @@ const stmts = {
 
 function getIdentitiesForContact(contactId: string): ContactIdentity[] {
   const rows = stmts.getIdentities.all(contactId) as IdentityRow[];
-  return rows.map(r => ({
+  return rows.map((r) => ({
     platform: r.platform,
     value: r.identity_value,
     isPrimary: r.is_primary === 1,
@@ -307,7 +315,7 @@ function getIdentitiesForContact(contactId: string): ContactIdentity[] {
 function rowToContact(row: ContactV2Row): Contact {
   const identities = getIdentitiesForContact(row.id);
   // Primary identity value for backward compat (phone field)
-  const primary = identities.find(i => i.isPrimary) ?? identities[0];
+  const primary = identities.find((i) => i.isPrimary) ?? identities[0];
   return {
     id: row.id,
     phone: primary?.value ?? row.id,
@@ -422,7 +430,7 @@ export function upsertContact(
   phone: string,
   name?: string | null,
   status: ContactStatus = "allowed",
-  source?: ContactSource | null
+  source?: ContactSource | null,
 ): void {
   const normalized = normalizePhone(phone);
   const existing = resolveContact(normalized);
@@ -463,8 +471,10 @@ export function savePendingContact(phone: string, name?: string | null): boolean
   if (existing) {
     // Update name only, don't change status
     if (name) {
-      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
-        .run(name, existing.id);
+      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?").run(
+        name,
+        existing.id,
+      );
     }
     return false;
   } else {
@@ -551,8 +561,10 @@ export function saveDiscoveredContact(phone: string, name?: string | null): void
   if (existing) {
     // Update name only if not set
     if (name) {
-      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
-        .run(name, existing.id);
+      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?").run(
+        name,
+        existing.id,
+      );
     }
   } else {
     const id = generateId();
@@ -618,7 +630,7 @@ export function updateContact(
     opt_out?: boolean;
     source?: ContactSource | null;
     allowedAgents?: string[] | null;
-  }
+  },
 ): Contact {
   const contact = resolveContact(phone);
   if (!contact) {
@@ -702,9 +714,10 @@ export function mergeContactNotes(phone: string, newNotes: Record<string, unknow
   }
 
   const merged = { ...contact.notes, ...newNotes };
-  db.prepare(
-    "UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(JSON.stringify(merged), contact.id);
+  db.prepare("UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?").run(
+    JSON.stringify(merged),
+    contact.id,
+  );
 }
 
 /**
@@ -718,9 +731,10 @@ export function addContactTag(phone: string, tag: string): void {
 
   if (!contact.tags.includes(tag)) {
     const tags = [...contact.tags, tag];
-    db.prepare(
-      "UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(JSON.stringify(tags), contact.id);
+    db.prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(
+      JSON.stringify(tags),
+      contact.id,
+    );
   }
 }
 
@@ -733,10 +747,11 @@ export function removeContactTag(phone: string, tag: string): void {
     throw new Error(`Contact not found: ${phone}`);
   }
 
-  const tags = contact.tags.filter(t => t !== tag);
-  db.prepare(
-    "UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(JSON.stringify(tags), contact.id);
+  const tags = contact.tags.filter((t) => t !== tag);
+  db.prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(
+    JSON.stringify(tags),
+    contact.id,
+  );
 }
 
 /**
@@ -773,9 +788,10 @@ export function isOptedOut(phone: string): boolean {
 export function setOptOut(phone: string, optOut: boolean): void {
   const contact = resolveContact(phone);
   if (contact) {
-    db.prepare(
-      "UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(optOut ? 1 : 0, contact.id);
+    db.prepare("UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?").run(
+      optOut ? 1 : 0,
+      contact.id,
+    );
   }
 }
 
@@ -894,12 +910,16 @@ export function autoLinkIdentities(phoneValue: string, lidValue: string): void {
     // Add LID identity to phone contact
     try {
       addContactIdentity(phoneContact.id, "whatsapp_lid", normalizedLid);
-    } catch { /* already exists */ }
+    } catch {
+      /* already exists */
+    }
   } else if (!phoneContact && lidContact) {
     // Add phone identity to LID contact
     try {
       addContactIdentity(lidContact.id, "phone", normalizedPhone);
-    } catch { /* already exists */ }
+    } catch {
+      /* already exists */
+    }
   }
   // If neither exists, nothing to link
 }
@@ -944,7 +964,7 @@ export function removeGroupTag(contactRef: string, groupRef: string): void {
   const groupTags = (contact.notes.groupTags as Record<string, string>) ?? {};
   delete groupTags[groupKey];
   db.prepare(
-    "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?"
+    "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?",
   ).run(JSON.stringify(groupTags), contact.id);
 }
 
@@ -993,7 +1013,7 @@ export interface AccountPendingEntry {
 export function saveAccountPending(
   accountId: string,
   phone: string,
-  opts?: { name?: string | null; chatId?: string; isGroup?: boolean }
+  opts?: { name?: string | null; chatId?: string; isGroup?: boolean },
 ): boolean {
   const exists = db.prepare("SELECT 1 FROM account_pending WHERE account_id = ? AND phone = ?").get(accountId, phone);
   const now = Date.now();
@@ -1004,15 +1024,7 @@ export function saveAccountPending(
       name = COALESCE(excluded.name, account_pending.name),
       chat_id = COALESCE(excluded.chat_id, account_pending.chat_id),
       updated_at = excluded.updated_at
-  `).run(
-    accountId,
-    phone,
-    opts?.name ?? null,
-    opts?.chatId ?? null,
-    opts?.isGroup ? 1 : 0,
-    now,
-    now
-  );
+  `).run(accountId, phone, opts?.name ?? null, opts?.chatId ?? null, opts?.isGroup ? 1 : 0, now, now);
   return !exists;
 }
 
@@ -1024,10 +1036,17 @@ export function listAccountPending(accountId?: string): AccountPendingEntry[] {
     ? db.prepare("SELECT * FROM account_pending WHERE account_id = ? ORDER BY updated_at DESC").all(accountId)
     : db.prepare("SELECT * FROM account_pending ORDER BY account_id, updated_at DESC").all();
 
-  return (rows as Array<{
-    account_id: string; phone: string; name: string | null;
-    chat_id: string | null; is_group: number; created_at: number; updated_at: number;
-  }>).map(r => ({
+  return (
+    rows as Array<{
+      account_id: string;
+      phone: string;
+      name: string | null;
+      chat_id: string | null;
+      is_group: number;
+      created_at: number;
+      updated_at: number;
+    }>
+  ).map((r) => ({
     accountId: r.account_id,
     phone: r.phone,
     name: r.name,

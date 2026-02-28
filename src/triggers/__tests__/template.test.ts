@@ -33,14 +33,12 @@ describe("resolveTemplate", () => {
 
   describe("{{data.*}}", () => {
     it("resolves simple data field", () => {
-      expect(resolveTemplate("CWD: {{data.cwd}}", context)).toBe(
-        "CWD: /Users/luis/Dev/filipelabs/ravi.bot"
-      );
+      expect(resolveTemplate("CWD: {{data.cwd}}", context)).toBe("CWD: /Users/luis/Dev/filipelabs/ravi.bot");
     });
 
     it("resolves last_assistant_message", () => {
       expect(resolveTemplate("Última msg: {{data.last_assistant_message}}", context)).toBe(
-        "Última msg: Tô aqui, na escuta."
+        "Última msg: Tô aqui, na escuta.",
       );
     });
 
@@ -57,7 +55,7 @@ describe("resolveTemplate", () => {
     it("resolves multiple variables in one message", () => {
       const msg = "CC parou em {{data.cwd}}. Último output: {{data.last_assistant_message}}";
       expect(resolveTemplate(msg, context)).toBe(
-        "CC parou em /Users/luis/Dev/filipelabs/ravi.bot. Último output: Tô aqui, na escuta."
+        "CC parou em /Users/luis/Dev/filipelabs/ravi.bot. Último output: Tô aqui, na escuta.",
       );
     });
   });
@@ -94,9 +92,7 @@ describe("resolveTemplate", () => {
   describe("whitespace in variable names", () => {
     it("trims whitespace around variable name", () => {
       expect(resolveTemplate("{{ topic }}", context)).toBe("ravi.copilot.stop");
-      expect(resolveTemplate("{{ data.cwd }}", context)).toBe(
-        "/Users/luis/Dev/filipelabs/ravi.bot"
-      );
+      expect(resolveTemplate("{{ data.cwd }}", context)).toBe("/Users/luis/Dev/filipelabs/ravi.bot");
     });
   });
 

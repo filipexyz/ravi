@@ -16,7 +16,7 @@ export class ReactCommands {
   @Command({ name: "send", description: "Send an emoji reaction to a message" })
   async send(
     @Arg("messageId", { description: "Message ID to react to (from [mid:ID] tag)" }) messageId: string,
-    @Arg("emoji", { description: "Emoji to react with" }) emoji: string
+    @Arg("emoji", { description: "Emoji to react with" }) emoji: string,
   ) {
     const ctx = getContext();
     const source = ctx?.source;

@@ -9,7 +9,6 @@ import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import {
   listSessions,
-  getSession,
   getSessionsByAgent,
   deleteSession,
   resetSession,
@@ -88,7 +87,7 @@ export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
   list(
     @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
-    @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean
+    @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -99,7 +98,7 @@ export class SessionCommands {
     }
 
     if (ephemeralOnly) {
-      sessions = sessions.filter(s => s.ephemeral);
+      sessions = sessions.filter((s) => s.ephemeral);
     }
 
     if (sessions.length === 0) {
@@ -122,8 +121,12 @@ export class SessionCommands {
         console.log(`  ${name}  ${agent}  ${expires}  ${display}`);
       }
     } else {
-      console.log("  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             DISPLAY");
-      console.log("  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ──────────────────");
+      console.log(
+        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             DISPLAY",
+      );
+      console.log(
+        "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ──────────────────",
+      );
 
       for (const s of sessions) {
         const ephTag = s.ephemeral ? "⏳" : "  ";
@@ -164,7 +167,9 @@ export class SessionCommands {
     console.log(`Model:       ${s.modelOverride ?? "(agent default)"}`);
     console.log(`Thinking:    ${s.thinkingLevel ?? "(default)"}`);
     console.log(`SDK ID:      ${s.sdkSessionId ?? "(none)"}`);
-    console.log(`Tokens:      input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`);
+    console.log(
+      `Tokens:      input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+    );
 
     if (s.lastChannel || s.lastTo) {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
@@ -178,7 +183,9 @@ export class SessionCommands {
       console.log(`Ephemeral:   ⏳ yes — expires ${expiresStr} (${remaining}min left)`);
     }
 
-    console.log(`Queue:       ${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`);
+    console.log(
+      `Queue:       ${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`,
+    );
     console.log(`Compactions: ${s.compactionCount ?? 0}`);
     console.log(`Created:     ${formatDate(s.createdAt)}`);
     console.log(`Updated:     ${formatDate(s.updatedAt)}`);
@@ -190,7 +197,7 @@ export class SessionCommands {
   @Command({ name: "rename", description: "Set session display name" })
   rename(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("displayName", { description: "Display name" }) displayName: string
+    @Arg("displayName", { description: "Display name" }) displayName: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -212,7 +219,7 @@ export class SessionCommands {
   @Command({ name: "set-model", description: "Set session model override" })
   setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string
+    @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -242,7 +249,7 @@ export class SessionCommands {
   @Command({ name: "set-thinking", description: "Set session thinking level" })
   setThinking(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string
+    @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -296,7 +303,9 @@ export class SessionCommands {
         sessionKey: s.sessionKey,
         sessionName: s.name,
       });
-    } catch { /* session may not be active */ }
+    } catch {
+      /* session may not be active */
+    }
 
     resetSession(s.sessionKey);
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
@@ -324,7 +333,9 @@ export class SessionCommands {
         sessionKey: s.sessionKey,
         sessionName: s.name,
       });
-    } catch { /* session may not be active */ }
+    } catch {
+      /* session may not be active */
+    }
 
     deleteSession(s.sessionKey);
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
@@ -337,7 +348,7 @@ export class SessionCommands {
   @Command({ name: "set-ttl", description: "Make a session ephemeral with a TTL" })
   setTtl(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string
+    @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -367,7 +378,7 @@ export class SessionCommands {
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string
+    @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -400,9 +411,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
-  keep(
-    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string
-  ) {
+  keep(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
     const s = resolveSession(nameOrKey);
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
@@ -429,7 +438,10 @@ export class SessionCommands {
   // Messaging Commands
   // ===========================================================================
 
-  @Command({ name: "send", description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive." })
+  @Command({
+    name: "send",
+    description: "Send a prompt to a session (fire-and-forget). Use -w to wait for response, -i for interactive.",
+  })
   async send(
     @Arg("nameOrKey", { description: "Session name" }) nameOrKey: string,
     @Arg("prompt", { description: "Prompt to send (omit for interactive mode)", required: false }) prompt?: string,
@@ -437,7 +449,7 @@ export class SessionCommands {
     @Option({ flags: "-w, --wait", description: "Wait for response (chat mode)" }) wait?: boolean,
     @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
   ) {
     const session = this.resolveTarget(nameOrKey, agentId);
     if (!session) return;
@@ -477,7 +489,7 @@ export class SessionCommands {
     @Arg("message", { description: "Question to ask" }) message: string,
     @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -496,7 +508,7 @@ export class SessionCommands {
     @Arg("message", { description: "Answer to send back" }) message: string,
     @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -514,7 +526,7 @@ export class SessionCommands {
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Task to execute" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -530,7 +542,7 @@ export class SessionCommands {
     @Arg("target", { description: "Target session name" }) target: string,
     @Arg("message", { description: "Information to send" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
-    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string
+    @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -544,7 +556,8 @@ export class SessionCommands {
   @Command({ name: "read", description: "Read message history of a session (normalized)" })
   read(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" }) countStr?: string
+    @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
+    countStr?: string,
   ) {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
@@ -554,8 +567,8 @@ export class SessionCommands {
       return;
     }
 
-    const { homedir } = require("os");
-    const { existsSync, readFileSync } = require("fs");
+    const { homedir } = require("node:os");
+    const { existsSync, readFileSync } = require("node:fs");
 
     const escapedCwd = (session.agentCwd ?? "").replace(/\//g, "-");
     const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
@@ -582,14 +595,15 @@ export class SessionCommands {
         const entry = JSON.parse(line);
 
         if (entry.type === "user" && entry.message?.content) {
-          const content = typeof entry.message.content === "string"
-            ? entry.message.content
-            : Array.isArray(entry.message.content)
+          const content =
+            typeof entry.message.content === "string"
               ? entry.message.content
-                  .filter((p: { type: string }) => p.type === "text")
-                  .map((p: { text?: string }) => p.text ?? "")
-                  .join(" ")
-              : "";
+              : Array.isArray(entry.message.content)
+                ? entry.message.content
+                    .filter((p: { type: string }) => p.type === "text")
+                    .map((p: { text?: string }) => p.text ?? "")
+                    .join(" ")
+                : "";
           if (!content.trim()) continue;
           messages.push({
             role: "user",
@@ -688,7 +702,7 @@ export class SessionCommands {
   private resolveSource(
     session: SessionEntry,
     channelOverride?: string,
-    toOverride?: string
+    toOverride?: string,
   ): { source?: { channel: string; accountId: string; chatId: string; threadId?: string }; context?: ChannelContext } {
     let source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
     let context: ChannelContext | undefined;
@@ -710,7 +724,11 @@ export class SessionCommands {
     }
 
     if (session.lastContext) {
-      try { context = JSON.parse(session.lastContext) as ChannelContext; } catch { /* ignore */ }
+      try {
+        context = JSON.parse(session.lastContext) as ChannelContext;
+      } catch {
+        /* ignore */
+      }
     }
 
     return { source, context };
@@ -743,7 +761,7 @@ export class SessionCommands {
     prompt: string,
     session: SessionEntry,
     channelOverride?: string,
-    toOverride?: string
+    toOverride?: string,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
@@ -761,7 +779,7 @@ export class SessionCommands {
     prompt: string,
     session: SessionEntry,
     channelOverride?: string,
-    toOverride?: string
+    toOverride?: string,
   ): Promise<number> {
     let responseLength = 0;
 
@@ -790,7 +808,9 @@ export class SessionCommands {
               break;
             }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       })();
     });
 
@@ -807,7 +827,9 @@ export class SessionCommands {
             responseLength += data.response.length;
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     })();
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
@@ -817,7 +839,7 @@ export class SessionCommands {
     await completion;
     cleanup();
 
-    await Promise.race([streaming, new Promise(r => setTimeout(r, 100))]);
+    await Promise.race([streaming, new Promise((r) => setTimeout(r, 100))]);
 
     return responseLength;
   }
@@ -826,7 +848,7 @@ export class SessionCommands {
     sessionName: string,
     session: SessionEntry,
     channelOverride?: string,
-    toOverride?: string
+    toOverride?: string,
   ): Promise<void> {
     const readline = await import("node:readline");
     const rl = readline.createInterface({

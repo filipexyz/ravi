@@ -162,10 +162,7 @@ export class TriggerRunner {
 
           for (const trigger of triggers) {
             // Cooldown check
-            if (
-              trigger.lastFiredAt &&
-              Date.now() - trigger.lastFiredAt < trigger.cooldownMs
-            ) {
+            if (trigger.lastFiredAt && Date.now() - trigger.lastFiredAt < trigger.cooldownMs) {
               log.debug("Trigger cooldown active, skipping", {
                 triggerId: trigger.id,
                 triggerName: trigger.name,
@@ -217,10 +214,7 @@ export class TriggerRunner {
   /**
    * Fire a trigger with event data.
    */
-  private async fireTrigger(
-    trigger: Trigger,
-    event: { topic: string; data: unknown }
-  ): Promise<void> {
+  private async fireTrigger(trigger: Trigger, event: { topic: string; data: unknown }): Promise<void> {
     const agentId = trigger.agentId ?? getDefaultAgentId();
     const agent = getAgent(agentId);
     const agentCwd = agent ? expandHome(agent.cwd) : `/tmp/ravi-${agentId}`;
@@ -235,7 +229,11 @@ export class TriggerRunner {
         if (resolved?.name) {
           sessionName = resolved.name;
           if (resolved.lastChannel && resolved.lastTo) {
-            source = { channel: resolved.lastChannel, accountId: trigger.accountId ?? resolved.lastAccountId ?? "", chatId: resolved.lastTo };
+            source = {
+              channel: resolved.lastChannel,
+              accountId: trigger.accountId ?? resolved.lastAccountId ?? "",
+              chatId: resolved.lastTo,
+            };
           }
         } else {
           // Fallback: derive source from session key and use main session
@@ -261,7 +259,11 @@ export class TriggerRunner {
       if (trigger.replySession) {
         const replyResolved = resolveSession(trigger.replySession);
         if (replyResolved?.lastChannel && replyResolved.lastTo) {
-          source = { channel: replyResolved.lastChannel, accountId: trigger.accountId ?? replyResolved.lastAccountId ?? "", chatId: replyResolved.lastTo };
+          source = {
+            channel: replyResolved.lastChannel,
+            accountId: trigger.accountId ?? replyResolved.lastAccountId ?? "",
+            chatId: replyResolved.lastTo,
+          };
         } else {
           source = deriveSourceFromSessionKey(trigger.replySession) ?? undefined;
         }

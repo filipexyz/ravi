@@ -14,14 +14,10 @@
  */
 
 import { nats } from "./nats.js";
-import { pendingReplyCallbacks } from "./bot.js";
+import { pendingReplyCallbacks, type ResponseMessage } from "./bot.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
-import type { ResponseMessage } from "./bot.js";
-import {
-  dbFindActiveEntryByPhone,
-  dbUpdateEntry,
-} from "./outbound/index.js";
+import { dbFindActiveEntryByPhone, dbUpdateEntry } from "./outbound/index.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 
@@ -97,7 +93,7 @@ export class Gateway {
     key: string,
     topics: string[],
     handler: (event: { topic: string; data: unknown }) => Promise<void>,
-    opts?: { queue?: string }
+    opts?: { queue?: string },
   ): void {
     if (this.activeSubscriptions.has(key)) {
       log.warn(`${key} subscription already active, skipping duplicate`);
@@ -107,7 +103,7 @@ export class Gateway {
 
     (async () => {
       try {
-        for await (const event of nats.subscribe(...topics, ...(opts?.queue ? [{ queue: opts.queue }] : []) as [])) {
+        for await (const event of nats.subscribe(...topics, ...((opts?.queue ? [{ queue: opts.queue }] : []) as []))) {
           if (!this.running) break;
           // Fire-and-forget: don't block the subscription loop on slow handlers
           // (e.g. omni sender timeouts shouldn't stall all other events)
@@ -133,48 +129,55 @@ export class Gateway {
    * Queue group: only one gateway daemon sends each response.
    */
   private subscribeToResponses(): void {
-    this.subscribe("responses", ["ravi.session.*.response"], async (event) => {
-      const sessionName = event.topic.split(".")[2];
-      const response = event.data as unknown as ResponseMessage;
+    this.subscribe(
+      "responses",
+      ["ravi.session.*.response"],
+      async (event) => {
+        const sessionName = event.topic.split(".")[2];
+        const response = event.data as unknown as ResponseMessage;
 
-      const target = response.target;
-      if (!target) return;
+        const target = response.target;
+        if (!target) return;
 
-      const instanceId = configStore.resolveInstanceId(target.accountId);
-      if (!instanceId) return;
-      const chatId = normalizeOutboundJid(target.chatId);
+        const instanceId = configStore.resolveInstanceId(target.accountId);
+        if (!instanceId) return;
+        const chatId = normalizeOutboundJid(target.chatId);
 
-      const text = response.error
-        ? `Error: ${response.error}`
-        : response.response;
+        const text = response.error ? `Error: ${response.error}` : response.response;
 
-      if (text && text.trim() === SILENT_TOKEN) {
-        log.debug("Silent response, not sending to channel", { sessionName });
-        return;
-      }
-
-      if (text) {
-        if (!response._emitId) {
-          log.warn("GHOST RESPONSE DROPPED", {
-            sessionName, textPreview: text.slice(0, 200),
-          });
+        if (text && text.trim() === SILENT_TOKEN) {
+          log.debug("Silent response, not sending to channel", { sessionName });
           return;
         }
 
-        const t0 = Date.now();
-        log.info("Sending response", {
-          sessionName, instanceId, chatId, textLen: text.length,
-          emitId: response._emitId,
-        });
+        if (text) {
+          if (!response._emitId) {
+            log.warn("GHOST RESPONSE DROPPED", {
+              sessionName,
+              textPreview: text.slice(0, 200),
+            });
+            return;
+          }
 
-        try {
-          await this.omniSender.send(instanceId, chatId, text, target.threadId);
-          log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
-        } catch (err) {
-          log.error("Failed to send response", { instanceId, chatId, error: err });
+          const t0 = Date.now();
+          log.info("Sending response", {
+            sessionName,
+            instanceId,
+            chatId,
+            textLen: text.length,
+            emitId: response._emitId,
+          });
+
+          try {
+            await this.omniSender.send(instanceId, chatId, text, target.threadId);
+            log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
+          } catch (err) {
+            log.error("Failed to send response", { instanceId, chatId, error: err });
+          }
         }
-      }
-    }, { queue: "ravi-gateway" });
+      },
+      { queue: "ravi-gateway" },
+    );
   }
 
   /**
@@ -211,101 +214,109 @@ export class Gateway {
    * Queue group: only one gateway daemon processes each deliver event.
    */
   private subscribeToDirectSend(): void {
-    this.subscribe("directSend", ["ravi.outbound.deliver"], async (event) => {
-      const data = event.data as {
-        channel: string;
-        accountId: string;
-        to: string;
-        text?: string;
-        poll?: { name: string; values: string[]; selectableCount?: number };
-        typingDelayMs?: number;
-        pauseMs?: number;
-        replyTopic?: string;
-      };
+    this.subscribe(
+      "directSend",
+      ["ravi.outbound.deliver"],
+      async (event) => {
+        const data = event.data as {
+          channel: string;
+          accountId: string;
+          to: string;
+          text?: string;
+          poll?: { name: string; values: string[]; selectableCount?: number };
+          typingDelayMs?: number;
+          pauseMs?: number;
+          replyTopic?: string;
+        };
 
-      const instanceId = configStore.resolveInstanceId(data.accountId);
-      if (!instanceId) {
-        if (data.replyTopic) {
-          const cb = pendingReplyCallbacks.get(data.replyTopic);
-          if (cb) cb({ messageId: undefined });
-          else nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
+        const instanceId = configStore.resolveInstanceId(data.accountId);
+        if (!instanceId) {
+          if (data.replyTopic) {
+            const cb = pendingReplyCallbacks.get(data.replyTopic);
+            if (cb) cb({ messageId: undefined });
+            else nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
+          }
+          return;
         }
-        return;
-      }
-      const to = normalizeOutboundJid(data.to);
+        const to = normalizeOutboundJid(data.to);
 
-      try {
-        let typingDelayMs = data.typingDelayMs ?? 0;
-        let pauseMs = data.pauseMs ?? 0;
+        try {
+          let typingDelayMs = data.typingDelayMs ?? 0;
+          let pauseMs = data.pauseMs ?? 0;
 
-        // Auto sentinel humanization
-        const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
-        if (isSentinelAuto && data.text) {
-          const routerConfig = configStore.getConfig();
-          const mappedAgentId = routerConfig.accountAgents[data.accountId];
-          const mappedAgent = mappedAgentId ? routerConfig.agents[mappedAgentId] : undefined;
-          if (mappedAgent?.mode === "sentinel") {
-            const len = data.text.length;
-            pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
-            typingDelayMs = Math.max(2000, Math.min(len * 50, 8000)) + Math.random() * 1500;
+          // Auto sentinel humanization
+          const isSentinelAuto = !data.typingDelayMs && !data.pauseMs;
+          if (isSentinelAuto && data.text) {
+            const routerConfig = configStore.getConfig();
+            const mappedAgentId = routerConfig.accountAgents[data.accountId];
+            const mappedAgent = mappedAgentId ? routerConfig.agents[mappedAgentId] : undefined;
+            if (mappedAgent?.mode === "sentinel") {
+              const len = data.text.length;
+              pauseMs = 3000 + Math.min(len * 15, 2000) + Math.random() * 1000;
+              typingDelayMs = Math.max(2000, Math.min(len * 50, 8000)) + Math.random() * 1500;
+            }
+          }
+
+          if (pauseMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, pauseMs));
+          }
+
+          let messageId: string | undefined;
+
+          if (data.poll) {
+            // Poll not supported via omni yet — send as text
+            const pollText = `${data.poll.name}\n${data.poll.values.map((v, i) => `${i + 1}. ${v}`).join("\n")}`;
+            if (typingDelayMs > 0) {
+              await this.omniSender.sendTyping(instanceId, to, true);
+              await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
+              const res = await this.omniSender.send(instanceId, to, pollText);
+              messageId = res.messageId;
+              await this.omniSender.sendTyping(instanceId, to, false);
+            } else {
+              const res = await this.omniSender.send(instanceId, to, pollText);
+              messageId = res.messageId;
+            }
+          } else if (data.text) {
+            const sendStart = Date.now();
+            if (typingDelayMs > 0) {
+              await this.omniSender.sendTyping(instanceId, to, true);
+              await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
+              const res = await this.omniSender.send(instanceId, to, data.text);
+              messageId = res.messageId;
+              await this.omniSender.sendTyping(instanceId, to, false);
+            } else {
+              const res = await this.omniSender.send(instanceId, to, data.text);
+              messageId = res.messageId;
+            }
+            log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
+          }
+
+          log.info("Direct send delivered", { to, instanceId, messageId });
+
+          if (data.replyTopic) {
+            const cb = pendingReplyCallbacks.get(data.replyTopic);
+            if (cb) cb({ messageId });
+            else
+              nats
+                .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
+                .catch(() => {});
+          }
+
+          const entry = dbFindActiveEntryByPhone(to);
+          if (entry?.id) {
+            dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
+          }
+        } catch (err) {
+          log.error("Failed to deliver direct send", { to, instanceId, error: err });
+          if (data.replyTopic) {
+            const cb = pendingReplyCallbacks.get(data.replyTopic);
+            if (cb) cb({ messageId: undefined });
+            else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
           }
         }
-
-        if (pauseMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, pauseMs));
-        }
-
-        let messageId: string | undefined;
-
-        if (data.poll) {
-          // Poll not supported via omni yet — send as text
-          const pollText = `${data.poll.name}\n${data.poll.values.map((v, i) => `${i + 1}. ${v}`).join("\n")}`;
-          if (typingDelayMs > 0) {
-            await this.omniSender.sendTyping(instanceId, to, true);
-            await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-            const res = await this.omniSender.send(instanceId, to, pollText);
-            messageId = res.messageId;
-            await this.omniSender.sendTyping(instanceId, to, false);
-          } else {
-            const res = await this.omniSender.send(instanceId, to, pollText);
-            messageId = res.messageId;
-          }
-        } else if (data.text) {
-          const sendStart = Date.now();
-          if (typingDelayMs > 0) {
-            await this.omniSender.sendTyping(instanceId, to, true);
-            await new Promise((resolve) => setTimeout(resolve, typingDelayMs));
-            const res = await this.omniSender.send(instanceId, to, data.text);
-            messageId = res.messageId;
-            await this.omniSender.sendTyping(instanceId, to, false);
-          } else {
-            const res = await this.omniSender.send(instanceId, to, data.text);
-            messageId = res.messageId;
-          }
-          log.info("Send HTTP completed", { to, durationMs: Date.now() - sendStart });
-        }
-
-        log.info("Direct send delivered", { to, instanceId, messageId });
-
-        if (data.replyTopic) {
-          const cb = pendingReplyCallbacks.get(data.replyTopic);
-          if (cb) cb({ messageId });
-          else nats.emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>).catch(() => {});
-        }
-
-        const entry = dbFindActiveEntryByPhone(to);
-        if (entry?.id) {
-          dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
-        }
-      } catch (err) {
-        log.error("Failed to deliver direct send", { to, instanceId, error: err });
-        if (data.replyTopic) {
-          const cb = pendingReplyCallbacks.get(data.replyTopic);
-          if (cb) cb({ messageId: undefined });
-          else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
-        }
-      }
-    }, { queue: "ravi-gateway" });
+      },
+      { queue: "ravi-gateway" },
+    );
   }
 
   /**
@@ -313,25 +324,30 @@ export class Gateway {
    * Queue group: only one gateway daemon sends each reaction.
    */
   private subscribeToReactions(): void {
-    this.subscribe("reactions", ["ravi.outbound.reaction"], async (event) => {
-      const data = event.data as {
-        channel: string;
-        accountId: string;
-        chatId: string;
-        messageId: string;
-        emoji: string;
-      };
+    this.subscribe(
+      "reactions",
+      ["ravi.outbound.reaction"],
+      async (event) => {
+        const data = event.data as {
+          channel: string;
+          accountId: string;
+          chatId: string;
+          messageId: string;
+          emoji: string;
+        };
 
-      try {
-        const reactionInstanceId = configStore.resolveInstanceId(data.accountId);
-        if (!reactionInstanceId) return;
-        const reactionChatId = normalizeOutboundJid(data.chatId);
-        await this.omniSender.sendReaction(reactionInstanceId, reactionChatId, data.messageId, data.emoji);
-        log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
-      } catch (err) {
-        log.error("Failed to send reaction", { error: err });
-      }
-    }, { queue: "ravi-gateway" });
+        try {
+          const reactionInstanceId = configStore.resolveInstanceId(data.accountId);
+          if (!reactionInstanceId) return;
+          const reactionChatId = normalizeOutboundJid(data.chatId);
+          await this.omniSender.sendReaction(reactionInstanceId, reactionChatId, data.messageId, data.emoji);
+          log.info("Reaction sent", { chatId: reactionChatId, messageId: data.messageId, emoji: data.emoji });
+        } catch (err) {
+          log.error("Failed to send reaction", { error: err });
+        }
+      },
+      { queue: "ravi-gateway" },
+    );
   }
 
   /**
@@ -339,35 +355,40 @@ export class Gateway {
    * Queue group: only one gateway daemon sends each media file.
    */
   private subscribeToMediaSend(): void {
-    this.subscribe("mediaSend", ["ravi.media.send"], async (event) => {
-      const data = event.data as {
-        channel: string;
-        accountId: string;
-        chatId: string;
-        filePath: string;
-        mimetype: string;
-        type: "image" | "video" | "audio" | "document";
-        filename: string;
-        caption?: string;
-      };
+    this.subscribe(
+      "mediaSend",
+      ["ravi.media.send"],
+      async (event) => {
+        const data = event.data as {
+          channel: string;
+          accountId: string;
+          chatId: string;
+          filePath: string;
+          mimetype: string;
+          type: "image" | "video" | "audio" | "document";
+          filename: string;
+          caption?: string;
+        };
 
-      try {
-        const mediaInstanceId = configStore.resolveInstanceId(data.accountId);
-        if (!mediaInstanceId) return;
-        const mediaChatId = normalizeOutboundJid(data.chatId);
-        await this.omniSender.sendMedia(
-          mediaInstanceId,
-          mediaChatId,
-          data.filePath,
-          data.type,
-          data.filename,
-          data.caption
-        );
-        log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
-      } catch (err) {
-        log.error("Failed to send media", { error: err });
-      }
-    }, { queue: "ravi-gateway" });
+        try {
+          const mediaInstanceId = configStore.resolveInstanceId(data.accountId);
+          if (!mediaInstanceId) return;
+          const mediaChatId = normalizeOutboundJid(data.chatId);
+          await this.omniSender.sendMedia(
+            mediaInstanceId,
+            mediaChatId,
+            data.filePath,
+            data.type,
+            data.filename,
+            data.caption,
+          );
+          log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
+        } catch (err) {
+          log.error("Failed to send media", { error: err });
+        }
+      },
+      { queue: "ravi-gateway" },
+    );
   }
 
   /**

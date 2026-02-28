@@ -10,13 +10,15 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { dbListAgents } from "../router/router-db.js";
-import { expandHome, getMainSession, getOrCreateSession, getSessionByName, generateSessionName, ensureUniqueName, updateSessionName } from "../router/index.js";
-import type { AgentConfig } from "../router/types.js";
 import {
-  isWithinActiveHours,
-  updateAgentHeartbeatLastRun,
-  HEARTBEAT_PROMPT,
-} from "./config.js";
+  expandHome,
+  getOrCreateSession,
+  getSessionByName,
+  generateSessionName,
+  ensureUniqueName,
+  updateSessionName,
+} from "../router/index.js";
+import { isWithinActiveHours, updateAgentHeartbeatLastRun, HEARTBEAT_PROMPT } from "./config.js";
 
 const log = logger.child("heartbeat");
 
@@ -83,7 +85,7 @@ export class HeartbeatRunner {
 
     // Clear existing timers for agents that are no longer enabled
     for (const [agentId, timer] of this.timers) {
-      const agent = agents.find(a => a.id === agentId);
+      const agent = agents.find((a) => a.id === agentId);
       if (!agent?.heartbeat?.enabled) {
         if (timer.intervalTimer) {
           clearInterval(timer.intervalTimer);
@@ -161,7 +163,7 @@ export class HeartbeatRunner {
    */
   async triggerHeartbeat(agentId: string, trigger: "interval" | "manual"): Promise<boolean> {
     const agents = dbListAgents();
-    const agent = agents.find(a => a.id === agentId);
+    const agent = agents.find((a) => a.id === agentId);
 
     if (!agent) {
       log.warn("Agent not found for heartbeat", { agentId });
@@ -242,9 +244,10 @@ export class HeartbeatRunner {
 
     // Build source with explicit accountId if configured, else fall back to session state
     const hbAccountId = agent.heartbeat?.accountId ?? mainSession.lastAccountId;
-    const source = hbAccountId && mainSession.lastChannel && mainSession.lastTo
-      ? { channel: mainSession.lastChannel, accountId: hbAccountId, chatId: mainSession.lastTo }
-      : undefined;
+    const source =
+      hbAccountId && mainSession.lastChannel && mainSession.lastTo
+        ? { channel: mainSession.lastChannel, accountId: hbAccountId, chatId: mainSession.lastTo }
+        : undefined;
 
     // Send heartbeat prompt with agent info
     await publishSessionPrompt(sessionName, {
@@ -268,7 +271,7 @@ export class HeartbeatRunner {
     hasTimer: boolean;
   }> {
     const agents = dbListAgents();
-    return agents.map(agent => {
+    return agents.map((agent) => {
       const timer = this.timers.get(agent.id);
       return {
         agentId: agent.id,

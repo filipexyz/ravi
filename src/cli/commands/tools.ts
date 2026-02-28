@@ -125,7 +125,7 @@ export class ToolsCommands {
   @Command({ name: "test", description: "Test a tool execution" })
   async test(
     @Arg("name", { description: "Tool name" }) name: string,
-    @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string
+    @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string,
   ) {
     const tools = extractTools(getAllCommandClasses());
     const tool = tools.find((t) => t.name === name);

@@ -35,10 +35,7 @@ export class OmniSender {
   /**
    * Retry wrapper with exponential backoff.
    */
-  private async withRetry<T>(
-    operation: () => Promise<T>,
-    context: string
-  ): Promise<T> {
+  private async withRetry<T>(operation: () => Promise<T>, context: string): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -62,10 +59,10 @@ export class OmniSender {
    */
   async send(instanceId: string, to: string, text: string, threadId?: string): Promise<{ messageId?: string }> {
     try {
-      const result = await this.withRetry(
+      const result = (await this.withRetry(
         () => this.client.messages.send({ instanceId, to, text, ...(threadId ? { threadId } : {}) }),
-        `send(${instanceId})`
-      ) as { messageId?: string };
+        `send(${instanceId})`,
+      )) as { messageId?: string };
       return { messageId: result.messageId };
     } catch (err) {
       log.error("Failed to send message", { instanceId, to, error: err });
@@ -98,7 +95,7 @@ export class OmniSender {
     try {
       await this.withRetry(
         () => this.client.messages.sendReaction({ instanceId, to, messageId, emoji }),
-        `sendReaction(${instanceId})`
+        `sendReaction(${instanceId})`,
       );
     } catch (err) {
       log.error("Failed to send reaction", { instanceId, to, messageId, emoji, error: err });
@@ -116,7 +113,7 @@ export class OmniSender {
     localPath: string,
     type: "image" | "video" | "audio" | "document",
     filename: string,
-    caption?: string
+    caption?: string,
   ): Promise<{ messageId?: string }> {
     try {
       const data = readFileSync(localPath);

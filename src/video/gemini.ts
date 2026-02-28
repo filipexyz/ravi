@@ -6,7 +6,7 @@
  */
 
 import { GoogleGenAI, createUserContent, createPartFromUri } from "@google/genai";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { extname } from "node:path";
 import { logger } from "../utils/logger.js";
 
@@ -27,9 +27,7 @@ const MIME_MAP: Record<string, string> = {
 function getClient(): GoogleGenAI {
   const key = process.env.GEMINI_API_KEY;
   if (!key) {
-    throw new Error(
-      "GEMINI_API_KEY not configured. Add it to ~/.ravi/.env"
-    );
+    throw new Error("GEMINI_API_KEY not configured. Add it to ~/.ravi/.env");
   }
   return new GoogleGenAI({ apiKey: key });
 }
@@ -87,7 +85,7 @@ function parseResponse(text: string, source: string): VideoAnalysis {
 
   const topics = topicsRaw
     .split("\n")
-    .map(l => l.replace(/^[-*•]\s*/, "").trim())
+    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
     .filter(Boolean);
 
   const date = new Date().toISOString().split("T")[0];
@@ -101,7 +99,7 @@ function parseResponse(text: string, source: string): VideoAnalysis {
     summary,
     "",
     `## Topics`,
-    topics.map(t => `- ${t}`).join("\n"),
+    topics.map((t) => `- ${t}`).join("\n"),
     "",
     `## Transcript`,
     transcript,
@@ -113,10 +111,7 @@ function parseResponse(text: string, source: string): VideoAnalysis {
   return { title, duration, summary, topics, transcript, visualDescription, source, markdown };
 }
 
-export async function analyzeVideo(
-  urlOrPath: string,
-  customPrompt?: string,
-): Promise<VideoAnalysis> {
+export async function analyzeVideo(urlOrPath: string, customPrompt?: string): Promise<VideoAnalysis> {
   const client = getClient();
   const model = process.env.GEMINI_VIDEO_MODEL || "gemini-2.5-flash";
   const prompt = customPrompt
@@ -129,10 +124,7 @@ export async function analyzeVideo(
     log.info("Analyzing YouTube video", { url: urlOrPath, model });
     response = await client.models.generateContent({
       model,
-      contents: [
-        { fileData: { fileUri: urlOrPath } },
-        { text: prompt },
-      ],
+      contents: [{ fileData: { fileUri: urlOrPath } }, { text: prompt }],
     });
   } else if (existsSync(urlOrPath)) {
     const ext = extname(urlOrPath).toLowerCase();
@@ -153,10 +145,7 @@ export async function analyzeVideo(
 
     response = await client.models.generateContent({
       model,
-      contents: createUserContent([
-        createPartFromUri(uploaded.uri, uploaded.mimeType),
-        prompt,
-      ]),
+      contents: createUserContent([createPartFromUri(uploaded.uri, uploaded.mimeType), prompt]),
     });
   } else {
     throw new Error(`Not a valid YouTube URL or local file: ${urlOrPath}`);

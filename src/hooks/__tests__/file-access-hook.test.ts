@@ -11,7 +11,7 @@ import { resolve, join } from "node:path";
 function checkFileAccess(
   agentCwd: string,
   memoryPath: string,
-  requestedPath: string
+  requestedPath: string,
 ): { allowed: boolean; normalizedPath: string } {
   const normalizedPath = resolve(agentCwd, requestedPath);
   return {
@@ -77,12 +77,7 @@ describe("file access hook security", () => {
   });
 
   test("handles path with special characters", () => {
-    const specialPaths = [
-      "MEMORY.md%00",
-      "MEMORY.md\x00",
-      "MEMORY.md ",
-      " MEMORY.md",
-    ];
+    const specialPaths = ["MEMORY.md%00", "MEMORY.md\x00", "MEMORY.md ", " MEMORY.md"];
 
     for (const path of specialPaths) {
       const result = checkFileAccess(agentCwd, memoryPath, path);

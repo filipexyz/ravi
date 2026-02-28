@@ -115,7 +115,7 @@ async function choose(label: string, options: string[], defaultIdx = 0): Promise
   const answer = await prompt(`    ${arrow} ${label} ${optStr} `);
   const trimmed = answer.trim().toLowerCase();
   if (!trimmed) return options[defaultIdx];
-  const match = options.find(o => o.toLowerCase() === trimmed);
+  const match = options.find((o) => o.toLowerCase() === trimmed);
   return match || options[defaultIdx];
 }
 
@@ -199,7 +199,9 @@ async function stepOmni(): Promise<void> {
       signal: AbortSignal.timeout(3000),
     });
     healthy = res.status < 500;
-  } catch { /* not running */ }
+  } catch {
+    /* not running */
+  }
 
   if (healthy) {
     done("omni API já rodando (porta 8882)");
@@ -313,7 +315,7 @@ async function stepAgent(): Promise<void> {
   const agents = dbListAgents();
 
   if (agents.length > 0) {
-    const names = agents.map(a => `${c.cyan}${a.id}${c.reset}`).join(", ");
+    const names = agents.map((a) => `${c.cyan}${a.id}${c.reset}`).join(", ");
     console.log(`    ${ok} Agentes existentes: ${names}`);
     return;
   }

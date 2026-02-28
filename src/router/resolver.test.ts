@@ -144,9 +144,7 @@ describe("findRoute", () => {
   });
 
   it("does not return routes from other accounts", () => {
-    const mixedRoutes: RouteConfig[] = [
-      { pattern: "*", accountId: "acc-A", agent: "main", priority: 0 },
-    ];
+    const mixedRoutes: RouteConfig[] = [{ pattern: "*", accountId: "acc-A", agent: "main", priority: 0 }];
     const route = findRoute("5511999", mixedRoutes, "acc-B");
     expect(route).toBeNull();
   });
@@ -195,9 +193,7 @@ describe("matchRoute — thread: pattern priority", () => {
   });
 
   it("falls back to phone route when neither thread nor group match", () => {
-    const config = makeConfig([
-      { pattern: "5511*", accountId: "main", agent: "vendas", priority: 0 },
-    ]);
+    const config = makeConfig([{ pattern: "5511*", accountId: "main", agent: "vendas", priority: 0 }]);
 
     const result = matchRoute(config, {
       phone: "5511999999999",
@@ -225,23 +221,17 @@ describe("matchRoute — thread: pattern priority", () => {
     // Account "orphan" exists in accountAgents map (set to undefined-equivalent)
     // To trigger the "skip" branch, accountId must be in accountAgents with a defined value
     // OR we need accountId with no entry at all in accountAgents
-    const config = makeConfig(
-      [{ pattern: "5511*", accountId: "other", agent: "vendas", priority: 0 }],
-      {
-        accountAgents: { orphan: "nonexistent" }, // orphan has a mapping
-      }
-    );
+    const _config = makeConfig([{ pattern: "5511*", accountId: "other", agent: "vendas", priority: 0 }], {
+      accountAgents: { orphan: "nonexistent" }, // orphan has a mapping
+    });
 
     // Remove the agent from agents to make it throw — not the right approach.
     // The null path: effectiveAccount AND config.accountAgents[effectiveAccount] === undefined
     // That means accountId is provided but NOT in accountAgents at all
-    const config2 = makeConfig(
-      [{ pattern: "5521*", accountId: "other", agent: "vendas", priority: 0 }],
-      {
-        // accountAgents has NO entry for "unknown-acc"
-        accountAgents: {},
-      }
-    );
+    const config2 = makeConfig([{ pattern: "5521*", accountId: "other", agent: "vendas", priority: 0 }], {
+      // accountAgents has NO entry for "unknown-acc"
+      accountAgents: {},
+    });
     // accounts with no match and no entry in accountAgents return null only if
     // there IS an entry but it's undefined. Let's test the exact condition:
     const config3: RouterConfig = {
@@ -285,9 +275,7 @@ describe("matchRoute — route.policy passthrough", () => {
   });
 
   it("route without policy has policy undefined", () => {
-    const config = makeConfig([
-      { pattern: "*", accountId: "main", agent: "main", priority: 0 },
-    ]);
+    const config = makeConfig([{ pattern: "*", accountId: "main", agent: "main", priority: 0 }]);
 
     const result = matchRoute(config, { phone: "5511999", accountId: "main" });
     expect(result?.route?.policy).toBeUndefined();
@@ -313,10 +301,9 @@ describe("matchRoute — accountId scoping", () => {
   });
 
   it("route agent takes priority over accountAgent mapping", () => {
-    const config = makeConfig(
-      [{ pattern: "*", accountId: "acc-main", agent: "support", priority: 0 }],
-      { accountAgents: { "acc-main": "vendas" } }
-    );
+    const config = makeConfig([{ pattern: "*", accountId: "acc-main", agent: "support", priority: 0 }], {
+      accountAgents: { "acc-main": "vendas" },
+    });
 
     const result = matchRoute(config, {
       phone: "5511999",
@@ -333,9 +320,7 @@ describe("matchRoute — accountId scoping", () => {
 
 describe("matchRoute — thread: normalization", () => {
   it("normalizes threadId to 'thread:ID' for route matching", () => {
-    const config = makeConfig([
-      { pattern: "thread:msg-99", accountId: "main", agent: "support", priority: 0 },
-    ]);
+    const config = makeConfig([{ pattern: "thread:msg-99", accountId: "main", agent: "support", priority: 0 }]);
 
     const result = matchRoute(config, {
       phone: "5511999",

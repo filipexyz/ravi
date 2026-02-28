@@ -30,7 +30,7 @@ export function StatusBar({
   agentId,
   isConnected,
   model,
-  isTyping,
+  isTyping: _isTyping,
   isCompacting,
   totalTokens,
 }: StatusBarProps) {
@@ -40,30 +40,16 @@ export function StatusBar({
   const ctx = totalTokens.contextTokens;
 
   return (
-    <box
-      height={1}
-      width="100%"
-      flexDirection="row"
-      justifyContent="space-between"
-      bg="gray"
-    >
+    <box height={1} width="100%" flexDirection="row" justifyContent="space-between" bg="gray">
       <box flexDirection="row">
         <text content={` ${sessionName}`} fg="cyan" bold />
         <text content={` (${agentId})`} fg="white" />
         <text content={`  ${modelLabel}`} fg="yellow" />
       </box>
       <box flexDirection="row">
-        {isCompacting && (
-          <text content="compacting  " fg="magenta" bold />
-        )}
-        {ctx > 0 && (
-          <text content={`\u25A6 ${formatTokens(ctx)} `} fg="cyan" />
-        )}
-        <text
-          content={`${statusDot} `}
-          fg={isConnected ? "green" : "red"}
-          bold
-        />
+        {isCompacting && <text content="compacting  " fg="magenta" bold />}
+        {ctx > 0 && <text content={`\u25A6 ${formatTokens(ctx)} `} fg="cyan" />}
+        <text content={`${statusDot} `} fg={isConnected ? "green" : "red"} bold />
       </box>
     </box>
   );

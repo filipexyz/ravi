@@ -8,7 +8,6 @@ import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
 import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
 import { dbCreateRoute, getFirstAccountName } from "../../router/router-db.js";
-import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
@@ -41,12 +40,12 @@ function validateParticipantsAreContacts(participants: string[]): void {
       // Try fuzzy search with last digits
       const lastDigits = phone.slice(-4);
       const suggestions = searchContacts(lastDigits)
-        .filter(c => c.identities.some(i => i.platform === "phone"))
+        .filter((c) => c.identities.some((i) => i.platform === "phone"))
         .slice(0, 3);
       if (suggestions.length > 0) {
         console.error(`    Did you mean?`);
         for (const s of suggestions) {
-          const phoneId = s.identities.find(i => i.platform === "phone");
+          const phoneId = s.identities.find((i) => i.platform === "phone");
           console.error(`      ${s.name ?? "(sem nome)"} — ${phoneId?.value ?? s.phone}`);
         }
       }
@@ -61,16 +60,19 @@ function validateParticipantsAreContacts(participants: string[]): void {
 async function groupRequest<T = Record<string, unknown>>(
   op: string,
   data: Record<string, unknown>,
-  account?: string
+  account?: string,
 ): Promise<T> {
   const timeout = SLOW_OPS.has(op) ? 45000 : 15000;
   const acctName = account ?? getFirstAccountName() ?? "";
-  return requestReply<T>(`${TOPIC_PREFIX}.${op}`, {
-    ...data,
-    accountId: acctName,
-  }, timeout);
+  return requestReply<T>(
+    `${TOPIC_PREFIX}.${op}`,
+    {
+      ...data,
+      accountId: acctName,
+    },
+    timeout,
+  );
 }
-
 
 @Group({
   name: "whatsapp.group",
@@ -79,14 +81,11 @@ async function groupRequest<T = Record<string, unknown>>(
 })
 export class GroupCommands {
   @Command({ name: "list", description: "List all groups the bot participates in" })
-  async list(
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
-  ) {
-    const result = await groupRequest<{ groups: { id: string; subject: string; size: number; isCommunity: boolean }[]; total: number }>(
-      "list",
-      {},
-      account
-    );
+  async list(@Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string) {
+    const result = await groupRequest<{
+      groups: { id: string; subject: string; size: number; isCommunity: boolean }[];
+      total: number;
+    }>("list", {}, account);
 
     if (result.total === 0) {
       console.log("No groups found.");
@@ -111,7 +110,7 @@ export class GroupCommands {
   @Command({ name: "info", description: "Show group metadata" })
   async info(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const result = await groupRequest<Record<string, unknown>>("info", { groupId }, account);
 
@@ -119,7 +118,9 @@ export class GroupCommands {
     console.log(`  ID:           ${result.id}`);
     console.log(`  Owner:        ${result.owner ?? "-"}`);
     console.log(`  Size:         ${result.size}`);
-    console.log(`  Created:      ${result.creation ? new Date((result.creation as number) * 1000).toLocaleString() : "-"}`);
+    console.log(
+      `  Created:      ${result.creation ? new Date((result.creation as number) * 1000).toLocaleString() : "-"}`,
+    );
     console.log(`  Announce:     ${result.announce ? "yes (admins only)" : "no"}`);
     console.log(`  Restrict:     ${result.restrict ? "yes (locked)" : "no"}`);
 
@@ -157,9 +158,13 @@ export class GroupCommands {
     @Arg("name", { description: "Group name/subject" }) name: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
-    @Option({ flags: "--agent <id>", description: "Agent to route this group to (auto-approves contact)" }) agent?: string
+    @Option({ flags: "--agent <id>", description: "Agent to route this group to (auto-approves contact)" })
+    agent?: string,
   ) {
-    const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+    const participants = participantsStr
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
 
     if (participants.length === 0) {
       fail("At least one participant is required");
@@ -171,7 +176,7 @@ export class GroupCommands {
     const result = await groupRequest<{ id: string; subject: string; participants: number }>(
       "create",
       { subject: name, participants },
-      account
+      account,
     );
 
     console.log(`✓ Group created: ${result.subject}`);
@@ -186,10 +191,14 @@ export class GroupCommands {
 
     if (adminPhones.length > 0) {
       try {
-        await groupRequest("promote", {
-          groupId: result.id,
-          participants: adminPhones,
-        }, account);
+        await groupRequest(
+          "promote",
+          {
+            groupId: result.id,
+            participants: adminPhones,
+          },
+          account,
+        );
         console.log(`  Admins:       promoted ${adminPhones.length} contact(s)`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -276,9 +285,12 @@ export class GroupCommands {
   async add(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
-    const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+    const participants = participantsStr
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
 
     // Validate all participants exist in contacts before adding
     validateParticipantsAreContacts(participants);
@@ -292,9 +304,12 @@ export class GroupCommands {
   async remove(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to remove (comma-separated)" }) participantsStr: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
-    const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+    const participants = participantsStr
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
     const result = await groupRequest("remove", { groupId, participants }, account);
     console.log(`✓ Removed ${participants.length} participant(s)`);
     return result;
@@ -304,9 +319,12 @@ export class GroupCommands {
   async promote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to promote (comma-separated)" }) participantsStr: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
-    const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+    const participants = participantsStr
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
     const result = await groupRequest("promote", { groupId, participants }, account);
     console.log(`✓ Promoted ${participants.length} participant(s) to admin`);
     return result;
@@ -316,9 +334,12 @@ export class GroupCommands {
   async demote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to demote (comma-separated)" }) participantsStr: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
-    const participants = participantsStr.split(",").map((p) => p.trim()).filter(Boolean);
+    const participants = participantsStr
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
     const result = await groupRequest("demote", { groupId, participants }, account);
     console.log(`✓ Demoted ${participants.length} participant(s) from admin`);
     return result;
@@ -327,7 +348,7 @@ export class GroupCommands {
   @Command({ name: "invite", description: "Get group invite link" })
   async invite(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const result = await groupRequest<{ code: string; link: string }>("invite", { groupId }, account);
     console.log(`✓ Invite link: ${result.link}`);
@@ -337,7 +358,7 @@ export class GroupCommands {
   @Command({ name: "revoke-invite", description: "Revoke current invite link" })
   async revokeInvite(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const result = await groupRequest<{ code: string; link: string }>("revoke-invite", { groupId }, account);
     console.log(`✓ Invite revoked. New link: ${result.link}`);
@@ -347,7 +368,7 @@ export class GroupCommands {
   @Command({ name: "join", description: "Join a group via invite link/code" })
   async join(
     @Arg("code", { description: "Invite code or full link" }) code: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const result = await groupRequest<{ groupId: string }>("join", { code }, account);
     console.log(`✓ Joined group: ${result.groupId}`);
@@ -357,7 +378,7 @@ export class GroupCommands {
   @Command({ name: "leave", description: "Leave a group" })
   async leave(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     await groupRequest("leave", { groupId }, account);
     console.log(`✓ Left group: ${groupId}`);
@@ -367,7 +388,7 @@ export class GroupCommands {
   async rename(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("name", { description: "New group name" }) name: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     await groupRequest("rename", { groupId, subject: name }, account);
     console.log(`✓ Group renamed to: ${name}`);
@@ -377,17 +398,20 @@ export class GroupCommands {
   async description(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("text", { description: "New description" }) text: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     await groupRequest("description", { groupId, description: text }, account);
     console.log(`✓ Description updated`);
   }
 
-  @Command({ name: "settings", description: "Update group settings (announcement, not_announcement, locked, unlocked)" })
+  @Command({
+    name: "settings",
+    description: "Update group settings (announcement, not_announcement, locked, unlocked)",
+  })
   async settings(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("setting", { description: "Setting: announcement, not_announcement, locked, unlocked" }) setting: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const valid = ["announcement", "not_announcement", "locked", "unlocked"];
     if (!valid.includes(setting)) {

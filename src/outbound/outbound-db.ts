@@ -79,7 +79,11 @@ interface EntryRow {
 function rowToQueue(row: QueueRow): OutboundQueue {
   let stages: OutboundStage[] = [];
   if (row.stages !== null) {
-    try { stages = JSON.parse(row.stages); } catch { /* ignore */ }
+    try {
+      stages = JSON.parse(row.stages);
+    } catch {
+      /* ignore */
+    }
   }
 
   const queue: OutboundQueue = {
@@ -140,7 +144,9 @@ function rowToEntry(row: EntryRow): OutboundEntry {
         delete parsed.messageId;
       }
       entry.pendingReceipt = parsed as PendingReceipt;
-    } catch { /* ignore invalid JSON */ }
+    } catch {
+      /* ignore invalid JSON */
+    }
   }
   if (row.sender_id !== null) entry.senderId = row.sender_id;
 
@@ -341,12 +347,14 @@ export function dbUpdateQueueState(id: string, state: QueueStateUpdate): void {
  */
 export function dbGetNextDueQueue(): OutboundQueue | null {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT * FROM outbound_queues
     WHERE status = 'active' AND next_run_at IS NOT NULL
     ORDER BY next_run_at ASC
     LIMIT 1
-  `).get() as QueueRow | undefined;
+  `)
+    .get() as QueueRow | undefined;
   return row ? rowToQueue(row) : null;
 }
 
@@ -356,11 +364,13 @@ export function dbGetNextDueQueue(): OutboundQueue | null {
 export function dbGetDueQueues(): OutboundQueue[] {
   const db = getDb();
   const now = Date.now();
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT * FROM outbound_queues
     WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?
     ORDER BY next_run_at ASC
-  `).all(now) as QueueRow[];
+  `)
+    .all(now) as QueueRow[];
   return rows.map(rowToQueue);
 }
 
@@ -377,9 +387,9 @@ export function dbAddEntry(input: OutboundEntryInput): OutboundEntry {
   const now = Date.now();
 
   // Get max position in queue
-  const maxRow = db.prepare(
-    "SELECT COALESCE(MAX(position), -1) as max_pos FROM outbound_entries WHERE queue_id = ?"
-  ).get(input.queueId) as { max_pos: number };
+  const maxRow = db
+    .prepare("SELECT COALESCE(MAX(position), -1) as max_pos FROM outbound_entries WHERE queue_id = ?")
+    .get(input.queueId) as { max_pos: number };
   const position = maxRow.max_pos + 1;
 
   db.prepare(`
@@ -417,9 +427,9 @@ export function dbGetEntry(id: string): OutboundEntry | null {
  */
 export function dbListEntries(queueId: string): OutboundEntry[] {
   const db = getDb();
-  const rows = db.prepare(
-    "SELECT * FROM outbound_entries WHERE queue_id = ? ORDER BY position ASC"
-  ).all(queueId) as EntryRow[];
+  const rows = db
+    .prepare("SELECT * FROM outbound_entries WHERE queue_id = ? ORDER BY position ASC")
+    .all(queueId) as EntryRow[];
   return rows.map(rowToEntry);
 }
 
@@ -431,25 +441,29 @@ export function dbGetNextEntry(queueId: string, afterPosition: number): Outbound
   const db = getDb();
 
   // First try entries at or after current position
-  let row = db.prepare(`
+  let row = db
+    .prepare(`
     SELECT * FROM outbound_entries
     WHERE queue_id = ? AND position >= ?
       AND status = 'pending'
       AND rounds_completed = 0
     ORDER BY position ASC
     LIMIT 1
-  `).get(queueId, afterPosition) as EntryRow | undefined;
+  `)
+    .get(queueId, afterPosition) as EntryRow | undefined;
 
   // If no entries found after position, wrap around to beginning
   if (!row) {
-    row = db.prepare(`
+    row = db
+      .prepare(`
       SELECT * FROM outbound_entries
       WHERE queue_id = ?
         AND status = 'pending'
         AND rounds_completed = 0
       ORDER BY position ASC
       LIMIT 1
-    `).get(queueId) as EntryRow | undefined;
+    `)
+      .get(queueId) as EntryRow | undefined;
   }
 
   return row ? rowToEntry(row) : null;
@@ -544,14 +558,16 @@ export function dbDeleteEntry(id: string): boolean {
  */
 export function dbGetNextEntryWithResponse(queueId: string): OutboundEntry | null {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT * FROM outbound_entries
     WHERE queue_id = ?
       AND last_response_text IS NOT NULL
       AND status IN ('pending', 'active')
     ORDER BY last_response_at ASC
     LIMIT 1
-  `).get(queueId) as EntryRow | undefined;
+  `)
+    .get(queueId) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -568,7 +584,8 @@ export function dbGetNextFollowUpEntry(
   const now = Date.now();
 
   // Get all candidates: contacted (rounds > 0), has been sent, no pending response, not done/skipped
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT * FROM outbound_entries
     WHERE queue_id = ?
       AND rounds_completed > 0
@@ -576,7 +593,8 @@ export function dbGetNextFollowUpEntry(
       AND last_response_text IS NULL
       AND status IN ('pending', 'active')
     ORDER BY last_sent_at ASC
-  `).all(queueId) as EntryRow[];
+  `)
+    .all(queueId) as EntryRow[];
 
   for (const row of rows) {
     const entry = rowToEntry(row);
@@ -605,9 +623,11 @@ export function dbGetNextFollowUpEntry(
 export function dbMarkEntryDone(id: string): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET status = 'done', last_processed_at = ?, updated_at = ? WHERE id = ?"
-  ).run(now, now, id);
+  db.prepare("UPDATE outbound_entries SET status = 'done', last_processed_at = ?, updated_at = ? WHERE id = ?").run(
+    now,
+    now,
+    id,
+  );
   log.info("Marked entry done", { id });
 }
 
@@ -627,9 +647,11 @@ export function dbUpdateEntryContext(id: string, ctx: Record<string, unknown>): 
     if (merged[key] === null) delete merged[key];
   }
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET context = ?, updated_at = ? WHERE id = ?"
-  ).run(JSON.stringify(merged), now, id);
+  db.prepare("UPDATE outbound_entries SET context = ?, updated_at = ? WHERE id = ?").run(
+    JSON.stringify(merged),
+    now,
+    id,
+  );
 }
 
 /**
@@ -640,9 +662,7 @@ export function dbRecordEntryResponse(id: string, text: string): void {
   const db = getDb();
   const now = Date.now();
   const entry = dbGetEntry(id);
-  const combined = entry?.lastResponseText
-    ? entry.lastResponseText + "\n\n" + text
-    : text;
+  const combined = entry?.lastResponseText ? entry.lastResponseText + "\n\n" + text : text;
   db.prepare(`
     UPDATE outbound_entries SET
       status = 'pending',
@@ -671,7 +691,7 @@ export function dbRecordEntryResponse(id: string, text: string): void {
  */
 export function dbAddEntriesFromContacts(
   queueId: string,
-  contacts: Array<{ phone: string; email?: string | null; opt_out?: boolean }>
+  contacts: Array<{ phone: string; email?: string | null; opt_out?: boolean }>,
 ): number {
   const db = getDb();
 
@@ -681,9 +701,11 @@ export function dbAddEntriesFromContacts(
     if (contact.opt_out) continue;
 
     // Skip if already in queue
-    const existing = db.prepare(
-      "SELECT id FROM outbound_entries WHERE queue_id = ? AND contact_phone = ? AND status IN ('pending', 'active')"
-    ).get(queueId, contact.phone);
+    const existing = db
+      .prepare(
+        "SELECT id FROM outbound_entries WHERE queue_id = ? AND contact_phone = ? AND status IN ('pending', 'active')",
+      )
+      .get(queueId, contact.phone);
 
     if (existing) continue;
 
@@ -715,13 +737,17 @@ export function dbSetPendingReceipt(entryId: string, receipt: PendingReceipt): v
       ...existing,
       messageIds: [...existing.messageIds, ...receipt.messageIds],
     };
-    db.prepare(
-      "UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?"
-    ).run(JSON.stringify(merged), now, entryId);
+    db.prepare("UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?").run(
+      JSON.stringify(merged),
+      now,
+      entryId,
+    );
   } else {
-    db.prepare(
-      "UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?"
-    ).run(JSON.stringify(receipt), now, entryId);
+    db.prepare("UPDATE outbound_entries SET pending_receipt = ?, updated_at = ? WHERE id = ?").run(
+      JSON.stringify(receipt),
+      now,
+      entryId,
+    );
   }
   log.debug("Set pending receipt on entry", { entryId, messageIds: receipt.messageIds });
 }
@@ -732,9 +758,7 @@ export function dbSetPendingReceipt(entryId: string, receipt: PendingReceipt): v
 export function dbClearResponseText(entryId: string): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET last_response_text = NULL, updated_at = ? WHERE id = ?"
-  ).run(now, entryId);
+  db.prepare("UPDATE outbound_entries SET last_response_text = NULL, updated_at = ? WHERE id = ?").run(now, entryId);
   log.debug("Cleared response text from entry", { entryId });
 }
 
@@ -744,9 +768,7 @@ export function dbClearResponseText(entryId: string): void {
 export function dbClearPendingReceipt(entryId: string): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET pending_receipt = NULL, updated_at = ? WHERE id = ?"
-  ).run(now, entryId);
+  db.prepare("UPDATE outbound_entries SET pending_receipt = NULL, updated_at = ? WHERE id = ?").run(now, entryId);
   log.debug("Cleared pending receipt from entry", { entryId });
 }
 
@@ -756,9 +778,7 @@ export function dbClearPendingReceipt(entryId: string): void {
 export function dbSetEntrySenderId(entryId: string, senderId: string): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE outbound_entries SET sender_id = ?, updated_at = ? WHERE id = ?"
-  ).run(senderId, now, entryId);
+  db.prepare("UPDATE outbound_entries SET sender_id = ?, updated_at = ? WHERE id = ?").run(senderId, now, entryId);
   log.debug("Set sender_id on entry", { entryId, senderId });
 }
 
@@ -769,14 +789,16 @@ export function dbSetEntrySenderId(entryId: string, senderId: string): void {
  */
 export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | null {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id = ?
       AND e.status != 'agent'
     ORDER BY e.created_at ASC
     LIMIT 1
-  `).get(senderId) as EntryRow | undefined;
+  `)
+    .get(senderId) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -786,7 +808,8 @@ export function dbFindActiveEntryBySenderId(senderId: string): OutboundEntry | n
  */
 export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.sender_id IS NULL
@@ -794,7 +817,8 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
       AND e.status != 'agent'
     ORDER BY e.last_sent_at DESC
     LIMIT 1
-  `).get() as EntryRow | undefined;
+  `)
+    .get() as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -804,13 +828,15 @@ export function dbFindUnmappedActiveEntry(): OutboundEntry | null {
  */
 export function dbFindEntriesWithoutSenderId(): OutboundEntry[] {
   const db = getDb();
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT e.* FROM outbound_entries e
     WHERE e.sender_id IS NULL
       AND e.last_sent_at IS NOT NULL
       AND e.status != 'agent'
     ORDER BY e.last_sent_at DESC
-  `).all() as EntryRow[];
+  `)
+    .all() as EntryRow[];
   return rows.map(rowToEntry);
 }
 
@@ -820,14 +846,16 @@ export function dbFindEntriesWithoutSenderId(): OutboundEntry[] {
  */
 export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT e.* FROM outbound_entries e
     JOIN outbound_queues q ON q.id = e.queue_id
     WHERE e.contact_phone = ?
       AND e.status != 'agent'
     ORDER BY e.created_at ASC
     LIMIT 1
-  `).get(phone) as EntryRow | undefined;
+  `)
+    .get(phone) as EntryRow | undefined;
   return row ? rowToEntry(row) : null;
 }
 
@@ -839,7 +867,7 @@ export function dbFindActiveEntryByPhone(phone: string): OutboundEntry | null {
  * Get stage names for a queue.
  */
 export function getQueueStageNames(queue: OutboundQueue): string[] {
-  return queue.stages.map(s => s.name);
+  return queue.stages.map((s) => s.name);
 }
 
 /**

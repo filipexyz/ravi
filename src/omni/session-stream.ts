@@ -52,8 +52,8 @@ export async function ensureSessionPromptsStream(): Promise<void> {
     name: SESSION_STREAM,
     subjects: [SESSION_SUBJECT_FILTER],
     retention: RetentionPolicy.Workqueue,
-    storage: "memory" as never,   // prompts are ephemeral — no need for disk persistence
-    max_age: 60_000_000_000,      // 60s in nanoseconds — drop stale prompts
+    storage: "memory" as never, // prompts are ephemeral — no need for disk persistence
+    max_age: 60_000_000_000, // 60s in nanoseconds — drop stale prompts
     num_replicas: 1,
   });
 
@@ -97,7 +97,7 @@ async function cleanupLegacyConsumers(jsm: JetStreamManager): Promise<void> {
  */
 export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void> {
   // One-time migration: delete old per-daemon consumers (non-blocking — don't delay startup)
-  cleanupLegacyConsumers(jsm).catch(err => log.warn("Legacy consumer cleanup failed", { error: err }));
+  cleanupLegacyConsumers(jsm).catch((err) => log.warn("Legacy consumer cleanup failed", { error: err }));
 
   try {
     await jsm.consumers.info(SESSION_STREAM, CONSUMER_NAME);
@@ -126,14 +126,8 @@ export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void
  * Publish a session prompt to the JetStream work queue.
  * Replaces: nats.emit(`ravi.session.${sessionName}.prompt`, payload)
  */
-export async function publishSessionPrompt(
-  sessionName: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
+export async function publishSessionPrompt(sessionName: string, payload: Record<string, unknown>): Promise<void> {
   const nc = await ensureConnected();
   const js = nc.jetstream();
-  await js.publish(
-    `ravi.session.${sessionName}.prompt`,
-    sc.encode(JSON.stringify(payload)),
-  );
+  await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(payload)));
 }

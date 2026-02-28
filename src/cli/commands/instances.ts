@@ -45,14 +45,18 @@ import {
   dbDeleteRoute,
   dbRestoreRoute,
   dbListDeletedRoutes,
-  dbListAuditLog,
   DmScopeSchema,
   DmPolicySchema,
   GroupPolicySchema,
-  getFirstAccountName,
 } from "../../router/router-db.js";
 import { resolveOmniConnection } from "../../omni-config.js";
-import { getContact, listAccountPending, removeAccountPending, allowContact, type AccountPendingEntry } from "../../contacts.js";
+import {
+  getContact,
+  listAccountPending,
+  removeAccountPending,
+  allowContact,
+  type AccountPendingEntry,
+} from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
 
 function emitConfigChanged() {
@@ -97,7 +101,7 @@ function getOmniClient() {
 }
 
 const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel"] as const;
-type SettableKey = typeof SETTABLE_KEYS[number];
+type SettableKey = (typeof SETTABLE_KEYS)[number];
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
 
@@ -111,7 +115,6 @@ const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy"
   scope: "admin",
 })
 export class InstancesCommands {
-
   // --------------------------------------------------------------------------
   // list
   // --------------------------------------------------------------------------
@@ -120,14 +123,16 @@ export class InstancesCommands {
     const instances = dbListInstances();
 
     // Try to enrich with omni status
-    let omniStatus: Record<string, { isConnected?: boolean; profileName?: string }> = {};
+    const omniStatus: Record<string, { isConnected?: boolean; profileName?: string }> = {};
     try {
       const omni = getOmniClient();
       const result = await omni.instances.list({});
       for (const item of result.items as Array<{ id?: string; isActive?: boolean; profileName?: string }>) {
         if (item.id) omniStatus[item.id] = { isConnected: item.isActive, profileName: item.profileName };
       }
-    } catch { /* omni offline */ }
+    } catch {
+      /* omni offline */
+    }
 
     if (instances.length === 0) {
       console.log("No instances configured.");
@@ -140,11 +145,15 @@ export class InstancesCommands {
     console.log("  -------------------- ------------- --------------- ------------ ------------ ----------");
 
     for (const inst of instances) {
-      const status = inst.instanceId ? (omniStatus[inst.instanceId]?.isConnected ? "connected" : "disconnected") : "no-omni-id";
+      const status = inst.instanceId
+        ? omniStatus[inst.instanceId]?.isConnected
+          ? "connected"
+          : "disconnected"
+        : "no-omni-id";
       const profile = inst.instanceId ? (omniStatus[inst.instanceId]?.profileName ?? "") : "";
       const label = profile ? `${status} (${profile})` : status;
       console.log(
-        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`
+        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
       );
     }
     console.log(`\n  Total: ${instances.length}`);
@@ -154,9 +163,7 @@ export class InstancesCommands {
   // show
   // --------------------------------------------------------------------------
   @Command({ name: "show", description: "Show instance details" })
-  async show(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  async show(@Arg("name", { description: "Instance name" }) name: string) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
 
@@ -166,8 +173,10 @@ export class InstancesCommands {
     if (inst.instanceId) {
       try {
         const omni = getOmniClient();
-        omniInfo = await omni.instances.status(inst.instanceId) as typeof omniInfo;
-      } catch { /* omni offline */ }
+        omniInfo = (await omni.instances.status(inst.instanceId)) as typeof omniInfo;
+      } catch {
+        /* omni offline */
+      }
     }
 
     console.log(`\nInstance: ${inst.name}\n`);
@@ -200,11 +209,17 @@ export class InstancesCommands {
     @Arg("name", { description: "Instance name (e.g., main, vendas)" }) name: string,
     @Option({ flags: "--channel <channel>", description: "Channel type (default: whatsapp)" }) channel?: string,
     @Option({ flags: "--agent <id>", description: "Default agent for this instance" }) agent?: string,
-    @Option({ flags: "--dm-policy <policy>", description: "DM policy: open|pairing|closed (default: open)" }) dmPolicy?: string,
-    @Option({ flags: "--group-policy <policy>", description: "Group policy: open|allowlist|closed (default: open)" }) groupPolicy?: string,
+    @Option({ flags: "--dm-policy <policy>", description: "DM policy: open|pairing|closed (default: open)" })
+    dmPolicy?: string,
+    @Option({ flags: "--group-policy <policy>", description: "Group policy: open|allowlist|closed (default: open)" })
+    groupPolicy?: string,
   ) {
     if (agent && !dbGetAgent(agent)) {
-      fail(`Agent not found: ${agent}. Available: ${dbListAgents().map(a => a.id).join(", ")}`);
+      fail(
+        `Agent not found: ${agent}. Available: ${dbListAgents()
+          .map((a) => a.id)
+          .join(", ")}`,
+      );
     }
     if (dmPolicy) {
       const r = DmPolicySchema.safeParse(dmPolicy);
@@ -236,7 +251,7 @@ export class InstancesCommands {
   @Command({ name: "get", description: "Get an instance property" })
   get(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string
+    @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
   ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
@@ -252,7 +267,7 @@ export class InstancesCommands {
   set(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
-    @Arg("value", { description: "Property value (use '-' to clear)" }) value: string
+    @Arg("value", { description: "Property value (use '-' to clear)" }) value: string,
   ) {
     if (!SETTABLE_KEYS.includes(key as SettableKey)) {
       fail(`Invalid key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
@@ -278,7 +293,7 @@ export class InstancesCommands {
         const r = DmScopeSchema.safeParse(value);
         if (!r.success) fail(`Invalid dmScope: ${value}. Valid: ${DmScopeSchema.options.join(", ")}`);
       }
-      dbUpdateInstance(name, { dmScope: clear ? undefined : value as typeof inst.dmScope });
+      dbUpdateInstance(name, { dmScope: clear ? undefined : (value as typeof inst.dmScope) });
     } else if (key === "instanceId") {
       dbUpdateInstance(name, { instanceId: clear ? undefined : value });
     } else if (key === "channel") {
@@ -293,9 +308,7 @@ export class InstancesCommands {
   // delete
   // --------------------------------------------------------------------------
   @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
-  delete(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  delete(@Arg("name", { description: "Instance name" }) name: string) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     const deleted = dbDeleteInstance(name);
@@ -311,9 +324,7 @@ export class InstancesCommands {
   // restore
   // --------------------------------------------------------------------------
   @Command({ name: "restore", description: "Restore a soft-deleted instance" })
-  restore(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  restore(@Arg("name", { description: "Instance name" }) name: string) {
     const ok = dbRestoreInstance(name);
     if (ok) {
       console.log(`✓ Instance restored: ${name}`);
@@ -363,15 +374,17 @@ export class InstancesCommands {
       // Try to find existing in omni by name
       try {
         const result = await omni.instances.list({ channel: omniChannel });
-        const existing = (result.items as Array<{ id?: string; name?: string }>).find(i => i.name === name);
+        const existing = (result.items as Array<{ id?: string; name?: string }>).find((i) => i.name === name);
         if (existing?.id) instanceId = existing.id;
-      } catch { /* omni offline */ }
+      } catch {
+        /* omni offline */
+      }
     }
 
     if (!instanceId) {
       console.log(`Creating ${channel} instance "${name}" in omni...`);
       try {
-        const created = await omni.instances.create({ name, channel: omniChannel }) as { id?: string };
+        const created = (await omni.instances.create({ name, channel: omniChannel })) as { id?: string };
         instanceId = created.id ?? "";
         console.log(`✓ Instance created in omni: ${instanceId}`);
       } catch (err) {
@@ -396,13 +409,15 @@ export class InstancesCommands {
 
     // Check if already connected
     try {
-      const status = await omni.instances.status(instanceId) as { isConnected?: boolean; profileName?: string };
+      const status = (await omni.instances.status(instanceId)) as { isConnected?: boolean; profileName?: string };
       if (status.isConnected) {
         const profile = status.profileName ? ` as ${status.profileName}` : "";
         console.log(`\n✓ Already connected${profile}`);
         return;
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // Initiate connection
     console.log("Waiting for QR code...\n");
@@ -443,7 +458,11 @@ export class InstancesCommands {
             }
           }
         } catch (err) {
-          if (!settled) { clearTimeout(timer); settled = true; reject(err); }
+          if (!settled) {
+            clearTimeout(timer);
+            settled = true;
+            reject(err);
+          }
         }
       })();
     });
@@ -453,9 +472,7 @@ export class InstancesCommands {
   // disconnect
   // --------------------------------------------------------------------------
   @Command({ name: "disconnect", description: "Disconnect an instance from omni" })
-  async disconnect(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  async disconnect(@Arg("name", { description: "Instance name" }) name: string) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     if (!inst.instanceId) fail(`Instance "${name}" has no omni instanceId set`);
@@ -472,9 +489,7 @@ export class InstancesCommands {
   // status
   // --------------------------------------------------------------------------
   @Command({ name: "status", description: "Show connection status for an instance" })
-  async status(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  async status(@Arg("name", { description: "Instance name" }) name: string) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     if (!inst.instanceId) {
@@ -483,7 +498,11 @@ export class InstancesCommands {
     }
     try {
       const omni = getOmniClient();
-      const s = await omni.instances.status(inst.instanceId!) as { isConnected?: boolean; profileName?: string; state?: string };
+      const s = (await omni.instances.status(inst.instanceId!)) as {
+        isConnected?: boolean;
+        profileName?: string;
+        state?: string;
+      };
       console.log(`\nInstance: ${name}\n`);
       console.log(`  Instance ID: ${inst.instanceId}`);
       console.log(`  Channel:     ${inst.channel}`);
@@ -497,7 +516,6 @@ export class InstancesCommands {
       fail(`Error fetching status: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-
 }
 
 // ============================================================================
@@ -510,11 +528,8 @@ export class InstancesCommands {
   scope: "admin",
 })
 export class InstancesRoutesCommands {
-
   @Command({ name: "list", description: "List routes for an instance" })
-  list(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  list(@Arg("name", { description: "Instance name" }) name: string) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const routes = dbListRoutes(name);
 
@@ -530,14 +545,19 @@ export class InstancesRoutesCommands {
 
     for (const route of routes) {
       const contact = getContact(route.pattern);
-      const statusIcon = !contact ? "\x1b[33m?\x1b[0m"
-        : contact.status === "allowed" ? "\x1b[32m✓\x1b[0m"
-        : contact.status === "blocked" ? "\x1b[31m✗\x1b[0m"
-        : "\x1b[36m○\x1b[0m";
+      const statusIcon = !contact
+        ? "\x1b[33m?\x1b[0m"
+        : contact.status === "allowed"
+          ? "\x1b[32m✓\x1b[0m"
+          : contact.status === "blocked"
+            ? "\x1b[31m✗\x1b[0m"
+            : "\x1b[36m○\x1b[0m";
       const policy = route.policy ?? "-";
       const session = route.session ?? "-";
       const channelLabel = route.channel ? ` [${route.channel}]` : "";
-      console.log(`  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`);
+      console.log(
+        `  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`,
+      );
     }
 
     console.log(`\n  Total: ${routes.length}`);
@@ -546,7 +566,7 @@ export class InstancesRoutesCommands {
   @Command({ name: "show", description: "Show route details" })
   show(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("pattern", { description: "Route pattern" }) pattern: string
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const route = dbGetRoute(pattern, name);
@@ -567,19 +587,29 @@ export class InstancesRoutesCommands {
     @Arg("pattern", { description: "Route pattern (e.g., group:123456, 5511*, thread:*, *)" }) pattern: string,
     @Arg("agent", { description: "Agent ID" }) agent: string,
     @Option({ flags: "--priority <n>", description: "Route priority (default: 0)" }) priority?: string,
-    @Option({ flags: "--policy <policy>", description: "Policy override: open|pairing|closed|allowlist" }) policy?: string,
+    @Option({ flags: "--policy <policy>", description: "Policy override: open|pairing|closed|allowlist" })
+    policy?: string,
     @Option({ flags: "--session <name>", description: "Force session name" }) session?: string,
     @Option({ flags: "--dm-scope <scope>", description: "DM scope override" }) dmScope?: string,
-    @Option({ flags: "--channel <channel>", description: "Limit route to a specific channel (e.g. whatsapp, telegram). Omit for all channels." }) channel?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Limit route to a specific channel (e.g. whatsapp, telegram). Omit for all channels.",
+    })
+    channel?: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
-    if (!dbGetAgent(agent)) fail(`Agent not found: ${agent}. Available: ${dbListAgents().map(a => a.id).join(", ")}`);
+    if (!dbGetAgent(agent))
+      fail(
+        `Agent not found: ${agent}. Available: ${dbListAgents()
+          .map((a) => a.id)
+          .join(", ")}`,
+      );
     if (dmScope) {
       const r = DmScopeSchema.safeParse(dmScope);
       if (!r.success) fail(`Invalid dmScope: ${dmScope}. Valid: ${DmScopeSchema.options.join(", ")}`);
     }
     const pri = priority !== undefined ? parseInt(priority, 10) : 0;
-    if (isNaN(pri)) fail(`Invalid priority: ${priority}`);
+    if (Number.isNaN(pri)) fail(`Invalid priority: ${priority}`);
 
     try {
       dbCreateRoute({
@@ -603,7 +633,10 @@ export class InstancesRoutesCommands {
         const contact = getContact(pattern);
         if (contact) {
           for (const id of contact.identities) {
-            if (removeAccountPending(name, id.value)) { removedPending = true; break; }
+            if (removeAccountPending(name, id.value)) {
+              removedPending = true;
+              break;
+            }
           }
         }
       }
@@ -620,12 +653,14 @@ export class InstancesRoutesCommands {
   @Command({ name: "remove", description: "Remove a route (soft-delete, recoverable)" })
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("pattern", { description: "Route pattern" }) pattern: string
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
-      console.log(`✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`);
+      console.log(
+        `✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`,
+      );
       emitConfigChanged();
     } else {
       fail(`Route not found: ${pattern} (instance: ${name})`);
@@ -635,7 +670,7 @@ export class InstancesRoutesCommands {
   @Command({ name: "restore", description: "Restore a soft-deleted route" })
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("pattern", { description: "Route pattern" }) pattern: string
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
   ) {
     const ok = dbRestoreRoute(pattern, name);
     if (ok) {
@@ -647,9 +682,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "deleted", description: "List soft-deleted routes" })
-  deleted(
-    @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string
-  ) {
+  deleted(@Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string) {
     const routes = dbListDeletedRoutes(name);
     if (routes.length === 0) {
       console.log("No deleted routes.");
@@ -667,11 +700,11 @@ export class InstancesRoutesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: `Property key (${ROUTE_SETTABLE_KEYS.join(", ")})` }) key: string,
-    @Arg("value", { description: "Property value (use '-' to clear)" }) value: string
+    @Arg("value", { description: "Property value (use '-' to clear)" }) value: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     if (!dbGetRoute(pattern, name)) fail(`Route not found: ${pattern} (instance: ${name})`);
-    if (!ROUTE_SETTABLE_KEYS.includes(key as typeof ROUTE_SETTABLE_KEYS[number])) {
+    if (!ROUTE_SETTABLE_KEYS.includes(key as (typeof ROUTE_SETTABLE_KEYS)[number])) {
       fail(`Invalid key: ${key}. Valid keys: ${ROUTE_SETTABLE_KEYS.join(", ")}`);
     }
 
@@ -683,7 +716,7 @@ export class InstancesRoutesCommands {
       updates.agent = value;
     } else if (key === "priority") {
       const n = parseInt(value, 10);
-      if (isNaN(n)) fail(`Invalid priority: ${value}`);
+      if (Number.isNaN(n)) fail(`Invalid priority: ${value}`);
       updates.priority = n;
     } else if (key === "dmScope") {
       if (!clear) {
@@ -724,11 +757,8 @@ export class InstancesRoutesCommands {
   scope: "admin",
 })
 export class InstancesPendingCommands {
-
   @Command({ name: "list", description: "List pending contacts/groups for an instance" })
-  list(
-    @Arg("name", { description: "Instance name" }) name: string
-  ) {
+  list(@Arg("name", { description: "Instance name" }) name: string) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const pending = listAccountPending(name);
 
@@ -751,7 +781,7 @@ export class InstancesPendingCommands {
   @Command({ name: "approve", description: "Approve a pending contact/group" })
   approve(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("contact", { description: "Contact ID or phone" }) contact: string
+    @Arg("contact", { description: "Contact ID or phone" }) contact: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     allowContact(contact);
@@ -763,7 +793,7 @@ export class InstancesPendingCommands {
   @Command({ name: "reject", description: "Reject and remove a pending contact/group" })
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("contact", { description: "Contact ID or phone" }) contact: string
+    @Arg("contact", { description: "Contact ID or phone" }) contact: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const removed = removeAccountPending(name, contact);

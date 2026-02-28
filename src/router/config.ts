@@ -75,7 +75,7 @@ export function loadRouterConfig(): RouterConfig {
 
   const config: RouterConfig = {
     agents: agentsRecord,
-    routes: routes.map(r => ({
+    routes: routes.map((r) => ({
       pattern: r.pattern,
       accountId: r.accountId,
       agent: r.agent,

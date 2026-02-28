@@ -39,7 +39,7 @@ export class TranscribeCommands {
     let buffer: Buffer;
     try {
       buffer = await readFile(filePath);
-    } catch (err) {
+    } catch (_err) {
       fail(`Cannot read file: ${filePath}`);
     }
 

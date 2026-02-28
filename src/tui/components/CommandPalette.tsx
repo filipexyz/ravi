@@ -15,12 +15,7 @@ export interface CommandPaletteProps {
 /**
  * Session picker overlay, centered on screen.
  */
-export function CommandPalette({
-  sessions,
-  currentSessionName,
-  onSelect,
-  onClose,
-}: CommandPaletteProps) {
+export function CommandPalette({ sessions, currentSessionName, onSelect, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<InputRenderable>(null);
@@ -50,39 +45,34 @@ export function CommandPalette({
     sb.scrollTo(clampedIndex);
   }, [clampedIndex, filtered.length]);
 
-  const handleInput = useCallback(
-    (value: string) => {
-      setQuery(value);
-      setSelectedIndex(0);
-    },
-    [],
-  );
+  const handleInput = useCallback((value: string) => {
+    setQuery(value);
+    setSelectedIndex(0);
+  }, []);
 
-  useKeyboard(
-    (key) => {
-      if (key.name === "escape") {
-        onClose();
-        return;
-      }
-      if (key.name === "return" || key.name === "enter") {
-        if (filtered.length > 0) {
-          const session = filtered[clampedIndex];
-          if (session) {
-            onSelect(session.name);
-          }
+  useKeyboard((key) => {
+    if (key.name === "escape") {
+      onClose();
+      return;
+    }
+    if (key.name === "return" || key.name === "enter") {
+      if (filtered.length > 0) {
+        const session = filtered[clampedIndex];
+        if (session) {
+          onSelect(session.name);
         }
-        return;
       }
-      if (key.name === "up" || (key.ctrl && key.name === "p")) {
-        setSelectedIndex((prev) => Math.max(0, prev - 1));
-        return;
-      }
-      if (key.name === "down" || (key.ctrl && key.name === "n")) {
-        setSelectedIndex((prev) => Math.min(filtered.length - 1, prev + 1));
-        return;
-      }
-    },
-  );
+      return;
+    }
+    if (key.name === "up" || (key.ctrl && key.name === "p")) {
+      setSelectedIndex((prev) => Math.max(0, prev - 1));
+      return;
+    }
+    if (key.name === "down" || (key.ctrl && key.name === "n")) {
+      setSelectedIndex((prev) => Math.min(filtered.length - 1, prev + 1));
+      return;
+    }
+  });
 
   const maxVisible = Math.min(filtered.length, 15, Math.max(1, Math.floor(renderer.height / 2) - 9));
   const overlayHeight = maxVisible + 9;
@@ -131,17 +121,8 @@ export function CommandPalette({
 
               return (
                 <box key={session.sessionKey} flexDirection="row" width="100%" backgroundColor="black">
-                  <text
-                    content={`${prefix}${session.name}`}
-                    fg={nameFg}
-                    bg="black"
-                    bold={isSelected}
-                  />
-                  <text
-                    content={` (${session.agentId})`}
-                    fg="gray"
-                    bg="black"
-                  />
+                  <text content={`${prefix}${session.name}`} fg={nameFg} bg="black" bold={isSelected} />
+                  <text content={` (${session.agentId})`} fg="gray" bg="black" />
                   {suffix ? <text content={suffix} fg={nameFg} bg="black" /> : null}
                 </box>
               );
@@ -151,11 +132,7 @@ export function CommandPalette({
       </scrollbox>
 
       <box height={1} width="100%" backgroundColor="black">
-        <text
-          content="  arrows: navigate | enter: select | esc: close"
-          fg="gray"
-          bg="black"
-        />
+        <text content="  arrows: navigate | enter: select | esc: close" fg="gray" bg="black" />
       </box>
     </box>
   );

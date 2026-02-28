@@ -4,19 +4,11 @@
  * Resolves phone numbers to agents and session keys.
  */
 
-import type {
-  RouterConfig,
-  AgentConfig,
-  RouteConfig,
-  MatchedRoute,
-  ResolvedRoute,
-  DmScope,
-} from "./types.js";
+import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName } from "./session-name.js";
-import { getOrCreateSession, updateSessionName, isNameTaken, getSessionByName } from "./sessions.js";
+import { getOrCreateSession, updateSessionName, getSessionByName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
-
 
 const log = logger.child("router");
 
@@ -62,21 +54,17 @@ export function findRoute(
   phone: string,
   routes: RouteConfig[],
   accountId?: string,
-  channel?: string
+  channel?: string,
 ): RouteConfig | null {
   // Strict account scoping — no cross-account fallback (security: prevents
   // messages on one account from silently routing to another account's agent)
-  const candidates = accountId
-    ? routes.filter(r => r.accountId === accountId)
-    : routes;
+  const candidates = accountId ? routes.filter((r) => r.accountId === accountId) : routes;
 
   // Filter to routes that apply to this channel:
   // - routes with matching channel (exact)
   // - routes with no channel (applies to all)
   // Channel-specific routes take priority over channel-agnostic ones
-  const channelCandidates = channel
-    ? candidates.filter(r => !r.channel || r.channel === channel)
-    : candidates;
+  const channelCandidates = channel ? candidates.filter((r) => !r.channel || r.channel === channel) : candidates;
 
   // Sort: channel-specific first, then by priority (higher first)
   const sorted = [...channelCandidates].sort((a, b) => {
@@ -110,7 +98,7 @@ export function matchRoute(
     groupId?: string;
     threadId?: string;
     peerKind?: string;
-  }
+  },
 ): MatchedRoute | null {
   const { phone, channel, accountId, isGroup, groupId } = params;
 
@@ -121,12 +109,10 @@ export function matchRoute(
   const effectiveAccount = accountId;
 
   // Try thread-specific route first (most specific)
-  let route = normalizedThreadId
-    ? findRoute(normalizedThreadId, config.routes, effectiveAccount, channel)
-    : null;
+  let route = normalizedThreadId ? findRoute(normalizedThreadId, config.routes, effectiveAccount, channel) : null;
   // Fall back to group route
   if (!route) {
-    const routeTarget = isGroup ? normalizedGroupId ?? phone : phone;
+    const routeTarget = isGroup ? (normalizedGroupId ?? phone) : phone;
     route = findRoute(routeTarget, config.routes, effectiveAccount, channel);
   }
 
@@ -152,8 +138,7 @@ export function matchRoute(
   }
 
   // Determine DM scope
-  const dmScope: DmScope =
-    route?.dmScope ?? agent.dmScope ?? config.defaultDmScope;
+  const dmScope: DmScope = route?.dmScope ?? agent.dmScope ?? config.defaultDmScope;
 
   // Build session key (kept for backwards compat in DB PK)
   const resolvedPeerKind = (params.peerKind ?? (isGroup ? "group" : "dm")) as "dm" | "group" | "channel";
@@ -190,7 +175,7 @@ export function resolveRoute(
     groupId?: string;
     threadId?: string;
     peerKind?: string;
-  }
+  },
 ): ResolvedRoute | null {
   const match = matchRoute(config, params);
   if (!match) return null;
@@ -231,7 +216,7 @@ export function resolveRoute(
     const isMain = dmScope === "main";
     const nameOpts = {
       isMain,
-      chatType: isGroup ? "group" as const : "dm" as const,
+      chatType: isGroup ? ("group" as const) : ("dm" as const),
       peerKind: resolvedPeerKind,
       peerId: isGroup ? groupId : phone,
       groupName: existing.displayName ?? existing.subject ?? undefined,

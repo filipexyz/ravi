@@ -24,27 +24,34 @@ import {
   dbAddEntry,
   dbGetEntry,
   dbListEntries,
-  dbDeleteEntry,
   dbUpdateEntry,
-  dbMarkEntryDone,
   dbUpdateEntryContext,
   dbAddEntriesFromContacts,
   directSend,
   getQueueStageNames,
+  type OutboundStage,
 } from "../../outbound/index.js";
-import type { OutboundStage } from "../../outbound/index.js";
 
 function statusColor(status: string): string {
   switch (status) {
-    case "active": return "\x1b[32m";
-    case "paused": return "\x1b[33m";
-    case "completed": return "\x1b[36m";
-    case "pending": return "\x1b[37m";
-    case "done": return "\x1b[32m";
-    case "agent": return "\x1b[35m";
-    case "skipped": return "\x1b[90m";
-    case "error": return "\x1b[31m";
-    default: return "\x1b[0m";
+    case "active":
+      return "\x1b[32m";
+    case "paused":
+      return "\x1b[33m";
+    case "completed":
+      return "\x1b[36m";
+    case "pending":
+      return "\x1b[37m";
+    case "done":
+      return "\x1b[32m";
+    case "agent":
+      return "\x1b[35m";
+    case "skipped":
+      return "\x1b[90m";
+    case "error":
+      return "\x1b[31m";
+    default:
+      return "\x1b[0m";
   }
 }
 
@@ -63,14 +70,19 @@ export class OutboundCommands {
   @Command({ name: "create", description: "Create a new outbound queue" })
   async create(
     @Arg("name", { description: "Queue name" }) name: string,
-    @Option({ flags: "--instructions <text>", description: "Agent instructions for processing entries" }) instructions?: string,
+    @Option({ flags: "--instructions <text>", description: "Agent instructions for processing entries" })
+    instructions?: string,
     @Option({ flags: "--every <interval>", description: "Interval between entries (e.g., 5m, 1h)" }) every?: string,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
     @Option({ flags: "--description <text>", description: "Queue description" }) description?: string,
     @Option({ flags: "--active-start <time>", description: "Active hours start (e.g., 09:00)" }) activeStart?: string,
     @Option({ flags: "--active-end <time>", description: "Active hours end (e.g., 22:00)" }) activeEnd?: string,
     @Option({ flags: "--tz <timezone>", description: "Timezone" }) tz?: string,
-    @Option({ flags: "--stages <json>", description: 'Pipeline stages JSON, e.g. \'[{"name":"novo"},{"name":"engajado","delay":30},{"name":"fechado"}]\'' }) stagesJson?: string,
+    @Option({
+      flags: "--stages <json>",
+      description: 'Pipeline stages JSON, e.g. \'[{"name":"novo"},{"name":"engajado","delay":30},{"name":"fechado"}]\'',
+    })
+    stagesJson?: string,
     @Option({ flags: "--max-rounds <n>", description: "Maximum rounds per entry" }) maxRoundsStr?: string,
   ) {
     if (!instructions) {
@@ -90,7 +102,9 @@ export class OutboundCommands {
     const timezone = tz ?? getDefaultTimezone();
 
     if (!stagesJson) {
-      fail("--stages is required (e.g. --stages '[{\"name\":\"cold\"},{\"name\":\"warm\",\"delay\":30},{\"name\":\"qualified\"},{\"name\":\"rejected\"}]')");
+      fail(
+        '--stages is required (e.g. --stages \'[{"name":"cold"},{"name":"warm","delay":30},{"name":"qualified"},{"name":"rejected"}]\')',
+      );
     }
 
     let stages: OutboundStage[];
@@ -129,7 +143,7 @@ export class OutboundCommands {
       console.log(`\n✓ Created queue: ${queue.id}`);
       console.log(`  Name:      ${queue.name}`);
       console.log(`  Interval:  ${formatDurationMs(queue.intervalMs)}`);
-      console.log(`  Stages:    ${queue.stages.map(s => s.name).join(" → ")}`);
+      console.log(`  Stages:    ${queue.stages.map((s) => s.name).join(" → ")}`);
       console.log(`  Status:    paused`);
       console.log(`\nAdd entries:`);
       console.log(`  ravi outbound add ${queue.id} <phone> --name "João Silva"`);
@@ -147,7 +161,7 @@ export class OutboundCommands {
     // Scope isolation: filter to own agent's queues
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      queues = queues.filter(q => canAccessResource(scopeCtx, q.agentId));
+      queues = queues.filter((q) => canAccessResource(scopeCtx, q.agentId));
     }
 
     if (queues.length === 0) {
@@ -167,9 +181,7 @@ export class OutboundCommands {
       const status = `${statusColor(queue.status)}${queue.status.padEnd(9)}${RESET}`;
       const interval = formatDurationMs(queue.intervalMs).padEnd(9);
       const processed = String(queue.totalProcessed).padEnd(9);
-      const nextRun = queue.nextRunAt
-        ? new Date(queue.nextRunAt).toLocaleString()
-        : "-";
+      const nextRun = queue.nextRunAt ? new Date(queue.nextRunAt).toLocaleString() : "-";
 
       console.log(`  ${id}  ${name}  ${status}  ${interval}  ${processed}  ${nextRun}`);
     }
@@ -183,8 +195,8 @@ export class OutboundCommands {
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     const entries = dbListEntries(id);
-    const pending = entries.filter(e => e.status === "pending" || e.status === "active").length;
-    const done = entries.filter(e => e.status === "done").length;
+    const pending = entries.filter((e) => e.status === "pending" || e.status === "active").length;
+    const done = entries.filter((e) => e.status === "done").length;
 
     console.log(`\nOutbound Queue: ${queue.name}\n`);
     console.log(`  ID:           ${queue.id}`);
@@ -196,10 +208,14 @@ export class OutboundCommands {
       console.log(`  Description:  ${queue.description}`);
     }
     if (queue.stages.length > 0) {
-      console.log(`  Stages:       ${queue.stages.map(s => {
-        const delay = s.delay != null ? ` (${s.delay}min)` : "";
-        return s.name + delay;
-      }).join(" → ")}`);
+      console.log(
+        `  Stages:       ${queue.stages
+          .map((s) => {
+            const delay = s.delay != null ? ` (${s.delay}min)` : "";
+            return s.name + delay;
+          })
+          .join(" → ")}`,
+      );
     }
     if (queue.activeStart && queue.activeEnd) {
       console.log(`  Active hours: ${queue.activeStart} - ${queue.activeEnd}`);
@@ -241,11 +257,13 @@ export class OutboundCommands {
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
 
     if (queue.stages.length === 0) {
-      fail(`Queue has no stages configured. Set stages first: ravi outbound set ${id} stages '[{"name":"novo"},{"name":"engajado","delay":30}]'`);
+      fail(
+        `Queue has no stages configured. Set stages first: ravi outbound set ${id} stages '[{"name":"novo"},{"name":"engajado","delay":30}]'`,
+      );
     }
 
     const entries = dbListEntries(id);
-    const pending = entries.filter(e => e.status === "pending" || e.status === "active").length;
+    const pending = entries.filter((e) => e.status === "pending" || e.status === "active").length;
     if (pending === 0) {
       fail(`Queue has no pending entries. Add entries first: ravi outbound add ${id} <phone>`);
     }
@@ -279,8 +297,11 @@ export class OutboundCommands {
   @Command({ name: "set", description: "Set queue property" })
   async set(
     @Arg("id", { description: "Queue ID" }) id: string,
-    @Arg("key", { description: "Property: name, instructions, every, agent, description, active-start, active-end, tz" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("key", {
+      description: "Property: name, instructions, every, agent, description, active-start, active-end, tz",
+    })
+    key: string,
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const queue = dbGetQueue(id);
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${id}`);
@@ -352,7 +373,9 @@ export class OutboundCommands {
                 }
               }
               dbUpdateQueue(id, { stages: parsed as OutboundStage[] });
-              console.log(`✓ Stages set: ${id} -> ${(parsed as OutboundStage[]).map((s: OutboundStage) => s.name).join(" → ")}`);
+              console.log(
+                `✓ Stages set: ${id} -> ${(parsed as OutboundStage[]).map((s: OutboundStage) => s.name).join(" → ")}`,
+              );
             } catch (e) {
               if ((e as Error).message?.includes("must be") || (e as Error).message?.includes("must have")) throw e;
               fail("Invalid JSON for stages");
@@ -368,7 +391,7 @@ export class OutboundCommands {
             console.log(`✓ Max rounds cleared: ${id}`);
           } else {
             const n = parseInt(value, 10);
-            if (isNaN(n) || n < 1) fail("max-rounds must be a positive integer");
+            if (Number.isNaN(n) || n < 1) fail("max-rounds must be a positive integer");
             dbUpdateQueue(id, { maxRounds: n });
             console.log(`✓ Max rounds set: ${id} -> ${n}`);
           }
@@ -376,7 +399,9 @@ export class OutboundCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds`);
+          fail(
+            `Unknown property: ${key}. Valid: name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds`,
+          );
       }
 
       await nats.emit("ravi.outbound.refresh", {});
@@ -407,7 +432,8 @@ export class OutboundCommands {
     @Option({ flags: "--name <name>", description: "Contact name (required)" }) name?: string,
     @Option({ flags: "--email <email>", description: "Contact email" }) email?: string,
     @Option({ flags: "--tag <tag>", description: "Add all contacts with this tag" }) tag?: string,
-    @Option({ flags: "--context <json>", description: "Extra context as JSON (e.g., '{\"company\":\"Acme\"}')" }) contextJson?: string,
+    @Option({ flags: "--context <json>", description: 'Extra context as JSON (e.g., \'{"company":"Acme"}\')' })
+    contextJson?: string,
   ) {
     const queue = dbGetQueue(queueId);
     if (!queue || !canAccessResource(getScopeContext(), queue.agentId)) fail(`Queue not found: ${queueId}`);
@@ -485,8 +511,12 @@ export class OutboundCommands {
     }
 
     console.log(`\nEntries for "${queue.name}":\n`);
-    console.log("  ID        POS  PHONE                  NAME                 STATUS    QUAL        ROUNDS  LAST RESPONSE");
-    console.log("  --------  ---  --------------------   -------------------  --------  ----------  ------  ----------------");
+    console.log(
+      "  ID        POS  PHONE                  NAME                 STATUS    QUAL        ROUNDS  LAST RESPONSE",
+    );
+    console.log(
+      "  --------  ---  --------------------   -------------------  --------  ----------  ------  ----------------",
+    );
 
     for (const entry of entries) {
       const id = entry.id.padEnd(8);
@@ -539,8 +569,12 @@ export class OutboundCommands {
   }
 
   @Command({ name: "report", description: "Full outbound report with all entries and context" })
-  report(@Arg("queueId", { description: "Queue ID (optional, all queues if omitted)", required: false }) queueId?: string) {
-    const queues = queueId ? [dbGetQueue(queueId)].filter(Boolean) as import("../outbound/types.js").OutboundQueue[] : dbListQueues();
+  report(
+    @Arg("queueId", { description: "Queue ID (optional, all queues if omitted)", required: false }) queueId?: string,
+  ) {
+    const queues = queueId
+      ? ([dbGetQueue(queueId)].filter(Boolean) as import("../outbound/types.js").OutboundQueue[])
+      : dbListQueues();
 
     if (queues.length === 0) {
       console.log("No queues found.");
@@ -551,13 +585,16 @@ export class OutboundCommands {
       const entries = dbListEntries(queue.id);
       console.log(`# ${queue.name} (${queue.status})`);
       console.log(`Interval: ${formatDurationMs(queue.intervalMs)} | Agent: ${queue.agentId}`);
-      if (queue.stages.length > 0) console.log(`Stages: ${queue.stages.map(s => s.name).join(" → ")} | Max rounds: ${queue.maxRounds ?? "-"}`);
+      if (queue.stages.length > 0)
+        console.log(`Stages: ${queue.stages.map((s) => s.name).join(" → ")} | Max rounds: ${queue.maxRounds ?? "-"}`);
       console.log(`Entries: ${entries.length}\n`);
 
       for (const entry of entries) {
         const name = (entry.context.name as string) ?? "-";
         console.log(`## ${name} (${formatPhone(entry.contactPhone)})`);
-        console.log(`ID: ${entry.id} | Status: ${entry.status} | Qual: ${entry.qualification ?? "-"} | Rounds: ${entry.roundsCompleted}`);
+        console.log(
+          `ID: ${entry.id} | Status: ${entry.status} | Qual: ${entry.qualification ?? "-"} | Rounds: ${entry.roundsCompleted}`,
+        );
 
         const { name: _n, ...ctx } = entry.context;
         if (Object.keys(ctx).length > 0) {
@@ -626,8 +663,10 @@ export class OutboundCommands {
     @Arg("entryId", { description: "Entry ID" }) entryId: string,
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
-    @Option({ flags: "--typing-delay <ms>", description: "Typing indicator delay in ms before sending" }) typingDelay?: string,
-    @Option({ flags: "--pause <ms>", description: "Pause in ms before typing (simulates reading/thinking)" }) pause?: string,
+    @Option({ flags: "--typing-delay <ms>", description: "Typing indicator delay in ms before sending" })
+    typingDelay?: string,
+    @Option({ flags: "--pause <ms>", description: "Pause in ms before typing (simulates reading/thinking)" })
+    pause?: string,
   ) {
     const entry = dbGetEntry(entryId);
     if (!entry) fail(`Entry not found: ${entryId}`);

@@ -47,10 +47,7 @@ export interface SessionNameOpts {
  * - main-cron-daily-report (agent main, cron suffix)
  * - main-trigger-lead-new (agent main, trigger suffix)
  */
-export function generateSessionName(
-  agentId: string,
-  opts: SessionNameOpts = {},
-): string {
+export function generateSessionName(agentId: string, opts: SessionNameOpts = {}): string {
   const agent = slugify(agentId);
 
   if (opts.isMain) {
@@ -66,7 +63,10 @@ export function generateSessionName(
     context = slugify(opts.groupName);
   } else if (opts.peerKind === "channel" && opts.peerId) {
     // Slack channels etc. — take last 8 chars of ID
-    const cleanId = opts.peerId.replace(/[^a-z0-9]/gi, "").slice(-8).toLowerCase();
+    const cleanId = opts.peerId
+      .replace(/[^a-z0-9]/gi, "")
+      .slice(-8)
+      .toLowerCase();
     context = `channel-${cleanId}`;
   } else if (opts.peerKind === "group" && opts.peerId) {
     // Strip "group:" prefix if present, take last 8 chars

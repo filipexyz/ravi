@@ -31,7 +31,7 @@ export class ServiceCommands {
       required: false,
       description: "Session key (default: agent:main:main)",
     })
-    session?: string
+    session?: string,
   ) {
     const args = ["src/tui.tsx"];
     if (session) args.push(session);

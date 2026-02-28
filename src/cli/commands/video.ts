@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { writeFileSync } from "node:fs";
-import { join, basename } from "node:path";
+import { join } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { analyzeVideo } from "../../video/gemini.js";
 
@@ -25,7 +25,8 @@ export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })
   async analyze(
     @Arg("url", { description: "YouTube URL or local file path" }) url: string,
-    @Option({ flags: "-o, --output <path>", description: "Output file path (default: auto-generated in cwd)" }) output?: string,
+    @Option({ flags: "-o, --output <path>", description: "Output file path (default: auto-generated in cwd)" })
+    output?: string,
     @Option({ flags: "-p, --prompt <text>", description: "Custom analysis prompt" }) prompt?: string,
   ) {
     console.log("Analyzing video...");

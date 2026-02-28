@@ -87,9 +87,7 @@ export function getContext(): ToolContext | undefined {
  * @example
  * const sessionKey = getContextValue("sessionKey");
  */
-export function getContextValue<K extends keyof ToolContext>(
-  key: K
-): ToolContext[K] | undefined {
+export function getContextValue<K extends keyof ToolContext>(key: K): ToolContext[K] | undefined {
   return contextStorage.getStore()?.[key];
 }
 
@@ -97,7 +95,12 @@ export function getContextValue<K extends keyof ToolContext>(
  * Check if running within a tool context (in-process or via env vars).
  */
 export function hasContext(): boolean {
-  return contextStorage.getStore() !== undefined || !!process.env.RAVI_SESSION_KEY || !!process.env.RAVI_SESSION_NAME || !!process.env.RAVI_AGENT_ID;
+  return (
+    contextStorage.getStore() !== undefined ||
+    !!process.env.RAVI_SESSION_KEY ||
+    !!process.env.RAVI_SESSION_NAME ||
+    !!process.env.RAVI_AGENT_ID
+  );
 }
 
 /**

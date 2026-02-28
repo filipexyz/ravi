@@ -28,12 +28,7 @@ const DB_PATH = join(RAVI_DIR, "ravi.db");
 // Schemas (safe to access at import time - no I/O)
 // ============================================================================
 
-export const DmScopeSchema = z.enum([
-  "main",
-  "per-peer",
-  "per-channel-peer",
-  "per-account-channel-peer",
-]);
+export const DmScopeSchema = z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]);
 
 export const AgentModeSchema = z.enum(["active", "sentinel"]);
 
@@ -326,13 +321,13 @@ function getDb(): Database {
 
   // Migration: add matrix_account column to agents if not exists
   const agentColumns = db.prepare("PRAGMA table_info(agents)").all() as Array<{ name: string }>;
-  if (!agentColumns.some(c => c.name === "matrix_account")) {
+  if (!agentColumns.some((c) => c.name === "matrix_account")) {
     db.exec("ALTER TABLE agents ADD COLUMN matrix_account TEXT REFERENCES matrix_accounts(username)");
     log.info("Added matrix_account column to agents table");
   }
 
   // Migration: add heartbeat columns to agents if not exists
-  if (!agentColumns.some(c => c.name === "heartbeat_enabled")) {
+  if (!agentColumns.some((c) => c.name === "heartbeat_enabled")) {
     db.exec(`
       ALTER TABLE agents ADD COLUMN heartbeat_enabled INTEGER DEFAULT 0;
     `);
@@ -355,14 +350,14 @@ function getDb(): Database {
   }
 
   // Migration: add setting_sources column to agents if not exists
-  if (!agentColumns.some(c => c.name === "setting_sources")) {
+  if (!agentColumns.some((c) => c.name === "setting_sources")) {
     db.exec("ALTER TABLE agents ADD COLUMN setting_sources TEXT");
     log.info("Added setting_sources column to agents table");
   }
 
   // Migration: drop legacy permission columns (replaced by REBAC)
   const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
-  const toDrop = legacyCols.filter(c => agentColumns.some(ac => ac.name === c));
+  const toDrop = legacyCols.filter((c) => agentColumns.some((ac) => ac.name === c));
   if (toDrop.length > 0) {
     for (const col of toDrop) {
       db.exec(`ALTER TABLE agents DROP COLUMN ${col}`);
@@ -371,33 +366,33 @@ function getDb(): Database {
   }
 
   // Migration: add spec_mode column to agents if not exists
-  if (!agentColumns.some(c => c.name === "spec_mode")) {
+  if (!agentColumns.some((c) => c.name === "spec_mode")) {
     db.exec("ALTER TABLE agents ADD COLUMN spec_mode INTEGER DEFAULT 0");
     log.info("Added spec_mode column to agents table");
   }
 
   // Migration: add scope isolation columns to agents if not exists
-  if (!agentColumns.some(c => c.name === "contact_scope")) {
+  if (!agentColumns.some((c) => c.name === "contact_scope")) {
     db.exec("ALTER TABLE agents ADD COLUMN contact_scope TEXT");
     db.exec("ALTER TABLE agents ADD COLUMN allowed_sessions TEXT");
     log.info("Added scope isolation columns to agents table");
   }
 
   // Migration: add agent_mode column to agents if not exists
-  if (!agentColumns.some(c => c.name === "agent_mode")) {
+  if (!agentColumns.some((c) => c.name === "agent_mode")) {
     db.exec("ALTER TABLE agents ADD COLUMN agent_mode TEXT");
     log.info("Added agent_mode column to agents table");
   }
 
   // Migration: add group_debounce_ms column to agents if not exists
-  if (!agentColumns.some(c => c.name === "group_debounce_ms")) {
+  if (!agentColumns.some((c) => c.name === "group_debounce_ms")) {
     db.exec("ALTER TABLE agents ADD COLUMN group_debounce_ms INTEGER");
     log.info("Added group_debounce_ms column to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
   const sessionColumns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
-  if (!sessionColumns.some(c => c.name === "last_heartbeat_text")) {
+  if (!sessionColumns.some((c) => c.name === "last_heartbeat_text")) {
     db.exec(`
       ALTER TABLE sessions ADD COLUMN last_heartbeat_text TEXT;
     `);
@@ -408,14 +403,14 @@ function getDb(): Database {
   }
 
   // Migration: add last_context column to sessions if not exists
-  if (!sessionColumns.some(c => c.name === "last_context")) {
+  if (!sessionColumns.some((c) => c.name === "last_context")) {
     db.exec("ALTER TABLE sessions ADD COLUMN last_context TEXT");
     log.info("Added last_context column to sessions table");
   }
 
   // Migration: add policy column to routes if not exists
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
-  if (!routeColumns.some(c => c.name === "policy")) {
+  if (!routeColumns.some((c) => c.name === "policy")) {
     db.exec("ALTER TABLE routes ADD COLUMN policy TEXT");
     log.info("Added policy column to routes table");
   }
@@ -423,7 +418,10 @@ function getDb(): Database {
   // Migration: seed instances table from account.* settings (one-time)
   const instanceCount = (db.prepare("SELECT COUNT(*) as n FROM instances").get() as { n: number }).n;
   if (instanceCount === 0) {
-    const settingRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'account.%'").all() as Array<{ key: string; value: string }>;
+    const settingRows = db.prepare("SELECT key, value FROM settings WHERE key LIKE 'account.%'").all() as Array<{
+      key: string;
+      value: string;
+    }>;
     const instanceData: Record<string, Partial<InstanceConfig>> = {};
 
     for (const { key, value } of settingRows) {
@@ -433,8 +431,10 @@ function getDb(): Database {
       if (!instanceData[name]) instanceData[name] = { name };
       if (field === "instanceId") instanceData[name].instanceId = value;
       else if (field === "agent") instanceData[name].agent = value;
-      else if (field === "dmPolicy" && (value === "open" || value === "pairing" || value === "closed")) instanceData[name].dmPolicy = value;
-      else if (field === "groupPolicy" && (value === "open" || value === "allowlist" || value === "closed")) instanceData[name].groupPolicy = value;
+      else if (field === "dmPolicy" && (value === "open" || value === "pairing" || value === "closed"))
+        instanceData[name].dmPolicy = value;
+      else if (field === "groupPolicy" && (value === "open" || value === "allowlist" || value === "closed"))
+        instanceData[name].groupPolicy = value;
     }
 
     const insertInstance = db.prepare(`
@@ -452,14 +452,14 @@ function getDb(): Database {
         inst.dmPolicy ?? "open",
         inst.groupPolicy ?? "open",
         now,
-        now
+        now,
       );
       log.info("Migrated instance from settings", { name: inst.name });
     }
   }
 
   // Migration: add ephemeral session columns
-  if (!sessionColumns.some(c => c.name === "ephemeral")) {
+  if (!sessionColumns.some((c) => c.name === "ephemeral")) {
     db.exec("ALTER TABLE sessions ADD COLUMN ephemeral INTEGER DEFAULT 0");
     db.exec("ALTER TABLE sessions ADD COLUMN expires_at INTEGER");
     db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_ephemeral ON sessions(ephemeral, expires_at) WHERE ephemeral = 1");
@@ -467,14 +467,20 @@ function getDb(): Database {
   }
 
   // Migration: add name column to sessions (human-readable unique identifier)
-  if (!sessionColumns.some(c => c.name === "name")) {
+  if (!sessionColumns.some((c) => c.name === "name")) {
     db.exec("ALTER TABLE sessions ADD COLUMN name TEXT");
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL");
     log.info("Added name column to sessions table");
 
     // Migrate existing sessions: generate names from session_key
-    const rows = db.prepare("SELECT session_key, agent_id, display_name, chat_type, group_id FROM sessions").all() as Array<{
-      session_key: string; agent_id: string; display_name: string | null; chat_type: string | null; group_id: string | null;
+    const rows = db
+      .prepare("SELECT session_key, agent_id, display_name, chat_type, group_id FROM sessions")
+      .all() as Array<{
+      session_key: string;
+      agent_id: string;
+      display_name: string | null;
+      chat_type: string | null;
+      group_id: string | null;
     }>;
     const usedNames = new Set<string>();
     const { slugify } = require("./session-name.js") as typeof import("./session-name.js");
@@ -551,7 +557,9 @@ function getDb(): Database {
   // Migration: add reply_session to cron_jobs
   try {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN reply_session TEXT");
-  } catch { /* column already exists */ }
+  } catch {
+    /* column already exists */
+  }
 
   db.exec(`
     -- Outbound queues
@@ -623,39 +631,42 @@ function getDb(): Database {
 
   // Migrations for outbound_entries
   const entryColumns = db.prepare("PRAGMA table_info(outbound_entries)").all() as Array<{ name: string }>;
-  if (!entryColumns.some(c => c.name === "pending_receipt")) {
+  if (!entryColumns.some((c) => c.name === "pending_receipt")) {
     db.exec("ALTER TABLE outbound_entries ADD COLUMN pending_receipt TEXT");
     log.info("Added pending_receipt column to outbound_entries table");
   }
-  if (!entryColumns.some(c => c.name === "sender_id")) {
+  if (!entryColumns.some((c) => c.name === "sender_id")) {
     db.exec("ALTER TABLE outbound_entries ADD COLUMN sender_id TEXT");
     log.info("Added sender_id column to outbound_entries table");
   }
-  if (!entryColumns.some(c => c.name === "qualification")) {
+  if (!entryColumns.some((c) => c.name === "qualification")) {
     db.exec("ALTER TABLE outbound_entries ADD COLUMN qualification TEXT");
     log.info("Added qualification column to outbound_entries table");
   }
 
   // Migrations for outbound_queues
   const queueColumns = db.prepare("PRAGMA table_info(outbound_queues)").all() as Array<{ name: string }>;
-  if (!queueColumns.some(c => c.name === "follow_up")) {
+  if (!queueColumns.some((c) => c.name === "follow_up")) {
     db.exec("ALTER TABLE outbound_queues ADD COLUMN follow_up TEXT");
     log.info("Added follow_up column to outbound_queues table");
   }
-  if (!queueColumns.some(c => c.name === "max_rounds")) {
+  if (!queueColumns.some((c) => c.name === "max_rounds")) {
     db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
     log.info("Added max_rounds column to outbound_queues table");
   }
-  if (!queueColumns.some(c => c.name === "stages")) {
+  if (!queueColumns.some((c) => c.name === "stages")) {
     db.exec("ALTER TABLE outbound_queues ADD COLUMN stages TEXT");
     log.info("Added stages column to outbound_queues table");
   }
 
   // Migration: add 'agent' to outbound_entries status CHECK constraint
   // SQLite requires table recreation to modify CHECK constraints
-  const entrySql = (db.prepare(
-    "SELECT sql FROM sqlite_master WHERE type='table' AND name='outbound_entries'"
-  ).get() as { sql: string } | undefined)?.sql ?? "";
+  const entrySql =
+    (
+      db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='outbound_entries'").get() as
+        | { sql: string }
+        | undefined
+    )?.sql ?? "";
   if (entrySql && !entrySql.includes("'agent'")) {
     db.exec("PRAGMA foreign_keys=OFF");
     try {
@@ -699,35 +710,35 @@ function getDb(): Database {
 
   // Migrations for triggers
   const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>;
-  if (!triggerColumns.some(c => c.name === "reply_session")) {
+  if (!triggerColumns.some((c) => c.name === "reply_session")) {
     db.exec("ALTER TABLE triggers ADD COLUMN reply_session TEXT");
     log.info("Added reply_session column to triggers table");
   }
-  if (!triggerColumns.some(c => c.name === "account_id")) {
+  if (!triggerColumns.some((c) => c.name === "account_id")) {
     db.exec("ALTER TABLE triggers ADD COLUMN account_id TEXT");
     log.info("Added account_id column to triggers table");
   }
-  if (!triggerColumns.some(c => c.name === "filter")) {
+  if (!triggerColumns.some((c) => c.name === "filter")) {
     db.exec("ALTER TABLE triggers ADD COLUMN filter TEXT");
     log.info("Added filter column to triggers table");
   }
 
   // Migration: add account_id column to cron_jobs
   const cronColumns = db.prepare("PRAGMA table_info(cron_jobs)").all() as Array<{ name: string }>;
-  if (!cronColumns.some(c => c.name === "account_id")) {
+  if (!cronColumns.some((c) => c.name === "account_id")) {
     db.exec("ALTER TABLE cron_jobs ADD COLUMN account_id TEXT");
     log.info("Added account_id column to cron_jobs table");
   }
 
   // Migration: add heartbeat_account_id column to agents
-  if (!agentColumns.some(c => c.name === "heartbeat_account_id")) {
+  if (!agentColumns.some((c) => c.name === "heartbeat_account_id")) {
     db.exec("ALTER TABLE agents ADD COLUMN heartbeat_account_id TEXT");
     log.info("Added heartbeat_account_id column to agents table");
   }
 
   // Migration: add account_id column to routes (recreate table for UNIQUE constraint change)
   const routeColumnsV1 = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
-  if (!routeColumnsV1.some(c => c.name === "account_id")) {
+  if (!routeColumnsV1.some((c) => c.name === "account_id")) {
     db.exec("PRAGMA foreign_keys=OFF");
     try {
       db.exec(`
@@ -762,27 +773,29 @@ function getDb(): Database {
 
   // Migration: add session_name column to routes
   const routeColumnsAfter = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
-  if (!routeColumnsAfter.some(c => c.name === "session_name")) {
+  if (!routeColumnsAfter.some((c) => c.name === "session_name")) {
     db.exec("ALTER TABLE routes ADD COLUMN session_name TEXT");
     log.info("Added session_name column to routes table");
   }
 
   // Migration: add channel column to routes (null = applies to all channels)
-  if (!routeColumnsAfter.some(c => c.name === "channel")) {
+  if (!routeColumnsAfter.some((c) => c.name === "channel")) {
     db.exec("ALTER TABLE routes ADD COLUMN channel TEXT");
     // Drop old unique index and recreate including channel
     db.exec("DROP INDEX IF EXISTS idx_routes_unique_pattern");
-    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_unique ON routes(pattern, account_id, COALESCE(channel, ''))");
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_routes_unique ON routes(pattern, account_id, COALESCE(channel, ''))",
+    );
     log.info("Added channel column to routes table");
   }
 
   // Migration: soft-delete columns for routes and instances + audit_log table
-  if (!routeColumnsAfter.some(c => c.name === "deleted_at")) {
+  if (!routeColumnsAfter.some((c) => c.name === "deleted_at")) {
     db.exec("ALTER TABLE routes ADD COLUMN deleted_at INTEGER");
     log.info("Added deleted_at column to routes table");
   }
   const instanceColumnsNow = db.prepare("PRAGMA table_info(instances)").all() as Array<{ name: string }>;
-  if (!instanceColumnsNow.some(c => c.name === "deleted_at")) {
+  if (!instanceColumnsNow.some((c) => c.name === "deleted_at")) {
     db.exec("ALTER TABLE instances ADD COLUMN deleted_at INTEGER");
     log.info("Added deleted_at column to instances table");
   }
@@ -811,11 +824,15 @@ function getDb(): Database {
   }
 
   // Startup cleanup: remove any expired ephemeral sessions left over from previous runs
-  const expiredCount = (db.prepare(
-    "SELECT COUNT(*) as n FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"
-  ).get(Date.now()) as { n: number }).n;
+  const expiredCount = (
+    db
+      .prepare("SELECT COUNT(*) as n FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?")
+      .get(Date.now()) as { n: number }
+  ).n;
   if (expiredCount > 0) {
-    db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(Date.now());
+    db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(
+      Date.now(),
+    );
     log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
   }
 
@@ -956,7 +973,9 @@ function getStatements(): PreparedStatements {
     deleteRoute: database.prepare("DELETE FROM routes WHERE pattern = ? AND account_id = ?"),
     getRoute: database.prepare("SELECT * FROM routes WHERE pattern = ? AND account_id = ? AND deleted_at IS NULL"),
     listRoutes: database.prepare("SELECT * FROM routes WHERE deleted_at IS NULL ORDER BY priority DESC, id"),
-    listRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NULL ORDER BY priority DESC, id"),
+    listRoutesByAccount: database.prepare(
+      "SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NULL ORDER BY priority DESC, id",
+    ),
 
     // Settings
     upsertSetting: database.prepare(`
@@ -994,18 +1013,28 @@ function getStatements(): PreparedStatements {
     `),
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
-    cleanupExpiredSessions: database.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"),
+    cleanupExpiredSessions: database.prepare(
+      "DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
+    ),
     // Audit log
-    insertAuditLog: database.prepare("INSERT INTO audit_log (action, entity, entity_id, old_value, actor, ts) VALUES (?, ?, ?, ?, ?, ?)"),
+    insertAuditLog: database.prepare(
+      "INSERT INTO audit_log (action, entity, entity_id, old_value, actor, ts) VALUES (?, ?, ?, ?, ?, ?)",
+    ),
     // Soft-delete: routes
-    softDeleteRoute: database.prepare("UPDATE routes SET deleted_at = ? WHERE pattern = ? AND account_id = ? AND deleted_at IS NULL"),
+    softDeleteRoute: database.prepare(
+      "UPDATE routes SET deleted_at = ? WHERE pattern = ? AND account_id = ? AND deleted_at IS NULL",
+    ),
     restoreRoute: database.prepare("UPDATE routes SET deleted_at = NULL WHERE pattern = ? AND account_id = ?"),
     listDeletedRoutes: database.prepare("SELECT * FROM routes WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
-    listDeletedRoutesByAccount: database.prepare("SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
+    listDeletedRoutesByAccount: database.prepare(
+      "SELECT * FROM routes WHERE account_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    ),
     // Soft-delete: instances
     softDeleteInstance: database.prepare("UPDATE instances SET deleted_at = ? WHERE name = ? AND deleted_at IS NULL"),
     restoreInstance: database.prepare("UPDATE instances SET deleted_at = NULL WHERE name = ?"),
-    listDeletedInstances: database.prepare("SELECT * FROM instances WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"),
+    listDeletedInstances: database.prepare(
+      "SELECT * FROM instances WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    ),
     // Instances
     upsertInstance: database.prepare(`
       INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
@@ -1196,7 +1225,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // allowed_sessions (no cross-session by default)
       validated.mode ?? null, // agent_mode
       now,
-      now
+      now,
     );
 
     log.info("Created agent", { id: validated.id });
@@ -1254,35 +1283,39 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
   const now = Date.now();
   const hb = updates.heartbeat;
   s.updateAgent.run(
-    updates.name !== undefined ? updates.name ?? null : row.name,
+    updates.name !== undefined ? (updates.name ?? null) : row.name,
     updates.cwd ?? row.cwd,
-    updates.model !== undefined ? updates.model ?? null : row.model,
-    updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
-    updates.systemPromptAppend !== undefined ? updates.systemPromptAppend ?? null : row.system_prompt_append,
-    updates.debounceMs !== undefined ? updates.debounceMs ?? null : row.debounce_ms,
-    updates.groupDebounceMs !== undefined ? updates.groupDebounceMs ?? null : row.group_debounce_ms,
-    updates.matrixAccount !== undefined ? updates.matrixAccount ?? null : row.matrix_account,
+    updates.model !== undefined ? (updates.model ?? null) : row.model,
+    updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
+    updates.systemPromptAppend !== undefined ? (updates.systemPromptAppend ?? null) : row.system_prompt_append,
+    updates.debounceMs !== undefined ? (updates.debounceMs ?? null) : row.debounce_ms,
+    updates.groupDebounceMs !== undefined ? (updates.groupDebounceMs ?? null) : row.group_debounce_ms,
+    updates.matrixAccount !== undefined ? (updates.matrixAccount ?? null) : row.matrix_account,
     updates.settingSources !== undefined
-      ? updates.settingSources ? JSON.stringify(updates.settingSources) : null
+      ? updates.settingSources
+        ? JSON.stringify(updates.settingSources)
+        : null
       : row.setting_sources,
     // Heartbeat fields
     hb?.enabled !== undefined ? (hb.enabled ? 1 : 0) : row.heartbeat_enabled,
     hb?.intervalMs !== undefined ? hb.intervalMs : row.heartbeat_interval_ms,
-    hb?.model !== undefined ? hb.model ?? null : row.heartbeat_model,
-    hb?.activeStart !== undefined ? hb.activeStart ?? null : row.heartbeat_active_start,
-    hb?.activeEnd !== undefined ? hb.activeEnd ?? null : row.heartbeat_active_end,
-    hb?.accountId !== undefined ? hb.accountId ?? null : row.heartbeat_account_id,
+    hb?.model !== undefined ? (hb.model ?? null) : row.heartbeat_model,
+    hb?.activeStart !== undefined ? (hb.activeStart ?? null) : row.heartbeat_active_start,
+    hb?.activeEnd !== undefined ? (hb.activeEnd ?? null) : row.heartbeat_active_end,
+    hb?.accountId !== undefined ? (hb.accountId ?? null) : row.heartbeat_account_id,
     // Spec mode
     updates.specMode !== undefined ? (updates.specMode ? 1 : 0) : row.spec_mode,
     // Scope isolation
-    updates.contactScope !== undefined ? updates.contactScope ?? null : row.contact_scope,
+    updates.contactScope !== undefined ? (updates.contactScope ?? null) : row.contact_scope,
     updates.allowedSessions !== undefined
-      ? updates.allowedSessions ? JSON.stringify(updates.allowedSessions) : null
+      ? updates.allowedSessions
+        ? JSON.stringify(updates.allowedSessions)
+        : null
       : row.allowed_sessions,
     // Agent mode
-    updates.mode !== undefined ? updates.mode ?? null : row.agent_mode,
+    updates.mode !== undefined ? (updates.mode ?? null) : row.agent_mode,
     now,
-    id
+    id,
   );
 
   log.info("Updated agent", { id });
@@ -1367,10 +1400,15 @@ export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteCon
       validated.priority,
       validated.channel ?? null,
       now,
-      now
+      now,
     );
 
-    log.info("Created route", { pattern: normalizedPattern, account: validated.accountId, agent: validated.agent, channel: validated.channel ?? "*" });
+    log.info("Created route", {
+      pattern: normalizedPattern,
+      account: validated.accountId,
+      agent: validated.agent,
+      channel: validated.channel ?? "*",
+    });
     return dbGetRoute(normalizedPattern, validated.accountId)!;
   } catch (err) {
     if ((err as Error).message.includes("UNIQUE constraint failed")) {
@@ -1395,9 +1433,7 @@ export function dbGetRoute(pattern: string, accountId: string): (RouteConfig & {
  */
 export function dbListRoutes(accountId?: string): (RouteConfig & { id: number })[] {
   const s = getStatements();
-  const rows = accountId
-    ? s.listRoutesByAccount.all(accountId) as RouteRow[]
-    : s.listRoutes.all() as RouteRow[];
+  const rows = accountId ? (s.listRoutesByAccount.all(accountId) as RouteRow[]) : (s.listRoutes.all() as RouteRow[]);
   return rows.map(rowToRoute);
 }
 
@@ -1425,14 +1461,14 @@ export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, ac
   const now = Date.now();
   s.updateRoute.run(
     updates.agent ?? row.agent_id,
-    updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
-    updates.session !== undefined ? updates.session ?? null : row.session_name,
-    updates.policy !== undefined ? updates.policy ?? null : row.policy,
+    updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
+    updates.session !== undefined ? (updates.session ?? null) : row.session_name,
+    updates.policy !== undefined ? (updates.policy ?? null) : row.policy,
     updates.priority ?? row.priority,
-    updates.channel !== undefined ? updates.channel ?? null : row.channel,
+    updates.channel !== undefined ? (updates.channel ?? null) : row.channel,
     now,
     pattern,
-    accountId
+    accountId,
   );
 
   log.info("Updated route", { pattern, accountId });
@@ -1449,7 +1485,14 @@ export function dbDeleteRoute(pattern: string, accountId: string): boolean {
   const now = Date.now();
   s.softDeleteRoute.run(now, pattern, accountId);
   if (getDbChanges() > 0) {
-    s.insertAuditLog.run("route.deleted", "route", `${pattern}@${accountId}`, JSON.stringify(route), process.env.USER ?? "daemon", now);
+    s.insertAuditLog.run(
+      "route.deleted",
+      "route",
+      `${pattern}@${accountId}`,
+      JSON.stringify(route),
+      process.env.USER ?? "daemon",
+      now,
+    );
     log.info("Soft-deleted route", { pattern, accountId });
     return true;
   }
@@ -1476,9 +1519,7 @@ export function dbRestoreRoute(pattern: string, accountId: string): boolean {
  */
 export function dbListDeletedRoutes(accountId?: string): RouteConfig[] {
   const s = getStatements();
-  const rows = (accountId
-    ? s.listDeletedRoutesByAccount.all(accountId)
-    : s.listDeletedRoutes.all()) as RouteRow[];
+  const rows = (accountId ? s.listDeletedRoutesByAccount.all(accountId) : s.listDeletedRoutes.all()) as RouteRow[];
   return rows.map(rowToRoute);
 }
 
@@ -1557,7 +1598,7 @@ export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): In
     validated.groupPolicy,
     validated.dmScope ?? null,
     now,
-    now
+    now,
   );
   log.info("Upserted instance", { name: validated.name });
   return dbGetInstance(validated.name)!;
@@ -1581,7 +1622,10 @@ export function dbListInstances(): InstanceConfig[] {
   return rows.map(rowToInstance);
 }
 
-export function dbUpdateInstance(name: string, updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt">>): InstanceConfig {
+export function dbUpdateInstance(
+  name: string,
+  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt">>,
+): InstanceConfig {
   const s = getStatements();
   const row = s.getInstanceByName.get(name) as InstanceRow | undefined;
   if (!row) throw new Error(`Instance not found: ${name}`);
@@ -1593,14 +1637,14 @@ export function dbUpdateInstance(name: string, updates: Partial<Omit<InstanceCon
   if (updates.groupPolicy) GroupPolicySchema.parse(updates.groupPolicy);
   const now = Date.now();
   s.updateInstance.run(
-    updates.instanceId !== undefined ? updates.instanceId ?? null : row.instance_id,
+    updates.instanceId !== undefined ? (updates.instanceId ?? null) : row.instance_id,
     updates.channel ?? row.channel,
-    updates.agent !== undefined ? updates.agent ?? null : row.agent,
+    updates.agent !== undefined ? (updates.agent ?? null) : row.agent,
     updates.dmPolicy ?? row.dm_policy,
     updates.groupPolicy ?? row.group_policy,
-    updates.dmScope !== undefined ? updates.dmScope ?? null : row.dm_scope,
+    updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     now,
-    name
+    name,
   );
   log.info("Updated instance", { name, ...updates });
   return dbGetInstance(name)!;
@@ -1690,7 +1734,7 @@ export function getFirstAccountName(): string | undefined {
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  return instances.find(i => i.agent === agentId)?.name ?? instances[0]?.name;
+  return instances.find((i) => i.agent === agentId)?.name ?? instances[0]?.name;
 }
 
 /**
@@ -1767,7 +1811,7 @@ export function dbUpsertMatrixAccount(account: Omit<MatrixAccount, "createdAt" |
     account.accessToken,
     account.deviceId ?? null,
     existing?.created_at ?? now,
-    now
+    now,
   );
 
   log.info("Upserted matrix account", { username: account.username, userId: account.userId });
@@ -1798,7 +1842,7 @@ export function dbListMatrixAccounts(): MatrixAccount[] {
 export function dbDeleteMatrixAccount(username: string): boolean {
   // Check if any agent references this account
   const agents = dbListAgents();
-  const referencingAgent = agents.find(a => a.matrixAccount === username);
+  const referencingAgent = agents.find((a) => a.matrixAccount === username);
   if (referencingAgent) {
     throw new Error(`Cannot delete: account is used by agent "${referencingAgent.id}"`);
   }
@@ -1849,7 +1893,7 @@ export interface MessageMetadata {
 export function dbSaveMessageMeta(
   messageId: string,
   chatId: string,
-  opts: { transcription?: string; mediaPath?: string; mediaType?: string }
+  opts: { transcription?: string; mediaPath?: string; mediaType?: string },
 ): void {
   const s = getStatements();
   s.upsertMessageMeta.run(
@@ -1858,7 +1902,7 @@ export function dbSaveMessageMeta(
     opts.transcription ?? null,
     opts.mediaPath ?? null,
     opts.mediaType ?? null,
-    Date.now()
+    Date.now(),
   );
 }
 
@@ -1931,9 +1975,25 @@ export interface AuditEntry {
 export function dbListAuditLog(entity?: string, limit = 100): AuditEntry[] {
   const db = getDb();
   const rows = entity
-    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{ id: number; action: string; entity: string; entity_id: string; old_value: string | null; actor: string; ts: number }>)
-    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{ id: number; action: string; entity: string; entity_id: string; old_value: string | null; actor: string; ts: number }>);
-  return rows.map(r => ({
+    ? (db.prepare("SELECT * FROM audit_log WHERE entity = ? ORDER BY ts DESC LIMIT ?").all(entity, limit) as Array<{
+        id: number;
+        action: string;
+        entity: string;
+        entity_id: string;
+        old_value: string | null;
+        actor: string;
+        ts: number;
+      }>)
+    : (db.prepare("SELECT * FROM audit_log ORDER BY ts DESC LIMIT ?").all(limit) as Array<{
+        id: number;
+        action: string;
+        entity: string;
+        entity_id: string;
+        old_value: string | null;
+        actor: string;
+        ts: number;
+      }>);
+  return rows.map((r) => ({
     id: r.id,
     action: r.action,
     entity: r.entity,

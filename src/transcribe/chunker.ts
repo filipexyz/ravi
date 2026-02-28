@@ -30,9 +30,12 @@ export async function getAudioDuration(buffer: Buffer, ext: string): Promise<num
   try {
     await writeFile(tmpFile, buffer);
     const { stdout } = await execFileAsync("ffprobe", [
-      "-v", "quiet",
-      "-show_entries", "format=duration",
-      "-of", "csv=p=0",
+      "-v",
+      "quiet",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "csv=p=0",
       tmpFile,
     ]);
     return parseFloat(stdout.trim());
@@ -81,11 +84,16 @@ export async function splitAudioChunks(
       try {
         await execFileAsync("ffmpeg", [
           "-y",
-          "-ss", String(Math.max(0, start - (index === 0 ? 0 : overlap))),
-          "-i", inputFile,
-          "-t", String(segmentDuration),
-          "-c", "copy",
-          "-v", "quiet",
+          "-ss",
+          String(Math.max(0, start - (index === 0 ? 0 : overlap))),
+          "-i",
+          inputFile,
+          "-t",
+          String(segmentDuration),
+          "-c",
+          "copy",
+          "-v",
+          "quiet",
           chunkFile,
         ]);
 

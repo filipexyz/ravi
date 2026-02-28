@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Pre-commit hook: run Biome lint on staged files
+# Blocks commit if there are lint errors
+
+set -euo pipefail
+
+# Get staged .ts/.tsx/.js/.jsx files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|js|jsx)$' || true)
+
+if [ -z "$STAGED_FILES" ]; then
+  exit 0
+fi
+
+echo "Running biome check on staged files..."
+
+# Run biome check only on staged files
+# shellcheck disable=SC2086
+if ! bunx biome check --no-errors-on-unmatched $STAGED_FILES; then
+  echo ""
+  echo "Lint errors found. Fix them before committing."
+  echo "Run 'bun run lint:fix' to auto-fix."
+  exit 1
+fi

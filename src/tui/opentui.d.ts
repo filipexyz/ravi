@@ -7,7 +7,7 @@
  */
 
 declare module "@opentui/core" {
-  import { EventEmitter } from "events";
+  import { EventEmitter } from "node:events";
 
   // --- Renderer ---
 
@@ -35,9 +35,7 @@ declare module "@opentui/core" {
     requestRender(): void;
   }
 
-  export function createCliRenderer(
-    config?: CliRendererConfig,
-  ): Promise<CliRenderer>;
+  export function createCliRenderer(config?: CliRendererConfig): Promise<CliRenderer>;
 
   // --- SyntaxStyle ---
 
@@ -121,10 +119,7 @@ declare module "@opentui/react" {
 
   // --- Hooks ---
 
-  export function useKeyboard(
-    handler: (key: KeyEvent) => void,
-    options?: { release?: boolean },
-  ): void;
+  export function useKeyboard(handler: (key: KeyEvent) => void, options?: { release?: boolean }): void;
 
   export function useRenderer(): CliRenderer;
 }

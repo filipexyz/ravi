@@ -239,18 +239,13 @@ function splitByOperators(command: string): string[] {
 /**
  * Check if an executable with its arguments represents inline code execution.
  */
-function isInlineCodeExecution(
-  executable: string,
-  command: string
-): { blocked: boolean; reason?: string } {
+function isInlineCodeExecution(executable: string, command: string): { blocked: boolean; reason?: string } {
   const flags = INLINE_CODE_INTERPRETERS[executable];
   if (!flags) return { blocked: false };
 
   // Check if any inline code flag is present in the command
   const tokens = command.split(/\s+/);
-  const execIndex = tokens.findIndex(
-    (t) => extractExecutableName(t) === executable
-  );
+  const execIndex = tokens.findIndex((t) => extractExecutableName(t) === executable);
 
   if (execIndex === -1) return { blocked: false };
 

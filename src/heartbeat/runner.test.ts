@@ -13,14 +13,7 @@
  * the runner uses a different session_key than the bot).
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-
-// We need to test the actual DB operations since that's where the bug manifests
-const RAVI_DIR = join(homedir(), "ravi");
-const DB_PATH = join(RAVI_DIR, "ravi.db");
+import { describe, test, expect, beforeEach } from "bun:test";
 
 /**
  * Simulates the sequence of events that causes the bug:
@@ -41,11 +34,7 @@ const DB_PATH = join(RAVI_DIR, "ravi.db");
  */
 
 // Import DB functions directly for testing
-import {
-  getOrCreateSession,
-  getSessionByName,
-  generateSessionName,
-} from "../router/index.js";
+import { getOrCreateSession, getSessionByName, generateSessionName } from "../router/index.js";
 
 describe("Heartbeat Session Bug", () => {
   const supervisorCwd = "/Users/luis/ravi/supervisor";
@@ -59,7 +48,7 @@ describe("Heartbeat Session Bug", () => {
       const db = getDb();
       db.prepare("DELETE FROM sessions WHERE name = 'supervisor'").run();
       db.prepare("DELETE FROM sessions WHERE session_key LIKE '%supervisor%'").run();
-    } catch (e) {
+    } catch (_e) {
       // DB might not be initialized yet
     }
   });
@@ -69,40 +58,21 @@ describe("Heartbeat Session Bug", () => {
     expect(name).toBe("supervisor");
   });
 
-  test("BUG REPRODUCTION: bot creates session with wrong agent when runner hasn't created it yet", () => {
-    // This simulates what happens in bot.ts startStreamingSession
-    // when it receives a heartbeat prompt but the session doesn't exist yet
-
-    // Step 1: Bot receives prompt, session doesn't exist
-    const sessionEntry = getSessionByName("supervisor");
-    expect(sessionEntry).toBeNull(); // No session yet
-
-    // Step 2: Bot creates session with default agent (main)
-    // This is what bot.ts line 699 does: getOrCreateSession(sessionName, agent.id, agentCwd)
-    // where agent.id = "main" because sessionEntry was null and agentId fell back to default
+  test("UNIQUE constraint prevents duplicate session names with different keys", () => {
+    // Step 1: Bot creates session with key="supervisor", name="supervisor"
     const botSession = getOrCreateSession("supervisor", "main", mainCwd, { name: "supervisor" });
-    expect(botSession.agentId).toBe("main"); // BUG: should be "supervisor"
+    expect(botSession.agentId).toBe("main");
     expect(botSession.sessionKey).toBe("supervisor");
 
-    // Step 3: Now the runner tries to create its session
-    // It uses a DIFFERENT key: "agent:supervisor:main"
-    // But same name: "supervisor" → UNIQUE constraint conflict!
-    const runnerSession = getOrCreateSession("agent:supervisor:main", "supervisor", supervisorCwd, { name: "supervisor" });
+    // Step 2: Runner tries to create session with DIFFERENT key but SAME name
+    // UNIQUE constraint on name prevents this — should throw
+    expect(() => {
+      getOrCreateSession("agent:supervisor:main", "supervisor", supervisorCwd, { name: "supervisor" });
+    }).toThrow();
 
-    // The runner created a DIFFERENT session (different key)
-    // But the name UNIQUE constraint may have caused issues
-    console.log("Runner session key:", runnerSession.sessionKey);
-    console.log("Runner session agent:", runnerSession.agentId);
-    console.log("Runner session name:", runnerSession.name);
-
-    // The bot's session still has the wrong agent
-    const finalSession = getSessionByName("supervisor");
-    console.log("Final session key:", finalSession?.sessionKey);
-    console.log("Final session agent:", finalSession?.agentId);
-
-    // THIS IS THE BUG: session has agent_id="main" instead of "supervisor"
-    // Even after runner tried to create with agent_id="supervisor"
-    expect(finalSession?.agentId).toBe("main"); // Current buggy behavior
+    // Step 3: The fix is to use getOrCreateSession with the SAME key to update agent_id
+    const fixed = getOrCreateSession("supervisor", "supervisor", supervisorCwd);
+    expect(fixed.agentId).toBe("supervisor");
   });
 
   test("FIX VERIFICATION: bot should respect _agentId from heartbeat prompt", () => {

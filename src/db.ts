@@ -39,17 +39,11 @@ try {
 db.exec("CREATE INDEX IF NOT EXISTS idx_messages_sdk_session ON messages(sdk_session_id)");
 
 // Prepared statements — AFTER migrations so column is guaranteed to exist
-const insertStmt = db.prepare(
-  "INSERT INTO messages (session_id, role, content, sdk_session_id) VALUES (?, ?, ?, ?)"
-);
+const insertStmt = db.prepare("INSERT INTO messages (session_id, role, content, sdk_session_id) VALUES (?, ?, ?, ?)");
 
-const getHistoryStmt = db.prepare(
-  "SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC"
-);
+const getHistoryStmt = db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id ASC");
 
-const getRecentStmt = db.prepare(
-  "SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?"
-);
+const getRecentStmt = db.prepare("SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?");
 
 export interface Message {
   id: number;
@@ -73,9 +67,10 @@ export function saveMessage(
  * Backfill NULL sdk_session_id on messages after the SDK assigns one.
  */
 export function backfillSdkSessionId(sessionId: string, sdkSessionId: string): void {
-  db.prepare(
-    "UPDATE messages SET sdk_session_id = ? WHERE session_id = ? AND sdk_session_id IS NULL"
-  ).run(sdkSessionId, sessionId);
+  db.prepare("UPDATE messages SET sdk_session_id = ? WHERE session_id = ? AND sdk_session_id IS NULL").run(
+    sdkSessionId,
+    sessionId,
+  );
 }
 
 export function getHistory(sessionId: string): Message[] {
@@ -92,15 +87,17 @@ export function getRecentHistory(sessionId: string, limit = 20): Message[] {
  * Finds the sdk_session_id of the last message and filters by it.
  */
 export function getRecentSessionHistory(sessionId: string, limit = 50): Message[] {
-  const last = db.prepare(
-    "SELECT sdk_session_id FROM messages WHERE session_id = ? AND sdk_session_id IS NOT NULL ORDER BY id DESC LIMIT 1"
-  ).get(sessionId) as { sdk_session_id: string } | null;
+  const last = db
+    .prepare(
+      "SELECT sdk_session_id FROM messages WHERE session_id = ? AND sdk_session_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+    )
+    .get(sessionId) as { sdk_session_id: string } | null;
 
   if (!last) return [];
 
-  const messages = db.prepare(
-    "SELECT * FROM messages WHERE session_id = ? AND sdk_session_id = ? ORDER BY id DESC LIMIT ?"
-  ).all(sessionId, last.sdk_session_id, limit) as Message[];
+  const messages = db
+    .prepare("SELECT * FROM messages WHERE session_id = ? AND sdk_session_id = ? ORDER BY id DESC LIMIT ?")
+    .all(sessionId, last.sdk_session_id, limit) as Message[];
 
   return messages.reverse();
 }

@@ -3,8 +3,7 @@
  */
 
 import { getContact } from "../../contacts.js";
-import { listCommands } from "../registry.js";
-import type { SlashCommand, SlashContext } from "../registry.js";
+import { listCommands, type SlashCommand, type SlashContext } from "../registry.js";
 
 export const helpCommand: SlashCommand = {
   name: "help",
@@ -19,7 +18,7 @@ export const helpCommand: SlashCommand = {
       return "Nenhum comando disponível.";
     }
 
-    const lines = cmds.map(c => {
+    const lines = cmds.map((c) => {
       const lock = c.permission === "admin" ? " 🔒" : "";
       return `/${c.name}${lock} — ${c.description}`;
     });

@@ -54,7 +54,9 @@ export function App() {
       }
     };
     renderer.on("selection", onSelection);
-    return () => { renderer.off("selection", onSelection); };
+    return () => {
+      renderer.off("selection", onSelection);
+    };
   }, [renderer]);
 
   const {
@@ -71,10 +73,7 @@ export function App() {
   } = useNats(sessionName);
 
   // Resolve agent info from session list
-  const currentSession = useMemo(
-    () => sessions.find((s) => s.name === sessionName),
-    [sessions, sessionName],
-  );
+  const currentSession = useMemo(() => sessions.find((s) => s.name === sessionName), [sessions, sessionName]);
   const agentId = currentSession?.agentId ?? "unknown";
   const model = useMemo(() => {
     if (agentId === "unknown") return loadConfig().model;
@@ -83,18 +82,16 @@ export function App() {
   }, [agentId]);
 
   // Toggle command palette with Ctrl+K
-  useKeyboard(
-    (key) => {
-      if (key.ctrl && key.name === "k") {
-        setPaletteOpen((prev) => {
-          if (!prev) {
-            refreshSessions();
-          }
-          return !prev;
-        });
-      }
-    },
-  );
+  useKeyboard((key) => {
+    if (key.ctrl && key.name === "k") {
+      setPaletteOpen((prev) => {
+        if (!prev) {
+          refreshSessions();
+        }
+        return !prev;
+      });
+    }
+  });
 
   const handleSelectSession = useCallback((name: string) => {
     setSessionName(name);
@@ -145,9 +142,7 @@ export function App() {
           break;
         }
         case "help": {
-          const lines = SLASH_COMMANDS.map(
-            (c) => `  /${c.name}  — ${c.description}`,
-          ).join("\n");
+          const lines = SLASH_COMMANDS.map((c) => `  /${c.name}  — ${c.description}`).join("\n");
           pushMessage({
             id: `system-${Date.now()}`,
             type: "chat",

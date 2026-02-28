@@ -76,16 +76,12 @@ function rowToRelation(row: RelationRow): Relation {
  */
 function validateWildcard(objectId: string): void {
   if (objectId.includes("*") && objectId !== "*" && !objectId.endsWith("*")) {
-    throw new Error(
-      `Invalid wildcard pattern: "${objectId}". Only trailing wildcards are supported (e.g., "dev-*").`
-    );
+    throw new Error(`Invalid wildcard pattern: "${objectId}". Only trailing wildcards are supported (e.g., "dev-*").`);
   }
   // Also reject multiple wildcards like "a*b*"
   const starCount = (objectId.match(/\*/g) || []).length;
   if (starCount > 1) {
-    throw new Error(
-      `Invalid wildcard pattern: "${objectId}". Only a single trailing wildcard is supported.`
-    );
+    throw new Error(`Invalid wildcard pattern: "${objectId}". Only a single trailing wildcard is supported.`);
   }
 }
 
@@ -98,7 +94,7 @@ export function grantRelation(
   relation: string,
   objectType: string,
   objectId: string,
-  source: string = "manual"
+  source: string = "manual",
 ): void {
   validateWildcard(objectId);
   const db = getDb();
@@ -118,13 +114,15 @@ export function revokeRelation(
   subjectId: string,
   relation: string,
   objectType: string,
-  objectId: string
+  objectId: string,
 ): boolean {
   const db = getDb();
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     DELETE FROM relations
     WHERE subject_type = ? AND subject_id = ? AND relation = ? AND object_type = ? AND object_id = ?
-  `).run(subjectType, subjectId, relation, objectType, objectId);
+  `)
+    .run(subjectType, subjectId, relation, objectType, objectId);
   return result.changes > 0;
 }
 
@@ -136,14 +134,16 @@ export function hasRelation(
   subjectId: string,
   relation: string,
   objectType: string,
-  objectId: string
+  objectId: string,
 ): boolean {
   const db = getDb();
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT 1 FROM relations
     WHERE subject_type = ? AND subject_id = ? AND relation = ? AND object_type = ? AND object_id = ?
     LIMIT 1
-  `).get(subjectType, subjectId, relation, objectType, objectId);
+  `)
+    .get(subjectType, subjectId, relation, objectType, objectId);
   return row !== null && row !== undefined;
 }
 
@@ -188,11 +188,7 @@ export function listRelations(filter?: RelationFilter): Relation[] {
 /**
  * Clear relations. Optionally filter by subject and/or source.
  */
-export function clearRelations(opts?: {
-  subjectType?: string;
-  subjectId?: string;
-  source?: string;
-}): number {
+export function clearRelations(opts?: { subjectType?: string; subjectId?: string; source?: string }): number {
   const db = getDb();
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -267,7 +263,6 @@ export function syncRelationsFromConfig(): void {
           granted++;
         }
       }
-
     }
   })();
 

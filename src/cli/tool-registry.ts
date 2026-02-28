@@ -8,29 +8,45 @@
 // SDK built-in tools
 export const SDK_TOOLS = [
   // File operations
-  "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit",
+  "Read",
+  "Edit",
+  "Write",
+  "Glob",
+  "Grep",
+  "NotebookEdit",
   // Execution
-  "Bash", "Task", "TaskOutput", "TaskStop",
+  "Bash",
+  "Task",
+  "TaskOutput",
+  "TaskStop",
   // Web
-  "WebFetch", "WebSearch",
+  "WebFetch",
+  "WebSearch",
   // Planning & interaction
-  "EnterPlanMode", "ExitPlanMode", "AskUserQuestion", "TodoWrite",
+  "EnterPlanMode",
+  "ExitPlanMode",
+  "AskUserQuestion",
+  "TodoWrite",
   // Teams
-  "TeamCreate", "TeamDelete", "SendMessage",
+  "TeamCreate",
+  "TeamDelete",
+  "SendMessage",
   // Discovery & navigation
-  "ToolSearch", "EnterWorktree",
+  "ToolSearch",
+  "EnterWorktree",
   // Other
-  "Skill", "LSP",
+  "Skill",
+  "LSP",
 ];
 
 /** Named groups of SDK tools for bulk permission grants */
 export const TOOL_GROUPS: Record<string, string[]> = {
   "read-only": ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP", "ToolSearch"],
-  "write": ["Edit", "Write", "NotebookEdit"],
-  "execute": ["Bash", "Task", "TaskOutput", "TaskStop"],
-  "plan": ["EnterPlanMode", "ExitPlanMode", "AskUserQuestion", "TodoWrite"],
-  "teams": ["TeamCreate", "TeamDelete", "SendMessage"],
-  "navigate": ["EnterWorktree", "Skill"],
+  write: ["Edit", "Write", "NotebookEdit"],
+  execute: ["Bash", "Task", "TaskOutput", "TaskStop"],
+  plan: ["EnterPlanMode", "ExitPlanMode", "AskUserQuestion", "TodoWrite"],
+  teams: ["TeamCreate", "TeamDelete", "SendMessage"],
+  navigate: ["EnterWorktree", "Skill"],
 };
 
 /**

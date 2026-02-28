@@ -39,7 +39,6 @@ let _commandClasses: CommandClass[] | null = null;
 export function getAllCommandClasses(): CommandClass[] {
   if (!_commandClasses) {
     // Dynamic import to avoid circular dependency at load time
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const allCommands = require("./commands/index.js");
     _commandClasses = Object.values(allCommands) as CommandClass[];
   }
@@ -57,7 +56,7 @@ function getCachedTools(): ExportedTool[] {
 }
 
 // Set lazy initializer for tool registry (avoids circular dependency)
-setCliToolsInitializer(() => getCachedTools().map(t => t.name));
+setCliToolsInitializer(() => getCachedTools().map((t) => t.name));
 
 // ============================================================================
 // Public API
@@ -91,17 +90,12 @@ export function getCliToolsByGroup(): Record<string, string[]> {
  * Create SDK tool definitions (JSON Schema format).
  * Used for inspection and documentation.
  */
-export function createSdkTools(
-  classes: CommandClass[],
-  options: CreateSdkToolsOptions = {}
-): SdkToolDefinition[] {
+export function createSdkTools(classes: CommandClass[], options: CreateSdkToolsOptions = {}): SdkToolDefinition[] {
   const { filter } = options;
 
   // Use cache if using all classes, otherwise extract fresh
   const allClasses = getAllCommandClasses();
-  let tools = classes === allClasses
-    ? getCachedTools()
-    : extractTools(classes);
+  let tools = classes === allClasses ? getCachedTools() : extractTools(classes);
 
   if (filter) {
     const regex = typeof filter === "string" ? new RegExp(filter) : filter;

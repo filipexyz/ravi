@@ -27,9 +27,7 @@ export class PromptBuilder {
    * Build the final prompt string
    */
   build(): string {
-    return this.sections
-      .map((s) => `## ${s.title}\n\n${s.content}`)
-      .join("\n\n");
+    return this.sections.map((s) => `## ${s.title}\n\n${s.content}`).join("\n\n");
   }
 }
 
@@ -95,11 +93,7 @@ export function buildGroupContext(ctx: ChannelContext): string {
 /**
  * Build runtime info section for system prompt
  */
-export function buildRuntimeInfo(
-  agentId: string,
-  ctx: ChannelContext,
-  sessionName?: string
-): string {
+export function buildRuntimeInfo(agentId: string, ctx: ChannelContext, sessionName?: string): string {
   const capabilities = "polls,reactions"; // TODO: get from plugin
   const sessionPart = sessionName ? ` | session=${sessionName}` : "";
 
@@ -201,20 +195,21 @@ export function buildSystemPrompt(
   ctx?: ChannelContext,
   extraSections?: PromptSection[],
   sessionName?: string,
-  opts?: { agentMode?: string }
+  opts?: { agentMode?: string },
 ): string {
   const isSentinel = opts?.agentMode === "sentinel";
   const isLargeGroup = ctx?.isGroup && (ctx.groupMembers?.length ?? 0) >= 3;
 
-  const builder = new PromptBuilder()
-    .section("Identidade", "Você é Ravi.");
+  const builder = new PromptBuilder().section("Identidade", "Você é Ravi.");
 
   // System commands for all agents (sentinel needs them for cross-send execute/ask)
   builder.section("System Commands", systemCommandsText());
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
-    builder.section("Channel Messaging", `You are a sentinel agent — you observe messages silently and never auto-reply.
+    builder.section(
+      "Channel Messaging",
+      `You are a sentinel agent — you observe messages silently and never auto-reply.
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
 
 - \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID\` — send a WhatsApp message
@@ -222,7 +217,8 @@ When instructed via [System] Execute or [System] Ask, you CAN send messages expl
 - \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID\` — send read receipt (blue ticks)
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
-Your text output is NOT sent to the channel. Use these tools to send explicitly.`);
+Your text output is NOT sent to the channel. Use these tools to send explicitly.`,
+    );
   }
 
   // Silent replies only for groups with 3+ members

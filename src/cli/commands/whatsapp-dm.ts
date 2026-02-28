@@ -20,13 +20,13 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
   if (contact) {
     const identities = getContactIdentities(contact.id);
     // Prefer LID for DMs (direct WhatsApp internal ID)
-    const lid = identities.find(i => i.platform === "whatsapp_lid");
+    const lid = identities.find((i) => i.platform === "whatsapp_lid");
     if (lid) {
       const jid = phoneToJid(`lid:${lid.value.replace(/^lid:/, "")}`);
       if (jid) return { jid, displayName: contact.name ?? formatPhone(contact.phone) };
     }
     // Fallback to phone
-    const phone = identities.find(i => i.platform === "phone");
+    const phone = identities.find((i) => i.platform === "phone");
     if (phone) {
       const jid = phoneToJid(phone.value);
       if (jid) return { jid, displayName: contact.name ?? formatPhone(phone.value) };
@@ -55,7 +55,7 @@ export class WhatsAppDmCommands {
   async send(
     @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
     @Arg("message", { description: "Message text" }) message: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
 
@@ -77,7 +77,7 @@ export class WhatsAppDmCommands {
     @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
     @Option({ flags: "--no-ack", description: "Don't send read receipt" }) noAck?: boolean,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
     const sessionId = jidToSessionId(jid);
@@ -100,7 +100,7 @@ export class WhatsAppDmCommands {
     // Send ack for the last user message by default
     if (!noAck) {
       // Find last inbound message ID from content (mid tag)
-      const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
       if (lastUserMsg) {
         const midMatch = lastUserMsg.content.match(/\[mid:([^\]]+)\]/);
         if (midMatch) {
@@ -121,7 +121,7 @@ export class WhatsAppDmCommands {
   async ack(
     @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string
+    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
 

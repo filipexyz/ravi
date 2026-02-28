@@ -25,10 +25,7 @@ let explicitConnect = false;
  * With retry enabled (default for daemon), retries up to 30 times with 2s intervals
  * to handle PM2 parallel startup where NATS might not be ready yet.
  */
-export async function connectNats(
-  url = DEFAULT_URL,
-  opts?: { explicit?: boolean; retry?: boolean }
-): Promise<void> {
+export async function connectNats(url = DEFAULT_URL, opts?: { explicit?: boolean; retry?: boolean }): Promise<void> {
   const maxRetries = opts?.retry !== false && opts?.explicit ? 30 : 1;
   const retryInterval = 2000;
 
@@ -76,7 +73,9 @@ export function isExplicitConnect(): boolean {
 export async function ensureConnected(): Promise<NatsConnection> {
   if (nc) return nc;
   if (!connecting) {
-    connecting = connectNats(DEFAULT_URL).finally(() => { connecting = null; });
+    connecting = connectNats(DEFAULT_URL).finally(() => {
+      connecting = null;
+    });
   }
   await connecting;
   return nc!;
@@ -91,18 +90,14 @@ export function getNats(): NatsConnection {
  * Publish JSON data to a topic.
  * Drop-in replacement for nats.emit()
  */
-export async function publish(
-  topic: string,
-  data: Record<string, unknown>
-): Promise<void> {
+export async function publish(topic: string, data: Record<string, unknown>): Promise<void> {
   const conn = await ensureConnected();
 
   // Trace .response emissions (helps debug ghost responses)
   if (topic.includes(".response")) {
     const hasEmitId = "_emitId" in data;
     if (!hasEmitId) {
-      const stack =
-        new Error().stack?.split("\n").slice(2, 8).join("\n") || "no stack";
+      const stack = new Error().stack?.split("\n").slice(2, 8).join("\n") || "no stack";
       log.warn("GHOST_EMIT_DETECTED", {
         topic,
         keys: Object.keys(data),
@@ -230,7 +225,9 @@ export async function* subscribe(
       if (queue.length > 0) {
         yield queue.shift()!;
       } else {
-        await new Promise<void>((r) => { resolve = r; });
+        await new Promise<void>((r) => {
+          resolve = r;
+        });
         resolve = null;
       }
     }
@@ -261,6 +258,7 @@ export async function closeNats(): Promise<void> {
  */
 export const nats = {
   emit: publish,
-  subscribe: (...args: [...string[], SubscribeOptions] | string[]) => subscribe(...(args as Parameters<typeof subscribe>)),
+  subscribe: (...args: [...string[], SubscribeOptions] | string[]) =>
+    subscribe(...(args as Parameters<typeof subscribe>)),
   close: closeNats,
 };

@@ -41,7 +41,7 @@ interface HookContext {
 type HookCallback = (
   input: PreCompactHookInput,
   toolUseId: string | null,
-  context: HookContext
+  context: HookContext,
 ) => Promise<Record<string, unknown>>;
 
 /**
@@ -62,9 +62,7 @@ export interface PreCompactHookOptions {
  * @param options Hook options
  * @returns A hook callback for PreCompact events
  */
-export function createPreCompactHook(
-  options: PreCompactHookOptions = {}
-): HookCallback {
+export function createPreCompactHook(options: PreCompactHookOptions = {}): HookCallback {
   return async (input, _toolUseId, _context) => {
     const { session_id: sessionId, cwd: agentCwd } = input;
 
@@ -126,10 +124,7 @@ Foque em:
 
     // Write full transcript to temp file
     const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_:-]/g, "_");
-    const transcriptTmpPath = join(
-      tmpdir(),
-      `ravi-memory-${sanitizedSessionId}-${Date.now()}.md`
-    );
+    const transcriptTmpPath = join(tmpdir(), `ravi-memory-${sanitizedSessionId}-${Date.now()}.md`);
     writeFileSync(transcriptTmpPath, formattedTranscript, "utf-8");
     const lineCount = formattedTranscript.split("\n").length;
 
@@ -247,10 +242,7 @@ Preste atenção especial a:
         // - Transcript file: Read only
         // - MEMORY.md + memory/*.md: Read/Edit/Write
         // - Everything else under CWD: Read only
-        const fileAccessHook = async (
-          toolInput: Record<string, unknown>,
-          _toolUseId: string | null
-        ) => {
+        const fileAccessHook = async (toolInput: Record<string, unknown>, _toolUseId: string | null) => {
           const filePath = (toolInput.file_path as string) || "";
           const normalizedPath = resolve(agentCwd, filePath);
 

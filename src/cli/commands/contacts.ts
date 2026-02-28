@@ -14,7 +14,6 @@ function emitConfigChanged() {
 import {
   getAllContacts,
   getContact,
-  getContactById,
   getPendingContacts,
   upsertContact,
   deleteContact,
@@ -32,7 +31,6 @@ import {
   addContactIdentity,
   removeContactIdentity,
   mergeContacts,
-  getContactIdentities,
   setGroupTag,
   removeGroupTag,
   type Contact,
@@ -40,15 +38,10 @@ import {
   type ReplyMode,
   type ContactSource,
   listAccountPending,
-  removeAccountPending,
 } from "../../contacts.js";
 import { dbListRoutes } from "../../router/router-db.js";
 import { findSessionByChatId } from "../../router/sessions.js";
-import {
-  getScopeContext,
-  isScopeEnforced,
-  canAccessContact,
-} from "../../permissions/scope.js";
+import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permissions/scope.js";
 
 function statusIcon(status: ContactStatus): string {
   switch (status) {
@@ -84,7 +77,7 @@ function getRouteAgent(contact: Contact): string | null {
   if (!_cachedRoutes) _cachedRoutes = dbListRoutes();
   for (const id of contact.identities) {
     const val = id.value.toLowerCase();
-    const match = _cachedRoutes.find(r => r.pattern === val);
+    const match = _cachedRoutes.find((r) => r.pattern === val);
     if (match) return match.agent;
   }
   return null;
@@ -101,20 +94,24 @@ function getSessionName(contact: Contact): string | null {
 
 function platformIcon(platform: string): string {
   switch (platform) {
-    case "phone": return "📱";
-    case "whatsapp_lid": return "🆔";
-    case "whatsapp_group": return "👥";
-    case "matrix": return "🔗";
-    case "telegram": return "✈️";
-    default: return "•";
+    case "phone":
+      return "📱";
+    case "whatsapp_lid":
+      return "🆔";
+    case "whatsapp_group":
+      return "👥";
+    case "matrix":
+      return "🔗";
+    case "telegram":
+      return "✈️";
+    default:
+      return "•";
   }
 }
 
 function formatIdentities(contact: Contact): string {
   if (contact.identities.length === 0) return "-";
-  return contact.identities
-    .map(i => `${platformIcon(i.platform)} ${formatPhone(i.value)}`)
-    .join(" | ");
+  return contact.identities.map((i) => `${platformIcon(i.platform)} ${formatPhone(i.value)}`).join(" | ");
 }
 
 function formatIdentitiesShort(contact: Contact, maxLen = 40): string {
@@ -130,17 +127,13 @@ function formatIdentitiesShort(contact: Contact, maxLen = 40): string {
 export class ContactsCommands {
   @Scope("open")
   @Command({ name: "list", description: "List all contacts" })
-  list(
-    @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string
-  ) {
-    let contacts = filterStatus
-      ? getAllContacts().filter(c => c.status === filterStatus)
-      : getAllContacts();
+  list(@Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string) {
+    let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
 
     // Scope isolation: filter contacts by agent scope (via REBAC)
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      contacts = contacts.filter(c => {
+      contacts = contacts.filter((c) => {
         // Find the agent that owns this contact's session (via route)
         const contactAgent = getRouteAgent(c);
         const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
@@ -156,7 +149,9 @@ export class ContactsCommands {
 
     console.log("\nContacts:\n");
     console.log("  ST  ID          NAME                  AGENT           SESSION              IDENTITIES");
-    console.log("  --  ----------  --------------------  --------------  -------------------  ---------------------------");
+    console.log(
+      "  --  ----------  --------------------  --------------  -------------------  ---------------------------",
+    );
     for (const contact of contacts) {
       const icon = statusIcon(contact.status);
       const id = contact.id.padEnd(10);
@@ -171,15 +166,13 @@ export class ContactsCommands {
     const blocked = contacts.filter((c) => c.status === "blocked").length;
     const discovered = contacts.filter((c) => c.status === "discovered").length;
     console.log(
-      `\n  Total: ${contacts.length} (${allowed} allowed, ${pending} pending, ${blocked} blocked, ${discovered} discovered)`
+      `\n  Total: ${contacts.length} (${allowed} allowed, ${pending} pending, ${blocked} blocked, ${discovered} discovered)`,
     );
   }
 
   @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
-  pending(
-    @Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string
-  ) {
+  pending(@Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string) {
     // Global pending contacts
     const contacts = getPendingContacts();
     if (contacts.length > 0) {
@@ -227,18 +220,21 @@ export class ContactsCommands {
   add(
     @Arg("identity", { description: "Phone number, LID, or group ID" }) identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
-    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string
+    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
   ) {
     const normalized = normalizePhone(identity);
     upsertContact(normalized, name ?? null, "allowed", "manual");
     const contact = getContact(normalized);
     if (contact && agentIds) {
-      const agents = agentIds.split(",").map(a => a.trim()).filter(Boolean);
+      const agents = agentIds
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean);
       updateContact(contact.id, { allowedAgents: agents });
     }
     const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
     console.log(
-      `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`
+      `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`,
     );
   }
 
@@ -248,7 +244,7 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
     replyMode?: string,
-    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string
+    @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
   ) {
     if (replyMode && replyMode !== "auto" && replyMode !== "mention") {
       fail("Reply mode must be 'auto' or 'mention'");
@@ -264,16 +260,17 @@ export class ContactsCommands {
       setContactReplyMode(contact.phone, replyMode as ReplyMode);
     }
     if (agentIds) {
-      const agents = agentIds.split(",").map(a => a.trim()).filter(Boolean);
+      const agents = agentIds
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean);
       updateContact(contact.id, { allowedAgents: agents });
     }
     emitConfigChanged();
 
     const modeInfo = replyMode ? ` (${replyMode})` : "";
     const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
-    console.log(
-      `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}${agentLabel}`
-    );
+    console.log(`✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}${agentLabel}`);
   }
 
   @Scope("writeContacts")
@@ -316,7 +313,7 @@ export class ContactsCommands {
   set(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Property key" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -344,7 +341,7 @@ export class ContactsCommands {
         updateContact(contact.id, { tags });
         console.log(`✓ Tags set: ${contact.id} → ${value}`);
       } catch {
-        fail("Tags must be a valid JSON array, e.g. '[\"lead\",\"vip\"]'");
+        fail('Tags must be a valid JSON array, e.g. \'["lead","vip"]\'');
       }
     } else if (key === "notes") {
       try {
@@ -353,7 +350,7 @@ export class ContactsCommands {
         updateContact(contact.id, { notes });
         console.log(`✓ Notes set: ${contact.id}`);
       } catch {
-        fail("Notes must be a valid JSON object, e.g. '{\"empresa\":\"Acme\"}'");
+        fail('Notes must be a valid JSON object, e.g. \'{"empresa":"Acme"}\'');
       }
     } else if (key === "opt-out" || key === "optout") {
       const boolValue = value === "true" || value === "yes" || value === "1";
@@ -364,7 +361,7 @@ export class ContactsCommands {
       if (value !== "-" && !validSources.includes(value)) {
         fail(`Source must be one of: ${validSources.join(", ")} (or '-' to clear)`);
       }
-      updateContact(contact.id, { source: value === "-" ? null : value as ContactSource });
+      updateContact(contact.id, { source: value === "-" ? null : (value as ContactSource) });
       console.log(`✓ Source set: ${contact.id} → ${value}`);
     } else if (key === "allowed-agents") {
       if (value === "-" || value === "null") {
@@ -432,7 +429,7 @@ export class ContactsCommands {
   @Command({ name: "find", description: "Find contacts by tag or search query" })
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
-    @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean
+    @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
   ) {
     const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
 
@@ -457,7 +454,7 @@ export class ContactsCommands {
   @Command({ name: "tag", description: "Add a tag to a contact" })
   tag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("tag", { description: "Tag to add" }) tag: string
+    @Arg("tag", { description: "Tag to add" }) tag: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -472,7 +469,7 @@ export class ContactsCommands {
   @Command({ name: "untag", description: "Remove a tag from a contact" })
   untag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("tag", { description: "Tag to remove" }) tag: string
+    @Arg("tag", { description: "Tag to remove" }) tag: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -488,7 +485,7 @@ export class ContactsCommands {
   groupTag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
-    @Arg("tag", { description: "Tag label" }) tag: string
+    @Arg("tag", { description: "Tag label" }) tag: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -507,7 +504,7 @@ export class ContactsCommands {
   @Command({ name: "group-untag", description: "Remove a contact's tag from a specific group" })
   groupUntag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string
+    @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -526,8 +523,9 @@ export class ContactsCommands {
   @Command({ name: "identity-add", description: "Add an identity to a contact" })
   identityAdd(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
-    @Arg("platform", { description: "Platform (phone, whatsapp_lid, whatsapp_group, matrix, telegram)" }) platform: string,
-    @Arg("value", { description: "Identity value" }) value: string
+    @Arg("platform", { description: "Platform (phone, whatsapp_lid, whatsapp_group, matrix, telegram)" })
+    platform: string,
+    @Arg("value", { description: "Identity value" }) value: string,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -546,7 +544,7 @@ export class ContactsCommands {
   @Command({ name: "identity-remove", description: "Remove an identity" })
   identityRemove(
     @Arg("platform", { description: "Platform" }) platform: string,
-    @Arg("value", { description: "Identity value" }) value: string
+    @Arg("value", { description: "Identity value" }) value: string,
   ) {
     removeContactIdentity(platform, value);
     console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatPhone(value)}`);
@@ -556,7 +554,7 @@ export class ContactsCommands {
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
   merge(
     @Arg("target", { description: "Target contact ID" }) targetRef: string,
-    @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string
+    @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
   ) {
     const target = getContact(targetRef);
     const source = getContact(sourceRef);

@@ -63,7 +63,7 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   "whatsapp.groupPolicy": {
     description: `WhatsApp group policy (${GROUP_POLICIES.join(", ")})`,
     validate: (value: string) => {
-      if (!GROUP_POLICIES.includes(value as typeof GROUP_POLICIES[number])) {
+      if (!GROUP_POLICIES.includes(value as (typeof GROUP_POLICIES)[number])) {
         throw new Error(`Invalid value. Must be one of: ${GROUP_POLICIES.join(", ")}`);
       }
     },
@@ -71,7 +71,7 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   "whatsapp.dmPolicy": {
     description: `WhatsApp DM policy (${DM_POLICIES.join(", ")})`,
     validate: (value: string) => {
-      if (!DM_POLICIES.includes(value as typeof DM_POLICIES[number])) {
+      if (!DM_POLICIES.includes(value as (typeof DM_POLICIES)[number])) {
         throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
       }
     },
@@ -86,7 +86,7 @@ const PATTERN_VALIDATORS: PatternValidator[] = [
     pattern: /^account\.[^.]+(\.[^.]+)?\.groupPolicy$/,
     description: `Per-account group policy (${GROUP_POLICIES.join(", ")})`,
     validate: (value: string) => {
-      if (!GROUP_POLICIES.includes(value as typeof GROUP_POLICIES[number])) {
+      if (!GROUP_POLICIES.includes(value as (typeof GROUP_POLICIES)[number])) {
         throw new Error(`Invalid value. Must be one of: ${GROUP_POLICIES.join(", ")}`);
       }
     },
@@ -96,7 +96,7 @@ const PATTERN_VALIDATORS: PatternValidator[] = [
     pattern: /^account\.[^.]+(\.[^.]+)?\.dmPolicy$/,
     description: `Per-account DM policy (${DM_POLICIES.join(", ")})`,
     validate: (value: string) => {
-      if (!DM_POLICIES.includes(value as typeof DM_POLICIES[number])) {
+      if (!DM_POLICIES.includes(value as (typeof DM_POLICIES)[number])) {
         throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
       }
     },
@@ -104,9 +104,8 @@ const PATTERN_VALIDATORS: PatternValidator[] = [
 ];
 
 function findPatternValidator(key: string): PatternValidator | undefined {
-  return PATTERN_VALIDATORS.find(p => p.pattern.test(key));
+  return PATTERN_VALIDATORS.find((p) => p.pattern.test(key));
 }
-
 
 @Group({
   name: "settings",
@@ -128,9 +127,9 @@ export class SettingsCommands {
     }
 
     // Show any additional custom settings (split: pattern-known vs truly custom)
-    const customKeys = Object.keys(settings).filter(k => !KNOWN_SETTINGS[k]);
-    const knownPatternKeys = customKeys.filter(k => findPatternValidator(k));
-    const unknownKeys = customKeys.filter(k => !findPatternValidator(k));
+    const customKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS[k]);
+    const knownPatternKeys = customKeys.filter((k) => findPatternValidator(k));
+    const unknownKeys = customKeys.filter((k) => !findPatternValidator(k));
 
     if (knownPatternKeys.length > 0) {
       console.log("  Per-account policies:");
@@ -171,7 +170,7 @@ export class SettingsCommands {
   @Command({ name: "set", description: "Set a setting value" })
   set(
     @Arg("key", { description: "Setting key" }) key: string,
-    @Arg("value", { description: "Setting value" }) value: string
+    @Arg("value", { description: "Setting value" }) value: string,
   ) {
     // Validate known settings (exact match first, then pattern-based)
     const meta = KNOWN_SETTINGS[key];
@@ -181,11 +180,14 @@ export class SettingsCommands {
       try {
         validator(value);
       } catch (err) {
-        const hint = key === "defaultAgent"
-          ? `. Available: ${dbListAgents().map(a => a.id).join(", ")}`
-          : key === "defaultDmScope"
-            ? `. Valid scopes: ${DmScopeSchema.options.join(", ")}`
-            : "";
+        const hint =
+          key === "defaultAgent"
+            ? `. Available: ${dbListAgents()
+                .map((a) => a.id)
+                .join(", ")}`
+            : key === "defaultDmScope"
+              ? `. Valid scopes: ${DmScopeSchema.options.join(", ")}`
+              : "";
         fail(`Invalid value for ${key}: ${err instanceof Error ? err.message : err}${hint}`);
       }
     }

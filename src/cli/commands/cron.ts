@@ -37,7 +37,7 @@ export class CronCommands {
     // Scope isolation: filter to own agent's jobs
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      jobs = jobs.filter(j => canAccessResource(scopeCtx, j.agentId));
+      jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
     }
 
     if (jobs.length === 0) {
@@ -59,7 +59,9 @@ export class CronCommands {
       const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
       const nextRun = job.nextRunAt
         ? new Date(job.nextRunAt).toLocaleString()
-        : job.schedule.type === "at" ? "(expired)" : "-";
+        : job.schedule.type === "at"
+          ? "(expired)"
+          : "-";
 
       console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
     }
@@ -127,8 +129,9 @@ export class CronCommands {
     @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
-    @Option({ flags: "--account <name>", description: "Account for outbound routing (auto-detected from agent)" }) account?: string,
-    @Option({ flags: "--description <text>", description: "Job description" }) description?: string
+    @Option({ flags: "--account <name>", description: "Account for outbound routing (auto-detected from agent)" })
+    account?: string,
+    @Option({ flags: "--description <text>", description: "Job description" }) description?: string,
   ) {
     // Validate message is provided
     if (!message) {
@@ -262,8 +265,12 @@ export class CronCommands {
   @Command({ name: "set", description: "Set job property" })
   async set(
     @Arg("id", { description: "Job ID" }) id: string,
-    @Arg("key", { description: "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("key", {
+      description:
+        "Property: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after",
+    })
+    key: string,
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
@@ -373,7 +380,9 @@ export class CronCommands {
         }
 
         default:
-          fail(`Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after`);
+          fail(
+            `Unknown property: ${key}. Valid: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after`,
+          );
       }
 
       // Signal daemon to refresh timers

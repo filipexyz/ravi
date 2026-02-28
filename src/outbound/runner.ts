@@ -107,7 +107,7 @@ export class OutboundRunner {
     });
 
     this.timer = setTimeout(() => {
-      this.runDueQueues().catch(err => {
+      this.runDueQueues().catch((err) => {
         log.error("Error running due queues", { error: err });
       });
     }, delay);
@@ -211,15 +211,17 @@ export class OutboundRunner {
       if (!entry) {
         // No pending entries for initial outreach
         const allEntries = dbListEntries(queue.id);
-        const notDoneCount = allEntries.filter(e => e.status !== "done" && e.status !== "skipped").length;
+        const notDoneCount = allEntries.filter((e) => e.status !== "done" && e.status !== "skipped").length;
 
         // Don't mark completed if there are entries that could still get follow-ups
-        const hasFollowUpCandidates = Object.keys(stageDelays).length > 0 &&
-          allEntries.some(e =>
-            e.roundsCompleted > 0 &&
-            !e.lastResponseText &&
-            (e.status === "pending" || e.status === "active") &&
-            (queue.maxRounds === undefined || e.roundsCompleted < queue.maxRounds)
+        const hasFollowUpCandidates =
+          Object.keys(stageDelays).length > 0 &&
+          allEntries.some(
+            (e) =>
+              e.roundsCompleted > 0 &&
+              !e.lastResponseText &&
+              (e.status === "pending" || e.status === "active") &&
+              (queue.maxRounds === undefined || e.roundsCompleted < queue.maxRounds),
           );
 
         if (notDoneCount === 0 && allEntries.length > 0) {
@@ -302,9 +304,7 @@ export class OutboundRunner {
 
     // Build user prompt: just the actionable part
     const isFollowUp = !!entry.lastResponseText;
-    const prompt = isFollowUp
-      ? this.buildFollowUpPrompt(queue, entry)
-      : this.buildOutreachPrompt(queue, entry);
+    const prompt = isFollowUp ? this.buildFollowUpPrompt(queue, entry) : this.buildOutreachPrompt(queue, entry);
 
     // Find or create outbound session
     const sessionName = this.resolveOutboundSession(queue, entry, agentId);
@@ -380,7 +380,9 @@ export class OutboundRunner {
     parts.push("");
     parts.push("## Available Actions");
     parts.push(`- \`ravi outbound send ${entry.id} <message>\` — Send WhatsApp message (use --typing-delay 3000-6000)`);
-    parts.push(`- \`ravi outbound qualify ${entry.id} <stage>\` — Atualize o estágio quando mudar (${stageNames.join("/")})`);
+    parts.push(
+      `- \`ravi outbound qualify ${entry.id} <stage>\` — Atualize o estágio quando mudar (${stageNames.join("/")})`,
+    );
     parts.push(`- \`ravi outbound done ${entry.id}\` — Encerrar entry (use quando concluir o pipeline)`);
     parts.push(`- \`ravi outbound complete ${entry.id}\` — Re-encerrar entry que reativou com nova mensagem`);
     parts.push(`- \`ravi outbound skip ${entry.id}\` — Pular por agora`);
@@ -650,7 +652,6 @@ export class OutboundRunner {
       }
     }
   }
-
 }
 
 // Singleton instance

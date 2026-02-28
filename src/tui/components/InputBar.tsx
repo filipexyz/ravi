@@ -211,13 +211,7 @@ export function InputBar({
   const barHeight = visibleLines + 2;
 
   return (
-    <box
-      height={barHeight}
-      width="100%"
-      border={["top", "bottom"]}
-      borderColor="gray"
-      borderFocusedColor="cyan"
-    >
+    <box height={barHeight} width="100%" border={["top", "bottom"]} borderColor="gray" borderFocusedColor="cyan">
       {slashOpen && (
         <SlashMenu query={slashQuery} selectedIndex={selectedIndex} parentHeight={barHeight + extraOffset} />
       )}

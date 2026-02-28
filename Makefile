@@ -4,10 +4,10 @@
 quality: lint typecheck
 	@echo "✓ Quality checks passed"
 
-# Lint with eslint (report only, no fix)
+# Lint with biome (report only, no fix)
 lint:
-	@echo "Running eslint..."
-	@bun eslint src/ --max-warnings=0
+	@echo "Running biome check..."
+	@bunx biome check src/
 
 # TypeScript type checking
 typecheck:
@@ -40,7 +40,7 @@ daemon:
 help:
 	@echo "Available targets:"
 	@echo "  quality   - Run lint + typecheck (no auto-fix)"
-	@echo "  lint      - Run eslint only"
+	@echo "  lint      - Run biome check only"
 	@echo "  typecheck - Run tsc --noEmit only"
 	@echo "  build     - Compile TypeScript"
 	@echo "  clean     - Remove dist/"

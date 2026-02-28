@@ -103,8 +103,7 @@ export function ToolBlock({ tool }: ToolBlockProps) {
   const isRunning = tool.status === "running";
   const icon = isRunning ? "\u27F3" : expanded ? "\u25BC" : "\u25B6";
   const summary = toolSummary(tool.toolName, tool.input);
-  const durationStr =
-    tool.durationMs != null ? `${tool.durationMs}ms` : "";
+  const durationStr = tool.durationMs != null ? `${tool.durationMs}ms` : "";
 
   // Header line
   const headerParts = [
@@ -114,11 +113,7 @@ export function ToolBlock({ tool }: ToolBlockProps) {
     durationStr ? `  ${durationStr}` : "",
   ];
   const headerText = headerParts.join("");
-  const headerColor = isRunning
-    ? "yellow"
-    : tool.isError
-      ? "red"
-      : "gray";
+  const headerColor = isRunning ? "yellow" : tool.isError ? "red" : "gray";
 
   if (!expanded) {
     return (
@@ -137,9 +132,7 @@ export function ToolBlock({ tool }: ToolBlockProps) {
   return (
     <box flexDirection="column" width="100%" marginBottom={0} onClick={toggle}>
       <text content={headerText} fg={headerColor} />
-      {inputStr ? (
-        <text content={`\u2502 ${inputStr}`} fg="cyan" />
-      ) : null}
+      {inputStr ? <text content={`\u2502 ${inputStr}`} fg="cyan" /> : null}
       {outputStr ? (
         <text
           content={outputStr

@@ -9,10 +9,7 @@
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import {
-  getExpiringSessions,
-  getExpiredSessions,
-} from "../router/sessions.js";
+import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
 import { dbCleanupMessageMeta, dbCleanupExpiredSessions } from "../router/router-db.js";
 
 const log = logger.child("ephemeral");

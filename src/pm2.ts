@@ -23,13 +23,8 @@ export function isPm2Available(): boolean {
 /**
  * Run a pm2 command with inherited stdio.
  */
-export function runPm2(
-  args: string[],
-  envOverrides?: Record<string, string>
-): { status: number } {
-  const env = envOverrides
-    ? { ...process.env, ...envOverrides }
-    : process.env;
+export function runPm2(args: string[], envOverrides?: Record<string, string>): { status: number } {
+  const env = envOverrides ? { ...process.env, ...envOverrides } : process.env;
 
   const result = spawnSync("pm2", args, {
     stdio: "inherit",

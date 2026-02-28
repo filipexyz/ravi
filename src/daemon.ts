@@ -12,7 +12,7 @@ import { RaviBot } from "./bot.js";
 import { createGateway } from "./gateway.js";
 import { OmniSender, OmniConsumer } from "./omni/index.js";
 import { loadConfig } from "./utils/config.js";
-import { nats, connectNats, closeNats } from "./nats.js";
+import { connectNats, closeNats } from "./nats.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbGetSetting } from "./router/router-db.js";
@@ -26,7 +26,12 @@ import { startInboxWatcher, stopInboxWatcher } from "./copilot/inbox-watcher.js"
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
-import { tryAcquireLeadership, startLeadershipRenewal, watchForLeadershipVacancy, releaseLeadership } from "./leader/index.js";
+import {
+  tryAcquireLeadership,
+  startLeadershipRenewal,
+  watchForLeadershipVacancy,
+  releaseLeadership,
+} from "./leader/index.js";
 
 const log = logger.child("daemon");
 
@@ -48,8 +53,7 @@ function loadEnvFile() {
     const key = trimmed.slice(0, eqIndex).trim();
     let value = trimmed.slice(eqIndex + 1).trim();
 
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
 
@@ -231,7 +235,7 @@ export async function startDaemon() {
       await startHeartbeatRunner();
       await startCronRunner();
       log.info("Heartbeat and cron runners started (new leader)");
-    }).catch(err => log.error("Leadership watcher failed", err));
+    }).catch((err) => log.error("Leadership watcher failed", err));
   }
 
   await startOutboundRunner();
@@ -251,12 +255,14 @@ export async function startDaemon() {
   // Notify restart reason after consumer is ready + delay to let sessions reconnect first.
   // The TUI sends "Continue from where you left off" on reconnect — we wait for that turn
   // to start before publishing the inform, so it arrives between turns (not concatenated).
-  bot.consumerReady.then(async () => {
-    await new Promise(r => setTimeout(r, 3000));
-    await notifyRestartReason();
-  }).catch(err => {
-    log.error("Failed to notify restart reason", err);
-  });
+  bot.consumerReady
+    .then(async () => {
+      await new Promise((r) => setTimeout(r, 3000));
+      await notifyRestartReason();
+    })
+    .catch((err) => {
+      log.error("Failed to notify restart reason", err);
+    });
 }
 
 /**
@@ -271,8 +277,12 @@ function createStubSender(): OmniSender {
     },
     sendTyping: async () => {},
     sendReaction: async () => {},
-    sendMedia: async () => { return {}; },
-    getClient: () => { throw new Error("Omni not configured"); },
+    sendMedia: async () => {
+      return {};
+    },
+    getClient: () => {
+      throw new Error("Omni not configured");
+    },
   } as unknown as OmniSender;
 }
 

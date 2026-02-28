@@ -20,13 +20,7 @@ import {
   expandHome,
 } from "../router/index.js";
 import { getAgent } from "../router/config.js";
-import {
-  dbGetDueJobs,
-  dbGetNextDueJob,
-  dbUpdateJobState,
-  dbDeleteCronJob,
-  dbGetCronJob,
-} from "./cron-db.js";
+import { dbGetDueJobs, dbGetNextDueJob, dbUpdateJobState, dbDeleteCronJob, dbGetCronJob } from "./cron-db.js";
 import { calculateNextRun } from "./schedule.js";
 import type { CronJob } from "./types.js";
 
@@ -106,7 +100,7 @@ export class CronRunner {
     });
 
     this.timer = setTimeout(() => {
-      this.runDueJobs().catch(err => {
+      this.runDueJobs().catch((err) => {
         log.error("Error running due jobs", { error: err });
       });
     }, delay);
@@ -157,9 +151,7 @@ export class CronRunner {
 
       // Calculate next run from the scheduled time (not now) to prevent drift
       // For interval jobs, use the original nextRunAt as base
-      const baseTime = job.schedule.type === "every" && job.nextRunAt
-        ? job.nextRunAt
-        : startTime;
+      const baseTime = job.schedule.type === "every" && job.nextRunAt ? job.nextRunAt : startTime;
       const nextRunAt = calculateNextRun(job.schedule, baseTime);
 
       dbUpdateJobState(job.id, {
@@ -180,9 +172,7 @@ export class CronRunner {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
       // Calculate next run even on error so job can retry
-      const baseTime = job.schedule.type === "every" && job.nextRunAt
-        ? job.nextRunAt
-        : startTime;
+      const baseTime = job.schedule.type === "every" && job.nextRunAt ? job.nextRunAt : startTime;
       const nextRunAt = calculateNextRun(job.schedule, baseTime);
 
       dbUpdateJobState(job.id, {
@@ -255,7 +245,11 @@ export class CronRunner {
         sessionName = resolved;
         const session = resolveSession(job.replySession);
         if (session?.lastChannel && session.lastTo) {
-          source = { channel: session.lastChannel, accountId: job.accountId ?? session.lastAccountId ?? "", chatId: session.lastTo };
+          source = {
+            channel: session.lastChannel,
+            accountId: job.accountId ?? session.lastAccountId ?? "",
+            chatId: session.lastTo,
+          };
         }
       } else {
         // Fallback: derive source from old-style key and use main session
@@ -312,7 +306,11 @@ export class CronRunner {
     if (job.replySession) {
       const replyResolved = resolveSession(job.replySession);
       if (replyResolved?.lastChannel && replyResolved.lastTo) {
-        source = { channel: replyResolved.lastChannel, accountId: job.accountId ?? replyResolved.lastAccountId ?? "", chatId: replyResolved.lastTo };
+        source = {
+          channel: replyResolved.lastChannel,
+          accountId: job.accountId ?? replyResolved.lastAccountId ?? "",
+          chatId: replyResolved.lastTo,
+        };
       } else {
         source = deriveSourceFromSessionKey(job.replySession) ?? undefined;
       }

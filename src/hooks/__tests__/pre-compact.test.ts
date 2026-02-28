@@ -2,14 +2,13 @@
  * Tests for PreCompact Hook
  */
 
-import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createPreCompactHook } from "../pre-compact.js";
 
 const TEST_DIR = "/tmp/ravi-test-precompact";
 const TEST_CWD = join(TEST_DIR, "agent");
-const MEMORY_PATH = join(TEST_CWD, "MEMORY.md");
 
 // Sample transcript content
 const SAMPLE_TRANSCRIPT = [
@@ -71,7 +70,7 @@ describe("createPreCompactHook", () => {
         custom_instructions: null,
       },
       null,
-      { signal: new AbortController().signal }
+      { signal: new AbortController().signal },
     );
 
     // Should return immediately without blocking
@@ -91,7 +90,7 @@ describe("createPreCompactHook", () => {
         custom_instructions: null,
       },
       null,
-      { signal: new AbortController().signal }
+      { signal: new AbortController().signal },
     );
 
     expect(result).toEqual({});
@@ -113,7 +112,7 @@ describe("createPreCompactHook", () => {
         custom_instructions: null,
       },
       null,
-      { signal: new AbortController().signal }
+      { signal: new AbortController().signal },
     );
 
     expect(result).toEqual({});
@@ -138,7 +137,7 @@ describe("createPreCompactHook", () => {
         custom_instructions: null,
       },
       null,
-      { signal: new AbortController().signal }
+      { signal: new AbortController().signal },
     );
 
     expect(result).toEqual({});
@@ -160,7 +159,7 @@ describe("createPreCompactHook", () => {
         custom_instructions: "Focus only on names and preferences",
       },
       null,
-      { signal: new AbortController().signal }
+      { signal: new AbortController().signal },
     );
 
     expect(result).toEqual({});

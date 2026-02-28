@@ -53,10 +53,7 @@ function toDisplayString(value: unknown): string {
  * Variables: {{topic}}, {{data.<path>}}
  * Unresolved variables are left unchanged.
  */
-export function resolveTemplate(
-  message: string,
-  context: { topic: string; data: unknown }
-): string {
+export function resolveTemplate(message: string, context: { topic: string; data: unknown }): string {
   return message.replace(/\{\{([^}]+)\}\}/g, (match, key: string) => {
     const trimmed = key.trim();
 

@@ -19,7 +19,7 @@ mock.module("./relations.js", () => ({
     subjectId: string,
     relation: string,
     objectType: string,
-    objectId: string
+    objectId: string,
   ): boolean => {
     return relations.some(
       (r) =>
@@ -27,15 +27,10 @@ mock.module("./relations.js", () => ({
         r.subjectId === subjectId &&
         r.relation === relation &&
         r.objectType === objectType &&
-        r.objectId === objectId
+        r.objectId === objectId,
     );
   },
-  listRelations: (filter?: {
-    subjectType?: string;
-    subjectId?: string;
-    relation?: string;
-    objectType?: string;
-  }) => {
+  listRelations: (filter?: { subjectType?: string; subjectId?: string; relation?: string; objectType?: string }) => {
     return relations.filter((r) => {
       if (filter?.subjectType && r.subjectType !== filter.subjectType) return false;
       if (filter?.subjectId && r.subjectId !== filter.subjectId) return false;
@@ -66,13 +61,7 @@ const {
 } = await import("./scope");
 
 // Helpers
-function grant(
-  subjectType: string,
-  subjectId: string,
-  relation: string,
-  objectType: string,
-  objectId: string
-) {
+function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
   relations.push({ subjectType, subjectId, relation, objectType, objectId });
 }
 
@@ -136,15 +125,11 @@ describe("Scope Isolation", () => {
     });
 
     it("allows own session by name", () => {
-      expect(
-        canAccessSession({ agentId: "dev", sessionName: "dev-main" }, "dev-main")
-      ).toBe(true);
+      expect(canAccessSession({ agentId: "dev", sessionName: "dev-main" }, "dev-main")).toBe(true);
     });
 
     it("allows own session by key", () => {
-      expect(
-        canAccessSession({ agentId: "dev", sessionKey: "agent:dev:dev-main" }, "agent:dev:dev-main")
-      ).toBe(true);
+      expect(canAccessSession({ agentId: "dev", sessionKey: "agent:dev:dev-main" }, "agent:dev:dev-main")).toBe(true);
     });
 
     it("allows with explicit access grant", () => {
@@ -203,9 +188,7 @@ describe("Scope Isolation", () => {
 
   describe("canModifySession", () => {
     it("allows own session", () => {
-      expect(
-        canModifySession({ agentId: "dev", sessionName: "dev-main" }, "dev-main")
-      ).toBe(true);
+      expect(canModifySession({ agentId: "dev", sessionName: "dev-main" }, "dev-main")).toBe(true);
     });
 
     it("allows with modify grant", () => {

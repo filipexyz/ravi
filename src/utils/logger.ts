@@ -15,10 +15,10 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
 const COLORS = {
   reset: "\x1b[0m",
   dim: "\x1b[2m",
-  debug: "\x1b[36m",  // cyan
-  info: "\x1b[32m",   // green
-  warn: "\x1b[33m",   // yellow
-  error: "\x1b[31m",  // red
+  debug: "\x1b[36m", // cyan
+  info: "\x1b[32m", // green
+  warn: "\x1b[33m", // yellow
+  error: "\x1b[31m", // red
   context: "\x1b[35m", // magenta
 };
 
@@ -95,9 +95,7 @@ class Logger {
       }
     }
 
-    const contextStr = contextParts.length > 0
-      ? ` ${COLORS.dim}${contextParts.join(" ")}${COLORS.reset}`
-      : "";
+    const contextStr = contextParts.length > 0 ? ` ${COLORS.dim}${contextParts.join(" ")}${COLORS.reset}` : "";
 
     return `${COLORS.dim}${time}${COLORS.reset} ${color}${levelStr}${COLORS.reset} [${this.prefix}] ${message}${contextStr}`;
   }
@@ -168,7 +166,10 @@ class Logger {
     if (data instanceof Error) {
       errorData = {
         error: data.message,
-        stack: data.stack?.split("\n").slice(1, 4).map(s => s.trim()),
+        stack: data.stack
+          ?.split("\n")
+          .slice(1, 4)
+          .map((s) => s.trim()),
       };
     } else if (typeof data === "object" && data !== null) {
       const d = data as Record<string, unknown>;
@@ -176,7 +177,10 @@ class Logger {
         errorData = {
           ...d,
           error: d.error.message,
-          stack: d.error.stack?.split("\n").slice(1, 4).map(s => s.trim()),
+          stack: d.error.stack
+            ?.split("\n")
+            .slice(1, 4)
+            .map((s) => s.trim()),
         };
       }
     }

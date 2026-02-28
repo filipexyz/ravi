@@ -8,11 +8,26 @@
  */
 export const ALL_BUILTIN_TOOLS = [
   // Core tools
-  "Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write",
-  "NotebookEdit", "WebFetch", "WebSearch", "TodoWrite",
-  "ExitPlanMode", "EnterPlanMode", "AskUserQuestion", "Skill",
+  "Task",
+  "Bash",
+  "Glob",
+  "Grep",
+  "Read",
+  "Edit",
+  "Write",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+  "TodoWrite",
+  "ExitPlanMode",
+  "EnterPlanMode",
+  "AskUserQuestion",
+  "Skill",
   // Additional tools
-  "TaskOutput", "KillShell", "TaskStop", "LSP",
+  "TaskOutput",
+  "KillShell",
+  "TaskStop",
+  "LSP",
 ] as const;
 
-export type BuiltinTool = typeof ALL_BUILTIN_TOOLS[number];
+export type BuiltinTool = (typeof ALL_BUILTIN_TOOLS)[number];

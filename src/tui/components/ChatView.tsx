@@ -26,24 +26,20 @@ export function ChatView({ messages }: ChatViewProps) {
   }, [messages.length]);
 
   return (
-    <scrollbox
-      ref={scrollRef}
-      flexGrow={1}
-      width="100%"
-      stickyScroll
-      stickyStart="bottom"
-      scrollY
-    >
+    <scrollbox ref={scrollRef} flexGrow={1} width="100%" stickyScroll stickyStart="bottom" scrollY>
       <box flexDirection="column" width="100%" padding={1}>
         {/* ASCII logo */}
         <box flexDirection="column" width="100%" marginBottom={3}>
-          <text content={[
-            "                 _ ",
-            " _ __ __ ___   _(_)",
-            "| '__/ _` \\ \\ / / |",
-            "| | | (_| |\\ V /| |",
-            "|_|  \\__,_| \\_/ |_|",
-          ].join("\n")} fg="cyan" />
+          <text
+            content={[
+              "                 _ ",
+              " _ __ __ ___   _(_)",
+              "| '__/ _` \\ \\ / / |",
+              "| | | (_| |\\ V /| |",
+              "|_|  \\__,_| \\_/ |_|",
+            ].join("\n")}
+            fg="cyan"
+          />
         </box>
 
         {messages.length === 0 ? (

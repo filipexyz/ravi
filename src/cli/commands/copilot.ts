@@ -7,14 +7,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-} from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, renameSync } from "node:fs";
 import { nats } from "../../nats.js";
 
 /** Base path for Claude Code teams */
@@ -59,7 +52,7 @@ export class CopilotCommands {
     @Arg("message", { description: "Message text to send" }) message: string,
     @Option({ flags: "--from <name>", description: "Sender name (default: ravi)" }) from?: string,
     @Option({ flags: "--summary <text>", description: "Short summary shown as title" }) summary?: string,
-    @Option({ flags: "--color <color>", description: "Message color (e.g. blue, red, green)" }) color?: string
+    @Option({ flags: "--color <color>", description: "Message color (e.g. blue, red, green)" }) color?: string,
   ) {
     const inbox = inboxPath(teamName);
     const inboxDir = join(teamsDir(), teamName, "inboxes");
@@ -153,9 +146,7 @@ export class CopilotCommands {
         try {
           const cfg: TeamConfig = JSON.parse(readFileSync(cfgFile, "utf-8"));
           if (cfg.members && Array.isArray(cfg.members) && cfg.members.length > 0) {
-            memberNames = cfg.members
-              .map((m) => m.name ?? m.role ?? "?")
-              .join(", ");
+            memberNames = cfg.members.map((m) => m.name ?? m.role ?? "?").join(", ");
           }
         } catch {
           // skip

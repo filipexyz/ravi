@@ -66,7 +66,7 @@ export interface CommandMetadata extends CommandOptions {
  * @Group decorator - marks a class as a command group
  */
 export function Group(options: GroupOptions) {
-  return function (target: Function) {
+  return (target: Function) => {
     Reflect.defineMetadata(GROUP_KEY, options, target);
   };
 }
@@ -75,13 +75,8 @@ export function Group(options: GroupOptions) {
  * @Command decorator - marks a method as a command within a group
  */
 export function Command(options: CommandOptions) {
-  return function (
-    target: object,
-    propertyKey: string,
-    _descriptor: PropertyDescriptor
-  ) {
-    const commands: CommandMetadata[] =
-      Reflect.getMetadata(COMMANDS_KEY, target.constructor) || [];
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const commands: CommandMetadata[] = Reflect.getMetadata(COMMANDS_KEY, target.constructor) || [];
     commands.push({ ...options, method: propertyKey });
     Reflect.defineMetadata(COMMANDS_KEY, commands, target.constructor);
   };
@@ -92,13 +87,8 @@ export function Command(options: CommandOptions) {
  * Overrides the group-level scope for this specific command.
  */
 export function Scope(type: ScopeType) {
-  return function (
-    target: object,
-    propertyKey: string,
-    _descriptor: PropertyDescriptor
-  ) {
-    const scopes: Map<string, ScopeType> =
-      Reflect.getMetadata(SCOPE_KEY, target.constructor) || new Map();
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const scopes: Map<string, ScopeType> = Reflect.getMetadata(SCOPE_KEY, target.constructor) || new Map();
     scopes.set(propertyKey, type);
     Reflect.defineMetadata(SCOPE_KEY, scopes, target.constructor);
   };
@@ -108,13 +98,8 @@ export function Scope(type: ScopeType) {
  * @Arg decorator - marks a method parameter as a positional argument
  */
 export function Arg(name: string, options: ArgOptions = {}) {
-  return function (
-    target: object,
-    propertyKey: string,
-    parameterIndex: number
-  ) {
-    const args: ArgMetadata[] =
-      Reflect.getMetadata(ARGS_KEY, target, propertyKey) || [];
+  return (target: object, propertyKey: string, parameterIndex: number) => {
+    const args: ArgMetadata[] = Reflect.getMetadata(ARGS_KEY, target, propertyKey) || [];
     args.push({ name, index: parameterIndex, required: true, ...options });
     Reflect.defineMetadata(ARGS_KEY, args, target, propertyKey);
   };
@@ -124,13 +109,8 @@ export function Arg(name: string, options: ArgOptions = {}) {
  * @Option decorator - marks a method parameter as a flag option
  */
 export function Option(options: OptionOptions) {
-  return function (
-    target: object,
-    propertyKey: string,
-    parameterIndex: number
-  ) {
-    const opts: OptionMetadata[] =
-      Reflect.getMetadata(OPTIONS_KEY, target, propertyKey) || [];
+  return (target: object, propertyKey: string, parameterIndex: number) => {
+    const opts: OptionMetadata[] = Reflect.getMetadata(OPTIONS_KEY, target, propertyKey) || [];
     opts.push({ ...options, propertyKey, index: parameterIndex });
     Reflect.defineMetadata(OPTIONS_KEY, opts, target, propertyKey);
   };
@@ -145,19 +125,13 @@ export function getCommandsMetadata(target: Function): CommandMetadata[] {
   return Reflect.getMetadata(COMMANDS_KEY, target) || [];
 }
 
-export function getArgsMetadata(
-  target: object,
-  propertyKey: string
-): ArgMetadata[] {
+export function getArgsMetadata(target: object, propertyKey: string): ArgMetadata[] {
   const args = Reflect.getMetadata(ARGS_KEY, target, propertyKey) || [];
   // Sort by index to maintain parameter order
   return args.sort((a: ArgMetadata, b: ArgMetadata) => a.index - b.index);
 }
 
-export function getOptionsMetadata(
-  target: object,
-  propertyKey: string
-): OptionMetadata[] {
+export function getOptionsMetadata(target: object, propertyKey: string): OptionMetadata[] {
   return Reflect.getMetadata(OPTIONS_KEY, target, propertyKey) || [];
 }
 

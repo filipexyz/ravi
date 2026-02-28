@@ -11,19 +11,21 @@ export const SANITIZED_ENV_VARS = [
 export function createSanitizeBashHook(): HookCallbackMatcher {
   return {
     matcher: "Bash",
-    hooks: [async (input, _toolUseId, _context) => {
-      const command = (input.tool_input as { command?: string })?.command;
-      if (!command) return {};
-      const unsetPrefix = `unset ${SANITIZED_ENV_VARS.join(" ")} 2>/dev/null; `;
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          updatedInput: {
-            ...(input.tool_input as Record<string, unknown>),
-            command: unsetPrefix + command,
+    hooks: [
+      async (input, _toolUseId, _context) => {
+        const command = (input.tool_input as { command?: string })?.command;
+        if (!command) return {};
+        const unsetPrefix = `unset ${SANITIZED_ENV_VARS.join(" ")} 2>/dev/null; `;
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            updatedInput: {
+              ...(input.tool_input as Record<string, unknown>),
+              command: unsetPrefix + command,
+            },
           },
-        },
-      };
-    }],
+        };
+      },
+    ],
   };
 }

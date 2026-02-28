@@ -8,9 +8,9 @@
 
 /** How DMs are grouped into sessions */
 export type DmScope =
-  | "main"                    // All DMs share one session: agent:X:main
-  | "per-peer"                // Isolated by contact: agent:X:dm:PHONE
-  | "per-channel-peer"        // Isolated by channel+contact: agent:X:whatsapp:dm:PHONE
+  | "main" // All DMs share one session: agent:X:main
+  | "per-peer" // Isolated by contact: agent:X:dm:PHONE
+  | "per-channel-peer" // Isolated by channel+contact: agent:X:whatsapp:dm:PHONE
   | "per-account-channel-peer"; // Full isolation: agent:X:whatsapp:main:dm:PHONE
 
 // ============================================================================

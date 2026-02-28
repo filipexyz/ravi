@@ -29,13 +29,7 @@ export async function flushAuditAndExit(code: number): Promise<never> {
 /**
  * Emit an audit event via NATS (fire-and-forget, flushed on exit).
  */
-function emitAudit(event: {
-  type: string;
-  agentId: string;
-  denied: string;
-  reason: string;
-  command?: string;
-}): void {
+function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; command?: string }): void {
   const p = publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch((err) => {
     console.error("[audit] emitAudit failed", err);
   });
@@ -91,10 +85,7 @@ export function isScopeEnforced(ctx: ScopeContext): boolean {
  * 2. Target is the agent's own session
  * 3. Agent has 'access' relation on session:<target> (including wildcards)
  */
-export function canAccessSession(
-  ctx: ScopeContext,
-  targetNameOrKey: string
-): boolean {
+export function canAccessSession(ctx: ScopeContext, targetNameOrKey: string): boolean {
   if (!ctx.agentId) return true;
 
   // Own session
@@ -107,10 +98,7 @@ export function canAccessSession(
 /**
  * Filter a list of sessions to only those accessible by the current context.
  */
-export function filterAccessibleSessions(
-  ctx: ScopeContext,
-  sessions: SessionEntry[]
-): SessionEntry[] {
+export function filterAccessibleSessions(ctx: ScopeContext, sessions: SessionEntry[]): SessionEntry[] {
   if (!ctx.agentId) return sessions;
 
   return sessions.filter((s) => {
@@ -127,10 +115,7 @@ export function filterAccessibleSessions(
  * 2. Target is own session
  * 3. Agent has 'modify' relation on session:<target>
  */
-export function canModifySession(
-  ctx: ScopeContext,
-  targetNameOrKey: string
-): boolean {
+export function canModifySession(ctx: ScopeContext, targetNameOrKey: string): boolean {
   if (!ctx.agentId) return true;
 
   // Own session
@@ -152,7 +137,7 @@ export function canAccessContact(
   ctx: ScopeContext,
   contact: { tags: string[]; id: string },
   _agentConfig?: unknown,
-  contactSessions?: { agentId: string }[]
+  contactSessions?: { agentId: string }[],
 ): boolean {
   if (!ctx.agentId) return true;
 
@@ -199,10 +184,7 @@ export function canViewAgent(ctx: ScopeContext, targetAgentId: string): boolean 
 /**
  * Filter a list of agents to only those visible by the current context.
  */
-export function filterVisibleAgents<T extends { id: string }>(
-  ctx: ScopeContext,
-  agents: T[]
-): T[] {
+export function filterVisibleAgents<T extends { id: string }>(ctx: ScopeContext, agents: T[]): T[] {
   if (!ctx.agentId) return agents;
 
   return agents.filter((a) => canViewAgent(ctx, a.id));
@@ -223,10 +205,7 @@ export function canWriteContacts(ctx: ScopeContext): boolean {
  * Check if the current context can access a resource owned by an agent.
  * Ownership is checked directly (agent_id match), not via relations.
  */
-export function canAccessResource(
-  ctx: ScopeContext,
-  resourceAgentId: string | undefined
-): boolean {
+export function canAccessResource(ctx: ScopeContext, resourceAgentId: string | undefined): boolean {
   if (!ctx.agentId) return true;
 
   // Superadmin
@@ -254,7 +233,7 @@ export function canAccessResource(
 export function enforceScopeCheck(
   scope: ScopeType,
   groupName?: string,
-  commandName?: string
+  commandName?: string,
 ): {
   allowed: boolean;
   errorMessage: string;
@@ -284,22 +263,12 @@ export function enforceScopeCheck(
     }
     case "admin": {
       // Check group-level access first (e.g., execute group:agents)
-      const groupAllowed = agentCan(
-        ctx.agentId,
-        "execute",
-        "group",
-        groupName ?? "*"
-      );
+      const groupAllowed = agentCan(ctx.agentId, "execute", "group", groupName ?? "*");
       if (groupAllowed) return { allowed: true, errorMessage: "" };
 
       // Check subcommand-level access (e.g., execute group:agents_list)
       if (commandName && groupName) {
-        const cmdAllowed = agentCan(
-          ctx.agentId,
-          "execute",
-          "group",
-          `${groupName}_${commandName}`
-        );
+        const cmdAllowed = agentCan(ctx.agentId, "execute", "group", `${groupName}_${commandName}`);
         if (cmdAllowed) return { allowed: true, errorMessage: "" };
       }
 

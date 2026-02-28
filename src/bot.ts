@@ -12,7 +12,6 @@ import {
   getSessionByName,
   updateSdkSessionId,
   updateTokens,
-  updateSessionName,
   updateSessionSource,
   updateSessionContext,
   updateSessionDisplayName,
@@ -20,8 +19,6 @@ import {
   deleteSession,
   expandHome,
   getAnnounceCompaction,
-  generateSessionName,
-  ensureUniqueName,
   getAccountForAgent,
   type SessionEntry,
   type AgentConfig,
@@ -49,7 +46,7 @@ function truncateOutput(output: unknown): unknown {
     return output.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]`;
   }
   if (Array.isArray(output)) {
-    return output.map(item => {
+    return output.map((item) => {
       if (item?.type === "text" && typeof item?.text === "string" && item.text.length > MAX_OUTPUT_LENGTH) {
         return { ...item, text: item.text.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]` };
       }
@@ -315,7 +312,7 @@ export class RaviBot {
     // Cancel all pending approvals
     if (this.pendingApprovals.size > 0) {
       log.info("Cancelling pending approvals", { count: this.pendingApprovals.size });
-      for (const [messageId, approval] of this.pendingApprovals) {
+      for (const [_messageId, approval] of this.pendingApprovals) {
         clearTimeout(approval.timer);
         approval.resolve({ approved: false, reason: "Bot shutting down." });
       }
@@ -365,7 +362,7 @@ export class RaviBot {
 
     // Stash pending messages so they're re-injected on next prompt
     if (session.pendingMessages.length > 0) {
-      const texts = session.pendingMessages.map(m => m.message.content);
+      const texts = session.pendingMessages.map((m) => m.message.content);
       log.info("Stashing aborted messages", { sessionName, count: texts.length });
       this.stashedMessages.set(sessionName, texts);
     }
@@ -408,7 +405,7 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Reaction subscription error, reconnecting in 2s", { error: err });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
   }
@@ -459,7 +456,7 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Reply subscription error, reconnecting in 2s", { error: err });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
   }
@@ -481,9 +478,7 @@ export class RaviBot {
           if (!pending) continue;
 
           // Find which options got votes (from any voter — in DMs there's only one)
-          const selected = data.votes
-            .filter(v => v.voters.length > 0)
-            .map(v => v.name);
+          const selected = data.votes.filter((v) => v.voters.length > 0).map((v) => v.name);
 
           if (selected.length === 0) continue; // vote retracted, keep waiting
 
@@ -499,7 +494,7 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Poll vote subscription error, reconnecting in 2s", { error: err });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
   }
@@ -523,7 +518,7 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Session abort subscription error, reconnecting in 2s", { error: err });
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
   }
@@ -535,17 +530,20 @@ export class RaviBot {
   private async requestApproval(
     source: MessageTarget,
     text: string,
-    options?: { timeoutMs?: number }
+    options?: { timeoutMs?: number },
   ): Promise<{ approved: boolean; reason?: string }> {
     const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000; // 5 minutes
     // Use in-process callback to capture messageId (avoids SSE round-trip race condition)
     const replyTopic = `ravi.approval.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
 
     const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
-      const timeout = setTimeout(() => {
-        pendingReplyCallbacks.delete(replyTopic);
-        resolve({});
-      }, 5 * 60 * 1000);
+      const timeout = setTimeout(
+        () => {
+          pendingReplyCallbacks.delete(replyTopic);
+          resolve({});
+        },
+        5 * 60 * 1000,
+      );
       pendingReplyCallbacks.set(replyTopic, (data) => {
         clearTimeout(timeout);
         pendingReplyCallbacks.delete(replyTopic);
@@ -589,16 +587,19 @@ export class RaviBot {
     source: MessageTarget,
     pollName: string,
     optionLabels: string[],
-    options?: { timeoutMs?: number; selectableCount?: number }
+    options?: { timeoutMs?: number; selectableCount?: number },
   ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
     const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000;
     const replyTopic = `ravi.poll.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
 
     const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
-      const timeout = setTimeout(() => {
-        pendingReplyCallbacks.delete(replyTopic);
-        resolve({});
-      }, 5 * 60 * 1000);
+      const timeout = setTimeout(
+        () => {
+          pendingReplyCallbacks.delete(replyTopic);
+          resolve({});
+        },
+        5 * 60 * 1000,
+      );
       pendingReplyCallbacks.set(replyTopic, (data) => {
         clearTimeout(timeout);
         pendingReplyCallbacks.delete(replyTopic);
@@ -663,15 +664,17 @@ export class RaviBot {
     const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
     log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
 
-    nats.emit("ravi.approval.request", {
-      type: opts.type,
-      sessionName: opts.sessionName,
-      agentId: opts.agentId,
-      delegated: isDelegated,
-      channel: targetSource.channel,
-      chatId: targetSource.chatId,
-      timestamp: Date.now(),
-    }).catch(() => {});
+    nats
+      .emit("ravi.approval.request", {
+        type: opts.type,
+        sessionName: opts.sessionName,
+        agentId: opts.agentId,
+        delegated: isDelegated,
+        channel: targetSource.channel,
+        chatId: targetSource.chatId,
+        timestamp: Date.now(),
+      })
+      .catch(() => {});
 
     const label = opts.type === "plan" ? "Plano pendente" : "Spec pendente";
     const approvalText = isDelegated
@@ -680,14 +683,16 @@ export class RaviBot {
 
     const result = await this.requestApproval(targetSource, approvalText);
 
-    nats.emit("ravi.approval.response", {
-      type: opts.type,
-      sessionName: opts.sessionName,
-      agentId: opts.agentId,
-      approved: result.approved,
-      reason: result.reason,
-      timestamp: Date.now(),
-    }).catch(() => {});
+    nats
+      .emit("ravi.approval.response", {
+        type: opts.type,
+        sessionName: opts.sessionName,
+        agentId: opts.agentId,
+        approved: result.approved,
+        reason: result.reason,
+        timestamp: Date.now(),
+      })
+      .catch(() => {});
 
     return { ...result, isDelegated };
   }
@@ -771,7 +776,7 @@ export class RaviBot {
         const sessionName = msg.subject.split(".")[2];
 
         // Don't await - handle concurrently
-        this.handlePrompt(sessionName, prompt).catch(err => {
+        this.handlePrompt(sessionName, prompt).catch((err) => {
           log.error("Failed to handle prompt", err);
         });
       }
@@ -797,7 +802,7 @@ export class RaviBot {
 
     // Use group-specific debounce when available and session is a group
     const isGroup = sessionEntry?.chatType === "group" || sessionName.includes(":group:");
-    const debounceMs = (isGroup && agent?.groupDebounceMs) ? agent.groupDebounceMs : agent?.debounceMs;
+    const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
     log.debug("handlePrompt", { sessionName, agentId, debounceMs, isGroup });
 
     // If debounce is configured, use debounce flow
@@ -836,7 +841,7 @@ export class RaviBot {
     this.debounceStates.delete(sessionName);
 
     // Combine all messages into one
-    const combinedPrompt = state.messages.map(m => m.prompt.prompt).join("\n\n");
+    const combinedPrompt = state.messages.map((m) => m.prompt.prompt).join("\n\n");
     const lastSource = state.messages[state.messages.length - 1].source;
 
     log.info("Debounce: flushing", { sessionName, messageCount: state.messages.length });
@@ -949,12 +954,21 @@ export class RaviBot {
     const settingsPath = join(agentCwd, ".claude", "settings.json");
     if (!existsSync(settingsPath)) {
       mkdirSync(join(agentCwd, ".claude"), { recursive: true });
-      writeFileSync(settingsPath, JSON.stringify({
-        PermissionRequest: [{
-          matcher: "*",
-          hooks: [{ type: "command", command: "echo '{\"decision\":\"allow\"}'", timeout: 5 }],
-        }],
-      }, null, 2));
+      writeFileSync(
+        settingsPath,
+        JSON.stringify(
+          {
+            PermissionRequest: [
+              {
+                matcher: "*",
+                hooks: [{ type: "command", command: 'echo \'{"decision":"allow"}\'', timeout: 5 }],
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+      );
       log.info("Created auto-approve settings for agent", { agentId: agent.id, path: settingsPath });
     }
 
@@ -1006,7 +1020,9 @@ export class RaviBot {
     };
 
     // Build system prompt
-    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, { agentMode: agent.mode });
+    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
+      agentMode: agent.mode,
+    });
     if (prompt._outboundSystemContext) {
       systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
     }
@@ -1015,86 +1031,118 @@ export class RaviBot {
     const hooks: Record<string, Array<{ hooks: Array<(...args: any[]) => any> }>> = {};
     const hookOpts = { getAgentId: () => agent.id };
     hooks.PreToolUse = [
-      createToolPermissionHook(hookOpts),   // SDK tools (dynamic REBAC)
-      createBashPermissionHook(hookOpts),    // Bash executables
-      createSanitizeBashHook(),              // Strip secrets from Bash env
+      createToolPermissionHook(hookOpts), // SDK tools (dynamic REBAC)
+      createBashPermissionHook(hookOpts), // Bash executables
+      createSanitizeBashHook(), // Strip secrets from Bash env
     ];
 
     // Auto-approve all permission requests for subagents (teams/tasks).
     // The parent process uses canUseTool callback which isn't inherited by
     // subagent child processes. This hook ensures they don't hang waiting
     // for interactive approval in headless daemon mode.
-    hooks.PermissionRequest = [{ hooks: [async () => ({
-      hookSpecificOutput: {
-        hookEventName: "PermissionRequest" as const,
-        decision: { behavior: "allow" as const },
+    hooks.PermissionRequest = [
+      {
+        hooks: [
+          async () => ({
+            hookSpecificOutput: {
+              hookEventName: "PermissionRequest" as const,
+              decision: { behavior: "allow" as const },
+            },
+          }),
+        ],
       },
-    })] }];
+    ];
     const preCompactHook = createPreCompactHook({ memoryModel: agent.memoryModel });
-    hooks.PreCompact = [{ hooks: [async (input, toolUseId, context) => {
-      log.info("PreCompact hook CALLED by SDK", {
-        sessionName,
-        agentId: agent.id,
-        inputKeys: Object.keys(input),
-        hookEventName: (input as any).hook_event_name,
-      });
-      return preCompactHook(input as any, toolUseId ?? null, context as any);
-    }] }];
+    hooks.PreCompact = [
+      {
+        hooks: [
+          async (input, toolUseId, context) => {
+            log.info("PreCompact hook CALLED by SDK", {
+              sessionName,
+              agentId: agent.id,
+              inputKeys: Object.keys(input),
+              hookEventName: (input as any).hook_event_name,
+            });
+            return preCompactHook(input as any, toolUseId ?? null, context as any);
+          },
+        ],
+      },
+    ];
 
     // PreToolUse hook for ExitPlanMode — request approval via WhatsApp reaction.
     // With bypassPermissions the canUseTool callback is NOT called, but hooks still fire.
     // Supports cascading approvals: if agent has no channel, uses _approvalSource from delegating agent.
-    const exitPlanHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
-      // Extract plan text from plan file or tool_input
-      let planText = "";
-      const toolInput = input.tool_input as Record<string, unknown> | undefined;
+    const exitPlanHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> =
+      async (input) => {
+        // Extract plan text from plan file or tool_input
+        let planText = "";
+        const toolInput = input.tool_input as Record<string, unknown> | undefined;
 
-      try {
-        const { readFileSync, readdirSync, statSync } = await import("node:fs");
-        const planDir = join(agentCwd, ".claude", "plans");
-        const files = (() => {
-          try {
-            return readdirSync(planDir)
-              .filter((f: string) => f.endsWith(".md"))
-              .map((f: string) => ({ name: f, mtime: statSync(join(planDir, f)).mtimeMs }))
-              .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
-          } catch { return []; }
-        })();
-        if (files.length > 0) {
-          planText = readFileSync(join(planDir, files[0].name), "utf-8");
+        try {
+          const { readFileSync, readdirSync, statSync } = await import("node:fs");
+          const planDir = join(agentCwd, ".claude", "plans");
+          const files = (() => {
+            try {
+              return readdirSync(planDir)
+                .filter((f: string) => f.endsWith(".md"))
+                .map((f: string) => ({ name: f, mtime: statSync(join(planDir, f)).mtimeMs }))
+                .sort((a: { mtime: number }, b: { mtime: number }) => b.mtime - a.mtime);
+            } catch {
+              return [];
+            }
+          })();
+          if (files.length > 0) {
+            planText = readFileSync(join(planDir, files[0].name), "utf-8");
+          }
+        } catch {
+          /* fallback below */
         }
-      } catch { /* fallback below */ }
 
-      if (!planText && toolInput) {
-        if (typeof toolInput.plan === "string") {
-          planText = toolInput.plan;
-        } else {
-          const { allowedPrompts, pushToRemote, remoteSessionId, remoteSessionTitle, remoteSessionUrl, ...rest } = toolInput;
-          planText = Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : "(plano vazio)";
+        if (!planText && toolInput) {
+          if (typeof toolInput.plan === "string") {
+            planText = toolInput.plan;
+          } else {
+            const {
+              allowedPrompts: _ap,
+              pushToRemote: _ptr,
+              remoteSessionId: _rsi,
+              remoteSessionTitle: _rst,
+              remoteSessionUrl: _rsu,
+              ...rest
+            } = toolInput;
+            planText = Object.keys(rest).length > 0 ? JSON.stringify(rest, null, 2) : "(plano vazio)";
+          }
         }
-      }
-      if (!planText) planText = "(plano vazio)";
+        if (!planText) planText = "(plano vazio)";
 
-      const result = await this.requestCascadingApproval({
-        resolvedSource, approvalSource, type: "plan",
-        sessionName, agentId: agent.id, text: planText,
-      });
+        const result = await this.requestCascadingApproval({
+          resolvedSource,
+          approvalSource,
+          type: "plan",
+          sessionName,
+          agentId: agent.id,
+          text: planText,
+        });
 
-      if (result.approved) return {};
+        if (result.approved) return {};
 
-      const reason = result.reason ? `Plano rejeitado: ${result.reason}` : "Plano rejeitado pelo usuário.";
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason,
-        },
+        const reason = result.reason ? `Plano rejeitado: ${result.reason}` : "Plano rejeitado pelo usuário.";
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason,
+          },
+        };
       };
-    };
 
     // PreToolUse hook for AskUserQuestion — send WhatsApp poll and wait for answer.
     // Supports cascading approvals via _approvalSource.
-    const askUserQuestionHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
+    const askUserQuestionHook: (
+      input: any,
+      toolUseId: string | null,
+      context: any,
+    ) => Promise<Record<string, unknown>> = async (input) => {
       const targetSource = resolvedSource ?? approvalSource;
       if (!targetSource) {
         log.info("AskUserQuestion auto-approved (no source available)", { sessionName });
@@ -1104,31 +1152,40 @@ export class RaviBot {
       const isDelegated = !resolvedSource && !!approvalSource;
 
       const toolInput = input.tool_input as Record<string, unknown> | undefined;
-      const questions = toolInput?.questions as Array<{
-        question: string;
-        header: string;
-        options: Array<{ label: string; description: string }>;
-        multiSelect: boolean;
-      }> | undefined;
+      const questions = toolInput?.questions as
+        | Array<{
+            question: string;
+            header: string;
+            options: Array<{ label: string; description: string }>;
+            multiSelect: boolean;
+          }>
+        | undefined;
 
       if (!questions || questions.length === 0) return {};
 
       log.info("AskUserQuestion hook: sending polls", { sessionName, questionCount: questions.length, isDelegated });
 
-      nats.emit("ravi.approval.request", {
-        type: "question", sessionName, agentId: agent.id, delegated: isDelegated,
-        channel: targetSource.channel, chatId: targetSource.chatId,
-        questionCount: questions.length, timestamp: Date.now(),
-      }).catch(() => {});
+      nats
+        .emit("ravi.approval.request", {
+          type: "question",
+          sessionName,
+          agentId: agent.id,
+          delegated: isDelegated,
+          channel: targetSource.channel,
+          chatId: targetSource.chatId,
+          questionCount: questions.length,
+          timestamp: Date.now(),
+        })
+        .catch(() => {});
 
       const answers: Record<string, string> = {};
 
       for (const q of questions) {
-        const optionLabels = q.options.map(o => o.label);
-        const hasDescriptions = q.options.some(o => o.description);
+        const optionLabels = q.options.map((o) => o.label);
+        const hasDescriptions = q.options.some((o) => o.description);
         let pollName = isDelegated ? `[${agent.id}] ${q.question}` : q.question;
         if (hasDescriptions) {
-          const descLines = q.options.map(o => `• ${o.label} — ${o.description}`).join("\n");
+          const descLines = q.options.map((o) => `• ${o.label} — ${o.description}`).join("\n");
           pollName += "\n\n" + descLines;
         }
         pollName += "\n(responda a mensagem para outro)";
@@ -1144,10 +1201,16 @@ export class RaviBot {
         }
       }
 
-      nats.emit("ravi.approval.response", {
-        type: "question", sessionName, agentId: agent.id,
-        approved: true, answers, timestamp: Date.now(),
-      }).catch(() => {});
+      nats
+        .emit("ravi.approval.response", {
+          type: "question",
+          sessionName,
+          agentId: agent.id,
+          approved: true,
+          answers,
+          timestamp: Date.now(),
+        })
+        .catch(() => {});
 
       log.info("AskUserQuestion answers collected", { sessionName, answers, isDelegated });
       return {
@@ -1174,7 +1237,8 @@ export class RaviBot {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "deny",
-            permissionDecisionReason: "Spec mode ativo. Colete informações e complete a spec antes de implementar. Use Read, Glob, Grep, WebFetch para explorar.",
+            permissionDecisionReason:
+              "Spec mode ativo. Colete informações e complete a spec antes de implementar. Use Read, Glob, Grep, WebFetch para explorar.",
           },
         };
       }
@@ -1182,30 +1246,35 @@ export class RaviBot {
     };
 
     // Supports cascading approvals via _approvalSource.
-    const exitSpecHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> = async (input) => {
-      const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
-      if (!spec) return {};
+    const exitSpecHook: (input: any, toolUseId: string | null, context: any) => Promise<Record<string, unknown>> =
+      async (input) => {
+        const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
+        if (!spec) return {};
 
-      const result = await this.requestCascadingApproval({
-        resolvedSource, approvalSource, type: "spec",
-        sessionName, agentId: agent.id, text: spec,
-      });
+        const result = await this.requestCascadingApproval({
+          resolvedSource,
+          approvalSource,
+          type: "spec",
+          sessionName,
+          agentId: agent.id,
+          text: spec,
+        });
 
-      if (result.approved) {
-        const state = getSpecState(sessionName);
-        if (state) state.active = false;
-        return {};
-      }
+        if (result.approved) {
+          const state = getSpecState(sessionName);
+          if (state) state.active = false;
+          return {};
+        }
 
-      const reason = result.reason ? `Spec rejeitada: ${result.reason}` : "Spec rejeitada pelo usuário.";
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: reason,
-        },
+        const reason = result.reason ? `Spec rejeitada: ${result.reason}` : "Spec rejeitada pelo usuário.";
+        return {
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason,
+          },
+        };
       };
-    };
 
     // Append hooks to PreToolUse
     hooks.PreToolUse = [
@@ -1304,7 +1373,8 @@ export class RaviBot {
       if (parentSession?.sdkSessionId) {
         forkFromSdkId = parentSession.sdkSessionId;
         log.info("Forking thread session from parent", {
-          threadKey: dbSessionKey, parentKey,
+          threadKey: dbSessionKey,
+          parentKey,
           parentSdkId: forkFromSdkId,
         });
       }
@@ -1345,8 +1415,8 @@ export class RaviBot {
 
     // Run the event loop in the background (don't await — it stays alive)
     runWithContext(toolContext, () =>
-      this.runEventLoop(runId, sessionName, session, agent, streamingSession, queryResult)
-    ).catch(err => {
+      this.runEventLoop(runId, sessionName, session, agent, streamingSession, queryResult),
+    ).catch((err) => {
       const isAbort = err instanceof Error && /abort/i.test(err.message);
       if (isAbort) {
         log.info("Streaming session aborted", { sessionName });
@@ -1360,7 +1430,7 @@ export class RaviBot {
   private async *createMessageGenerator(
     sessionName: string,
     firstMessage: string,
-    session: StreamingSession
+    session: StreamingSession,
   ): AsyncGenerator<UserMessage> {
     // Re-inject stashed messages from a previous abort
     const stashed = this.stashedMessages.get(sessionName);
@@ -1393,9 +1463,10 @@ export class RaviBot {
 
       // Snapshot how many messages we're yielding (more may arrive during the turn)
       const yieldedCount = session.pendingMessages.length;
-      const combined = session.pendingMessages.map(m => m.message.content).join("\n\n");
+      const combined = session.pendingMessages.map((m) => m.message.content).join("\n\n");
       log.info("Generator: yielding", {
-        sessionName, count: yieldedCount,
+        sessionName,
+        count: yieldedCount,
       });
 
       yield {
@@ -1411,7 +1482,8 @@ export class RaviBot {
       if (session.interrupted) {
         // Turn was interrupted — keep ALL messages (they'll be re-yielded combined)
         log.info("Generator: turn interrupted, keeping queue", {
-          sessionName, count: session.pendingMessages.length,
+          sessionName,
+          count: session.pendingMessages.length,
         });
         session.interrupted = false;
       } else {
@@ -1419,7 +1491,9 @@ export class RaviBot {
         // New messages that arrived during the turn (e.g. during tool execution) stay
         session.pendingMessages.splice(0, yieldedCount);
         log.info("Generator: turn complete", {
-          sessionName, cleared: yieldedCount, remaining: session.pendingMessages.length,
+          sessionName,
+          cleared: yieldedCount,
+          remaining: session.pendingMessages.length,
         });
       }
     }
@@ -1432,7 +1506,7 @@ export class RaviBot {
     session: SessionEntry,
     agent: AgentConfig,
     streaming: StreamingSession,
-    queryResult: Query
+    queryResult: Query,
   ): Promise<void> {
     // Timeout watchdog
     const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
@@ -1458,9 +1532,10 @@ export class RaviBot {
       // Include _source on turn-ending events so any gateway daemon can stop typing.
       // In multi-daemon mode the daemon that processes the prompt may differ from
       // the daemon that received the inbound message (which set activeTargets locally).
-      const augmented = (event.type === "result" || event.type === "silent") && streaming.currentSource
-        ? { ...event, _source: streaming.currentSource }
-        : event;
+      const augmented =
+        (event.type === "result" || event.type === "silent") && streaming.currentSource
+          ? { ...event, _source: streaming.currentSource }
+          : event;
       await safeEmit(`ravi.session.${sessionName}.claude`, augmented);
     };
 
@@ -1495,16 +1570,21 @@ export class RaviBot {
           seq: sdkEventCount,
           type: message.type,
           sessionName,
-          ...(message.type === "assistant" ? {
-            contentTypes: message.message.content.map((b: any) => b.type),
-            textPreview: message.message.content
-              .filter((b: any) => b.type === "text")
-              .map((b: any) => b.text?.slice(0, 80))
-              .join("") || undefined,
-          } : {}),
-          ...(message.type === "result" ? {
-            sessionId: (message as any).session_id,
-          } : {}),
+          ...(message.type === "assistant"
+            ? {
+                contentTypes: message.message.content.map((b: any) => b.type),
+                textPreview:
+                  message.message.content
+                    .filter((b: any) => b.type === "text")
+                    .map((b: any) => b.text?.slice(0, 80))
+                    .join("") || undefined,
+              }
+            : {}),
+          ...(message.type === "result"
+            ? {
+                sessionId: (message as any).session_id,
+              }
+            : {}),
         });
 
         // Stream text deltas to TUI — skip emitSdkEvent for stream events (noisy, not needed)
@@ -1559,13 +1639,19 @@ export class RaviBot {
                 timestamp: new Date().toISOString(),
                 sessionName,
                 agentId: agent.id,
-              }).catch(err => log.warn("Failed to emit tool start", { error: err }));
+              }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
             }
           }
           if (messageText) {
             // Strip @@SILENT@@ from anywhere in the text and trim
-            messageText = messageText.replace(new RegExp(SILENT_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), "g"), "").trim();
-            log.info("Assistant message", { runId, interrupted: streaming.interrupted, text: messageText.slice(0, 100) });
+            messageText = messageText
+              .replace(new RegExp(SILENT_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "")
+              .trim();
+            log.info("Assistant message", {
+              runId,
+              interrupted: streaming.interrupted,
+              text: messageText.slice(0, 100),
+            });
 
             if (streaming.interrupted) {
               // Turn was interrupted — discard response
@@ -1585,7 +1671,12 @@ export class RaviBot {
               } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
                 log.info("Heartbeat OK", { sessionName });
                 await emitSdkEvent({ type: "silent" });
-              } else if (trimmed === "no response requested." || trimmed === "no response requested" || trimmed === "no response needed." || trimmed === "no response needed") {
+              } else if (
+                trimmed === "no response requested." ||
+                trimmed === "no response requested" ||
+                trimmed === "no response needed." ||
+                trimmed === "no response needed"
+              ) {
                 log.info("Silent response (no response requested)", { sessionName });
                 await emitSdkEvent({ type: "silent" });
               } else {
@@ -1613,7 +1704,7 @@ export class RaviBot {
                 timestamp: new Date().toISOString(),
                 sessionName,
                 agentId: agent.id,
-              }).catch(err => log.warn("Failed to emit tool end", { error: err }));
+              }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
               streaming.toolRunning = false;
               streaming.currentToolId = undefined;
@@ -1624,7 +1715,7 @@ export class RaviBot {
               // Execute deferred abort now that unsafe tool has completed
               if (streaming.pendingAbort) {
                 if (streaming.pendingMessages.length > 0) {
-                  const texts = streaming.pendingMessages.map(m => m.message.content);
+                  const texts = streaming.pendingMessages.map((m) => m.message.content);
                   log.info("Stashing aborted messages (deferred)", { sessionName, count: texts.length });
                   this.stashedMessages.set(sessionName, texts);
                 }
@@ -1668,12 +1759,14 @@ export class RaviBot {
 
             // Notify the user that the session was reset (skip for sentinel)
             if (streaming.currentSource && streaming.agentMode !== "sentinel") {
-              nats.emit("ravi.outbound.deliver", {
-                channel: streaming.currentSource.channel,
-                accountId: streaming.currentSource.accountId,
-                to: streaming.currentSource.chatId,
-                text: "⚠️ Sessão resetada (contexto estourou). Pode mandar de novo.",
-              }).catch(err => log.warn("Failed to notify session reset", { error: err }));
+              nats
+                .emit("ravi.outbound.deliver", {
+                  channel: streaming.currentSource.channel,
+                  accountId: streaming.currentSource.accountId,
+                  to: streaming.currentSource.chatId,
+                  text: "⚠️ Sessão resetada (contexto estourou). Pode mandar de novo.",
+                })
+                .catch((err) => log.warn("Failed to notify session reset", { error: err }));
             }
 
             // Abort the streaming session so next message creates a fresh one
@@ -1681,7 +1774,7 @@ export class RaviBot {
           }
 
           if (!streaming.interrupted && responseText.trim()) {
-            const sdkId = ("session_id" in message && message.session_id) ? message.session_id : undefined;
+            const sdkId = "session_id" in message && message.session_id ? message.session_id : undefined;
             saveMessage(sessionName, "assistant", responseText.trim(), sdkId);
           }
 

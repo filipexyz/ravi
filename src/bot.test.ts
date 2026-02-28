@@ -12,14 +12,14 @@ import { describe, it, expect, mock, beforeEach } from "bun:test";
 // ── SDK mock ────────────────────────────────────────────────────────────────
 
 let lastQueryPrompt: any = null;
-let lastQueryAbortController: AbortController | null = null;
+let _lastQueryAbortController: AbortController | null = null;
 let yieldedMessages: any[] = [];
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: (opts: any) => {
     lastQueryPrompt = opts.prompt;
     const ac: AbortController = opts.options.abortController;
-    lastQueryAbortController = ac;
+    _lastQueryAbortController = ac;
 
     // Consume the async generator and collect messages
     const iterable = {
@@ -100,7 +100,7 @@ mock.module("./router/index.js", () => ({
   updateSessionContext: mock(() => {}),
   updateSessionDisplayName: mock(() => {}),
   closeRouterDb: mock(() => {}),
-  expandHome: (p: string) => p.replace("~", "/Users/test"),
+  expandHome: (p: string) => p.replace("~", "/tmp/ravi-test-bot"),
 }));
 
 mock.module("./cli/context.js", () => ({
@@ -167,7 +167,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     bot = createBot();
     yieldedMessages = [];
     lastQueryPrompt = null;
-    lastQueryAbortController = null;
+    _lastQueryAbortController = null;
   });
 
   it("creates a new streaming session for first message", async () => {
@@ -176,7 +176,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
 
     // Wait for background event loop to start
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const sessions = (bot as any).streamingSessions;
     expect(sessions.has(sessionKey)).toBe(true);
@@ -190,7 +190,9 @@ describe("handlePromptImmediate — streaming sessions", () => {
     const streamingSession = {
       queryHandle: {},
       abortController: new AbortController(),
-      pushMessage: (_msg: any) => { wokenUp = true; },
+      pushMessage: (_msg: any) => {
+        wokenUp = true;
+      },
       pendingMessages: [] as any[],
       currentSource: { channel: "whatsapp", accountId: "main", chatId: "test" },
       toolRunning: false,
@@ -229,7 +231,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("new conversation"));
 
     // Wait for background event loop
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Should have replaced the done session with a new one
     const sessions = (bot as any).streamingSessions;

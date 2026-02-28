@@ -24,9 +24,7 @@ const MAX_INPUT_LENGTH = 500;
 
 function truncate(value: unknown): unknown {
   if (typeof value === "string") {
-    return value.length > MAX_INPUT_LENGTH
-      ? value.slice(0, MAX_INPUT_LENGTH) + "…"
-      : value;
+    return value.length > MAX_INPUT_LENGTH ? value.slice(0, MAX_INPUT_LENGTH) + "…" : value;
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -41,11 +39,7 @@ function truncate(value: unknown): unknown {
  * e.g. "whatsapp.group" on program creates program → whatsapp → group
  * Returns the deepest command node.
  */
-function resolveCommandPath(
-  parent: CommanderCommand,
-  segments: string[],
-  description: string
-): CommanderCommand {
+function resolveCommandPath(parent: CommanderCommand, segments: string[], description: string): CommanderCommand {
   let current = parent;
   for (let i = 0; i < segments.length; i++) {
     const name = segments[i];
@@ -54,9 +48,7 @@ function resolveCommandPath(
     // Check if this subcommand already exists
     let existing = current.commands.find((c) => c.name() === name);
     if (!existing) {
-      existing = current
-        .command(name)
-        .description(isLast ? description : "");
+      existing = current.command(name).description(isLast ? description : "");
     } else if (isLast && description) {
       // Update description if this is the final segment
       existing.description(description);
@@ -70,10 +62,7 @@ function resolveCommandPath(
  * Register all command classes with Commander.
  * Supports nested groups via dot notation: "whatsapp.group" → ravi whatsapp group <cmd>
  */
-export function registerCommands(
-  program: CommanderCommand,
-  classes: CommandClass[]
-): void {
+export function registerCommands(program: CommanderCommand, classes: CommandClass[]): void {
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
@@ -94,8 +83,7 @@ export function registerCommands(
     const scopeMap = getScopeMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
-      const effectiveScope: ScopeType =
-        scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
+      const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope);
     }
   }
@@ -106,7 +94,7 @@ function registerCommand(
   instance: object,
   cmdMeta: CommandMetadata,
   groupName: string,
-  scope: ScopeType
+  scope: ScopeType,
 ): void {
   const sub = group.command(cmdMeta.name).description(cmdMeta.description);
 
@@ -132,11 +120,7 @@ function registerCommand(
   // Add options to commander
   for (const opt of optionsMeta) {
     if (opt.description) {
-      sub.option(
-        opt.flags,
-        opt.description,
-        opt.defaultValue as string | boolean | undefined
-      );
+      sub.option(opt.flags, opt.description, opt.defaultValue as string | boolean | undefined);
     } else {
       sub.option(opt.flags);
     }

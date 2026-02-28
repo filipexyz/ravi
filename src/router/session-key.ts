@@ -18,15 +18,7 @@ import type { SessionKeyParams } from "./types.js";
  * - "agent:main:slack:channel:C123:thread:1234" (thread)
  */
 export function buildSessionKey(params: SessionKeyParams): string {
-  const {
-    agentId,
-    channel,
-    accountId,
-    peerKind = "dm",
-    peerId,
-    dmScope = "per-peer",
-    threadId,
-  } = params;
+  const { agentId, channel, accountId, peerKind = "dm", peerId, dmScope = "per-peer", threadId } = params;
 
   const parts: string[] = ["agent", agentId];
 
@@ -183,7 +175,7 @@ export function matchSessionKey(key: string, pattern: string): boolean {
  * Returns null for keys that don't contain channel info (e.g. "agent:X:main").
  */
 export function deriveSourceFromSessionKey(
-  key: string
+  key: string,
 ): { channel: string; accountId: string; chatId: string; threadId?: string } | null {
   const parsed = parseSessionKey(key);
   if (!parsed?.channel || !parsed.peerKind || !parsed.peerId) return null;

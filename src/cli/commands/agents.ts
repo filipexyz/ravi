@@ -21,12 +21,7 @@ import {
   setAgentSpecMode,
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
-import {
-  deleteSession,
-  getSessionsByAgent,
-  getMainSession,
-  resolveSession,
-} from "../../router/sessions.js";
+import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -101,7 +96,7 @@ export class AgentsCommands {
   @Command({ name: "create", description: "Create a new agent" })
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("cwd", { description: "Working directory" }) cwd: string
+    @Arg("cwd", { description: "Working directory" }) cwd: string,
   ) {
     try {
       createAgent({ id, cwd });
@@ -139,14 +134,24 @@ export class AgentsCommands {
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
 
-    const validKeys = ["name", "cwd", "model", "dmScope", "systemPromptAppend", "matrixAccount", "settingSources", "mode", "groupDebounceMs"];
+    const validKeys = [
+      "name",
+      "cwd",
+      "model",
+      "dmScope",
+      "systemPromptAppend",
+      "matrixAccount",
+      "settingSources",
+      "mode",
+      "groupDebounceMs",
+    ];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
     }
@@ -154,12 +159,14 @@ export class AgentsCommands {
     // Parse groupDebounceMs as integer
     if (key === "groupDebounceMs") {
       const parsed = parseInt(value, 10);
-      if (isNaN(parsed) || parsed < 0) {
+      if (Number.isNaN(parsed) || parsed < 0) {
         fail(`Invalid groupDebounceMs: ${value}. Must be a positive integer (ms) or 0 to disable`);
       }
       try {
         updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
-        console.log(parsed === 0 ? `\u2713 groupDebounceMs disabled: ${id}` : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`);
+        console.log(
+          parsed === 0 ? `\u2713 groupDebounceMs disabled: ${id}` : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
+        );
         emitConfigChanged();
       } catch (err) {
         fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -212,7 +219,9 @@ export class AgentsCommands {
 
     try {
       updateAgent(id, { [key]: parsedValue });
-      console.log(`\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`);
+      console.log(
+        `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
+      );
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -222,7 +231,7 @@ export class AgentsCommands {
   @Command({ name: "debounce", description: "Set message debounce time" })
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string
+    @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -250,7 +259,7 @@ export class AgentsCommands {
     }
 
     const debounceMs = parseInt(ms, 10);
-    if (isNaN(debounceMs) || debounceMs < 0) {
+    if (Number.isNaN(debounceMs) || debounceMs < 0) {
       fail(`Invalid debounce time: ${ms}. Must be a positive integer (ms) or 0 to disable`);
     }
 
@@ -269,7 +278,7 @@ export class AgentsCommands {
   @Command({ name: "spec-mode", description: "Enable or disable spec mode for an agent" })
   specMode(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("enabled", { required: false, description: "true/false" }) enabled?: string
+    @Arg("enabled", { required: false, description: "true/false" }) enabled?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -331,7 +340,8 @@ export class AgentsCommands {
   @Command({ name: "reset", description: "Reset agent session" })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" }) nameOrKey?: string
+    @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" })
+    nameOrKey?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -402,7 +412,8 @@ export class AgentsCommands {
   debug(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,
-    @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" }) turnsStr?: string
+    @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" })
+    turnsStr?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -436,7 +447,9 @@ export class AgentsCommands {
     console.log(`  CWD:         ${session.agentCwd}`);
     console.log(`  SDK ID:      ${session.sdkSessionId ?? "(none)"}`);
     console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
-    console.log(`  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`);
+    console.log(
+      `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
+    );
     console.log(`  Compactions:  ${session.compactionCount}`);
     console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
     console.log(`  Updated:     ${new Date(session.updatedAt).toLocaleString()}`);
@@ -473,9 +486,10 @@ export class AgentsCommands {
       try {
         const entry = JSON.parse(line);
         if (entry.type === "user" && entry.message?.content) {
-          const content = typeof entry.message.content === "string"
-            ? entry.message.content
-            : JSON.stringify(entry.message.content).slice(0, 200);
+          const content =
+            typeof entry.message.content === "string"
+              ? entry.message.content
+              : JSON.stringify(entry.message.content).slice(0, 200);
           turns.push({
             type: "user",
             timestamp: entry.timestamp ?? "",
@@ -483,8 +497,12 @@ export class AgentsCommands {
           });
         } else if (entry.type === "assistant" && entry.message?.content) {
           const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
-          const textParts = parts.filter((p: { type: string }) => p.type === "text").map((p: { text?: string }) => p.text ?? "");
-          const toolParts = parts.filter((p: { type: string }) => p.type === "tool_use").map((p: { name?: string; input?: unknown }) => `${p.name}(${JSON.stringify(p.input).slice(0, 100)})`);
+          const textParts = parts
+            .filter((p: { type: string }) => p.type === "text")
+            .map((p: { text?: string }) => p.text ?? "");
+          const toolParts = parts
+            .filter((p: { type: string }) => p.type === "tool_use")
+            .map((p: { name?: string; input?: unknown }) => `${p.name}(${JSON.stringify(p.input).slice(0, 100)})`);
 
           turns.push({
             type: "assistant",

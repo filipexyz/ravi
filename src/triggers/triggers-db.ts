@@ -93,7 +93,7 @@ export function dbCreateTrigger(input: TriggerInput): Trigger {
     input.filter ?? null,
     0,
     now,
-    now
+    now,
   );
 
   log.info("Created trigger", { id, name: input.name, topic: input.topic });
@@ -212,10 +212,7 @@ export function dbDeleteTrigger(id: string): boolean {
 /**
  * Update trigger state after firing.
  */
-export function dbUpdateTriggerState(
-  id: string,
-  state: { lastFiredAt: number; incrementFire: boolean }
-): void {
+export function dbUpdateTriggerState(id: string, state: { lastFiredAt: number; incrementFire: boolean }): void {
   const db = getDb();
   const now = Date.now();
 

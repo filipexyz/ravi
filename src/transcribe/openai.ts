@@ -58,11 +58,7 @@ function getProvider(): TranscribeProvider {
 /**
  * Transcribe a single audio buffer (no chunking).
  */
-async function transcribeChunk(
-  provider: TranscribeProvider,
-  buffer: Buffer,
-  mimetype: string,
-): Promise<string> {
+async function transcribeChunk(provider: TranscribeProvider, buffer: Buffer, mimetype: string): Promise<string> {
   const ext = EXT_MAP[mimetype] ?? "ogg";
   const filename = `audio.${ext}`;
   const file = new File([buffer], filename, { type: mimetype });
@@ -80,10 +76,7 @@ async function transcribeChunk(
  * Transcribe audio using Groq (preferred) or OpenAI.
  * Automatically chunks audio longer than 10 minutes.
  */
-export async function transcribeAudio(
-  buffer: Buffer,
-  mimetype: string,
-): Promise<TranscriptionResult> {
+export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise<TranscriptionResult> {
   const provider = getProvider();
   const ext = EXT_MAP[mimetype] ?? "ogg";
 
@@ -115,7 +108,12 @@ export async function transcribeAudio(
   const texts: string[] = [];
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
-    log.debug("Transcribing chunk", { index: i, totalChunks: chunks.length, size: chunk.buffer.length, startSec: chunk.startSec });
+    log.debug("Transcribing chunk", {
+      index: i,
+      totalChunks: chunks.length,
+      size: chunk.buffer.length,
+      startSec: chunk.startSec,
+    });
     const text = await transcribeChunk(provider, chunk.buffer, mimetype);
     if (text.trim()) {
       texts.push(text.trim());
@@ -124,7 +122,12 @@ export async function transcribeAudio(
   }
 
   const fullText = texts.join(" ");
-  log.info("Chunked transcription complete", { provider: provider.name, chunks: chunks.length, textLength: fullText.length, duration });
+  log.info("Chunked transcription complete", {
+    provider: provider.name,
+    chunks: chunks.length,
+    textLength: fullText.length,
+    duration,
+  });
 
   return { text: fullText, duration, chunks: chunks.length };
 }

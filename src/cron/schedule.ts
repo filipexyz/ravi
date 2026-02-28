@@ -128,7 +128,7 @@ export function formatDurationMs(ms: number): string {
  */
 export function parseDateTime(dateTime: string): number {
   const date = new Date(dateTime);
-  if (isNaN(date.getTime())) {
+  if (Number.isNaN(date.getTime())) {
     throw new Error(`Invalid date/time format: ${dateTime}`);
   }
   return date.getTime();
@@ -165,7 +165,9 @@ export function parseScheduleInput(input: string, timezone?: string): CronSchedu
 
   // Assume it's a cron expression
   if (!isValidCronExpression(input)) {
-    throw new Error(`Invalid schedule: ${input}. Expected duration (30m), date (2025-02-01T15:00), or cron (0 9 * * *)`);
+    throw new Error(
+      `Invalid schedule: ${input}. Expected duration (30m), date (2025-02-01T15:00), or cron (0 9 * * *)`,
+    );
   }
 
   return {

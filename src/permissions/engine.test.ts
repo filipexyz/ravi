@@ -19,7 +19,7 @@ mock.module("./relations.js", () => ({
     subjectId: string,
     relation: string,
     objectType: string,
-    objectId: string
+    objectId: string,
   ): boolean => {
     return relations.some(
       (r) =>
@@ -27,7 +27,7 @@ mock.module("./relations.js", () => ({
         r.subjectId === subjectId &&
         r.relation === relation &&
         r.objectType === objectType &&
-        r.objectId === objectId
+        r.objectId === objectId,
     );
   },
   listRelations: (filter?: {
@@ -52,13 +52,7 @@ mock.module("./relations.js", () => ({
 const { can, agentCan } = await import("./engine");
 
 // Helper to add a relation
-function grant(
-  subjectType: string,
-  subjectId: string,
-  relation: string,
-  objectType: string,
-  objectId: string
-) {
+function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
   relations.push({ subjectType, subjectId, relation, objectType, objectId });
 }
 

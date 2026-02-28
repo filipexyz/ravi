@@ -20,7 +20,7 @@ import { nats } from "../nats.js";
 export async function requestReply<T = Record<string, unknown>>(
   topic: string,
   data: Record<string, unknown>,
-  timeoutMs = 15000
+  timeoutMs = 15000,
 ): Promise<T> {
   const replyTopic = `ravi._reply.${randomUUID()}`;
 

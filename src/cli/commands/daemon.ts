@@ -9,14 +9,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
 import { hasContext, fail } from "../context.js";
-import {
-  isPm2Available,
-  runPm2,
-  isRaviRunning,
-  getRaviPid,
-  getPm2Processes,
-  PM2_PROCESS_NAME,
-} from "../../pm2.js";
+import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
@@ -53,10 +46,15 @@ export class DaemonCommands {
     }
 
     const { status } = runPm2([
-      "start", bundlePath,
-      "--name", PM2_PROCESS_NAME,
-      "--interpreter", "bun",
-      "--", "daemon", "run",
+      "start",
+      bundlePath,
+      "--name",
+      PM2_PROCESS_NAME,
+      "--interpreter",
+      "bun",
+      "--",
+      "daemon",
+      "run",
     ]);
 
     if (status === 0) {
@@ -86,14 +84,14 @@ export class DaemonCommands {
   @Command({ name: "restart", description: "Restart the daemon" })
   restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
-    @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean
+    @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
   ) {
     requirePm2();
 
     // When called inside daemon, spawn detached restart and return immediately
     if (hasContext()) {
       if (!message) {
-        fail("Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m \"motivo\"");
+        fail('Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m "motivo"');
       }
 
       // Save restart reason with session context
@@ -129,7 +127,7 @@ export class DaemonCommands {
       try {
         execSync("bun run build", {
           stdio: "inherit",
-          cwd: this.findProjectRoot() ?? undefined
+          cwd: this.findProjectRoot() ?? undefined,
         });
         console.log("Build completed");
       } catch {
@@ -185,7 +183,9 @@ export class DaemonCommands {
 
     if (omniApi) {
       const mem = (omniApi.memory / 1024 / 1024).toFixed(1);
-      console.log(`  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`);
+      console.log(
+        `  omni-api:  ${omniApi.status === "online" ? "online" : omniApi.status}  (PID ${omniApi.pid}, ${mem}MB)`,
+      );
     } else {
       console.log("  omni-api:  not managed by PM2");
     }
@@ -198,7 +198,7 @@ export class DaemonCommands {
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
     @Option({ flags: "-t, --tail <lines>", description: "Number of lines to show", defaultValue: "50" }) tail?: string,
     @Option({ flags: "--clear", description: "Flush PM2 logs for ravi" }) clear?: boolean,
-    @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean
+    @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean,
   ) {
     requirePm2();
 
@@ -312,11 +312,8 @@ export class DaemonCommands {
           if (!filename || !filename.endsWith(".ts")) return;
 
           const normalizedPath = filename.replace(/\\/g, "/");
-          const ignoredFiles = [
-            "cli/commands/index.ts",
-            "plugins/internal-registry.ts",
-          ];
-          if (ignoredFiles.some(f => normalizedPath === f || normalizedPath.endsWith(`/${f}`))) {
+          const ignoredFiles = ["cli/commands/index.ts", "plugins/internal-registry.ts"];
+          if (ignoredFiles.some((f) => normalizedPath === f || normalizedPath.endsWith(`/${f}`))) {
             return;
           }
 
@@ -385,9 +382,7 @@ ANTHROPIC_API_KEY=
 
   private findBundlePath(): string | null {
     // Try known locations
-    const locations = [
-      join(this.findProjectRoot() ?? "", "dist", "bundle", "index.js"),
-    ];
+    const locations = [join(this.findProjectRoot() ?? "", "dist", "bundle", "index.js")];
 
     for (const loc of locations) {
       if (existsSync(loc)) return loc;
@@ -431,12 +426,16 @@ ANTHROPIC_API_KEY=
     if (existsSync(plistPath)) {
       try {
         execSync(`launchctl unload ${plistPath} 2>/dev/null`, { stdio: "pipe" });
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       try {
         const { unlinkSync } = require("node:fs");
         unlinkSync(plistPath);
         console.log("Removed old launchd service");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     if (existsSync(systemdPath)) {
@@ -446,7 +445,9 @@ ANTHROPIC_API_KEY=
         execSync(`sudo rm ${systemdPath} 2>/dev/null`, { stdio: "pipe" });
         execSync("sudo systemctl daemon-reload 2>/dev/null", { stdio: "pipe" });
         console.log("Removed old systemd service");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
   }
 }

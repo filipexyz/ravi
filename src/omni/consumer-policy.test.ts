@@ -35,7 +35,7 @@ function resolvePolicy(
   defaultValue: string,
   routerConfig: Pick<RouterConfig, "instances">,
   effectiveAccountId: string,
-  getSetting: (key: string) => string | null
+  getSetting: (key: string) => string | null,
 ): string {
   // 1. Explicit route override
   if (routePolicy) return routePolicy;
@@ -49,9 +49,7 @@ function resolvePolicy(
 
   // 3. Legacy settings fallback
   return (
-    getSetting(`account.${effectiveAccountId}.${policyName}`) ??
-    getSetting(`whatsapp.${policyName}`) ??
-    defaultValue
+    getSetting(`account.${effectiveAccountId}.${policyName}`) ?? getSetting(`whatsapp.${policyName}`) ?? defaultValue
   );
 }
 
@@ -91,7 +89,14 @@ describe("resolvePolicy — priority hierarchy", () => {
     settingsStore["account.acc-1.dmPolicy"] = "closed";
     settingsStore["whatsapp.dmPolicy"] = "closed";
 
-    const result = resolvePolicy("dmPolicy", "closed-by-route", "open", config, "acc-1", (k) => settingsStore[k] ?? null);
+    const result = resolvePolicy(
+      "dmPolicy",
+      "closed-by-route",
+      "open",
+      config,
+      "acc-1",
+      (k) => settingsStore[k] ?? null,
+    );
     expect(result).toBe("closed-by-route");
   });
 

@@ -3,8 +3,8 @@
  */
 
 import "reflect-metadata";
-import { existsSync } from "fs";
-import { resolve, basename, extname } from "path";
+import { existsSync } from "node:fs";
+import { resolve, basename, extname } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";

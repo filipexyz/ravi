@@ -14,11 +14,7 @@
  */
 
 import { publish } from "../nats.js";
-import {
-  checkDangerousPatterns,
-  parseBashCommand,
-  UNCONDITIONAL_BLOCKS,
-} from "./parser.js";
+import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
 import { agentCan } from "../permissions/engine.js";
@@ -29,13 +25,7 @@ const log = logger.child("bash:hook");
 /**
  * Emit an audit event via NATS (fire-and-forget).
  */
-function emitAudit(event: {
-  type: string;
-  agentId: string;
-  denied: string;
-  reason: string;
-  detail?: string;
-}): void {
+function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; detail?: string }): void {
   publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
 }
 
@@ -61,7 +51,7 @@ interface HookContext {
 type HookCallback = (
   input: PreToolUseHookInput,
   toolUseId: string | null,
-  context: HookContext
+  context: HookContext,
 ) => Promise<Record<string, unknown>>;
 
 /**
@@ -96,7 +86,7 @@ function extractRaviToolName(command: string): string | null {
  */
 function extractRaviTarget(command: string): string | null {
   const match = command.match(
-    /(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+[\w-]+\s+[\w-]+\s+(?:(?:-\w+\s+\S+\s+)*)["']?([^"'\s]+)/
+    /(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+[\w-]+\s+[\w-]+\s+(?:(?:-\w+\s+\S+\s+)*)["']?([^"'\s]+)/,
   );
   return match?.[1] ?? null;
 }
@@ -124,10 +114,7 @@ function checkEnvSpoofing(command: string): { allowed: boolean; reason?: string 
  * 3. Check each executable against unconditional blocks
  * 4. Check each executable against REBAC (execute executable:<name>)
  */
-function checkExecutablePermissions(
-  command: string,
-  agentId: string
-): { allowed: boolean; reason?: string } {
+function checkExecutablePermissions(command: string, agentId: string): { allowed: boolean; reason?: string } {
   // If agent has wildcard access, skip expensive parsing
   if (agentCan(agentId, "execute", "executable", "*")) {
     return { allowed: true };
@@ -179,11 +166,21 @@ function checkExecutablePermissions(
 
 /** Commands that require session scope check on the target argument */
 const SESSION_TARGET_COMMANDS = new Set([
-  "sessions_send", "sessions_ask", "sessions_answer",
-  "sessions_execute", "sessions_inform", "sessions_read",
-  "sessions_info", "sessions_reset", "sessions_delete",
-  "sessions_rename", "sessions_set-model", "sessions_set-thinking",
-  "sessions_set-ttl", "sessions_extend", "sessions_keep",
+  "sessions_send",
+  "sessions_ask",
+  "sessions_answer",
+  "sessions_execute",
+  "sessions_inform",
+  "sessions_read",
+  "sessions_info",
+  "sessions_reset",
+  "sessions_delete",
+  "sessions_rename",
+  "sessions_set-model",
+  "sessions_set-thinking",
+  "sessions_set-ttl",
+  "sessions_extend",
+  "sessions_keep",
 ]);
 
 /**
@@ -195,7 +192,7 @@ const SESSION_TARGET_COMMANDS = new Set([
 function checkScopePermission(
   command: string,
   toolName: string | null,
-  ctx?: { agentId?: string; sessionName?: string; sessionKey?: string }
+  ctx?: { agentId?: string; sessionName?: string; sessionKey?: string },
 ): { allowed: boolean; reason?: string } {
   if (!toolName) return { allowed: true };
 
@@ -228,11 +225,8 @@ interface BashHookOptions {
  * 2. Executable permissions (via REBAC)
  * 3. Session scope (via REBAC)
  */
-export function createBashPermissionHook(
-  options: BashHookOptions
-): HookCallbackMatcher {
-
-  const bashPermissionHook: HookCallback = async (input, toolUseId, context) => {
+export function createBashPermissionHook(options: BashHookOptions): HookCallbackMatcher {
+  const bashPermissionHook: HookCallback = async (input, _toolUseId, _context) => {
     const command = input.tool_input?.command as string | undefined;
 
     if (!command) {
@@ -340,9 +334,7 @@ export function createBashPermissionHook(
  * This ensures permission changes take effect immediately without
  * needing to restart the session.
  */
-export function createToolPermissionHook(
-  options: BashHookOptions
-): HookCallbackMatcher {
+export function createToolPermissionHook(options: BashHookOptions): HookCallbackMatcher {
   const toolPermissionHook: HookCallback = async (input) => {
     const agentId = options.getAgentId();
     if (!agentId) return {};

@@ -173,7 +173,9 @@ function getStatements(): SessionStatements {
     getByName: db.prepare("SELECT * FROM sessions WHERE name = ?"),
     getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ?"),
     getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"),
-    findByAttributes: db.prepare("SELECT * FROM sessions WHERE agent_id = ? AND channel = ? AND group_id = ? ORDER BY updated_at DESC LIMIT 1"),
+    findByAttributes: db.prepare(
+      "SELECT * FROM sessions WHERE agent_id = ? AND channel = ? AND group_id = ? ORDER BY updated_at DESC LIMIT 1",
+    ),
     updateSdkId: db.prepare("UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"),
     updateTokens: db.prepare(`
       UPDATE sessions SET
@@ -190,23 +192,15 @@ function getStatements(): SessionStatements {
     deleteByName: db.prepare("DELETE FROM sessions WHERE name = ?"),
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
     updateAgent: db.prepare(
-      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?"
+      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?",
     ),
     updateSource: db.prepare(
-      "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?"
+      "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
     ),
-    updateDisplayName: db.prepare(
-      "UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"
-    ),
-    updateContext: db.prepare(
-      "UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"
-    ),
-    updateModelOverride: db.prepare(
-      "UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"
-    ),
-    updateThinkingLevel: db.prepare(
-      "UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"
-    ),
+    updateDisplayName: db.prepare("UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"),
+    updateContext: db.prepare("UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"),
+    updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
+    updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
   };
 
   return stmts;
@@ -223,7 +217,7 @@ export function getOrCreateSession(
   sessionKey: string,
   agentId: string,
   agentCwd: string,
-  defaults?: Partial<SessionEntry>
+  defaults?: Partial<SessionEntry>,
 ): SessionEntry {
   const s = getStatements();
   const existing = s.getByKey.get(sessionKey) as SessionRow | undefined;
@@ -266,9 +260,15 @@ export function getOrCreateSession(
     defaults?.queueMode ?? null,
     defaults?.queueDebounceMs ?? null,
     defaults?.queueCap ?? null,
-    0, 0, 0, 0,
-    0, 0, 0,
-    now, now
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    now,
+    now,
   );
 
   log.debug("Created session", { sessionKey, agentId });
@@ -306,10 +306,7 @@ export function getSessionsByAgent(agentId: string): SessionEntry[] {
 /**
  * Update SDK session ID
  */
-export function updateSdkSessionId(
-  sessionKey: string,
-  sdkSessionId: string
-): void {
+export function updateSdkSessionId(sessionKey: string, sdkSessionId: string): void {
   const s = getStatements();
   s.updateSdkId.run(sdkSessionId, Date.now(), sessionKey);
   log.debug("Updated SDK session ID", { sessionKey, sdkSessionId });
@@ -318,21 +315,9 @@ export function updateSdkSessionId(
 /**
  * Update token usage
  */
-export function updateTokens(
-  sessionKey: string,
-  input: number,
-  output: number,
-  context?: number
-): void {
+export function updateTokens(sessionKey: string, input: number, output: number, context?: number): void {
   const s = getStatements();
-  s.updateTokens.run(
-    input,
-    output,
-    input + output,
-    context ?? 0,
-    Date.now(),
-    sessionKey
-  );
+  s.updateTokens.run(input, output, input + output, context ?? 0, Date.now(), sessionKey);
 }
 
 /**
@@ -374,7 +359,7 @@ export function findSessionByChatId(chatId: string): SessionEntry | null {
   const db = getDb();
   const row = db
     .prepare(
-      "SELECT * FROM sessions WHERE last_to = ? COLLATE NOCASE AND last_channel IS NOT NULL ORDER BY updated_at DESC LIMIT 1"
+      "SELECT * FROM sessions WHERE last_to = ? COLLATE NOCASE AND last_channel IS NOT NULL ORDER BY updated_at DESC LIMIT 1",
     )
     .get(chatId) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
@@ -394,23 +379,14 @@ export function listSessions(): SessionEntry[] {
  */
 export function updateSessionSource(
   sessionKey: string,
-  source: { channel?: string; accountId?: string; chatId?: string }
+  source: { channel?: string; accountId?: string; chatId?: string },
 ): void {
   if (!source.channel && !source.accountId && !source.chatId) return;
   const s = getStatements();
-  s.updateSource.run(
-    source.channel ?? null,
-    source.accountId ?? null,
-    source.chatId ?? null,
-    Date.now(),
-    sessionKey
-  );
+  s.updateSource.run(source.channel ?? null, source.accountId ?? null, source.chatId ?? null, Date.now(), sessionKey);
 }
 
-export function updateSessionDisplayName(
-  sessionKey: string,
-  displayName: string
-): void {
+export function updateSessionDisplayName(sessionKey: string, displayName: string): void {
   const s = getStatements();
   s.updateDisplayName.run(displayName, Date.now(), sessionKey);
 }
@@ -418,10 +394,7 @@ export function updateSessionDisplayName(
 /**
  * Update session's channel context (stable group/channel metadata as JSON)
  */
-export function updateSessionContext(
-  sessionKey: string,
-  contextJson: string
-): void {
+export function updateSessionContext(sessionKey: string, contextJson: string): void {
   const s = getStatements();
   s.updateContext.run(contextJson, Date.now(), sessionKey);
 }
@@ -432,10 +405,7 @@ export function updateSessionContext(
 /**
  * Update session model override (null to clear)
  */
-export function updateSessionModelOverride(
-  sessionKey: string,
-  model: string | null
-): void {
+export function updateSessionModelOverride(sessionKey: string, model: string | null): void {
   const s = getStatements();
   s.updateModelOverride.run(model, Date.now(), sessionKey);
 }
@@ -443,18 +413,12 @@ export function updateSessionModelOverride(
 /**
  * Update session thinking level (null to clear)
  */
-export function updateSessionThinkingLevel(
-  sessionKey: string,
-  level: string | null
-): void {
+export function updateSessionThinkingLevel(sessionKey: string, level: string | null): void {
   const s = getStatements();
   s.updateThinkingLevel.run(level, Date.now(), sessionKey);
 }
 
-export function updateSessionHeartbeat(
-  sessionKey: string,
-  text: string
-): void {
+export function updateSessionHeartbeat(sessionKey: string, text: string): void {
   const db = getDb();
   const stmt = db.prepare(`
     UPDATE sessions SET
@@ -484,10 +448,7 @@ export function getSessionByName(name: string): SessionEntry | null {
  * Update session name.
  * Names must not contain dots (used as topic separator in NATS).
  */
-export function updateSessionName(
-  sessionKey: string,
-  name: string
-): void {
+export function updateSessionName(sessionKey: string, name: string): void {
   if (name.includes(".")) {
     throw new Error(`Session name must not contain dots: "${name}"`);
   }
@@ -523,9 +484,11 @@ export function deleteSessionByName(name: string): boolean {
 export function setSessionEphemeral(sessionKey: string, ttlMs: number): void {
   const db = getDb();
   const now = Date.now();
-  db.prepare(
-    "UPDATE sessions SET ephemeral = 1, expires_at = ?, updated_at = ? WHERE session_key = ?"
-  ).run(now + ttlMs, now, sessionKey);
+  db.prepare("UPDATE sessions SET ephemeral = 1, expires_at = ?, updated_at = ? WHERE session_key = ?").run(
+    now + ttlMs,
+    now,
+    sessionKey,
+  );
 }
 
 /**
@@ -538,9 +501,11 @@ export function extendSession(nameOrKey: string, ttlMs: number): boolean {
   const db = getDb();
   const now = Date.now();
   const newExpiry = Math.max(session.expiresAt ?? now, now) + ttlMs;
-  db.prepare(
-    "UPDATE sessions SET expires_at = ?, updated_at = ? WHERE session_key = ?"
-  ).run(newExpiry, now, session.sessionKey);
+  db.prepare("UPDATE sessions SET expires_at = ?, updated_at = ? WHERE session_key = ?").run(
+    newExpiry,
+    now,
+    session.sessionKey,
+  );
   return true;
 }
 
@@ -552,9 +517,10 @@ export function makeSessionPermanent(nameOrKey: string): boolean {
   if (!session) return false;
 
   const db = getDb();
-  db.prepare(
-    "UPDATE sessions SET ephemeral = 0, expires_at = NULL, updated_at = ? WHERE session_key = ?"
-  ).run(Date.now(), session.sessionKey);
+  db.prepare("UPDATE sessions SET ephemeral = 0, expires_at = NULL, updated_at = ? WHERE session_key = ?").run(
+    Date.now(),
+    session.sessionKey,
+  );
   return true;
 }
 
@@ -564,9 +530,11 @@ export function makeSessionPermanent(nameOrKey: string): boolean {
 export function getExpiringSessions(withinMs: number): SessionEntry[] {
   const db = getDb();
   const now = Date.now();
-  const rows = db.prepare(
-    "SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ? AND expires_at > ?"
-  ).all(now + withinMs, now) as SessionRow[];
+  const rows = db
+    .prepare(
+      "SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ? AND expires_at > ?",
+    )
+    .all(now + withinMs, now) as SessionRow[];
   return rows.map(rowToEntry);
 }
 
@@ -575,9 +543,9 @@ export function getExpiringSessions(withinMs: number): SessionEntry[] {
  */
 export function getExpiredSessions(): SessionEntry[] {
   const db = getDb();
-  const rows = db.prepare(
-    "SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"
-  ).all(Date.now()) as SessionRow[];
+  const rows = db
+    .prepare("SELECT * FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?")
+    .all(Date.now()) as SessionRow[];
   return rows.map(rowToEntry);
 }
 
@@ -585,11 +553,7 @@ export function getExpiredSessions(): SessionEntry[] {
  * Find session by attributes (agent + channel + group/peer).
  * Used by resolveRoute to find existing sessions.
  */
-export function findSessionByAttributes(
-  agentId: string,
-  channel: string,
-  groupId: string,
-): SessionEntry | null {
+export function findSessionByAttributes(agentId: string, channel: string, groupId: string): SessionEntry | null {
   const s = getStatements();
   const row = s.findByAttributes.get(agentId, channel, groupId) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
@@ -602,11 +566,18 @@ export function findSessionByAttributes(
 export function getMainSession(agentId: string): SessionEntry | null {
   const db = getDb();
   // Main session name is the slugified agent ID
-  const slug = agentId.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const row = db.prepare("SELECT * FROM sessions WHERE name = ? AND agent_id = ?").get(slug, agentId) as SessionRow | undefined;
+  const slug = agentId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const row = db.prepare("SELECT * FROM sessions WHERE name = ? AND agent_id = ?").get(slug, agentId) as
+    | SessionRow
+    | undefined;
   if (row) return rowToEntry(row);
   // Fallback: if main session was renamed, find by session_key suffix
-  const fallback = db.prepare("SELECT * FROM sessions WHERE agent_id = ? AND session_key LIKE '%:main' ORDER BY updated_at DESC LIMIT 1").get(agentId) as SessionRow | undefined;
+  const fallback = db
+    .prepare("SELECT * FROM sessions WHERE agent_id = ? AND session_key LIKE '%:main' ORDER BY updated_at DESC LIMIT 1")
+    .get(agentId) as SessionRow | undefined;
   return fallback ? rowToEntry(fallback) : null;
 }
 

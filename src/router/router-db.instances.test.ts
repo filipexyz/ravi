@@ -11,11 +11,17 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 // Helpers for cleanup
 // ============================================================================
 
-const TEST_NAMES = ["test-inst-main", "test-inst-vendas", "test-inst-update", "test-inst-delete", "test-inst-byid", "test-inst-defaults"];
+const TEST_NAMES = [
+  "test-inst-main",
+  "test-inst-vendas",
+  "test-inst-update",
+  "test-inst-delete",
+  "test-inst-byid",
+  "test-inst-defaults",
+];
 
 function cleanupInstances() {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { getDb } = require("./router-db.js") as { getDb: () => import("bun:sqlite").Database };
     const db = getDb();
     for (const name of TEST_NAMES) {
@@ -109,21 +115,15 @@ describe("Instances CRUD", () => {
   });
 
   it("throws when referenced agent does not exist", () => {
-    expect(() =>
-      dbUpsertInstance({ name: "test-inst-main", agent: "ghost-agent-xyz" })
-    ).toThrow("Agent not found");
+    expect(() => dbUpsertInstance({ name: "test-inst-main", agent: "ghost-agent-xyz" })).toThrow("Agent not found");
   });
 
   it("rejects invalid dmPolicy value", () => {
-    expect(() =>
-      dbUpsertInstance({ name: "test-inst-main", dmPolicy: "badvalue" as "open" })
-    ).toThrow();
+    expect(() => dbUpsertInstance({ name: "test-inst-main", dmPolicy: "badvalue" as "open" })).toThrow();
   });
 
   it("rejects invalid groupPolicy value", () => {
-    expect(() =>
-      dbUpsertInstance({ name: "test-inst-main", groupPolicy: "badvalue" as "open" })
-    ).toThrow();
+    expect(() => dbUpsertInstance({ name: "test-inst-main", groupPolicy: "badvalue" as "open" })).toThrow();
   });
 
   it("accepts all valid dmPolicy values", () => {
@@ -247,37 +247,27 @@ describe("Instances CRUD", () => {
   });
 
   it("update throws when instance does not exist", () => {
-    expect(() =>
-      dbUpdateInstance("no-such-instance-xyz", { dmPolicy: "closed" })
-    ).toThrow("Instance not found");
+    expect(() => dbUpdateInstance("no-such-instance-xyz", { dmPolicy: "closed" })).toThrow("Instance not found");
   });
 
   it("update throws when assigning non-existent agent", () => {
     dbUpsertInstance({ name: "test-inst-update" });
-    expect(() =>
-      dbUpdateInstance("test-inst-update", { agent: "ghost-agent-xyz" })
-    ).toThrow("Agent not found");
+    expect(() => dbUpdateInstance("test-inst-update", { agent: "ghost-agent-xyz" })).toThrow("Agent not found");
   });
 
   it("update validates dmPolicy values", () => {
     dbUpsertInstance({ name: "test-inst-update" });
-    expect(() =>
-      dbUpdateInstance("test-inst-update", { dmPolicy: "invalid" as "open" })
-    ).toThrow();
+    expect(() => dbUpdateInstance("test-inst-update", { dmPolicy: "invalid" as "open" })).toThrow();
   });
 
   it("update validates groupPolicy values", () => {
     dbUpsertInstance({ name: "test-inst-update" });
-    expect(() =>
-      dbUpdateInstance("test-inst-update", { groupPolicy: "invalid" as "open" })
-    ).toThrow();
+    expect(() => dbUpdateInstance("test-inst-update", { groupPolicy: "invalid" as "open" })).toThrow();
   });
 
   it("update validates dmScope values", () => {
     dbUpsertInstance({ name: "test-inst-update" });
-    expect(() =>
-      dbUpdateInstance("test-inst-update", { dmScope: "invalid" as "per-peer" })
-    ).toThrow();
+    expect(() => dbUpdateInstance("test-inst-update", { dmScope: "invalid" as "per-peer" })).toThrow();
   });
 
   // ============================================================================

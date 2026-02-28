@@ -117,13 +117,7 @@ export function useNats(sessionName: string): UseNatsResult {
       try {
         setIsConnected(true);
 
-        for await (const event of subscribe(
-          promptTopic,
-          responseTopic,
-          streamTopic,
-          toolTopic,
-          claudeTopic,
-        )) {
+        for await (const event of subscribe(promptTopic, responseTopic, streamTopic, toolTopic, claudeTopic)) {
           if (abortRef.current) break;
 
           const { topic, data } = event;
@@ -144,11 +138,8 @@ export function useNats(sessionName: string): UseNatsResult {
             };
             setMessages((prev) => {
               const next = [...prev, msg];
-              return next.length > MAX_MESSAGES
-                ? next.slice(next.length - MAX_MESSAGES)
-                : next;
+              return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
             });
-
           } else if (topic === streamTopic) {
             // Streaming text delta chunk — ignore stale chunks after response
             if (streamDone.current) continue;
@@ -173,11 +164,8 @@ export function useNats(sessionName: string): UseNatsResult {
                 return next;
               }
               const next = [...prev, entry];
-              return next.length > MAX_MESSAGES
-                ? next.slice(next.length - MAX_MESSAGES)
-                : next;
+              return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
             });
-
           } else if (topic === responseTopic) {
             const responseData = data as { response?: string };
             const response = responseData.response;
@@ -198,11 +186,8 @@ export function useNats(sessionName: string): UseNatsResult {
             setMessages((prev) => {
               const filtered = prev.filter((m) => m.id !== STREAMING_ID);
               const next = [...filtered, finalMsg];
-              return next.length > MAX_MESSAGES
-                ? next.slice(next.length - MAX_MESSAGES)
-                : next;
+              return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
             });
-
           } else if (topic === toolTopic) {
             const toolData = data as {
               event?: string;
@@ -229,9 +214,7 @@ export function useNats(sessionName: string): UseNatsResult {
               setMessages((prev) => {
                 const filtered = prev.filter((m) => m.id !== STREAMING_ID);
                 const next = [...filtered, entry];
-                return next.length > MAX_MESSAGES
-                  ? next.slice(next.length - MAX_MESSAGES)
-                  : next;
+                return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
               });
             } else if (toolData.event === "end" && toolData.toolId) {
               setMessages((prev) =>
@@ -249,7 +232,6 @@ export function useNats(sessionName: string): UseNatsResult {
                 }),
               );
             }
-
           } else if (topic === claudeTopic) {
             const claudeData = data as {
               type?: string;
@@ -284,10 +266,7 @@ export function useNats(sessionName: string): UseNatsResult {
                   contextTokens: inp + cr + cc,
                 }));
               }
-            } else if (
-              claudeData.type === "system" &&
-              claudeData.subtype === "status"
-            ) {
+            } else if (claudeData.type === "system" && claudeData.subtype === "status") {
               if (claudeData.status === "compacting") {
                 setIsCompacting(true);
               } else if (claudeData.status === "idle") {
@@ -330,9 +309,7 @@ export function useNats(sessionName: string): UseNatsResult {
   const pushMessage = useCallback((entry: TimelineEntry) => {
     setMessages((prev) => {
       const next = [...prev, entry];
-      return next.length > MAX_MESSAGES
-        ? next.slice(next.length - MAX_MESSAGES)
-        : next;
+      return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
     });
   }, []);
 

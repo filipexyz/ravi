@@ -25,10 +25,7 @@ const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-
 
 const program = new Command();
 
-program
-  .name("ravi")
-  .description("Ravi Bot CLI - Claude-powered bot management")
-  .version(pkg.version);
+program.name("ravi").description("Ravi Bot CLI - Claude-powered bot management").version(pkg.version);
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands));

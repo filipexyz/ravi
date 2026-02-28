@@ -20,7 +20,6 @@ import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
 
-
 @Group({
   name: "heartbeat",
   description: "Heartbeat scheduling management",
@@ -39,12 +38,8 @@ export class HeartbeatCommands {
       const hb = agent.heartbeat;
       const enabled = hb?.enabled ? "yes" : "no";
       const interval = hb?.intervalMs ? formatDuration(hb.intervalMs) : "-";
-      const activeHours = hb?.activeStart && hb?.activeEnd
-        ? `${hb.activeStart}-${hb.activeEnd}`
-        : "always";
-      const lastRun = hb?.lastRunAt
-        ? new Date(hb.lastRunAt).toLocaleString()
-        : "-";
+      const activeHours = hb?.activeStart && hb?.activeEnd ? `${hb.activeStart}-${hb.activeEnd}` : "always";
+      const lastRun = hb?.lastRunAt ? new Date(hb.lastRunAt).toLocaleString() : "-";
 
       const id = agent.id.padEnd(14);
       const enabledStr = enabled.padEnd(7);
@@ -89,7 +84,7 @@ export class HeartbeatCommands {
   @Command({ name: "enable", description: "Enable heartbeat for an agent" })
   async enable(
     @Arg("id", { description: "Agent ID" }) id: string,
-    @Arg("interval", { required: false, description: "Interval (e.g., 30m, 1h)" }) interval?: string
+    @Arg("interval", { required: false, description: "Interval (e.g., 30m, 1h)" }) interval?: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -139,7 +134,7 @@ export class HeartbeatCommands {
   async set(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property: interval, model, account, active-hours" }) key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const agent = getAgent(id);
     if (!agent) {

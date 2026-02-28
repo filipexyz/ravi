@@ -135,7 +135,7 @@ export function dbCreateCronJob(input: CronJobInput): CronJob {
     input.message,
     nextRunAt ?? null,
     now,
-    now
+    now,
   );
 
   log.info("Created cron job", { id, name: input.name, scheduleType: input.schedule.type });
@@ -205,13 +205,19 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
     values.push(updates.deleteAfterRun ? 1 : 0);
   }
   if (updates.schedule !== undefined) {
-    fields.push("schedule_type = ?", "schedule_at = ?", "schedule_every = ?", "schedule_cron = ?", "schedule_timezone = ?");
+    fields.push(
+      "schedule_type = ?",
+      "schedule_at = ?",
+      "schedule_every = ?",
+      "schedule_cron = ?",
+      "schedule_timezone = ?",
+    );
     values.push(
       updates.schedule.type,
       updates.schedule.at ?? null,
       updates.schedule.every ?? null,
       updates.schedule.cron ?? null,
-      updates.schedule.timezone ?? null
+      updates.schedule.timezone ?? null,
     );
     // Recalculate next run when schedule changes
     const nextRunAt = calculateNextRun(updates.schedule);
@@ -315,9 +321,8 @@ export function dbUpdateJobState(id: string, state: JobStateUpdate): void {
     state.lastDurationMs ?? null,
     state.nextRunAt ?? null,
     now,
-    id
+    id,
   );
 
   log.debug("Updated job state", { id, status: state.lastStatus });
 }
-

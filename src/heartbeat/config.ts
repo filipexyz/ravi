@@ -126,19 +126,18 @@ export function isWithinActiveHours(config: HeartbeatConfig): boolean {
 export function getAgentHeartbeatConfig(agentId: string): HeartbeatConfig | null {
   const agent = dbGetAgent(agentId);
   if (!agent) return null;
-  return agent.heartbeat ?? {
-    enabled: false,
-    intervalMs: 1800000,
-  };
+  return (
+    agent.heartbeat ?? {
+      enabled: false,
+      intervalMs: 1800000,
+    }
+  );
 }
 
 /**
  * Update agent's heartbeat configuration.
  */
-export function updateAgentHeartbeatConfig(
-  agentId: string,
-  updates: Partial<HeartbeatConfig>
-): AgentConfig {
+export function updateAgentHeartbeatConfig(agentId: string, updates: Partial<HeartbeatConfig>): AgentConfig {
   const agent = dbGetAgent(agentId);
   if (!agent) {
     throw new Error(`Agent not found: ${agentId}`);
@@ -169,7 +168,7 @@ export function updateAgentHeartbeatLastRun(agentId: string): void {
  */
 export function getHeartbeatEnabledAgents(): AgentConfig[] {
   const agents = dbListAgents();
-  return agents.filter(a => a.heartbeat?.enabled);
+  return agents.filter((a) => a.heartbeat?.enabled);
 }
 
 // ============================================================================

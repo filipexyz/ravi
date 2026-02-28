@@ -63,7 +63,7 @@ export async function fetchOmniMedia(
       return null;
     }
     const contentLength = res.headers.get("content-length");
-    if (contentLength && parseInt(contentLength) > maxBytes) {
+    if (contentLength && parseInt(contentLength, 10) > maxBytes) {
       log.warn("Media too large (content-length)", { url, size: contentLength });
       return null;
     }

@@ -32,25 +32,19 @@ export class TriggersCommands {
     // Scope isolation: filter to own agent's triggers
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
-      triggers = triggers.filter(t => canAccessResource(scopeCtx, t.agentId));
+      triggers = triggers.filter((t) => canAccessResource(scopeCtx, t.agentId));
     }
 
     if (triggers.length === 0) {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
-        '  ravi triggers add "Lead Qualificado" --topic "ravi.*.cli.outbound.qualify" --message "Notifica o grupo"'
+        '  ravi triggers add "Lead Qualificado" --topic "ravi.*.cli.outbound.qualify" --message "Notifica o grupo"',
       );
-      console.log(
-        '  ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro" --cooldown 1m'
-      );
+      console.log('  ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro" --cooldown 1m');
       console.log("\nAvailable topics:");
-      console.log(
-        "  ravi.*.cli.{group}.{command}   CLI tool executions (e.g., ravi.*.cli.contacts.add)"
-      );
-      console.log(
-        "  ravi.*.tool                    SDK tool executions (Bash, Read, etc.)"
-      );
+      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions (e.g., ravi.*.cli.contacts.add)");
+      console.log("  ravi.*.tool                    SDK tool executions (Bash, Read, etc.)");
       console.log("  ravi.*.response                Agent responses");
       console.log("  whatsapp.*.inbound             WhatsApp messages");
       console.log("  matrix.*.inbound               Matrix messages");
@@ -58,12 +52,8 @@ export class TriggersCommands {
     }
 
     console.log("\nEvent Triggers:\n");
-    console.log(
-      "  ID        NAME                      ENABLED  TOPIC                           FIRES"
-    );
-    console.log(
-      "  --------  ------------------------  -------  ------------------------------  -----"
-    );
+    console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
+    console.log("  --------  ------------------------  -------  ------------------------------  -----");
 
     for (const t of triggers) {
       const id = t.id.padEnd(8);
@@ -109,21 +99,13 @@ export class TriggersCommands {
     console.log("");
     console.log(`  Fire count:      ${trigger.fireCount}`);
     if (trigger.lastFiredAt) {
-      console.log(
-        `  Last fired:      ${new Date(trigger.lastFiredAt).toLocaleString()}`
-      );
+      console.log(`  Last fired:      ${new Date(trigger.lastFiredAt).toLocaleString()}`);
     }
-    console.log(
-      `  Created:         ${new Date(trigger.createdAt).toLocaleString()}`
-    );
+    console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
 
     console.log("\nAvailable topics:");
-    console.log(
-      "  ravi.*.cli.{group}.{command}   CLI tool executions"
-    );
-    console.log(
-      "  ravi.*.tool                    SDK tool executions"
-    );
+    console.log("  ravi.*.cli.{group}.{command}   CLI tool executions");
+    console.log("  ravi.*.tool                    SDK tool executions");
     console.log("  ravi.*.response                Agent responses");
     console.log("  whatsapp.*.inbound             WhatsApp messages");
     console.log("  matrix.*.inbound               Matrix messages");
@@ -161,9 +143,9 @@ export class TriggersCommands {
     session?: string,
     @Option({
       flags: "--filter <expression>",
-      description: 'Filter expression (e.g. \'data.cwd == "/Users/luis/ravi"\')',
+      description: "Filter expression (e.g. 'data.cwd == \"/Users/luis/ravi\"')",
     })
-    filter?: string
+    filter?: string,
   ) {
     if (!topic) {
       fail("--topic is required");
@@ -186,9 +168,7 @@ export class TriggersCommands {
       try {
         cooldownMs = parseDurationMs(cooldown);
       } catch (err) {
-        fail(
-          `Invalid cooldown: ${err instanceof Error ? err.message : err}`
-        );
+        fail(`Invalid cooldown: ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -214,9 +194,7 @@ export class TriggersCommands {
     // Warn about blocked topics
     const blockedPatterns = [".prompt", ".response", ".claude"];
     if (blockedPatterns.some((p) => topic.includes(p))) {
-      console.log(
-        "Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops"
-      );
+      console.log("Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops");
     }
 
     const input: TriggerInput = {
@@ -242,9 +220,7 @@ export class TriggersCommands {
       console.log(`  Cooldown:   ${formatDurationMs(trigger.cooldownMs)}`);
       console.log(`  Session:    ${trigger.session}`);
     } catch (err) {
-      fail(
-        `Error creating trigger: ${err instanceof Error ? err.message : err}`
-      );
+      fail(`Error creating trigger: ${err instanceof Error ? err.message : err}`);
     }
   }
 
@@ -284,11 +260,10 @@ export class TriggersCommands {
   async set(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Arg("key", {
-      description:
-        "Property: name, message, topic, agent, account, session, cooldown",
+      description: "Property: name, message, topic, agent, account, session, cooldown",
     })
     key: string,
-    @Arg("value", { description: "Property value" }) value: string
+    @Arg("value", { description: "Property value" }) value: string,
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
@@ -310,9 +285,7 @@ export class TriggersCommands {
         case "topic": {
           const blocked = [".prompt", ".response", ".claude"];
           if (blocked.some((p) => value.includes(p))) {
-            console.log(
-              "Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops"
-            );
+            console.log("Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops");
           }
           dbUpdateTrigger(id, { topic: value });
           console.log(`✓ Topic set: ${id} -> ${value}`);
@@ -320,8 +293,7 @@ export class TriggersCommands {
         }
 
         case "agent": {
-          const agentId =
-            value === "null" || value === "-" ? undefined : value;
+          const agentId = value === "null" || value === "-" ? undefined : value;
           if (agentId) {
             const ag = getAgent(agentId);
             if (!ag) {
@@ -329,9 +301,7 @@ export class TriggersCommands {
             }
           }
           dbUpdateTrigger(id, { agentId });
-          console.log(
-            `✓ Agent set: ${id} -> ${agentId ?? "(default)"}`
-          );
+          console.log(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
           break;
         }
 
@@ -345,9 +315,7 @@ export class TriggersCommands {
         case "session": {
           const validValues = ["main", "isolated"];
           if (!validValues.includes(value)) {
-            fail(
-              `Invalid session value: ${value}. Valid: ${validValues.join(", ")}`
-            );
+            fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
           }
           dbUpdateTrigger(id, {
             session: value as "main" | "isolated",
@@ -359,9 +327,7 @@ export class TriggersCommands {
         case "cooldown": {
           const ms = parseDurationMs(value);
           dbUpdateTrigger(id, { cooldownMs: ms });
-          console.log(
-            `✓ Cooldown set: ${id} -> ${formatDurationMs(ms)}`
-          );
+          console.log(`✓ Cooldown set: ${id} -> ${formatDurationMs(ms)}`);
           break;
         }
 
@@ -373,9 +339,7 @@ export class TriggersCommands {
         }
 
         default:
-          fail(
-            `Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter`
-          );
+          fail(`Unknown property: ${key}. Valid: name, message, topic, agent, account, session, cooldown, filter`);
       }
 
       await nats.emit("ravi.triggers.refresh", {});

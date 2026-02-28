@@ -33,7 +33,7 @@ export function can(
   subjectId: string,
   permission: string,
   objectType: string,
-  objectId: string
+  objectId: string,
 ): boolean {
   // 1. Superadmin check: (subject, admin, system, *)
   if (hasRelation(subjectType, subjectId, "admin", "system", "*")) {
@@ -98,7 +98,7 @@ export function agentCan(
   agentId: string | undefined,
   permission: string,
   objectType: string,
-  objectId: string
+  objectId: string,
 ): boolean {
   // No agent context → always allowed (CLI direct)
   if (!agentId) return true;
