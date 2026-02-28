@@ -6,6 +6,7 @@
  */
 
 export * from "./agents.js";
+export * from "./audio.js";
 export * from "./contacts.js";
 export * from "./copilot.js";
 export * from "./cron.js";

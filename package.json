@@ -28,7 +28,7 @@
     "gen:commands": "bun scripts/gen-commands.ts",
     "gen:plugins": "bun scripts/gen-plugins.ts",
     "prebuild": "bun run gen:commands && bun run gen:plugins",
-    "build": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats",
+    "build": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*'",
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
     "tui": "bun src/tui/index.tsx",
@@ -51,6 +51,7 @@
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.45",
+    "@elevenlabs/elevenlabs-js": "^2.37.0",
     "@google/genai": "^1.41.0",
     "@hapi/boom": "^10.0.1",
     "@omni/sdk": "file:/Users/luis/dev/namastex/omni-v2/packages/sdk",
