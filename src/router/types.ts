@@ -92,6 +92,9 @@ export interface AgentConfig {
 
   /** Agent operating mode: active (responds) or sentinel (observes silently) */
   mode?: "active" | "sentinel";
+
+  /** Generic key-value defaults for CLI tools (e.g., tts voice, image mode) */
+  defaults?: Record<string, unknown>;
 }
 
 // ============================================================================

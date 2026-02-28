@@ -88,6 +88,10 @@ export class AgentsCommands {
     console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
     console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
 
+    if (agent.defaults && Object.keys(agent.defaults).length > 0) {
+      console.log(`  Defaults:      ${JSON.stringify(agent.defaults)}`);
+    }
+
     if (agent.systemPromptAppend) {
       console.log(`  System Append: ${agent.systemPromptAppend.slice(0, 50)}...`);
     }
@@ -151,6 +155,7 @@ export class AgentsCommands {
       "settingSources",
       "mode",
       "groupDebounceMs",
+      "defaults",
     ];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
@@ -214,6 +219,18 @@ export class AgentsCommands {
         }
       } catch {
         fail(`settingSources must be valid JSON array, e.g. '["user", "project"]'`);
+      }
+    }
+
+    // Parse defaults as JSON object
+    if (key === "defaults") {
+      try {
+        parsedValue = JSON.parse(value);
+        if (typeof parsedValue !== "object" || parsedValue === null || Array.isArray(parsedValue)) {
+          fail(`defaults must be a JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
+        }
+      } catch {
+        fail(`defaults must be valid JSON object, e.g. '{"tts_voice":"abc","image_mode":"fast"}'`);
       }
     }
 

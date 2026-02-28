@@ -98,6 +98,8 @@ interface AgentRow {
   allowed_sessions: string | null;
   // Agent mode
   agent_mode: string | null;
+  // Generic defaults
+  defaults: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -388,6 +390,12 @@ function getDb(): Database {
   if (!agentColumns.some((c) => c.name === "group_debounce_ms")) {
     db.exec("ALTER TABLE agents ADD COLUMN group_debounce_ms INTEGER");
     log.info("Added group_debounce_ms column to agents table");
+  }
+
+  // Migration: add defaults column to agents if not exists
+  if (!agentColumns.some((c) => c.name === "defaults")) {
+    db.exec("ALTER TABLE agents ADD COLUMN defaults TEXT");
+    log.info("Added defaults column to agents table");
   }
 
   // Migration: add heartbeat columns to sessions if not exists
@@ -920,8 +928,9 @@ function getStatements(): PreparedStatements {
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
+        defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
@@ -944,6 +953,7 @@ function getStatements(): PreparedStatements {
         contact_scope = ?,
         allowed_sessions = ?,
         agent_mode = ?,
+        defaults = ?,
         updated_at = ?
       WHERE id = ?
     `),
@@ -1128,6 +1138,15 @@ function rowToAgent(row: AgentRow): AgentConfig {
     result.mode = row.agent_mode;
   }
 
+  // Generic defaults
+  if (row.defaults !== null) {
+    try {
+      result.defaults = JSON.parse(row.defaults);
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
   return result;
 }
 
@@ -1224,6 +1243,7 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       null, // contact_scope (no restriction by default)
       null, // allowed_sessions (no cross-session by default)
       validated.mode ?? null, // agent_mode
+      null, // defaults
       now,
       now,
     );
@@ -1314,6 +1334,8 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
       : row.allowed_sessions,
     // Agent mode
     updates.mode !== undefined ? (updates.mode ?? null) : row.agent_mode,
+    // Generic defaults
+    updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
     now,
     id,
   );
