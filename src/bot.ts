@@ -255,8 +255,14 @@ export class RaviBot {
   private promptsReceived = 0;
   /** Subscriber health: watchdog timer */
   private subscriberHealthTimer: ReturnType<typeof setInterval> | null = null;
+  /** Resolves when the JetStream consumer is active and ready to receive messages */
+  readonly consumerReady: Promise<void>;
+  private resolveConsumerReady!: () => void;
 
   constructor(options: RaviBotOptions) {
+    this.consumerReady = new Promise<void>((resolve) => {
+      this.resolveConsumerReady = resolve;
+    });
     this.config = options.config;
     logger.setLevel(options.config.logLevel);
   }
@@ -733,6 +739,9 @@ export class RaviBot {
 
       const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
       const messages = await consumer.consume();
+
+      // Signal that consumer is active and ready to receive messages
+      this.resolveConsumerReady();
 
       for await (const msg of messages) {
         if (!this.running) {

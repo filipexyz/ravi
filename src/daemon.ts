@@ -248,8 +248,10 @@ export async function startDaemon() {
 
   log.info("Daemon ready");
 
-  // Notify restart reason
-  setTimeout(() => notifyRestartReason(), 5000);
+  // Notify restart reason only after consumer is active and ready to receive
+  bot.consumerReady.then(() => notifyRestartReason()).catch(err => {
+    log.error("Failed to notify restart reason", err);
+  });
 }
 
 /**
