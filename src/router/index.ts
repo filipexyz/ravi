@@ -75,6 +75,8 @@ export {
   dbGetMessageMeta,
   dbCleanupMessageMeta,
   type MessageMetadata,
+  // Session cleanup
+  dbCleanupExpiredSessions,
 } from "./router-db.js";
 
 // Session Name

@@ -12,10 +12,8 @@ import { logger } from "../utils/logger.js";
 import {
   getExpiringSessions,
   getExpiredSessions,
-  deleteSessionByName,
-  deleteSession,
 } from "../router/sessions.js";
-import { dbCleanupMessageMeta } from "../router/router-db.js";
+import { dbCleanupMessageMeta, dbCleanupExpiredSessions } from "../router/router-db.js";
 
 const log = logger.child("ephemeral");
 
@@ -62,11 +60,9 @@ Sem ação = sessão será excluída automaticamente.`;
       }
     }
 
-    // 2. Delete expired sessions
+    // 2. Abort and delete expired sessions
     const expired = getExpiredSessions();
     for (const session of expired) {
-      const sessionName = session.name ?? session.sessionKey;
-
       // Abort SDK subprocess first
       try {
         await nats.emit("ravi.session.abort", {
@@ -76,17 +72,14 @@ Sem ação = sessão será excluída automaticamente.`;
       } catch {
         // Ignore abort errors — session may not be active
       }
-
-      // Delete from DB
-      const deleted = session.name
-        ? deleteSessionByName(session.name)
-        : deleteSession(session.sessionKey);
-
-      if (deleted) {
-        warned.delete(session.sessionKey);
-        log.info("Deleted expired ephemeral session", { sessionName });
-      }
+      warned.delete(session.sessionKey);
     }
+    // Bulk-delete all expired ephemeral sessions (catches any stragglers too)
+    const deletedCount = dbCleanupExpiredSessions();
+    if (deletedCount > 0) {
+      log.info("Deleted expired ephemeral sessions", { count: deletedCount });
+    }
+
     // 3. Cleanup old message metadata (>7 days)
     const cleaned = dbCleanupMessageMeta();
     if (cleaned > 0) {

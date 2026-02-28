@@ -773,6 +773,15 @@ function getDb(): Database {
     log.info("Created default agent: main");
   }
 
+  // Startup cleanup: remove any expired ephemeral sessions left over from previous runs
+  const expiredCount = (db.prepare(
+    "SELECT COUNT(*) as n FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"
+  ).get(Date.now()) as { n: number }).n;
+  if (expiredCount > 0) {
+    db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(Date.now());
+    log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
+  }
+
   log.debug("Database initialized", { path: DB_PATH });
   return db;
 }
@@ -817,6 +826,7 @@ interface PreparedStatements {
   upsertMessageMeta: Statement;
   getMessageMeta: Statement;
   cleanupMessageMeta: Statement;
+  cleanupExpiredSessions: Statement;
   // Instances
   upsertInstance: Statement;
   getInstanceByName: Statement;
@@ -936,6 +946,7 @@ function getStatements(): PreparedStatements {
     `),
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
+    cleanupExpiredSessions: database.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?"),
     // Instances
     upsertInstance: database.prepare(`
       INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
@@ -1753,5 +1764,16 @@ const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export function dbCleanupMessageMeta(): number {
   const s = getStatements();
   s.cleanupMessageMeta.run(Date.now() - MESSAGE_META_TTL_MS);
+  return getDbChanges();
+}
+
+/**
+ * Hard-delete ephemeral sessions that have already expired.
+ * Safe to call at any time — idempotent, only removes rows with expires_at <= now.
+ * Returns number of rows deleted.
+ */
+export function dbCleanupExpiredSessions(): number {
+  const s = getStatements();
+  s.cleanupExpiredSessions.run(Date.now());
   return getDbChanges();
 }
