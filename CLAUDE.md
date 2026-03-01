@@ -1,6 +1,6 @@
 # Ravi Bot
 
-Claude-powered bot with multi-channel messaging (WhatsApp, Telegram, Discord) via omni-v2. Runs entirely locally with embedded NATS JetStream and omni API server as child processes.
+The daemon that gives Claude a life. Multi-channel messaging (WhatsApp, Telegram, Discord) via omni-v2, running entirely locally with embedded NATS JetStream and omni API server as child processes.
 
 ## Architecture
 

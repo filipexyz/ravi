@@ -1,7 +1,7 @@
 {
   "name": "ravi.bot",
   "version": "0.6.3",
-  "description": "Claude-powered bot with multi-channel messaging via omni",
+  "description": "The daemon that gives Claude a life",
   "type": "module",
   "main": "dist/bundle/index.js",
   "bin": {
