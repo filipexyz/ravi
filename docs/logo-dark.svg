@@ -1,8 +1,55 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 155 58">
-  <text font-family="Fragment Mono, Menlo, Consolas, monospace" font-size="13" fill="#22D3EE" xml:space="preserve">
-    <tspan x="0" dy="14"> _ __ __ ___   _(_)</tspan>
-    <tspan x="0" dy="14">| '__/ _` \ \ / / |</tspan>
-    <tspan x="0" dy="14">| | | (_| |\ V /| |</tspan>
-    <tspan x="0" dy="14">|_|  \__,_| \_/ |_|</tspan>
-  </text>
+  <g fill="#22D3EE">
+    <path transform="translate(8.03,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(24.10,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(32.14,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(48.20,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(56.24,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(72.31,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(80.34,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(88.37,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(120.51,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(128.54,11.00) scale(0.013000,-0.013000)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/>
+    <path transform="translate(136.58,11.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(144.61,11.00) scale(0.013000,-0.013000)" d="M241 -81H151Q318 110 318 349Q318 588 151 779H241Q313 698 356.0 585.5Q399 473 399 349Q399 225 356.0 112.5Q313 0 241 -81Z"/>
+    <path transform="translate(0.00,25.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(16.07,25.00) scale(0.013000,-0.013000)" d="M258 548V699H360V548L333 390H285Z"/>
+    <path transform="translate(24.10,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(32.14,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(40.17,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/>
+    <path transform="translate(56.24,25.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(64.27,25.00) scale(0.013000,-0.013000)" d="M359 592H299L150 740H263Z"/>
+    <path transform="translate(80.34,25.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/>
+    <path transform="translate(96.41,25.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/>
+    <path transform="translate(112.48,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/>
+    <path transform="translate(128.54,25.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/>
+    <path transform="translate(144.61,25.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(0.00,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(16.07,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(32.14,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(48.20,39.00) scale(0.013000,-0.013000)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/>
+    <path transform="translate(56.24,39.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(64.27,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(80.34,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(88.37,39.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/>
+    <path transform="translate(104.44,39.00) scale(0.013000,-0.013000)" d="M588 699 363 0H255L30 699H128L310 96L491 699Z"/>
+    <path transform="translate(120.51,39.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/>
+    <path transform="translate(128.54,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(144.61,39.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(0.00,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(8.03,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(16.07,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(40.17,53.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/>
+    <path transform="translate(48.20,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(56.24,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(64.27,53.00) scale(0.013000,-0.013000)" d="M241 0V136H377V-35Q377 -95 343.5 -130.0Q310 -165 244 -165H226V-114H242Q321 -114 321 -38V0Z"/>
+    <path transform="translate(72.31,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(80.34,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(96.41,53.00) scale(0.013000,-0.013000)" d="M520 -80H435L98 794H183Z"/>
+    <path transform="translate(104.44,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(112.48,53.00) scale(0.013000,-0.013000)" d="M98 -80 435 794H520L183 -80Z"/>
+    <path transform="translate(128.54,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+    <path transform="translate(136.58,53.00) scale(0.013000,-0.013000)" d="M0 -146H618V-218H0Z"/>
+    <path transform="translate(144.61,53.00) scale(0.013000,-0.013000)" d="M268 -80V779H350V-80Z"/>
+  </g>
 </svg>
