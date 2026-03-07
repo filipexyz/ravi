@@ -52,7 +52,7 @@ export async function fetchOmniMedia(
   omniApiKey: string,
   maxBytes = MAX_MEDIA_BYTES,
 ): Promise<Buffer | null> {
-  const url = `${omniApiUrl}${mediaUrl}`;
+  const url = mediaUrl.startsWith("http") ? mediaUrl : `${omniApiUrl}${mediaUrl}`;
   try {
     const res = await fetch(url, {
       headers: { "x-api-key": omniApiKey },

@@ -24,6 +24,7 @@ import { dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId } f
 import type { OmniSender } from "./sender.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
+import { readdir } from "node:fs/promises";
 
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
@@ -581,6 +582,22 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
 
+    // Extract reply/quoted message context (works across all channels)
+    const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
+
+    // If reply references media, try to find the saved attachment
+    let replyMediaPath: string | undefined;
+    if (replyContext?.quotedId && replyContext.quotedMediaType) {
+      replyMediaPath = await this.findAttachmentByMessageId(agentCwd, replyContext.quotedId);
+      log.debug("Reply media lookup", {
+        quotedId: replyContext.quotedId,
+        quotedMediaType: replyContext.quotedMediaType,
+        agentCwd,
+        found: !!replyMediaPath,
+        path: replyMediaPath,
+      });
+    }
+
     // Build message envelope text
     const envelope = this.formatEnvelope(
       channelType,
@@ -593,6 +610,8 @@ export class OmniConsumer {
       event.timestamp,
       threadId,
       mediaResult,
+      replyContext,
+      replyMediaPath,
     );
 
     if (agentMode === "sentinel") {
@@ -777,6 +796,135 @@ export class OmniConsumer {
   // ============================================================================
 
   /**
+   * Extract quoted/reply message context. Uses omni's normalized `replyToId`
+   * (works for all channels), then enriches with WhatsApp's contextInfo when
+   * available (quoted text, sender, media type).
+   */
+  private extractReplyContext(
+    replyToId: string | undefined,
+    rawPayload: Record<string, unknown> | undefined,
+  ): { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null {
+    // Try WhatsApp-specific rich context first
+    const whatsappContext = this.extractWhatsAppReplyContext(rawPayload);
+    if (whatsappContext) return whatsappContext;
+
+    // Fallback: use omni's normalized replyToId (Telegram, Discord, Slack, etc.)
+    if (!replyToId) return null;
+    return { quotedId: replyToId };
+  }
+
+  /**
+   * Extract rich reply context from WhatsApp/Baileys rawPayload.
+   * contextInfo lives inside message.{messageType}.contextInfo and includes
+   * the full quoted message content, sender, and media type.
+   */
+  private extractWhatsAppReplyContext(
+    rawPayload: Record<string, unknown> | undefined,
+  ): { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null {
+    if (!rawPayload) return null;
+
+    // viewOnceMessageV2 wraps the real message one level deeper
+    let message = rawPayload.message as Record<string, unknown> | undefined;
+    if (!message) return null;
+    const viewOnce = message.viewOnceMessageV2 as Record<string, unknown> | undefined;
+    if (viewOnce?.message) {
+      message = viewOnce.message as Record<string, unknown>;
+    }
+
+    // All Baileys message types that can carry contextInfo
+    const messageTypes = [
+      "extendedTextMessage",
+      "imageMessage",
+      "videoMessage",
+      "documentMessage",
+      "audioMessage",
+      "stickerMessage",
+      "buttonsResponseMessage",
+      "listResponseMessage",
+      "contactMessage",
+      "locationMessage",
+    ];
+    let contextInfo: Record<string, unknown> | undefined;
+
+    for (const type of messageTypes) {
+      const msgData = message[type] as Record<string, unknown> | undefined;
+      if (msgData?.contextInfo) {
+        contextInfo = msgData.contextInfo as Record<string, unknown>;
+        break;
+      }
+    }
+
+    if (!contextInfo) return null;
+
+    const quotedId = contextInfo.stanzaId as string | undefined;
+    if (!quotedId) return null;
+
+    // Extract sender of the quoted message
+    const rawParticipant = (contextInfo.participant as string) ?? (contextInfo.remoteJid as string);
+    const quotedSender = rawParticipant ? stripJid(rawParticipant) : undefined;
+
+    // Extract text and media type from quotedMessage
+    const quotedMessage = contextInfo.quotedMessage as Record<string, unknown> | undefined;
+    let quotedText: string | undefined;
+    let quotedMediaType: string | undefined;
+
+    if (quotedMessage) {
+      // viewOnceMessageV2 inside quoted message
+      let effectiveQuoted = quotedMessage;
+      const qViewOnce = quotedMessage.viewOnceMessageV2 as Record<string, unknown> | undefined;
+      if (qViewOnce?.message) {
+        effectiveQuoted = qViewOnce.message as Record<string, unknown>;
+      }
+
+      if (typeof effectiveQuoted.conversation === "string") {
+        quotedText = effectiveQuoted.conversation;
+      } else if ((effectiveQuoted.extendedTextMessage as Record<string, unknown> | undefined)?.text) {
+        quotedText = (effectiveQuoted.extendedTextMessage as Record<string, unknown>).text as string;
+      } else if (effectiveQuoted.imageMessage) {
+        const img = effectiveQuoted.imageMessage as Record<string, unknown>;
+        quotedMediaType = "image";
+        const caption = typeof img.caption === "string" ? img.caption : undefined;
+        quotedText = caption ? `[image] ${caption}` : "[image]";
+      } else if (effectiveQuoted.videoMessage) {
+        const vid = effectiveQuoted.videoMessage as Record<string, unknown>;
+        quotedMediaType = "video";
+        const caption = typeof vid.caption === "string" ? vid.caption : undefined;
+        quotedText = caption ? `[video] ${caption}` : "[video]";
+      } else if (effectiveQuoted.documentMessage) {
+        const doc = effectiveQuoted.documentMessage as Record<string, unknown>;
+        quotedMediaType = "document";
+        const caption = typeof doc.caption === "string" ? doc.caption : undefined;
+        const filename = typeof doc.fileName === "string" ? doc.fileName : undefined;
+        quotedText = caption ? `[document: ${filename ?? "file"}] ${caption}` : `[document: ${filename ?? "file"}]`;
+      } else if (effectiveQuoted.audioMessage) {
+        quotedMediaType = "audio";
+        quotedText = "[audio]";
+      } else if (effectiveQuoted.stickerMessage) {
+        quotedMediaType = "sticker";
+        quotedText = "[sticker]";
+      }
+    }
+
+    return { quotedText, quotedSender, quotedId, quotedMediaType };
+  }
+
+  /**
+   * Find a previously-saved attachment file by message externalId.
+   * Attachments are saved as `{timestamp}-{externalId}.{ext}` by saveToAgentAttachments.
+   */
+  private async findAttachmentByMessageId(agentCwd: string, messageId: string): Promise<string | undefined> {
+    try {
+      const attachDir = `${agentCwd}/attachments`;
+      const safeId = messageId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      const files = await readdir(attachDir);
+      const match = files.find((f) => f.includes(safeId));
+      return match ? `${attachDir}/${match}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * Process media: fetch from omni HTTP API, save to agent attachments, transcribe audio.
    */
   private async processMedia(
@@ -876,6 +1024,8 @@ export class OmniConsumer {
     timestamp: number,
     threadId?: string,
     mediaResult?: { localPath?: string; transcript?: string } | null,
+    replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
+    replyMediaPath?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -898,12 +1048,25 @@ export class OmniConsumer {
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
     const threadTag = threadId ? ` thread:${threadId}` : "";
 
+    // Build reply context block if present
+    let replyBlock = "";
+    if (replyContext?.quotedId) {
+      const sender = replyContext.quotedSender
+        ? getContactName(replyContext.quotedSender) || replyContext.quotedSender
+        : "unknown";
+      const quotedContent = replyContext.quotedText ?? "[message]";
+      const mediaLine = replyMediaPath ? `\nfile: ${replyMediaPath}` : "";
+      replyBlock = `\n[Replying to ${sender} mid:${replyContext.quotedId}]\n${quotedContent}${mediaLine}\n[/Replying]\n`;
+    }
+
     if (isGroup) {
       const groupLabel = groupName || stripJid(chatJid);
-      return `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}: ${content}`;
+      const header = `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}:`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
     } else {
       const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
-      return `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}] ${content}`;
+      const header = `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}]`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
     }
   }
 
