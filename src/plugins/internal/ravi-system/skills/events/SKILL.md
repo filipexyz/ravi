@@ -92,7 +92,6 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 | `ravi.cron.refresh` | `{}` — refresh de timers de cron |
 | `ravi.cron.trigger` | `{ jobId }` — trigger manual de cron job |
 | `ravi.heartbeat.refresh` | `{}` — refresh de timers heartbeat |
-| `ravi.copilot.watch` | `{ team, agentId }` — copilot inbox watcher |
 
 ### CLI Tools (emitidos pelo bot)
 
