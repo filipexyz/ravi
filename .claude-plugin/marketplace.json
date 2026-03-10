@@ -1,0 +1,21 @@
+{
+  "name": "ravi",
+  "owner": {
+    "name": "Filipe Labs"
+  },
+  "metadata": {
+    "description": "Skills for the Ravi daemon — multi-channel messaging, agents, contacts, triggers, cron, and more"
+  },
+  "plugins": [
+    {
+      "name": "ravi-system",
+      "source": "./src/plugins/internal/ravi-system",
+      "description": "Ravi system management — agents, contacts, triggers, routes, cron, outbound, heartbeat, sessions, permissions, and channels"
+    },
+    {
+      "name": "ravi-dev",
+      "source": "./src/plugins/internal/ravi-dev",
+      "description": "Ravi development tools — architecture docs, prompt system, and internal patterns"
+    }
+  ]
+}
