@@ -128,7 +128,7 @@ Full CLI reference is in [CLAUDE.md](CLAUDE.md).
 
 ## Configuration
 
-All config is stored in SQLite (`~/ravi/ravi.db`) and managed via CLI.
+All config is stored in SQLite (`~/.ravi/ravi.db`) and managed via CLI.
 
 ### Agent Options
 
@@ -155,13 +155,13 @@ agent:main:outbound:queueId:phone        # Outbound campaign
 
 ```
 ~/ravi/
-├── ravi.db               # Config: agents, routes, sessions, contacts (SQLite)
 └── main/                 # Agent working directory
     ├── CLAUDE.md         # Agent instructions
     ├── HEARTBEAT.md      # Pending tasks for heartbeat
     └── MEMORY.md         # Agent memory (auto-managed)
 
 ~/.ravi/
+├── ravi.db               # Config: agents, routes, sessions, contacts (SQLite)
 ├── .env                  # Environment variables
 ├── omni-api-key          # Auto-generated omni API key
 ├── jetstream/            # NATS JetStream storage

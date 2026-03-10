@@ -10,7 +10,7 @@
 import { Database, type Statement } from "bun:sqlite";
 import { z } from "zod";
 import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
@@ -22,7 +22,9 @@ const log = logger.child("router:db");
 // ============================================================================
 
 const RAVI_DIR = join(homedir(), "ravi");
-const DB_PATH = join(RAVI_DIR, "ravi.db");
+const RAVI_DOT_DIR = join(homedir(), ".ravi");
+const DB_PATH = join(RAVI_DOT_DIR, "ravi.db");
+const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 
 // ============================================================================
 // Schemas (safe to access at import time - no I/O)
@@ -187,7 +189,18 @@ function getDb(): Database {
   }
 
   // Create directory on first access
-  mkdirSync(RAVI_DIR, { recursive: true });
+  mkdirSync(RAVI_DOT_DIR, { recursive: true });
+
+  // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
+  if (!existsSync(DB_PATH) && existsSync(LEGACY_DB_PATH)) {
+    log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
+    renameSync(LEGACY_DB_PATH, DB_PATH);
+    // Also move WAL/SHM files if they exist
+    for (const suffix of ["-wal", "-shm"]) {
+      const legacy = LEGACY_DB_PATH + suffix;
+      if (existsSync(legacy)) renameSync(legacy, DB_PATH + suffix);
+    }
+  }
 
   db = new Database(DB_PATH);
 
@@ -295,6 +308,27 @@ function getDb(): Database {
       media_type TEXT,
       created_at INTEGER NOT NULL
     );
+
+    -- Cost tracking: granular per-turn cost events
+    CREATE TABLE IF NOT EXISTS cost_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER DEFAULT 0,
+      cache_creation_tokens INTEGER DEFAULT 0,
+      input_cost_usd REAL NOT NULL,
+      output_cost_usd REAL NOT NULL,
+      cache_cost_usd REAL DEFAULT 0,
+      total_cost_usd REAL NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cost_events_agent ON cost_events(agent_id);
+    CREATE INDEX IF NOT EXISTS idx_cost_events_session ON cost_events(session_key);
+    CREATE INDEX IF NOT EXISTS idx_cost_events_created ON cost_events(created_at);
 
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
@@ -899,6 +933,8 @@ interface PreparedStatements {
   softDeleteInstance: Statement;
   restoreInstance: Statement;
   listDeletedInstances: Statement;
+  // Cost events
+  insertCostEvent: Statement;
   // Instances
   upsertInstance: Statement;
   getInstanceByName: Statement;
@@ -1045,6 +1081,13 @@ function getStatements(): PreparedStatements {
     listDeletedInstances: database.prepare(
       "SELECT * FROM instances WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     ),
+    // Cost events
+    insertCostEvent: database.prepare(`
+      INSERT INTO cost_events (session_key, agent_id, model, input_tokens, output_tokens,
+        cache_read_tokens, cache_creation_tokens, input_cost_usd, output_cost_usd, cache_cost_usd,
+        total_cost_usd, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
     // Instances
     upsertInstance: database.prepare(`
       INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
@@ -1987,6 +2030,191 @@ export interface AuditEntry {
   oldValue: unknown | null;
   actor: string;
   ts: number;
+}
+
+// ============================================================================
+// Cost Events
+// ============================================================================
+
+export interface CostEvent {
+  id: number;
+  sessionKey: string;
+  agentId: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  inputCostUsd: number;
+  outputCostUsd: number;
+  cacheCostUsd: number;
+  totalCostUsd: number;
+  createdAt: number;
+}
+
+/**
+ * Insert a cost event for a single turn.
+ */
+export function dbInsertCostEvent(event: Omit<CostEvent, "id">): void {
+  const s = getStatements();
+  s.insertCostEvent.run(
+    event.sessionKey,
+    event.agentId,
+    event.model,
+    event.inputTokens,
+    event.outputTokens,
+    event.cacheReadTokens,
+    event.cacheCreationTokens,
+    event.inputCostUsd,
+    event.outputCostUsd,
+    event.cacheCostUsd,
+    event.totalCostUsd,
+    event.createdAt,
+  );
+}
+
+interface CostSummaryRow {
+  total_cost: number;
+  total_input: number;
+  total_output: number;
+  total_cache_read: number;
+  total_cache_creation: number;
+  turns: number;
+}
+
+interface AgentCostRow extends CostSummaryRow {
+  agent_id: string;
+  model: string;
+}
+
+interface SessionCostRow extends CostSummaryRow {
+  session_key: string;
+}
+
+/**
+ * Get total cost summary for a time range.
+ */
+export function dbGetCostSummary(sinceMs: number): CostSummaryRow {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+        COALESCE(SUM(total_cost_usd), 0) as total_cost,
+        COALESCE(SUM(input_tokens), 0) as total_input,
+        COALESCE(SUM(output_tokens), 0) as total_output,
+        COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+        COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+        COUNT(*) as turns
+      FROM cost_events WHERE created_at >= ?`,
+    )
+    .get(sinceMs) as CostSummaryRow;
+}
+
+/**
+ * Get cost breakdown by agent for a time range.
+ */
+export function dbGetCostByAgent(sinceMs: number): AgentCostRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+      agent_id,
+      model,
+      COALESCE(SUM(total_cost_usd), 0) as total_cost,
+      COALESCE(SUM(input_tokens), 0) as total_input,
+      COALESCE(SUM(output_tokens), 0) as total_output,
+      COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+      COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+      COUNT(*) as turns
+    FROM cost_events WHERE created_at >= ?
+    GROUP BY agent_id, model
+    ORDER BY total_cost DESC`,
+    )
+    .all(sinceMs) as AgentCostRow[];
+}
+
+/**
+ * Get cost for a specific agent in a time range.
+ */
+export function dbGetCostForAgent(agentId: string, sinceMs: number): CostSummaryRow {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+        COALESCE(SUM(total_cost_usd), 0) as total_cost,
+        COALESCE(SUM(input_tokens), 0) as total_input,
+        COALESCE(SUM(output_tokens), 0) as total_output,
+        COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+        COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+        COUNT(*) as turns
+      FROM cost_events WHERE agent_id = ? AND created_at >= ?`,
+    )
+    .get(agentId, sinceMs) as CostSummaryRow;
+}
+
+/**
+ * Get cost for a specific session.
+ */
+export function dbGetCostForSession(sessionKey: string): CostSummaryRow {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+        COALESCE(SUM(total_cost_usd), 0) as total_cost,
+        COALESCE(SUM(input_tokens), 0) as total_input,
+        COALESCE(SUM(output_tokens), 0) as total_output,
+        COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+        COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+        COUNT(*) as turns
+      FROM cost_events WHERE session_key = ?`,
+    )
+    .get(sessionKey) as CostSummaryRow;
+}
+
+/**
+ * Get top N most expensive sessions in a time range.
+ */
+export function dbGetTopSessions(sinceMs: number, limit = 10): SessionCostRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+      session_key,
+      COALESCE(SUM(total_cost_usd), 0) as total_cost,
+      COALESCE(SUM(input_tokens), 0) as total_input,
+      COALESCE(SUM(output_tokens), 0) as total_output,
+      COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+      COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+      COUNT(*) as turns
+    FROM cost_events WHERE created_at >= ?
+    GROUP BY session_key
+    ORDER BY total_cost DESC
+    LIMIT ?`,
+    )
+    .all(sinceMs, limit) as SessionCostRow[];
+}
+
+/**
+ * Get cost report for a date range (from, to in ms).
+ */
+export function dbGetCostReport(fromMs: number, toMs: number): AgentCostRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+      agent_id,
+      model,
+      COALESCE(SUM(total_cost_usd), 0) as total_cost,
+      COALESCE(SUM(input_tokens), 0) as total_input,
+      COALESCE(SUM(output_tokens), 0) as total_output,
+      COALESCE(SUM(cache_read_tokens), 0) as total_cache_read,
+      COALESCE(SUM(cache_creation_tokens), 0) as total_cache_creation,
+      COUNT(*) as turns
+    FROM cost_events WHERE created_at >= ? AND created_at < ?
+    GROUP BY agent_id, model
+    ORDER BY total_cost DESC`,
+    )
+    .all(fromMs, toMs) as AgentCostRow[];
 }
 
 /**

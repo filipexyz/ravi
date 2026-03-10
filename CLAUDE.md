@@ -364,7 +364,7 @@ ravi outbound report <queueId>        # Specific queue
 **Session Keys:**
 Outbound entries run in isolated sessions: `agent:{agentId}:outbound:{queueId}:{phone}`
 
-## Router (`~/ravi/ravi.db`)
+## Router (`~/.ravi/ravi.db`)
 
 Configuration is stored in SQLite and managed via CLI:
 
@@ -468,13 +468,13 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 
 ```
 ~/ravi/
-├── ravi.db          # Config and sessions (SQLite)
 └── main/            # Agent CWD
     ├── CLAUDE.md    # Agent instructions
     ├── HEARTBEAT.md # Pending tasks for heartbeat (optional)
     └── SPEC_INSTRUCTIONS.md  # Custom spec mode instructions (optional)
 
 ~/.ravi/
+├── ravi.db          # Config and sessions (SQLite)
 ├── .env             # Environment variables (loaded by daemon)
 ├── omni-api-key     # Auto-generated omni API key
 ├── jetstream/       # NATS JetStream storage

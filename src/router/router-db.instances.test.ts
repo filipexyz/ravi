@@ -1,7 +1,7 @@
 /**
  * Tests for instances table CRUD in router-db.ts
  *
- * Uses the real SQLite DB (same path as production: ~/ravi/ravi.db).
+ * Uses the real SQLite DB (same path as production: ~/.ravi/ravi.db).
  * Each test cleans up its own data in beforeEach/afterEach to avoid pollution.
  */
 

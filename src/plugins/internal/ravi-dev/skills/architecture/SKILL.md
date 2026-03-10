@@ -235,7 +235,7 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 ## Storage
 
 ```
-~/ravi/ravi.db          - SQLite: agents, routes, sessions, contacts, settings
+~/.ravi/ravi.db         - SQLite: agents, routes, sessions, contacts, settings
 ~/.ravi/.env            - API keys e env vars
 ~/.ravi/omni-api-key    - API key para omni (auto-gerada)
 ~/.ravi/jetstream/      - JetStream storage (nats-server)
