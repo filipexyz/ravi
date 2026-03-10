@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ravi - The daemon that gives Claude a life</title>
+  <meta name="description" content="Multi-agent messaging daemon built on Claude SDK. Connect Claude to WhatsApp, Telegram, and Discord with session routing, automation, and NATS JetStream." />
+  <meta property="og:title" content="Ravi" />
+  <meta property="og:description" content="The daemon that gives Claude a life" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://ravi.bot" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            cyan: {
+              50: '#ecfeff', 100: '#cffafe', 200: '#a5f3fc', 300: '#67e8f9',
+              400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490',
+              800: '#155e75', 900: '#164e63', 950: '#083344',
+            },
+          },
+          fontFamily: {
+            sans: ['DM Sans', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    .gradient-text {
+      background: linear-gradient(135deg, #22d3ee, #06b6d4, #0891b2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .glow { box-shadow: 0 0 60px rgba(6, 182, 212, 0.15); }
+    .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
+    pre code { font-size: 0.85rem; line-height: 1.6; }
+    .fade-in { animation: fadeIn 0.6s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse-slow { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+    .pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans antialiased">
+
+  <!-- Nav -->
+  <nav class="fixed top-0 w-full z-50 bg-gray-950/80 backdrop-blur-lg border-b border-gray-800/50">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <span class="text-xl font-bold tracking-tight text-white">ravi</span>
+        <span class="text-xs font-mono text-cyan-500 bg-cyan-500/10 px-2 py-0.5 rounded-full">daemon</span>
+      </a>
+      <div class="flex items-center gap-6">
+        <a href="https://docs.ravi.bot" class="text-sm text-gray-400 hover:text-white transition-colors">Docs</a>
+        <a href="https://github.com/filipexyz/ravi" class="text-sm text-gray-400 hover:text-white transition-colors">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="relative pt-32 pb-20 px-6 overflow-hidden">
+    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(6,182,212,0.08)_0%,_transparent_60%)]"></div>
+    <div class="max-w-4xl mx-auto text-center relative fade-in">
+      <div class="mb-8 flex justify-center">
+        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 border border-cyan-500/20 flex items-center justify-center glow">
+          <svg viewBox="0 0 155 58" class="w-12 h-12" fill="#22d3ee">
+            <g><path transform="translate(8.03,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(24.10,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(48.20,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(72.31,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(88.37,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(120.51,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(128.54,11.00) scale(0.013,-0.013)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(136.58,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,11.00) scale(0.013,-0.013)" d="M241 -81H151Q318 110 318 349Q318 588 151 779H241Q313 698 356.0 585.5Q399 473 399 349Q399 225 356.0 112.5Q313 0 241 -81Z"/><path transform="translate(0,25) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,25) scale(0.013,-0.013)" d="M258 548V699H360V548L333 390H285Z"/><path transform="translate(24.10,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(40.17,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(56.24,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,25) scale(0.013,-0.013)" d="M359 592H299L150 740H263Z"/><path transform="translate(80.34,25) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(96.41,25) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(112.48,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(144.61,25) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(0,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(32.14,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(48.20,39) scale(0.013,-0.013)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(56.24,39) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(80.34,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(88.37,39) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,39) scale(0.013,-0.013)" d="M588 699 363 0H255L30 699H128L310 96L491 699Z"/><path transform="translate(120.51,39) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(144.61,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(0,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(8.03,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(16.07,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(40.17,53) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(48.20,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,53) scale(0.013,-0.013)" d="M241 0V136H377V-35Q377 -95 343.5 -130.0Q310 -165 244 -165H226V-114H242Q321 -114 321 -38V0Z"/><path transform="translate(72.31,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(96.41,53) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(112.48,53) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(136.58,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/></g>
+          </svg>
+        </div>
+      </div>
+      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-4">
+        The daemon that gives<br /><span class="gradient-text">Claude a life</span>
+      </h1>
+      <p class="text-lg text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        Multi-agent messaging daemon built on the Claude SDK.<br class="hidden sm:block" />
+        Connect Claude to WhatsApp, Telegram, and Discord &mdash; with session routing, automation, and embedded NATS JetStream.
+      </p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+        <a href="https://docs.ravi.bot/start" class="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg transition-colors text-sm">
+          Get Started
+        </a>
+        <a href="https://github.com/filipexyz/ravi" class="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors text-sm border border-gray-700">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture -->
+  <section class="py-16 px-6">
+    <div class="max-w-4xl mx-auto">
+      <div class="rounded-xl bg-gray-900/60 border border-gray-800 p-8 glow">
+        <pre class="font-mono text-sm text-cyan-300 overflow-x-auto"><code><span class="text-gray-500">$</span> ravi daemon start
+
+  <span class="text-gray-500">├──</span> <span class="text-cyan-400">nats-server</span> <span class="text-gray-600">:4222</span>  <span class="text-gray-500">(JetStream)</span>
+  <span class="text-gray-500">├──</span> <span class="text-cyan-400">omni API</span>    <span class="text-gray-600">:8882</span>  <span class="text-gray-500">(child process)</span>
+  <span class="text-gray-500">│</span>     <span class="text-gray-500">├──</span> WhatsApp <span class="text-gray-600">(Baileys)</span>
+  <span class="text-gray-500">│</span>     <span class="text-gray-500">├──</span> Telegram
+  <span class="text-gray-500">│</span>     <span class="text-gray-500">└──</span> Discord
+  <span class="text-gray-500">└──</span> <span class="text-cyan-400">ravi bot</span>
+        <span class="text-gray-500">├──</span> OmniConsumer  <span class="text-gray-600">→ JetStream pull consumer</span>
+        <span class="text-gray-500">├──</span> Claude SDK    <span class="text-gray-600">→ sessions, tools, agents</span>
+        <span class="text-gray-500">├──</span> OmniSender    <span class="text-gray-600">→ HTTP POST /api/v2/messages/send</span>
+        <span class="text-gray-500">└──</span> Runners       <span class="text-gray-600">→ cron, heartbeat, triggers, outbound</span></code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Grid -->
+  <section class="py-16 px-6" id="features">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">Everything you need</h2>
+      <p class="text-gray-400 text-center mb-12 max-w-xl mx-auto">From message routing to outreach campaigns &mdash; one daemon, zero external services.</p>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">channels</div>
+          <h3 class="font-semibold mb-1">Multi-Channel</h3>
+          <p class="text-sm text-gray-400">WhatsApp, Telegram, Discord via omni. Connect multiple accounts to different agents.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">agents</div>
+          <h3 class="font-semibold mb-1">Multi-Agent</h3>
+          <p class="text-sm text-gray-400">Multiple agents with different models, modes, and permissions. Active or sentinel mode.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">sessions</div>
+          <h3 class="font-semibold mb-1">Session Routing</h3>
+          <p class="text-sm text-gray-400">Per-peer, per-group, per-thread isolation. Cross-session messaging between agents.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">cron</div>
+          <h3 class="font-semibold mb-1">Cron Jobs</h3>
+          <p class="text-sm text-gray-400">Schedule prompts with cron expressions, intervals, or one-shot times. Timezone-aware.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">triggers</div>
+          <h3 class="font-semibold mb-1">Event Triggers</h3>
+          <p class="text-sm text-gray-400">Subscribe to NATS topics and fire agent prompts. Template variables, filters, cooldowns.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">outbound</div>
+          <h3 class="font-semibold mb-1">Outbound Queues</h3>
+          <p class="text-sm text-gray-400">Automated outreach campaigns with follow-ups, qualification tracking, and humanized delivery.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">heartbeat</div>
+          <h3 class="font-semibold mb-1">Heartbeat</h3>
+          <p class="text-sm text-gray-400">Proactive agent runs on schedule. Reads HEARTBEAT.md and acts on pending tasks.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">permissions</div>
+          <h3 class="font-semibold mb-1">REBAC Permissions</h3>
+          <p class="text-sm text-gray-400">Relation-based access control for tools, executables, sessions, and contacts.</p>
+        </div>
+
+        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
+          <div class="text-cyan-400 text-sm font-mono mb-2">media</div>
+          <h3 class="font-semibold mb-1">Media Pipeline</h3>
+          <p class="text-sm text-gray-400">Audio transcription (Whisper), video analysis (Gemini), image generation, media sending.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section class="py-16 px-6" id="quickstart">
+    <div class="max-w-3xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-12">Up and running in 60 seconds</h2>
+      <div class="space-y-4">
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
+            <span class="text-cyan-400 text-sm font-mono font-bold">1</span>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold mb-2">Install</h3>
+            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+              <code class="font-mono text-sm text-gray-300">git clone https://github.com/filipexyz/ravi.git && cd ravi<br />bun install && bun run build && bun link</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
+            <span class="text-cyan-400 text-sm font-mono font-bold">2</span>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold mb-2">Setup</h3>
+            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+              <code class="font-mono text-sm text-gray-300">ravi setup</code>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">Downloads nats-server, configures Claude auth, creates your first agent.</p>
+          </div>
+        </div>
+
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
+            <span class="text-cyan-400 text-sm font-mono font-bold">3</span>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold mb-2">Start the daemon</h3>
+            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+              <code class="font-mono text-sm text-gray-300">ravi daemon start</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-4 items-start">
+          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
+            <span class="text-cyan-400 text-sm font-mono font-bold">4</span>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold mb-2">Connect a channel</h3>
+            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
+              <code class="font-mono text-sm text-gray-300">ravi whatsapp connect</code>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">Scan the QR code and start chatting with Claude on WhatsApp.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Message Flow -->
+  <section class="py-16 px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">Message flow</h2>
+      <p class="text-gray-400 text-center mb-10">Every message takes the same path. No magic, no hidden state.</p>
+      <div class="rounded-xl bg-gray-900/60 border border-gray-800 p-8">
+        <div class="flex flex-col items-center gap-2 font-mono text-sm">
+          <div class="flex items-center gap-3">
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">WhatsApp</span>
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Telegram</span>
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Discord</span>
+          </div>
+          <span class="text-gray-600">|</span>
+          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">omni API</span>
+          <span class="text-gray-600">|</span>
+          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">NATS JetStream</span>
+          <span class="text-gray-600">|</span>
+          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">OmniConsumer</span>
+          <span class="text-gray-600">|</span>
+          <div class="px-6 py-3 rounded-lg bg-gradient-to-r from-cyan-950/80 to-cyan-900/40 text-cyan-300 border border-cyan-700/30 font-semibold">
+            RaviBot &middot; Claude SDK
+          </div>
+          <span class="text-gray-600">|</span>
+          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">Gateway &rarr; OmniSender</span>
+          <span class="text-gray-600">|</span>
+          <div class="flex items-center gap-3">
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">WhatsApp</span>
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Telegram</span>
+            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Discord</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tech Stack -->
+  <section class="py-16 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="flex flex-wrap items-center justify-center gap-8 text-sm text-gray-500">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
+          <span>Bun runtime</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
+          <span>TypeScript</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
+          <span>NATS JetStream</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
+          <span>SQLite</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
+          <span>Claude Agent SDK</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-800/50 py-10 px-6">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="text-sm text-gray-500">
+        Built by <a href="https://github.com/filipexyz" class="text-gray-400 hover:text-white transition-colors">Filipe Labs</a>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-gray-500">
+        <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
+        <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
+        <span>MIT License</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
