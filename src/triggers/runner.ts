@@ -25,6 +25,7 @@ import { dbListTriggers, dbGetTrigger, dbUpdateTriggerState } from "./triggers-d
 import { evaluateFilter } from "./filter.js";
 import { resolveTemplate } from "./template.js";
 import type { Trigger } from "./types.js";
+import { isBlockedTriggerTopic } from "./topic-policy.js";
 
 const log = logger.child("triggers:runner");
 
@@ -122,12 +123,8 @@ export class TriggerRunner {
       byTopic.set(t.topic, list);
     }
 
-    // Internal bot topics that must never be trigger sources (loop risk)
-    // Use prefix match to avoid blocking external topics like ravi.copilot.prompt
-    const blockedPrefixes = ["ravi.session."];
-
     for (const [topic, trigs] of byTopic) {
-      if (blockedPrefixes.some((p) => topic.startsWith(p))) {
+      if (isBlockedTriggerTopic(topic)) {
         log.warn("Skipping trigger on internal topic (anti-loop)", { topic });
         continue;
       }

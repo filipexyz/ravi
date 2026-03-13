@@ -1,53 +1,63 @@
 /**
- * Tool Registry - Central registry of all available tools
+ * Tool Registry - Central registry of built-in runtime tools and CLI tools.
  *
  * This file avoids circular dependencies by not importing command classes directly.
- * Instead, it maintains a registry that can be populated dynamically.
+ * It defines Ravi's canonical built-in tool capabilities, then exposes
+ * provider-native aliases for backward compatibility.
  */
 
-// SDK built-in tools
-export const SDK_TOOLS = [
-  // File operations
-  "Read",
-  "Edit",
-  "Write",
-  "Glob",
-  "Grep",
-  "NotebookEdit",
-  // Execution
-  "Bash",
-  "Task",
-  "TaskOutput",
-  "TaskStop",
-  // Web
-  "WebFetch",
-  "WebSearch",
-  // Planning & interaction
-  "EnterPlanMode",
-  "ExitPlanMode",
-  "AskUserQuestion",
-  "TodoWrite",
-  // Teams
-  "TeamCreate",
-  "TeamDelete",
-  "SendMessage",
-  // Discovery & navigation
-  "ToolSearch",
-  "EnterWorktree",
-  // Other
-  "Skill",
-  "LSP",
+export interface RuntimeBuiltinToolDefinition {
+  capability: string;
+  nativeName: string;
+  groups: string[];
+}
+
+export const RUNTIME_BUILTIN_TOOLS: RuntimeBuiltinToolDefinition[] = [
+  { capability: "fs.read", nativeName: "Read", groups: ["read-only"] },
+  { capability: "fs.edit", nativeName: "Edit", groups: ["write"] },
+  { capability: "fs.write", nativeName: "Write", groups: ["write"] },
+  { capability: "fs.glob", nativeName: "Glob", groups: ["read-only"] },
+  { capability: "fs.grep", nativeName: "Grep", groups: ["read-only"] },
+  { capability: "fs.notebook.edit", nativeName: "NotebookEdit", groups: ["write"] },
+  { capability: "exec.shell", nativeName: "Bash", groups: ["execute"] },
+  { capability: "agent.task.start", nativeName: "Task", groups: ["execute"] },
+  { capability: "agent.task.output", nativeName: "TaskOutput", groups: ["execute"] },
+  { capability: "agent.task.stop", nativeName: "TaskStop", groups: ["execute"] },
+  { capability: "web.fetch", nativeName: "WebFetch", groups: ["read-only"] },
+  { capability: "web.search", nativeName: "WebSearch", groups: ["read-only"] },
+  { capability: "plan.enter", nativeName: "EnterPlanMode", groups: ["plan"] },
+  { capability: "plan.exit", nativeName: "ExitPlanMode", groups: ["plan"] },
+  { capability: "user.ask", nativeName: "AskUserQuestion", groups: ["plan"] },
+  { capability: "plan.todo.write", nativeName: "TodoWrite", groups: ["plan"] },
+  { capability: "team.create", nativeName: "TeamCreate", groups: ["teams"] },
+  { capability: "team.delete", nativeName: "TeamDelete", groups: ["teams"] },
+  { capability: "team.message.send", nativeName: "SendMessage", groups: ["teams"] },
+  { capability: "tool.search", nativeName: "ToolSearch", groups: ["read-only"] },
+  { capability: "workspace.enter", nativeName: "EnterWorktree", groups: ["navigate"] },
+  { capability: "skill.invoke", nativeName: "Skill", groups: ["navigate"] },
+  { capability: "lsp.query", nativeName: "LSP", groups: ["read-only"] },
 ];
 
-/** Named groups of SDK tools for bulk permission grants */
-export const TOOL_GROUPS: Record<string, string[]> = {
-  "read-only": ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "LSP", "ToolSearch"],
-  write: ["Edit", "Write", "NotebookEdit"],
-  execute: ["Bash", "Task", "TaskOutput", "TaskStop"],
-  plan: ["EnterPlanMode", "ExitPlanMode", "AskUserQuestion", "TodoWrite"],
-  teams: ["TeamCreate", "TeamDelete", "SendMessage"],
-  navigate: ["EnterWorktree", "Skill"],
-};
+export const SDK_TOOLS = RUNTIME_BUILTIN_TOOLS.map((tool) => tool.nativeName);
+
+/** Named groups of built-in tools for bulk permission grants */
+export const TOOL_GROUPS: Record<string, string[]> = Object.fromEntries(
+  Array.from(new Set(RUNTIME_BUILTIN_TOOLS.flatMap((tool) => tool.groups))).map((group) => [
+    group,
+    RUNTIME_BUILTIN_TOOLS.filter((tool) => tool.groups.includes(group)).map((tool) => tool.nativeName),
+  ]),
+);
+
+const BUILTIN_TOOL_BY_NATIVE_NAME = new Map(RUNTIME_BUILTIN_TOOLS.map((tool) => [tool.nativeName, tool]));
+const BUILTIN_TOOL_BY_CAPABILITY = new Map(RUNTIME_BUILTIN_TOOLS.map((tool) => [tool.capability, tool]));
+
+export function getBuiltinToolCapability(toolName: string): string | undefined {
+  return BUILTIN_TOOL_BY_NATIVE_NAME.get(toolName)?.capability;
+}
+
+export function getBuiltinToolNativeName(capability: string): string | undefined {
+  return BUILTIN_TOOL_BY_CAPABILITY.get(capability)?.nativeName;
+}
 
 /**
  * Resolve a tool group name to its member tools.
@@ -61,33 +71,21 @@ export function resolveToolGroup(groupName: string): string[] | undefined {
  * Find which tool groups a given tool belongs to.
  */
 export function getToolGroups(toolName: string): string[] {
-  return Object.entries(TOOL_GROUPS)
-    .filter(([, tools]) => tools.includes(toolName))
-    .map(([name]) => name);
+  return BUILTIN_TOOL_BY_NATIVE_NAME.get(toolName)?.groups ?? [];
 }
 
 // CLI tool names registry (populated lazily or by registerCliTools)
 let cliToolNames: string[] | null = null;
 let lazyInitializer: (() => string[]) | null = null;
 
-/**
- * Set a lazy initializer for CLI tool names.
- * Called when getCliToolNames() is invoked and registry is empty.
- */
 export function setCliToolsInitializer(init: () => string[]): void {
   lazyInitializer = init;
 }
 
-/**
- * Register CLI tool names (called during initialization)
- */
 export function registerCliTools(names: string[]): void {
   cliToolNames = names;
 }
 
-/**
- * Get all registered CLI tool names (lazy init if needed)
- */
 export function getCliToolNames(): string[] {
   if (cliToolNames === null && lazyInitializer) {
     cliToolNames = lazyInitializer();
@@ -95,23 +93,14 @@ export function getCliToolNames(): string[] {
   return cliToolNames ?? [];
 }
 
-/**
- * Get all tools (SDK + CLI)
- */
 export function getAllToolNames(): string[] {
   return [...SDK_TOOLS, ...getCliToolNames()];
 }
 
-/**
- * Check if a tool name is a CLI tool
- */
 export function isCliTool(name: string): boolean {
   return getCliToolNames().includes(name);
 }
 
-/**
- * Check if a tool name is an SDK tool
- */
 export function isSdkTool(name: string): boolean {
   return SDK_TOOLS.includes(name);
 }

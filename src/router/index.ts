@@ -82,6 +82,15 @@ export {
   // Audit log
   dbListAuditLog,
   type AuditEntry,
+  // Cost tracking
+  dbInsertCostEvent,
+  dbGetCostSummary,
+  dbGetCostByAgent,
+  dbGetCostForAgent,
+  dbGetCostForSession,
+  dbGetTopSessions,
+  dbGetCostReport,
+  type CostEvent,
 } from "./router-db.js";
 
 // Session Name
@@ -97,11 +106,15 @@ export {
   getSession,
   getSessionByName,
   getSessionBySdkId,
+  getSessionByProviderId,
   getSessionsByAgent,
   getMainSession,
   resolveSession,
   findSessionByAttributes,
   updateSdkSessionId,
+  updateProviderSession,
+  updateProviderSessionId,
+  clearProviderSession,
   updateTokens,
   updateSessionName,
   updateSessionSource,

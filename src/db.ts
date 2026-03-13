@@ -50,6 +50,7 @@ export interface Message {
   session_id: string;
   role: "user" | "assistant";
   content: string;
+  provider_session_id?: string | null;
   sdk_session_id: string | null;
   created_at: string;
 }
@@ -58,9 +59,9 @@ export function saveMessage(
   sessionId: string,
   role: "user" | "assistant",
   content: string,
-  sdkSessionId?: string | null,
+  providerSessionId?: string | null,
 ): void {
-  insertStmt.run(sessionId, role, content, sdkSessionId ?? null);
+  insertStmt.run(sessionId, role, content, providerSessionId ?? null);
 }
 
 /**
@@ -73,6 +74,10 @@ export function backfillSdkSessionId(sessionId: string, sdkSessionId: string): v
   );
 }
 
+export function backfillProviderSessionId(sessionId: string, providerSessionId: string): void {
+  backfillSdkSessionId(sessionId, providerSessionId);
+}
+
 export function getHistory(sessionId: string): Message[] {
   return getHistoryStmt.all(sessionId) as Message[];
 }
@@ -83,8 +88,8 @@ export function getRecentHistory(sessionId: string, limit = 20): Message[] {
 }
 
 /**
- * Get recent messages for the current SDK session only.
- * Finds the sdk_session_id of the last message and filters by it.
+ * Get recent messages for the current provider session only.
+ * Backed by the legacy sdk_session_id column for compatibility.
  */
 export function getRecentSessionHistory(sessionId: string, limit = 50): Message[] {
   const last = db
@@ -100,6 +105,10 @@ export function getRecentSessionHistory(sessionId: string, limit = 50): Message[
     .all(sessionId, last.sdk_session_id, limit) as Message[];
 
   return messages.reverse();
+}
+
+export function getRecentProviderSessionHistory(sessionId: string, limit = 50): Message[] {
+  return getRecentSessionHistory(sessionId, limit);
 }
 
 export function close(): void {

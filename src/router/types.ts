@@ -2,6 +2,8 @@
  * Session Router Types
  */
 
+import type { RuntimeProviderId } from "../runtime/types.js";
+
 // ============================================================================
 // DM Scope
 // ============================================================================
@@ -57,6 +59,9 @@ export interface AgentConfig {
   /** Model override for this agent */
   model?: string;
 
+  /** Runtime provider for this agent (defaults to Claude when unset) */
+  provider?: RuntimeProviderId;
+
   /** Default DM scope for this agent */
   dmScope?: DmScope;
 
@@ -92,6 +97,12 @@ export interface AgentConfig {
 
   /** Agent operating mode: active (responds) or sentinel (observes silently) */
   mode?: "active" | "sentinel";
+
+  /** Remote execution: Proxmox VMID (e.g., "201") or hostname/IP to run Claude via SSH */
+  remote?: string;
+
+  /** SSH user for remote execution (default: "root") */
+  remoteUser?: string;
 
   /** Generic key-value defaults for CLI tools (e.g., tts voice, image mode) */
   defaults?: Record<string, unknown>;
@@ -177,6 +188,10 @@ export interface SessionEntry {
   sessionKey: string;
   /** Human-readable unique session name (used in NATS topics) */
   name?: string;
+  runtimeProvider?: RuntimeProviderId;
+  runtimeSessionParams?: Record<string, unknown>;
+  runtimeSessionDisplayId?: string;
+  providerSessionId?: string;
   sdkSessionId?: string;
   sessionFile?: string;
   updatedAt: number;

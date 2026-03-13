@@ -20,6 +20,9 @@ interface SessionRow {
   session_key: string;
   name: string | null;
   sdk_session_id: string | null;
+  runtime_provider: string | null;
+  runtime_session_json: string | null;
+  runtime_session_display_id: string | null;
   agent_id: string;
   agent_cwd: string;
   chat_type: string | null;
@@ -56,9 +59,16 @@ interface SessionRow {
 }
 
 function rowToEntry(row: SessionRow): SessionEntry {
+  const runtimeSessionParams = parseRuntimeSessionParams(row.runtime_session_json);
+  const providerSessionId = row.runtime_session_display_id ?? row.sdk_session_id ?? undefined;
   return {
     sessionKey: row.session_key,
     name: row.name ?? undefined,
+    runtimeProvider:
+      row.runtime_provider === "claude" || row.runtime_provider === "codex" ? row.runtime_provider : undefined,
+    runtimeSessionParams,
+    runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
+    providerSessionId,
     sdkSessionId: row.sdk_session_id ?? undefined,
     agentId: row.agent_id,
     agentCwd: row.agent_cwd,
@@ -108,6 +118,8 @@ interface SessionStatements {
   getByAgent: Statement;
   findByAttributes: Statement;
   updateSdkId: Statement;
+  updateProviderState: Statement;
+  clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
   nameExists: Statement;
@@ -132,7 +144,7 @@ function getStatements(): SessionStatements {
   stmts = {
     upsert: db.prepare(`
       INSERT INTO sessions (
-        session_key, name, sdk_session_id, agent_id, agent_cwd,
+        session_key, name, sdk_session_id, runtime_provider, runtime_session_json, runtime_session_display_id, agent_id, agent_cwd,
         chat_type, channel, account_id, group_id, subject, display_name,
         last_channel, last_to, last_account_id, last_thread_id,
         model_override, thinking_level,
@@ -141,7 +153,7 @@ function getStatements(): SessionStatements {
         system_sent, aborted_last_run, compaction_count,
         created_at, updated_at
       ) VALUES (
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
         ?, ?,
@@ -153,6 +165,9 @@ function getStatements(): SessionStatements {
       ON CONFLICT(session_key) DO UPDATE SET
         name = COALESCE(excluded.name, sessions.name),
         sdk_session_id = COALESCE(excluded.sdk_session_id, sessions.sdk_session_id),
+        runtime_provider = COALESCE(excluded.runtime_provider, sessions.runtime_provider),
+        runtime_session_json = COALESCE(excluded.runtime_session_json, sessions.runtime_session_json),
+        runtime_session_display_id = COALESCE(excluded.runtime_session_display_id, sessions.runtime_session_display_id),
         chat_type = COALESCE(excluded.chat_type, sessions.chat_type),
         channel = COALESCE(excluded.channel, sessions.channel),
         account_id = COALESCE(excluded.account_id, sessions.account_id),
@@ -171,12 +186,20 @@ function getStatements(): SessionStatements {
     `),
     getByKey: db.prepare("SELECT * FROM sessions WHERE session_key = ?"),
     getByName: db.prepare("SELECT * FROM sessions WHERE name = ?"),
-    getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ?"),
+    getBySdkId: db.prepare("SELECT * FROM sessions WHERE sdk_session_id = ? OR runtime_session_display_id = ?"),
     getByAgent: db.prepare("SELECT * FROM sessions WHERE agent_id = ? ORDER BY updated_at DESC"),
     findByAttributes: db.prepare(
       "SELECT * FROM sessions WHERE agent_id = ? AND channel = ? AND group_id = ? ORDER BY updated_at DESC LIMIT 1",
     ),
-    updateSdkId: db.prepare("UPDATE sessions SET sdk_session_id = ?, updated_at = ? WHERE session_key = ?"),
+    updateSdkId: db.prepare(
+      "UPDATE sessions SET sdk_session_id = ?, runtime_session_display_id = COALESCE(runtime_session_display_id, ?), updated_at = ? WHERE session_key = ?",
+    ),
+    updateProviderState: db.prepare(
+      "UPDATE sessions SET sdk_session_id = ?, runtime_provider = ?, runtime_session_json = ?, runtime_session_display_id = ?, updated_at = ? WHERE session_key = ?",
+    ),
+    clearProviderState: db.prepare(
+      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
+    ),
     updateTokens: db.prepare(`
       UPDATE sessions SET
         input_tokens = input_tokens + ?,
@@ -192,7 +215,7 @@ function getStatements(): SessionStatements {
     deleteByName: db.prepare("DELETE FROM sessions WHERE name = ?"),
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
     updateAgent: db.prepare(
-      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, updated_at = ? WHERE session_key = ?",
+      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
     ),
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
@@ -234,6 +257,9 @@ export function getOrCreateSession(
       existing.agent_id = agentId;
       existing.agent_cwd = agentCwd;
       existing.sdk_session_id = null;
+      existing.runtime_provider = null;
+      existing.runtime_session_json = null;
+      existing.runtime_session_display_id = null;
     }
     return rowToEntry(existing);
   }
@@ -242,7 +268,10 @@ export function getOrCreateSession(
   s.upsert.run(
     sessionKey,
     defaults?.name ?? null,
-    defaults?.sdkSessionId ?? null,
+    defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
+    defaults?.runtimeProvider ?? null,
+    serializeRuntimeSessionParams(defaults?.runtimeSessionParams),
+    defaults?.runtimeSessionDisplayId ?? defaults?.providerSessionId ?? defaults?.sdkSessionId ?? null,
     agentId,
     agentCwd,
     defaults?.chatType ?? null,
@@ -290,8 +319,12 @@ export function getSession(sessionKey: string): SessionEntry | null {
  */
 export function getSessionBySdkId(sdkSessionId: string): SessionEntry | null {
   const s = getStatements();
-  const row = s.getBySdkId.get(sdkSessionId) as SessionRow | undefined;
+  const row = s.getBySdkId.get(sdkSessionId, sdkSessionId) as SessionRow | undefined;
   return row ? rowToEntry(row) : null;
+}
+
+export function getSessionByProviderId(providerSessionId: string): SessionEntry | null {
+  return getSessionBySdkId(providerSessionId);
 }
 
 /**
@@ -308,8 +341,53 @@ export function getSessionsByAgent(agentId: string): SessionEntry[] {
  */
 export function updateSdkSessionId(sessionKey: string, sdkSessionId: string): void {
   const s = getStatements();
-  s.updateSdkId.run(sdkSessionId, Date.now(), sessionKey);
+  s.updateSdkId.run(sdkSessionId, sdkSessionId, Date.now(), sessionKey);
   log.debug("Updated SDK session ID", { sessionKey, sdkSessionId });
+}
+
+export function updateProviderSession(
+  sessionKey: string,
+  runtimeProvider: SessionEntry["runtimeProvider"],
+  providerSessionId: string,
+  options: {
+    runtimeSessionParams?: SessionEntry["runtimeSessionParams"];
+    runtimeSessionDisplayId?: string;
+  } = {},
+): void {
+  const s = getStatements();
+  const runtimeSessionDisplayId = options.runtimeSessionDisplayId ?? providerSessionId;
+  s.updateProviderState.run(
+    providerSessionId,
+    runtimeProvider ?? null,
+    serializeRuntimeSessionParams(options.runtimeSessionParams),
+    runtimeSessionDisplayId,
+    Date.now(),
+    sessionKey,
+  );
+  log.debug("Updated provider session state", {
+    sessionKey,
+    runtimeProvider,
+    providerSessionId,
+    runtimeSessionDisplayId,
+  });
+}
+
+export function updateProviderSessionId(
+  sessionKey: string,
+  providerSessionId: string,
+  runtimeProvider?: SessionEntry["runtimeProvider"],
+): void {
+  if (runtimeProvider) {
+    updateProviderSession(sessionKey, runtimeProvider, providerSessionId);
+    return;
+  }
+  updateSdkSessionId(sessionKey, providerSessionId);
+}
+
+export function clearProviderSession(sessionKey: string): void {
+  const s = getStatements();
+  s.clearProviderState.run(Date.now(), sessionKey);
+  log.debug("Cleared provider session state", { sessionKey });
 }
 
 /**
@@ -338,6 +416,9 @@ export function resetSession(sessionKey: string): boolean {
   db.prepare(`
     UPDATE sessions SET
       sdk_session_id = NULL,
+      runtime_provider = NULL,
+      runtime_session_json = NULL,
+      runtime_session_display_id = NULL,
       system_sent = 0,
       aborted_last_run = 0,
       compaction_count = 0,
@@ -349,6 +430,27 @@ export function resetSession(sessionKey: string): boolean {
     WHERE session_key = ?
   `).run(Date.now(), sessionKey);
   return getDbChanges() > 0;
+}
+
+function parseRuntimeSessionParams(raw: string | null): Record<string, unknown> | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeRuntimeSessionParams(params: Record<string, unknown> | undefined): string | null {
+  if (!params || Object.keys(params).length === 0) {
+    return null;
+  }
+
+  return JSON.stringify(params);
 }
 
 /**

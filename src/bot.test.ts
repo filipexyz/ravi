@@ -72,6 +72,7 @@ mock.module("./nats.js", () => ({
 
 mock.module("./db.js", () => ({
   saveMessage: mock(() => {}),
+  backfillProviderSessionId: mock(() => {}),
   close: mock(() => {}),
 }));
 
@@ -94,13 +95,42 @@ mock.module("./router/index.js", () => ({
     agentId,
     sdkSessionId: null,
   }),
-  updateSdkSessionId: mock(() => {}),
+  getSession: mock(() => null),
+  getSessionByName: mock(() => null),
+  clearProviderSession: mock(() => {}),
+  updateProviderSession: mock(() => {}),
   updateTokens: mock(() => {}),
   updateSessionSource: mock(() => {}),
   updateSessionContext: mock(() => {}),
   updateSessionDisplayName: mock(() => {}),
+  deleteSession: mock(() => {}),
   closeRouterDb: mock(() => {}),
+  getAnnounceCompaction: mock(() => false),
+  getAccountForAgent: mock(() => null),
+  dbInsertCostEvent: mock(() => {}),
   expandHome: (p: string) => p.replace("~", "/tmp/ravi-test-bot"),
+}));
+
+mock.module("./config-store.js", () => ({
+  configStore: {
+    getConfig: () => ({
+      agents: {
+        main: {
+          id: "main",
+          cwd: "/tmp/ravi-test-bot/main",
+          provider: "claude",
+          model: "sonnet",
+        },
+      },
+      routes: [],
+      defaultAgent: "main",
+      defaultDmScope: "main",
+      accountAgents: {},
+      instanceToAccount: {},
+      instances: {},
+    }),
+    resolveInstanceId: () => undefined,
+  },
 }));
 
 mock.module("./cli/context.js", () => ({
@@ -121,6 +151,7 @@ mock.module("./hooks/index.js", () => ({
 
 mock.module("./constants.js", () => ({
   ALL_BUILTIN_TOOLS: ["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+  calculateCost: mock(() => null),
 }));
 
 mock.module("./plugins/index.js", () => ({
@@ -175,9 +206,6 @@ describe("handlePromptImmediate — streaming sessions", () => {
 
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
 
-    // Wait for background event loop to start
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
     const sessions = (bot as any).streamingSessions;
     expect(sessions.has(sessionKey)).toBe(true);
   });
@@ -188,7 +216,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     // Create a fake streaming session that is alive and waiting (generator idle)
     let wokenUp = false;
     const streamingSession = {
-      queryHandle: {},
+      queryHandle: { provider: "claude", interrupt: async () => {} },
       abortController: new AbortController(),
       pushMessage: (_msg: any) => {
         wokenUp = true;
@@ -218,7 +246,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
 
     // Create a done streaming session
     const doneSession = {
-      queryHandle: {},
+      queryHandle: { provider: "claude", interrupt: async () => {} },
       abortController: new AbortController(),
       pushMessage: null,
       currentSource: undefined,
@@ -243,7 +271,7 @@ describe("handlePromptImmediate — streaming sessions", () => {
     const sessionKey = "agent:main:test-source";
 
     const streamingSession = {
-      queryHandle: {},
+      queryHandle: { provider: "claude", interrupt: async () => {} },
       abortController: new AbortController(),
       pushMessage: (_msg: any) => {},
       pendingMessages: [] as any[],
@@ -269,11 +297,24 @@ describe("stop — cleanup", () => {
   it("aborts all streaming sessions on stop", async () => {
     const bot = createBot();
     const abortController = new AbortController();
+    let interrupted = false;
+    let generatorWoken = false;
+    let turnSignalWoken = false;
 
     const streamingSession = {
-      queryHandle: {},
+      queryHandle: {
+        provider: "claude",
+        interrupt: async () => {
+          interrupted = true;
+        },
+      },
       abortController,
-      pushMessage: null,
+      pushMessage: () => {
+        generatorWoken = true;
+      },
+      onTurnComplete: () => {
+        turnSignalWoken = true;
+      },
       currentSource: undefined,
       toolRunning: false,
       lastActivity: Date.now(),
@@ -285,6 +326,9 @@ describe("stop — cleanup", () => {
     await bot.stop();
 
     expect(abortController.signal.aborted).toBe(true);
+    expect(interrupted).toBe(true);
+    expect(generatorWoken).toBe(true);
+    expect(turnSignalWoken).toBe(true);
     expect((bot as any).streamingSessions.size).toBe(0);
   });
 });

@@ -26,6 +26,7 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
 import type { SessionEntry } from "../../router/types.js";
+import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -35,6 +36,12 @@ import {
 } from "../../permissions/scope.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
+
+type StreamTerminalState =
+  | { kind: "complete" }
+  | { kind: "failed"; error: string }
+  | { kind: "interrupted"; error: string }
+  | { kind: "timeout" };
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -76,6 +83,21 @@ function timeAgo(ts: number): string {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
+}
+
+function extractRuntimeTerminalError(data: Record<string, unknown>): string | undefined {
+  const error = data.error;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return undefined;
+}
+
+function formatWaitTimeoutError(sessionName: string): string {
+  const seconds = Math.round(SEND_TIMEOUT_MS / 1000);
+  return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
 }
 
 @Group({
@@ -166,7 +188,7 @@ export class SessionCommands {
     console.log(`Agent:       ${s.agentId}`);
     console.log(`Model:       ${s.modelOverride ?? "(agent default)"}`);
     console.log(`Thinking:    ${s.thinkingLevel ?? "(default)"}`);
-    console.log(`SDK ID:      ${s.sdkSessionId ?? "(none)"}`);
+    console.log(`Runtime ID:  ${s.providerSessionId ?? s.sdkSessionId ?? "(none)"}`);
     console.log(
       `Tokens:      input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
     );
@@ -562,24 +584,28 @@ export class SessionCommands {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
 
-    if (!session.sdkSessionId) {
-      console.log("⚠️  No SDK session — no history available");
+    const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
+    if (!providerSessionId) {
+      console.log("⚠️  No runtime session — no history available");
       return;
     }
 
-    const { homedir } = require("node:os");
-    const { existsSync, readFileSync } = require("node:fs");
+    const { readFileSync } = require("node:fs");
+    const agent = loadRouterConfig().agents[session.agentId];
+    const transcript = locateRuntimeTranscript({
+      runtimeProvider: session.runtimeProvider,
+      providerSessionId,
+      agentCwd: session.agentCwd,
+      remote: agent?.remote,
+    });
 
-    const escapedCwd = (session.agentCwd ?? "").replace(/\//g, "-");
-    const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
-
-    if (!existsSync(jsonlPath)) {
-      console.log("⚠️  Transcript not found");
+    if (!transcript.path) {
+      console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
     }
 
     const maxMessages = parseInt(countStr ?? "20", 10);
-    const raw = readFileSync(jsonlPath, "utf-8") as string;
+    const raw = readFileSync(transcript.path, "utf-8") as string;
     const lines = raw.trim().split("\n").filter(Boolean);
 
     interface Message {
@@ -782,7 +808,10 @@ export class SessionCommands {
     toOverride?: string,
   ): Promise<number> {
     let responseLength = 0;
+    let settled = false;
+    let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
 
+    const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
     const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
     const responseStream = nats.subscribe(`ravi.session.${sessionName}.response`);
 
@@ -790,21 +819,58 @@ export class SessionCommands {
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
+      runtimeStream.return(undefined);
       claudeStream.return(undefined);
       responseStream.return(undefined);
     };
 
-    const completion = new Promise<void>((resolve) => {
+    const completion = new Promise<StreamTerminalState>((resolve) => {
+      const settle = (state: StreamTerminalState) => {
+        if (settled) return;
+        settled = true;
+        resolve(state);
+      };
+      settleCompletion = settle;
+
       timeoutId = setTimeout(() => {
         console.log("\n⏱️  Timeout");
-        resolve();
+        settle({ kind: "timeout" });
       }, SEND_TIMEOUT_MS);
+
+      (async () => {
+        try {
+          for await (const event of runtimeStream) {
+            const data = event.data as Record<string, unknown>;
+            const type = data.type;
+            if (type === "turn.complete") {
+              settle({ kind: "complete" });
+              break;
+            }
+            if (type === "turn.failed") {
+              settle({
+                kind: "failed",
+                error: extractRuntimeTerminalError(data) ?? "Session failed",
+              });
+              break;
+            }
+            if (type === "turn.interrupted") {
+              settle({
+                kind: "interrupted",
+                error: extractRuntimeTerminalError(data) ?? "Session turn was interrupted",
+              });
+              break;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
 
       (async () => {
         try {
           for await (const event of claudeStream) {
             if ((event.data as Record<string, unknown>).type === "result") {
-              resolve();
+              settle({ kind: "complete" });
               break;
             }
           }
@@ -819,7 +885,7 @@ export class SessionCommands {
         for await (const event of responseStream) {
           const data = event.data as ResponseMessage;
           if (data.error) {
-            console.log(`\n❌ ${data.error}`);
+            settleCompletion?.({ kind: "failed", error: data.error });
             break;
           }
           if (data.response) {
@@ -836,10 +902,17 @@ export class SessionCommands {
     const _approvalSource = this.resolveCallerApprovalSource();
     await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
 
-    await completion;
+    const completionState = await completion;
     cleanup();
 
     await Promise.race([streaming, new Promise((r) => setTimeout(r, 100))]);
+
+    if (completionState.kind === "failed" || completionState.kind === "interrupted") {
+      throw new Error(completionState.error);
+    }
+    if (completionState.kind === "timeout") {
+      throw new Error(formatWaitTimeoutError(sessionName));
+    }
 
     return responseLength;
   }
@@ -894,7 +967,7 @@ export class SessionCommands {
           const s = resolveSession(sessionName);
           if (s) {
             console.log(`Session: ${s.name ?? s.sessionKey}`);
-            console.log(`SDK Session: ${s.sdkSessionId || "(none)"}`);
+            console.log(`Runtime Session: ${s.providerSessionId ?? s.sdkSessionId ?? "(none)"}`);
             console.log(`Tokens: ${(s.inputTokens || 0) + (s.outputTokens || 0)}\n`);
           } else {
             console.log("No active session.\n");
@@ -904,8 +977,12 @@ export class SessionCommands {
         }
 
         console.log();
-        await this.streamToSession(sessionName, trimmed, session, channelOverride, toOverride);
-        console.log("\n");
+        try {
+          await this.streamToSession(sessionName, trimmed, session, channelOverride, toOverride);
+          console.log("\n");
+        } catch (err) {
+          console.log(`\nError: ${err instanceof Error ? err.message : String(err)}\n`);
+        }
         ask();
       });
     };

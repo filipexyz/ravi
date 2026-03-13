@@ -13,7 +13,7 @@ const COMMANDS_DIR = join(import.meta.dir, "../src/cli/commands");
 const OUTPUT_FILE = join(COMMANDS_DIR, "index.ts");
 
 const files = readdirSync(COMMANDS_DIR)
-  .filter(f => f.endsWith(".ts") && f !== "index.ts")
+  .filter((f) => f.endsWith(".ts") && f !== "index.ts" && !f.endsWith(".test.ts") && !f.endsWith(".spec.ts"))
   .sort();
 
 const exports = files

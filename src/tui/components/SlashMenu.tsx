@@ -9,7 +9,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "switch", description: "Switch session (Ctrl+K)" },
   { name: "reset", description: "Reset session (clear context)" },
   { name: "help", description: "Show available commands" },
-  { name: "model", description: "Change model" },
+  { name: "model", description: "Switch provider/model for this agent" },
 ];
 
 export function filterCommands(query: string): SlashCommand[] {

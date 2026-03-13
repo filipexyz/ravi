@@ -18,6 +18,7 @@ import {
   dbDeleteTrigger,
   type TriggerInput,
 } from "../../triggers/index.js";
+import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
 
 @Group({
   name: "triggers",
@@ -153,6 +154,10 @@ export class TriggersCommands {
     if (!message) {
       fail("--message is required");
     }
+    const blockedReason = getBlockedTriggerTopicReason(topic);
+    if (blockedReason) {
+      fail(blockedReason);
+    }
 
     // Validate agent if provided
     if (agent) {
@@ -190,12 +195,6 @@ export class TriggersCommands {
 
     // Capture reply session from caller context for source routing
     const replySession = ctx?.sessionKey;
-
-    // Warn about blocked topics
-    const blockedPatterns = [".prompt", ".response", ".claude"];
-    if (blockedPatterns.some((p) => topic.includes(p))) {
-      console.log("Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops");
-    }
 
     const input: TriggerInput = {
       name,
@@ -283,9 +282,9 @@ export class TriggersCommands {
           break;
 
         case "topic": {
-          const blocked = [".prompt", ".response", ".claude"];
-          if (blocked.some((p) => value.includes(p))) {
-            console.log("Warning: triggers on .prompt, .response, and .claude topics are skipped to prevent loops");
+          const blockedReason = getBlockedTriggerTopicReason(value);
+          if (blockedReason) {
+            fail(blockedReason);
           }
           dbUpdateTrigger(id, { topic: value });
           console.log(`✓ Topic set: ${id} -> ${value}`);

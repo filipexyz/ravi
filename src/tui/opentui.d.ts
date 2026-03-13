@@ -29,6 +29,8 @@ declare module "@opentui/core" {
     height: number;
     readonly root: any;
     get isDestroyed(): boolean;
+    getSelection(): { getSelectedText(): string } | null;
+    copyToClipboardOSC52(text: string): void;
     start(): void;
     stop(): void;
     destroy(): void;

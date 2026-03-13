@@ -33,17 +33,22 @@ const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 export const DmScopeSchema = z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]);
 
 export const AgentModeSchema = z.enum(["active", "sentinel"]);
+export const RuntimeProviderSchema = z.enum(["claude", "codex"]);
 
 export const AgentInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  provider: RuntimeProviderSchema.optional(),
+  remote: z.string().optional(),
+  remoteUser: z.string().optional(),
   dmScope: DmScopeSchema.optional(),
   systemPromptAppend: z.string().optional(),
   debounceMs: z.number().int().min(0).optional(),
   groupDebounceMs: z.number().int().min(0).optional(),
   matrixAccount: z.string().optional(),
+  settingSources: z.array(z.enum(["user", "project"])).optional(),
   mode: AgentModeSchema.optional(),
 });
 
@@ -80,6 +85,9 @@ interface AgentRow {
   name: string | null;
   cwd: string;
   model: string | null;
+  provider: string | null;
+  remote: string | null;
+  remote_user: string | null;
   dm_scope: string | null;
   system_prompt_append: string | null;
   debounce_ms: number | null;
@@ -219,6 +227,9 @@ function getDb(): Database {
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
+      provider TEXT CHECK(provider IS NULL OR provider IN ('claude','codex')),
+      remote TEXT,
+      remote_user TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       system_prompt_append TEXT,
       debounce_ms INTEGER,
@@ -246,7 +257,11 @@ function getDb(): Database {
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
+      name TEXT,
       sdk_session_id TEXT,
+      runtime_provider TEXT CHECK(runtime_provider IS NULL OR runtime_provider IN ('claude','codex')),
+      runtime_session_json TEXT,
+      runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
       chat_type TEXT,
@@ -279,6 +294,7 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
 
     -- REBAC: Relationship-based access control
     CREATE TABLE IF NOT EXISTS relations (
@@ -391,6 +407,22 @@ function getDb(): Database {
     log.info("Added setting_sources column to agents table");
   }
 
+  // Migration: add provider column to agents if not exists
+  if (!agentColumns.some((c) => c.name === "provider")) {
+    db.exec("ALTER TABLE agents ADD COLUMN provider TEXT");
+    log.info("Added provider column to agents table");
+  }
+
+  if (!agentColumns.some((c) => c.name === "remote")) {
+    db.exec("ALTER TABLE agents ADD COLUMN remote TEXT");
+    log.info("Added remote column to agents table");
+  }
+
+  if (!agentColumns.some((c) => c.name === "remote_user")) {
+    db.exec("ALTER TABLE agents ADD COLUMN remote_user TEXT");
+    log.info("Added remote_user column to agents table");
+  }
+
   // Migration: drop legacy permission columns (replaced by REBAC)
   const legacyCols = ["allowed_tools", "bash_mode", "bash_allowlist", "bash_denylist"];
   const toDrop = legacyCols.filter((c) => agentColumns.some((ac) => ac.name === c));
@@ -449,6 +481,29 @@ function getDb(): Database {
     db.exec("ALTER TABLE sessions ADD COLUMN last_context TEXT");
     log.info("Added last_context column to sessions table");
   }
+
+  // Migration: add runtime_provider column to sessions if not exists
+  if (!sessionColumns.some((c) => c.name === "runtime_provider")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider TEXT");
+    log.info("Added runtime_provider column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
+    log.info("Added runtime_session_json column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
+    log.info("Added runtime_session_display_id column to sessions table");
+  }
+  db.exec(
+    "UPDATE sessions SET runtime_provider = 'claude' WHERE runtime_provider IS NULL AND sdk_session_id IS NOT NULL",
+  );
+  db.exec(`
+    UPDATE sessions
+    SET runtime_session_display_id = sdk_session_id
+    WHERE runtime_session_display_id IS NULL AND sdk_session_id IS NOT NULL
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
 
   // Migration: add policy column to routes if not exists
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
@@ -959,20 +1014,23 @@ function getStatements(): PreparedStatements {
   stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, provider, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
         name = ?,
         cwd = ?,
         model = ?,
+        provider = ?,
+        remote = ?,
+        remote_user = ?,
         dm_scope = ?,
         system_prompt_append = ?,
         debounce_ms = ?,
@@ -1133,6 +1191,9 @@ function rowToAgent(row: AgentRow): AgentConfig {
 
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
+  if (row.provider === "claude" || row.provider === "codex") result.provider = row.provider;
+  if (row.remote !== null) result.remote = row.remote;
+  if (row.remote_user !== null) result.remoteUser = row.remote_user;
   if (row.dm_scope !== null) {
     // Validate before casting
     const parsed = DmScopeSchema.safeParse(row.dm_scope);
@@ -1269,6 +1330,9 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.name ?? null,
       validated.cwd,
       validated.model ?? null,
+      validated.provider ?? null,
+      validated.remote ?? null,
+      validated.remoteUser ?? null,
       validated.dmScope ?? null,
       validated.systemPromptAppend ?? null,
       validated.debounceMs ?? null,
@@ -1349,6 +1413,9 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.name !== undefined ? (updates.name ?? null) : row.name,
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? (updates.model ?? null) : row.model,
+    updates.provider !== undefined ? (updates.provider ?? null) : row.provider,
+    updates.remote !== undefined ? (updates.remote ?? null) : row.remote,
+    updates.remoteUser !== undefined ? (updates.remoteUser ?? null) : row.remote_user,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     updates.systemPromptAppend !== undefined ? (updates.systemPromptAppend ?? null) : row.system_prompt_append,
     updates.debounceMs !== undefined ? (updates.debounceMs ?? null) : row.debounce_ms,

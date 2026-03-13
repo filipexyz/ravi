@@ -3,8 +3,7 @@
  */
 
 import "reflect-metadata";
-import { homedir } from "node:os";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
@@ -22,6 +21,7 @@ import {
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
+import { locateRuntimeTranscript } from "../../transcripts.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -79,6 +79,7 @@ export class AgentsCommands {
     console.log(`  Name:          ${agent.name || "-"}`);
     console.log(`  CWD:           ${agent.cwd}`);
     console.log(`  Model:         ${agent.model || "-"}`);
+    console.log(`  Provider:      ${agent.provider || "claude"}`);
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
     console.log(`  Mode:          ${agent.mode ?? "active"}`);
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
@@ -87,6 +88,10 @@ export class AgentsCommands {
 
     console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
     console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
+
+    if (agent.remote) {
+      console.log(`  Remote:        ${agent.remote}${agent.remoteUser ? ` (user: ${agent.remoteUser})` : ""}`);
+    }
 
     if (agent.defaults && Object.keys(agent.defaults).length > 0) {
       console.log(`  Defaults:      ${JSON.stringify(agent.defaults)}`);
@@ -101,9 +106,15 @@ export class AgentsCommands {
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
+    @Option({ flags: "--provider <provider>", description: "Runtime provider: claude or codex" }) provider?: string,
   ) {
+    if (provider && provider !== "claude" && provider !== "codex") {
+      fail(`Invalid provider: ${provider}. Valid providers: claude, codex`);
+    }
+    const normalizedProvider = provider === "claude" || provider === "codex" ? provider : undefined;
+
     try {
-      createAgent({ id, cwd });
+      createAgent({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) });
 
       // Ensure directory exists
       const config = loadRouterConfig();
@@ -111,6 +122,9 @@ export class AgentsCommands {
 
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
+      if (normalizedProvider) {
+        console.log(`  Provider: ${normalizedProvider}`);
+      }
       console.log(`  Permissions: closed (no tools, no executables)`);
       console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
       emitConfigChanged();
@@ -149,6 +163,7 @@ export class AgentsCommands {
       "name",
       "cwd",
       "model",
+      "provider",
       "dmScope",
       "systemPromptAppend",
       "matrixAccount",
@@ -156,6 +171,8 @@ export class AgentsCommands {
       "mode",
       "groupDebounceMs",
       "defaults",
+      "remote",
+      "remoteUser",
     ];
     if (!validKeys.includes(key)) {
       fail(`Invalid key: ${key}. Valid keys: ${validKeys.join(", ")}`);
@@ -187,6 +204,13 @@ export class AgentsCommands {
       }
     }
 
+    // Validate provider values
+    if (key === "provider") {
+      if (value !== "claude" && value !== "codex") {
+        fail(`Invalid provider: ${value}. Valid providers: claude, codex`);
+      }
+    }
+
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
     if (key === "matrixAccount" && value !== "null" && value !== "") {
       const { dbGetMatrixAccount } = await import("../../router/router-db.js");
@@ -201,6 +225,16 @@ export class AgentsCommands {
       if (value !== "active" && value !== "sentinel") {
         fail(`Invalid mode: ${value}. Valid modes: active, sentinel`);
       }
+    }
+
+    // Validate remote (VMID, hostname/IP, or worker:<id>)
+    if (key === "remote" && !/^(worker:[a-zA-Z0-9.\-_]+|[a-zA-Z0-9.\-_]+)$/.test(value)) {
+      fail(`Invalid remote: ${value}. Must be a VMID, hostname/IP, or worker:<id>`);
+    }
+
+    // Validate remoteUser (Unix username)
+    if (key === "remoteUser" && !/^[a-zA-Z0-9._-]+$/.test(value)) {
+      fail(`Invalid remoteUser: ${value}. Must be a valid Unix username`);
     }
 
     // Parse settingSources as JSON array
@@ -347,7 +381,7 @@ export class AgentsCommands {
       const updated = new Date(session.updatedAt).toLocaleString();
 
       console.log(`  ${session.name ?? session.sessionKey}`);
-      console.log(`    SDK: ${session.sdkSessionId || "(none)"}`);
+      console.log(`    Runtime: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
       console.log(`    Tokens: ${tokens}`);
       console.log(`    Updated: ${updated}`);
       console.log();
@@ -462,7 +496,7 @@ export class AgentsCommands {
     console.log(`\n🔍 Debug: ${session.name ?? session.sessionKey}\n`);
     console.log(`  Agent:       ${session.agentId}`);
     console.log(`  CWD:         ${session.agentCwd}`);
-    console.log(`  SDK ID:      ${session.sdkSessionId ?? "(none)"}`);
+    console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
     console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
     console.log(
       `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
@@ -471,23 +505,28 @@ export class AgentsCommands {
     console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
     console.log(`  Updated:     ${new Date(session.updatedAt).toLocaleString()}`);
 
-    // Try to read SDK session transcript
-    if (!session.sdkSessionId) {
-      console.log(`\n  ⚠️  No SDK session ID — cannot read transcript`);
+    // Try to read provider transcript
+    const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
+    if (!providerSessionId) {
+      console.log(`\n  ⚠️  No runtime session ID — cannot read transcript`);
       return;
     }
 
-    // SDK stores sessions at ~/.claude/projects/-{escaped-cwd}/{sdkSessionId}.jsonl
-    const escapedCwd = session.agentCwd.replace(/\//g, "-");
-    const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
+    const agentConfig = getAgent(session.agentId);
+    const transcript = locateRuntimeTranscript({
+      runtimeProvider: session.runtimeProvider,
+      providerSessionId,
+      agentCwd: session.agentCwd,
+      remote: agentConfig?.remote,
+    });
 
-    if (!existsSync(jsonlPath)) {
-      console.log(`\n  ⚠️  Transcript not found: ${jsonlPath}`);
+    if (!transcript.path) {
+      console.log(`\n  ⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
     }
 
     // Read and parse JSONL
-    const raw = readFileSync(jsonlPath, "utf-8");
+    const raw = readFileSync(transcript.path, "utf-8");
     const lines = raw.trim().split("\n").filter(Boolean);
 
     // Extract user/assistant turns
