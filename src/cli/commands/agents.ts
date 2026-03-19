@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { getScopeContext, filterVisibleAgents, canViewAgent } from "../../permissions/scope.js";
@@ -22,10 +23,125 @@ import {
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
+import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+interface DebugTurn {
+  type: string;
+  timestamp: string;
+  text?: string;
+  toolUse?: string;
+}
+
+interface DebugSessionSummary {
+  sessionKey: string;
+  name?: string;
+  agentId: string;
+  agentCwd: string;
+  runtimeId?: string;
+  runtimeProvider?: string;
+  channel?: string;
+  to?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  contextTokens?: number;
+  compactionCount?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function buildDebugSessionSummary(session: {
+  sessionKey: string;
+  name?: string | null;
+  agentId: string;
+  agentCwd: string;
+  providerSessionId?: string | null;
+  sdkSessionId?: string | null;
+  runtimeProvider?: string | null;
+  lastChannel?: string | null;
+  lastTo?: string | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  totalTokens?: number | null;
+  contextTokens?: number | null;
+  compactionCount?: number | null;
+  createdAt: number;
+  updatedAt: number;
+}): DebugSessionSummary {
+  return {
+    sessionKey: session.sessionKey,
+    ...(session.name ? { name: session.name } : {}),
+    agentId: session.agentId,
+    agentCwd: session.agentCwd,
+    ...((session.providerSessionId ?? session.sdkSessionId)
+      ? { runtimeId: session.providerSessionId ?? session.sdkSessionId ?? undefined }
+      : {}),
+    ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
+    ...(session.lastChannel ? { channel: session.lastChannel } : {}),
+    ...(session.lastTo ? { to: session.lastTo } : {}),
+    ...(session.inputTokens !== undefined && session.inputTokens !== null ? { inputTokens: session.inputTokens } : {}),
+    ...(session.outputTokens !== undefined && session.outputTokens !== null
+      ? { outputTokens: session.outputTokens }
+      : {}),
+    ...(session.totalTokens !== undefined && session.totalTokens !== null ? { totalTokens: session.totalTokens } : {}),
+    ...(session.contextTokens !== undefined && session.contextTokens !== null
+      ? { contextTokens: session.contextTokens }
+      : {}),
+    ...(session.compactionCount !== undefined && session.compactionCount !== null
+      ? { compactionCount: session.compactionCount }
+      : {}),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
+function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, unknown>[]; turns: DebugTurn[] } {
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const parsedEntries: Record<string, unknown>[] = [];
+  const turns: DebugTurn[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line) as Record<string, any>;
+      parsedEntries.push(entry);
+
+      if (entry.type === "user" && entry.message?.content) {
+        const content =
+          typeof entry.message.content === "string"
+            ? entry.message.content
+            : JSON.stringify(entry.message.content).slice(0, 200);
+        turns.push({
+          type: "user",
+          timestamp: entry.timestamp ?? "",
+          text: content.slice(0, 300),
+        });
+      } else if (entry.type === "assistant" && entry.message?.content) {
+        const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
+        const textParts = parts
+          .filter((p: { type: string }) => p.type === "text")
+          .map((p: { text?: string }) => p.text ?? "");
+        const toolParts = parts
+          .filter((p: { type: string }) => p.type === "tool_use")
+          .map((p: { name?: string; input?: unknown }) => `${p.name}(${JSON.stringify(p.input).slice(0, 100)})`);
+
+        turns.push({
+          type: "assistant",
+          timestamp: entry.timestamp ?? "",
+          text: textParts.join(" ").slice(0, 300) || undefined,
+          toolUse: toolParts.join(", ").slice(0, 200) || undefined,
+        });
+      }
+    } catch {
+      // skip malformed lines
+    }
+  }
+
+  return { parsedEntries, turns };
 }
 
 @Group({
@@ -119,6 +235,9 @@ export class AgentsCommands {
       // Ensure directory exists
       const config = loadRouterConfig();
       ensureAgentDirs(config);
+      ensureAgentInstructionFiles(cwd.replace("~", homedir()), {
+        createClaudeStub: `# ${id}\n\nInstruções do agente aqui.\n`,
+      });
 
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
@@ -270,6 +389,9 @@ export class AgentsCommands {
 
     try {
       updateAgent(id, { [key]: parsedValue });
+      if (key === "cwd" || key === "provider") {
+        ensureAgentDirs(loadRouterConfig());
+      }
       console.log(
         `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
       );
@@ -465,6 +587,7 @@ export class AgentsCommands {
     @Arg("nameOrKey", { required: false, description: "Session name/key (omit for main)" }) nameOrKey?: string,
     @Option({ flags: "-n, --turns <count>", description: "Number of recent turns to show (default: 5)" })
     turnsStr?: string,
+    @Option({ flags: "--json", description: "Output raw debug data as JSON" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -479,8 +602,19 @@ export class AgentsCommands {
     }
 
     if (!session) {
-      console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
       const sessions = getSessionsByAgent(id);
+      if (asJson) {
+        console.log(
+          JSON.stringify({
+            error: `No session found: ${nameOrKey ?? "(main)"}`,
+            agentId: id,
+            availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
+          }),
+        );
+        return;
+      }
+
+      console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
       if (sessions.length > 0) {
         console.log(`\n  Available sessions for ${id}:`);
         for (const s of sessions) {
@@ -491,23 +625,40 @@ export class AgentsCommands {
     }
 
     const maxTurns = parseInt(turnsStr ?? "5", 10);
+    const sessionSummary = buildDebugSessionSummary(session);
 
-    // Session metadata
-    console.log(`\n🔍 Debug: ${session.name ?? session.sessionKey}\n`);
-    console.log(`  Agent:       ${session.agentId}`);
-    console.log(`  CWD:         ${session.agentCwd}`);
-    console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
-    console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
-    console.log(
-      `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
-    );
-    console.log(`  Compactions:  ${session.compactionCount}`);
-    console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
-    console.log(`  Updated:     ${new Date(session.updatedAt).toLocaleString()}`);
+    if (!asJson) {
+      // Session metadata
+      console.log(`\n🔍 Debug: ${session.name ?? session.sessionKey}\n`);
+      console.log(`  Agent:       ${session.agentId}`);
+      console.log(`  CWD:         ${session.agentCwd}`);
+      console.log(`  Runtime ID:  ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`);
+      console.log(`  Channel:     ${session.lastChannel ?? "-"} → ${session.lastTo ?? "-"}`);
+      console.log(
+        `  Tokens:      in=${session.inputTokens} out=${session.outputTokens} total=${session.totalTokens} ctx=${session.contextTokens}`,
+      );
+      console.log(`  Compactions:  ${session.compactionCount}`);
+      console.log(`  Created:     ${new Date(session.createdAt).toLocaleString()}`);
+      console.log(`  Updated:     ${new Date(session.updatedAt).toLocaleString()}`);
+    }
 
     // Try to read provider transcript
     const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
     if (!providerSessionId) {
+      if (asJson) {
+        console.log(
+          JSON.stringify({
+            session: sessionSummary,
+            transcript: {
+              available: false,
+              reason: "No runtime session ID",
+            },
+            entries: [],
+          }),
+        );
+        return;
+      }
+
       console.log(`\n  ⚠️  No runtime session ID — cannot read transcript`);
       return;
     }
@@ -521,59 +672,50 @@ export class AgentsCommands {
     });
 
     if (!transcript.path) {
+      if (asJson) {
+        console.log(
+          JSON.stringify({
+            session: sessionSummary,
+            transcript: {
+              available: false,
+              reason: transcript.reason ?? "Transcript not found",
+            },
+            entries: [],
+          }),
+        );
+        return;
+      }
+
       console.log(`\n  ⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
     }
 
     // Read and parse JSONL
     const raw = readFileSync(transcript.path, "utf-8");
-    const lines = raw.trim().split("\n").filter(Boolean);
-
-    // Extract user/assistant turns
-    interface Turn {
-      type: string;
-      timestamp: string;
-      text?: string;
-      toolUse?: string;
-    }
-
-    const turns: Turn[] = [];
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-        if (entry.type === "user" && entry.message?.content) {
-          const content =
-            typeof entry.message.content === "string"
-              ? entry.message.content
-              : JSON.stringify(entry.message.content).slice(0, 200);
-          turns.push({
-            type: "user",
-            timestamp: entry.timestamp ?? "",
-            text: content.slice(0, 300),
-          });
-        } else if (entry.type === "assistant" && entry.message?.content) {
-          const parts = entry.message.content as Array<{ type: string; text?: string; name?: string; input?: unknown }>;
-          const textParts = parts
-            .filter((p: { type: string }) => p.type === "text")
-            .map((p: { text?: string }) => p.text ?? "");
-          const toolParts = parts
-            .filter((p: { type: string }) => p.type === "tool_use")
-            .map((p: { name?: string; input?: unknown }) => `${p.name}(${JSON.stringify(p.input).slice(0, 100)})`);
-
-          turns.push({
-            type: "assistant",
-            timestamp: entry.timestamp ?? "",
-            text: textParts.join(" ").slice(0, 300) || undefined,
-            toolUse: toolParts.join(", ").slice(0, 200) || undefined,
-          });
-        }
-      } catch {
-        // skip malformed lines
-      }
-    }
+    const { parsedEntries, turns } = parseTranscriptEntries(raw);
 
     // Show last N turns
     const recent = turns.slice(-maxTurns * 2); // user+assistant pairs
+    if (asJson) {
+      const recentRawEntries = parsedEntries
+        .filter((entry) => entry.type === "user" || entry.type === "assistant")
+        .slice(-maxTurns * 2);
+
+      console.log(
+        JSON.stringify({
+          session: sessionSummary,
+          transcript: {
+            available: true,
+            path: transcript.path,
+            totalEntries: parsedEntries.length,
+            selectedEntries: recentRawEntries.length,
+          },
+          entries: recentRawEntries,
+        }),
+      );
+      return;
+    }
+
     console.log(`\n  📋 Last ${Math.min(recent.length, maxTurns * 2)} entries (of ${turns.length} total):\n`);
 
     for (const turn of recent) {

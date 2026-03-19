@@ -311,6 +311,7 @@ async function stepAgent(): Promise<void> {
 
   const { dbListAgents, dbCreateAgent, dbSetSetting } = await import("../../router/router-db.js");
   const { ensureAgentDirs, loadRouterConfig } = await import("../../router/config.js");
+  const { ensureAgentInstructionFiles } = await import("../../runtime/agent-instructions.js");
 
   const agents = dbListAgents();
 
@@ -330,10 +331,9 @@ async function stepAgent(): Promise<void> {
   ensureAgentDirs(loadRouterConfig());
 
   const resolvedCwd = cwd.replace("~", homedir());
-  const claudeMdPath = join(resolvedCwd, "CLAUDE.md");
-  if (!existsSync(claudeMdPath)) {
-    writeFileSync(claudeMdPath, `# ${id}\n\nInstruções do agente aqui.\n`);
-  }
+  ensureAgentInstructionFiles(resolvedCwd, {
+    createClaudeStub: `# ${id}\n\nInstruções do agente aqui.\n`,
+  });
 
   done(`Agente ${c.cyan}${id}${c.reset} criado em ${c.gray}${cwd}${c.reset}`);
 }

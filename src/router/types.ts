@@ -163,6 +163,9 @@ export interface RouterConfig {
 
   /** Instance configs keyed by name */
   instances: Record<string, import("./router-db.js").InstanceConfig>;
+
+  /** Unknown omni instanceIds that Ravi should ignore completely */
+  ignoredOmniInstanceIds?: string[];
 }
 
 // ============================================================================

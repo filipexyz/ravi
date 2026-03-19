@@ -18,6 +18,7 @@ const TEST_NAMES = [
   "test-inst-delete",
   "test-inst-byid",
   "test-inst-defaults",
+  "test-inst-disabled",
 ];
 
 function cleanupInstances() {
@@ -97,9 +98,17 @@ describe("Instances CRUD", () => {
     expect(inst.dmPolicy).toBe("open");
     expect(inst.groupPolicy).toBe("open");
     expect(inst.channel).toBe("whatsapp");
+    expect(inst.enabled).toBe(true);
     expect(inst.agent).toBeUndefined();
     expect(inst.instanceId).toBeUndefined();
     expect(inst.dmScope).toBeUndefined();
+  });
+
+  it("can create a disabled instance that still stays registered", () => {
+    const inst = dbUpsertInstance({ name: "test-inst-disabled", instanceId: "disabled-uuid", enabled: false });
+
+    expect(inst.instanceId).toBe("disabled-uuid");
+    expect(inst.enabled).toBe(false);
   });
 
   it("upserts (overwrites) existing instance on name conflict", () => {
@@ -244,6 +253,14 @@ describe("Instances CRUD", () => {
     dbUpsertInstance({ name: "test-inst-update" });
     const updated = dbUpdateInstance("test-inst-update", { agent: TEST_AGENT_ID });
     expect(updated.agent).toBe(TEST_AGENT_ID);
+  });
+
+  it("update can disable an instance in ravi without deleting it", () => {
+    dbUpsertInstance({ name: "test-inst-update", instanceId: "still-registered" });
+    const updated = dbUpdateInstance("test-inst-update", { enabled: false });
+
+    expect(updated.instanceId).toBe("still-registered");
+    expect(updated.enabled).toBe(false);
   });
 
   it("update throws when instance does not exist", () => {

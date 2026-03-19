@@ -74,6 +74,7 @@ export const InstanceInputSchema = z.object({
   dmPolicy: DmPolicySchema.default("open"),
   groupPolicy: GroupPolicySchema.default("open"),
   dmScope: DmScopeSchema.optional(),
+  enabled: z.boolean().default(true),
 });
 
 // ============================================================================
@@ -137,6 +138,7 @@ interface InstanceRow {
   dm_policy: string;
   group_policy: string;
   dm_scope: string | null;
+  enabled: number | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -150,6 +152,7 @@ export interface InstanceConfig {
   dmPolicy: "open" | "pairing" | "closed";
   groupPolicy: "open" | "allowlist" | "closed";
   dmScope?: DmScope;
+  enabled?: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -355,6 +358,7 @@ function getDb(): Database {
       dm_policy    TEXT NOT NULL DEFAULT 'open' CHECK(dm_policy IN ('open','pairing','closed')),
       group_policy TEXT NOT NULL DEFAULT 'open' CHECK(group_policy IN ('open','allowlist','closed')),
       dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
+      enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
     );
@@ -535,8 +539,8 @@ function getDb(): Database {
     }
 
     const insertInstance = db.prepare(`
-      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const now = Date.now();
     for (const inst of Object.values(instanceData)) {
@@ -548,6 +552,7 @@ function getDb(): Database {
         inst.agent ?? null,
         inst.dmPolicy ?? "open",
         inst.groupPolicy ?? "open",
+        inst.enabled === false ? 0 : 1,
         now,
         now,
       );
@@ -896,6 +901,10 @@ function getDb(): Database {
     db.exec("ALTER TABLE instances ADD COLUMN deleted_at INTEGER");
     log.info("Added deleted_at column to instances table");
   }
+  if (!instanceColumnsNow.some((c) => c.name === "enabled")) {
+    db.exec("ALTER TABLE instances ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
+    log.info("Added enabled column to instances table");
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1148,8 +1157,8 @@ function getStatements(): PreparedStatements {
     `),
     // Instances
     upsertInstance: database.prepare(`
-      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         instance_id  = excluded.instance_id,
         channel      = excluded.channel,
@@ -1157,6 +1166,7 @@ function getStatements(): PreparedStatements {
         dm_policy    = excluded.dm_policy,
         group_policy = excluded.group_policy,
         dm_scope     = excluded.dm_scope,
+        enabled      = excluded.enabled,
         updated_at   = excluded.updated_at
     `),
     getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
@@ -1171,6 +1181,7 @@ function getStatements(): PreparedStatements {
         dm_policy    = ?,
         group_policy = ?,
         dm_scope     = ?,
+        enabled      = ?,
         updated_at   = ?
       WHERE name = ?
     `),
@@ -1291,6 +1302,7 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
     channel: row.channel,
     dmPolicy: (row.dm_policy ?? "open") as InstanceConfig["dmPolicy"],
     groupPolicy: (row.group_policy ?? "open") as InstanceConfig["groupPolicy"],
+    enabled: row.enabled !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1729,6 +1741,7 @@ export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): In
     validated.dmPolicy,
     validated.groupPolicy,
     validated.dmScope ?? null,
+    validated.enabled ? 1 : 0,
     now,
     now,
   );
@@ -1775,6 +1788,7 @@ export function dbUpdateInstance(
     updates.dmPolicy ?? row.dm_policy,
     updates.groupPolicy ?? row.group_policy,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
+    updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
     now,
     name,
   );
@@ -1857,7 +1871,7 @@ export function getDefaultTimezone(): string | undefined {
  */
 export function getFirstAccountName(): string | undefined {
   const instances = dbListInstances();
-  return instances[0]?.name;
+  return instances.find((instance) => instance.enabled !== false)?.name;
 }
 
 /**
@@ -1866,7 +1880,10 @@ export function getFirstAccountName(): string | undefined {
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  return instances.find((i) => i.agent === agentId)?.name ?? instances[0]?.name;
+  return (
+    instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name ??
+    instances.find((instance) => instance.enabled !== false)?.name
+  );
 }
 
 /**

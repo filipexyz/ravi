@@ -18,6 +18,7 @@ import { publish } from "../nats.js";
 import { resetSession, resolveSession } from "../router/sessions.js";
 
 const initialSessionName = process.argv[2] || "main";
+const tmuxAgentId = process.env.RAVI_TMUX_AGENT || null;
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -49,7 +50,7 @@ export function App() {
   const [sessionName, setSessionName] = useState(initialSessionName);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const { sessions, refresh: refreshSessions } = useSessions();
+  const { sessions, refresh: refreshSessions } = useSessions({ agentId: tmuxAgentId });
 
   // Auto-copy selected text to clipboard via OSC 52
   useEffect(() => {
@@ -84,7 +85,7 @@ export function App() {
   // Resolve current session/agent metadata directly from SQLite so the status
   // bar reflects live provider changes without waiting for the palette list.
   const currentSession = resolveSession(sessionName);
-  const agentId = currentSession?.agentId ?? "unknown";
+  const agentId = currentSession?.agentId ?? tmuxAgentId ?? "unknown";
   const agent = agentId === "unknown" ? null : dbGetAgent(agentId);
   const runtimeLabel = resolveRuntimeDisplayLabel({
     configuredProvider: agent?.provider ?? "claude",

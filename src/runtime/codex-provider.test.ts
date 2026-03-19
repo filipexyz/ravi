@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
@@ -242,6 +242,16 @@ describe("createCodexRuntimeProvider", () => {
     expect(calls[0]?.systemPromptAppend).toContain(`Workspace instructions loaded from ${join(cwd, "CLAUDE.md")}`);
     expect(calls[0]?.systemPromptAppend).toContain("Use the Ravi skills when helpful.");
     expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
+  });
+
+  it("prepareSession creates an AGENTS.md bridge for Codex workspaces", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    writeFileSync(join(cwd, "CLAUDE.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
+
+    const provider = createCodexRuntimeProvider({ defaultModel: "gpt-5" });
+    provider.prepareSession?.({ agentId: "main", cwd, plugins: [] });
+
+    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
   });
 
   it("includes synchronized Ravi skill names in the Codex system prompt", async () => {

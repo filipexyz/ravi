@@ -6,6 +6,8 @@
  * ravi instances create <name> [--channel whatsapp] [--agent main]
  * ravi instances set <name> <key> <value>
  * ravi instances get <name> <key>
+ * ravi instances enable <name-or-instanceId>
+ * ravi instances disable <name-or-instanceId>
  * ravi instances connect <name> [--channel whatsapp]
  * ravi instances disconnect <name>
  * ravi instances status <name>
@@ -29,6 +31,7 @@ import { nats } from "../../nats.js";
 import { createOmniClient } from "@omni/sdk";
 import {
   dbGetInstance,
+  dbGetInstanceByInstanceId,
   dbListInstances,
   dbUpsertInstance,
   dbUpdateInstance,
@@ -48,7 +51,14 @@ import {
   DmScopeSchema,
   DmPolicySchema,
   GroupPolicySchema,
+  dbGetSetting,
+  dbSetSetting,
 } from "../../router/router-db.js";
+import {
+  IGNORED_OMNI_INSTANCE_IDS_SETTING,
+  parseIgnoredOmniInstanceIds,
+  serializeIgnoredOmniInstanceIds,
+} from "../../router/omni-ignore.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 import {
   getContact,
@@ -61,6 +71,26 @@ import { listSessions, deleteSession } from "../../router/sessions.js";
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function parseEnabledValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "on", "open", "enabled"].includes(normalized)) return true;
+  if (["false", "0", "off", "closed", "disabled"].includes(normalized)) return false;
+  fail(`Invalid enabled value: ${value}. Valid: true, false`);
+}
+
+function getIgnoredOmniInstanceIds(): string[] {
+  return parseIgnoredOmniInstanceIds(dbGetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING));
+}
+
+function saveIgnoredOmniInstanceIds(instanceIds: Iterable<string>): void {
+  dbSetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING, serializeIgnoredOmniInstanceIds(instanceIds));
+  emitConfigChanged();
+}
+
+function resolveInstanceByNameOrId(value: string) {
+  return dbGetInstance(value) ?? dbGetInstanceByInstanceId(value);
 }
 
 function deleteConflictingSessions(pattern: string, targetAgent: string): number {
@@ -100,7 +130,7 @@ function getOmniClient() {
   return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
 }
 
-const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel"] as const;
+const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel", "enabled"] as const;
 type SettableKey = (typeof SETTABLE_KEYS)[number];
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
@@ -121,6 +151,7 @@ export class InstancesCommands {
   @Command({ name: "list", description: "List all instances" })
   async list() {
     const instances = dbListInstances();
+    const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
     // Try to enrich with omni status
     const omniStatus: Record<string, { isConnected?: boolean; profileName?: string }> = {};
@@ -135,14 +166,21 @@ export class InstancesCommands {
     }
 
     if (instances.length === 0) {
-      console.log("No instances configured.");
-      console.log("\nCreate one: ravi instances create <name> --channel whatsapp");
+      console.log("No registered instances configured.");
+      if (ignoredOmniInstanceIds.length > 0) {
+        console.log("\nIgnored unknown omni instanceIds:\n");
+        for (const instanceId of ignoredOmniInstanceIds) {
+          console.log(`  ${instanceId}`);
+        }
+      } else {
+        console.log("\nCreate one: ravi instances create <name> --channel whatsapp");
+      }
       return;
     }
 
     console.log("\nInstances:\n");
-    console.log("  NAME                 CHANNEL       AGENT           DM           GROUP        STATUS");
-    console.log("  -------------------- ------------- --------------- ------------ ------------ ----------");
+    console.log("  NAME                 CHANNEL       AGENT           RAVI      DM           GROUP        STATUS");
+    console.log("  -------------------- ------------- --------------- --------- ------------ ------------ ----------");
 
     for (const inst of instances) {
       const status = inst.instanceId
@@ -153,10 +191,17 @@ export class InstancesCommands {
       const profile = inst.instanceId ? (omniStatus[inst.instanceId]?.profileName ?? "") : "";
       const label = profile ? `${status} (${profile})` : status;
       console.log(
-        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
+        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
       );
     }
     console.log(`\n  Total: ${instances.length}`);
+
+    if (ignoredOmniInstanceIds.length > 0) {
+      console.log("\nIgnored unknown omni instanceIds:\n");
+      for (const instanceId of ignoredOmniInstanceIds) {
+        console.log(`  ${instanceId}`);
+      }
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -182,6 +227,7 @@ export class InstancesCommands {
     console.log(`\nInstance: ${inst.name}\n`);
     console.log(`  Channel:      ${inst.channel}`);
     console.log(`  Instance ID:  ${inst.instanceId ?? "(not set)"}`);
+    console.log(`  Ravi:         ${inst.enabled === false ? "disabled" : "enabled"}`);
     console.log(`  Agent:        ${inst.agent ?? "(default)"}`);
     console.log(`  DM Policy:    ${inst.dmPolicy}`);
     console.log(`  Group Policy: ${inst.groupPolicy}`);
@@ -298,9 +344,59 @@ export class InstancesCommands {
       dbUpdateInstance(name, { instanceId: clear ? undefined : value });
     } else if (key === "channel") {
       dbUpdateInstance(name, { channel: value });
+    } else if (key === "enabled") {
+      if (clear) fail("enabled cannot be cleared");
+      dbUpdateInstance(name, { enabled: parseEnabledValue(value) });
     }
 
     console.log(`✓ ${name}.${key} = ${clear ? "(cleared)" : value}`);
+    emitConfigChanged();
+  }
+
+  // --------------------------------------------------------------------------
+  // enable
+  // --------------------------------------------------------------------------
+  @Command({ name: "enable", description: "Enable an instance in Ravi without changing omni" })
+  enable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+    const inst = resolveInstanceByNameOrId(target);
+    if (!inst) {
+      const ignored = getIgnoredOmniInstanceIds();
+      if (!ignored.includes(target)) fail(`Instance not found: ${target}`);
+      saveIgnoredOmniInstanceIds(ignored.filter((instanceId) => instanceId !== target));
+      console.log(`✓ Removed ignored unknown omni instanceId from ravi: ${target}`);
+      return;
+    }
+    if (inst.enabled !== false) {
+      console.log(`Instance already enabled in ravi: ${inst.name}`);
+      return;
+    }
+    dbUpdateInstance(inst.name, { enabled: true });
+    console.log(`✓ Instance enabled in ravi: ${inst.name}`);
+    emitConfigChanged();
+  }
+
+  // --------------------------------------------------------------------------
+  // disable
+  // --------------------------------------------------------------------------
+  @Command({ name: "disable", description: "Disable an instance in Ravi without changing omni" })
+  disable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+    const inst = resolveInstanceByNameOrId(target);
+    if (!inst) {
+      const ignored = getIgnoredOmniInstanceIds();
+      if (ignored.includes(target)) {
+        console.log(`Unknown omni instanceId already ignored in ravi: ${target}`);
+        return;
+      }
+      saveIgnoredOmniInstanceIds([...ignored, target]);
+      console.log(`✓ Ignoring unknown omni instanceId in ravi: ${target}`);
+      return;
+    }
+    if (inst.enabled === false) {
+      console.log(`Instance already disabled in ravi: ${inst.name}`);
+      return;
+    }
+    dbUpdateInstance(inst.name, { enabled: false });
+    console.log(`✓ Instance disabled in ravi: ${inst.name}`);
     emitConfigChanged();
   }
 
@@ -395,7 +491,7 @@ export class InstancesCommands {
 
     // Upsert local instance record
     const agentId = agent ?? inst?.agent ?? (dbGetAgent(name) ? name : undefined);
-    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined });
+    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined, enabled: inst?.enabled !== false });
     if (agentId && !dbGetAgent(agentId)) {
       const cwd = `${homedir()}/ravi/${agentId}`;
       mkdirSync(cwd, { recursive: true });
@@ -506,6 +602,7 @@ export class InstancesCommands {
       console.log(`\nInstance: ${name}\n`);
       console.log(`  Instance ID: ${inst.instanceId}`);
       console.log(`  Channel:     ${inst.channel}`);
+      console.log(`  Ravi:        ${inst.enabled === false ? "disabled" : "enabled"}`);
       console.log(`  State:       ${s.state ?? "unknown"}`);
       console.log(`  Connected:   ${s.isConnected ?? false}`);
       if (s.profileName) console.log(`  Profile:     ${s.profileName}`);

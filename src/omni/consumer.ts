@@ -11,6 +11,7 @@ import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetSt
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { handleSlashCommand } from "../slash/index.js";
+import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
@@ -356,8 +357,14 @@ export class OmniConsumer {
     const isNonDmChannel = rawIsDm === false && (channelType === "slack" || channelType === "discord");
     const peerKind = isNonDmChannel ? ("channel" as const) : undefined;
     // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
-    const effectiveAccountId = configStore.resolveAccountName(instanceId);
+    const routerConfig = configStore.getConfig();
+    const effectiveAccountId = routerConfig.instanceToAccount[instanceId];
     if (!effectiveAccountId) {
+      if (isIgnoredOmniInstanceId(routerConfig.ignoredOmniInstanceIds, instanceId)) {
+        log.debug("Ignoring unknown omni instanceId configured in ravi", { instanceId, channelType });
+        return;
+      }
+
       log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
       const now = Date.now();
       const lastEmit = unregisteredCooldowns.get(instanceId) ?? 0;
@@ -374,6 +381,15 @@ export class OmniConsumer {
           timestamp: event.timestamp,
         }).catch(() => {});
       }
+      return;
+    }
+    const instanceConfig = routerConfig.instances?.[effectiveAccountId];
+    if (instanceConfig?.enabled === false) {
+      log.info("Instance disabled in ravi, ignoring inbound", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+      });
       return;
     }
 
@@ -425,7 +441,6 @@ export class OmniConsumer {
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
 
     // Resolve route to get session key
-    const routerConfig = configStore.getConfig();
     const resolved = resolveRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,

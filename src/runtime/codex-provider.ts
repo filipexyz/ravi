@@ -1,8 +1,7 @@
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import type {
   RuntimeBillingType,
   RuntimeExecutionMetadata,
@@ -126,6 +125,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
+      ensureAgentInstructionFiles(input.cwd);
       const syncedSkills = syncSkills(input.plugins ?? []);
       syncedSkillsByCwd.set(input.cwd, Array.isArray(syncedSkills) ? syncedSkills : []);
       return {};
@@ -1071,17 +1071,7 @@ function buildCodexSkillCatalogInstruction(syncedSkillNames: string[]): string {
 }
 
 async function loadWorkspaceInstructions(cwd: string): Promise<{ path: string; content: string } | null> {
-  for (const fileName of ["AGENTS.md", "CLAUDE.md"]) {
-    const path = join(cwd, fileName);
-    try {
-      const content = (await readFile(path, "utf8")).trim();
-      if (content.length > 0) {
-        return { path, content };
-      }
-    } catch {}
-  }
-
-  return null;
+  return loadAgentWorkspaceInstructions(cwd);
 }
 
 function createAsyncQueue<T>(): AsyncQueue<T> {

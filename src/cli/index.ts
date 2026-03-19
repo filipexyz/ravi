@@ -41,24 +41,42 @@ program
 // TUI - full-screen terminal interface
 program
   .command("tui")
-  .description("Open the terminal UI (connects via NATS)")
-  .argument("[session]", "Session name to connect to", "main")
-  .action(async (session: string) => {
-    // Dynamic import to avoid loading OpenTUI for non-TUI commands
-    const { spawn } = await import("node:child_process");
-    const { existsSync } = await import("node:fs");
-    // __dirname points to dist/bundle/ when running from built CLI,
-    // so resolve from package.json location instead
-    const projectRoot = join(__dirname, "../..");
-    const tuiPath = existsSync(join(projectRoot, "src/tui/index.tsx"))
-      ? join(projectRoot, "src/tui/index.tsx")
-      : join(projectRoot, "dist/tui/index.tsx");
-    const child = spawn("bun", [tuiPath, session], {
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("exit", (code) => process.exit(code ?? 0));
+  .description("Open the tmux-backed terminal UI workspace")
+  .argument("[target]", "Agent ID or Ravi session name", "main")
+  .option("--direct", "Open the legacy single-window TUI without tmux")
+  .action(async (target: string, options: { direct?: boolean }) => {
+    if (options.direct) {
+      await spawnDirectTui(target);
+      return;
+    }
+
+    const { launchTmuxTui } = await import("../tmux/tui-entry.js");
+    await launchTmuxTui(target);
   });
 
 // Parse and execute
 program.parse();
+
+async function spawnDirectTui(session: string): Promise<void> {
+  const { spawn } = await import("node:child_process");
+  const { existsSync } = await import("node:fs");
+  const projectRoot = join(__dirname, "../..");
+  const tuiPath = existsSync(join(projectRoot, "src/tui/index.tsx"))
+    ? join(projectRoot, "src/tui/index.tsx")
+    : join(projectRoot, "dist/tui/index.tsx");
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("bun", [tuiPath, session], {
+      stdio: "inherit",
+      env: process.env,
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if ((code ?? 0) !== 0) {
+        reject(new Error(`TUI exited with code ${code ?? 0}`));
+        return;
+      }
+      resolve();
+    });
+  });
+}

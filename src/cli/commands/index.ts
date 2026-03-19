@@ -23,6 +23,7 @@ export * from "./service.js";
 export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
+export * from "./tmux.js";
 export * from "./tools.js";
 export * from "./transcribe.js";
 export * from "./triggers.js";
