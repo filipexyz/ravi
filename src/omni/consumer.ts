@@ -19,6 +19,7 @@ const unregisteredCooldowns = new Map<string, number>();
 import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
+import { dbSaveMessageMeta } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../bot.js";
 import { dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId } from "../outbound/index.js";
@@ -596,6 +597,14 @@ export class OmniConsumer {
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
+
+    if (payload.externalId && chatJid && (mediaResult?.transcript || mediaResult?.localPath)) {
+      dbSaveMessageMeta(payload.externalId, chatJid, {
+        transcription: mediaResult?.transcript,
+        mediaPath: mediaResult?.localPath,
+        mediaType: payload.content.type,
+      });
+    }
 
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);

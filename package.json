@@ -32,6 +32,8 @@
     "start": "bun src/index.ts",
     "dev": "bun --watch src/index.ts",
     "tui": "bun src/tui/index.tsx",
+    "wa:overlay:bridge": "bun src/whatsapp-overlay/bridge.ts",
+    "wa:overlay:cli": "bun src/whatsapp-overlay/cli.ts",
     "cli": "bun src/cli/index.ts",
     "typecheck": "bun tsc --noEmit",
     "lint": "bunx biome check src/",
