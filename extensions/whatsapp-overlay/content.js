@@ -17,6 +17,7 @@ const CHAT_ARTIFACT_ATTR = "data-ravi-chat-artifact";
 const CHAT_ARTIFACT_KEY_ATTR = "data-ravi-chat-artifact-key";
 const CHAT_ARTIFACT_STACK_ATTR = "data-ravi-chat-artifact-stack";
 const CHAT_ARTIFACT_ANCHOR_ATTR = "data-ravi-chat-artifact-anchor";
+const expandedConversationToolGroups = new Set();
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
@@ -1009,13 +1010,53 @@ function refreshConversationArtifacts() {
 
   for (const group of grouped) {
     const stack = createConversationArtifactStack(group.anchorKey);
-    for (const artifact of group.artifacts) {
+    for (const item of buildConversationArtifactRenderItems(group.artifacts, group.anchorKey)) {
+      if (item.type === "tool-summary") {
+        const row = createConversationToolSummaryRow();
+        updateConversationToolSummaryRow(row, item);
+        stack.appendChild(row);
+        continue;
+      }
+
       const row = createConversationArtifactRow();
-      updateConversationArtifactRow(row, artifact);
+      updateConversationArtifactRow(row, item.artifact);
       stack.appendChild(row);
     }
     group.anchorNode.insertAdjacentElement("afterend", stack);
   }
+}
+
+function buildConversationArtifactRenderItems(artifacts, anchorKey) {
+  const sorted = [...artifacts].sort((left, right) => {
+    const leftTime = left.updatedAt || left.createdAt || 0;
+    const rightTime = right.updatedAt || right.createdAt || 0;
+    return leftTime - rightTime;
+  });
+
+  const toolArtifacts = sorted.filter((artifact) => artifact.kind === "tool");
+  const items = sorted
+    .filter((artifact) => artifact.kind !== "tool")
+    .map((artifact) => ({
+      type: "artifact",
+      artifact,
+      sortAt: artifact.updatedAt || artifact.createdAt || 0,
+    }));
+
+  if (toolArtifacts.length > 0) {
+    const latestTimestamp = toolArtifacts.reduce(
+      (latest, artifact) => Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
+      0,
+    );
+    items.push({
+      type: "tool-summary",
+      key: `tool-summary:${anchorKey}`,
+      artifacts: toolArtifacts,
+      sortAt: toolArtifacts[0]?.createdAt || latestTimestamp,
+      latestTimestamp,
+    });
+  }
+
+  return items.sort((left, right) => left.sortAt - right.sortAt);
 }
 
 function normalizeConversationArtifacts(artifacts) {
@@ -1107,30 +1148,76 @@ function createConversationArtifactRow() {
   const body = document.createElement("div");
   body.className = "ravi-wa-chat-artifact__body";
 
-  const head = document.createElement("div");
-  head.className = "ravi-wa-chat-artifact__head";
-
   const label = document.createElement("strong");
   label.className = "ravi-wa-chat-artifact__label";
 
   const kind = document.createElement("span");
   kind.className = "ravi-wa-chat-artifact__kind";
 
-  const detail = document.createElement("p");
+  const detail = document.createElement("span");
   detail.className = "ravi-wa-chat-artifact__detail";
-
-  const meta = document.createElement("div");
-  meta.className = "ravi-wa-chat-artifact__meta";
 
   const time = document.createElement("span");
   time.className = "ravi-wa-chat-artifact__time";
 
-  head.append(label, kind);
-  meta.append(time);
-  body.append(head, detail, meta);
+  body.append(label, kind, detail, time);
   root.append(dot, body);
 
   root.__raviArtifactRefs = { dot, label, kind, detail, time };
+  return root;
+}
+
+function createConversationToolSummaryRow() {
+  const root = document.createElement("article");
+  root.setAttribute(CHAT_ARTIFACT_ATTR, "true");
+  root.className = "ravi-wa-chat-artifact ravi-wa-chat-artifact--tool-group";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ravi-wa-chat-artifact__toggle";
+
+  const dot = document.createElement("span");
+  dot.className = "ravi-wa-chat-artifact__dot";
+
+  const body = document.createElement("div");
+  body.className = "ravi-wa-chat-artifact__body";
+
+  const label = document.createElement("strong");
+  label.className = "ravi-wa-chat-artifact__label";
+
+  const detail = document.createElement("span");
+  detail.className = "ravi-wa-chat-artifact__detail";
+
+  const time = document.createElement("span");
+  time.className = "ravi-wa-chat-artifact__time";
+
+  const chevron = document.createElement("span");
+  chevron.className = "ravi-wa-chat-artifact__chevron";
+  chevron.textContent = "▾";
+
+  const list = document.createElement("div");
+  list.className = "ravi-wa-chat-artifact__list";
+  list.hidden = true;
+
+  body.append(label, detail);
+  button.append(dot, body, time, chevron);
+  root.append(button, list);
+
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const key = root.getAttribute(CHAT_ARTIFACT_KEY_ATTR);
+    if (!key) return;
+    const nextExpanded = !root.classList.contains("is-expanded");
+    if (nextExpanded) {
+      expandedConversationToolGroups.add(key);
+    } else {
+      expandedConversationToolGroups.delete(key);
+    }
+    applyConversationToolSummaryExpanded(root, nextExpanded);
+  });
+
+  root.__raviToolSummaryRefs = { button, dot, label, detail, time, chevron, list };
   return root;
 }
 
@@ -1147,7 +1234,10 @@ function updateConversationArtifactRow(root, artifact) {
   root.title = `${artifact.label || artifact.kind || "artifact"} · ${artifact.detail || "sem detalhe"}`;
 
   if (refs?.label) refs.label.textContent = artifact.label || artifact.kind || "artifact";
-  if (refs?.kind) refs.kind.textContent = artifact.kind || "artifact";
+  if (refs?.kind) {
+    refs.kind.textContent = artifact.kind || "artifact";
+    refs.kind.hidden = !artifact.kind || artifact.kind === artifact.label;
+  }
   if (refs?.detail) {
     refs.detail.textContent = artifact.detail || "";
     refs.detail.hidden = !artifact.detail;
@@ -1155,6 +1245,81 @@ function updateConversationArtifactRow(root, artifact) {
   if (refs?.time) {
     refs.time.textContent = formatElapsedCompact(artifact.updatedAt ?? artifact.createdAt) || "agora";
   }
+}
+
+function updateConversationToolSummaryRow(root, item) {
+  if (!root.__raviToolSummaryRefs) {
+    root.__raviToolSummaryRefs = createConversationToolSummaryRow().__raviToolSummaryRefs;
+  }
+
+  const refs = root.__raviToolSummaryRefs;
+  const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
+  const key = item.key;
+  const active = artifacts.some(isConversationToolArtifactActive);
+  const latestTimestamp = item.latestTimestamp || artifacts.reduce(
+    (latest, artifact) => Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
+    0,
+  );
+
+  root.className = "ravi-wa-chat-artifact ravi-wa-chat-artifact--tool-group";
+  root.setAttribute(CHAT_ARTIFACT_KEY_ATTR, key);
+  root.title = artifacts
+    .map((artifact) => `${artifact.label || "tool"} · ${artifact.detail || "sem detalhe"}`)
+    .join("\n");
+
+  if (refs?.label) {
+    refs.label.textContent = active ? "trabalhando..." : "tools";
+  }
+  if (refs?.detail) {
+    refs.detail.textContent = `${artifacts.length} ${artifacts.length === 1 ? "tool" : "tools"}`;
+  }
+  if (refs?.time) {
+    refs.time.textContent = formatElapsedCompact(latestTimestamp) || "agora";
+  }
+  if (refs?.list) {
+    refs.list.replaceChildren(
+      ...artifacts
+        .slice()
+        .sort((left, right) => (left.createdAt || 0) - (right.createdAt || 0))
+        .map((artifact) => createConversationToolSummaryItem(artifact)),
+    );
+  }
+
+  applyConversationToolSummaryExpanded(root, expandedConversationToolGroups.has(key));
+}
+
+function createConversationToolSummaryItem(artifact) {
+  const row = document.createElement("div");
+  row.className = "ravi-wa-chat-artifact__list-item";
+
+  const label = document.createElement("span");
+  label.className = "ravi-wa-chat-artifact__list-label";
+  label.textContent = artifact.label || "tool";
+
+  const detail = document.createElement("span");
+  detail.className = "ravi-wa-chat-artifact__list-detail";
+  detail.textContent = artifact.detail || "sem detalhe";
+
+  row.append(label, detail);
+  return row;
+}
+
+function applyConversationToolSummaryExpanded(root, expanded) {
+  root.classList.toggle("is-expanded", expanded);
+  if (root.__raviToolSummaryRefs?.button) {
+    root.__raviToolSummaryRefs.button.setAttribute("aria-expanded", expanded ? "true" : "false");
+  }
+  if (root.__raviToolSummaryRefs?.list) {
+    root.__raviToolSummaryRefs.list.hidden = !expanded;
+  }
+}
+
+function isConversationToolArtifactActive(artifact) {
+  const detail = String(artifact?.detail || "")
+    .trim()
+    .toLowerCase();
+  if (!detail) return true;
+  return !(detail.startsWith("ok") || detail.startsWith("erro"));
 }
 
 function normalizeArtifactKindClass(kind) {

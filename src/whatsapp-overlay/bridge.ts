@@ -1862,14 +1862,25 @@ async function trackSessionRuntime(): Promise<void> {
     }
 
     if (topic.endsWith(".tool")) {
+      const eventTimestamp = Date.now();
       const eventName = typeof data.event === "string" ? data.event : undefined;
+      const toolId = cleanNullable(typeof data.toolId === "string" ? data.toolId : null) ?? `tool-${eventTimestamp}`;
       const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
+      const toolDetail =
+        eventName === "start"
+          ? summarizeToolInput(data.input)
+          : eventName === "end"
+            ? summarizeToolArtifactDetail(toolName, data)
+            : undefined;
       pushLiveEvent(sessionName, {
         kind: "tool",
         label: toolName,
-        detail: eventName === "start" ? summarizeToolInput(data.input) : eventName === "end" ? "finished" : undefined,
-        timestamp: Date.now(),
+        detail: toolDetail,
+        timestamp: eventTimestamp,
       });
+      if (eventName === "start" || eventName === "end") {
+        pushLiveArtifact(sessionName, buildToolArtifact(sessionName, toolId, toolName, data, eventTimestamp));
+      }
       if (eventName === "start") {
         upsertLive(sessionName, "thinking", `${toolName} running`);
       } else if (eventName === "end") {
@@ -1919,7 +1930,7 @@ async function trackSessionRuntime(): Promise<void> {
           sessionName,
           data,
           eventTimestamp,
-          resolveInterruptionAnchor(sessionName),
+          resolveActiveArtifactAnchor(sessionName),
         );
         pushLiveEvent(sessionName, {
           kind: "runtime",
@@ -2026,6 +2037,11 @@ function pushLiveArtifact(sessionName: string, artifact: OverlayChatArtifact): v
   });
 }
 
+function findLiveArtifact(sessionName: string, artifactId: string): OverlayChatArtifact | null {
+  const currentArtifacts = liveBySessionName.get(sessionName)?.artifacts ?? [];
+  return currentArtifacts.find((artifact) => artifact.id === artifactId) ?? null;
+}
+
 function getOrCreateArtifactTurnState(sessionName: string): SessionArtifactTurnState {
   const existing = artifactTurnStateBySessionName.get(sessionName);
   if (existing) return existing;
@@ -2082,7 +2098,7 @@ function rememberDeliveredMessageId(sessionName: string, emitId: string | null, 
   state.pendingArtifactEmitId = null;
 }
 
-function resolveInterruptionAnchor(sessionName: string): OverlayChatArtifactAnchor {
+function resolveActiveArtifactAnchor(sessionName: string): OverlayChatArtifactAnchor {
   const state = artifactTurnStateBySessionName.get(sessionName);
   const deliveredMessageId = state?.activeDeliveredMessageIds.at(-1) ?? null;
   if (deliveredMessageId) {
@@ -2091,6 +2107,10 @@ function resolveInterruptionAnchor(sessionName: string): OverlayChatArtifactAnch
   const promptMessageId = state?.activePromptMessageIds.at(-1) ?? null;
   if (promptMessageId) {
     return { placement: "after-message-id", messageId: promptMessageId };
+  }
+  const historyPromptMessageId = findRecentPromptMessageIdInHistory(sessionName);
+  if (historyPromptMessageId) {
+    return { placement: "after-message-id", messageId: historyPromptMessageId };
   }
   return { placement: "after-last-message" };
 }
@@ -2178,6 +2198,27 @@ function buildInterruptionArtifact(
   };
 }
 
+function buildToolArtifact(
+  sessionName: string,
+  toolId: string,
+  toolName: string,
+  data: Record<string, unknown>,
+  timestamp: number,
+): OverlayChatArtifact {
+  const artifactId = `${sessionName}:tool:${toolId}`;
+  const existing = findLiveArtifact(sessionName, artifactId);
+  return {
+    id: artifactId,
+    kind: "tool",
+    label: toolName,
+    detail: summarizeToolArtifactDetail(toolName, data),
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    anchor: existing?.anchor ?? resolveActiveArtifactAnchor(sessionName),
+    dedupeKey: artifactId,
+  };
+}
+
 function extractRuntimeText(data: Record<string, unknown>): string {
   const candidates = [data.detail, data.message, data.reason, data.error, data.status];
 
@@ -2197,6 +2238,19 @@ function extractPromptMessageId(prompt: string): string | null {
   return extractExternalMessageId(match?.[1] ?? null);
 }
 
+function findRecentPromptMessageIdInHistory(sessionName: string): string | null {
+  const history = getRecentHistory(sessionName, 40);
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message.role !== "user") continue;
+    const promptMessageId = extractPromptMessageId(message.content);
+    if (promptMessageId) {
+      return promptMessageId;
+    }
+  }
+  return null;
+}
+
 function summarizeToolInput(value: unknown): string {
   if (value == null) return "running";
   if (typeof value === "string") return formatLiveText(value, 240);
@@ -2204,6 +2258,41 @@ function summarizeToolInput(value: unknown): string {
 
   const keys = Object.keys(value as Record<string, unknown>).slice(0, 4);
   return keys.length ? keys.join(", ") : "running";
+}
+
+function summarizeToolOutput(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return formatLiveText(value, 240);
+  if (typeof value !== "object") return formatLiveText(String(value), 240);
+
+  const keys = Object.keys(value as Record<string, unknown>).slice(0, 4);
+  return keys.length ? keys.join(", ") : "";
+}
+
+function summarizeToolArtifactDetail(toolName: string, data: Record<string, unknown>): string {
+  const eventName = typeof data.event === "string" ? data.event : undefined;
+  if (eventName === "start") {
+    return summarizeToolInput(data.input);
+  }
+
+  if (eventName === "end") {
+    const status = data.isError === true ? "erro" : "ok";
+    const duration =
+      typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
+        ? formatDurationCompact(data.durationMs)
+        : "";
+    const outputSummary = data.isError === true ? summarizeToolOutput(data.output) : "";
+    const parts = [status, duration, outputSummary].filter(Boolean);
+    return parts.join(" · ") || `${toolName} finished`;
+  }
+
+  return "";
+}
+
+function formatDurationCompact(durationMs: number): string {
+  if (durationMs < 1_000) return `${Math.round(durationMs)}ms`;
+  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
+  return `${Math.round(durationMs / 60_000)}m`;
 }
 
 function withCors(response: Response, url: URL): Response {
