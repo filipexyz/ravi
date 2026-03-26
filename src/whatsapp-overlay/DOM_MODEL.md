@@ -46,6 +46,34 @@ Detection flow:
 - `modal`
   blocking overlay layer
 
+## Ravi-Owned Surfaces
+
+The overlay should distinguish between:
+
+- `native WhatsApp surfaces`
+- `Ravi-owned surfaces`
+
+Current Ravi-owned surfaces:
+
+- `quiet-rail`
+  compact context strip below the conversation app bar
+- `chat-row-badge`
+  metadata chip attached to native WhatsApp rows
+- `message-chip`
+  inline chip near author/time anchors in the timeline
+- `message-popover`
+  fixed floating detail panel tied to one message
+
+Target Ravi-owned surface for navigation:
+
+- `cockpit-sidebar`
+  a full right-hand sidebar that visually behaves like a sibling of the native left pane
+
+This matters because navigation and context should not share the same anchor by default:
+
+- `navigation` belongs to a sidebar/list surface
+- `current-chat context` belongs near the app bar and timeline
+
 ## Why this matters
 
 This gives us a stable path for:
@@ -55,6 +83,11 @@ This gives us a stable path for:
 - inline card injection
 - future action menus inside WhatsApp
 - later message-level enrichment without chasing class renames
+
+It also gives us one product constraint that became clear in live testing:
+
+- navigation must be `chat-centric`
+- `agent` is supportive metadata, not the primary row identity
 
 It also defines the build loop:
 

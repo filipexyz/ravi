@@ -4,16 +4,28 @@ const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 1100;
 const VIEW_STATE_REPUBLISH_MS = 2500;
 const ROOT_ID = "ravi-wa-overlay-root";
 const DRAWER_ID = "ravi-wa-overlay-drawer";
+const LAYOUT_CLASS = "ravi-wa-layout-active";
+const LAYOUT_HOST_CLASS = "ravi-wa-layout-host";
+const MAIN_PANE_CLASS = "ravi-wa-main-pane";
+const MAIN_PANE_HIDDEN_CLASS = "ravi-wa-main-pane-hidden";
+const LAYOUT_BRANCH_HIDDEN_CLASS = "ravi-wa-layout-branch-hidden";
 const INLINE_PROBE_ID = "ravi-wa-inline-probe";
 const CHAT_ROW_SELECTOR = "div[role='grid'] [role='row']";
 const CHAT_ROW_BADGE_ATTR = "data-ravi-chat-chip";
 const MESSAGE_CHIP_ATTR = "data-ravi-message-chip";
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
+const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
 const PAGE_CHAT_REQUEST_EVENT = "ravi-wa-request-active-chat";
 const PAGE_CHAT_RESPONSE_EVENT = "ravi-wa-active-chat";
 const LOG_LIMIT = 12;
 const CLIENT_ID_KEY = "ravi-wa-overlay-client-id";
+const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
+const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
+const OMNI_POLL_INTERVAL_MS = 2600;
+const OMNI_NAV_ID = "ravi-wa-omni-launcher";
+const NATIVE_SIDEBAR_SEARCH_SELECTOR =
+  "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
 const SELECTOR_PROBE_DEFS = [
   ["app-root-main", "main"],
   ["app-root-role-application", "[role='application']"],
@@ -33,12 +45,13 @@ const SELECTOR_PROBE_DEFS = [
 ];
 
 let latestSnapshot = null;
-let drawerOpen = false;
 let latestViewState = null;
 let latestTimelineDebug = null;
 let latestChatListItems = [];
 let latestPageChat = null;
+let latestOmniPanel = null;
 const messageMetaCache = new Map();
+const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
 let lastPublishedAt = 0;
 const detectionLogs = [];
 let bridgeError = null;
@@ -48,8 +61,28 @@ let chatListRefreshInFlight = false;
 let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
+let sidebarFilter = "";
+let omniFilter = "";
+let omniSessionFilter = "";
+let sidebarNotice = null;
+let sidebarNoticeTimer = null;
+let pinnedSessionKey = loadPinnedSessionKey();
+let activeWorkspace = loadActiveWorkspace();
+let preferredOmniInstance = loadPreferredOmniInstance();
+let selectedOmniChatId = null;
+let selectedOmniSessionKey = null;
+let selectedOmniRouteAgentId = null;
+let omniDraftSessionName = "";
+let omniDraftNewAgentId = "";
+let omniDraftNewAgentSessionName = "";
+let currentLayoutHost = null;
+let currentLayoutMain = null;
+let currentLayoutSideBranch = null;
+let currentLayoutMainBranch = null;
 const intervalIds = [];
 const clientId = getOrCreateClientId();
+let omniPanelInFlight = false;
+let omniRouteActionInFlight = false;
 
 boot();
 
@@ -57,15 +90,38 @@ function boot() {
   ensurePageBridge();
   document.addEventListener(PAGE_CHAT_RESPONSE_EVENT, handlePageChatEvent);
   ensureShell();
+  syncLayoutChrome();
+  syncWorkspaceLauncher();
   ensureMessagePopover();
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshViewState, 700));
   intervalIds.push(setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS));
   intervalIds.push(setInterval(refreshMessageChips, MESSAGE_CHIP_REFRESH_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshOmniPanel, OMNI_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, 700));
   window.addEventListener("resize", syncMessagePopoverPosition);
   document.addEventListener("scroll", syncMessagePopoverPosition, true);
+}
+
+function shouldDeferOmniRender() {
+  if (activeWorkspace !== "omni") return false;
+  if (omniRouteActionInFlight) return true;
+  const root = document.getElementById(ROOT_ID);
+  const active = document.activeElement;
+  if (!root || !active || !root.contains(active)) return false;
+
+  const tagName = active.tagName;
+  if (tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA") {
+    return true;
+  }
+
+  return active.getAttribute?.("contenteditable") === "true";
+}
+
+function requestRender(snapshot = latestSnapshot, context = detectChatContext()) {
+  if (shouldDeferOmniRender()) return;
+  render(snapshot, context);
 }
 
 async function refreshSnapshot() {
@@ -78,9 +134,39 @@ async function refreshSnapshot() {
     });
     bridgeError = null;
     latestSnapshot = snapshot;
-    render();
+    requestRender(snapshot, context);
   } catch (error) {
     handleRuntimeError(error);
+  }
+}
+
+async function refreshOmniPanel(force = false) {
+  if (pollingStopped || omniPanelInFlight) return;
+  if (!force && activeWorkspace !== "omni") return;
+
+  omniPanelInFlight = true;
+  try {
+    const context = detectChatContext();
+    const panel = await chrome.runtime.sendMessage({
+      type: "ravi:get-omni-panel",
+      payload: {
+        chatId: context.chatId,
+        title: context.title,
+        session: context.session,
+        instance: preferredOmniInstance,
+      },
+    });
+    if (panel?.ok) {
+      latestOmniPanel = panel;
+      bridgeError = null;
+      if (activeWorkspace === "omni") {
+        requestRender();
+      }
+    }
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    omniPanelInFlight = false;
   }
 }
 
@@ -89,6 +175,7 @@ function refreshAll() {
   refreshSnapshot();
   refreshChatListOverlay();
   refreshMessageChips();
+  refreshOmniPanel();
 }
 
 function refreshViewState() {
@@ -113,7 +200,7 @@ function refreshViewState() {
   console.log("[RaviOverlay] view-state", next);
   publishViewState(next).catch(handleRuntimeError);
   renderTimelineProbe();
-  render();
+  requestRender();
 }
 
 function detectChatContext() {
@@ -230,6 +317,7 @@ function detectViewState() {
     hasModal: Boolean(modal),
     components,
     selectorProbes,
+    chatRows: buildPublishedChatRows(),
   };
 }
 
@@ -524,6 +612,33 @@ function detectVisibleChatRows() {
     .filter(Boolean);
 }
 
+function buildPublishedChatRows(limit = 20) {
+  return detectVisibleChatRows()
+    .slice(0, limit)
+    .map((row) => ({
+      id: row.id,
+      title: row.title,
+      chatIdCandidate: row.chatIdCandidate || null,
+      selected: row.selected === true,
+      unreadCount: extractChatRowUnreadCount(row.row),
+      text: row.row?.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 240) || null,
+    }));
+}
+
+function extractChatRowUnreadCount(row) {
+  if (!(row instanceof Element)) return null;
+  const text = row.textContent?.replace(/\s+/g, " ").trim() || "";
+  const match =
+    text.match(/(\d+)\s*mensagens?\s+n[aã]o\s+lidas?/i) ||
+    text.match(/(\d+)\s*unread/i) ||
+    text.match(/(\d+)\s*new message/i);
+  if (!match?.[1]) {
+    return null;
+  }
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) ? value : null;
+}
+
 function extractChatRowTitleNode(row) {
   const candidates = Array.from(row.querySelectorAll("span[title][dir='auto']")).filter(isVisibleElement);
   return candidates[0] || null;
@@ -692,7 +807,6 @@ function renderTimelineProbe() {
     anchorCount: nodes.length,
     mode: "cli-preview-only",
   };
-  render();
 }
 
 async function refreshChatListOverlay() {
@@ -1382,56 +1496,161 @@ function ensureShell() {
   const root = document.createElement("div");
   root.id = ROOT_ID;
   root.innerHTML = `
-    <button id="ravi-wa-overlay-pill" type="button" aria-expanded="false">
-      <span id="ravi-wa-overlay-pill-dot" class="ravi-wa-pill-dot ravi-wa-pill-dot--idle"></span>
-      <span class="ravi-wa-pill-copy">
-        <strong id="ravi-wa-overlay-pill-title">ravi</strong>
-        <span id="ravi-wa-overlay-pill-subtitle">sem sessão</span>
-      </span>
-      <span id="ravi-wa-overlay-pill-state" class="ravi-wa-pill-state ravi-wa-pill-state--idle">idle</span>
-    </button>
-    <aside id="${DRAWER_ID}" class="ravi-hidden">
+    <div id="${RECENT_STACK_ID}" class="ravi-hidden"></div>
+    <aside id="${DRAWER_ID}">
       <div class="ravi-wa-drawer-header">
         <div class="ravi-wa-drawer-heading">
-          <strong>Ravi</strong>
+          <strong id="ravi-wa-overlay-panel-title">Ravi</strong>
           <span id="ravi-wa-overlay-panel-subtitle">cockpit</span>
         </div>
-        <button id="ravi-wa-overlay-close" type="button">×</button>
       </div>
       <div id="ravi-wa-overlay-body"></div>
     </aside>
   `;
   document.body.appendChild(root);
 
-  root.querySelector("#ravi-wa-overlay-pill")?.addEventListener("click", () => {
-    drawerOpen = !drawerOpen;
-    syncDrawerVisibility();
-  });
-  root.querySelector("#ravi-wa-overlay-close")?.addEventListener("click", () => {
-    drawerOpen = false;
-    syncDrawerVisibility();
-  });
-
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
 
     if (openMessageChip) {
       closeMessagePopover();
-      return;
     }
-
-    if (!drawerOpen) return;
-    drawerOpen = false;
-    syncDrawerVisibility();
   });
 }
 
-function syncDrawerVisibility() {
+function syncLayoutChrome() {
+  const root = document.getElementById(ROOT_ID);
   const drawer = document.getElementById(DRAWER_ID);
-  const pill = document.getElementById("ravi-wa-overlay-pill");
-  if (!drawer) return;
-  drawer.classList.toggle("ravi-hidden", !drawerOpen);
-  pill?.setAttribute("aria-expanded", drawerOpen ? "true" : "false");
+  const sidePane = document.getElementById("side");
+  const mainPane = document.getElementById("main");
+  const host = sidePane && mainPane ? findLayoutHost(sidePane, mainPane) : null;
+  if (!root || !drawer || !sidePane || !mainPane || !host) return;
+  const sideBranch = findDirectChildBranch(host, sidePane);
+  const mainBranch = findDirectChildBranch(host, mainPane);
+
+  if (currentLayoutHost && currentLayoutHost !== host) {
+    currentLayoutHost.classList.remove(LAYOUT_HOST_CLASS);
+  }
+  if (currentLayoutMain && currentLayoutMain !== mainPane) {
+    currentLayoutMain.classList.remove(MAIN_PANE_CLASS);
+  }
+  if (currentLayoutSideBranch && currentLayoutSideBranch !== sideBranch) {
+    currentLayoutSideBranch.classList.remove(LAYOUT_BRANCH_HIDDEN_CLASS);
+  }
+  if (currentLayoutMainBranch && currentLayoutMainBranch !== mainBranch) {
+    currentLayoutMainBranch.classList.remove(LAYOUT_BRANCH_HIDDEN_CLASS);
+  }
+
+  if (root.parentElement !== host) {
+    host.appendChild(root);
+  }
+  if (root !== host.lastElementChild) {
+    host.appendChild(root);
+  }
+
+  root.classList.add(LAYOUT_CLASS);
+  host.classList.add(LAYOUT_HOST_CLASS);
+  mainPane.classList.add(MAIN_PANE_CLASS);
+  root.setAttribute("data-workspace", activeWorkspace);
+  host.setAttribute("data-ravi-workspace", activeWorkspace);
+  mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, activeWorkspace === "omni");
+  sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, activeWorkspace === "omni");
+  mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, activeWorkspace === "omni");
+  drawer.classList.remove("ravi-hidden");
+
+  currentLayoutHost = host;
+  currentLayoutMain = mainPane;
+  currentLayoutSideBranch = sideBranch;
+  currentLayoutMainBranch = mainBranch;
+  syncWorkspaceLauncher();
+}
+
+function findLayoutHost(sidePane, mainPane) {
+  const mainAncestors = new Set();
+  let current = mainPane.parentElement;
+  while (current) {
+    mainAncestors.add(current);
+    current = current.parentElement;
+  }
+
+  current = sidePane.parentElement;
+  while (current) {
+    if (mainAncestors.has(current) && isValidLayoutHost(current, sidePane, mainPane)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return mainPane.parentElement;
+}
+
+function syncWorkspaceLauncher() {
+  const host = document.querySelector("header[data-tab='2']");
+  if (!(host instanceof HTMLElement)) return;
+
+  let launcher = host.querySelector(`#${OMNI_NAV_ID}`);
+  if (!(launcher instanceof HTMLElement)) {
+    launcher = document.createElement("div");
+    launcher.id = OMNI_NAV_ID;
+    launcher.setAttribute("data-navbar-item", "true");
+    launcher.innerHTML = `
+      <button
+        type="button"
+        class="ravi-wa-navbar-button"
+        aria-label="Omni"
+        title="Omni"
+      >
+        <span class="ravi-wa-navbar-button__glyph" aria-hidden="true">◎</span>
+      </button>
+    `;
+    const button = launcher.querySelector("button");
+    button?.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveWorkspace(activeWorkspace === "omni" ? "ravi" : "omni");
+    });
+  }
+
+  const anchor = Array.from(host.children).find((node) => {
+    if (node === launcher) return false;
+    if (!(node instanceof HTMLElement)) return false;
+    const label =
+      node.getAttribute("aria-label") ||
+      node.querySelector("[aria-label]")?.getAttribute("aria-label") ||
+      "";
+    return /config|setting|perfil|profile/i.test(label);
+  });
+
+  if (anchor && launcher.nextElementSibling !== anchor) {
+    host.insertBefore(launcher, anchor);
+  } else if (!anchor && launcher.parentElement !== host) {
+    host.appendChild(launcher);
+  } else if (!anchor && launcher !== host.lastElementChild) {
+    host.appendChild(launcher);
+  }
+
+  launcher.setAttribute("data-active", activeWorkspace === "omni" ? "true" : "false");
+}
+
+function isValidLayoutHost(host, sidePane, mainPane) {
+  if (!(host instanceof HTMLElement)) return false;
+
+  const sideBranch = findDirectChildBranch(host, sidePane);
+  const mainBranch = findDirectChildBranch(host, mainPane);
+  if (!sideBranch || !mainBranch || sideBranch === mainBranch) return false;
+
+  const style = window.getComputedStyle(host);
+  if (style.display === "grid" || style.display === "inline-grid") return true;
+  if (style.display !== "flex" && style.display !== "inline-flex") return false;
+  return !style.flexDirection.startsWith("column");
+}
+
+function findDirectChildBranch(host, node) {
+  let current = node;
+  while (current?.parentElement && current.parentElement !== host) {
+    current = current.parentElement;
+  }
+  return current?.parentElement === host ? current : null;
 }
 
 function ensureMessagePopover() {
@@ -1446,29 +1665,51 @@ function ensureMessagePopover() {
 }
 
 function render(snapshot = latestSnapshot, context = detectChatContext()) {
-  const pill = document.getElementById("ravi-wa-overlay-pill");
   const body = document.getElementById("ravi-wa-overlay-body");
+  const panelTitle = document.getElementById("ravi-wa-overlay-panel-title");
   const panelSubtitle = document.getElementById("ravi-wa-overlay-panel-subtitle");
-  const pillTitle = document.getElementById("ravi-wa-overlay-pill-title");
-  const pillSubtitle = document.getElementById("ravi-wa-overlay-pill-subtitle");
-  const pillState = document.getElementById("ravi-wa-overlay-pill-state");
-  const pillDot = document.getElementById("ravi-wa-overlay-pill-dot");
-  if (!pill || !body || !panelSubtitle || !pillTitle || !pillSubtitle || !pillState || !pillDot) return;
+  const recentStack = document.getElementById(RECENT_STACK_ID);
+  if (!body || !panelTitle || !panelSubtitle || !recentStack) return;
 
   const session = snapshot?.session;
-  const live = session?.live;
   const view = latestViewState;
   const title = context?.title || view?.title || "chat desconhecido";
-  const activity = session?.live?.activity || "idle";
-  const activityLabel = chipActivityLabel(activity);
-  const activityClass = chipActivityClass(activity);
+  renderRecentStack(recentStack);
+  syncLayoutChrome();
+  syncWorkspaceLauncher();
 
-  pillTitle.textContent = "ravi";
-  pillSubtitle.textContent = session ? `${session.sessionName} · ${session.agentId}` : view?.screen || "sem sessão";
+  if (activeWorkspace === "omni") {
+    panelTitle.textContent = "Omni";
+    panelSubtitle.textContent =
+      latestOmniPanel?.preferredInstance?.profileName ||
+      latestOmniPanel?.preferredInstance?.name ||
+      title ||
+      "whatsapp";
+    renderOmniWorkspace(body, context);
+    return;
+  }
+
+  panelTitle.textContent = "Ravi";
   panelSubtitle.textContent = title;
-  pillState.textContent = activityLabel;
-  pillState.className = `ravi-wa-pill-state ravi-wa-pill-state--${activityClass}`;
-  pillDot.className = `ravi-wa-pill-dot ravi-wa-pill-dot--${activityClass}`;
+
+  const recentSessions = filterCockpitSessions(snapshot?.recentSessions || snapshot?.recentChats || []);
+  const hotSessions = filterCockpitSessions(snapshot?.hotSessions || []);
+  const navTargets = dedupeSessionsByKey([session, ...hotSessions, ...recentSessions].filter(Boolean));
+  const followedSession = session || null;
+  const pinnedSession = pinnedSessionKey ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null : null;
+  if (pinnedSessionKey && !pinnedSession) {
+    pinnedSessionKey = null;
+    persistPinnedSessionKey(null);
+  }
+  const focusedSession = pinnedSession || followedSession || navTargets[0] || null;
+  const isPinned = Boolean(pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey);
+  const focusedLive = focusedSession?.live;
+  const focusedActivity = focusedLive?.activity || "idle";
+  const focusedActivityLabel = chipActivityLabel(focusedActivity);
+  const focusedActivityClass = chipActivityClass(focusedActivity);
+  const listedSessions = focusedSession
+    ? navTargets.filter((item) => item.sessionKey !== focusedSession.sessionKey)
+    : navTargets;
 
   const debugCard = `
     <details class="ravi-wa-disclosure">
@@ -1520,72 +1761,156 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     `
     : "";
 
-  if (!snapshot?.resolved || !session) {
-    body.innerHTML = `
-      ${errorCard}
-      <section class="ravi-wa-card ravi-wa-hero-card">
-        <div class="ravi-wa-hero-top">
-          <div>
-            <h3>${escapeHtml(title)}</h3>
-            <p>Esse chat ainda não foi casado com nenhuma sessão do Ravi.</p>
-          </div>
-          <span class="ravi-wa-state-pill ravi-wa-state-pill--idle">unbound</span>
-        </div>
-        <div class="ravi-wa-chip-row">
-          <span class="ravi-wa-meta-chip">screen ${escapeHtml(view?.screen || "-")}</span>
-          <span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(title, 22))}</span>
-        </div>
-      </section>
-      <section class="ravi-wa-card">
-        <p>${(snapshot?.warnings || ["O bridge ainda não casou esse chat com nenhuma sessão do Ravi."]).join(" ")}</p>
-      </section>
-      ${debugCard}
-      ${logsCard}
-    `;
-    return;
-  }
+  const heroSummary = focusedSession
+    ? escapeHtml(focusedLive?.summary || "sem evento vivo")
+    : escapeHtml((snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]).join(" "));
+  const heroStateClass = focusedSession ? focusedActivityClass : "idle";
+  const heroStateLabel = focusedSession ? focusedActivityLabel : "unbound";
+  const heroTitle = focusedSession ? focusedSession.sessionName : "nenhuma sessão";
+  const heroLinkedChat = focusedSession ? getLinkedChatLabel(focusedSession) : null;
+  const heroElapsed = focusedSession ? formatElapsedCompact(focusedLive?.updatedAt ?? focusedSession.updatedAt) || "agora" : "-";
+  const heroModeLabel = isPinned ? "pinada" : followedSession ? "seguindo chat" : "sem vínculo";
+  const canFollowCurrent = Boolean(isPinned && followedSession);
+  const canPinFocused = Boolean(focusedSession && !isPinned);
+  const liveEventsCard = focusedSession ? renderLiveEventsCard(focusedSession) : "";
 
   body.innerHTML = `
     ${errorCard}
     <section class="ravi-wa-card ravi-wa-hero-card">
       <div class="ravi-wa-hero-top">
         <div>
-          <h3>${escapeHtml(title)}</h3>
-          <p>${escapeHtml(live?.summary || "sem evento vivo")}</p>
+          <h3>${escapeHtml(heroTitle)}</h3>
+          <p>${heroSummary}</p>
         </div>
-        <span class="ravi-wa-state-pill ravi-wa-state-pill--${activityClass}">${escapeHtml(activityLabel)}</span>
+        <span class="ravi-wa-state-pill ravi-wa-state-pill--${heroStateClass}">${escapeHtml(heroStateLabel)}</span>
       </div>
       <div class="ravi-wa-chip-row">
-        <span class="ravi-wa-meta-chip">session ${escapeHtml(shorten(session.sessionName, 18))}</span>
-        <span class="ravi-wa-meta-chip">agent ${escapeHtml(session.agentId)}</span>
-        <span class="ravi-wa-meta-chip">${escapeHtml(session.modelOverride || session.runtimeProvider || "model -")}</span>
+        <span class="ravi-wa-meta-chip">modo ${escapeHtml(heroModeLabel)}</span>
+        ${
+          focusedSession
+            ? `<span class="ravi-wa-meta-chip">agent ${escapeHtml(focusedSession.agentId)}</span>
+               <span class="ravi-wa-meta-chip">updated ${escapeHtml(heroElapsed)}</span>
+               ${heroLinkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(heroLinkedChat, 22))}</span>` : ""}
+               ${focusedSession.channel ? `<span class="ravi-wa-meta-chip">channel ${escapeHtml(focusedSession.channel)}</span>` : ""}
+               ${focusedSession.accountId ? `<span class="ravi-wa-meta-chip">instance ${escapeHtml(shorten(focusedSession.accountId, 18))}</span>` : ""}`
+            : ""
+        }
       </div>
     </section>
     <section class="ravi-wa-card">
-      <dl class="ravi-wa-grid">
-        <div><dt>Sessão</dt><dd>${escapeHtml(session.sessionName)}</dd></div>
-        <div><dt>Agent</dt><dd>${escapeHtml(session.agentId)}</dd></div>
-        <div><dt>Live</dt><dd>${escapeHtml(activityLabel)}</dd></div>
-        <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(live?.updatedAt))}</dd></div>
-        <div><dt>Thinking</dt><dd>${escapeHtml(session.thinkingLevel || "-")}</dd></div>
-        <div><dt>Modelo</dt><dd>${escapeHtml(session.modelOverride || session.runtimeProvider || "-")}</dd></div>
-        <div><dt>Queue</dt><dd>${escapeHtml(session.queueMode || "-")}</dd></div>
-        <div><dt>Heartbeat</dt><dd>${escapeHtml(session.lastHeartbeatText || "-")}</dd></div>
-        <div><dt>Canal</dt><dd>${escapeHtml(session.channel || "-")}</dd></div>
-        <div><dt>Instância</dt><dd>${escapeHtml(session.accountId || "-")}</dd></div>
-      </dl>
+      <label class="ravi-wa-sidebar-search">
+        <span>buscar sessões, agents ou chats vinculados</span>
+        <input id="ravi-wa-sidebar-search" type="text" placeholder="dev, main, 5511..." value="${escapeAttribute(sidebarFilter)}" />
+      </label>
     </section>
     <section class="ravi-wa-card">
-      <div class="ravi-wa-actions">
-        <button data-action="abort">Abortar</button>
-        <button data-action="reset">Resetar</button>
-        <button data-action="set-thinking" data-value="normal">Thinking normal</button>
-        <button data-action="set-thinking" data-value="verbose">Thinking verbose</button>
+      <div class="ravi-wa-section-head">
+        <h3>sessões quentes</h3>
+        <span>${hotSessions.length}</span>
       </div>
+      ${renderCockpitRows(hotSessions, focusedSession, "Nenhuma sessão quente agora.")}
     </section>
+    <section class="ravi-wa-card">
+      <div class="ravi-wa-section-head">
+        <h3>sessões recentes</h3>
+        <span>${listedSessions.length}</span>
+      </div>
+      ${renderCockpitRows(listedSessions, focusedSession, "Nenhuma sessão recente do Ravi.")}
+    </section>
+    ${liveEventsCard}
+    ${
+      sidebarNotice
+        ? `
+      <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--${escapeAttribute(sidebarNotice.kind || "info")}">
+        <p>${escapeHtml(sidebarNotice.message || "")}</p>
+      </section>
+    `
+        : ""
+    }
+    ${
+      focusedSession
+        ? `
+      <section class="ravi-wa-card">
+        <dl class="ravi-wa-grid">
+          <div><dt>Sessão</dt><dd>${escapeHtml(focusedSession.sessionName)}</dd></div>
+          <div><dt>Agent</dt><dd>${escapeHtml(focusedSession.agentId)}</dd></div>
+          <div><dt>Live</dt><dd>${escapeHtml(focusedActivityLabel)}</dd></div>
+          <div><dt>Atualizado</dt><dd>${escapeHtml(formatTimestamp(focusedLive?.updatedAt))}</dd></div>
+          <div><dt>Thinking</dt><dd>${escapeHtml(focusedSession.thinkingLevel || "-")}</dd></div>
+          <div><dt>Modelo</dt><dd>${escapeHtml(focusedSession.modelOverride || focusedSession.runtimeProvider || "-")}</dd></div>
+          <div><dt>Queue</dt><dd>${escapeHtml(focusedSession.queueMode || "-")}</dd></div>
+          <div><dt>Heartbeat</dt><dd>${escapeHtml(focusedSession.lastHeartbeatText || "-")}</dd></div>
+          <div><dt>Canal</dt><dd>${escapeHtml(focusedSession.channel || "-")}</dd></div>
+          <div><dt>Instância</dt><dd>${escapeHtml(focusedSession.accountId || "-")}</dd></div>
+        </dl>
+      </section>
+      <section class="ravi-wa-card">
+        <div class="ravi-wa-actions">
+          ${focusedSession.chatId ? `<button data-ravi-open-chat="${escapeAttribute(focusedSession.sessionKey)}">Abrir chat</button>` : ""}
+          ${canFollowCurrent ? `<button data-ravi-follow-current="true">Seguir chat</button>` : ""}
+          ${canPinFocused ? `<button data-ravi-pin-session="${escapeAttribute(focusedSession.sessionKey)}">Pinar sessão</button>` : ""}
+          <button data-action="abort">Abortar</button>
+          <button data-action="reset">Resetar</button>
+          <button data-action="set-thinking" data-value="normal">Thinking normal</button>
+          <button data-action="set-thinking" data-value="verbose">Thinking verbose</button>
+        </div>
+      </section>
+    `
+        : ""
+    }
     ${debugCard}
     ${logsCard}
   `;
+
+  const searchInput = body.querySelector("#ravi-wa-sidebar-search");
+  searchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    sidebarFilter = nextValue;
+    render(snapshot, context);
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-sidebar-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-open-chat]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sessionKey = button.getAttribute("data-ravi-open-chat");
+      const target = navTargets.find((item) => item.sessionKey === sessionKey);
+      if (!target) return;
+      await openCockpitChat(target);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-pin-session]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sessionKey = button.getAttribute("data-ravi-pin-session");
+      if (!sessionKey) return;
+      pinnedSessionKey = sessionKey;
+      persistPinnedSessionKey(sessionKey);
+      render(snapshot, context);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-follow-current]").forEach((button) => {
+    button.addEventListener("click", () => {
+      pinnedSessionKey = null;
+      persistPinnedSessionKey(null);
+      render(snapshot, context);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-focus-session]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sessionKey = button.getAttribute("data-ravi-focus-session");
+      if (!sessionKey) return;
+      pinnedSessionKey = sessionKey;
+      persistPinnedSessionKey(sessionKey);
+      render(snapshot, context);
+    });
+  });
 
   body.querySelectorAll("button[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -1595,7 +1920,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
         const next = await chrome.runtime.sendMessage({
           type: "ravi:session-action",
           payload: {
-            session: session.sessionKey,
+            session: focusedSession.sessionKey,
             action,
             value,
           },
@@ -1608,6 +1933,1302 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       }
     });
   });
+}
+
+function renderOmniWorkspace(body, context) {
+  const panel = latestOmniPanel;
+  const preferredInstance = panel?.preferredInstance || null;
+  const instances = filterOmniInstances(panel?.instances || []);
+  const agents = filterOmniAgents(panel?.agents || []);
+  const chats = filterOmniChats(panel?.chats || []);
+  const groups = filterOmniGroups(panel?.groups || []);
+  const sessions = filterOmniSessions(panel?.sessions || []);
+  const fallbackChatId = selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
+  const selectedChat = chats.find((chat) => chat.id === fallbackChatId) || panel?.currentChat || chats[0] || null;
+  selectedOmniChatId = selectedChat?.id || null;
+  const fallbackSessionKey =
+    selectedOmniSessionKey ||
+    selectedChat?.linkedSession?.sessionKey ||
+    panel?.currentChat?.linkedSession?.sessionKey ||
+    sessions[0]?.sessionKey ||
+    null;
+  const selectedSession = sessions.find((session) => session.sessionKey === fallbackSessionKey) || null;
+  selectedOmniSessionKey = selectedSession?.sessionKey || null;
+  const defaultRouteAgentId =
+    selectedOmniRouteAgentId ||
+    selectedSession?.agentId ||
+    selectedChat?.linkedSession?.agentId ||
+    agents[0]?.id ||
+    null;
+  if (defaultRouteAgentId && agents.some((agent) => agent.id === defaultRouteAgentId)) {
+    selectedOmniRouteAgentId = defaultRouteAgentId;
+  } else if (!agents.some((agent) => agent.id === selectedOmniRouteAgentId)) {
+    selectedOmniRouteAgentId = agents[0]?.id || null;
+  }
+  const selectedRouteAgentId = selectedOmniRouteAgentId || null;
+  const createSessionPlaceholder = buildOmniDraftSessionName(selectedChat, selectedRouteAgentId);
+  const createNewAgentSessionPlaceholder = buildOmniDraftSessionName(
+    selectedChat,
+    omniDraftNewAgentId || selectedRouteAgentId || "novo",
+  );
+
+  const heroTitle = preferredInstance?.profileName || preferredInstance?.name || "omni";
+  const heroSummary = selectedChat
+    ? `${selectedChat.name || selectedChat.externalId || "chat"} · ${formatOmniChatType(selectedChat.chatType)}`
+    : preferredInstance
+      ? `instância ${preferredInstance.name} pronta para operar`
+      : "sem instância whatsapp do omni";
+  const heroStatus = preferredInstance ? formatOmniInstanceStatus(preferredInstance) : "offline";
+  const heroStateClass = preferredInstance?.isConnected ? "streaming" : preferredInstance?.isActive ? "thinking" : "idle";
+
+  body.innerHTML = `
+    <div class="ravi-wa-omni-page">
+      <section class="ravi-wa-omni-hero">
+        <div class="ravi-wa-hero-top">
+          <div>
+            <h3>${escapeHtml(heroTitle)}</h3>
+            <p>${escapeHtml(heroSummary)}</p>
+          </div>
+          <span class="ravi-wa-state-pill ravi-wa-state-pill--${heroStateClass}">${escapeHtml(heroStatus)}</span>
+        </div>
+        <div class="ravi-wa-chip-row">
+          ${
+            preferredInstance
+              ? `
+            <span class="ravi-wa-meta-chip">instância ${escapeHtml(preferredInstance.name)}</span>
+            <span class="ravi-wa-meta-chip">phone ${escapeHtml(preferredInstance.phone || shorten(preferredInstance.ownerIdentifier || "-", 18))}</span>
+            <span class="ravi-wa-meta-chip">channel ${escapeHtml(preferredInstance.channel)}</span>
+            ${selectedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(selectedChat.name || selectedChat.externalId || "-", 24))}</span>` : ""}
+          `
+              : `<span class="ravi-wa-meta-chip">sem instância preferida</span>`
+          }
+        </div>
+      </section>
+
+      <section class="ravi-wa-omni-toolbar">
+        <label class="ravi-wa-sidebar-search">
+          <span>buscar canal</span>
+          <input id="ravi-wa-omni-search" type="text" placeholder="luis, ravi, 120363..." value="${escapeAttribute(omniFilter)}" />
+        </label>
+        <label class="ravi-wa-sidebar-search">
+          <span>buscar sessão ravi</span>
+          <input id="ravi-wa-omni-session-search" type="text" placeholder="dev, main, agent..." value="${escapeAttribute(omniSessionFilter)}" />
+        </label>
+      </section>
+
+      <section class="ravi-wa-omni-grid">
+        <section class="ravi-wa-omni-column ravi-wa-omni-column--left">
+          <div class="ravi-wa-card ravi-wa-card--flush">
+            <div class="ravi-wa-section-head">
+              <h3>instâncias whatsapp</h3>
+              <span>${instances.length}</span>
+            </div>
+            ${renderOmniInstanceRows(instances, preferredInstance)}
+          </div>
+          <div class="ravi-wa-card ravi-wa-card--flush">
+            <div class="ravi-wa-section-head">
+              <h3>grupos</h3>
+              <span>${groups.length}</span>
+            </div>
+            ${renderOmniGroupRows(groups)}
+          </div>
+        </section>
+
+        <section class="ravi-wa-omni-column ravi-wa-omni-column--center">
+          <div class="ravi-wa-card ravi-wa-card--flush">
+            <div class="ravi-wa-section-head">
+              <h3>chats da instância</h3>
+              <span>${chats.length}</span>
+            </div>
+            ${renderOmniChatRows(chats, selectedChat, "Nenhum chat recente nessa instância.")}
+          </div>
+        </section>
+
+        <section class="ravi-wa-omni-column ravi-wa-omni-column--right">
+          ${renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedRouteAgentId, {
+            createSessionPlaceholder,
+            createNewAgentSessionPlaceholder,
+          })}
+          ${
+            panel?.warnings?.length
+              ? `
+            <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--info">
+              <p>${escapeHtml(panel.warnings.join(" · "))}</p>
+            </section>
+          `
+              : ""
+          }
+        </section>
+      </section>
+    </div>
+  `;
+
+  const searchInput = body.querySelector("#ravi-wa-omni-search");
+  searchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    omniFilter = nextValue;
+    render();
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-omni-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  const sessionSearchInput = body.querySelector("#ravi-wa-omni-session-search");
+  sessionSearchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    omniSessionFilter = nextValue;
+    render();
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-omni-session-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-instance]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const instanceId = button.getAttribute("data-ravi-omni-instance");
+      if (!instanceId) return;
+      preferredOmniInstance = instanceId;
+      persistPreferredOmniInstance(instanceId);
+      await refreshOmniPanel(true);
+      render();
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-select-chat]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const chatId = button.getAttribute("data-ravi-omni-select-chat");
+      if (!chatId) return;
+      selectedOmniChatId = chatId;
+      const chat = chats.find((item) => item.id === chatId) || null;
+      selectedOmniSessionKey = chat?.linkedSession?.sessionKey || selectedOmniSessionKey;
+      selectedOmniRouteAgentId = chat?.linkedSession?.agentId || selectedOmniRouteAgentId;
+      render();
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-open-chat]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const chatId = button.getAttribute("data-ravi-omni-open-chat");
+      const target = chats.find((item) => item?.id === chatId) || (selectedChat?.id === chatId ? selectedChat : null);
+      if (!target) return;
+      await openOmniChatTarget(target);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-open-group]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const externalId = button.getAttribute("data-ravi-omni-open-group");
+      const target = (panel?.groups || []).find((item) => item?.externalId === externalId);
+      if (!target) return;
+      await openGenericChatTarget({
+        chatId: target.externalId,
+        title: target.name,
+        label: target.name || target.externalId || "grupo",
+      });
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-select-session]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sessionKey = button.getAttribute("data-ravi-omni-select-session");
+      if (!sessionKey) return;
+      selectedOmniSessionKey = sessionKey;
+      const session = sessions.find((item) => item.sessionKey === sessionKey) || null;
+      if (session?.agentId) {
+        selectedOmniRouteAgentId = session.agentId;
+      }
+      render();
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-bind-chat]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      if (!formState.selectedChat || !formState.selectedSession) return;
+      await runOmniRouteAction(async () => {
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: "ravi:omni-route",
+            payload: {
+              action: "bind-existing",
+              session: formState.selectedSession.sessionName,
+              title: formState.selectedChat.name,
+              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+              instance: formState.selectedChat.instanceName,
+              chatType: formState.selectedChat.chatType,
+              chatName: formState.selectedChat.name,
+            },
+          });
+          if (result?.ok === false) {
+            setSidebarNotice("error", result.error || "falha ao vincular chat");
+            return;
+          }
+          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || formState.selectedSession.sessionKey;
+          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          setSidebarNotice(
+            "success",
+            buildOmniRouteNotice("bind-existing", result, formState.selectedChat, formState.selectedSession),
+          );
+          await refreshSnapshot();
+          await refreshOmniPanel(true);
+          render();
+        } catch (error) {
+          handleRuntimeError(error);
+        }
+      });
+    });
+  });
+
+  const agentSelect = body.querySelector("#ravi-wa-omni-target-agent");
+  agentSelect?.addEventListener("change", (event) => {
+    selectedOmniRouteAgentId = event.target.value || null;
+  });
+
+  const newSessionInput = body.querySelector("#ravi-wa-omni-new-session-name");
+  newSessionInput?.addEventListener("input", (event) => {
+    omniDraftSessionName = event.target.value || "";
+  });
+
+  body.querySelectorAll("[data-ravi-omni-create-session]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      if (!formState.selectedChat || !formState.selectedRouteAgentId) return;
+      await runOmniRouteAction(async () => {
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: "ravi:omni-route",
+            payload: {
+              action: "create-session",
+              agentId: formState.selectedRouteAgentId,
+              sessionName: formState.draftSessionName || undefined,
+              title: formState.selectedChat.name,
+              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+              instance: formState.selectedChat.instanceName,
+              chatType: formState.selectedChat.chatType,
+              chatName: formState.selectedChat.name,
+            },
+          });
+          if (result?.ok === false) {
+            setSidebarNotice("error", result.error || "falha ao criar sessão");
+            return;
+          }
+          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          omniDraftSessionName = "";
+          setSidebarNotice(
+            "success",
+            buildOmniRouteNotice("create-session", result, formState.selectedChat, result?.snapshot?.session),
+          );
+          await refreshSnapshot();
+          await refreshOmniPanel(true);
+          render();
+        } catch (error) {
+          handleRuntimeError(error);
+        }
+      });
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-omni-migrate-session]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      if (!formState.selectedChat || !formState.selectedRouteAgentId || !formState.currentLinkedSession) return;
+      await runOmniRouteAction(async () => {
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: "ravi:omni-route",
+            payload: {
+              action: "migrate-session",
+              session: formState.currentLinkedSession.sessionName,
+              agentId: formState.selectedRouteAgentId,
+              sessionName: formState.draftSessionName || undefined,
+              title: formState.selectedChat.name,
+              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+              instance: formState.selectedChat.instanceName,
+              chatType: formState.selectedChat.chatType,
+              chatName: formState.selectedChat.name,
+            },
+          });
+          if (result?.ok === false) {
+            setSidebarNotice("error", result.error || "falha ao migrar sessão");
+            return;
+          }
+          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          omniDraftSessionName = "";
+          setSidebarNotice(
+            "success",
+            buildOmniRouteNotice("migrate-session", result, formState.selectedChat, result?.snapshot?.session),
+          );
+          await refreshSnapshot();
+          await refreshOmniPanel(true);
+          render();
+        } catch (error) {
+          handleRuntimeError(error);
+        }
+      });
+    });
+  });
+
+  const newAgentInput = body.querySelector("#ravi-wa-omni-new-agent-id");
+  newAgentInput?.addEventListener("input", (event) => {
+    omniDraftNewAgentId = event.target.value || "";
+  });
+
+  const newAgentSessionInput = body.querySelector("#ravi-wa-omni-new-agent-session-name");
+  newAgentSessionInput?.addEventListener("input", (event) => {
+    omniDraftNewAgentSessionName = event.target.value || "";
+  });
+
+  body.querySelectorAll("[data-ravi-omni-create-agent-session]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      if (!formState.selectedChat) return;
+      const nextAgentId = formState.draftNewAgentId;
+      if (!nextAgentId) {
+        setSidebarNotice("error", "preenche o id do novo agent");
+        return;
+      }
+      await runOmniRouteAction(async () => {
+        try {
+          const result = await chrome.runtime.sendMessage({
+            type: "ravi:omni-route",
+            payload: {
+              action: "create-session",
+              createAgent: true,
+              agentId: nextAgentId,
+              sessionName: formState.draftNewAgentSessionName || undefined,
+              title: formState.selectedChat.name,
+              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+              instance: formState.selectedChat.instanceName,
+              chatType: formState.selectedChat.chatType,
+              chatName: formState.selectedChat.name,
+            },
+          });
+          if (result?.ok === false) {
+            setSidebarNotice("error", result.error || "falha ao criar agent e sessão");
+            return;
+          }
+          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || nextAgentId;
+          omniDraftNewAgentId = "";
+          omniDraftNewAgentSessionName = "";
+          setSidebarNotice(
+            "success",
+            buildOmniRouteNotice("create-agent-session", result, formState.selectedChat, result?.snapshot?.session),
+          );
+          await refreshSnapshot();
+          await refreshOmniPanel(true);
+          render();
+        } catch (error) {
+          handleRuntimeError(error);
+        }
+      });
+    });
+  });
+}
+
+function getOmniRoutingFormState(body, panel, chats, sessions, agents) {
+  const fallbackChatId = selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
+  const selectedChat = chats.find((chat) => chat.id === fallbackChatId) || panel?.currentChat || chats[0] || null;
+  const currentLinkedSession = selectedChat?.linkedSession || panel?.currentChat?.linkedSession || null;
+  const fallbackSessionKey =
+    selectedOmniSessionKey ||
+    currentLinkedSession?.sessionKey ||
+    sessions[0]?.sessionKey ||
+    null;
+  const selectedSession = sessions.find((session) => session.sessionKey === fallbackSessionKey) || null;
+  const agentSelect = body.querySelector("#ravi-wa-omni-target-agent");
+  const nextRouteAgentId =
+    (agentSelect instanceof HTMLSelectElement ? agentSelect.value : null) ||
+    selectedOmniRouteAgentId ||
+    selectedSession?.agentId ||
+    selectedChat?.linkedSession?.agentId ||
+    agents[0]?.id ||
+    null;
+  const newSessionInput = body.querySelector("#ravi-wa-omni-new-session-name");
+  const newAgentInput = body.querySelector("#ravi-wa-omni-new-agent-id");
+  const newAgentSessionInput = body.querySelector("#ravi-wa-omni-new-agent-session-name");
+  const draftSessionName =
+    (newSessionInput instanceof HTMLInputElement ? newSessionInput.value : omniDraftSessionName).trim() || null;
+  const draftNewAgentId =
+    (newAgentInput instanceof HTMLInputElement ? newAgentInput.value : omniDraftNewAgentId).trim() || null;
+  const draftNewAgentSessionName =
+    (newAgentSessionInput instanceof HTMLInputElement
+      ? newAgentSessionInput.value
+      : omniDraftNewAgentSessionName
+    ).trim() || null;
+
+  selectedOmniChatId = selectedChat?.id || null;
+  selectedOmniSessionKey = selectedSession?.sessionKey || selectedOmniSessionKey;
+  selectedOmniRouteAgentId = nextRouteAgentId;
+  omniDraftSessionName = draftSessionName || "";
+  omniDraftNewAgentId = draftNewAgentId || "";
+  omniDraftNewAgentSessionName = draftNewAgentSessionName || "";
+
+  return {
+    selectedChat,
+    currentLinkedSession,
+    selectedSession,
+    selectedRouteAgentId: nextRouteAgentId,
+    draftSessionName,
+    draftNewAgentId,
+    draftNewAgentSessionName,
+  };
+}
+
+async function runOmniRouteAction(fn) {
+  if (omniRouteActionInFlight) return;
+  omniRouteActionInFlight = true;
+  try {
+    await fn();
+  } finally {
+    omniRouteActionInFlight = false;
+  }
+}
+
+function renderOmniInstanceRows(items, preferredInstance) {
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">Nenhuma instância WhatsApp do Omni disponível.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-nav-list">
+      ${items
+        .map((instance) => {
+          const selected = preferredInstance?.id === instance.id ? "true" : "false";
+          const subline = [instance.profileName, instance.phone, shorten(instance.ownerIdentifier || "", 18)].filter(Boolean).join(" · ");
+          const stateClass = instance.isConnected ? "streaming" : instance.isActive ? "thinking" : "idle";
+          return `
+            <button
+              type="button"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              data-ravi-omni-instance="${escapeAttribute(instance.id)}"
+              aria-pressed="${selected}"
+            >
+              <span class="ravi-wa-nav-row__avatar">OM</span>
+              <span class="ravi-wa-nav-row__body">
+                <span class="ravi-wa-nav-row__titleline">
+                  <strong>${escapeHtml(instance.name)}</strong>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(instance.channel.replace("whatsapp-", ""))}</span>
+                </span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(subline || "sem profile sincronizado")}</span>
+              </span>
+              <span class="ravi-wa-nav-row__aside">
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedFromIso(instance.lastSeenAt || instance.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${stateClass}">${escapeHtml(formatOmniInstanceStatus(instance))}</span>
+              </span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderOmniChatRows(items, currentChat, emptyText) {
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-nav-list">
+      ${items
+        .map((chat) => {
+          const selected = currentChat?.id === chat.id ? "true" : "false";
+          const subline = chat.lastMessagePreview || chat.externalId || "sem preview";
+          const linkedSession = chat.linkedSession;
+          const linkedState = linkedSession ? chipActivityClass(linkedSession.live?.activity) : "idle";
+          const linkedLabel = linkedSession
+            ? `${linkedSession.sessionName} · ${chipActivityLabel(linkedSession.live?.activity)}`
+            : "sem sessão";
+          return `
+            <button
+              type="button"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              data-ravi-omni-select-chat="${escapeAttribute(chat.id)}"
+              aria-pressed="${selected}"
+              title="${escapeHtml(chat.name || chat.externalId || chat.id)}"
+            >
+              <span class="ravi-wa-nav-row__avatar">WA</span>
+              <span class="ravi-wa-nav-row__body">
+                <span class="ravi-wa-nav-row__titleline">
+                  <strong>${escapeHtml(chat.name || chat.externalId || "chat")}</strong>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(formatOmniChatType(chat.chatType))}</span>
+                </span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(shorten(subline, 52))}</span>
+                <span class="ravi-wa-nav-row__subline ravi-wa-nav-row__subline--session">${escapeHtml(linkedLabel)}</span>
+              </span>
+              <span class="ravi-wa-nav-row__aside">
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedFromIso(chat.lastMessageAt || chat.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${linkedState}">${escapeHtml(formatUnreadLabel(chat.unreadCount))}</span>
+              </span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedRouteAgentId, drafts) {
+  if (!selectedChat) {
+    return `
+      <section class="ravi-wa-card ravi-wa-card--flush">
+        <div class="ravi-wa-section-head">
+          <h3>roteamento ravi</h3>
+          <span>sem chat</span>
+        </div>
+        <p class="ravi-wa-empty">seleciona um chat do omni pra ver e configurar a sessão vinculada.</p>
+      </section>
+    `;
+  }
+
+  const currentLinkedSession = selectedChat.linkedSession || null;
+  const bindLabel = buildOmniBindButtonLabel(currentLinkedSession, selectedSession);
+  const bindDisabled =
+    !selectedSession || (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey);
+  const selectedRouteAgent = agents.find((agent) => agent.id === selectedRouteAgentId) || null;
+  const migrateDisabled =
+    !currentLinkedSession || !selectedRouteAgentId || currentLinkedSession.agentId === selectedRouteAgentId;
+  const migrateLabel = currentLinkedSession
+    ? `Migrar para ${selectedRouteAgent?.id || "agent"}`
+    : "Migrar sessão";
+
+  return `
+    <section class="ravi-wa-card ravi-wa-card--flush">
+      <div class="ravi-wa-section-head">
+        <h3>roteamento ravi</h3>
+        <span>${escapeHtml(formatOmniChatType(selectedChat.chatType))}</span>
+      </div>
+      <div class="ravi-wa-route-summary">
+        <strong>${escapeHtml(selectedChat.name || selectedChat.externalId || "chat")}</strong>
+        <p>${escapeHtml(selectedChat.lastMessagePreview || selectedChat.externalId || "sem preview")}</p>
+        <div class="ravi-wa-chip-row">
+          <span class="ravi-wa-meta-chip">chatId ${escapeHtml(shorten(selectedChat.externalId || selectedChat.canonicalId || "-", 28))}</span>
+          <span class="ravi-wa-meta-chip">unread ${escapeHtml(String(selectedChat.unreadCount ?? 0))}</span>
+          <span class="ravi-wa-meta-chip">participants ${escapeHtml(String(selectedChat.participantCount ?? "-"))}</span>
+        </div>
+      </div>
+
+      <div class="ravi-wa-route-binding">
+        <div class="ravi-wa-route-binding__current">
+          <span class="ravi-wa-route-binding__label">sessão atual do chat</span>
+          ${
+            currentLinkedSession
+              ? `
+            <button
+              type="button"
+              class="ravi-wa-nav-row ravi-wa-nav-row--selected"
+              data-ravi-omni-select-session="${escapeAttribute(currentLinkedSession.sessionKey)}"
+            >
+              <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten(currentLinkedSession.agentId.slice(0, 2).toUpperCase(), 2))}</span>
+              <span class="ravi-wa-nav-row__body">
+                <span class="ravi-wa-nav-row__titleline">
+                  <strong>${escapeHtml(currentLinkedSession.sessionName)}</strong>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(currentLinkedSession.agentId)}</span>
+                </span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado")}</span>
+              </span>
+              <span class="ravi-wa-nav-row__aside">
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(currentLinkedSession.live?.updatedAt ?? currentLinkedSession.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${chipActivityClass(currentLinkedSession.live?.activity)}">${escapeHtml(chipActivityLabel(currentLinkedSession.live?.activity))}</span>
+              </span>
+            </button>
+          `
+              : `<p class="ravi-wa-empty">nenhuma sessão casada ainda.</p>`
+          }
+        </div>
+        <div class="ravi-wa-actions">
+          <button data-ravi-omni-open-chat="${escapeAttribute(selectedChat.id)}">Abrir chat</button>
+          ${
+            selectedSession
+              ? `<button data-ravi-omni-bind-chat="${escapeAttribute(selectedChat.id)}"${bindDisabled ? " disabled" : ""}>${escapeHtml(bindLabel)}</button>`
+              : `<button disabled>Escolhe uma sessão</button>`
+          }
+        </div>
+      </div>
+
+      <section class="ravi-wa-route-builder">
+        <div class="ravi-wa-section-head ravi-wa-section-head--spaced">
+          <h3>criar nova sessão</h3>
+          <span>${escapeHtml(selectedRouteAgent?.id || "agent")}</span>
+        </div>
+        <div class="ravi-wa-route-form">
+          <label class="ravi-wa-field">
+            <span>agent destino</span>
+            <select id="ravi-wa-omni-target-agent">
+              ${renderOmniAgentOptions(agents, selectedRouteAgentId)}
+            </select>
+          </label>
+          <label class="ravi-wa-field">
+            <span>nome da sessão</span>
+            <input
+              id="ravi-wa-omni-new-session-name"
+              type="text"
+              placeholder="${escapeAttribute(drafts.createSessionPlaceholder || "deixa vazio pra gerar")}"
+              value="${escapeAttribute(omniDraftSessionName)}"
+            />
+          </label>
+        </div>
+        <div class="ravi-wa-actions${currentLinkedSession ? "" : " ravi-wa-actions--single"}">
+          ${
+            currentLinkedSession
+              ? `<button data-ravi-omni-migrate-session="${escapeAttribute(selectedChat.id)}"${migrateDisabled ? " disabled" : ""}>${escapeHtml(migrateLabel)}</button>`
+              : ""
+          }
+          <button data-ravi-omni-create-session="${escapeAttribute(selectedChat.id)}"${selectedRouteAgentId ? "" : " disabled"}>Criar sessão + vincular</button>
+        </div>
+      </section>
+
+      <section class="ravi-wa-route-builder">
+        <div class="ravi-wa-section-head ravi-wa-section-head--spaced">
+          <h3>novo agent + sessão</h3>
+          <span>bootstrap</span>
+        </div>
+        <div class="ravi-wa-route-form">
+          <label class="ravi-wa-field">
+            <span>id do novo agent</span>
+            <input
+              id="ravi-wa-omni-new-agent-id"
+              type="text"
+              placeholder="sales, ops, achados-ia"
+              value="${escapeAttribute(omniDraftNewAgentId)}"
+            />
+          </label>
+          <label class="ravi-wa-field">
+            <span>nome da sessão</span>
+            <input
+              id="ravi-wa-omni-new-agent-session-name"
+              type="text"
+              placeholder="${escapeAttribute(drafts.createNewAgentSessionPlaceholder || "deixa vazio pra gerar")}"
+              value="${escapeAttribute(omniDraftNewAgentSessionName)}"
+            />
+          </label>
+        </div>
+        <div class="ravi-wa-actions ravi-wa-actions--single">
+          <button data-ravi-omni-create-agent-session="${escapeAttribute(selectedChat.id)}">Criar agent + sessão + vincular</button>
+        </div>
+      </section>
+
+      <div class="ravi-wa-section-head ravi-wa-section-head--spaced">
+        <h3>sessões ravi</h3>
+        <span>${filterOmniSessions(latestOmniPanel?.sessions || []).length}</span>
+      </div>
+      ${renderOmniSessionRows(filterOmniSessions(latestOmniPanel?.sessions || []), selectedSession, "Nenhuma sessão Ravi disponível.")}
+    </section>
+  `;
+}
+
+function renderOmniSessionRows(items, selectedSession, emptyText) {
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-nav-list ravi-wa-nav-list--tall">
+      ${items
+        .map((session) => {
+          const selected = selectedSession?.sessionKey === session.sessionKey ? "true" : "false";
+          const activityClass = chipActivityClass(session.live?.activity);
+          const linkedChat = getLinkedChatLabel(session);
+          return `
+            <button
+              type="button"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              data-ravi-omni-select-session="${escapeAttribute(session.sessionKey)}"
+              aria-pressed="${selected}"
+            >
+              <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2))}</span>
+              <span class="ravi-wa-nav-row__body">
+                <span class="ravi-wa-nav-row__titleline">
+                  <strong>${escapeHtml(session.sessionName)}</strong>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
+                </span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(shorten(linkedChat || session.chatId || "sem chat vinculado", 46))}</span>
+              </span>
+              <span class="ravi-wa-nav-row__aside">
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(chipActivityLabel(session.live?.activity))}</span>
+              </span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderOmniGroupRows(items) {
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">Nenhum grupo listado nessa instância.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-nav-list">
+      ${items
+        .map((group) => `
+          <button
+            type="button"
+            class="ravi-wa-nav-row"
+            data-ravi-omni-open-group="${escapeAttribute(group.externalId || "")}"
+            title="${escapeHtml(group.name || group.externalId || "grupo")}"
+          >
+            <span class="ravi-wa-nav-row__avatar">GR</span>
+            <span class="ravi-wa-nav-row__body">
+              <span class="ravi-wa-nav-row__titleline">
+                <strong>${escapeHtml(group.name || group.externalId || "grupo")}</strong>
+                <span class="ravi-wa-nav-row__agent">${escapeHtml(group.isCommunity ? "community" : "group")}</span>
+              </span>
+              <span class="ravi-wa-nav-row__subline">${escapeHtml(group.description || group.externalId || "sem descrição")}</span>
+            </span>
+            <span class="ravi-wa-nav-row__aside">
+              <span class="ravi-wa-nav-row__elapsed">${escapeHtml(group.memberCount != null ? `${group.memberCount} membros` : "-")}</span>
+              <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--idle">${escapeHtml(group.isReadOnly ? "read only" : "aberto")}</span>
+            </span>
+          </button>
+        `)
+        .join("")}
+    </div>
+  `;
+}
+
+function renderRecentStack(container) {
+  container.innerHTML = "";
+  container.classList.add("ravi-hidden");
+}
+
+function renderLiveEventsCard(session) {
+  const events = Array.isArray(session?.live?.events) ? session.live.events.slice(0, 8) : [];
+  if (!events.length) {
+    return `
+      <section class="ravi-wa-card">
+        <div class="ravi-wa-section-head">
+          <h3>tempo real</h3>
+          <span>0</span>
+        </div>
+        <p class="ravi-wa-empty">sem eventos vivos dessa sessão ainda.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="ravi-wa-card">
+      <div class="ravi-wa-section-head">
+        <h3>tempo real</h3>
+        <span>${escapeHtml(chipActivityLabel(session?.live?.activity || "idle"))}</span>
+      </div>
+      <div class="ravi-wa-live-log">
+        ${events
+          .map((event) => {
+            const kind = chipActivityClass(eventKindToActivity(event.kind));
+            return `
+              <div class="ravi-wa-live-line ravi-wa-live-line--${kind}">
+                <div class="ravi-wa-live-line__meta">
+                  <span>${escapeHtml(formatElapsedCompact(event.timestamp) || "agora")}</span>
+                  <strong>${escapeHtml(event.label || event.kind)}</strong>
+                </div>
+                <div class="ravi-wa-live-line__text">${escapeHtml(event.detail || event.kind)}</div>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderCockpitRows(items, currentSession, emptyText) {
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">${escapeHtml(emptyText)}</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-nav-list">
+      ${items
+        .map((session) => {
+          const activityClass = chipActivityClass(session.live?.activity);
+          const activityLabel = chipActivityLabel(session.live?.activity);
+          const linkedChat = getLinkedChatLabel(session);
+          const elapsed = formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt) || "now";
+          const subline = linkedChat
+            ? shorten(linkedChat, 34)
+            : session.channel
+              ? `canal ${session.channel}`
+              : "sem chat vinculado";
+          const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
+          const avatarLabel = shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2);
+          return `
+            <button
+              type="button"
+              class="ravi-wa-nav-row ravi-wa-nav-row--${activityClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
+              aria-pressed="${selected}"
+              title="${escapeHtml(`${session.sessionName} · ${linkedChat || session.chatId || "-"}`)}"
+            >
+              <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
+              <span class="ravi-wa-nav-row__body">
+                <span class="ravi-wa-nav-row__titleline">
+                  <strong>${escapeHtml(session.sessionName)}</strong>
+                  <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
+                </span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(subline)}</span>
+              </span>
+              <span class="ravi-wa-nav-row__aside">
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(elapsed)}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(activityLabel)}</span>
+              </span>
+            </button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function eventKindToActivity(kind) {
+  switch (kind) {
+    case "stream":
+      return "streaming";
+    case "approval":
+      return "awaiting_approval";
+    case "tool":
+    case "prompt":
+    case "runtime":
+      return "thinking";
+    case "response":
+      return "streaming";
+    default:
+      return "idle";
+  }
+}
+
+function filterCockpitSessions(items) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(sidebarFilter);
+  if (!needle) return list;
+  return list.filter((session) =>
+    [session.displayName, session.subject, session.chatId, session.sessionName, session.agentId, session.channel]
+      .map(normalizeLookupToken)
+      .some((value) => value && value.includes(needle)),
+  );
+}
+
+function filterOmniInstances(items) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(omniFilter);
+  if (!needle) return list;
+  return list.filter((instance) =>
+    [instance.name, instance.profileName, instance.phone, instance.ownerIdentifier, instance.channel]
+      .map(normalizeLookupToken)
+      .some((value) => value && value.includes(needle)),
+  );
+}
+
+function filterOmniAgents(items) {
+  return Array.isArray(items) ? items : [];
+}
+
+function filterOmniChats(items) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(omniFilter);
+  const filtered = !needle
+    ? list
+    : list.filter((chat) =>
+        [chat.name, chat.externalId, chat.lastMessagePreview, chat.chatType]
+          .map(normalizeLookupToken)
+          .some((value) => value && value.includes(needle)),
+      );
+  return filtered.slice(0, 40);
+}
+
+function filterOmniGroups(items) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(omniFilter);
+  const filtered = !needle
+    ? list
+    : list.filter((group) =>
+        [group.name, group.externalId, group.description]
+          .map(normalizeLookupToken)
+          .some((value) => value && value.includes(needle)),
+      );
+  return filtered.slice(0, 18);
+}
+
+function filterOmniSessions(items) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(omniSessionFilter);
+  if (!needle) return list.slice(0, 40);
+  return list
+    .filter((session) =>
+      [session.sessionName, session.agentId, session.chatId, session.displayName, session.subject]
+        .map(normalizeLookupToken)
+        .some((value) => value && value.includes(needle)),
+    )
+    .slice(0, 40);
+}
+
+function formatOmniInstanceStatus(instance) {
+  if (instance?.isConnected) return "connected";
+  if (instance?.isActive) return "active";
+  return "offline";
+}
+
+function formatOmniChatType(value) {
+  if (!value) return "chat";
+  return value === "dm" ? "dm" : value === "group" ? "group" : value;
+}
+
+function formatUnreadLabel(value) {
+  const count = Number(value || 0);
+  return count > 0 ? `${count} unread` : "read";
+}
+
+function renderOmniAgentOptions(items, selectedAgentId) {
+  if (!items.length) {
+    return `<option value="">Nenhum agent</option>`;
+  }
+
+  return items
+    .map((agent) => {
+      const selected = agent.id === selectedAgentId ? " selected" : "";
+      const label = agent.name ? `${agent.id} · ${agent.name}` : agent.id;
+      return `<option value="${escapeAttribute(agent.id)}"${selected}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+}
+
+function buildOmniBindButtonLabel(currentLinkedSession, selectedSession) {
+  if (!selectedSession) return "Escolhe uma sessão";
+  if (!currentLinkedSession) return `Vincular a ${selectedSession.sessionName}`;
+  if (currentLinkedSession.sessionKey === selectedSession.sessionKey) {
+    return `Já vinculada em ${selectedSession.sessionName}`;
+  }
+  return `Migrar ${currentLinkedSession.sessionName} -> ${selectedSession.sessionName}`;
+}
+
+function buildOmniDraftSessionName(selectedChat, agentId) {
+  const agentStem = slugifyOmniToken(agentId || "sessao");
+  const chatStem = slugifyOmniToken(selectedChat?.name || selectedChat?.externalId || "chat");
+  if (!chatStem) return agentStem;
+  return `${agentStem}-${chatStem}`.slice(0, 48);
+}
+
+function buildOmniRouteNotice(kind, result, selectedChat, session) {
+  const chatLabel = selectedChat?.name || selectedChat?.externalId || "chat";
+  const sessionName = session?.sessionName || result?.snapshot?.session?.sessionName || result?.route?.session || "sessão";
+
+  if (kind === "bind-existing") {
+    return `migrei ${chatLabel} -> ${sessionName}`;
+  }
+  if (kind === "migrate-session") {
+    return `mudei ${chatLabel} para ${sessionName}`;
+  }
+  if (result?.createdAgent) {
+    return `criei agent + sessão e vinculei ${chatLabel} -> ${sessionName}`;
+  }
+  if (result?.createdSession) {
+    return `criei sessão e vinculei ${chatLabel} -> ${sessionName}`;
+  }
+  return `roteei ${chatLabel} -> ${sessionName}`;
+}
+
+function slugifyOmniToken(value) {
+  return normalizeLookupToken(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+}
+
+function formatElapsedFromIso(value) {
+  if (!value) return "";
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return "";
+  return formatElapsedCompact(timestamp);
+}
+
+function getCockpitChatTitle(session) {
+  return session.displayName || session.subject || session.chatId || session.sessionName;
+}
+
+function getLinkedChatLabel(session) {
+  return session.displayName || session.subject || session.chatId || null;
+}
+
+function dedupeSessionsByKey(items) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    if (!item?.sessionKey || seen.has(item.sessionKey)) continue;
+    seen.add(item.sessionKey);
+    result.push(item);
+  }
+  return result;
+}
+
+async function openCockpitChat(session) {
+  if (!session?.chatId && !session?.displayName && !session?.subject) {
+    setSidebarNotice("error", `a sessão ${session?.sessionName || "?"} não tem chat vinculado`);
+    return false;
+  }
+  return openGenericChatTarget({
+    chatId: session.chatId,
+    title: getCockpitChatTitle(session),
+    label: getCockpitChatTitle(session),
+    queries: [session.displayName, session.subject, session.chatId, session.sessionName].filter(Boolean),
+  });
+}
+
+async function openOmniChatTarget(chat) {
+  return openGenericChatTarget({
+    chatId: chat.externalId || chat.canonicalId,
+    title: chat.name,
+    label: chat.name || chat.externalId || chat.id,
+    queries: [chat.name, chat.externalId, chat.canonicalId].filter(Boolean),
+  });
+}
+
+async function openGenericChatTarget(target) {
+  if (!target?.chatId && !target?.title) {
+    setSidebarNotice("error", "esse item do omni não tem chat vinculado");
+    return false;
+  }
+
+  const label = target.label || target.title || target.chatId || "chat";
+  setSidebarNotice("info", `abrindo ${label}...`, 0);
+
+  if (clickMatchingChatRowByTarget(target)) {
+    setSidebarNotice("success", `abriu ${label}`);
+    return true;
+  }
+
+  const searchInput = detectNativeSidebarSearchInput();
+  if (!(searchInput instanceof HTMLInputElement)) {
+    setSidebarNotice("error", "não achei a busca nativa do whatsapp");
+    return false;
+  }
+
+  const originalValue = searchInput.value || "";
+  const queries = [...new Set((target.queries || [target.title, target.chatId]).filter(Boolean))];
+
+  for (const query of queries) {
+    focusNativeSidebarSearchInput(searchInput);
+    setNativeSidebarSearchValue(searchInput, query);
+    await sleep(180);
+
+    if (await waitForMatchingChatRowByTarget(target, 1800)) {
+      await sleep(140);
+      clearNativeSidebarSearch(searchInput, originalValue);
+      setSidebarNotice("success", `abriu ${label}`);
+      return true;
+    }
+  }
+
+  clearNativeSidebarSearch(searchInput, originalValue);
+  setSidebarNotice("error", `não achei ${label}`);
+  return false;
+}
+
+function clickMatchingChatRow(session) {
+  return clickMatchingChatRowByTarget({
+    chatId: session?.chatId,
+    title: getCockpitChatTitle(session),
+  });
+}
+
+function clickMatchingChatRowByTarget(target) {
+  const rows = detectVisibleChatRows();
+  const chatIdVariants = buildChatIdVariants(target?.chatId);
+  const normalizedTitle = normalizeLookupToken(target?.title);
+  const row = rows.find((candidate) => {
+    const rowChatId = normalizeLookupToken(candidate.chatIdCandidate);
+    const rowTitle = normalizeLookupToken(candidate.title);
+    if (rowChatId && chatIdVariants.includes(rowChatId)) return true;
+    if (normalizedTitle && rowTitle && rowTitle === normalizedTitle) return true;
+    return false;
+  });
+
+  if (!row) return false;
+  row.row.scrollIntoView({ block: "center", behavior: "smooth" });
+  const clickable = row.row.querySelector("[aria-selected]") || row.row.firstElementChild || row.row;
+  if (clickable instanceof HTMLElement) {
+    clickable.click();
+    return true;
+  }
+  return false;
+}
+
+async function waitForMatchingChatRow(session, timeoutMs) {
+  return waitForMatchingChatRowByTarget(
+    {
+      chatId: session?.chatId,
+      title: getCockpitChatTitle(session),
+    },
+    timeoutMs,
+  );
+}
+
+async function waitForMatchingChatRowByTarget(target, timeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (clickMatchingChatRowByTarget(target)) {
+      return true;
+    }
+    await sleep(120);
+  }
+  return false;
+}
+
+function detectNativeSidebarSearchInput() {
+  return document.querySelector(NATIVE_SIDEBAR_SEARCH_SELECTOR);
+}
+
+function focusNativeSidebarSearchInput(input) {
+  input.focus();
+  input.click();
+  input.select?.();
+}
+
+function setNativeSidebarSearchValue(input, value) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+  if (setter) {
+    setter.call(input, value);
+  } else {
+    input.value = value;
+  }
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function clearNativeSidebarSearch(input, originalValue = "") {
+  focusNativeSidebarSearchInput(input);
+  setNativeSidebarSearchValue(input, originalValue);
+}
+
+function setSidebarNotice(kind, message, ttlMs = 2400) {
+  sidebarNotice = { kind, message };
+  if (sidebarNoticeTimer) clearTimeout(sidebarNoticeTimer);
+  if (ttlMs > 0) {
+    sidebarNoticeTimer = setTimeout(() => {
+      sidebarNotice = null;
+      sidebarNoticeTimer = null;
+      render();
+    }, ttlMs);
+  } else {
+    sidebarNoticeTimer = null;
+  }
+  render();
+}
+
+function loadPinnedSessionKey() {
+  try {
+    return window.localStorage.getItem(PINNED_SESSION_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+function loadActiveWorkspace() {
+  try {
+    const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
+    return stored === "omni" ? "omni" : "ravi";
+  } catch {
+    return "ravi";
+  }
+}
+
+function persistActiveWorkspace(value) {
+  try {
+    window.localStorage.setItem(ACTIVE_WORKSPACE_KEY_STORAGE, value);
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function loadPreferredOmniInstance() {
+  try {
+    return window.localStorage.getItem(OMNI_INSTANCE_KEY_STORAGE);
+  } catch {
+    return null;
+  }
+}
+
+function persistPreferredOmniInstance(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(OMNI_INSTANCE_KEY_STORAGE, value);
+    } else {
+      window.localStorage.removeItem(OMNI_INSTANCE_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function setActiveWorkspace(nextWorkspace) {
+  activeWorkspace = nextWorkspace === "omni" ? "omni" : "ravi";
+  persistActiveWorkspace(activeWorkspace);
+  syncWorkspaceLauncher();
+  render();
+  if (activeWorkspace === "omni") {
+    refreshOmniPanel(true);
+  }
+}
+
+function persistPinnedSessionKey(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(PINNED_SESSION_KEY_STORAGE, value);
+    } else {
+      window.localStorage.removeItem(PINNED_SESSION_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
+function normalizeLookupToken(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+}
+
+function buildChatIdVariants(value) {
+  const normalized = normalizeLookupToken(value);
+  if (!normalized) return [];
+
+  const variants = new Set([normalized]);
+  const groupMatch = normalized.match(/^group:(.+)$/);
+  if (groupMatch) variants.add(`${groupMatch[1]}@g.us`);
+
+  const groupJidMatch = normalized.match(/^(.+)@g\.us$/);
+  if (groupJidMatch) variants.add(`group:${groupJidMatch[1]}`);
+
+  const dmJidMatch = normalized.match(/^(\d+)@s\.whatsapp\.net$/);
+  if (dmJidMatch) variants.add(dmJidMatch[1]);
+
+  if (/^\d+$/.test(normalized)) {
+    variants.add(`group:${normalized}`);
+    variants.add(`${normalized}@g.us`);
+    variants.add(`${normalized}@s.whatsapp.net`);
+  }
+
+  return [...variants];
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll('"', "&quot;");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function escapeHtml(value) {

@@ -29,6 +29,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ravi:get-omni-panel") {
+    fetchOmniPanel(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:bind-chat") {
+    postBind(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:omni-route") {
+    postOmniRoute(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "ravi:session-action") {
     postAction(message.payload)
       .then(sendResponse)
@@ -92,6 +113,35 @@ async function resolveChatList(payload = {}) {
 
 async function fetchMessageMeta(payload = {}) {
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/message-meta`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+async function fetchOmniPanel(payload = {}) {
+  const params = new URLSearchParams();
+  if (payload.chatId) params.set("chatId", payload.chatId);
+  if (payload.title) params.set("title", payload.title);
+  if (payload.session) params.set("session", payload.session);
+  if (payload.instance) params.set("instance", payload.instance);
+
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/panel?${params.toString()}`);
+  return response.json();
+}
+
+async function postBind(payload = {}) {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/bind`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+async function postOmniRoute(payload = {}) {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/route`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),

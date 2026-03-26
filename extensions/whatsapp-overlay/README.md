@@ -18,6 +18,57 @@ This keeps exploration fast and cheap:
 
 Current chosen direction: a compact status rail (`quiet rail`) below the conversation app bar, validated first through the CLI before baking it into the extension surface.
 
+## Current Surfaces
+
+What already exists in code:
+
+- chat-list badges for visible rows (`session + live state`)
+- message-level chips inside the conversation timeline
+- compact `quiet rail` below the conversation app bar
+- local bridge + CLI for DOM inspection, preview injection, and live state resolution
+
+These surfaces work as a product lab:
+
+- the left pane proves session correlation at scale
+- the center pane proves message enrichment and per-chat context
+- the CLI keeps us from hardcoding UI too early
+
+## Navigation Lessons
+
+One experiment was intentionally useful even though it was rejected:
+
+- a floating stack of "recent agents" below the rail
+
+It proved that Ravi can surface cross-chat context inside WhatsApp, but it also showed the wrong product model for navigation:
+
+- the item was `agent-centric`, while navigation in WhatsApp is always `chat-centric`
+- clicking only worked well when the target row was already visible in the native chat list
+- the stack competed with the app bar instead of extending WhatsApp's navigation model
+
+So the lesson is now explicit:
+
+- `agent` is metadata
+- `chat` is the navigation entity
+
+## Target Direction
+
+The next cockpit cut should stop treating navigation as a floating overlay and instead materialize a real right-hand Ravi sidebar:
+
+- left: native WhatsApp chat list
+- center: native WhatsApp conversation
+- right: Ravi sidebar, visually aligned with the left pane
+
+That sidebar should be:
+
+- `chat-centric`
+- searchable
+- deterministic to open
+- good for operational scanning
+
+Reference spec:
+
+- [`docs/whatsapp-overlay-cockpit-v1.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-cockpit-v1.md)
+
 ## Run
 
 1. Start the local bridge:
@@ -52,9 +103,11 @@ bun run wa:overlay:cli watch
 - live activity states from NATS (`thinking`, `compacting`, `awaiting approval`)
 - real actions: `abort`, `reset`, `set-thinking`
 - app-bar UI is currently being prototyped through the CLI first, with `quiet rail` selected as the first persistent pattern to materialize
+- a floating "recent agents" navigation stack was tested and explicitly rejected in favor of a future right sidebar
 
 ## Limitations
 
 - the first cut prefers stability over deep DOM anchoring
 - chat correlation falls back to title matching when `chatId` is not discoverable from the page
 - routing/config actions are intentionally out of scope for the first test
+- current cross-chat navigation is not yet product-grade; the chosen next direction is a dedicated right sidebar

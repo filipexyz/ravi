@@ -1,40 +1,186 @@
+:root {
+  --ravi-wa-overlay-width: clamp(340px, 30vw, 420px);
+}
+
+.ravi-wa-layout-host {
+  display: flex !important;
+  align-items: stretch !important;
+  min-width: 0;
+}
+
+.ravi-wa-layout-host[data-ravi-workspace="omni"] > :not(header[data-tab="2"]):not(#ravi-wa-overlay-root):not(#wds-toast-container) {
+  display: none !important;
+}
+
+.ravi-wa-main-pane {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 #ravi-wa-overlay-root {
-  position: fixed;
-  top: 76px;
-  right: 20px;
-  z-index: 2147483647;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
+  position: relative;
+  width: var(--ravi-wa-overlay-width);
+  min-width: 320px;
+  max-width: 420px;
+  height: 100%;
+  flex: 0 0 var(--ravi-wa-overlay-width);
+  pointer-events: none;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+#ravi-wa-overlay-root[data-workspace="omni"] {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  flex: 1 1 auto;
+}
+
+.ravi-wa-main-pane-hidden {
+  display: none !important;
+}
+
+.ravi-wa-layout-branch-hidden {
+  display: none !important;
+}
+
+.ravi-hidden {
+  display: none !important;
+}
+
 #ravi-wa-overlay-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(32, 44, 51, 0.96);
-  color: #e9edef;
-  padding: 6px 8px 6px 10px;
-  backdrop-filter: blur(16px);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
-  cursor: pointer;
-  transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    border-color 160ms ease,
-    background 160ms ease;
+  display: none !important;
 }
 
 #ravi-wa-overlay-pill:hover {
+  display: none !important;
+}
+
+#ravi-wa-overlay-recent {
+  display: none !important;
+}
+
+#ravi-wa-omni-launcher {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 6px 0;
+}
+
+.ravi-wa-navbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: #aebac1;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.ravi-wa-navbar-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f7f8fa;
   transform: translateY(-1px);
-  border-color: rgba(134, 239, 172, 0.2);
-  background: rgba(32, 44, 51, 1);
-  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.26);
+}
+
+#ravi-wa-omni-launcher[data-active="true"] .ravi-wa-navbar-button {
+  background: rgba(37, 211, 102, 0.14);
+  color: #d7ffe6;
+  box-shadow: inset 0 0 0 1px rgba(37, 211, 102, 0.24);
+}
+
+.ravi-wa-navbar-button__glyph {
+  font-size: 17px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.ravi-wa-recent-pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(17, 27, 33, 0.92);
+  color: #d1d7db;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ravi-wa-recent-pill:hover {
+  transform: translateY(-1px);
+}
+
+.ravi-wa-recent-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.ravi-wa-recent-pill__dot--idle {
+  background: #94a3b8;
+}
+
+.ravi-wa-recent-pill__dot--thinking {
+  background: #60a5fa;
+}
+
+.ravi-wa-recent-pill__dot--streaming {
+  background: #4ade80;
+}
+
+.ravi-wa-recent-pill__dot--approval {
+  background: #facc15;
+}
+
+.ravi-wa-recent-pill__dot--compacting {
+  background: #c084fc;
+}
+
+.ravi-wa-recent-pill__dot--blocked {
+  background: #f87171;
+}
+
+.ravi-wa-recent-pill__copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ravi-wa-recent-pill__copy strong {
+  font-size: 12px;
+  line-height: 1.05;
+  color: #f7f8fa;
+  text-transform: lowercase;
+}
+
+.ravi-wa-recent-pill__copy span {
+  font-size: 10px;
+  color: #8696a0;
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ravi-wa-recent-pill__age {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #aebac1;
 }
 
 .ravi-wa-pill-dot {
@@ -150,15 +296,24 @@
 }
 
 #ravi-wa-overlay-drawer {
-  width: min(360px, calc(100vw - 28px));
-  max-height: min(72vh, 700px);
+  position: relative;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
   overflow: auto;
-  border-radius: 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(17, 27, 33, 0.98), rgba(24, 36, 43, 0.98));
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(17, 27, 33, 0.985), rgba(24, 36, 43, 0.985));
   color: #e9edef;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
+  box-shadow: inset 18px 0 24px rgba(0, 0, 0, 0.06);
   backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+#ravi-wa-overlay-root[data-workspace="omni"] #ravi-wa-overlay-drawer {
+  border-left: 0;
+  box-shadow: none;
+  background: #111b21;
 }
 
 #ravi-wa-overlay-drawer.ravi-hidden {
@@ -167,10 +322,15 @@
 
 .ravi-wa-drawer-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
-  padding: 16px 16px 10px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 16px 16px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(17, 27, 33, 0.9);
+  backdrop-filter: blur(18px);
 }
 
 .ravi-wa-drawer-heading {
@@ -197,12 +357,24 @@
   padding: 14px 16px 16px;
 }
 
+#ravi-wa-overlay-root[data-workspace="omni"] #ravi-wa-overlay-body {
+  padding: 0;
+}
+
 .ravi-wa-card {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 18px;
   padding: 12px 14px;
   margin-bottom: 12px;
   background: rgba(255, 255, 255, 0.028);
+}
+
+.ravi-wa-card--flush {
+  margin-bottom: 0;
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  background: transparent;
 }
 
 .ravi-wa-card h3 {
@@ -261,6 +433,431 @@
   line-height: 1;
 }
 
+.ravi-wa-sidebar-search {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-sidebar-search span {
+  color: #8696a0;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-sidebar-search input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #f7f8fa;
+  font-size: 12px;
+  outline: none;
+}
+
+.ravi-wa-sidebar-search input::placeholder {
+  color: #6f7f87;
+}
+
+.ravi-wa-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ravi-wa-section-head h3 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+}
+
+.ravi-wa-section-head span {
+  color: #8696a0;
+  font-size: 11px;
+}
+
+.ravi-wa-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ravi-wa-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.018);
+  color: #d1d7db;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.ravi-wa-nav-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+
+.ravi-wa-nav-row--selected {
+  background: rgba(37, 211, 102, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(37, 211, 102, 0.22),
+    inset 3px 0 0 #25d366;
+}
+
+.ravi-wa-nav-row__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(55, 74, 82, 0.96), rgba(34, 46, 53, 0.96));
+  color: #f7f8fa;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.ravi-wa-nav-row__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-nav-row__titleline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ravi-wa-nav-row__titleline strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f7f8fa;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ravi-wa-nav-row__agent {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #9fb0b8;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.ravi-wa-nav-row__subline {
+  color: #8696a0;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ravi-wa-nav-row__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.ravi-wa-nav-row__elapsed {
+  color: #8696a0;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.ravi-wa-nav-row__state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: lowercase;
+  line-height: 1;
+}
+
+.ravi-wa-nav-row__state--idle {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+.ravi-wa-nav-row__state--thinking {
+  background: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+}
+
+.ravi-wa-nav-row__state--streaming {
+  background: rgba(52, 211, 153, 0.16);
+  color: #86efac;
+}
+
+.ravi-wa-nav-row__state--approval {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fcd34d;
+}
+
+.ravi-wa-nav-row__state--compacting {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c4b5fd;
+}
+
+.ravi-wa-nav-row__state--blocked {
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+.ravi-wa-empty {
+  margin: 0;
+  color: #8696a0;
+  font-size: 12px;
+}
+
+.ravi-wa-omni-page {
+  display: flex;
+  min-height: calc(100vh - 110px);
+  flex-direction: column;
+}
+
+.ravi-wa-omni-hero {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at top right, rgba(37, 211, 102, 0.08), transparent 36%),
+    rgba(17, 27, 33, 0.94);
+}
+
+.ravi-wa-omni-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(17, 27, 33, 0.92);
+}
+
+.ravi-wa-omni-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(320px, 1fr) minmax(320px, 420px);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.ravi-wa-omni-column {
+  min-width: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(17, 27, 33, 0.97);
+}
+
+.ravi-wa-omni-column:last-child {
+  border-right: 0;
+}
+
+.ravi-wa-omni-column .ravi-wa-card + .ravi-wa-card {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-route-summary {
+  margin-bottom: 16px;
+}
+
+.ravi-wa-route-summary strong {
+  display: block;
+  color: #f7f8fa;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.ravi-wa-route-summary p {
+  margin: 6px 0 0;
+}
+
+.ravi-wa-route-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ravi-wa-route-binding__label {
+  display: block;
+  margin-bottom: 8px;
+  color: #8696a0;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-route-builder {
+  margin-top: 18px;
+}
+
+.ravi-wa-route-form {
+  display: grid;
+  gap: 10px;
+}
+
+.ravi-wa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ravi-wa-field span {
+  color: #8696a0;
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-field input,
+.ravi-wa-field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f7f8fa;
+  font-size: 12px;
+  outline: none;
+}
+
+.ravi-wa-field input::placeholder {
+  color: #6b7c86;
+}
+
+.ravi-wa-field input:focus,
+.ravi-wa-field select:focus {
+  border-color: rgba(37, 211, 102, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-nav-list--tall {
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.ravi-wa-section-head--spaced {
+  margin-top: 18px;
+}
+
+.ravi-wa-nav-row__subline--session {
+  color: #9fb0b8;
+}
+
+@media (max-width: 1320px) {
+  .ravi-wa-omni-grid {
+    grid-template-columns: minmax(240px, 280px) minmax(280px, 1fr) minmax(300px, 360px);
+  }
+}
+
+.ravi-wa-live-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ravi-wa-live-line {
+  padding: 10px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-live-line:first-child {
+  padding-top: 2px;
+  border-top: 0;
+}
+
+.ravi-wa-live-line__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.ravi-wa-live-line__meta span {
+  color: #8696a0;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.ravi-wa-live-line__meta strong {
+  color: #dfe6ea;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0.01em;
+}
+
+.ravi-wa-live-line__text {
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ravi-wa-live-line--thinking .ravi-wa-live-line__meta strong {
+  color: #93c5fd;
+}
+
+.ravi-wa-live-line--streaming .ravi-wa-live-line__meta strong {
+  color: #86efac;
+}
+
+.ravi-wa-live-line--approval .ravi-wa-live-line__meta strong {
+  color: #fcd34d;
+}
+
+.ravi-wa-live-line--blocked .ravi-wa-live-line__meta strong {
+  color: #fca5a5;
+}
+
+.ravi-wa-notice {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.ravi-wa-notice--info {
+  border-color: rgba(96, 165, 250, 0.16);
+}
+
+.ravi-wa-notice--success {
+  border-color: rgba(74, 222, 128, 0.18);
+}
+
+.ravi-wa-notice--error {
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
 .ravi-wa-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -307,6 +904,16 @@
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(37, 211, 102, 0.2);
   transform: translateY(-1px);
+}
+
+.ravi-wa-actions button:disabled {
+  opacity: 0.48;
+  cursor: default;
+  transform: none;
+}
+
+.ravi-wa-actions--single {
+  grid-template-columns: 1fr;
 }
 
 .ravi-wa-disclosure {

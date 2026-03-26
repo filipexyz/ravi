@@ -1,18 +1,38 @@
 import { serve } from "bun";
+import { spawn } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { getRecentHistory } from "../db.js";
-import { dbGetAgent, dbGetMessageMeta } from "../router/router-db.js";
+import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
+import { createAgent, ensureAgentDirs, getAllAgents, loadRouterConfig } from "../router/config.js";
+import { expandHome } from "../router/resolver.js";
+import { buildSessionKey } from "../router/session-key.js";
+import { ensureUniqueName, generateSessionName } from "../router/session-name.js";
+import { dbCreateRoute, dbGetAgent, dbGetMessageMeta, dbGetRoute, dbUpdateRoute } from "../router/router-db.js";
 import {
+  getOrCreateSession,
+  getSessionByName,
   listSessions,
   resolveSession,
+  updateSessionName,
+  updateSessionSource,
   updateSessionDisplayName,
   updateSessionThinkingLevel,
   resetSession,
 } from "../router/sessions.js";
 import { closeNats, connectNats, publish, subscribe } from "../nats.js";
-import { buildOverlaySnapshot, type OverlayActivity, type OverlayLiveState, type OverlayQuery } from "./model.js";
+import {
+  buildOverlaySnapshot,
+  type OverlayActivity,
+  type OverlayLiveState,
+  type OverlayQuery,
+  type OverlaySessionSnapshot,
+  type OverlaySessionEvent,
+} from "./model.js";
 import type { OverlayPublishedState } from "./state.js";
 import { getBindingForQuery, upsertBinding } from "./bindings.js";
 import type { OverlayDomCommandEnvelope, OverlayDomCommandRequest, OverlayDomCommandResult } from "./dom-control.js";
+import { deriveOmniRouteTarget } from "./routing.js";
 
 const PORT = Number(process.env.RAVI_WA_OVERLAY_PORT ?? 4210);
 const HOST = process.env.RAVI_WA_OVERLAY_HOST ?? "127.0.0.1";
@@ -22,6 +42,7 @@ let latestPublishedState: OverlayPublishedState | null = null;
 const publishedHistory: OverlayPublishedState[] = [];
 const pendingDomCommands: OverlayDomCommandEnvelope[] = [];
 const domCommandResults = new Map<string, OverlayDomCommandResult>();
+const runtimeTrackerTasks = new Set<Promise<void>>();
 
 type ActionName = "abort" | "reset" | "set-thinking" | "rename";
 
@@ -35,6 +56,19 @@ type BindBody = {
   session?: string;
   title?: string | null;
   chatId?: string | null;
+};
+
+type OmniRouteBody = {
+  action?: "bind-existing" | "create-session" | "migrate-session";
+  session?: string | null;
+  title?: string | null;
+  chatId?: string | null;
+  instance?: string | null;
+  chatType?: string | null;
+  chatName?: string | null;
+  agentId?: string | null;
+  sessionName?: string | null;
+  createAgent?: boolean;
 };
 
 type DomResultBody = {
@@ -55,6 +89,127 @@ type MessageMetaBody = {
   messageId?: string | null;
   chatId?: string | null;
 };
+
+type OmniInstanceRecord = {
+  id: string;
+  name: string;
+  channel?: string | null;
+  isActive?: boolean;
+  profileName?: string | null;
+  ownerIdentifier?: string | null;
+  lastSeenAt?: string | null;
+  updatedAt?: string | null;
+};
+
+type OmniWhoamiRecord = {
+  instanceId?: string | null;
+  phone?: string | null;
+  profileName?: string | null;
+  ownerIdentifier?: string | null;
+  state?: string | null;
+  isConnected?: boolean;
+};
+
+type OmniChatRecord = {
+  id: string;
+  instanceId: string;
+  externalId?: string | null;
+  canonicalId?: string | null;
+  chatType?: string | null;
+  channel?: string | null;
+  name?: string | null;
+  description?: string | null;
+  participantCount?: number | null;
+  unreadCount?: number | null;
+  lastMessageAt?: string | null;
+  lastMessagePreview?: string | null;
+  updatedAt?: string | null;
+};
+
+type OmniGroupRecord = {
+  externalId?: string | null;
+  name?: string | null;
+  description?: string | null;
+  memberCount?: number | null;
+  createdAt?: string | null;
+  isReadOnly?: boolean;
+  platformMetadata?: {
+    isCommunity?: boolean;
+    isCommunityAnnounce?: boolean;
+  } | null;
+};
+
+type OmniPanelInstance = {
+  id: string;
+  name: string;
+  channel: string;
+  isActive: boolean;
+  status: string;
+  isConnected: boolean;
+  profileName: string | null;
+  phone: string | null;
+  ownerIdentifier: string | null;
+  lastSeenAt: string | null;
+  updatedAt: string | null;
+};
+
+type OmniPanelAgent = {
+  id: string;
+  name: string | null;
+  cwd: string;
+  provider: string | null;
+};
+
+type OmniPanelChat = {
+  id: string;
+  instanceId: string;
+  instanceName: string;
+  externalId: string | null;
+  canonicalId: string | null;
+  chatType: string | null;
+  channel: string | null;
+  name: string | null;
+  participantCount: number | null;
+  unreadCount: number | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  updatedAt: string | null;
+  matchesCurrent: boolean;
+  linkedSession: OverlaySessionSnapshot | null;
+};
+
+type OmniPanelGroup = {
+  instanceId: string;
+  externalId: string | null;
+  name: string | null;
+  description: string | null;
+  memberCount: number | null;
+  createdAt: string | null;
+  isReadOnly: boolean;
+  isCommunity: boolean;
+};
+
+type OmniPanelSnapshot = {
+  ok: true;
+  query: {
+    chatId: string | null;
+    title: string | null;
+    session: string | null;
+    instance: string | null;
+  };
+  preferredInstance: OmniPanelInstance | null;
+  currentChat: OmniPanelChat | null;
+  instances: OmniPanelInstance[];
+  agents: OmniPanelAgent[];
+  chats: OmniPanelChat[];
+  groups: OmniPanelGroup[];
+  sessions: OverlaySessionSnapshot[];
+  warnings: string[];
+  generatedAt: number;
+};
+
+const OMNI_PANEL_CACHE_TTL_MS = 3_000;
+const omniPanelCache = new Map<string, { expiresAt: number; value: Promise<OmniPanelSnapshot> | OmniPanelSnapshot }>();
 
 void connectOverlayNats()
   .then(startRuntimeTracker)
@@ -103,6 +258,14 @@ const server = serve({
 
     if (url.pathname === "/api/whatsapp-overlay/message-meta" && req.method === "POST") {
       return handleMessageMeta(req, url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/omni/panel" && req.method === "GET") {
+      return handleOmniPanel(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/omni/route" && req.method === "POST") {
+      return handleOmniRoute(req, url);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/session/action" && req.method === "POST") {
@@ -334,6 +497,198 @@ function handleSnapshot(url: URL): Response {
   return withCors(Response.json(snapshot), url);
 }
 
+async function handleOmniPanel(url: URL): Promise<Response> {
+  try {
+    const query = {
+      chatId: cleanNullable(url.searchParams.get("chatId")),
+      title: cleanNullable(url.searchParams.get("title")),
+      session: cleanNullable(url.searchParams.get("session")),
+      instance: cleanNullable(url.searchParams.get("instance")),
+    };
+    const snapshot = await getCachedOmniPanel(query);
+    return withCors(Response.json(snapshot), url);
+  } catch (error) {
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      ),
+      url,
+    );
+  }
+}
+
+async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
+  try {
+    const body = (await req.json()) as OmniRouteBody;
+    const target = deriveOmniRouteTarget({
+      chatId: cleanRequired(body.chatId, "chatId"),
+      instanceName: cleanRequired(body.instance, "instance"),
+      chatType: cleanNullable(body.chatType),
+      title: cleanNullable(body.chatName) ?? cleanNullable(body.title),
+    });
+
+    const title = cleanNullable(body.title) ?? target.title;
+    const sessionNameInput = cleanNullable(body.sessionName);
+    let session: ReturnType<typeof resolveSession> = null;
+    let createdAgent = false;
+    let createdSession = false;
+
+    if (body.action === "bind-existing") {
+      session = body.session ? resolveSession(body.session) : null;
+      if (!session) {
+        return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
+      }
+    } else if (body.action === "create-session" || body.action === "migrate-session") {
+      const agentId = cleanRequired(body.agentId, "agentId");
+      createdAgent = ensureOmniAgent(agentId, body.action === "create-session" && body.createAgent === true);
+      const agentConfig = dbGetAgent(agentId);
+      if (!agentConfig) {
+        return withCors(Response.json({ ok: false, error: `Agent not found: ${agentId}` }, { status: 404 }), url);
+      }
+
+      const currentSession =
+        body.action === "migrate-session" ? (body.session ? resolveSession(body.session) : null) : null;
+      if (body.action === "migrate-session") {
+        if (!currentSession) {
+          return withCors(Response.json({ ok: false, error: "Current session not found" }, { status: 404 }), url);
+        }
+        if (currentSession.agentId === agentId) {
+          return withCors(Response.json({ ok: false, error: "Essa sessão já está nesse agent" }, { status: 409 }), url);
+        }
+      }
+
+      const sessionKey = buildSessionKey({
+        agentId,
+        channel: "whatsapp",
+        accountId: target.instanceName,
+        peerKind: target.peerKind,
+        peerId: target.peerId,
+      });
+      const existingByKey = resolveSession(sessionKey);
+      const existingNamed = sessionNameInput ? getSessionByName(sessionNameInput) : null;
+      if (existingNamed && existingNamed.sessionKey !== existingByKey?.sessionKey) {
+        return withCors(
+          Response.json(
+            {
+              ok: false,
+              error: `Session already exists: ${sessionNameInput}. Escolha a sessão existente para migrar.`,
+            },
+            { status: 409 },
+          ),
+          url,
+        );
+      }
+      const generatedName =
+        sessionNameInput ??
+        existingByKey?.name ??
+        ensureUniqueName(
+          generateSessionName(agentId, {
+            chatType: target.chatType,
+            groupName: target.chatType === "group" ? (target.title ?? undefined) : undefined,
+            peerKind: target.peerKind,
+            peerId: target.peerId,
+          }),
+        );
+      createdSession = !existingByKey;
+      session = getOrCreateSession(sessionKey, agentId, expandHome(agentConfig.cwd), {
+        name: generatedName,
+        chatType: target.chatType,
+        channel: "whatsapp",
+        accountId: target.instanceName,
+        groupId: target.groupId ?? undefined,
+        subject: target.chatType === "group" ? (target.title ?? undefined) : undefined,
+        displayName: target.title ?? undefined,
+        lastChannel: "whatsapp",
+        lastAccountId: target.instanceName,
+        lastTo: target.sourceChatId,
+      });
+      if ((sessionNameInput || !session.name) && session.name !== generatedName) {
+        updateSessionName(session.sessionKey, generatedName);
+        session = resolveSession(session.sessionKey);
+      }
+    } else {
+      return withCors(Response.json({ ok: false, error: "Unsupported Omni route action" }, { status: 400 }), url);
+    }
+
+    if (!session) {
+      return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
+    }
+
+    updateSessionSource(session.sessionKey, {
+      channel: "whatsapp",
+      accountId: target.instanceName,
+      chatId: target.sourceChatId,
+    });
+    if (title) {
+      updateSessionDisplayName(session.sessionKey, title);
+    }
+
+    const existingRoute = dbGetRoute(target.routePattern, target.instanceName);
+    if (existingRoute) {
+      dbUpdateRoute(
+        target.routePattern,
+        { agent: session.agentId, session: session.name ?? session.sessionKey },
+        target.instanceName,
+      );
+    } else {
+      dbCreateRoute({
+        pattern: target.routePattern,
+        accountId: target.instanceName,
+        agent: session.agentId,
+        session: session.name ?? session.sessionKey,
+        priority: 0,
+      });
+    }
+
+    const binding = upsertBinding({
+      title,
+      chatId: target.sourceChatId,
+      session: session.name ?? session.sessionKey,
+    });
+
+    omniPanelCache.clear();
+    await publish("ravi.config.changed", {}).catch(() => {});
+
+    const snapshot = buildSnapshot({
+      title,
+      chatId: target.sourceChatId,
+      session: session.name ?? session.sessionKey,
+    });
+    return withCors(
+      Response.json({
+        ok: true,
+        action: body.action,
+        createdAgent,
+        createdSession,
+        binding,
+        route: {
+          pattern: target.routePattern,
+          accountId: target.instanceName,
+          agent: session.agentId,
+          session: session.name ?? session.sessionKey,
+        },
+        snapshot,
+      }),
+      url,
+    );
+  } catch (error) {
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      ),
+      url,
+    );
+  }
+}
+
 async function handleChatListResolve(req: Request, url: URL): Promise<Response> {
   try {
     const body = (await req.json()) as ChatListResolveBody;
@@ -553,10 +908,491 @@ function queryFromPublishedState(state: OverlayPublishedState): OverlayQuery {
   };
 }
 
+async function getCachedOmniPanel(query: {
+  chatId: string | null;
+  title: string | null;
+  session: string | null;
+  instance: string | null;
+}): Promise<OmniPanelSnapshot> {
+  const cacheKey = JSON.stringify(query);
+  const cached = omniPanelCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return await cached.value;
+  }
+
+  const pending = buildOmniPanelSnapshot(query);
+  omniPanelCache.set(cacheKey, {
+    expiresAt: Date.now() + OMNI_PANEL_CACHE_TTL_MS,
+    value: pending,
+  });
+
+  try {
+    const value = await pending;
+    omniPanelCache.set(cacheKey, {
+      expiresAt: Date.now() + OMNI_PANEL_CACHE_TTL_MS,
+      value,
+    });
+    return value;
+  } catch (error) {
+    omniPanelCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+async function buildOmniPanelSnapshot(query: {
+  chatId: string | null;
+  title: string | null;
+  session: string | null;
+  instance: string | null;
+}): Promise<OmniPanelSnapshot> {
+  const overlaySnapshot = buildSnapshot({
+    chatId: query.chatId,
+    title: query.title,
+    session: query.session,
+  });
+  const omniAgents = buildOmniPanelAgents();
+  const instances = await listOmniWhatsAppInstances();
+  const preferredHint = resolvePreferredOmniInstanceHint(query.instance, overlaySnapshot.session?.accountId ?? null);
+  const activeInstances = instances.filter((instance) => instance.isActive);
+  const candidateInstances = activeInstances.length > 0 ? activeInstances : instances;
+
+  if (candidateInstances.length === 0) {
+    return {
+      ok: true,
+      query,
+      preferredInstance: null,
+      currentChat: null,
+      instances: [],
+      agents: omniAgents,
+      chats: [],
+      groups: [],
+      sessions: buildOmniPanelSessions(getOverlaySessions()),
+      warnings: ["Nenhuma instância WhatsApp do Omni disponível."],
+      generatedAt: Date.now(),
+    };
+  }
+
+  const overlaySessions = getOverlaySessions();
+  const omniSessions = buildOmniPanelSessions(overlaySessions);
+  const chatsByInstanceEntries = await Promise.all(
+    candidateInstances.map(async (instance) => {
+      const chats = await listOmniChats(instance.name, 60, overlaySessions);
+      return [instance.id, chats] as const;
+    }),
+  );
+  const chatsByInstance = new Map<string, OmniPanelChat[]>(chatsByInstanceEntries);
+
+  const matchedCurrentChat = findPreferredOmniChat(query, chatsByInstance);
+  const preferredInstance =
+    findOmniInstanceByHint(candidateInstances, preferredHint) ??
+    (matchedCurrentChat
+      ? (candidateInstances.find((instance) => instance.id === matchedCurrentChat.instanceId) ?? null)
+      : null) ??
+    candidateInstances.find((instance) => instance.name === "luis") ??
+    candidateInstances[0] ??
+    null;
+
+  const currentChat =
+    matchedCurrentChat && preferredInstance && matchedCurrentChat.instanceId === preferredInstance.id
+      ? matchedCurrentChat
+      : preferredInstance
+        ? findCurrentOmniChatInList(query, chatsByInstance.get(preferredInstance.id) ?? [])
+        : null;
+
+  const chats = preferredInstance ? (chatsByInstance.get(preferredInstance.id) ?? []) : [];
+  const groups = preferredInstance ? await listOmniGroups(preferredInstance.name) : [];
+  const warnings = buildOmniWarnings(preferredInstance, currentChat, query);
+
+  return {
+    ok: true,
+    query,
+    preferredInstance,
+    currentChat,
+    instances: candidateInstances,
+    agents: omniAgents,
+    chats,
+    groups,
+    sessions: omniSessions,
+    warnings,
+    generatedAt: Date.now(),
+  };
+}
+
+async function runOmniJson(args: string[]): Promise<unknown> {
+  const commandArgs = args.includes("--json") ? args : [...args, "--json"];
+  return await new Promise((resolve, reject) => {
+    const proc = spawn("omni", commandArgs, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+
+    proc.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+    proc.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+    proc.on("error", reject);
+    proc.on("close", (code) => {
+      const stdoutText = Buffer.concat(stdout).toString("utf8").trim();
+      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
+      if (code !== 0) {
+        reject(new Error(stderrText || `omni ${args.join(" ")} failed`));
+        return;
+      }
+      if (!stdoutText) {
+        resolve(null);
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdoutText));
+      } catch (error) {
+        reject(error);
+      }
+    });
+  });
+}
+
+async function listOmniWhatsAppInstances(): Promise<OmniPanelInstance[]> {
+  const raw = await runOmniJson(["instances", "list"]);
+  const records = Array.isArray(raw) ? (raw as OmniInstanceRecord[]) : [];
+  const whatsappInstances = records.filter((record) => normalizeLookupToken(record.channel).includes("whatsapp"));
+
+  const enriched = await Promise.all(
+    whatsappInstances.map(async (record) => {
+      const whoami = await getOmniWhoami(record.name);
+      return {
+        id: record.id,
+        name: record.name,
+        channel: cleanNullable(record.channel) ?? "whatsapp-baileys",
+        isActive: record.isActive === true,
+        status: cleanNullable(whoami?.state) ?? (record.isActive ? "active" : "inactive"),
+        isConnected: whoami?.isConnected === true,
+        profileName: cleanNullable(whoami?.profileName) ?? cleanNullable(record.profileName),
+        phone: cleanNullable(whoami?.phone),
+        ownerIdentifier: cleanNullable(whoami?.ownerIdentifier) ?? cleanNullable(record.ownerIdentifier),
+        lastSeenAt: cleanNullable(record.lastSeenAt),
+        updatedAt: cleanNullable(record.updatedAt),
+      } satisfies OmniPanelInstance;
+    }),
+  );
+
+  return enriched.sort((a, b) => compareOmniInstances(a, b));
+}
+
+async function getOmniWhoami(instanceName: string): Promise<OmniWhoamiRecord | null> {
+  try {
+    const raw = await runOmniJson(["instances", "whoami", instanceName]);
+    if (!raw || Array.isArray(raw) || typeof raw !== "object") return null;
+    return raw as OmniWhoamiRecord;
+  } catch {
+    return null;
+  }
+}
+
+async function listOmniChats(
+  instanceName: string,
+  limit = 40,
+  sessions: ReturnType<typeof getOverlaySessions> = getOverlaySessions(),
+): Promise<OmniPanelChat[]> {
+  try {
+    const raw = await runOmniJson(["chats", "list", "--instance", instanceName, "--limit", String(limit)]);
+    const records = Array.isArray(raw) ? (raw as OmniChatRecord[]) : [];
+    return records.map((record) => toOmniPanelChat(record, instanceName, sessions)).sort(compareOmniChats);
+  } catch {
+    return [];
+  }
+}
+
+async function listOmniGroups(instanceName: string): Promise<OmniPanelGroup[]> {
+  try {
+    const raw = await runOmniJson(["instances", "groups", instanceName]);
+    const records = Array.isArray(raw) ? (raw as OmniGroupRecord[]) : [];
+    return records
+      .map((record) => ({
+        instanceId: instanceName,
+        externalId: cleanNullable(record.externalId),
+        name: cleanNullable(record.name),
+        description: cleanNullable(record.description),
+        memberCount: typeof record.memberCount === "number" ? record.memberCount : null,
+        createdAt: cleanNullable(record.createdAt),
+        isReadOnly: record.isReadOnly === true,
+        isCommunity: record.platformMetadata?.isCommunity === true,
+      }))
+      .sort(compareOmniGroups)
+      .slice(0, 12);
+  } catch {
+    return [];
+  }
+}
+
+function buildOmniPanelSessions(sessions: ReturnType<typeof getOverlaySessions>): OverlaySessionSnapshot[] {
+  return sessions
+    .filter((session) => isOmniRelevantSession(session))
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 80)
+    .map((session) => toOmniPanelSessionSnapshot(session));
+}
+
+function buildOmniPanelAgents(): OmniPanelAgent[] {
+  return getAllAgents()
+    .map((agent) => ({
+      id: agent.id,
+      name: cleanNullable(agent.name),
+      cwd: agent.cwd,
+      provider: agent.provider ?? null,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function toOmniPanelChat(
+  record: OmniChatRecord,
+  instanceName: string,
+  sessions: ReturnType<typeof getOverlaySessions>,
+): OmniPanelChat {
+  const query = {
+    chatId: cleanNullable(record.externalId) ?? cleanNullable(record.canonicalId),
+    title: cleanNullable(record.name),
+    session: null,
+  };
+  const snapshot = buildSnapshotWithSessions(query, sessions);
+
+  return {
+    id: record.id,
+    instanceId: record.instanceId,
+    instanceName,
+    externalId: cleanNullable(record.externalId),
+    canonicalId: cleanNullable(record.canonicalId),
+    chatType: cleanNullable(record.chatType),
+    channel: cleanNullable(record.channel),
+    name: cleanNullable(record.name),
+    participantCount: typeof record.participantCount === "number" ? record.participantCount : null,
+    unreadCount: typeof record.unreadCount === "number" ? record.unreadCount : null,
+    lastMessageAt: cleanNullable(record.lastMessageAt),
+    lastMessagePreview: cleanNullable(record.lastMessagePreview),
+    updatedAt: cleanNullable(record.updatedAt),
+    matchesCurrent: false,
+    linkedSession: snapshot.session,
+  };
+}
+
+function toOmniPanelSessionSnapshot(session: ReturnType<typeof getOverlaySessions>[number]): OverlaySessionSnapshot {
+  const live = session.name ? liveBySessionName.get(session.name) : undefined;
+  return {
+    sessionKey: session.sessionKey,
+    sessionName: session.name ?? session.sessionKey,
+    agentId: session.agentId,
+    displayName: session.displayName ?? null,
+    subject: session.subject ?? null,
+    chatType: session.chatType ?? null,
+    channel: session.lastChannel ?? session.channel ?? null,
+    accountId: session.lastAccountId ?? session.accountId ?? null,
+    chatId: session.lastTo ?? null,
+    threadId: session.lastThreadId ?? null,
+    modelOverride: session.modelOverride ?? null,
+    thinkingLevel: session.thinkingLevel ?? null,
+    queueMode: session.queueMode ?? null,
+    abortedLastRun: session.abortedLastRun === true,
+    compactionCount: session.compactionCount ?? 0,
+    runtimeProvider: session.runtimeProvider ?? null,
+    providerSessionId: session.providerSessionId ?? null,
+    updatedAt: session.updatedAt,
+    lastHeartbeatText: session.lastHeartbeatText ?? null,
+    lastHeartbeatSentAt: session.lastHeartbeatSentAt ?? null,
+    ephemeral: session.ephemeral === true,
+    expiresAt: session.expiresAt ?? null,
+    live:
+      live ??
+      (session.abortedLastRun
+        ? { activity: "blocked", summary: "last run aborted", updatedAt: session.updatedAt }
+        : { activity: "idle", updatedAt: session.updatedAt }),
+  };
+}
+
+function isOmniRelevantSession(session: ReturnType<typeof getOverlaySessions>[number]): boolean {
+  const channel = normalizeLookupToken(session.lastChannel ?? session.channel);
+  return !channel || channel.includes("whatsapp");
+}
+
+function resolvePreferredOmniInstanceHint(
+  explicitInstance: string | null,
+  _sessionAccountId: string | null,
+): string | null {
+  return cleanNullable(explicitInstance);
+}
+
+function findOmniInstanceByHint(instances: OmniPanelInstance[], hint: string | null): OmniPanelInstance | null {
+  const needle = normalizeLookupToken(hint);
+  if (!needle) return null;
+  return (
+    instances.find((instance) => normalizeLookupToken(instance.id) === needle) ??
+    instances.find((instance) => normalizeLookupToken(instance.name) === needle) ??
+    null
+  );
+}
+
+function findPreferredOmniChat(
+  query: { chatId: string | null; title: string | null },
+  chatsByInstance: Map<string, OmniPanelChat[]>,
+): OmniPanelChat | null {
+  const entries = Array.from(chatsByInstance.values()).flat();
+  return findCurrentOmniChatInList(query, entries);
+}
+
+function findCurrentOmniChatInList(
+  query: { chatId: string | null; title: string | null },
+  chats: OmniPanelChat[],
+): OmniPanelChat | null {
+  const chatIdVariants = buildOmniChatIdVariants(query.chatId);
+  if (chatIdVariants.length > 0) {
+    const byChatId = chats.find((chat) => {
+      const values = [chat.externalId, chat.canonicalId].map(normalizeLookupToken).filter(Boolean) as string[];
+      return values.some((value) => chatIdVariants.includes(value));
+    });
+    if (byChatId) {
+      return { ...byChatId, matchesCurrent: true };
+    }
+  }
+
+  const titleNeedle = normalizeComparableTitle(query.title);
+  if (!titleNeedle) return null;
+  if (shouldDisableOmniTitleMatch(titleNeedle)) return null;
+
+  const exact = chats.find((chat) => normalizeComparableTitle(chat.name) === titleNeedle);
+  if (exact) {
+    return { ...exact, matchesCurrent: true };
+  }
+
+  return null;
+}
+
+function buildOmniWarnings(
+  preferredInstance: OmniPanelInstance | null,
+  currentChat: OmniPanelChat | null,
+  query: { chatId: string | null; title: string | null },
+): string[] {
+  const warnings: string[] = [];
+  if (!preferredInstance) {
+    warnings.push("Nenhuma instância WhatsApp do Omni disponível.");
+    return warnings;
+  }
+
+  if ((query.chatId || query.title) && !currentChat) {
+    warnings.push("Chat atual ainda não casou com um chat do Omni.");
+  }
+
+  if (!preferredInstance.isConnected) {
+    warnings.push(`Instância ${preferredInstance.name} não está conectada.`);
+  }
+
+  return warnings;
+}
+
+function buildOmniChatIdVariants(value: string | null | undefined): string[] {
+  const normalized = normalizeLookupToken(value);
+  if (!normalized) return [];
+
+  const variants = new Set<string>([normalized]);
+  if (/^\d+$/.test(normalized)) {
+    variants.add(`${normalized}@g.us`);
+    variants.add(`${normalized}@s.whatsapp.net`);
+    variants.add(`group:${normalized}`);
+  }
+
+  const groupMatch = normalized.match(/^group:(.+)$/);
+  if (groupMatch) {
+    variants.add(`${groupMatch[1]}@g.us`);
+  }
+
+  const groupJid = normalized.match(/^(.+)@g\.us$/);
+  if (groupJid) {
+    variants.add(groupJid[1]);
+    variants.add(`group:${groupJid[1]}`);
+  }
+
+  const dmJid = normalized.match(/^(\d+)@s\.whatsapp\.net$/);
+  if (dmJid) {
+    variants.add(dmJid[1]);
+  }
+
+  return [...variants];
+}
+
+function normalizeComparableTitle(value: string | null | undefined): string {
+  return normalizeLookupToken(value)
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function shouldDisableOmniTitleMatch(value: string): boolean {
+  return !value.includes(" ") && value.length <= 5;
+}
+
+function compareOmniInstances(a: OmniPanelInstance, b: OmniPanelInstance): number {
+  return (
+    Number(b.isConnected) - Number(a.isConnected) ||
+    Number(b.isActive) - Number(a.isActive) ||
+    compareIsoDateDesc(a.lastSeenAt, b.lastSeenAt) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+function compareOmniChats(a: OmniPanelChat, b: OmniPanelChat): number {
+  return (
+    compareIsoDateDesc(a.lastMessageAt ?? a.updatedAt, b.lastMessageAt ?? b.updatedAt) ||
+    (b.unreadCount ?? 0) - (a.unreadCount ?? 0) ||
+    (a.name ?? a.externalId ?? "").localeCompare(b.name ?? b.externalId ?? "")
+  );
+}
+
+function compareOmniGroups(a: OmniPanelGroup, b: OmniPanelGroup): number {
+  return (
+    (b.memberCount ?? 0) - (a.memberCount ?? 0) ||
+    compareIsoDateDesc(a.createdAt, b.createdAt) ||
+    (a.name ?? a.externalId ?? "").localeCompare(b.name ?? b.externalId ?? "")
+  );
+}
+
+function compareIsoDateDesc(a: string | null | undefined, b: string | null | undefined): number {
+  const aTime = a ? Date.parse(a) : 0;
+  const bTime = b ? Date.parse(b) : 0;
+  return bTime - aTime;
+}
+
+function cleanRequired(value: string | null | undefined, field: string): string {
+  const cleaned = cleanNullable(value);
+  if (!cleaned) {
+    throw new Error(`Missing ${field}`);
+  }
+  return cleaned;
+}
+
 function cleanNullable(value: string | null | undefined): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeLookupToken(value: string | null | undefined): string {
+  return cleanNullable(value)?.toLowerCase() ?? "";
+}
+
+function ensureOmniAgent(agentId: string, createIfMissing: boolean): boolean {
+  if (dbGetAgent(agentId)) {
+    return false;
+  }
+
+  if (!createIfMissing) {
+    throw new Error(`Agent not found: ${agentId}`);
+  }
+
+  const cwd = join(homedir(), "ravi", agentId);
+  createAgent({ id: agentId, cwd });
+  ensureAgentDirs(loadRouterConfig());
+  ensureAgentInstructionFiles(cwd, {
+    createClaudeStub: `# ${agentId}\n\nInstruções do agente aqui.\n`,
+  });
+  return true;
 }
 
 function extractExternalMessageId(value: string | null): string | null {
@@ -586,75 +1422,133 @@ function findTranscriptInSessionHistory(sessionName: string, externalMessageId: 
 }
 
 async function startRuntimeTracker(): Promise<void> {
-  for await (const event of subscribe(
-    "ravi.session.*.prompt",
-    "ravi.session.*.response",
-    "ravi.session.*.runtime",
-    "ravi.session.*.claude",
-    "ravi.session.*.stream",
-    "ravi.session.*.tool",
-    "ravi.approval.request",
-    "ravi.approval.response",
-  )) {
+  const sessionTask = trackSessionRuntime().catch((error) => {
+    console.error("[ravi-wa-overlay] session runtime tracker failed", error);
+  });
+  runtimeTrackerTasks.add(sessionTask);
+  void sessionTask.finally(() => runtimeTrackerTasks.delete(sessionTask));
+
+  const approvalTask = trackApprovalRuntime().catch((error) => {
+    console.error("[ravi-wa-overlay] approval runtime tracker failed", error);
+  });
+  runtimeTrackerTasks.add(approvalTask);
+  void approvalTask.finally(() => runtimeTrackerTasks.delete(approvalTask));
+}
+
+async function trackSessionRuntime(): Promise<void> {
+  for await (const event of subscribe("ravi.session.>")) {
     const { topic, data } = event;
+    const sessionName = topic.split(".")[2];
+    if (!sessionName) continue;
 
-    if (topic.startsWith("ravi.session.")) {
-      const sessionName = topic.split(".")[2];
-      if (!sessionName) continue;
+    if (topic.endsWith(".prompt")) {
+      pushLiveEvent(sessionName, {
+        kind: "prompt",
+        label: "prompt",
+        detail: formatLiveText(typeof data.prompt === "string" ? data.prompt : ""),
+        timestamp: Date.now(),
+      });
+      upsertLive(sessionName, "thinking", "prompt queued");
+      continue;
+    }
 
-      if (topic.endsWith(".prompt")) {
-        upsertLive(sessionName, "thinking", "prompt queued");
-        continue;
-      }
+    if (topic.endsWith(".stream")) {
+      const chunk = typeof data.chunk === "string" ? data.chunk : "";
+      updateStreamEvent(sessionName, chunk);
+      upsertLive(sessionName, "streaming", "streaming reply");
+      continue;
+    }
 
-      if (topic.endsWith(".stream")) {
-        upsertLive(sessionName, "streaming", "streaming reply");
-        continue;
-      }
+    if (topic.endsWith(".response")) {
+      pushLiveEvent(sessionName, {
+        kind: "response",
+        label: "response",
+        detail: formatLiveText(typeof data.response === "string" ? data.response : ""),
+        timestamp: Date.now(),
+      });
+      upsertLive(sessionName, "streaming", "response emitted", false);
+      continue;
+    }
 
-      if (topic.endsWith(".response")) {
-        upsertLive(sessionName, "streaming", "response emitted", false);
-        continue;
-      }
-
-      if (topic.endsWith(".tool")) {
-        const eventName = typeof data.event === "string" ? data.event : undefined;
-        const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
-        if (eventName === "start") {
-          upsertLive(sessionName, "thinking", `${toolName} running`);
-        } else if (eventName === "end") {
-          upsertLive(sessionName, "thinking", `${toolName} finished`);
-        }
-        continue;
-      }
-
-      if (topic.endsWith(".runtime") || topic.endsWith(".claude")) {
-        const type = typeof data.type === "string" ? data.type : undefined;
-        const subtype = typeof data.subtype === "string" ? data.subtype : undefined;
-        const status = typeof data.status === "string" ? data.status : undefined;
-
-        if (status === "compacting" || (type === "system" && subtype === "status" && status === "compacting")) {
-          upsertLive(sessionName, "compacting", "compacting");
-        } else if (status === "thinking" || status === "queued") {
-          upsertLive(sessionName, "thinking", status);
-        } else if (type === "assistant" || type === "assistant.message") {
-          upsertLive(sessionName, "streaming", "assistant composing");
-        } else if (type === "tool.started") {
-          upsertLive(sessionName, "thinking", "tool running");
-        } else if (type === "tool.completed") {
-          upsertLive(sessionName, "thinking", "tool finished");
-        } else if (type === "provider.raw" || type === "system" || type === "user") {
-          upsertLive(sessionName, "thinking", "working");
-        } else if (isTerminalRuntimeEvent(type) || status === "idle") {
-          upsertLive(sessionName, "idle", "idle");
-        }
+    if (topic.endsWith(".tool")) {
+      const eventName = typeof data.event === "string" ? data.event : undefined;
+      const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
+      pushLiveEvent(sessionName, {
+        kind: "tool",
+        label: toolName,
+        detail: eventName === "start" ? summarizeToolInput(data.input) : eventName === "end" ? "finished" : undefined,
+        timestamp: Date.now(),
+      });
+      if (eventName === "start") {
+        upsertLive(sessionName, "thinking", `${toolName} running`);
+      } else if (eventName === "end") {
+        upsertLive(sessionName, "thinking", `${toolName} finished`);
       }
       continue;
     }
 
+    if (topic.endsWith(".runtime") || topic.endsWith(".claude")) {
+      const type = typeof data.type === "string" ? data.type : undefined;
+      const subtype = typeof data.subtype === "string" ? data.subtype : undefined;
+      const status = typeof data.status === "string" ? data.status : undefined;
+      const eventTimestamp = Date.now();
+
+      if (status === "compacting" || (type === "system" && subtype === "status" && status === "compacting")) {
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "runtime",
+          detail: "compacting",
+          timestamp: eventTimestamp,
+        });
+        upsertLive(sessionName, "compacting", "compacting");
+      } else if (status === "thinking" || status === "queued") {
+        upsertLive(sessionName, "thinking", status);
+      } else if (type === "assistant" || type === "assistant.message") {
+        upsertLive(sessionName, "streaming", "assistant composing");
+      } else if (type === "tool.started") {
+        pushLiveEvent(sessionName, {
+          kind: "tool",
+          label: "tool",
+          detail: "running",
+          timestamp: eventTimestamp,
+        });
+        upsertLive(sessionName, "thinking", "tool running");
+      } else if (type === "tool.completed") {
+        pushLiveEvent(sessionName, {
+          kind: "tool",
+          label: "tool",
+          detail: "finished",
+          timestamp: eventTimestamp,
+        });
+        upsertLive(sessionName, "thinking", "tool finished");
+      } else if (type === "provider.raw" || type === "system" || type === "user") {
+        upsertLive(sessionName, "thinking", "working");
+      } else if (isTerminalRuntimeEvent(type) || status === "idle") {
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "runtime",
+          detail: type ?? status ?? "idle",
+          timestamp: eventTimestamp,
+        });
+        upsertLive(sessionName, "idle", "idle");
+      }
+    }
+  }
+}
+
+async function trackApprovalRuntime(): Promise<void> {
+  for await (const event of subscribe("ravi.approval.request", "ravi.approval.response")) {
+    const { topic, data } = event;
+
     if (topic === "ravi.approval.request") {
       const sessionName = typeof data.sessionName === "string" ? data.sessionName : null;
       if (sessionName) {
+        pushLiveEvent(sessionName, {
+          kind: "approval",
+          label: "approval",
+          detail: "pending",
+          timestamp: Date.now(),
+        });
         upsertLive(sessionName, "awaiting_approval", "approval pending", true);
       }
       continue;
@@ -663,6 +1557,12 @@ async function startRuntimeTracker(): Promise<void> {
     if (topic === "ravi.approval.response") {
       const sessionName = typeof data.sessionName === "string" ? data.sessionName : null;
       if (sessionName) {
+        pushLiveEvent(sessionName, {
+          kind: "approval",
+          label: "approval",
+          detail: "answered",
+          timestamp: Date.now(),
+        });
         upsertLive(sessionName, "idle", "approval answered", false);
       }
     }
@@ -676,11 +1576,80 @@ function isTerminalRuntimeEvent(type?: string): boolean {
 function upsertLive(sessionName: string, activity: OverlayActivity, summary: string, approvalPending?: boolean): void {
   const current = liveBySessionName.get(sessionName);
   liveBySessionName.set(sessionName, {
+    ...current,
     activity,
     summary,
     approvalPending: approvalPending ?? current?.approvalPending,
     updatedAt: Date.now(),
   });
+}
+
+function pushLiveEvent(sessionName: string, event: OverlaySessionEvent): void {
+  const current = liveBySessionName.get(sessionName);
+  const previous = Array.isArray(current?.events) ? current.events : [];
+  const next = [event, ...previous].slice(0, 12);
+  liveBySessionName.set(sessionName, {
+    ...current,
+    activity: current?.activity ?? "unknown",
+    updatedAt: event.timestamp,
+    events: next,
+  });
+}
+
+function updateStreamEvent(sessionName: string, detail: string): void {
+  const current = liveBySessionName.get(sessionName);
+  const previous = Array.isArray(current?.events) ? [...current.events] : [];
+  const timestamp = Date.now();
+  const existingIndex = previous.findIndex((event) => event.kind === "stream");
+  const nextDetail = mergeStreamText(existingIndex >= 0 ? previous[existingIndex]?.detail : "", detail);
+
+  if (existingIndex >= 0) {
+    previous[existingIndex] = {
+      ...previous[existingIndex]!,
+      detail: nextDetail,
+      timestamp,
+    };
+  } else {
+    previous.unshift({
+      kind: "stream",
+      label: "stream",
+      detail: nextDetail,
+      timestamp,
+    });
+  }
+
+  liveBySessionName.set(sessionName, {
+    ...current,
+    activity: current?.activity ?? "streaming",
+    updatedAt: timestamp,
+    events: previous.sort((a, b) => b.timestamp - a.timestamp).slice(0, 12),
+  });
+}
+
+function formatLiveText(value: string, max = 3200): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max - 3)}...`;
+}
+
+function mergeStreamText(previous: string | undefined, chunk: string, max = 3200): string {
+  const rawChunk = typeof chunk === "string" ? chunk : "";
+  if (!rawChunk.trim()) {
+    return previous ?? "";
+  }
+
+  const base = typeof previous === "string" ? previous.trim() : "";
+  const merged = `${base}${rawChunk}`.replace(/\s+/g, " ").trim();
+  return merged.length <= max ? merged : `${merged.slice(0, max - 3)}...`;
+}
+
+function summarizeToolInput(value: unknown): string {
+  if (value == null) return "running";
+  if (typeof value === "string") return formatLiveText(value, 240);
+  if (typeof value !== "object") return String(value);
+
+  const keys = Object.keys(value as Record<string, unknown>).slice(0, 4);
+  return keys.length ? keys.join(", ") : "running";
 }
 
 function withCors(response: Response, url: URL): Response {
@@ -737,7 +1706,7 @@ function buildOverlayNatsCandidates(configuredUrl: string): string[] {
     ) {
       const ipv6 = new URL(configuredUrl);
       ipv6.hostname = "[::1]";
-      candidates.unshift(ipv6.toString());
+      candidates.push(ipv6.toString());
     }
   } catch {
     return candidates;

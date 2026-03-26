@@ -5,7 +5,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OverlayDomCommandRequest, OverlayDomCommandResult } from "./dom-control.js";
-import type { OverlayComponentMatch, OverlayPublishedState, OverlaySelectorProbe } from "./state.js";
+import type {
+  OverlayComponentMatch,
+  OverlayChatRowState,
+  OverlayPublishedState,
+  OverlaySelectorProbe,
+} from "./state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -141,6 +146,35 @@ program
       return;
     }
     renderSelectorProbes(probes);
+  });
+
+program
+  .command("inspect")
+  .description("Inspect visible WhatsApp chat rows with their resolver/session map")
+  .option("--url <baseUrl>", "Bridge base URL", DEFAULT_BASE_URL)
+  .option("--index <n>", "Visible row index to inspect")
+  .option("--title <text>", "Filter visible rows by title")
+  .option("--json", "Print raw JSON")
+  .action(async (options: { url: string; index?: string; title?: string; json?: boolean }) => {
+    const state = await fetchCurrent(options.url);
+    const rows = buildInspectRows(state.current?.view?.chatRows ?? [], options);
+    if (rows.length === 0) {
+      throw new Error("No visible chat row matched. Reload the extension so it republishes chatRows.");
+    }
+
+    const resolved = await resolveInspectRows(options.url, rows);
+    const payload = {
+      generatedAt: Date.now(),
+      count: resolved.length,
+      rows: resolved,
+    };
+
+    if (options.json) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+
+    renderInspectRows(payload.rows);
   });
 
 const dom = program.command("dom").description("Control and inspect WhatsApp Web DOM through the extension");
@@ -312,6 +346,13 @@ async function fetchCurrent(baseUrl: string) {
   return fetchJson(`${baseUrl}/api/whatsapp-overlay/current`);
 }
 
+async function resolveChatList(
+  baseUrl: string,
+  payload: { entries: Array<{ id: string; chatId?: string | null; title?: string | null; session?: string | null }> },
+) {
+  return postJson(`${baseUrl}/api/whatsapp-overlay/chat-list/resolve`, payload);
+}
+
 async function fetchJson(url: string) {
   const response = await fetch(url);
   if (!response.ok) {
@@ -400,6 +441,126 @@ function renderCurrent(state: {
         `- ${new Date(item.postedAt).toLocaleTimeString()}  ${item.view.screen}  ${item.view.title ?? item.view.selectedChat ?? "-"}`,
       );
     }
+  }
+}
+
+function buildInspectRows(
+  rows: OverlayChatRowState[],
+  options: { index?: string; title?: string },
+): Array<OverlayChatRowState & { index: number }> {
+  let next = rows.map((row, index) => ({ ...row, index }));
+
+  if (options.title) {
+    const needle = options.title.trim().toLowerCase();
+    next = next.filter((row) => row.title.toLowerCase().includes(needle));
+  }
+
+  if (options.index !== undefined) {
+    const index = Number.parseInt(options.index, 10);
+    next = Number.isFinite(index) ? next.filter((row) => row.index === index) : [];
+  }
+
+  return next;
+}
+
+async function resolveInspectRows(
+  baseUrl: string,
+  rows: Array<OverlayChatRowState & { index: number }>,
+): Promise<
+  Array<
+    OverlayChatRowState & {
+      index: number;
+      query: { chatId: string | null; title: string | null; session: string | null };
+      matchedSession: {
+        sessionName: string | null;
+        agentId: string | null;
+        chatId: string | null;
+        status: string | null;
+      } | null;
+      resolved: boolean;
+      warnings: string[];
+    }
+  >
+> {
+  const response = await resolveChatList(baseUrl, {
+    entries: rows.map((row) => ({
+      id: row.id,
+      chatId: row.chatIdCandidate ?? null,
+      title: row.title,
+      session: null,
+    })),
+  });
+
+  const byId = new Map((response?.items ?? []).map((item: any) => [item.id, item]));
+  return rows.map((row) => {
+    const item = byId.get(row.id);
+    return {
+      ...row,
+      unreadCount: row.unreadCount ?? deriveUnreadCount(row.text),
+      query: {
+        chatId: item?.query?.chatId ?? row.chatIdCandidate ?? null,
+        title: item?.query?.title ?? row.title,
+        session: item?.query?.session ?? null,
+      },
+      matchedSession: item?.session
+        ? {
+            sessionName: item.session.sessionName ?? null,
+            agentId: item.session.agentId ?? null,
+            chatId: item.session.chatId ?? null,
+            status: item.session.live?.activity ?? null,
+          }
+        : null,
+      resolved: item?.resolved === true,
+      warnings: Array.isArray(item?.warnings) ? item.warnings : [],
+    };
+  });
+}
+
+function deriveUnreadCount(text: string | null | undefined): number | null {
+  if (typeof text !== "string" || text.length === 0) return null;
+  const normalized = text.replace(/\s+/g, " ").trim();
+  const match =
+    normalized.match(/(\d+)\s*mensagens?\s+n[aã]o\s+lidas?/i) ||
+    normalized.match(/(\d+)\s*unread/i) ||
+    normalized.match(/(\d+)\s*new message/i);
+  if (!match?.[1]) return null;
+  const value = Number.parseInt(match[1], 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function renderInspectRows(
+  rows: Array<
+    OverlayChatRowState & {
+      index: number;
+      matchedSession: {
+        sessionName: string | null;
+        agentId: string | null;
+        chatId: string | null;
+        status: string | null;
+      } | null;
+      resolved: boolean;
+      warnings: string[];
+    }
+  >,
+): void {
+  if (rows.length === 0) {
+    console.log("No visible rows matched.");
+    return;
+  }
+
+  for (const row of rows) {
+    console.log(`[${row.index}] ${row.title}`);
+    console.log(`  chatId:  ${row.chatIdCandidate ?? "-"}`);
+    console.log(`  unread:  ${row.unreadCount ?? 0}`);
+    console.log(`  selected:${row.selected ? " yes" : " no"}`);
+    console.log(`  session: ${row.matchedSession?.sessionName ?? "-"}`);
+    console.log(`  status:  ${row.matchedSession?.status ?? "-"}`);
+    console.log(`  agent:   ${row.matchedSession?.agentId ?? "-"}`);
+    console.log(`  linked:  ${row.matchedSession?.chatId ?? "-"}`);
+    if (row.warnings.length > 0) {
+      console.log(`  warn:    ${row.warnings.join(" | ")}`);
+    }
+    console.log("");
   }
 }
 

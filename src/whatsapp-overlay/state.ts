@@ -18,6 +18,15 @@ export interface OverlaySelectorProbe {
   samplePath?: string[];
 }
 
+export interface OverlayChatRowState {
+  id: string;
+  title: string;
+  chatIdCandidate?: string | null;
+  selected?: boolean;
+  unreadCount?: number | null;
+  text?: string | null;
+}
+
 export interface OverlayViewState {
   screen: string;
   title?: string | null;
@@ -32,6 +41,7 @@ export interface OverlayViewState {
   hasModal?: boolean;
   components?: OverlayComponentMatch[];
   selectorProbes?: OverlaySelectorProbe[];
+  chatRows?: OverlayChatRowState[];
 }
 
 export interface OverlayPublishedState {
