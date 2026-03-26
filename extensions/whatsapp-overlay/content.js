@@ -13,6 +13,10 @@ const INLINE_PROBE_ID = "ravi-wa-inline-probe";
 const CHAT_ROW_SELECTOR = "div[role='grid'] [role='row']";
 const CHAT_ROW_BADGE_ATTR = "data-ravi-chat-chip";
 const MESSAGE_CHIP_ATTR = "data-ravi-message-chip";
+const CHAT_ARTIFACT_ATTR = "data-ravi-chat-artifact";
+const CHAT_ARTIFACT_KEY_ATTR = "data-ravi-chat-artifact-key";
+const CHAT_ARTIFACT_STACK_ATTR = "data-ravi-chat-artifact-stack";
+const CHAT_ARTIFACT_ANCHOR_ATTR = "data-ravi-chat-artifact-anchor";
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
@@ -204,7 +208,9 @@ function refreshViewState() {
 }
 
 function detectChatContext() {
-  const title = detectChatTitle() || latestPageChat?.title || latestViewState?.selectedChat || detectSelectedChatLabel();
+  const selectedChat = latestViewState?.selectedChat || detectSelectedChatLabel();
+  const detectedTitle = detectChatTitle() || latestPageChat?.title || selectedChat || detectSelectedChatLabel();
+  const title = shouldPreferSelectedChatTitle(detectedTitle, selectedChat) ? selectedChat : detectedTitle;
   const url = new URL(window.location.href);
   const phone = url.searchParams.get("phone");
   const chatIdCandidate = latestPageChat?.chatId || latestViewState?.chatIdCandidate || detectChatIdCandidate();
@@ -216,6 +222,25 @@ function detectChatContext() {
     title,
     session: text ? null : session,
   };
+}
+
+function shouldPreferSelectedChatTitle(title, selectedChat) {
+  if (!selectedChat) return false;
+  const screen = latestViewState?.screen || "";
+  if (!screen.startsWith("conversation")) return false;
+
+  const normalizedTitle = String(title || "")
+    .trim()
+    .toLowerCase();
+  const normalizedSelected = String(selectedChat || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedTitle) return true;
+  if (normalizedTitle === normalizedSelected) return false;
+  if (normalizedTitle === "whatsapp" || normalizedTitle === "omni") return true;
+
+  return activeWorkspace === "omni";
 }
 
 function detectChatTitle() {
@@ -598,18 +623,36 @@ function detectVisibleChatRows() {
       const titleContainer = titleNode?.parentElement || null;
       if (!title || !titleContainer) return null;
 
-      const chatIdCandidate = extractChatIdCandidates(row)[0] || null;
       const selectedNode = row.querySelector("[aria-selected]");
+      const selected = selectedNode?.getAttribute?.("aria-selected") === "true";
+      const chatIdCandidate = resolveChatRowChatIdCandidate(row, { selected });
       return {
         id: buildChatRowId(title, chatIdCandidate, index),
         row,
         title,
         titleContainer,
         chatIdCandidate,
-        selected: selectedNode?.getAttribute?.("aria-selected") === "true",
+        selected,
       };
     })
     .filter(Boolean);
+}
+
+function resolveChatRowChatIdCandidate(row, { selected }) {
+  if (selected && latestPageChat?.chatId) {
+    return latestPageChat.chatId;
+  }
+
+  const fromMarkup = extractChatIdCandidates(row)[0] || null;
+  if (fromMarkup) {
+    return fromMarkup;
+  }
+
+  if (selected && latestViewState?.chatIdCandidate) {
+    return latestViewState.chatIdCandidate;
+  }
+
+  return null;
 }
 
 function buildPublishedChatRows(limit = 20) {
@@ -885,6 +928,7 @@ function refreshMessageChips() {
   const view = latestViewState || detectViewState();
   if (!view?.screen?.startsWith("conversation")) {
     clearMessageChips();
+    clearConversationArtifacts();
     return;
   }
 
@@ -935,6 +979,194 @@ function refreshMessageChips() {
   }
 
   syncMessagePopoverPosition();
+  refreshConversationArtifacts();
+}
+
+function refreshConversationArtifacts() {
+  if (pollingStopped) return;
+
+  const view = latestViewState || detectViewState();
+  if (!view?.screen?.startsWith("conversation")) {
+    clearConversationArtifacts();
+    return;
+  }
+
+  const session = latestSnapshot?.session;
+  const artifacts = normalizeConversationArtifacts(session?.live?.artifacts || []);
+  if (artifacts.length === 0) {
+    clearConversationArtifacts();
+    return;
+  }
+
+  const messages = detectVisibleMessages();
+  const grouped = groupConversationArtifactsByAnchor(artifacts, messages);
+
+  clearConversationArtifacts();
+
+  if (grouped.length === 0) {
+    return;
+  }
+
+  for (const group of grouped) {
+    const stack = createConversationArtifactStack(group.anchorKey);
+    for (const artifact of group.artifacts) {
+      const row = createConversationArtifactRow();
+      updateConversationArtifactRow(row, artifact);
+      stack.appendChild(row);
+    }
+    group.anchorNode.insertAdjacentElement("afterend", stack);
+  }
+}
+
+function normalizeConversationArtifacts(artifacts) {
+  const seen = new Set();
+  const next = [];
+
+  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
+    if (!artifact) continue;
+    const anchor = normalizeArtifactAnchor(artifact.anchor);
+    if (!anchor) continue;
+    const key = artifact.dedupeKey || artifact.id;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    next.push({ ...artifact, anchor });
+  }
+
+  return next;
+}
+
+function normalizeArtifactAnchor(anchor) {
+  if (!anchor || typeof anchor !== "object") return null;
+  if (anchor.placement === "after-last-message") {
+    return { placement: "after-last-message" };
+  }
+  if (anchor.placement === "after-message-id") {
+    const messageId = extractExternalMessageId(typeof anchor.messageId === "string" ? anchor.messageId : null);
+    if (!messageId) return null;
+    return { placement: "after-message-id", messageId };
+  }
+  return null;
+}
+
+function groupConversationArtifactsByAnchor(artifacts, messages) {
+  const lastMessage = messages[messages.length - 1] || null;
+  const messageNodesByExternalId = new Map();
+  for (const message of messages) {
+    if (message?.externalMessageId && message?.node instanceof HTMLElement) {
+      messageNodesByExternalId.set(message.externalMessageId, message.node);
+    }
+  }
+
+  const groups = new Map();
+  for (const artifact of artifacts) {
+    const anchor = artifact.anchor || null;
+    let anchorNode = null;
+    let anchorKey = null;
+
+    if (anchor?.placement === "after-message-id") {
+      anchorNode = messageNodesByExternalId.get(anchor.messageId) || null;
+      anchorKey = anchorNode ? `message:${anchor.messageId}` : null;
+    } else if (anchor?.placement === "after-last-message") {
+      anchorNode = lastMessage?.node || null;
+      anchorKey = anchorNode ? "after-last-message" : null;
+    }
+
+    if (!(anchorNode instanceof HTMLElement) || !anchorKey) continue;
+
+    const current = groups.get(anchorKey);
+    if (current) {
+      current.artifacts.push(artifact);
+    } else {
+      groups.set(anchorKey, {
+        anchorKey,
+        anchorNode,
+        artifacts: [artifact],
+      });
+    }
+  }
+
+  return [...groups.values()];
+}
+
+function createConversationArtifactStack(anchorKey) {
+  const stack = document.createElement("div");
+  stack.className = "ravi-wa-chat-artifact-stack";
+  stack.setAttribute(CHAT_ARTIFACT_STACK_ATTR, "true");
+  stack.setAttribute(CHAT_ARTIFACT_ANCHOR_ATTR, anchorKey);
+  return stack;
+}
+
+function createConversationArtifactRow() {
+  const root = document.createElement("article");
+  root.setAttribute(CHAT_ARTIFACT_ATTR, "true");
+  root.className = "ravi-wa-chat-artifact";
+
+  const dot = document.createElement("span");
+  dot.className = "ravi-wa-chat-artifact__dot";
+
+  const body = document.createElement("div");
+  body.className = "ravi-wa-chat-artifact__body";
+
+  const head = document.createElement("div");
+  head.className = "ravi-wa-chat-artifact__head";
+
+  const label = document.createElement("strong");
+  label.className = "ravi-wa-chat-artifact__label";
+
+  const kind = document.createElement("span");
+  kind.className = "ravi-wa-chat-artifact__kind";
+
+  const detail = document.createElement("p");
+  detail.className = "ravi-wa-chat-artifact__detail";
+
+  const meta = document.createElement("div");
+  meta.className = "ravi-wa-chat-artifact__meta";
+
+  const time = document.createElement("span");
+  time.className = "ravi-wa-chat-artifact__time";
+
+  head.append(label, kind);
+  meta.append(time);
+  body.append(head, detail, meta);
+  root.append(dot, body);
+
+  root.__raviArtifactRefs = { dot, label, kind, detail, time };
+  return root;
+}
+
+function updateConversationArtifactRow(root, artifact) {
+  if (!root.__raviArtifactRefs) {
+    root.__raviArtifactRefs = createConversationArtifactRow().__raviArtifactRefs;
+  }
+  const refs = root.__raviArtifactRefs;
+  const key = artifact.dedupeKey || artifact.id;
+  const kindClass = normalizeArtifactKindClass(artifact.kind || "artifact");
+
+  root.className = `ravi-wa-chat-artifact ravi-wa-chat-artifact--${kindClass}`;
+  root.setAttribute(CHAT_ARTIFACT_KEY_ATTR, key);
+  root.title = `${artifact.label || artifact.kind || "artifact"} · ${artifact.detail || "sem detalhe"}`;
+
+  if (refs?.label) refs.label.textContent = artifact.label || artifact.kind || "artifact";
+  if (refs?.kind) refs.kind.textContent = artifact.kind || "artifact";
+  if (refs?.detail) {
+    refs.detail.textContent = artifact.detail || "";
+    refs.detail.hidden = !artifact.detail;
+  }
+  if (refs?.time) {
+    refs.time.textContent = formatElapsedCompact(artifact.updatedAt ?? artifact.createdAt) || "agora";
+  }
+}
+
+function normalizeArtifactKindClass(kind) {
+  return String(kind || "artifact")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "artifact";
+}
+
+function clearConversationArtifacts() {
+  document.querySelectorAll(`[${CHAT_ARTIFACT_ATTR}]`).forEach((node) => node.remove());
+  document.querySelectorAll(`[${CHAT_ARTIFACT_STACK_ATTR}]`).forEach((node) => node.remove());
 }
 
 function detectVisibleMessages() {
@@ -1937,6 +2169,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
 
 function renderOmniWorkspace(body, context) {
   const panel = latestOmniPanel;
+  const actor = getOmniPanelActor(panel);
   const preferredInstance = panel?.preferredInstance || null;
   const instances = filterOmniInstances(panel?.instances || []);
   const agents = filterOmniAgents(panel?.agents || []);
@@ -1971,6 +2204,7 @@ function renderOmniWorkspace(body, context) {
     selectedChat,
     omniDraftNewAgentId || selectedRouteAgentId || "novo",
   );
+  const actorLabel = actor ? `${actor.sessionName} · ${actor.agentId}` : "sem ator atual";
 
   const heroTitle = preferredInstance?.profileName || preferredInstance?.name || "omni";
   const heroSummary = selectedChat
@@ -1998,9 +2232,10 @@ function renderOmniWorkspace(body, context) {
             <span class="ravi-wa-meta-chip">instância ${escapeHtml(preferredInstance.name)}</span>
             <span class="ravi-wa-meta-chip">phone ${escapeHtml(preferredInstance.phone || shorten(preferredInstance.ownerIdentifier || "-", 18))}</span>
             <span class="ravi-wa-meta-chip">channel ${escapeHtml(preferredInstance.channel)}</span>
+            <span class="ravi-wa-meta-chip">ator ${escapeHtml(actorLabel)}</span>
             ${selectedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(selectedChat.name || selectedChat.externalId || "-", 24))}</span>` : ""}
           `
-              : `<span class="ravi-wa-meta-chip">sem instância preferida</span>`
+              : `<span class="ravi-wa-meta-chip">sem instância preferida</span><span class="ravi-wa-meta-chip">ator ${escapeHtml(actorLabel)}</span>`
           }
         </div>
       </section>
@@ -2157,6 +2392,7 @@ function renderOmniWorkspace(body, context) {
             type: "ravi:omni-route",
             payload: {
               action: "bind-existing",
+              actorSession: getCurrentOmniActorSession(),
               session: formState.selectedSession.sessionName,
               title: formState.selectedChat.name,
               chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
@@ -2166,7 +2402,7 @@ function renderOmniWorkspace(body, context) {
             },
           });
           if (result?.ok === false) {
-            setSidebarNotice("error", result.error || "falha ao vincular chat");
+            setSidebarNotice("error", formatOmniRouteError(result, "falha ao vincular chat"));
             return;
           }
           selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || formState.selectedSession.sessionKey;
@@ -2205,6 +2441,7 @@ function renderOmniWorkspace(body, context) {
             type: "ravi:omni-route",
             payload: {
               action: "create-session",
+              actorSession: getCurrentOmniActorSession(),
               agentId: formState.selectedRouteAgentId,
               sessionName: formState.draftSessionName || undefined,
               title: formState.selectedChat.name,
@@ -2215,7 +2452,7 @@ function renderOmniWorkspace(body, context) {
             },
           });
           if (result?.ok === false) {
-            setSidebarNotice("error", result.error || "falha ao criar sessão");
+            setSidebarNotice("error", formatOmniRouteError(result, "falha ao criar sessão"));
             return;
           }
           selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
@@ -2245,6 +2482,7 @@ function renderOmniWorkspace(body, context) {
             type: "ravi:omni-route",
             payload: {
               action: "migrate-session",
+              actorSession: getCurrentOmniActorSession(),
               session: formState.currentLinkedSession.sessionName,
               agentId: formState.selectedRouteAgentId,
               sessionName: formState.draftSessionName || undefined,
@@ -2256,7 +2494,7 @@ function renderOmniWorkspace(body, context) {
             },
           });
           if (result?.ok === false) {
-            setSidebarNotice("error", result.error || "falha ao migrar sessão");
+            setSidebarNotice("error", formatOmniRouteError(result, "falha ao migrar sessão"));
             return;
           }
           selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
@@ -2301,6 +2539,7 @@ function renderOmniWorkspace(body, context) {
             type: "ravi:omni-route",
             payload: {
               action: "create-session",
+              actorSession: getCurrentOmniActorSession(),
               createAgent: true,
               agentId: nextAgentId,
               sessionName: formState.draftNewAgentSessionName || undefined,
@@ -2312,7 +2551,7 @@ function renderOmniWorkspace(body, context) {
             },
           });
           if (result?.ok === false) {
-            setSidebarNotice("error", result.error || "falha ao criar agent e sessão");
+            setSidebarNotice("error", formatOmniRouteError(result, "falha ao criar agent e sessão"));
             return;
           }
           selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
@@ -2405,12 +2644,15 @@ function renderOmniInstanceRows(items, preferredInstance) {
           const selected = preferredInstance?.id === instance.id ? "true" : "false";
           const subline = [instance.profileName, instance.phone, shorten(instance.ownerIdentifier || "", 18)].filter(Boolean).join(" · ");
           const stateClass = instance.isConnected ? "streaming" : instance.isActive ? "thinking" : "idle";
+          const opaque = isOmniOpaque(instance);
+          const title = buildOmniItemPermissionTitle(instance, instance.name);
           return `
             <button
               type="button"
-              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}${opaque ? " ravi-wa-nav-row--opaque" : ""}"
               data-ravi-omni-instance="${escapeAttribute(instance.id)}"
               aria-pressed="${selected}"
+              title="${escapeAttribute(title)}"
             >
               <span class="ravi-wa-nav-row__avatar">OM</span>
               <span class="ravi-wa-nav-row__body">
@@ -2418,11 +2660,11 @@ function renderOmniInstanceRows(items, preferredInstance) {
                   <strong>${escapeHtml(instance.name)}</strong>
                   <span class="ravi-wa-nav-row__agent">${escapeHtml(instance.channel.replace("whatsapp-", ""))}</span>
                 </span>
-                <span class="ravi-wa-nav-row__subline">${escapeHtml(subline || "sem profile sincronizado")}</span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(opaque ? "sem permissão para detalhes da instância" : subline || "sem profile sincronizado")}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedFromIso(instance.lastSeenAt || instance.updatedAt) || "-")}</span>
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${stateClass}">${escapeHtml(formatOmniInstanceStatus(instance))}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${opaque ? "locked" : stateClass}">${escapeHtml(opaque ? "opaque" : formatOmniInstanceStatus(instance))}</span>
               </span>
             </button>
           `;
@@ -2442,19 +2684,23 @@ function renderOmniChatRows(items, currentChat, emptyText) {
       ${items
         .map((chat) => {
           const selected = currentChat?.id === chat.id ? "true" : "false";
-          const subline = chat.lastMessagePreview || chat.externalId || "sem preview";
+          const opaque = isOmniOpaque(chat);
+          const subline = opaque ? "sem permissão para detalhes do chat" : chat.lastMessagePreview || chat.externalId || "sem preview";
           const linkedSession = chat.linkedSession;
-          const linkedState = linkedSession ? chipActivityClass(linkedSession.live?.activity) : "idle";
-          const linkedLabel = linkedSession
+          const linkedState = opaque ? "locked" : linkedSession ? chipActivityClass(linkedSession.live?.activity) : "idle";
+          const linkedLabel = opaque
+            ? describeOmniMissingRelations(chat?.auth?.view?.missing) || "sem permissão"
+            : linkedSession
             ? `${linkedSession.sessionName} · ${chipActivityLabel(linkedSession.live?.activity)}`
             : "sem sessão";
+          const title = buildOmniItemPermissionTitle(chat, chat.name || chat.externalId || chat.id);
           return `
             <button
               type="button"
-              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}${opaque ? " ravi-wa-nav-row--opaque" : ""}"
               data-ravi-omni-select-chat="${escapeAttribute(chat.id)}"
               aria-pressed="${selected}"
-              title="${escapeHtml(chat.name || chat.externalId || chat.id)}"
+              title="${escapeAttribute(title)}"
             >
               <span class="ravi-wa-nav-row__avatar">WA</span>
               <span class="ravi-wa-nav-row__body">
@@ -2467,7 +2713,7 @@ function renderOmniChatRows(items, currentChat, emptyText) {
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedFromIso(chat.lastMessageAt || chat.updatedAt) || "-")}</span>
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${linkedState}">${escapeHtml(formatUnreadLabel(chat.unreadCount))}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${linkedState}">${escapeHtml(opaque ? "opaque" : formatUnreadLabel(chat.unreadCount))}</span>
               </span>
             </button>
           `;
@@ -2491,15 +2737,30 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
   }
 
   const currentLinkedSession = selectedChat.linkedSession || null;
+  const routeFormState = {
+    selectedChat,
+    selectedSession,
+    currentLinkedSession,
+    selectedRouteAgentId,
+    draftNewAgentId: omniDraftNewAgentId.trim() || null,
+  };
+  const bindAction = getOmniActionState("bind-existing", routeFormState);
+  const createAction = getOmniActionState("create-session", routeFormState);
+  const migrateAction = getOmniActionState("migrate-session", routeFormState);
+  const createAgentAction = getOmniActionState("create-agent-session", routeFormState);
   const bindLabel = buildOmniBindButtonLabel(currentLinkedSession, selectedSession);
   const bindDisabled =
-    !selectedSession || (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey);
+    !bindAction.allowed || !selectedSession || (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey);
   const selectedRouteAgent = agents.find((agent) => agent.id === selectedRouteAgentId) || null;
-  const migrateDisabled =
-    !currentLinkedSession || !selectedRouteAgentId || currentLinkedSession.agentId === selectedRouteAgentId;
+  const migrateDisabled = !migrateAction.allowed;
   const migrateLabel = currentLinkedSession
     ? `Migrar para ${selectedRouteAgent?.id || "agent"}`
     : "Migrar sessão";
+  const selectedChatOpaque = isOmniOpaque(selectedChat);
+  const currentSessionOpaque = isOmniOpaque(currentLinkedSession);
+  const routeSummaryText = selectedChatOpaque
+    ? describeOmniMissingRelations(selectedChat?.auth?.view?.missing) || "sem permissão para detalhes do chat"
+    : selectedChat.lastMessagePreview || selectedChat.externalId || "sem preview";
 
   return `
     <section class="ravi-wa-card ravi-wa-card--flush">
@@ -2509,12 +2770,17 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
       </div>
       <div class="ravi-wa-route-summary">
         <strong>${escapeHtml(selectedChat.name || selectedChat.externalId || "chat")}</strong>
-        <p>${escapeHtml(selectedChat.lastMessagePreview || selectedChat.externalId || "sem preview")}</p>
+        <p>${escapeHtml(routeSummaryText)}</p>
         <div class="ravi-wa-chip-row">
           <span class="ravi-wa-meta-chip">chatId ${escapeHtml(shorten(selectedChat.externalId || selectedChat.canonicalId || "-", 28))}</span>
-          <span class="ravi-wa-meta-chip">unread ${escapeHtml(String(selectedChat.unreadCount ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">participants ${escapeHtml(String(selectedChat.participantCount ?? "-"))}</span>
+          <span class="ravi-wa-meta-chip">unread ${escapeHtml(selectedChatOpaque ? "-" : String(selectedChat.unreadCount ?? 0))}</span>
+          <span class="ravi-wa-meta-chip">participants ${escapeHtml(selectedChatOpaque ? "-" : String(selectedChat.participantCount ?? "-"))}</span>
         </div>
+        ${
+          selectedChatOpaque
+            ? `<p class="ravi-wa-route-auth-hint">relação faltando: ${escapeHtml(describeOmniMissingRelations(selectedChat?.auth?.view?.missing) || "read route")}</p>`
+            : ""
+        }
       </div>
 
       <div class="ravi-wa-route-binding">
@@ -2525,8 +2791,9 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
               ? `
             <button
               type="button"
-              class="ravi-wa-nav-row ravi-wa-nav-row--selected"
+              class="ravi-wa-nav-row ravi-wa-nav-row--selected${currentSessionOpaque ? " ravi-wa-nav-row--opaque" : ""}"
               data-ravi-omni-select-session="${escapeAttribute(currentLinkedSession.sessionKey)}"
+              title="${escapeAttribute(buildOmniItemPermissionTitle(currentLinkedSession, currentLinkedSession.sessionName))}"
             >
               <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten(currentLinkedSession.agentId.slice(0, 2).toUpperCase(), 2))}</span>
               <span class="ravi-wa-nav-row__body">
@@ -2534,22 +2801,22 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
                   <strong>${escapeHtml(currentLinkedSession.sessionName)}</strong>
                   <span class="ravi-wa-nav-row__agent">${escapeHtml(currentLinkedSession.agentId)}</span>
                 </span>
-                <span class="ravi-wa-nav-row__subline">${escapeHtml(currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado")}</span>
+                <span class="ravi-wa-nav-row__subline">${escapeHtml(currentSessionOpaque ? describeOmniMissingRelations(currentLinkedSession?.auth?.view?.missing) || "sem permissão para detalhes da sessão" : currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado")}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(currentLinkedSession.live?.updatedAt ?? currentLinkedSession.updatedAt) || "-")}</span>
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${chipActivityClass(currentLinkedSession.live?.activity)}">${escapeHtml(chipActivityLabel(currentLinkedSession.live?.activity))}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${currentSessionOpaque ? "locked" : chipActivityClass(currentLinkedSession.live?.activity)}">${escapeHtml(currentSessionOpaque ? "opaque" : chipActivityLabel(currentLinkedSession.live?.activity))}</span>
               </span>
             </button>
           `
-              : `<p class="ravi-wa-empty">nenhuma sessão casada ainda.</p>`
+              : `<p class="ravi-wa-empty">${escapeHtml(selectedChatOpaque ? "sessão vinculada opaca pelo rebac." : "nenhuma sessão casada ainda.")}</p>`
           }
         </div>
         <div class="ravi-wa-actions">
           <button data-ravi-omni-open-chat="${escapeAttribute(selectedChat.id)}">Abrir chat</button>
           ${
             selectedSession
-              ? `<button data-ravi-omni-bind-chat="${escapeAttribute(selectedChat.id)}"${bindDisabled ? " disabled" : ""}>${escapeHtml(bindLabel)}</button>`
+              ? `<button data-ravi-omni-bind-chat="${escapeAttribute(selectedChat.id)}" title="${escapeAttribute(buildOmniActionTitle(bindLabel, bindAction))}"${bindDisabled ? " disabled" : ""}>${escapeHtml(bindLabel)}</button>`
               : `<button disabled>Escolhe uma sessão</button>`
           }
         </div>
@@ -2580,10 +2847,10 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
         <div class="ravi-wa-actions${currentLinkedSession ? "" : " ravi-wa-actions--single"}">
           ${
             currentLinkedSession
-              ? `<button data-ravi-omni-migrate-session="${escapeAttribute(selectedChat.id)}"${migrateDisabled ? " disabled" : ""}>${escapeHtml(migrateLabel)}</button>`
+              ? `<button data-ravi-omni-migrate-session="${escapeAttribute(selectedChat.id)}" title="${escapeAttribute(buildOmniActionTitle(migrateLabel, migrateAction))}"${migrateDisabled ? " disabled" : ""}>${escapeHtml(migrateLabel)}</button>`
               : ""
           }
-          <button data-ravi-omni-create-session="${escapeAttribute(selectedChat.id)}"${selectedRouteAgentId ? "" : " disabled"}>Criar sessão + vincular</button>
+          <button data-ravi-omni-create-session="${escapeAttribute(selectedChat.id)}" title="${escapeAttribute(buildOmniActionTitle("Criar sessão + vincular", createAction))}"${createAction.allowed ? "" : " disabled"}>Criar sessão + vincular</button>
         </div>
       </section>
 
@@ -2613,7 +2880,7 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
           </label>
         </div>
         <div class="ravi-wa-actions ravi-wa-actions--single">
-          <button data-ravi-omni-create-agent-session="${escapeAttribute(selectedChat.id)}">Criar agent + sessão + vincular</button>
+          <button data-ravi-omni-create-agent-session="${escapeAttribute(selectedChat.id)}" title="${escapeAttribute(buildOmniActionTitle("Criar agent + sessão + vincular", createAgentAction))}"${createAgentAction.allowed ? "" : " disabled"}>Criar agent + sessão + vincular</button>
         </div>
       </section>
 
@@ -2636,14 +2903,19 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
       ${items
         .map((session) => {
           const selected = selectedSession?.sessionKey === session.sessionKey ? "true" : "false";
-          const activityClass = chipActivityClass(session.live?.activity);
-          const linkedChat = getLinkedChatLabel(session);
+          const opaque = isOmniOpaque(session);
+          const activityClass = opaque ? "locked" : chipActivityClass(session.live?.activity);
+          const linkedChat = opaque
+            ? describeOmniMissingRelations(session?.auth?.view?.missing) || "sem permissão para detalhes da sessão"
+            : getLinkedChatLabel(session);
+          const title = buildOmniItemPermissionTitle(session, session.sessionName);
           return `
             <button
               type="button"
-              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+              class="ravi-wa-nav-row${selected === "true" ? " ravi-wa-nav-row--selected" : ""}${opaque ? " ravi-wa-nav-row--opaque" : ""}"
               data-ravi-omni-select-session="${escapeAttribute(session.sessionKey)}"
               aria-pressed="${selected}"
+              title="${escapeAttribute(title)}"
             >
               <span class="ravi-wa-nav-row__avatar">${escapeHtml(shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2))}</span>
               <span class="ravi-wa-nav-row__body">
@@ -2655,7 +2927,7 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
               </span>
               <span class="ravi-wa-nav-row__aside">
                 <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt) || "-")}</span>
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(chipActivityLabel(session.live?.activity))}</span>
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(opaque ? "opaque" : chipActivityLabel(session.live?.activity))}</span>
               </span>
             </button>
           `;
@@ -2673,12 +2945,15 @@ function renderOmniGroupRows(items) {
   return `
     <div class="ravi-wa-nav-list">
       ${items
-        .map((group) => `
+        .map((group) => {
+          const opaque = isOmniOpaque(group);
+          const title = buildOmniItemPermissionTitle(group, group.name || group.externalId || "grupo");
+          return `
           <button
             type="button"
-            class="ravi-wa-nav-row"
+            class="ravi-wa-nav-row${opaque ? " ravi-wa-nav-row--opaque" : ""}"
             data-ravi-omni-open-group="${escapeAttribute(group.externalId || "")}"
-            title="${escapeHtml(group.name || group.externalId || "grupo")}"
+            title="${escapeAttribute(title)}"
           >
             <span class="ravi-wa-nav-row__avatar">GR</span>
             <span class="ravi-wa-nav-row__body">
@@ -2686,14 +2961,15 @@ function renderOmniGroupRows(items) {
                 <strong>${escapeHtml(group.name || group.externalId || "grupo")}</strong>
                 <span class="ravi-wa-nav-row__agent">${escapeHtml(group.isCommunity ? "community" : "group")}</span>
               </span>
-              <span class="ravi-wa-nav-row__subline">${escapeHtml(group.description || group.externalId || "sem descrição")}</span>
+              <span class="ravi-wa-nav-row__subline">${escapeHtml(opaque ? describeOmniMissingRelations(group?.auth?.view?.missing) || "sem permissão para detalhes do grupo" : group.description || group.externalId || "sem descrição")}</span>
             </span>
             <span class="ravi-wa-nav-row__aside">
-              <span class="ravi-wa-nav-row__elapsed">${escapeHtml(group.memberCount != null ? `${group.memberCount} membros` : "-")}</span>
-              <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--idle">${escapeHtml(group.isReadOnly ? "read only" : "aberto")}</span>
+              <span class="ravi-wa-nav-row__elapsed">${escapeHtml(opaque ? "-" : group.memberCount != null ? `${group.memberCount} membros` : "-")}</span>
+              <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${opaque ? "locked" : "idle"}">${escapeHtml(opaque ? "opaque" : group.isReadOnly ? "read only" : "aberto")}</span>
             </span>
           </button>
-        `)
+        `;
+        })
         .join("")}
     </div>
   `;
@@ -2890,6 +3166,228 @@ function formatUnreadLabel(value) {
   return count > 0 ? `${count} unread` : "read";
 }
 
+function getCurrentOmniActorSession() {
+  return (
+    latestOmniPanel?.actor?.sessionName ||
+    latestOmniPanel?.actor?.sessionKey ||
+    latestSnapshot?.session?.sessionName ||
+    latestSnapshot?.session?.sessionKey ||
+    null
+  );
+}
+
+function allowOmniDecision(relation) {
+  return {
+    allowed: true,
+    matched: relation ? [relation] : [],
+    missing: [],
+    reason: null,
+  };
+}
+
+function denyOmniDecision(...relations) {
+  const missing = relations.filter(Boolean);
+  return {
+    allowed: false,
+    matched: [],
+    missing,
+    reason: missing.length ? `missing ${missing.join(" + ")}` : "missing permission",
+  };
+}
+
+function omniCapabilityAllows(capabilities, permission, objectType, objectId) {
+  const list = Array.isArray(capabilities) ? capabilities : [];
+  if (list.some((cap) => cap?.permission === "admin" && cap?.objectType === "system" && cap?.objectId === "*")) {
+    return true;
+  }
+  if (list.some((cap) => cap?.permission === permission && cap?.objectType === objectType && cap?.objectId === objectId)) {
+    return true;
+  }
+  if (
+    objectId !== "*" &&
+    list.some((cap) => cap?.permission === permission && cap?.objectType === objectType && cap?.objectId === "*")
+  ) {
+    return true;
+  }
+  if (objectId !== "*") {
+    return list.some((cap) => {
+      if (cap?.permission !== permission || cap?.objectType !== objectType || typeof cap?.objectId !== "string") {
+        return false;
+      }
+      if (!cap.objectId.includes("*")) return false;
+      return omniPatternMatches(cap.objectId, objectId);
+    });
+  }
+  return false;
+}
+
+function omniPatternMatches(pattern, value) {
+  if (pattern === value) return true;
+  if (!pattern.endsWith("*")) return false;
+  return value.startsWith(pattern.slice(0, -1));
+}
+
+function getOmniPanelActor(panel = latestOmniPanel) {
+  return panel?.actor || null;
+}
+
+function checkOmniAction(permission, objectType, objectId) {
+  const actor = getOmniPanelActor();
+  const relation = `${permission} ${objectType}:${objectId}`;
+  if (!actor?.agentId) return denyOmniDecision(relation);
+  return omniCapabilityAllows(actor.capabilities, permission, objectType, objectId)
+    ? allowOmniDecision(relation)
+    : denyOmniDecision(relation);
+}
+
+function checkOmniSessionAccess(session) {
+  const actor = getOmniPanelActor();
+  const target = session?.sessionName || session?.sessionKey || null;
+  const relation = target ? `access session:${target}` : null;
+  if (!target) return denyOmniDecision();
+  if (!actor?.agentId) return denyOmniDecision(relation);
+  if (actor.sessionName === target || actor.sessionKey === target) return allowOmniDecision(relation);
+  return omniCapabilityAllows(actor.capabilities, "access", "session", target)
+    ? allowOmniDecision(relation)
+    : denyOmniDecision(relation);
+}
+
+function checkOmniSessionModify(session) {
+  const actor = getOmniPanelActor();
+  const target = session?.sessionName || session?.sessionKey || null;
+  const relation = target ? `modify session:${target}` : null;
+  if (!target) return denyOmniDecision();
+  if (!actor?.agentId) return denyOmniDecision(relation);
+  if (actor.sessionName === target || actor.sessionKey === target) return allowOmniDecision(relation);
+  return omniCapabilityAllows(actor.capabilities, "modify", "session", target)
+    ? allowOmniDecision(relation)
+    : denyOmniDecision(relation);
+}
+
+function checkOmniAgentView(agentId) {
+  const actor = getOmniPanelActor();
+  const relation = `view agent:${agentId}`;
+  if (!agentId) return denyOmniDecision();
+  if (!actor?.agentId) return denyOmniDecision(relation);
+  if (actor.agentId === agentId) return allowOmniDecision(relation);
+  return omniCapabilityAllows(actor.capabilities, "view", "agent", agentId)
+    ? allowOmniDecision(relation)
+    : denyOmniDecision(relation);
+}
+
+function checkOmniGroupExecute(groupName) {
+  return checkOmniAction("execute", "group", groupName);
+}
+
+function checkOmniRouteModify(routeObjectId) {
+  if (!routeObjectId) return denyOmniDecision();
+  return checkOmniAction("modify", "route", routeObjectId);
+}
+
+function collectOmniMissingRelations(decisions) {
+  return Array.from(
+    new Set(
+      (Array.isArray(decisions) ? decisions : [])
+        .filter((decision) => decision && decision.allowed === false)
+        .flatMap((decision) => decision.missing || []),
+    ),
+  );
+}
+
+function describeOmniMissingRelations(missing) {
+  const list = Array.isArray(missing) ? missing.filter(Boolean) : [];
+  if (!list.length) return null;
+  return list.join(" + ");
+}
+
+function getOmniAuth(item) {
+  return item?.auth || null;
+}
+
+function isOmniOpaque(item) {
+  return getOmniAuth(item)?.visibility === "opaque";
+}
+
+function buildOmniItemPermissionTitle(item, fallback) {
+  const auth = getOmniAuth(item);
+  const missing = describeOmniMissingRelations(auth?.view?.missing);
+  if (!missing) return fallback || "";
+  return `${fallback || "restricted"} · ${missing}`;
+}
+
+function getOmniActionState(kind, formState) {
+  const selectedChat = formState?.selectedChat || null;
+  const selectedSession = formState?.selectedSession || null;
+  const currentLinkedSession = formState?.currentLinkedSession || null;
+  const selectedRouteAgentId = formState?.selectedRouteAgentId || null;
+
+  const decisions = [];
+
+  if (kind === "bind-existing") {
+    if (!selectedSession) {
+      return { allowed: false, missing: ["choose session"], reason: "choose session" };
+    }
+    if (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey) {
+      return { allowed: false, missing: ["already linked"], reason: "already linked" };
+    }
+    decisions.push(checkOmniSessionAccess(selectedSession));
+    decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
+  }
+
+  if (kind === "create-session") {
+    if (!selectedRouteAgentId) {
+      return { allowed: false, missing: ["choose agent"], reason: "choose agent" };
+    }
+    decisions.push(checkOmniGroupExecute("sessions"));
+    decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
+    decisions.push(checkOmniAgentView(selectedRouteAgentId));
+  }
+
+  if (kind === "migrate-session") {
+    if (!currentLinkedSession) {
+      return { allowed: false, missing: ["no linked session"], reason: "no linked session" };
+    }
+    if (!selectedRouteAgentId) {
+      return { allowed: false, missing: ["choose agent"], reason: "choose agent" };
+    }
+    if (currentLinkedSession.agentId === selectedRouteAgentId) {
+      return { allowed: false, missing: ["same agent"], reason: "same agent" };
+    }
+    decisions.push(checkOmniGroupExecute("sessions"));
+    decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
+    decisions.push(checkOmniAgentView(selectedRouteAgentId));
+    decisions.push(checkOmniSessionModify(currentLinkedSession));
+  }
+
+  if (kind === "create-agent-session") {
+    if (!formState?.draftNewAgentId) {
+      return { allowed: false, missing: ["new agent id"], reason: "new agent id" };
+    }
+    decisions.push(checkOmniGroupExecute("agents"));
+    decisions.push(checkOmniGroupExecute("sessions"));
+    decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
+  }
+
+  const missing = collectOmniMissingRelations(decisions);
+  return {
+    allowed: missing.length === 0,
+    missing,
+    reason: describeOmniMissingRelations(missing),
+  };
+}
+
+function buildOmniActionTitle(label, state) {
+  if (!state || state.allowed) return label;
+  const reason = state.reason || describeOmniMissingRelations(state.missing);
+  return reason ? `${label} · ${reason}` : label;
+}
+
+function formatOmniRouteError(result, fallback) {
+  const missing = describeOmniMissingRelations(result?.missingRelations);
+  if (missing) return `${fallback} · ${missing}`;
+  return result?.error || fallback;
+}
+
 function renderOmniAgentOptions(items, selectedAgentId) {
   if (!items.length) {
     return `<option value="">Nenhum agent</option>`;
@@ -2898,8 +3396,10 @@ function renderOmniAgentOptions(items, selectedAgentId) {
   return items
     .map((agent) => {
       const selected = agent.id === selectedAgentId ? " selected" : "";
+      const disabled = isOmniOpaque(agent) ? " disabled" : "";
       const label = agent.name ? `${agent.id} · ${agent.name}` : agent.id;
-      return `<option value="${escapeAttribute(agent.id)}"${selected}>${escapeHtml(label)}</option>`;
+      const title = buildOmniItemPermissionTitle(agent, label);
+      return `<option value="${escapeAttribute(agent.id)}"${selected}${disabled} title="${escapeAttribute(title)}">${escapeHtml(isOmniOpaque(agent) ? `🔒 ${label}` : label)}</option>`;
     })
     .join("");
 }
@@ -3005,7 +3505,13 @@ async function openGenericChatTarget(target) {
   const label = target.label || target.title || target.chatId || "chat";
   setSidebarNotice("info", `abrindo ${label}...`, 0);
 
-  if (clickMatchingChatRowByTarget(target)) {
+  if (isTargetOpenNow(target)) {
+    setSidebarNotice("success", `${label} já estava aberto`);
+    return true;
+  }
+
+  const visibleOpen = await tryOpenChatTargetFromVisibleRows(target);
+  if (visibleOpen.ok) {
     setSidebarNotice("success", `abriu ${label}`);
     return true;
   }
@@ -3018,22 +3524,112 @@ async function openGenericChatTarget(target) {
 
   const originalValue = searchInput.value || "";
   const queries = [...new Set((target.queries || [target.title, target.chatId]).filter(Boolean))];
+  let lastFailure = visibleOpen.reason || null;
 
   for (const query of queries) {
     focusNativeSidebarSearchInput(searchInput);
     setNativeSidebarSearchValue(searchInput, query);
     await sleep(180);
 
-    if (await waitForMatchingChatRowByTarget(target, 1800)) {
-      await sleep(140);
-      clearNativeSidebarSearch(searchInput, originalValue);
-      setSidebarNotice("success", `abriu ${label}`);
-      return true;
+    const waitedRow = await waitForMatchingChatRowByTarget(target, 1800);
+    if (waitedRow) {
+      const searchOpen = await tryOpenChatTargetFromVisibleRows(target);
+      if (searchOpen.ok) {
+        await sleep(140);
+        clearNativeSidebarSearch(searchInput, originalValue);
+        setSidebarNotice("success", `abriu ${label}`);
+        return true;
+      }
+      lastFailure = searchOpen.reason || lastFailure;
     }
   }
 
   clearNativeSidebarSearch(searchInput, originalValue);
-  setSidebarNotice("error", `não achei ${label}`);
+  setSidebarNotice("error", lastFailure || `não achei ${label}`);
+  return false;
+}
+
+async function tryOpenChatTargetFromVisibleRows(target) {
+  const row = findMatchingChatRowByTarget(target);
+  if (!row) {
+    return { ok: false, reason: null };
+  }
+
+  if (!clickChatRow(row)) {
+    return {
+      ok: false,
+      reason: `achei ${target.label || target.title || target.chatId || "o chat"}, mas não consegui clicar na row`,
+    };
+  }
+
+  const confirmed = await waitForTargetOpen(target, 1800);
+  if (!confirmed) {
+    return {
+      ok: false,
+      reason: `achei ${target.label || target.title || target.chatId || "o chat"}, mas o WhatsApp não confirmou a abertura`,
+    };
+  }
+
+  return { ok: true, reason: null };
+}
+
+function findMatchingChatRowByTarget(target) {
+  const rows = detectVisibleChatRows();
+  const chatIdVariants = buildChatIdVariants(target?.chatId);
+  const normalizedTitle = normalizeLookupToken(target?.title);
+  return (
+    rows.find((candidate) => {
+      const rowChatId = normalizeLookupToken(candidate.chatIdCandidate);
+      const rowTitle = normalizeLookupToken(candidate.title);
+      if (rowChatId && chatIdVariants.includes(rowChatId)) return true;
+      if (normalizedTitle && rowTitle && rowTitle === normalizedTitle) return true;
+      return false;
+    }) || null
+  );
+}
+
+function clickChatRow(row) {
+  if (!row?.row) return false;
+  row.row.scrollIntoView({ block: "center", behavior: "smooth" });
+  const clickable = row.row.querySelector("[aria-selected]") || row.row.firstElementChild || row.row;
+  if (clickable instanceof HTMLElement) {
+    clickable.click();
+    return true;
+  }
+  return false;
+}
+
+function isTargetOpenNow(target) {
+  const currentChatId = normalizeLookupToken(
+    latestPageChat?.chatId || latestViewState?.chatIdCandidate || detectChatIdCandidate(),
+  );
+  const currentTitle = normalizeLookupToken(
+    latestPageChat?.title || detectChatTitle() || latestViewState?.selectedChat || detectSelectedChatLabel(),
+  );
+  const chatIdVariants = buildChatIdVariants(target?.chatId);
+  const normalizedTitle = normalizeLookupToken(target?.title);
+
+  if (currentChatId && chatIdVariants.includes(currentChatId)) {
+    return true;
+  }
+
+  if (normalizedTitle && currentTitle && normalizedTitle === currentTitle) {
+    return true;
+  }
+
+  return false;
+}
+
+async function waitForTargetOpen(target, timeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    requestPageChatInfo();
+    if (isTargetOpenNow(target)) {
+      await sleep(140);
+      return true;
+    }
+    await sleep(120);
+  }
   return false;
 }
 
@@ -3045,25 +3641,9 @@ function clickMatchingChatRow(session) {
 }
 
 function clickMatchingChatRowByTarget(target) {
-  const rows = detectVisibleChatRows();
-  const chatIdVariants = buildChatIdVariants(target?.chatId);
-  const normalizedTitle = normalizeLookupToken(target?.title);
-  const row = rows.find((candidate) => {
-    const rowChatId = normalizeLookupToken(candidate.chatIdCandidate);
-    const rowTitle = normalizeLookupToken(candidate.title);
-    if (rowChatId && chatIdVariants.includes(rowChatId)) return true;
-    if (normalizedTitle && rowTitle && rowTitle === normalizedTitle) return true;
-    return false;
-  });
-
+  const row = findMatchingChatRowByTarget(target);
   if (!row) return false;
-  row.row.scrollIntoView({ block: "center", behavior: "smooth" });
-  const clickable = row.row.querySelector("[aria-selected]") || row.row.firstElementChild || row.row;
-  if (clickable instanceof HTMLElement) {
-    clickable.click();
-    return true;
-  }
-  return false;
+  return clickChatRow(row);
 }
 
 async function waitForMatchingChatRow(session, timeoutMs) {
@@ -3079,12 +3659,13 @@ async function waitForMatchingChatRow(session, timeoutMs) {
 async function waitForMatchingChatRowByTarget(target, timeoutMs) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (clickMatchingChatRowByTarget(target)) {
-      return true;
+    const row = findMatchingChatRowByTarget(target);
+    if (row) {
+      return row;
     }
     await sleep(120);
   }
-  return false;
+  return null;
 }
 
 function detectNativeSidebarSearchInput() {

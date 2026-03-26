@@ -6,6 +6,7 @@ import {
   buildOverlaySnapshot,
   resolveByChatId,
   resolveByTitle,
+  upsertOverlayChatArtifact,
   type OverlayLiveState,
 } from "./model.js";
 
@@ -121,6 +122,16 @@ describe("whatsapp overlay model", () => {
           summary: "approval pending",
           updatedAt: 42,
           events: [{ kind: "tool", label: "bash", detail: "running", timestamp: 42 }],
+          artifacts: [
+            {
+              id: "artifact-1",
+              kind: "interruption",
+              label: "interrupção",
+              detail: "execução interrompida",
+              createdAt: 41,
+              anchor: { placement: "after-message-id", messageId: "3EB123" },
+            },
+          ],
         },
       ],
     ]);
@@ -139,6 +150,68 @@ describe("whatsapp overlay model", () => {
       kind: "tool",
       label: "bash",
     });
+    expect(snapshot.session?.live.artifacts?.[0]).toMatchObject({
+      id: "artifact-1",
+      kind: "interruption",
+      anchor: { placement: "after-message-id", messageId: "3EB123" },
+    });
+  });
+
+  it("reconciles artifacts by dedupe key", () => {
+    const original = [
+      {
+        id: "artifact-1",
+        kind: "interruption",
+        label: "interrupção",
+        detail: "primeira versão",
+        createdAt: 10,
+        dedupeKey: "turn.interrupted",
+        anchor: { placement: "after-last-message" as const },
+      },
+    ];
+
+    const merged = upsertOverlayChatArtifact(original, {
+      id: "artifact-2",
+      kind: "interruption",
+      label: "interrupção",
+      detail: "versão reconciliada",
+      createdAt: 20,
+      dedupeKey: "turn.interrupted",
+      anchor: { placement: "after-last-message" },
+    });
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      id: "artifact-2",
+      detail: "versão reconciliada",
+      dedupeKey: "turn.interrupted",
+    });
+  });
+
+  it("keeps independent artifacts when no dedupe key is provided", () => {
+    const original = [
+      {
+        id: "artifact-1",
+        kind: "interruption",
+        label: "interrupção",
+        detail: "primeira interrupção",
+        createdAt: 10,
+        anchor: { placement: "after-last-message" as const },
+      },
+    ];
+
+    const merged = upsertOverlayChatArtifact(original, {
+      id: "artifact-2",
+      kind: "interruption",
+      label: "interrupção",
+      detail: "segunda interrupção",
+      createdAt: 20,
+      anchor: { placement: "after-last-message" },
+    });
+
+    expect(merged).toHaveLength(2);
+    expect(merged[0]?.id).toBe("artifact-1");
+    expect(merged[1]?.id).toBe("artifact-2");
   });
 
   it("builds session list entries in batch", () => {

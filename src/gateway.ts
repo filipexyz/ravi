@@ -15,7 +15,7 @@
  */
 
 import { nats } from "./nats.js";
-import { pendingReplyCallbacks, type ResponseMessage } from "./bot.js";
+import type { ResponseMessage } from "./bot.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import { dbFindActiveEntryByPhone, dbUpdateEntry } from "./outbound/index.js";
@@ -185,7 +185,15 @@ export class Gateway {
           });
 
           try {
-            await this.omniSender.send(instanceId, chatId, text, target.threadId);
+            const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
+            if (delivered.messageId) {
+              await nats.emit(`ravi.session.${sessionName}.delivery`, {
+                emitId: response._emitId,
+                messageId: delivered.messageId,
+                target,
+                deliveredAt: Date.now(),
+              });
+            }
             log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
           } catch (err) {
             log.error("Failed to send response", { instanceId, chatId, error: err });
@@ -262,9 +270,7 @@ export class Gateway {
         const instanceId = configStore.resolveInstanceId(data.accountId);
         if (!instanceId) {
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId: undefined });
-            else nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
+            nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
           }
           return;
         }
@@ -324,12 +330,9 @@ export class Gateway {
           log.info("Direct send delivered", { to, instanceId, messageId });
 
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId });
-            else
-              nats
-                .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
-                .catch(() => {});
+            nats
+              .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
+              .catch(() => {});
           }
 
           const entry = dbFindActiveEntryByPhone(to);
@@ -339,9 +342,7 @@ export class Gateway {
         } catch (err) {
           log.error("Failed to deliver direct send", { to, instanceId, error: err });
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId: undefined });
-            else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
+            nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
           }
         }
       },

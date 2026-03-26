@@ -4,11 +4,19 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { getRecentHistory } from "../db.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
+import { snapshotAgentCapabilities } from "../runtime/context-registry.js";
 import { createAgent, ensureAgentDirs, getAllAgents, loadRouterConfig } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
 import { buildSessionKey } from "../router/session-key.js";
 import { ensureUniqueName, generateSessionName } from "../router/session-name.js";
-import { dbCreateRoute, dbGetAgent, dbGetMessageMeta, dbGetRoute, dbUpdateRoute } from "../router/router-db.js";
+import {
+  dbCreateRoute,
+  dbGetAgent,
+  dbGetMessageMeta,
+  dbGetRoute,
+  dbUpdateRoute,
+  type ContextCapability,
+} from "../router/router-db.js";
 import {
   getOrCreateSession,
   getSessionByName,
@@ -21,23 +29,37 @@ import {
   resetSession,
 } from "../router/sessions.js";
 import { closeNats, connectNats, publish, subscribe } from "../nats.js";
+import { agentCan } from "../permissions/engine.js";
+import { canAccessSession, canModifySession, canViewAgent, type ScopeContext } from "../permissions/scope.js";
 import {
   buildOverlaySnapshot,
   type OverlayActivity,
+  type OverlayChatArtifact,
+  type OverlayChatArtifactAnchor,
   type OverlayLiveState,
   type OverlayQuery,
   type OverlaySessionSnapshot,
   type OverlaySessionEvent,
+  upsertOverlayChatArtifact,
 } from "./model.js";
 import type { OverlayPublishedState } from "./state.js";
 import { getBindingForQuery, upsertBinding } from "./bindings.js";
 import type { OverlayDomCommandEnvelope, OverlayDomCommandRequest, OverlayDomCommandResult } from "./dom-control.js";
 import { deriveOmniRouteTarget } from "./routing.js";
+import type { SessionEntry } from "../router/types.js";
 
 const PORT = Number(process.env.RAVI_WA_OVERLAY_PORT ?? 4210);
 const HOST = process.env.RAVI_WA_OVERLAY_HOST ?? "127.0.0.1";
 
 const liveBySessionName = new Map<string, OverlayLiveState>();
+type SessionArtifactTurnState = {
+  activeResponseEmitIds: string[];
+  activeDeliveredMessageIds: string[];
+  activePromptMessageIds: string[];
+  pendingArtifactId: string | null;
+  pendingArtifactEmitId: string | null;
+};
+const artifactTurnStateBySessionName = new Map<string, SessionArtifactTurnState>();
 let latestPublishedState: OverlayPublishedState | null = null;
 const publishedHistory: OverlayPublishedState[] = [];
 const pendingDomCommands: OverlayDomCommandEnvelope[] = [];
@@ -60,6 +82,7 @@ type BindBody = {
 
 type OmniRouteBody = {
   action?: "bind-existing" | "create-session" | "migrate-session";
+  actorSession?: string | null;
   session?: string | null;
   title?: string | null;
   chatId?: string | null;
@@ -151,6 +174,7 @@ type OmniPanelInstance = {
   ownerIdentifier: string | null;
   lastSeenAt: string | null;
   updatedAt: string | null;
+  auth?: OmniPanelItemAuth;
 };
 
 type OmniPanelAgent = {
@@ -158,6 +182,7 @@ type OmniPanelAgent = {
   name: string | null;
   cwd: string;
   provider: string | null;
+  auth?: OmniPanelItemAuth;
 };
 
 type OmniPanelChat = {
@@ -176,6 +201,9 @@ type OmniPanelChat = {
   updatedAt: string | null;
   matchesCurrent: boolean;
   linkedSession: OverlaySessionSnapshot | null;
+  routePattern?: string | null;
+  routeObjectId?: string | null;
+  auth?: OmniPanelItemAuth;
 };
 
 type OmniPanelGroup = {
@@ -187,6 +215,28 @@ type OmniPanelGroup = {
   createdAt: string | null;
   isReadOnly: boolean;
   isCommunity: boolean;
+  routePattern?: string | null;
+  routeObjectId?: string | null;
+  auth?: OmniPanelItemAuth;
+};
+
+type OmniPanelActor = {
+  sessionKey: string;
+  sessionName: string;
+  agentId: string;
+  capabilities: ContextCapability[];
+};
+
+type OmniPermissionDecision = {
+  allowed: boolean;
+  matched: string[];
+  missing: string[];
+  reason: string | null;
+};
+
+type OmniPanelItemAuth = {
+  visibility: "full" | "opaque";
+  view: OmniPermissionDecision;
 };
 
 type OmniPanelSnapshot = {
@@ -197,6 +247,7 @@ type OmniPanelSnapshot = {
     session: string | null;
     instance: string | null;
   };
+  actor: OmniPanelActor | null;
   preferredInstance: OmniPanelInstance | null;
   currentChat: OmniPanelChat | null;
   instances: OmniPanelInstance[];
@@ -524,12 +575,27 @@ async function handleOmniPanel(url: URL): Promise<Response> {
 async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
   try {
     const body = (await req.json()) as OmniRouteBody;
+    const actor = resolveOmniRouteActor(cleanNullable(body.actorSession));
+    if (!actor) {
+      return withCors(
+        Response.json(
+          {
+            ok: false,
+            error: "Permission denied: no current session actor",
+            missingRelations: ["current session actor"],
+          },
+          { status: 403 },
+        ),
+        url,
+      );
+    }
     const target = deriveOmniRouteTarget({
       chatId: cleanRequired(body.chatId, "chatId"),
       instanceName: cleanRequired(body.instance, "instance"),
       chatType: cleanNullable(body.chatType),
       title: cleanNullable(body.chatName) ?? cleanNullable(body.title),
     });
+    const routeObjectId = buildRouteObjectId(target.instanceName, target.routePattern);
 
     const title = cleanNullable(body.title) ?? target.title;
     const sessionNameInput = cleanNullable(body.sessionName);
@@ -542,8 +608,53 @@ async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
       if (!session) {
         return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
       }
+      const permissions = [
+        checkSessionAccess(actor, toOmniPanelSessionSnapshot(session)),
+        checkRouteModify(actor, routeObjectId),
+      ];
+      const denied = collectDeniedRelations(permissions);
+      if (denied.length > 0) {
+        return withCors(
+          Response.json(
+            {
+              ok: false,
+              error: "Permission denied",
+              missingRelations: denied,
+            },
+            { status: 403 },
+          ),
+          url,
+        );
+      }
     } else if (body.action === "create-session" || body.action === "migrate-session") {
       const agentId = cleanRequired(body.agentId, "agentId");
+      const permissions = [
+        checkGroupExecute(actor, "sessions"),
+        checkRouteModify(actor, routeObjectId),
+        checkAgentView(actor, agentId),
+      ];
+      if (body.action === "migrate-session") {
+        const currentSession = body.session ? resolveSession(body.session) : null;
+        permissions.push(checkSessionModify(actor, currentSession ? toOmniPanelSessionSnapshot(currentSession) : null));
+      }
+      if (body.action === "create-session" && body.createAgent === true) {
+        permissions.push(checkGroupExecute(actor, "agents"));
+      }
+      const denied = collectDeniedRelations(permissions);
+      if (denied.length > 0) {
+        return withCors(
+          Response.json(
+            {
+              ok: false,
+              error: "Permission denied",
+              missingRelations: denied,
+            },
+            { status: 403 },
+          ),
+          url,
+        );
+      }
+
       createdAgent = ensureOmniAgent(agentId, body.action === "create-session" && body.createAgent === true);
       const agentConfig = dbGetAgent(agentId);
       if (!agentConfig) {
@@ -672,6 +783,7 @@ async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
           session: session.name ?? session.sessionKey,
         },
         snapshot,
+        actor,
       }),
       url,
     );
@@ -870,7 +982,7 @@ function buildSnapshot(query: OverlayQuery) {
   return buildSnapshotWithSessions(query, getOverlaySessions());
 }
 
-function getOverlaySessions() {
+function getOverlaySessions(): SessionEntry[] {
   return listSessions().map((session) => {
     const agent = dbGetAgent(session.agentId);
     return {
@@ -950,33 +1062,36 @@ async function buildOmniPanelSnapshot(query: {
     title: query.title,
     session: query.session,
   });
-  const omniAgents = buildOmniPanelAgents();
+  const actor = buildOmniPanelActor(overlaySnapshot.session);
+  const omniAgents = buildOmniPanelAgents(actor);
   const instances = await listOmniWhatsAppInstances();
   const preferredHint = resolvePreferredOmniInstanceHint(query.instance, overlaySnapshot.session?.accountId ?? null);
-  const activeInstances = instances.filter((instance) => instance.isActive);
-  const candidateInstances = activeInstances.length > 0 ? activeInstances : instances;
+  const authorizedInstances = instances.map((instance) => applyOmniInstanceAuth(instance, actor));
+  const activeInstances = authorizedInstances.filter((instance) => instance.isActive);
+  const candidateInstances = activeInstances.length > 0 ? activeInstances : authorizedInstances;
 
   if (candidateInstances.length === 0) {
     return {
       ok: true,
       query,
+      actor,
       preferredInstance: null,
       currentChat: null,
       instances: [],
       agents: omniAgents,
       chats: [],
       groups: [],
-      sessions: buildOmniPanelSessions(getOverlaySessions()),
+      sessions: buildOmniPanelSessions(getOverlaySessions(), actor),
       warnings: ["Nenhuma instância WhatsApp do Omni disponível."],
       generatedAt: Date.now(),
     };
   }
 
   const overlaySessions = getOverlaySessions();
-  const omniSessions = buildOmniPanelSessions(overlaySessions);
+  const omniSessions = buildOmniPanelSessions(overlaySessions, actor);
   const chatsByInstanceEntries = await Promise.all(
     candidateInstances.map(async (instance) => {
-      const chats = await listOmniChats(instance.name, 60, overlaySessions);
+      const chats = await listOmniChats(instance.name, 60, overlaySessions, actor);
       return [instance.id, chats] as const;
     }),
   );
@@ -1000,12 +1115,13 @@ async function buildOmniPanelSnapshot(query: {
         : null;
 
   const chats = preferredInstance ? (chatsByInstance.get(preferredInstance.id) ?? []) : [];
-  const groups = preferredInstance ? await listOmniGroups(preferredInstance.name) : [];
+  const groups = preferredInstance ? await listOmniGroups(preferredInstance.name, actor) : [];
   const warnings = buildOmniWarnings(preferredInstance, currentChat, query);
 
   return {
     ok: true,
     query,
+    actor,
     preferredInstance,
     currentChat,
     instances: candidateInstances,
@@ -1091,31 +1207,23 @@ async function listOmniChats(
   instanceName: string,
   limit = 40,
   sessions: ReturnType<typeof getOverlaySessions> = getOverlaySessions(),
+  actor: OmniPanelActor | null = null,
 ): Promise<OmniPanelChat[]> {
   try {
     const raw = await runOmniJson(["chats", "list", "--instance", instanceName, "--limit", String(limit)]);
     const records = Array.isArray(raw) ? (raw as OmniChatRecord[]) : [];
-    return records.map((record) => toOmniPanelChat(record, instanceName, sessions)).sort(compareOmniChats);
+    return records.map((record) => toOmniPanelChat(record, instanceName, sessions, actor)).sort(compareOmniChats);
   } catch {
     return [];
   }
 }
 
-async function listOmniGroups(instanceName: string): Promise<OmniPanelGroup[]> {
+async function listOmniGroups(instanceName: string, actor: OmniPanelActor | null = null): Promise<OmniPanelGroup[]> {
   try {
     const raw = await runOmniJson(["instances", "groups", instanceName]);
     const records = Array.isArray(raw) ? (raw as OmniGroupRecord[]) : [];
     return records
-      .map((record) => ({
-        instanceId: instanceName,
-        externalId: cleanNullable(record.externalId),
-        name: cleanNullable(record.name),
-        description: cleanNullable(record.description),
-        memberCount: typeof record.memberCount === "number" ? record.memberCount : null,
-        createdAt: cleanNullable(record.createdAt),
-        isReadOnly: record.isReadOnly === true,
-        isCommunity: record.platformMetadata?.isCommunity === true,
-      }))
+      .map((record) => applyOmniGroupAuth(toOmniPanelGroup(record, instanceName), actor))
       .sort(compareOmniGroups)
       .slice(0, 12);
   } catch {
@@ -1123,29 +1231,277 @@ async function listOmniGroups(instanceName: string): Promise<OmniPanelGroup[]> {
   }
 }
 
-function buildOmniPanelSessions(sessions: ReturnType<typeof getOverlaySessions>): OverlaySessionSnapshot[] {
+function buildOmniPanelSessions(
+  sessions: ReturnType<typeof getOverlaySessions>,
+  actor: OmniPanelActor | null = null,
+): OverlaySessionSnapshot[] {
   return sessions
     .filter((session) => isOmniRelevantSession(session))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, 80)
-    .map((session) => toOmniPanelSessionSnapshot(session));
+    .map((session) => applyOmniSessionAuth(toOmniPanelSessionSnapshot(session), actor));
 }
 
-function buildOmniPanelAgents(): OmniPanelAgent[] {
+function buildOmniPanelAgents(actor: OmniPanelActor | null = null): OmniPanelAgent[] {
   return getAllAgents()
-    .map((agent) => ({
-      id: agent.id,
-      name: cleanNullable(agent.name),
-      cwd: agent.cwd,
-      provider: agent.provider ?? null,
-    }))
+    .map((agent) =>
+      applyOmniAgentAuth(
+        {
+          id: agent.id,
+          name: cleanNullable(agent.name),
+          cwd: agent.cwd,
+          provider: agent.provider ?? null,
+        },
+        actor,
+      ),
+    )
     .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function toOmniPanelGroup(record: OmniGroupRecord, instanceName: string): OmniPanelGroup {
+  const target = buildOmniRouteDescriptor(
+    cleanNullable(record.externalId),
+    instanceName,
+    "group",
+    cleanNullable(record.name),
+  );
+  return {
+    instanceId: instanceName,
+    externalId: cleanNullable(record.externalId),
+    name: cleanNullable(record.name),
+    description: cleanNullable(record.description),
+    memberCount: typeof record.memberCount === "number" ? record.memberCount : null,
+    createdAt: cleanNullable(record.createdAt),
+    isReadOnly: record.isReadOnly === true,
+    isCommunity: record.platformMetadata?.isCommunity === true,
+    routePattern: target?.routePattern ?? null,
+    routeObjectId: target ? buildRouteObjectId(target.instanceName, target.routePattern) : null,
+  };
+}
+
+function buildOmniPanelActor(session: OverlaySessionSnapshot | null): OmniPanelActor | null {
+  if (!session?.agentId) return null;
+  return {
+    sessionKey: session.sessionKey,
+    sessionName: session.sessionName,
+    agentId: session.agentId,
+    capabilities: snapshotAgentCapabilities(session.agentId),
+  };
+}
+
+function resolveOmniRouteActor(sessionHint: string | null): OmniPanelActor | null {
+  const hinted = sessionHint ? resolveSession(sessionHint) : null;
+  if (hinted) {
+    return buildOmniPanelActor(toOmniPanelSessionSnapshot(hinted));
+  }
+
+  const fallbackSnapshot = latestPublishedState ? buildSnapshot(queryFromPublishedState(latestPublishedState)) : null;
+  return buildOmniPanelActor(fallbackSnapshot?.session ?? null);
+}
+
+function buildScopeContext(actor: OmniPanelActor | null): ScopeContext {
+  return {
+    agentId: actor?.agentId,
+    sessionKey: actor?.sessionKey,
+    sessionName: actor?.sessionName,
+  };
+}
+
+function buildRouteObjectId(instanceName: string, routePattern: string): string {
+  return `${instanceName}:${routePattern}`;
+}
+
+function buildOmniRouteDescriptor(
+  chatId: string | null,
+  instanceName: string,
+  chatType: string | null,
+  title: string | null,
+): { instanceName: string; routePattern: string } | null {
+  if (!chatId) return null;
+  try {
+    const target = deriveOmniRouteTarget({
+      chatId,
+      instanceName,
+      chatType,
+      title,
+    });
+    return {
+      instanceName: target.instanceName,
+      routePattern: target.routePattern,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function allowDecision(relation?: string): OmniPermissionDecision {
+  return {
+    allowed: true,
+    matched: relation ? [relation] : [],
+    missing: [],
+    reason: null,
+  };
+}
+
+function denyDecision(...relations: Array<string | null | undefined>): OmniPermissionDecision {
+  const missing = relations.filter((relation): relation is string => Boolean(relation));
+  return {
+    allowed: false,
+    matched: [],
+    missing,
+    reason: missing.length > 0 ? `missing ${missing.join(" + ")}` : "missing permission",
+  };
+}
+
+function collectDeniedRelations(decisions: OmniPermissionDecision[]): string[] {
+  return Array.from(new Set(decisions.filter((decision) => !decision.allowed).flatMap((decision) => decision.missing)));
+}
+
+function checkInstanceRead(actor: OmniPanelActor | null, instanceName: string): OmniPermissionDecision {
+  const relation = `read instance:${instanceName}`;
+  if (!actor?.agentId) return denyDecision(relation);
+  return agentCan(actor.agentId, "read", "instance", instanceName) ? allowDecision(relation) : denyDecision(relation);
+}
+
+function checkRouteRead(actor: OmniPanelActor | null, routeObjectId: string | null): OmniPermissionDecision {
+  const relation = routeObjectId ? `read route:${routeObjectId}` : null;
+  if (!routeObjectId) return denyDecision();
+  const target = routeObjectId as string;
+  if (!actor?.agentId) return denyDecision(relation);
+  return agentCan(actor.agentId, "read", "route", target)
+    ? allowDecision(relation ?? undefined)
+    : denyDecision(relation);
+}
+
+function checkRouteModify(actor: OmniPanelActor | null, routeObjectId: string | null): OmniPermissionDecision {
+  const relation = routeObjectId ? `modify route:${routeObjectId}` : null;
+  if (!routeObjectId) return denyDecision();
+  const target = routeObjectId as string;
+  if (!actor?.agentId) return denyDecision(relation);
+  return agentCan(actor.agentId, "modify", "route", target)
+    ? allowDecision(relation ?? undefined)
+    : denyDecision(relation);
+}
+
+function checkSessionAccess(
+  actor: OmniPanelActor | null,
+  session: OverlaySessionSnapshot | null,
+): OmniPermissionDecision {
+  const target = session?.sessionName ?? session?.sessionKey ?? null;
+  const relation = target ? `access session:${target}` : null;
+  if (!target) return denyDecision();
+  const scopeContext = buildScopeContext(actor);
+  return canAccessSession(scopeContext, target) ? allowDecision(relation ?? undefined) : denyDecision(relation);
+}
+
+function checkSessionModify(
+  actor: OmniPanelActor | null,
+  session: OverlaySessionSnapshot | null,
+): OmniPermissionDecision {
+  const target = session?.sessionName ?? session?.sessionKey ?? null;
+  const relation = target ? `modify session:${target}` : null;
+  if (!target) return denyDecision();
+  const scopeContext = buildScopeContext(actor);
+  return canModifySession(scopeContext, target) ? allowDecision(relation ?? undefined) : denyDecision(relation);
+}
+
+function checkAgentView(actor: OmniPanelActor | null, agentId: string): OmniPermissionDecision {
+  const relation = `view agent:${agentId}`;
+  const scopeContext = buildScopeContext(actor);
+  return canViewAgent(scopeContext, agentId) ? allowDecision(relation) : denyDecision(relation);
+}
+
+function checkGroupExecute(actor: OmniPanelActor | null, groupName: string): OmniPermissionDecision {
+  const relation = `execute group:${groupName}`;
+  if (!actor?.agentId) return denyDecision(relation);
+  return agentCan(actor.agentId, "execute", "group", groupName) ? allowDecision(relation) : denyDecision(relation);
+}
+
+function combineAnyDecisions(...decisions: OmniPermissionDecision[]): OmniPermissionDecision {
+  const allowed = decisions.find((decision) => decision.allowed);
+  if (allowed) {
+    return {
+      allowed: true,
+      matched: decisions.flatMap((decision) => decision.matched),
+      missing: [],
+      reason: null,
+    };
+  }
+  return {
+    allowed: false,
+    matched: [],
+    missing: Array.from(new Set(decisions.flatMap((decision) => decision.missing))),
+    reason:
+      decisions
+        .map((decision) => decision.reason)
+        .filter(Boolean)
+        .join(" | ") || "missing permission",
+  };
+}
+
+function applyOmniInstanceAuth(instance: OmniPanelInstance, actor: OmniPanelActor | null): OmniPanelInstance {
+  const view = checkInstanceRead(actor, instance.name);
+  return {
+    ...instance,
+    profileName: view.allowed ? instance.profileName : null,
+    phone: view.allowed ? instance.phone : null,
+    ownerIdentifier: view.allowed ? instance.ownerIdentifier : null,
+    auth: { visibility: view.allowed ? "full" : "opaque", view },
+  };
+}
+
+function applyOmniAgentAuth(agent: OmniPanelAgent, actor: OmniPanelActor | null): OmniPanelAgent {
+  const view = checkAgentView(actor, agent.id);
+  return {
+    ...agent,
+    name: view.allowed ? agent.name : null,
+    cwd: view.allowed ? agent.cwd : "",
+    provider: view.allowed ? agent.provider : null,
+    auth: { visibility: view.allowed ? "full" : "opaque", view },
+  };
+}
+
+function applyOmniSessionAuth(session: OverlaySessionSnapshot, actor: OmniPanelActor | null): OverlaySessionSnapshot {
+  const view = checkSessionAccess(actor, session);
+  return {
+    ...session,
+    displayName: view.allowed ? session.displayName : null,
+    subject: view.allowed ? session.subject : null,
+    chatId: view.allowed ? session.chatId : null,
+    lastHeartbeatText: view.allowed ? session.lastHeartbeatText : null,
+    auth: { visibility: view.allowed ? "full" : "opaque", view },
+  };
+}
+
+function applyOmniChatAuth(chat: OmniPanelChat, actor: OmniPanelActor | null): OmniPanelChat {
+  const routeRead = checkRouteRead(actor, chat.routeObjectId ?? null);
+  const sessionAccess = checkSessionAccess(actor, chat.linkedSession);
+  const view = combineAnyDecisions(routeRead, sessionAccess);
+  return {
+    ...chat,
+    participantCount: view.allowed ? chat.participantCount : null,
+    unreadCount: view.allowed ? chat.unreadCount : null,
+    lastMessagePreview: view.allowed ? chat.lastMessagePreview : null,
+    linkedSession: view.allowed ? chat.linkedSession : null,
+    auth: { visibility: view.allowed ? "full" : "opaque", view },
+  };
+}
+
+function applyOmniGroupAuth(group: OmniPanelGroup, actor: OmniPanelActor | null): OmniPanelGroup {
+  const view = checkRouteRead(actor, group.routeObjectId ?? null);
+  return {
+    ...group,
+    description: view.allowed ? group.description : null,
+    memberCount: view.allowed ? group.memberCount : null,
+    auth: { visibility: view.allowed ? "full" : "opaque", view },
+  };
 }
 
 function toOmniPanelChat(
   record: OmniChatRecord,
   instanceName: string,
   sessions: ReturnType<typeof getOverlaySessions>,
+  actor: OmniPanelActor | null = null,
 ): OmniPanelChat {
   const query = {
     chatId: cleanNullable(record.externalId) ?? cleanNullable(record.canonicalId),
@@ -1153,27 +1509,38 @@ function toOmniPanelChat(
     session: null,
   };
   const snapshot = buildSnapshotWithSessions(query, sessions);
-
-  return {
-    id: record.id,
-    instanceId: record.instanceId,
+  const target = buildOmniRouteDescriptor(
+    cleanNullable(record.externalId) ?? cleanNullable(record.canonicalId),
     instanceName,
-    externalId: cleanNullable(record.externalId),
-    canonicalId: cleanNullable(record.canonicalId),
-    chatType: cleanNullable(record.chatType),
-    channel: cleanNullable(record.channel),
-    name: cleanNullable(record.name),
-    participantCount: typeof record.participantCount === "number" ? record.participantCount : null,
-    unreadCount: typeof record.unreadCount === "number" ? record.unreadCount : null,
-    lastMessageAt: cleanNullable(record.lastMessageAt),
-    lastMessagePreview: cleanNullable(record.lastMessagePreview),
-    updatedAt: cleanNullable(record.updatedAt),
-    matchesCurrent: false,
-    linkedSession: snapshot.session,
-  };
+    cleanNullable(record.chatType),
+    cleanNullable(record.name),
+  );
+
+  return applyOmniChatAuth(
+    {
+      id: record.id,
+      instanceId: record.instanceId,
+      instanceName,
+      externalId: cleanNullable(record.externalId),
+      canonicalId: cleanNullable(record.canonicalId),
+      chatType: cleanNullable(record.chatType),
+      channel: cleanNullable(record.channel),
+      name: cleanNullable(record.name),
+      participantCount: typeof record.participantCount === "number" ? record.participantCount : null,
+      unreadCount: typeof record.unreadCount === "number" ? record.unreadCount : null,
+      lastMessageAt: cleanNullable(record.lastMessageAt),
+      lastMessagePreview: cleanNullable(record.lastMessagePreview),
+      updatedAt: cleanNullable(record.updatedAt),
+      matchesCurrent: false,
+      linkedSession: snapshot.session,
+      routePattern: target?.routePattern ?? null,
+      routeObjectId: target ? buildRouteObjectId(target.instanceName, target.routePattern) : null,
+    },
+    actor,
+  );
 }
 
-function toOmniPanelSessionSnapshot(session: ReturnType<typeof getOverlaySessions>[number]): OverlaySessionSnapshot {
+function toOmniPanelSessionSnapshot(session: SessionEntry): OverlaySessionSnapshot {
   const live = session.name ? liveBySessionName.get(session.name) : undefined;
   return {
     sessionKey: session.sessionKey,
@@ -1442,6 +1809,15 @@ async function trackSessionRuntime(): Promise<void> {
     if (!sessionName) continue;
 
     if (topic.endsWith(".prompt")) {
+      const promptContext =
+        data.context && typeof data.context === "object" ? (data.context as Record<string, unknown>) : null;
+      const promptMessageId =
+        extractExternalMessageId(
+          cleanNullable(typeof promptContext?.messageId === "string" ? promptContext.messageId : null),
+        ) ?? extractPromptMessageId(typeof data.prompt === "string" ? data.prompt : "");
+      if (promptMessageId) {
+        rememberPromptMessageId(sessionName, promptMessageId);
+      }
       pushLiveEvent(sessionName, {
         kind: "prompt",
         label: "prompt",
@@ -1449,6 +1825,17 @@ async function trackSessionRuntime(): Promise<void> {
         timestamp: Date.now(),
       });
       upsertLive(sessionName, "thinking", "prompt queued");
+      continue;
+    }
+
+    if (topic.endsWith(".delivery")) {
+      const deliveredMessageId = extractExternalMessageId(
+        cleanNullable(typeof data.messageId === "string" ? data.messageId : null),
+      );
+      const emitId = cleanNullable(typeof data.emitId === "string" ? data.emitId : null);
+      if (deliveredMessageId) {
+        rememberDeliveredMessageId(sessionName, emitId, deliveredMessageId);
+      }
       continue;
     }
 
@@ -1460,6 +1847,10 @@ async function trackSessionRuntime(): Promise<void> {
     }
 
     if (topic.endsWith(".response")) {
+      const emitId = cleanNullable(typeof data._emitId === "string" ? data._emitId : null);
+      if (emitId) {
+        rememberResponseEmitId(sessionName, emitId);
+      }
       pushLiveEvent(sessionName, {
         kind: "response",
         label: "response",
@@ -1523,7 +1914,36 @@ async function trackSessionRuntime(): Promise<void> {
         upsertLive(sessionName, "thinking", "tool finished");
       } else if (type === "provider.raw" || type === "system" || type === "user") {
         upsertLive(sessionName, "thinking", "working");
-      } else if (isTerminalRuntimeEvent(type) || status === "idle") {
+      } else if (type === "turn.interrupted") {
+        const artifact = buildInterruptionArtifact(
+          sessionName,
+          data,
+          eventTimestamp,
+          resolveInterruptionAnchor(sessionName),
+        );
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "runtime",
+          detail: "turn.interrupted",
+          timestamp: eventTimestamp,
+        });
+        pushLiveArtifact(sessionName, artifact);
+        const pendingEmitId = getLatestResponseEmitId(sessionName);
+        if (artifact.anchor?.placement !== "after-message-id" && pendingEmitId) {
+          rememberPendingArtifactAnchor(sessionName, artifact.id, pendingEmitId);
+        }
+        upsertLive(sessionName, "idle", "idle");
+        resetActiveArtifactTurnState(sessionName);
+      } else if (isTerminalRuntimeEvent(type)) {
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "runtime",
+          detail: type ?? status ?? "idle",
+          timestamp: eventTimestamp,
+        });
+        upsertLive(sessionName, "idle", "idle");
+        resetActiveArtifactTurnState(sessionName);
+      } else if (status === "idle") {
         pushLiveEvent(sessionName, {
           kind: "runtime",
           label: "runtime",
@@ -1596,6 +2016,103 @@ function pushLiveEvent(sessionName: string, event: OverlaySessionEvent): void {
   });
 }
 
+function pushLiveArtifact(sessionName: string, artifact: OverlayChatArtifact): void {
+  const current = liveBySessionName.get(sessionName);
+  liveBySessionName.set(sessionName, {
+    ...current,
+    activity: current?.activity ?? "unknown",
+    updatedAt: artifact.updatedAt ?? artifact.createdAt,
+    artifacts: upsertOverlayChatArtifact(current?.artifacts, artifact),
+  });
+}
+
+function getOrCreateArtifactTurnState(sessionName: string): SessionArtifactTurnState {
+  const existing = artifactTurnStateBySessionName.get(sessionName);
+  if (existing) return existing;
+
+  const created: SessionArtifactTurnState = {
+    activeResponseEmitIds: [],
+    activeDeliveredMessageIds: [],
+    activePromptMessageIds: [],
+    pendingArtifactId: null,
+    pendingArtifactEmitId: null,
+  };
+  artifactTurnStateBySessionName.set(sessionName, created);
+  return created;
+}
+
+function rememberResponseEmitId(sessionName: string, emitId: string): void {
+  const state = getOrCreateArtifactTurnState(sessionName);
+  state.activeResponseEmitIds = [...state.activeResponseEmitIds.filter((value) => value !== emitId), emitId].slice(-8);
+}
+
+function rememberPromptMessageId(sessionName: string, messageId: string): void {
+  const state = getOrCreateArtifactTurnState(sessionName);
+  state.activePromptMessageIds = [
+    ...state.activePromptMessageIds.filter((value) => value !== messageId),
+    messageId,
+  ].slice(-8);
+}
+
+function rememberDeliveredMessageId(sessionName: string, emitId: string | null, messageId: string): void {
+  const state = getOrCreateArtifactTurnState(sessionName);
+  const belongsToActiveTurn = Boolean(emitId && state.activeResponseEmitIds.includes(emitId));
+  if (belongsToActiveTurn) {
+    state.activeDeliveredMessageIds = [
+      ...state.activeDeliveredMessageIds.filter((value) => value !== messageId),
+      messageId,
+    ].slice(-8);
+  }
+
+  if (!emitId || state.pendingArtifactEmitId !== emitId || !state.pendingArtifactId) {
+    return;
+  }
+
+  const currentArtifacts = liveBySessionName.get(sessionName)?.artifacts ?? [];
+  const pendingArtifact = currentArtifacts.find((artifact) => artifact.id === state.pendingArtifactId);
+  if (pendingArtifact) {
+    pushLiveArtifact(sessionName, {
+      ...pendingArtifact,
+      updatedAt: Date.now(),
+      anchor: { placement: "after-message-id", messageId },
+    });
+  }
+
+  state.pendingArtifactId = null;
+  state.pendingArtifactEmitId = null;
+}
+
+function resolveInterruptionAnchor(sessionName: string): OverlayChatArtifactAnchor {
+  const state = artifactTurnStateBySessionName.get(sessionName);
+  const deliveredMessageId = state?.activeDeliveredMessageIds.at(-1) ?? null;
+  if (deliveredMessageId) {
+    return { placement: "after-message-id", messageId: deliveredMessageId };
+  }
+  const promptMessageId = state?.activePromptMessageIds.at(-1) ?? null;
+  if (promptMessageId) {
+    return { placement: "after-message-id", messageId: promptMessageId };
+  }
+  return { placement: "after-last-message" };
+}
+
+function rememberPendingArtifactAnchor(sessionName: string, artifactId: string, emitId: string): void {
+  const state = getOrCreateArtifactTurnState(sessionName);
+  state.pendingArtifactId = artifactId;
+  state.pendingArtifactEmitId = emitId;
+}
+
+function getLatestResponseEmitId(sessionName: string): string | null {
+  return artifactTurnStateBySessionName.get(sessionName)?.activeResponseEmitIds.at(-1) ?? null;
+}
+
+function resetActiveArtifactTurnState(sessionName: string): void {
+  const state = artifactTurnStateBySessionName.get(sessionName);
+  if (!state) return;
+  state.activeResponseEmitIds = [];
+  state.activeDeliveredMessageIds = [];
+  state.activePromptMessageIds = [];
+}
+
 function updateStreamEvent(sessionName: string, detail: string): void {
   const current = liveBySessionName.get(sessionName);
   const previous = Array.isArray(current?.events) ? [...current.events] : [];
@@ -1641,6 +2158,43 @@ function mergeStreamText(previous: string | undefined, chunk: string, max = 3200
   const base = typeof previous === "string" ? previous.trim() : "";
   const merged = `${base}${rawChunk}`.replace(/\s+/g, " ").trim();
   return merged.length <= max ? merged : `${merged.slice(0, max - 3)}...`;
+}
+
+function buildInterruptionArtifact(
+  sessionName: string,
+  data: Record<string, unknown>,
+  timestamp: number,
+  anchor: OverlayChatArtifactAnchor,
+): OverlayChatArtifact {
+  const detail = extractRuntimeText(data) || "execução interrompida";
+  return {
+    id: `${sessionName}:turn.interrupted:${timestamp}`,
+    kind: "interruption",
+    label: "interrupção",
+    detail,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    anchor,
+  };
+}
+
+function extractRuntimeText(data: Record<string, unknown>): string {
+  const candidates = [data.detail, data.message, data.reason, data.error, data.status];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) {
+      const normalized = formatLiveText(value, 160);
+      if (normalized) return normalized;
+    }
+  }
+
+  return "";
+}
+
+function extractPromptMessageId(prompt: string): string | null {
+  if (typeof prompt !== "string" || !prompt.trim()) return null;
+  const match = prompt.match(/\bmid:([^\]\s]+)/i);
+  return extractExternalMessageId(match?.[1] ?? null);
 }
 
 function summarizeToolInput(value: unknown): string {

@@ -516,6 +516,20 @@
     inset 3px 0 0 #25d366;
 }
 
+.ravi-wa-nav-row--opaque {
+  background: rgba(255, 255, 255, 0.012);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.ravi-wa-nav-row--opaque:hover {
+  background: rgba(255, 255, 255, 0.024);
+}
+
+.ravi-wa-nav-row--opaque .ravi-wa-nav-row__avatar,
+.ravi-wa-nav-row--opaque .ravi-wa-nav-row__titleline strong {
+  filter: saturate(0.2);
+}
+
 .ravi-wa-nav-row__avatar {
   display: inline-flex;
   align-items: center;
@@ -637,6 +651,11 @@
   color: #fca5a5;
 }
 
+.ravi-wa-nav-row__state--locked {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fcd34d;
+}
+
 .ravi-wa-empty {
   margin: 0;
   color: #8696a0;
@@ -702,6 +721,12 @@
   margin: 6px 0 0;
 }
 
+.ravi-wa-route-auth-hint {
+  margin-top: 10px !important;
+  color: #fcd34d !important;
+  font-size: 11px !important;
+}
+
 .ravi-wa-route-binding {
   display: flex;
   flex-direction: column;
@@ -758,6 +783,12 @@
 .ravi-wa-field select:focus {
   border-color: rgba(37, 211, 102, 0.22);
   background: rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-field select:disabled,
+.ravi-wa-field input:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
 }
 
 .ravi-wa-nav-list--tall {
@@ -950,6 +981,101 @@
 .ravi-wa-error-card {
   border-color: rgba(248, 113, 113, 0.2);
   background: rgba(248, 113, 113, 0.06);
+}
+
+.ravi-wa-chat-artifact-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+  pointer-events: none;
+}
+
+.ravi-wa-chat-artifact {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: fit-content;
+  max-width: min(92%, 560px);
+  margin: 4px auto 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(17, 27, 33, 0.82);
+  color: #d1d7db;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+
+.ravi-wa-chat-artifact__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.12);
+}
+
+.ravi-wa-chat-artifact--interruption .ravi-wa-chat-artifact__dot {
+  background: #f87171;
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.14);
+}
+
+.ravi-wa-chat-artifact__body {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ravi-wa-chat-artifact__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ravi-wa-chat-artifact__label {
+  font-size: 12px;
+  line-height: 1.2;
+  color: #f7f8fa;
+  text-transform: lowercase;
+}
+
+.ravi-wa-chat-artifact__kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #8696a0;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+
+.ravi-wa-chat-artifact__detail {
+  margin: 0;
+  color: #aebac1;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ravi-wa-chat-artifact__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6f7f87;
+  font-size: 10px;
+  line-height: 1.1;
+}
+
+.ravi-wa-chat-artifact__time {
+  white-space: nowrap;
 }
 
 .ravi-wa-chat-chip {

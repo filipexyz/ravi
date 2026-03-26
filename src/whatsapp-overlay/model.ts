@@ -22,12 +22,45 @@ export interface OverlaySessionEvent {
   timestamp: number;
 }
 
+export type OverlayChatArtifactAnchor =
+  | {
+      placement: "after-last-message";
+    }
+  | {
+      placement: "after-message-id";
+      messageId: string;
+    };
+
+export interface OverlayChatArtifact {
+  id: string;
+  kind: string;
+  label: string;
+  detail?: string | null;
+  createdAt: number;
+  updatedAt?: number;
+  anchor?: OverlayChatArtifactAnchor;
+  dedupeKey?: string | null;
+}
+
 export interface OverlayLiveState {
   activity: OverlayActivity;
   approvalPending?: boolean;
   summary?: string;
   updatedAt?: number;
   events?: OverlaySessionEvent[];
+  artifacts?: OverlayChatArtifact[];
+}
+
+export interface OverlayPermissionDecision {
+  allowed: boolean;
+  matched: string[];
+  missing: string[];
+  reason: string | null;
+}
+
+export interface OverlayItemAuth {
+  visibility: "full" | "opaque";
+  view: OverlayPermissionDecision;
 }
 
 export interface OverlayCandidate {
@@ -63,6 +96,7 @@ export interface OverlaySessionSnapshot {
   ephemeral: boolean;
   expiresAt: number | null;
   live: OverlayLiveState;
+  auth?: OverlayItemAuth;
 }
 
 export interface OverlaySnapshot {
@@ -155,6 +189,23 @@ export function buildOverlayChatList(args: {
   liveBySessionName?: Map<string, OverlayLiveState>;
 }): OverlayChatListEntry[] {
   return buildOverlaySessionList(args);
+}
+
+export function upsertOverlayChatArtifact(
+  artifacts: OverlayChatArtifact[] | undefined,
+  artifact: OverlayChatArtifact,
+): OverlayChatArtifact[] {
+  const current = Array.isArray(artifacts) ? artifacts : [];
+  const key = artifact.dedupeKey ?? artifact.id;
+  const index = current.findIndex((item) => (item.dedupeKey ?? item.id) === key);
+
+  if (index === -1) {
+    return [...current, artifact];
+  }
+
+  const next = current.slice();
+  next[index] = artifact;
+  return next;
 }
 
 export function resolveSessionForOverlay(
@@ -350,9 +401,9 @@ function isRelevantOverlaySession(session: SessionEntry): boolean {
 
 function defaultLiveState(session: SessionEntry): OverlayLiveState {
   if (session.abortedLastRun) {
-    return { activity: "blocked", summary: "last run aborted", updatedAt: session.updatedAt };
+    return { activity: "blocked", summary: "last run aborted", updatedAt: session.updatedAt, artifacts: [] };
   }
-  return { activity: "idle", updatedAt: session.updatedAt };
+  return { activity: "idle", updatedAt: session.updatedAt, artifacts: [] };
 }
 
 function buildWarnings(query: OverlayQuery, session: SessionEntry | null, candidates: OverlayCandidate[]): string[] {
