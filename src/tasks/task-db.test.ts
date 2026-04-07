@@ -164,4 +164,46 @@ describe("task-db", () => {
 
     expect(dbHasActiveTaskForSession(sessionName, second.task.id)).toBe(false);
   });
+
+  it("persists worktree metadata on both the task and the dispatched assignment", () => {
+    const created = dbCreateTask({
+      title: "Task worktree persistence",
+      instructions: "Store worktree metadata across task lifecycle",
+      createdBy: "test",
+      worktree: {
+        mode: "path",
+        path: "../feature-worktree",
+        branch: "feature/task-runtime",
+      },
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(created.task.worktree).toEqual({
+      mode: "path",
+      path: "../feature-worktree",
+      branch: "feature/task-runtime",
+    });
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+      worktree: {
+        mode: "path",
+        path: "/tmp/ravi-task-worktree",
+        branch: "feature/task-runtime",
+      },
+    });
+
+    expect(dbGetTask(created.task.id)?.worktree).toEqual({
+      mode: "path",
+      path: "../feature-worktree",
+      branch: "feature/task-runtime",
+    });
+    expect(dbGetActiveAssignment(created.task.id)?.worktree).toEqual({
+      mode: "path",
+      path: "/tmp/ravi-task-worktree",
+      branch: "feature/task-runtime",
+    });
+  });
 });

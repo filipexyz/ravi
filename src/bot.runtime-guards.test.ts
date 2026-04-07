@@ -352,6 +352,13 @@ mock.module("./tasks/task-db.js", () => ({
     hasActiveTaskForSession(sessionName, excludeTaskId),
 }));
 
+mock.module("./tasks/service.js", () => ({
+  recoverActiveTasksAfterRestart: mock(async () => ({
+    recoveredTaskIds: [],
+    skipped: [],
+  })),
+}));
+
 mock.module("./utils/logger.js", () => {
   const noop = () => loggerChild;
   const loggerChild = { info: noop, warn: noop, error: noop, debug: noop, child: noop };
@@ -487,6 +494,30 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(preparePlugins).toEqual(discoveredPlugins);
+  });
+
+  it("uses the session cwd instead of the agent default when a task/session overrides the workspace", async () => {
+    const sessionKey = "agent:main:task-worktree";
+    sessions.set(sessionKey, {
+      sessionKey,
+      name: sessionKey,
+      agentId: "main",
+      agentCwd: "/tmp/ravi-test-bot/worktrees/task-worktree",
+    });
+
+    let preparedCwd = "";
+    runtimePrepareImpl = async (_providerId, input) => {
+      preparedCwd = input.cwd;
+      return undefined;
+    };
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello from worktree"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(preparedCwd).toBe("/tmp/ravi-test-bot/worktrees/task-worktree");
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect(runtimeStartCalls[0]?.cwd).toBe("/tmp/ravi-test-bot/worktrees/task-worktree");
   });
 
   it("accepts the next prompt after a completed Codex turn without interrupting the session", async () => {

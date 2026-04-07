@@ -15,6 +15,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ravi:get-tasks") {
+    fetchTasks(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "ravi:session-prompt") {
     postSessionPrompt(message.payload)
       .then(sendResponse)
@@ -117,6 +124,18 @@ async function fetchSessionWorkspace(payload = {}) {
   if (payload.session) params.set("session", payload.session);
 
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/workspace?${params.toString()}`);
+  return response.json();
+}
+
+async function fetchTasks(payload = {}) {
+  const params = new URLSearchParams();
+  if (payload.taskId) params.set("taskId", payload.taskId);
+  if (payload.status) params.set("status", payload.status);
+  if (payload.agentId) params.set("agentId", payload.agentId);
+  if (payload.sessionName) params.set("sessionName", payload.sessionName);
+  if (payload.eventsLimit) params.set("eventsLimit", String(payload.eventsLimit));
+
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
   return response.json();
 }
 

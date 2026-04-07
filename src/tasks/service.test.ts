@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   buildTaskEventPayload,
+  buildTaskResumePrompt,
   buildTaskStreamSnapshot,
   dbCreateTask,
   dbDeleteTask,
   dbDispatchTask,
   dbReportTaskProgress,
+  isTaskRecoveryFresh,
   isTaskStreamCommand,
 } from "./index.js";
 
@@ -24,6 +26,11 @@ describe("task substrate contract", () => {
       title: "Stream payload smoke",
       instructions: "Create an event payload with the canonical task entity",
       createdBy: "test",
+      worktree: {
+        mode: "path",
+        path: "../stream-worktree",
+        branch: "feature/stream",
+      },
     });
     createdTaskIds.push(created.task.id);
 
@@ -32,6 +39,11 @@ describe("task substrate contract", () => {
     expect(payload.kind).toBe("task.event");
     expect(payload.task.id).toBe(created.task.id);
     expect(payload.task.createdBy).toBe("test");
+    expect(payload.task.worktree).toEqual({
+      mode: "path",
+      path: "../stream-worktree",
+      branch: "feature/stream",
+    });
     expect(payload.event.type).toBe("task.created");
     expect(payload.task.artifacts).toEqual({
       status: "planned",
@@ -46,6 +58,11 @@ describe("task substrate contract", () => {
       title: "Snapshot smoke",
       instructions: "Create -> dispatch -> report so the snapshot exposes current task state",
       createdBy: "test",
+      worktree: {
+        mode: "path",
+        path: "../snapshot-worktree",
+        branch: "feature/snapshot",
+      },
     });
     createdTaskIds.push(created.task.id);
 
@@ -53,6 +70,11 @@ describe("task substrate contract", () => {
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
       assignedBy: "test",
+      worktree: {
+        mode: "path",
+        path: "/tmp/ravi-task-snapshot-worktree",
+        branch: "feature/snapshot",
+      },
     });
     dbReportTaskProgress(created.task.id, {
       actor: "test",
@@ -79,6 +101,11 @@ describe("task substrate contract", () => {
       id: created.task.id,
       status: "in_progress",
       progress: 35,
+      worktree: {
+        mode: "path",
+        path: "../snapshot-worktree",
+        branch: "feature/snapshot",
+      },
     });
     expect(snapshot.stats).toEqual({
       total: 1,
@@ -90,6 +117,11 @@ describe("task substrate contract", () => {
       failed: 0,
     });
     expect(snapshot.selectedTask?.activeAssignment?.sessionName).toBe(`${created.task.id}-work`);
+    expect(snapshot.selectedTask?.activeAssignment?.worktree).toEqual({
+      mode: "path",
+      path: "/tmp/ravi-task-snapshot-worktree",
+      branch: "feature/snapshot",
+    });
     expect(snapshot.selectedTask?.events.map((event) => event.type)).toEqual([
       "task.created",
       "task.dispatched",
@@ -107,5 +139,89 @@ describe("task substrate contract", () => {
     expect(isTaskStreamCommand("task.block")).toBe(true);
     expect(isTaskStreamCommand("task.fail")).toBe(true);
     expect(isTaskStreamCommand("snapshot.open")).toBe(false);
+  });
+
+  it("builds a resume prompt that preserves task progress across daemon restart", () => {
+    const created = dbCreateTask({
+      title: "Resume smoke",
+      instructions: "Continue from previous progress after restart",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+    const progressed = dbReportTaskProgress(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      progress: 42,
+      message: "halfway there",
+    });
+
+    const prompt = buildTaskResumePrompt(progressed.task, "dev", `${created.task.id}-work`, {
+      effectiveCwd: "/tmp/ravi-task-recovery",
+    });
+
+    expect(prompt).toContain(`task ${created.task.id}`);
+    expect(prompt).toContain("Status atual: in_progress");
+    expect(prompt).toContain("Progresso atual: 42%");
+    expect(prompt).toContain("Retome do ponto onde parou");
+    expect(prompt).toContain(`ravi tasks done ${created.task.id} --summary`);
+  });
+
+  it("recovers only fresh active tasks after restart", () => {
+    const now = 3_000_000;
+    expect(
+      isTaskRecoveryFresh(
+        {
+          id: "task-fresh",
+          title: "Fresh",
+          instructions: "Fresh task",
+          status: "in_progress",
+          priority: "normal",
+          progress: 80,
+          createdAt: now - 10_000,
+          updatedAt: now - 5_000,
+        },
+        {
+          id: "asg-fresh",
+          taskId: "task-fresh",
+          agentId: "dev",
+          sessionName: "task-fresh-work",
+          status: "accepted",
+          assignedAt: now - 15_000,
+          acceptedAt: now - 8_000,
+        },
+        now,
+      ),
+    ).toBe(true);
+
+    expect(
+      isTaskRecoveryFresh(
+        {
+          id: "task-stale",
+          title: "Stale",
+          instructions: "Old task",
+          status: "in_progress",
+          priority: "normal",
+          progress: 90,
+          createdAt: now - 3_000_000,
+          updatedAt: now - 2_000_000,
+        },
+        {
+          id: "asg-stale",
+          taskId: "task-stale",
+          agentId: "dev",
+          sessionName: "task-stale-work",
+          status: "accepted",
+          assignedAt: now - 2_100_000,
+        },
+        now,
+      ),
+    ).toBe(false);
   });
 });

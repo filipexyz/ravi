@@ -53,6 +53,12 @@ import { buildOverlayV3PlaceholderSnapshot, type OverlayV3RelayHealth } from "./
 import type { SessionEntry } from "../router/types.js";
 import { matchOmniChatFromRow } from "./chat-list-match.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import {
+  buildTaskStreamSnapshot,
+  type TaskStatus,
+  type TaskStreamSelection,
+  type TaskStreamTaskEntity,
+} from "../tasks/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "../..");
@@ -133,6 +139,32 @@ type MessageMetaBody = {
 type OverlayV3CommandBody = {
   name?: string | null;
   args?: Record<string, unknown> | null;
+};
+
+type OverlayTasksQuery = {
+  taskId: string | null;
+  status: TaskStatus | null;
+  agentId: string | null;
+  sessionName: string | null;
+  eventsLimit: number;
+};
+
+type OverlayTasksSnapshot = {
+  ok: true;
+  generatedAt: number;
+  query: OverlayTasksQuery;
+  stats: {
+    total: number;
+    open: number;
+    dispatched: number;
+    inProgress: number;
+    blocked: number;
+    done: number;
+    failed: number;
+  };
+  items: TaskStreamTaskEntity[];
+  activeItems: TaskStreamTaskEntity[];
+  selectedTask: TaskStreamSelection | null;
 };
 
 type OmniInstanceRecord = {
@@ -363,6 +395,10 @@ const server = serve({
 
     if (url.pathname === "/api/whatsapp-overlay/session/prompt" && req.method === "POST") {
       return handleSessionPrompt(req, url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/tasks" && req.method === "GET") {
+      return handleTasks(url);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/current" && req.method === "POST") {
@@ -907,6 +943,80 @@ function handleSnapshot(url: URL): Response {
     session: url.searchParams.get("session"),
   });
   return withCors(Response.json(snapshot), url);
+}
+
+function handleTasks(url: URL): Response {
+  try {
+    const explicitTaskId = cleanNullable(url.searchParams.get("taskId"));
+    const status = cleanTaskStatus(url.searchParams.get("status"));
+    const agentId = cleanNullable(url.searchParams.get("agentId"));
+    const sessionName = cleanNullable(url.searchParams.get("sessionName"));
+    const eventsLimit = normalizeTaskEventsLimit(url.searchParams.get("eventsLimit"));
+
+    const listSnapshot = buildTaskStreamSnapshot({
+      ...(status ? { status } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(sessionName ? { sessionName } : {}),
+      eventsLimit,
+    });
+    const items = [...listSnapshot.items].sort((a, b) => b.updatedAt - a.updatedAt);
+    const activeItems = items.filter((item) => item.status !== "done" && item.status !== "failed");
+    let selectedTaskId = explicitTaskId ?? activeItems[0]?.id ?? items[0]?.id ?? null;
+    let selectedTask: TaskStreamSelection | null = null;
+
+    if (selectedTaskId) {
+      try {
+        selectedTask =
+          buildTaskStreamSnapshot({
+            taskId: selectedTaskId,
+            eventsLimit,
+          }).selectedTask ?? null;
+      } catch (error) {
+        if (explicitTaskId && error instanceof Error && /task not found/i.test(error.message)) {
+          selectedTaskId = activeItems[0]?.id ?? items[0]?.id ?? null;
+          selectedTask = selectedTaskId
+            ? (buildTaskStreamSnapshot({
+                taskId: selectedTaskId,
+                eventsLimit,
+              }).selectedTask ?? null)
+            : null;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const payload: OverlayTasksSnapshot = {
+      ok: true,
+      generatedAt: Date.now(),
+      query: {
+        taskId: selectedTaskId,
+        status,
+        agentId,
+        sessionName,
+        eventsLimit,
+      },
+      stats: listSnapshot.stats,
+      items,
+      activeItems,
+      selectedTask,
+    };
+
+    return withCors(Response.json(payload), url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status = /task not found/i.test(message) ? 404 : 500;
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: message,
+        },
+        { status },
+      ),
+      url,
+    );
+  }
 }
 
 async function handleOmniPanel(url: URL): Promise<Response> {
@@ -2257,6 +2367,27 @@ function cleanNullable(value: string | null | undefined): string | null {
 
 function normalizePositiveNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function cleanTaskStatus(value: string | null | undefined): TaskStatus | null {
+  const normalized = cleanNullable(value);
+  switch (normalized) {
+    case "open":
+    case "dispatched":
+    case "in_progress":
+    case "blocked":
+    case "done":
+    case "failed":
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function normalizeTaskEventsLimit(value: string | null | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 20;
+  return Math.max(1, Math.min(parsed, 50));
 }
 
 function normalizeLookupToken(value: string | null | undefined): string {

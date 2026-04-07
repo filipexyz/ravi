@@ -45,6 +45,9 @@ The following are already validated in browser and terminal:
   - a session can now replace only the center pane, while the Ravi drawer stays visible
   - it no longer depends on the currently open WhatsApp chat
   - it already supports prompt send directly to the selected session
+- task visibility in the drawer
+  - active tasks can now be inspected from the extension itself
+  - selected tasks show instructions, assignment and recent event timeline without leaving WhatsApp Web
 - message artifacts
   - interruption/tool artifacts can be injected inline
 - DOM control plane
@@ -62,11 +65,13 @@ Today the overlay runs in a hybrid state:
 - `content.js`
   - DOM mapping, product rendering, and placeholder consumer
   - plus the new center-pane session workspace renderer and composer
+  - plus the read-only task list/detail surface in the drawer
 - `background.js`
   - thin bridge proxy
 - `src/whatsapp-overlay/bridge.ts`
   - read model + actions + live state reduction
   - plus session-workspace read + prompt endpoints
+  - plus read-only task snapshot endpoint for the extension
   - plus v3 placeholder endpoint and first v3 command endpoint backed by the local relay
 - `src/whatsapp-overlay/cli.ts`
   - terminal inspection/control plane

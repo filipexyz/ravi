@@ -391,11 +391,28 @@ export class RaviBot {
     this.subscribeToSessionAborts();
     this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
+    void this.recoverActiveTasksAfterRestart();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
       agents: Object.keys(configStore.getConfig().agents),
     });
+  }
+
+  private async recoverActiveTasksAfterRestart(): Promise<void> {
+    try {
+      const { recoverActiveTasksAfterRestart } = await import("./tasks/service.js");
+      const recovery = await recoverActiveTasksAfterRestart();
+      if (recovery.recoveredTaskIds.length === 0 && recovery.skipped.length === 0) {
+        return;
+      }
+      log.info("Recovered active tasks after restart", {
+        recovered: recovery.recoveredTaskIds,
+        skipped: recovery.skipped,
+      });
+    } catch (error) {
+      log.error("Failed to recover active tasks after restart", { error });
+    }
   }
 
   async stop(): Promise<void> {
@@ -1031,6 +1048,7 @@ export class RaviBot {
     } else {
       session = sessionEntry ?? getOrCreateSession(sessionName, agentId, agentCwd, { name: sessionName });
     }
+    const sessionCwd = expandHome(session.agentCwd);
     const dbSessionKey = session.sessionKey; // actual DB primary key
     const storedRuntimeSessionParams = session.runtimeSessionParams;
     const storedProviderSessionId =
@@ -1155,7 +1173,7 @@ export class RaviBot {
 
           try {
             const { readFileSync, readdirSync, statSync } = await import("node:fs");
-            const planDir = join(agentCwd, ".claude", "plans");
+            const planDir = join(sessionCwd, ".claude", "plans");
             const files = (() => {
               try {
                 return readdirSync(planDir)
@@ -1402,7 +1420,7 @@ export class RaviBot {
 
       // Create spec mode MCP server for this session (only if agent has specMode enabled)
       const specServer =
-        runtimeCapabilities.supportsMcpServers && agent.specMode ? createSpecServer(sessionName, agentCwd) : null;
+        runtimeCapabilities.supportsMcpServers && agent.specMode ? createSpecServer(sessionName, sessionCwd) : null;
 
       // Create the AsyncGenerator that feeds messages to the SDK
       const messageGenerator = this.createMessageGenerator(sessionName, streamingSession);
@@ -1470,7 +1488,7 @@ export class RaviBot {
 
       const providerBootstrap = await runtimeProvider.prepareSession?.({
         agentId: agent.id,
-        cwd: agentCwd,
+        cwd: sessionCwd,
         ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
       });
       const baseRuntimeEnv = Object.fromEntries(
@@ -1520,7 +1538,7 @@ export class RaviBot {
       const runtimeRequest: RuntimeStartRequest = {
         prompt: messageGenerator,
         model,
-        cwd: agentCwd,
+        cwd: sessionCwd,
         ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
         ...(canResumeStoredSession
           ? {

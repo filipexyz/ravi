@@ -9,6 +9,7 @@ import type {
   TaskProgressInput,
   TaskRecord,
   TaskTerminalInput,
+  TaskWorktreeConfig,
 } from "./types.js";
 
 interface TaskRow {
@@ -21,6 +22,9 @@ interface TaskRow {
   created_by: string | null;
   assignee_agent_id: string | null;
   assignee_session_name: string | null;
+  worktree_mode: string | null;
+  worktree_path: string | null;
+  worktree_branch: string | null;
   summary: string | null;
   blocker_reason: string | null;
   created_at: number;
@@ -36,6 +40,9 @@ interface TaskAssignmentRow {
   agent_id: string;
   session_name: string;
   assigned_by: string | null;
+  worktree_mode: string | null;
+  worktree_path: string | null;
+  worktree_branch: string | null;
   status: TaskAssignment["status"];
   assigned_at: number;
   accepted_at: number | null;
@@ -56,6 +63,35 @@ interface TaskEventRow {
 
 let schemaReady = false;
 
+function applyTaskWorktreeSchemaMigrations(): void {
+  const db = getDb();
+  const taskColumns = new Set(
+    (db.prepare("PRAGMA table_info(tasks)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!taskColumns.has("worktree_mode")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN worktree_mode TEXT");
+  }
+  if (!taskColumns.has("worktree_path")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN worktree_path TEXT");
+  }
+  if (!taskColumns.has("worktree_branch")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN worktree_branch TEXT");
+  }
+
+  const assignmentColumns = new Set(
+    (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!assignmentColumns.has("worktree_mode")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN worktree_mode TEXT");
+  }
+  if (!assignmentColumns.has("worktree_path")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN worktree_path TEXT");
+  }
+  if (!assignmentColumns.has("worktree_branch")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN worktree_branch TEXT");
+  }
+}
+
 function ensureTaskSchema(): void {
   if (schemaReady) return;
   const db = getDb();
@@ -70,6 +106,9 @@ function ensureTaskSchema(): void {
       created_by TEXT,
       assignee_agent_id TEXT,
       assignee_session_name TEXT,
+      worktree_mode TEXT,
+      worktree_path TEXT,
+      worktree_branch TEXT,
       summary TEXT,
       blocker_reason TEXT,
       created_at INTEGER NOT NULL,
@@ -85,6 +124,9 @@ function ensureTaskSchema(): void {
       agent_id TEXT NOT NULL,
       session_name TEXT NOT NULL,
       assigned_by TEXT,
+      worktree_mode TEXT,
+      worktree_path TEXT,
+      worktree_branch TEXT,
       status TEXT NOT NULL,
       assigned_at INTEGER NOT NULL,
       accepted_at INTEGER,
@@ -111,7 +153,28 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id, assigned_at DESC);
     CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at ASC);
   `);
+  applyTaskWorktreeSchemaMigrations();
   schemaReady = true;
+}
+
+function rowToWorktree(
+  mode: string | null,
+  path: string | null,
+  branch: string | null,
+): TaskWorktreeConfig | undefined {
+  if (mode !== "inherit" && mode !== "path") {
+    return undefined;
+  }
+
+  return {
+    mode,
+    ...(path ? { path } : {}),
+    ...(branch ? { branch } : {}),
+  };
+}
+
+function worktreeToColumns(worktree?: TaskWorktreeConfig): [string | null, string | null, string | null] {
+  return [worktree?.mode ?? null, worktree?.path ?? null, worktree?.branch ?? null];
 }
 
 function rowToTask(row: TaskRow): TaskRecord {
@@ -125,6 +188,9 @@ function rowToTask(row: TaskRow): TaskRecord {
     ...(row.created_by ? { createdBy: row.created_by } : {}),
     ...(row.assignee_agent_id ? { assigneeAgentId: row.assignee_agent_id } : {}),
     ...(row.assignee_session_name ? { assigneeSessionName: row.assignee_session_name } : {}),
+    ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
+      ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
+      : {}),
     ...(row.summary ? { summary: row.summary } : {}),
     ...(row.blocker_reason ? { blockerReason: row.blocker_reason } : {}),
     createdAt: row.created_at,
@@ -142,6 +208,9 @@ function rowToAssignment(row: TaskAssignmentRow): TaskAssignment {
     agentId: row.agent_id,
     sessionName: row.session_name,
     ...(row.assigned_by ? { assignedBy: row.assigned_by } : {}),
+    ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
+      ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
+      : {}),
     status: row.status,
     assignedAt: row.assigned_at,
     ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}),
@@ -234,12 +303,25 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   const db = getDb();
   const id = `task-${randomUUID().slice(0, 8)}`;
   const now = Date.now();
+  const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
 
   db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, priority, progress, created_by, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?)
-  `).run(id, input.title, input.instructions, input.priority ?? "normal", input.createdBy ?? null, now, now);
+      id, title, instructions, status, priority, progress, created_by, worktree_mode, worktree_path, worktree_branch,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    input.title,
+    input.instructions,
+    input.priority ?? "normal",
+    input.createdBy ?? null,
+    worktreeMode,
+    worktreePath,
+    worktreeBranch,
+    now,
+    now,
+  );
 
   const event = appendTaskEvent(id, "task.created", {
     actor: input.createdBy,
@@ -345,6 +427,7 @@ export function dbDispatchTask(
   ensureTaskSchema();
   const db = getDb();
   const now = Date.now();
+  const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
   getTaskOrThrow(taskId);
 
   db.prepare(`
@@ -356,9 +439,19 @@ export function dbDispatchTask(
   const assignmentId = `asg-${randomUUID().slice(0, 8)}`;
   db.prepare(`
     INSERT INTO task_assignments (
-      id, task_id, agent_id, session_name, assigned_by, status, assigned_at
-    ) VALUES (?, ?, ?, ?, ?, 'assigned', ?)
-  `).run(assignmentId, taskId, input.agentId, input.sessionName, input.assignedBy ?? null, now);
+      id, task_id, agent_id, session_name, assigned_by, worktree_mode, worktree_path, worktree_branch, status, assigned_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assigned', ?)
+  `).run(
+    assignmentId,
+    taskId,
+    input.agentId,
+    input.sessionName,
+    input.assignedBy ?? null,
+    worktreeMode,
+    worktreePath,
+    worktreeBranch,
+    now,
+  );
 
   db.prepare(`
     UPDATE tasks

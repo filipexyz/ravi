@@ -6,8 +6,10 @@ import { logger } from "../../utils/logger.js";
 import {
   completeTask,
   createTask,
+  createTaskWorktreeConfig,
   dispatchTask,
   emitTaskEvent,
+  formatTaskWorktree,
   getDefaultTaskSessionName,
   getTaskActor,
   getTaskDetails,
@@ -79,6 +81,23 @@ function requireStatus(value?: string): TaskStatus | undefined {
   return normalized;
 }
 
+function resolveCreateAssignee(agentId?: string, assigneeId?: string): string | undefined {
+  const normalizedAgent = agentId?.trim();
+  const normalizedAssignee = assigneeId?.trim();
+  if (normalizedAgent && normalizedAssignee && normalizedAgent !== normalizedAssignee) {
+    fail(`Conflicting assignee values: --agent=${normalizedAgent} and --assignee=${normalizedAssignee}.`);
+  }
+  return normalizedAgent || normalizedAssignee;
+}
+
+function requireTaskWorktree(mode?: string, path?: string, branch?: string) {
+  try {
+    return createTaskWorktreeConfig({ mode, path, branch });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
 function printTaskSummary(task: TaskRecord): void {
   console.log(`\nTask:        ${task.id}`);
   console.log(`Title:       ${task.title}`);
@@ -87,6 +106,7 @@ function printTaskSummary(task: TaskRecord): void {
   console.log(`Progress:    ${task.progress}%`);
   console.log(`Agent:       ${task.assigneeAgentId ?? "-"}`);
   console.log(`Session:     ${task.assigneeSessionName ?? "-"}`);
+  if (task.worktree) console.log(`Worktree:    ${formatTaskWorktree(task.worktree)}`);
   console.log(`Created:     ${formatTime(task.createdAt)}`);
   console.log(`Updated:     ${formatTime(task.updatedAt)} (${timeAgo(task.updatedAt)})`);
   if (task.summary) console.log(`Summary:     ${task.summary}`);
@@ -190,13 +210,23 @@ function silenceCliInfraLogs(): void {
   scope: "open",
 })
 export class TaskCommands {
-  @Command({ name: "create", description: "Create a new tracked task" })
+  @Command({ name: "create", description: "Create a tracked task; --agent/--assignee auto-dispatches immediately" })
   async create(
     @Arg("title", { description: "Short task title" }) title: string,
     @Option({ flags: "--instructions <text>", description: "Detailed instructions for the task" })
     instructions?: string,
     @Option({ flags: "--priority <level>", description: "low|normal|high|urgent", defaultValue: "normal" })
     priority?: string,
+    @Option({ flags: "--agent <id>", description: "Auto-dispatch to this agent immediately" }) agentId?: string,
+    @Option({ flags: "--assignee <id>", description: "Alias for --agent" }) assigneeId?: string,
+    @Option({ flags: "--session <name>", description: "Working session name to use when auto-dispatching" })
+    sessionName?: string,
+    @Option({ flags: "--worktree-mode <mode>", description: "inherit|path (path is implied by --worktree-path)" })
+    worktreeMode?: string,
+    @Option({ flags: "--worktree-path <path>", description: "Task worktree path (relative to agent cwd if needed)" })
+    worktreePath?: string,
+    @Option({ flags: "--worktree-branch <name>", description: "Optional branch label for the task worktree" })
+    worktreeBranch?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     silenceCliInfraLogs();
@@ -204,21 +234,58 @@ export class TaskCommands {
       fail("--instructions is required");
     }
 
+    const assigneeAgentId = resolveCreateAssignee(agentId, assigneeId);
+    if (sessionName?.trim() && !assigneeAgentId) {
+      fail("--session requires --agent or --assignee.");
+    }
+
+    const worktree = requireTaskWorktree(worktreeMode, worktreePath, worktreeBranch);
     const actor = getTaskActor().actor;
-    const { task, event } = createTask({
+    const created = createTask({
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
       createdBy: actor,
+      ...(worktree ? { worktree } : {}),
     });
-    await emitTaskEvent(task, event);
+    await emitTaskEvent(created.task, created.event);
+
+    let task = created.task;
+    let dispatched: Awaited<ReturnType<typeof dispatchTask>> | null = null;
+    if (assigneeAgentId) {
+      dispatched = await dispatchTask(created.task.id, {
+        agentId: assigneeAgentId,
+        sessionName: sessionName?.trim() || getDefaultTaskSessionName(created.task.id),
+        assignedBy: actor,
+        ...(worktree ? { worktree } : {}),
+      });
+      await emitTaskEvent(dispatched.task, dispatched.event);
+      task = dispatched.task;
+    }
 
     if (asJson) {
-      console.log(JSON.stringify({ task, event }, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            task,
+            event: created.event,
+            ...(dispatched
+              ? {
+                  dispatch: {
+                    event: dispatched.event,
+                    sessionName: dispatched.sessionName,
+                  },
+                }
+              : {}),
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
-    console.log(`\n✓ Created task ${task.id}`);
+    console.log(`\n✓ ${dispatched ? "Created and dispatched" : "Created"} task ${task.id}`);
     printTaskSummary(task);
     printNextSteps(task);
   }
@@ -286,6 +353,9 @@ export class TaskCommands {
       console.log("\nActive assignment:");
       console.log(`  Agent:       ${details.activeAssignment.agentId}`);
       console.log(`  Session:     ${details.activeAssignment.sessionName}`);
+      if (details.activeAssignment.worktree) {
+        console.log(`  Worktree:    ${formatTaskWorktree(details.activeAssignment.worktree)}`);
+      }
       console.log(`  Status:      ${details.activeAssignment.status}`);
       console.log(`  Assigned at: ${formatTime(details.activeAssignment.assignedAt)}`);
     }

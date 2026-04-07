@@ -3,6 +3,7 @@ import { nats } from "../nats.js";
 import { expandHome, loadRouterConfig } from "../router/index.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { isAbsolute, resolve as resolvePath } from "node:path";
 import { z } from "zod";
 import {
   dbCompleteTask,
@@ -28,12 +29,17 @@ import type {
   TaskRecord,
   TaskStatus,
   TaskTerminalInput,
+  TaskWorktreeConfig,
+  TaskWorktreeMode,
 } from "./types.js";
 
 const TASK_EVENT_PREFIX = "ravi.task";
 const TASK_STATUSES = ["open", "dispatched", "in_progress", "blocked", "done", "failed"] as const;
 const TASK_PRIORITIES = ["low", "normal", "high", "urgent"] as const;
 const TASK_ARTIFACT_KINDS = ["file", "url", "text"] as const;
+const TASK_WORKTREE_MODES = ["inherit", "path"] as const;
+const TASK_RECOVERY_STATUSES: TaskStatus[] = ["dispatched", "in_progress"];
+const TASK_RECOVERY_MAX_STALE_MS = 20 * 60 * 1000;
 
 export const TASK_STREAM_SCOPE = "tasks";
 export const TASK_STREAM_TOPIC_PATTERNS = ["ravi.task.>"] as const;
@@ -63,6 +69,7 @@ export interface TaskStreamTaskEntity {
   createdBy: string | null;
   assigneeAgentId: string | null;
   assigneeSessionName: string | null;
+  worktree: TaskWorktreeConfig | null;
   summary: string | null;
   blockerReason: string | null;
   createdAt: number;
@@ -117,6 +124,16 @@ export interface TaskStreamEventPayload {
   artifacts: TaskArtifactPlaceholder;
 }
 
+export interface TaskRecoveryResult {
+  recoveredTaskIds: string[];
+  skipped: Array<{ taskId: string; reason: string }>;
+}
+
+export function isTaskRecoveryFresh(task: TaskRecord, assignment: TaskAssignment, now = Date.now()): boolean {
+  const freshestActivity = Math.max(task.updatedAt ?? 0, assignment.acceptedAt ?? 0, assignment.assignedAt ?? 0);
+  return now - freshestActivity <= TASK_RECOVERY_MAX_STALE_MS;
+}
+
 export type TaskStreamCommandName = (typeof TASK_STREAM_COMMAND_NAMES)[number];
 
 const TaskSnapshotArgsSchema = z
@@ -135,11 +152,24 @@ const TaskStreamActorSchema = z.object({
   sessionName: z.string().trim().min(1).optional(),
 });
 
+const TaskWorktreeInputSchema = z
+  .object({
+    mode: z.enum(TASK_WORKTREE_MODES).optional(),
+    path: z.string().trim().min(1).optional(),
+    branch: z.string().trim().min(1).optional(),
+  })
+  .strict()
+  .transform((value) => createTaskWorktreeConfig(value));
+
 const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   title: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
+  agentId: z.string().trim().min(1).optional(),
   createdBy: z.string().trim().min(1).optional(),
+  assigneeAgentId: z.string().trim().min(1).optional(),
+  sessionName: z.string().trim().min(1).optional(),
+  worktree: TaskWorktreeInputSchema.optional(),
 }).strict();
 
 const TaskDispatchCommandArgsSchema = z
@@ -149,6 +179,7 @@ const TaskDispatchCommandArgsSchema = z
     sessionName: z.string().trim().min(1).optional(),
     assignedBy: z.string().trim().min(1).optional(),
     actor: z.string().trim().min(1).optional(),
+    worktree: TaskWorktreeInputSchema.optional(),
   })
   .strict();
 
@@ -181,6 +212,112 @@ function createTaskArtifactPlaceholder(): TaskArtifactPlaceholder {
   };
 }
 
+function normalizeTaskString(value?: string | null): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+export function createTaskWorktreeConfig(input?: {
+  mode?: string | null;
+  path?: string | null;
+  branch?: string | null;
+}): TaskWorktreeConfig | undefined {
+  const modeInput = normalizeTaskString(input?.mode);
+  const path = normalizeTaskString(input?.path);
+  const branch = normalizeTaskString(input?.branch);
+
+  if (!modeInput && !path && !branch) {
+    return undefined;
+  }
+
+  const mode = (modeInput ?? (path || branch ? "path" : "inherit")) as TaskWorktreeMode;
+  if (mode !== "inherit" && mode !== "path") {
+    throw new Error(`Invalid worktree mode: ${modeInput}. Use inherit|path.`);
+  }
+
+  if (mode === "inherit") {
+    if (path || branch) {
+      throw new Error("worktree mode 'inherit' cannot be combined with path or branch.");
+    }
+    return { mode };
+  }
+
+  if (!path) {
+    throw new Error("worktree path is required when worktree mode is 'path'.");
+  }
+
+  return {
+    mode,
+    path,
+    ...(branch ? { branch } : {}),
+  };
+}
+
+export function formatTaskWorktree(worktree?: TaskWorktreeConfig | null): string {
+  if (!worktree) {
+    return "agent default cwd";
+  }
+
+  if (worktree.mode === "inherit") {
+    return "inherit agent cwd";
+  }
+
+  return `${worktree.path}${worktree.branch ? ` (branch ${worktree.branch})` : ""}`;
+}
+
+function resolveTaskSessionWorkspace(
+  agentCwd: string,
+  worktree?: TaskWorktreeConfig,
+): { effectiveCwd: string; worktree?: TaskWorktreeConfig } {
+  if (!worktree || worktree.mode === "inherit") {
+    return {
+      effectiveCwd: agentCwd,
+      ...(worktree ? { worktree } : {}),
+    };
+  }
+
+  const expandedPath = expandHome(worktree.path ?? "");
+  const effectiveCwd = isAbsolute(expandedPath) ? expandedPath : resolvePath(agentCwd, expandedPath);
+  return {
+    effectiveCwd,
+    worktree: {
+      ...worktree,
+      path: effectiveCwd,
+    },
+  };
+}
+
+function resolveTaskSessionContext(
+  task: TaskRecord,
+  agentId: string,
+  sessionName: string,
+  worktreeInput?: TaskWorktreeConfig,
+): { sessionName: string; effectiveCwd: string; worktree?: TaskWorktreeConfig } {
+  const config = loadRouterConfig();
+  const agent = config.agents[agentId];
+  if (!agent) {
+    throw new Error(`Agent not found: ${agentId}`);
+  }
+
+  const configuredAgentCwd = expandHome(agent.cwd);
+  const { effectiveCwd, worktree } = resolveTaskSessionWorkspace(configuredAgentCwd, worktreeInput ?? task.worktree);
+  const existingSession = resolveSession(sessionName);
+  if (existingSession && existingSession.agentId !== agentId) {
+    throw new Error(`Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${agentId}.`);
+  }
+
+  const sessionKey = existingSession?.sessionKey ?? sessionName;
+  const session = getOrCreateSession(sessionKey, agentId, effectiveCwd, {
+    name: existingSession?.name ?? sessionName,
+  });
+
+  return {
+    sessionName: session.name ?? sessionName,
+    effectiveCwd,
+    ...(worktree ? { worktree } : {}),
+  };
+}
+
 function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
   return {
     id: task.id,
@@ -192,6 +329,7 @@ function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
     createdBy: task.createdBy ?? null,
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
+    worktree: task.worktree ?? null,
     summary: task.summary ?? null,
     blockerReason: task.blockerReason ?? null,
     createdAt: task.createdAt,
@@ -242,6 +380,13 @@ function summarizeTasks(tasks: TaskRecord[]): TaskStreamStats {
 
 function resolveTaskCommandActor(actor?: string, fallback = "ravi.stream"): string {
   return actor?.trim() || fallback;
+}
+
+function resolveTaskCreateAssignee(agentId?: string, assigneeAgentId?: string): string | undefined {
+  if (agentId && assigneeAgentId && agentId !== assigneeAgentId) {
+    throw new Error(`Conflicting task.create assignee values: agentId=${agentId}, assigneeAgentId=${assigneeAgentId}`);
+  }
+  return agentId ?? assigneeAgentId;
 }
 
 export function isTaskStreamCommand(name: string): name is TaskStreamCommandName {
@@ -320,17 +465,39 @@ export async function executeTaskStreamCommand(
   switch (name) {
     case "task.create": {
       const args = TaskCreateCommandArgsSchema.parse(rawArgs);
-      const { task, event } = createTask({
+      const created = createTask({
         title: args.title,
         instructions: args.instructions,
         priority: args.priority,
         createdBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
+        ...(args.worktree ? { worktree: args.worktree } : {}),
       });
-      await emitTaskEvent(task, event);
+      await emitTaskEvent(created.task, created.event);
+
+      const assigneeAgentId = resolveTaskCreateAssignee(args.agentId, args.assigneeAgentId);
+      if (assigneeAgentId) {
+        const dispatch = await dispatchTask(created.task.id, {
+          agentId: assigneeAgentId,
+          sessionName: args.sessionName ?? getDefaultTaskSessionName(created.task.id),
+          assignedBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
+          ...(args.worktree ? { worktree: args.worktree } : {}),
+        });
+        await emitTaskEvent(dispatch.task, dispatch.event);
+        return {
+          action: name,
+          task: toTaskStreamEntity(dispatch.task),
+          event: created.event,
+          dispatch: {
+            event: dispatch.event,
+            sessionName: dispatch.sessionName,
+          },
+        };
+      }
+
       return {
         action: name,
-        task: toTaskStreamEntity(task),
-        event,
+        task: toTaskStreamEntity(created.task),
+        event: created.event,
       };
     }
 
@@ -340,6 +507,7 @@ export async function executeTaskStreamCommand(
         agentId: args.agentId,
         sessionName: args.sessionName ?? getDefaultTaskSessionName(args.taskId),
         assignedBy: args.assignedBy ?? resolveTaskCommandActor(args.actor, options.actor),
+        ...(args.worktree ? { worktree: args.worktree } : {}),
       });
       await emitTaskEvent(result.task, result.event);
       return {
@@ -437,13 +605,25 @@ export async function emitTaskEvent(task: TaskRecord, event: TaskEvent): Promise
   await nats.emit(`${TASK_EVENT_PREFIX}.${task.id}.event`, buildTaskEventPayload(task, event));
 }
 
-export function buildTaskDispatchPrompt(task: TaskRecord, agentId: string, sessionName: string): string {
+export function buildTaskDispatchPrompt(
+  task: TaskRecord,
+  agentId: string,
+  sessionName: string,
+  options: {
+    effectiveCwd: string;
+    worktree?: TaskWorktreeConfig;
+  },
+): string {
   return `[System] Execute: Você assumiu a task ${task.id} no Ravi.
 
 Título: ${task.title}
 Prioridade: ${task.priority}
 Sessão de trabalho: ${sessionName}
 Agent responsável: ${agentId}
+
+Contexto operacional:
+- diretório efetivo: ${options.effectiveCwd}
+- worktree: ${formatTaskWorktree(options.worktree)}
 
 Objetivo:
 ${task.instructions}
@@ -465,6 +645,49 @@ Regras:
 - não responda descrevendo o protocolo
 - use o CLI de tasks para atualizar o estado real da task
 - progresso é binário e operacional, não narrativo`;
+}
+
+export function buildTaskResumePrompt(
+  task: TaskRecord,
+  agentId: string,
+  sessionName: string,
+  options: {
+    effectiveCwd: string;
+    worktree?: TaskWorktreeConfig;
+  },
+): string {
+  return `[System] Execute: O daemon do Ravi reiniciou enquanto você trabalhava na task ${task.id}.
+
+Título: ${task.title}
+Prioridade: ${task.priority}
+Status atual: ${task.status}
+Progresso atual: ${task.progress}%
+Sessão de trabalho: ${sessionName}
+Agent responsável: ${agentId}
+
+Contexto operacional:
+- diretório efetivo: ${options.effectiveCwd}
+- worktree: ${formatTaskWorktree(options.worktree)}
+
+Objetivo:
+${task.instructions}
+
+Flow obrigatório de retomada:
+1. Retome do ponto onde parou; não recomece do zero.
+2. No primeiro avanço real depois da retomada:
+   ravi tasks report ${task.id} --progress <${Math.max(task.progress, 5)}-100> --message "retomei a task apos restart e avancei em <o que mudou>"
+3. Se travar:
+   ravi tasks block ${task.id} --reason "<bloqueio concreto>"
+4. Se der erro terminal:
+   ravi tasks fail ${task.id} --reason "<falha concreta>"
+5. Quando concluir:
+   ravi tasks done ${task.id} --summary "<o que foi entregue>"
+
+Regras:
+- trabalhe nesta sessão até concluir ou bloquear
+- use o que já foi feito como baseline
+- não responda descrevendo o protocolo
+- use o CLI de tasks para atualizar o estado real da task`;
 }
 
 export function createTask(input: CreateTaskInput): { task: TaskRecord; event: TaskEvent } {
@@ -497,30 +720,27 @@ export async function dispatchTask(
   event: TaskEvent;
   sessionName: string;
 }> {
-  const config = loadRouterConfig();
-  const agent = config.agents[input.agentId];
-  if (!agent) {
-    throw new Error(`Agent not found: ${input.agentId}`);
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
   }
-
-  const agentCwd = expandHome(agent.cwd);
-  const existingSession = resolveSession(input.sessionName);
-  if (existingSession && existingSession.agentId !== input.agentId) {
-    throw new Error(
-      `Session ${input.sessionName} already belongs to agent ${existingSession.agentId}, not ${input.agentId}.`,
-    );
-  }
-
-  const session =
-    existingSession ?? getOrCreateSession(input.sessionName, input.agentId, agentCwd, { name: input.sessionName });
-  const sessionName = session.name ?? input.sessionName;
+  const { sessionName, effectiveCwd, worktree } = resolveTaskSessionContext(
+    existingTask,
+    input.agentId,
+    input.sessionName,
+    input.worktree ?? existingTask.worktree,
+  );
 
   const { task, event } = dbDispatchTask(taskId, {
     ...input,
     sessionName,
+    ...(worktree ? { worktree } : {}),
   });
 
-  const prompt = buildTaskDispatchPrompt(task, input.agentId, sessionName);
+  const prompt = buildTaskDispatchPrompt(task, input.agentId, sessionName, {
+    effectiveCwd,
+    worktree,
+  });
   await publishSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
@@ -528,6 +748,57 @@ export async function dispatchTask(
   });
 
   return { task, event, sessionName };
+}
+
+export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
+  const recoveredTaskIds: string[] = [];
+  const skipped: Array<{ taskId: string; reason: string }> = [];
+  const seen = new Set<string>();
+  const now = Date.now();
+
+  for (const status of TASK_RECOVERY_STATUSES) {
+    const tasks = listTasks({ status });
+    for (const task of tasks) {
+      if (seen.has(task.id)) continue;
+      seen.add(task.id);
+
+      const assignment = dbGetActiveAssignment(task.id);
+      if (!assignment) {
+        skipped.push({ taskId: task.id, reason: "no_active_assignment" });
+        continue;
+      }
+      if (!isTaskRecoveryFresh(task, assignment, now)) {
+        skipped.push({ taskId: task.id, reason: "stale_active_task" });
+        continue;
+      }
+
+      try {
+        const { sessionName, effectiveCwd, worktree } = resolveTaskSessionContext(
+          task,
+          assignment.agentId,
+          assignment.sessionName,
+          assignment.worktree ?? task.worktree,
+        );
+        const prompt = buildTaskResumePrompt(task, assignment.agentId, sessionName, {
+          effectiveCwd,
+          worktree,
+        });
+        await publishSessionPrompt(sessionName, {
+          prompt,
+          deliveryBarrier: "after_task",
+          taskBarrierTaskId: task.id,
+        });
+        recoveredTaskIds.push(task.id);
+      } catch (error) {
+        skipped.push({
+          taskId: task.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  return { recoveredTaskIds, skipped };
 }
 
 export function reportTaskProgress(taskId: string, input: TaskProgressInput): { task: TaskRecord; event: TaskEvent } {

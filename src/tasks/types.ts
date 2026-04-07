@@ -2,6 +2,8 @@ export type TaskStatus = "open" | "dispatched" | "in_progress" | "blocked" | "do
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
+export type TaskWorktreeMode = "inherit" | "path";
+
 export type TaskEventType =
   | "task.created"
   | "task.dispatched"
@@ -9,6 +11,12 @@ export type TaskEventType =
   | "task.blocked"
   | "task.done"
   | "task.failed";
+
+export interface TaskWorktreeConfig {
+  mode: TaskWorktreeMode;
+  path?: string;
+  branch?: string;
+}
 
 export interface TaskRecord {
   id: string;
@@ -20,6 +28,7 @@ export interface TaskRecord {
   createdBy?: string;
   assigneeAgentId?: string;
   assigneeSessionName?: string;
+  worktree?: TaskWorktreeConfig;
   summary?: string;
   blockerReason?: string;
   createdAt: number;
@@ -35,6 +44,7 @@ export interface TaskAssignment {
   agentId: string;
   sessionName: string;
   assignedBy?: string;
+  worktree?: TaskWorktreeConfig;
   status: "assigned" | "accepted" | "blocked" | "done" | "failed" | "superseded";
   assignedAt: number;
   acceptedAt?: number;
@@ -58,12 +68,14 @@ export interface CreateTaskInput {
   instructions: string;
   priority?: TaskPriority;
   createdBy?: string;
+  worktree?: TaskWorktreeConfig;
 }
 
 export interface DispatchTaskInput {
   agentId: string;
   sessionName: string;
   assignedBy?: string;
+  worktree?: TaskWorktreeConfig;
 }
 
 export interface TaskProgressInput {
