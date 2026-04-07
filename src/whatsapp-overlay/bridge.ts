@@ -1,8 +1,9 @@
 import { serve } from "bun";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { getRecentHistory } from "../db.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { getRecentHistory, getRecentSessionHistory } from "../db.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
 import { snapshotAgentCapabilities } from "../runtime/context-registry.js";
 import { createAgent, ensureAgentDirs, getAllAgents, loadRouterConfig } from "../router/config.js";
@@ -45,11 +46,19 @@ import {
 import type { OverlayPublishedState } from "./state.js";
 import { getBindingForQuery, upsertBinding } from "./bindings.js";
 import type { OverlayDomCommandEnvelope, OverlayDomCommandRequest, OverlayDomCommandResult } from "./dom-control.js";
-import { deriveOmniRouteTarget } from "./routing.js";
+import { deriveOmniRouteTarget, isOmniGroupChat } from "./routing.js";
+import { CliStreamRelayCommandError, createCliStreamRelay } from "../stream/relay.js";
+import type { StreamEventMessage } from "../stream/protocol.js";
+import { buildOverlayV3PlaceholderSnapshot, type OverlayV3RelayHealth } from "./placeholders.js";
 import type { SessionEntry } from "../router/types.js";
+import { matchOmniChatFromRow } from "./chat-list-match.js";
+import { publishSessionPrompt } from "../omni/session-stream.js";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, "../..");
 const PORT = Number(process.env.RAVI_WA_OVERLAY_PORT ?? 4210);
 const HOST = process.env.RAVI_WA_OVERLAY_HOST ?? "127.0.0.1";
+const CHAT_LIST_OMNI_CACHE_TTL_MS = 5_000;
 
 const liveBySessionName = new Map<string, OverlayLiveState>();
 type SessionArtifactTurnState = {
@@ -65,6 +74,7 @@ const publishedHistory: OverlayPublishedState[] = [];
 const pendingDomCommands: OverlayDomCommandEnvelope[] = [];
 const domCommandResults = new Map<string, OverlayDomCommandResult>();
 const runtimeTrackerTasks = new Set<Promise<void>>();
+let chatListResolveOmniCache: { expiresAt: number; chats: OmniPanelChat[] } | null = null;
 
 type ActionName = "abort" | "reset" | "set-thinking" | "rename";
 
@@ -72,6 +82,11 @@ type ActionBody = {
   session?: string;
   action?: ActionName;
   value?: string | null;
+};
+
+type PromptBody = {
+  session?: string;
+  prompt?: string | null;
 };
 
 type BindBody = {
@@ -104,6 +119,8 @@ type ChatListResolveBody = {
     chatId?: string | null;
     title?: string | null;
     session?: string | null;
+    preview?: string | null;
+    timeLabel?: string | null;
   }>;
 };
 
@@ -111,6 +128,11 @@ type MessageMetaBody = {
   session?: string | null;
   messageId?: string | null;
   chatId?: string | null;
+};
+
+type OverlayV3CommandBody = {
+  name?: string | null;
+  args?: Record<string, unknown> | null;
 };
 
 type OmniInstanceRecord = {
@@ -259,8 +281,44 @@ type OmniPanelSnapshot = {
   generatedAt: number;
 };
 
+class OverlayV3CommandValidationError extends Error {
+  readonly code: string;
+  readonly status: number;
+  readonly details: unknown;
+
+  constructor(message: string, options: { code: string; status: number; details?: unknown }) {
+    super(message);
+    this.name = "OverlayV3CommandValidationError";
+    this.code = options.code;
+    this.status = options.status;
+    this.details = options.details ?? null;
+  }
+}
+
+class OverlayHttpResponseError extends Error {
+  readonly status: number;
+  readonly payload: Record<string, unknown>;
+
+  constructor(status: number, payload: Record<string, unknown>) {
+    super(typeof payload.error === "string" ? payload.error : `HTTP ${status}`);
+    this.name = "OverlayHttpResponseError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 const OMNI_PANEL_CACHE_TTL_MS = 3_000;
 const omniPanelCache = new Map<string, { expiresAt: number; value: Promise<OmniPanelSnapshot> | OmniPanelSnapshot }>();
+const overlayV3Relay = createCliStreamRelay({
+  command: "bun",
+  args: ["src/cli/index.ts", "stream", "--scope", "overlay.whatsapp", "--heartbeat-ms", "1500"],
+  cwd: REPO_ROOT,
+  scope: "overlay.whatsapp",
+});
+let overlayV3RelayBoot: Promise<void> | null = null;
+let overlayV3RelayEventsBound = false;
+
+void ensureOverlayV3Relay();
 
 void connectOverlayNats()
   .then(startRuntimeTracker)
@@ -299,8 +357,24 @@ const server = serve({
       return handleCurrent(url);
     }
 
+    if (url.pathname === "/api/whatsapp-overlay/session/workspace" && req.method === "GET") {
+      return handleSessionWorkspace(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/session/prompt" && req.method === "POST") {
+      return handleSessionPrompt(req, url);
+    }
+
     if (url.pathname === "/api/whatsapp-overlay/current" && req.method === "POST") {
       return handlePublish(req, url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/v3/placeholders" && req.method === "GET") {
+      return handleV3Placeholders(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/v3/command" && req.method === "POST") {
+      return handleV3Command(req, url);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/chat-list/resolve" && req.method === "POST") {
@@ -348,6 +422,184 @@ const server = serve({
 });
 
 console.log(`Ravi WhatsApp overlay bridge listening on http://${HOST}:${server.port}`);
+
+async function ensureOverlayV3Relay(): Promise<void> {
+  bindOverlayV3RelayEvents();
+  const health = overlayV3Relay.health();
+  if (health.status === "running") {
+    if (!health.snapshot) {
+      try {
+        await overlayV3Relay.requestSnapshot();
+      } catch {}
+    }
+    return;
+  }
+
+  if (overlayV3RelayBoot) {
+    return await overlayV3RelayBoot;
+  }
+
+  overlayV3RelayBoot = (async () => {
+    await overlayV3Relay.start();
+    if (!overlayV3Relay.health().snapshot) {
+      try {
+        await overlayV3Relay.requestSnapshot();
+      } catch {}
+    }
+  })()
+    .catch((error) => {
+      console.warn("[RaviOverlay] v3 relay bootstrap failed", error);
+      throw error;
+    })
+    .finally(() => {
+      overlayV3RelayBoot = null;
+    });
+
+  return await overlayV3RelayBoot;
+}
+
+function bindOverlayV3RelayEvents(): void {
+  if (overlayV3RelayEventsBound) return;
+  overlayV3RelayEventsBound = true;
+  overlayV3Relay.events.on("event", (message: StreamEventMessage) => {
+    void handleOverlayV3RelayEvent(message).catch((error) => {
+      console.warn("[RaviOverlay] v3 relay event handling failed", error);
+    });
+  });
+}
+
+function getOverlayV3RelayHealth(): OverlayV3RelayHealth {
+  const health = overlayV3Relay.health();
+  return {
+    status: health.status,
+    pid: health.pid,
+    scope: health.scope,
+    topicPatterns: health.topicPatterns,
+    lastHeartbeatAt: health.lastHeartbeatAt,
+    lastCursor: health.lastCursor,
+    lastError: health.lastError,
+    hasHello: Boolean(health.hello),
+    hasSnapshot: Boolean(health.snapshot),
+  };
+}
+
+async function handleV3Placeholders(url: URL): Promise<Response> {
+  try {
+    await ensureOverlayV3Relay();
+  } catch {
+    // keep serving degraded placeholder state even if the relay is down
+  }
+
+  const payload = buildOverlayV3PlaceholderSnapshot({
+    publishedState: latestPublishedState,
+    relay: getOverlayV3RelayHealth(),
+  });
+  return withCors(Response.json(payload), url);
+}
+
+async function handleV3Command(req: Request, url: URL): Promise<Response> {
+  try {
+    const body = (await req.json()) as OverlayV3CommandBody;
+    const name = cleanNullable(body?.name);
+    if (!name) {
+      return withCors(
+        Response.json(
+          {
+            ok: false,
+            error: "Missing name",
+            code: "invalid_command",
+          },
+          { status: 400 },
+        ),
+        url,
+      );
+    }
+    const args = normalizeOverlayV3CommandArgs(name, body?.args);
+
+    if (name === "chat.bindSession") {
+      const commandId = `v3c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      const result = await executeOmniRoute({
+        action: "bind-existing",
+        actorSession: cleanNullable(typeof args.actorSession === "string" ? args.actorSession : null),
+        session: cleanRequired(typeof args.session === "string" ? args.session : null, "session"),
+        title: cleanNullable(typeof args.title === "string" ? args.title : null),
+        chatId: cleanRequired(typeof args.chatId === "string" ? args.chatId : null, "chatId"),
+        instance: cleanRequired(typeof args.instance === "string" ? args.instance : null, "instance"),
+        chatType: cleanNullable(typeof args.chatType === "string" ? args.chatType : null),
+        chatName: cleanNullable(typeof args.chatName === "string" ? args.chatName : null),
+      });
+      return withCors(
+        Response.json({
+          ok: true,
+          ack: {
+            body: {
+              commandId,
+              ok: true,
+              result,
+            },
+          },
+        }),
+        url,
+      );
+    }
+
+    await ensureOverlayV3Relay();
+    const ack = await overlayV3Relay.sendCommand(name, args);
+    return withCors(
+      Response.json({
+        ok: true,
+        ack,
+      }),
+      url,
+    );
+  } catch (error) {
+    if (error instanceof CliStreamRelayCommandError) {
+      return withCors(
+        Response.json(
+          {
+            ok: false,
+            error: error.message,
+            code: error.code,
+            retryable: error.retryable,
+            details: error.details ?? null,
+          },
+          { status: 400 },
+        ),
+        url,
+      );
+    }
+
+    if (error instanceof OverlayHttpResponseError) {
+      return withCors(Response.json(error.payload, { status: error.status }), url);
+    }
+
+    if (error instanceof OverlayV3CommandValidationError) {
+      return withCors(
+        Response.json(
+          {
+            ok: false,
+            error: error.message,
+            code: error.code,
+            details: error.details,
+          },
+          { status: error.status },
+        ),
+        url,
+      );
+    }
+
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      ),
+      url,
+    );
+  }
+}
 
 async function handleAction(req: Request, url: URL): Promise<Response> {
   try {
@@ -463,15 +715,7 @@ async function handleDomCommand(req: Request, url: URL): Promise<Response> {
       return withCors(Response.json({ ok: false, error: "No active WhatsApp overlay client" }, { status: 409 }), url);
     }
 
-    const envelope: OverlayDomCommandEnvelope = {
-      id: commandId,
-      targetClientId,
-      createdAt: Date.now(),
-      request: body,
-    };
-
-    pendingDomCommands.push(envelope);
-    trimDomCommandState();
+    enqueueDomCommandRequest(targetClientId, body, commandId);
 
     return withCors(Response.json({ ok: true, commandId, targetClientId }), url);
   } catch (error) {
@@ -539,6 +783,123 @@ function handleGetDomResult(url: URL): Response {
   return withCors(Response.json({ ok: true, result }), url);
 }
 
+function normalizeOverlayV3CommandArgs(
+  name: string,
+  argsInput: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const args = argsInput && typeof argsInput === "object" ? { ...argsInput } : {};
+
+  if (name === "placeholder.outline") {
+    const componentId = cleanRequired(typeof args.componentId === "string" ? args.componentId : null, "componentId");
+    const component = latestPublishedState?.view.components?.find((entry) => entry.id === componentId) ?? null;
+    const selector =
+      cleanNullable(typeof args.selector === "string" ? args.selector : null) ?? component?.selector ?? null;
+    if (!selector) {
+      throw new OverlayV3CommandValidationError(`Mapped selector not found for component: ${componentId}`, {
+        code: "selector_unavailable",
+        status: 409,
+        details: { componentId },
+      });
+    }
+
+    const clientId =
+      cleanNullable(typeof args.clientId === "string" ? args.clientId : null) ?? latestPublishedState?.clientId ?? null;
+    if (!clientId) {
+      throw new OverlayV3CommandValidationError("No active WhatsApp overlay client", {
+        code: "no_active_client",
+        status: 409,
+      });
+    }
+
+    const color = cleanNullable(typeof args.color === "string" ? args.color : null) ?? "#53bdeb";
+    const durationMs = normalizePositiveNumber(args.durationMs, 2500);
+
+    return {
+      ...args,
+      componentId,
+      selector,
+      clientId,
+      color,
+      durationMs,
+      limit: 1,
+      visible: true,
+    };
+  }
+
+  if (name === "chat.bindSession") {
+    const session = cleanRequired(typeof args.session === "string" ? args.session : null, "session");
+    const chatId = cleanRequired(typeof args.chatId === "string" ? args.chatId : null, "chatId");
+    const instance = cleanRequired(typeof args.instance === "string" ? args.instance : null, "instance");
+    const title = cleanNullable(typeof args.title === "string" ? args.title : null);
+    const chatName = cleanNullable(typeof args.chatName === "string" ? args.chatName : null) ?? title;
+    const chatType = cleanNullable(typeof args.chatType === "string" ? args.chatType : null);
+    const actorSession = cleanNullable(typeof args.actorSession === "string" ? args.actorSession : null);
+
+    return {
+      ...args,
+      actorSession,
+      session,
+      title,
+      chatId,
+      instance,
+      chatType,
+      chatName,
+    };
+  }
+
+  return args;
+}
+
+async function handleOverlayV3RelayEvent(message: StreamEventMessage): Promise<void> {
+  if (message.topic !== "overlay.whatsapp.command.requested") return;
+
+  const eventBody = message.body as {
+    name?: unknown;
+    args?: Record<string, unknown>;
+  };
+  const name = cleanNullable(typeof eventBody.name === "string" ? eventBody.name : null);
+  if (name !== "placeholder.outline") return;
+
+  const args = eventBody.args ?? {};
+  const selector = cleanNullable(typeof args.selector === "string" ? args.selector : null);
+  const clientId = cleanNullable(typeof args.clientId === "string" ? args.clientId : null);
+  if (!selector || !clientId) return;
+
+  const color = cleanNullable(typeof args.color === "string" ? args.color : null) ?? "#53bdeb";
+  const durationMs = normalizePositiveNumber(args.durationMs, 2500);
+
+  enqueueDomCommandRequest(clientId, { name: "clear" });
+  enqueueDomCommandRequest(clientId, {
+    name: "outline",
+    selector,
+    visible: true,
+    limit: 1,
+    attrValue: color,
+  });
+
+  const clearTimer = setTimeout(() => {
+    enqueueDomCommandRequest(clientId, { name: "clear" });
+  }, durationMs);
+  clearTimer.unref?.();
+}
+
+function enqueueDomCommandRequest(
+  targetClientId: string,
+  request: OverlayDomCommandRequest,
+  commandId = `wdc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+): string {
+  const envelope: OverlayDomCommandEnvelope = {
+    id: commandId,
+    targetClientId,
+    createdAt: Date.now(),
+    request,
+  };
+
+  pendingDomCommands.push(envelope);
+  trimDomCommandState();
+  return commandId;
+}
+
 function handleSnapshot(url: URL): Response {
   const snapshot = buildSnapshot({
     chatId: url.searchParams.get("chatId"),
@@ -575,219 +936,12 @@ async function handleOmniPanel(url: URL): Promise<Response> {
 async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
   try {
     const body = (await req.json()) as OmniRouteBody;
-    const actor = resolveOmniRouteActor(cleanNullable(body.actorSession));
-    if (!actor) {
-      return withCors(
-        Response.json(
-          {
-            ok: false,
-            error: "Permission denied: no current session actor",
-            missingRelations: ["current session actor"],
-          },
-          { status: 403 },
-        ),
-        url,
-      );
-    }
-    const target = deriveOmniRouteTarget({
-      chatId: cleanRequired(body.chatId, "chatId"),
-      instanceName: cleanRequired(body.instance, "instance"),
-      chatType: cleanNullable(body.chatType),
-      title: cleanNullable(body.chatName) ?? cleanNullable(body.title),
-    });
-    const routeObjectId = buildRouteObjectId(target.instanceName, target.routePattern);
-
-    const title = cleanNullable(body.title) ?? target.title;
-    const sessionNameInput = cleanNullable(body.sessionName);
-    let session: ReturnType<typeof resolveSession> = null;
-    let createdAgent = false;
-    let createdSession = false;
-
-    if (body.action === "bind-existing") {
-      session = body.session ? resolveSession(body.session) : null;
-      if (!session) {
-        return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
-      }
-      const permissions = [
-        checkSessionAccess(actor, toOmniPanelSessionSnapshot(session)),
-        checkRouteModify(actor, routeObjectId),
-      ];
-      const denied = collectDeniedRelations(permissions);
-      if (denied.length > 0) {
-        return withCors(
-          Response.json(
-            {
-              ok: false,
-              error: "Permission denied",
-              missingRelations: denied,
-            },
-            { status: 403 },
-          ),
-          url,
-        );
-      }
-    } else if (body.action === "create-session" || body.action === "migrate-session") {
-      const agentId = cleanRequired(body.agentId, "agentId");
-      const permissions = [
-        checkGroupExecute(actor, "sessions"),
-        checkRouteModify(actor, routeObjectId),
-        checkAgentView(actor, agentId),
-      ];
-      if (body.action === "migrate-session") {
-        const currentSession = body.session ? resolveSession(body.session) : null;
-        permissions.push(checkSessionModify(actor, currentSession ? toOmniPanelSessionSnapshot(currentSession) : null));
-      }
-      if (body.action === "create-session" && body.createAgent === true) {
-        permissions.push(checkGroupExecute(actor, "agents"));
-      }
-      const denied = collectDeniedRelations(permissions);
-      if (denied.length > 0) {
-        return withCors(
-          Response.json(
-            {
-              ok: false,
-              error: "Permission denied",
-              missingRelations: denied,
-            },
-            { status: 403 },
-          ),
-          url,
-        );
-      }
-
-      createdAgent = ensureOmniAgent(agentId, body.action === "create-session" && body.createAgent === true);
-      const agentConfig = dbGetAgent(agentId);
-      if (!agentConfig) {
-        return withCors(Response.json({ ok: false, error: `Agent not found: ${agentId}` }, { status: 404 }), url);
-      }
-
-      const currentSession =
-        body.action === "migrate-session" ? (body.session ? resolveSession(body.session) : null) : null;
-      if (body.action === "migrate-session") {
-        if (!currentSession) {
-          return withCors(Response.json({ ok: false, error: "Current session not found" }, { status: 404 }), url);
-        }
-        if (currentSession.agentId === agentId) {
-          return withCors(Response.json({ ok: false, error: "Essa sessão já está nesse agent" }, { status: 409 }), url);
-        }
-      }
-
-      const sessionKey = buildSessionKey({
-        agentId,
-        channel: "whatsapp",
-        accountId: target.instanceName,
-        peerKind: target.peerKind,
-        peerId: target.peerId,
-      });
-      const existingByKey = resolveSession(sessionKey);
-      const existingNamed = sessionNameInput ? getSessionByName(sessionNameInput) : null;
-      if (existingNamed && existingNamed.sessionKey !== existingByKey?.sessionKey) {
-        return withCors(
-          Response.json(
-            {
-              ok: false,
-              error: `Session already exists: ${sessionNameInput}. Escolha a sessão existente para migrar.`,
-            },
-            { status: 409 },
-          ),
-          url,
-        );
-      }
-      const generatedName =
-        sessionNameInput ??
-        existingByKey?.name ??
-        ensureUniqueName(
-          generateSessionName(agentId, {
-            chatType: target.chatType,
-            groupName: target.chatType === "group" ? (target.title ?? undefined) : undefined,
-            peerKind: target.peerKind,
-            peerId: target.peerId,
-          }),
-        );
-      createdSession = !existingByKey;
-      session = getOrCreateSession(sessionKey, agentId, expandHome(agentConfig.cwd), {
-        name: generatedName,
-        chatType: target.chatType,
-        channel: "whatsapp",
-        accountId: target.instanceName,
-        groupId: target.groupId ?? undefined,
-        subject: target.chatType === "group" ? (target.title ?? undefined) : undefined,
-        displayName: target.title ?? undefined,
-        lastChannel: "whatsapp",
-        lastAccountId: target.instanceName,
-        lastTo: target.sourceChatId,
-      });
-      if ((sessionNameInput || !session.name) && session.name !== generatedName) {
-        updateSessionName(session.sessionKey, generatedName);
-        session = resolveSession(session.sessionKey);
-      }
-    } else {
-      return withCors(Response.json({ ok: false, error: "Unsupported Omni route action" }, { status: 400 }), url);
-    }
-
-    if (!session) {
-      return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
-    }
-
-    updateSessionSource(session.sessionKey, {
-      channel: "whatsapp",
-      accountId: target.instanceName,
-      chatId: target.sourceChatId,
-    });
-    if (title) {
-      updateSessionDisplayName(session.sessionKey, title);
-    }
-
-    const existingRoute = dbGetRoute(target.routePattern, target.instanceName);
-    if (existingRoute) {
-      dbUpdateRoute(
-        target.routePattern,
-        { agent: session.agentId, session: session.name ?? session.sessionKey },
-        target.instanceName,
-      );
-    } else {
-      dbCreateRoute({
-        pattern: target.routePattern,
-        accountId: target.instanceName,
-        agent: session.agentId,
-        session: session.name ?? session.sessionKey,
-        priority: 0,
-      });
-    }
-
-    const binding = upsertBinding({
-      title,
-      chatId: target.sourceChatId,
-      session: session.name ?? session.sessionKey,
-    });
-
-    omniPanelCache.clear();
-    await publish("ravi.config.changed", {}).catch(() => {});
-
-    const snapshot = buildSnapshot({
-      title,
-      chatId: target.sourceChatId,
-      session: session.name ?? session.sessionKey,
-    });
-    return withCors(
-      Response.json({
-        ok: true,
-        action: body.action,
-        createdAgent,
-        createdSession,
-        binding,
-        route: {
-          pattern: target.routePattern,
-          accountId: target.instanceName,
-          agent: session.agentId,
-          session: session.name ?? session.sessionKey,
-        },
-        snapshot,
-        actor,
-      }),
-      url,
-    );
+    const result = await executeOmniRoute(body);
+    return withCors(Response.json(result), url);
   } catch (error) {
+    if (error instanceof OverlayHttpResponseError) {
+      return withCors(Response.json(error.payload, { status: error.status }), url);
+    }
     return withCors(
       Response.json(
         {
@@ -799,6 +953,195 @@ async function handleOmniRoute(req: Request, url: URL): Promise<Response> {
       url,
     );
   }
+}
+
+async function executeOmniRoute(body: OmniRouteBody): Promise<Record<string, unknown>> {
+  const actor = resolveOmniRouteActor(cleanNullable(body.actorSession));
+  if (!actor) {
+    throw new OverlayHttpResponseError(403, {
+      ok: false,
+      error: "Permission denied: no current session actor",
+      missingRelations: ["current session actor"],
+    });
+  }
+
+  const target = deriveOmniRouteTarget({
+    chatId: cleanRequired(body.chatId, "chatId"),
+    instanceName: cleanRequired(body.instance, "instance"),
+    chatType: cleanNullable(body.chatType),
+    title: cleanNullable(body.chatName) ?? cleanNullable(body.title),
+  });
+  const routeObjectId = buildRouteObjectId(target.instanceName, target.routePattern);
+
+  const title = cleanNullable(body.title) ?? target.title;
+  const sessionNameInput = cleanNullable(body.sessionName);
+  let session: ReturnType<typeof resolveSession> = null;
+  let createdAgent = false;
+  let createdSession = false;
+
+  if (body.action === "bind-existing") {
+    session = body.session ? resolveSession(body.session) : null;
+    if (!session) {
+      throw new OverlayHttpResponseError(404, { ok: false, error: "Session not found" });
+    }
+    const permissions = [
+      checkSessionAccess(actor, toOmniPanelSessionSnapshot(session)),
+      checkRouteModify(actor, routeObjectId),
+    ];
+    const denied = collectDeniedRelations(permissions);
+    if (denied.length > 0) {
+      throw new OverlayHttpResponseError(403, {
+        ok: false,
+        error: "Permission denied",
+        missingRelations: denied,
+      });
+    }
+  } else if (body.action === "create-session" || body.action === "migrate-session") {
+    const agentId = cleanRequired(body.agentId, "agentId");
+    const permissions = [
+      checkGroupExecute(actor, "sessions"),
+      checkRouteModify(actor, routeObjectId),
+      checkAgentView(actor, agentId),
+    ];
+    if (body.action === "migrate-session") {
+      const currentSession = body.session ? resolveSession(body.session) : null;
+      permissions.push(checkSessionModify(actor, currentSession ? toOmniPanelSessionSnapshot(currentSession) : null));
+    }
+    if (body.action === "create-session" && body.createAgent === true) {
+      permissions.push(checkGroupExecute(actor, "agents"));
+    }
+    const denied = collectDeniedRelations(permissions);
+    if (denied.length > 0) {
+      throw new OverlayHttpResponseError(403, {
+        ok: false,
+        error: "Permission denied",
+        missingRelations: denied,
+      });
+    }
+
+    createdAgent = ensureOmniAgent(agentId, body.action === "create-session" && body.createAgent === true);
+    const agentConfig = dbGetAgent(agentId);
+    if (!agentConfig) {
+      throw new OverlayHttpResponseError(404, { ok: false, error: `Agent not found: ${agentId}` });
+    }
+
+    const currentSession =
+      body.action === "migrate-session" ? (body.session ? resolveSession(body.session) : null) : null;
+    if (body.action === "migrate-session") {
+      if (!currentSession) {
+        throw new OverlayHttpResponseError(404, { ok: false, error: "Current session not found" });
+      }
+      if (currentSession.agentId === agentId) {
+        throw new OverlayHttpResponseError(409, { ok: false, error: "Essa sessão já está nesse agent" });
+      }
+    }
+
+    const sessionKey = buildSessionKey({
+      agentId,
+      channel: "whatsapp",
+      accountId: target.instanceName,
+      peerKind: target.peerKind,
+      peerId: target.peerId,
+    });
+    const existingByKey = resolveSession(sessionKey);
+    const existingNamed = sessionNameInput ? getSessionByName(sessionNameInput) : null;
+    if (existingNamed && existingNamed.sessionKey !== existingByKey?.sessionKey) {
+      throw new OverlayHttpResponseError(409, {
+        ok: false,
+        error: `Session already exists: ${sessionNameInput}. Escolha a sessão existente para migrar.`,
+      });
+    }
+    const generatedName =
+      sessionNameInput ??
+      existingByKey?.name ??
+      ensureUniqueName(
+        generateSessionName(agentId, {
+          chatType: target.chatType,
+          groupName: target.chatType === "group" ? (target.title ?? undefined) : undefined,
+          peerKind: target.peerKind,
+          peerId: target.peerId,
+        }),
+      );
+    createdSession = !existingByKey;
+    session = getOrCreateSession(sessionKey, agentId, expandHome(agentConfig.cwd), {
+      name: generatedName,
+      chatType: target.chatType,
+      channel: "whatsapp",
+      accountId: target.instanceName,
+      groupId: target.groupId ?? undefined,
+      subject: target.chatType === "group" ? (target.title ?? undefined) : undefined,
+      displayName: target.title ?? undefined,
+      lastChannel: "whatsapp",
+      lastAccountId: target.instanceName,
+      lastTo: target.sourceChatId,
+    });
+    if ((sessionNameInput || !session.name) && session.name !== generatedName) {
+      updateSessionName(session.sessionKey, generatedName);
+      session = resolveSession(session.sessionKey);
+    }
+  } else {
+    throw new OverlayHttpResponseError(400, { ok: false, error: "Unsupported Omni route action" });
+  }
+
+  if (!session) {
+    throw new OverlayHttpResponseError(404, { ok: false, error: "Session not found" });
+  }
+
+  updateSessionSource(session.sessionKey, {
+    channel: "whatsapp",
+    accountId: target.instanceName,
+    chatId: target.sourceChatId,
+  });
+  if (title) {
+    updateSessionDisplayName(session.sessionKey, title);
+  }
+
+  const existingRoute = dbGetRoute(target.routePattern, target.instanceName);
+  if (existingRoute) {
+    dbUpdateRoute(
+      target.routePattern,
+      { agent: session.agentId, session: session.name ?? session.sessionKey },
+      target.instanceName,
+    );
+  } else {
+    dbCreateRoute({
+      pattern: target.routePattern,
+      accountId: target.instanceName,
+      agent: session.agentId,
+      session: session.name ?? session.sessionKey,
+      priority: 0,
+    });
+  }
+
+  const binding = upsertBinding({
+    title,
+    chatId: target.sourceChatId,
+    session: session.name ?? session.sessionKey,
+  });
+
+  omniPanelCache.clear();
+  await publish("ravi.config.changed", {}).catch(() => {});
+
+  const snapshot = buildSnapshot({
+    title,
+    chatId: target.sourceChatId,
+    session: session.name ?? session.sessionKey,
+  });
+  return {
+    ok: true,
+    action: body.action,
+    createdAgent,
+    createdSession,
+    binding,
+    route: {
+      pattern: target.routePattern,
+      accountId: target.instanceName,
+      agent: session.agentId,
+      session: session.name ?? session.sessionKey,
+    },
+    snapshot,
+    actor,
+  };
 }
 
 async function handleChatListResolve(req: Request, url: URL): Promise<Response> {
@@ -815,17 +1158,61 @@ async function handleChatListResolve(req: Request, url: URL): Promise<Response> 
           title: cleanNullable(entry?.title),
           session: cleanNullable(entry?.session),
         },
+        hints: {
+          preview: cleanNullable(entry?.preview),
+          timeLabel: cleanNullable(entry?.timeLabel),
+        },
       }))
       .filter((entry) => entry.query.chatId || entry.query.title || entry.query.session);
 
+    const needsOmniFallback = entries.some(
+      (entry) => !entry.query.chatId && (entry.hints.preview || entry.hints.timeLabel),
+    );
+    const omniChats = needsOmniFallback ? await getChatListResolveOmniChats(sessions) : [];
+
     const items = entries.map((entry) => {
-      const snapshot = buildSnapshotWithSessions(entry.query, sessions);
+      const initialSnapshot = buildSnapshotWithSessions(entry.query, sessions);
+      const matchedOmniChat =
+        !initialSnapshot.resolved && omniChats.length > 0
+          ? matchOmniChatFromRow(
+              {
+                title: entry.query.title,
+                preview: entry.hints.preview,
+                timeLabel: entry.hints.timeLabel,
+                chatIdCandidate: entry.query.chatId,
+              },
+              omniChats,
+            )
+          : null;
+      const matchedChatId = matchedOmniChat ? getPromotedOmniChatId(matchedOmniChat) : null;
+      const snapshot =
+        matchedChatId && matchedChatId !== initialSnapshot.query.chatId
+          ? buildSnapshotWithSessions(
+              {
+                ...entry.query,
+                chatId: matchedChatId,
+              },
+              sessions,
+            )
+          : initialSnapshot;
+
       return {
         id: entry.id,
         query: snapshot.query,
         resolved: snapshot.resolved,
         session: snapshot.session,
         warnings: snapshot.warnings,
+        matchSource: matchedChatId ? "omni-row-hints" : null,
+        matchedChat:
+          matchedChatId && matchedOmniChat
+            ? {
+                externalId: cleanNullable(matchedOmniChat.externalId),
+                canonicalId: cleanNullable(matchedOmniChat.canonicalId),
+                name: cleanNullable(matchedOmniChat.name),
+                lastMessageAt: cleanNullable(matchedOmniChat.lastMessageAt),
+                lastMessagePreview: cleanNullable(matchedOmniChat.lastMessagePreview),
+              }
+            : null,
       };
     });
 
@@ -849,6 +1236,46 @@ async function handleChatListResolve(req: Request, url: URL): Promise<Response> 
       url,
     );
   }
+}
+
+async function getChatListResolveOmniChats(sessions: ReturnType<typeof getOverlaySessions>): Promise<OmniPanelChat[]> {
+  const now = Date.now();
+  if (chatListResolveOmniCache && chatListResolveOmniCache.expiresAt > now) {
+    return chatListResolveOmniCache.chats;
+  }
+
+  const instances = await listOmniWhatsAppInstances();
+  const preferredInstanceName = getChatListResolvePreferredInstanceName();
+  const preferredInstance = findOmniInstanceByHint(instances, preferredInstanceName);
+  const targetInstances = preferredInstance ? [preferredInstance] : instances;
+  const chats = (
+    await Promise.all(targetInstances.map((instance) => listOmniChats(instance.name, 80, sessions, null)))
+  ).flat();
+
+  chatListResolveOmniCache = {
+    expiresAt: now + CHAT_LIST_OMNI_CACHE_TTL_MS,
+    chats,
+  };
+  return chats;
+}
+
+function getChatListResolvePreferredInstanceName(): string | null {
+  if (!latestPublishedState) return null;
+  return cleanNullable(buildSnapshot(queryFromPublishedState(latestPublishedState)).session?.accountId);
+}
+
+function isOmniGroupChatMatch(chat: OmniPanelChat): boolean {
+  return Boolean(
+    isOmniGroupChat(cleanNullable(chat.externalId) ?? cleanNullable(chat.canonicalId), cleanNullable(chat.chatType)),
+  );
+}
+
+function getPromotedOmniChatId(chat: OmniPanelChat): string | null {
+  if (!isOmniGroupChatMatch(chat)) {
+    return null;
+  }
+
+  return cleanNullable(chat.externalId) ?? cleanNullable(chat.canonicalId);
 }
 
 async function handleMessageMeta(req: Request, url: URL): Promise<Response> {
@@ -976,6 +1403,94 @@ function handleCurrent(url: URL): Response {
     }),
     url,
   );
+}
+
+function handleSessionWorkspace(url: URL): Response {
+  const sessionName = cleanNullable(url.searchParams.get("session"));
+  if (!sessionName) {
+    return withCors(Response.json({ ok: false, error: "Missing session" }, { status: 400 }), url);
+  }
+
+  const snapshot = buildSnapshot({ session: sessionName });
+  if (!snapshot.session) {
+    return withCors(
+      Response.json(
+        {
+          ok: true,
+          session: null,
+          snapshot,
+          messages: [],
+          historySource: "missing",
+          generatedAt: Date.now(),
+        },
+        { status: 404 },
+      ),
+      url,
+    );
+  }
+
+  const historyMessages = getRecentSessionHistory(snapshot.session.sessionName, 80);
+  const fallbackMessages = historyMessages.length === 0 ? getRecentHistory(snapshot.session.sessionName, 80) : [];
+  const messages = (historyMessages.length > 0 ? historyMessages : fallbackMessages).map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    createdAt: message.created_at,
+  }));
+
+  return withCors(
+    Response.json({
+      ok: true,
+      session: snapshot.session,
+      snapshot,
+      messages,
+      historySource: historyMessages.length > 0 ? "provider-session" : "recent-history",
+      generatedAt: Date.now(),
+    }),
+    url,
+  );
+}
+
+async function handleSessionPrompt(req: Request, url: URL): Promise<Response> {
+  try {
+    const body = (await req.json()) as PromptBody;
+    const session = body.session ? resolveSession(body.session) : null;
+    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+
+    if (!session) {
+      return withCors(Response.json({ ok: false, error: "Session not found" }, { status: 404 }), url);
+    }
+
+    if (!prompt) {
+      return withCors(Response.json({ ok: false, error: "Missing prompt" }, { status: 400 }), url);
+    }
+
+    const sessionName = session.name ?? session.sessionKey;
+    await publishSessionPrompt(sessionName, { prompt });
+    const currentActivity = liveBySessionName.get(sessionName)?.activity;
+    upsertLive(sessionName, currentActivity && currentActivity !== "idle" ? currentActivity : "thinking", prompt);
+
+    return withCors(
+      Response.json({
+        ok: true,
+        session: buildSnapshot({ session: sessionName }).session,
+        queued: true,
+        generatedAt: Date.now(),
+      }),
+      url,
+    );
+  } catch (error) {
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 },
+      ),
+      url,
+    );
+  }
 }
 
 function buildSnapshot(query: OverlayQuery) {
@@ -1740,6 +2255,10 @@ function cleanNullable(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizePositiveNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 function normalizeLookupToken(value: string | null | undefined): string {
   return cleanNullable(value)?.toLowerCase() ?? "";
 }
@@ -1851,10 +2370,11 @@ async function trackSessionRuntime(): Promise<void> {
       if (emitId) {
         rememberResponseEmitId(sessionName, emitId);
       }
+      const responseText = typeof data.response === "string" ? data.response : "";
       pushLiveEvent(sessionName, {
         kind: "response",
         label: "response",
-        detail: formatLiveText(typeof data.response === "string" ? data.response : ""),
+        detail: formatLiveText(responseText),
         timestamp: Date.now(),
       });
       upsertLive(sessionName, "streaming", "response emitted", false);
@@ -2006,12 +2526,17 @@ function isTerminalRuntimeEvent(type?: string): boolean {
 
 function upsertLive(sessionName: string, activity: OverlayActivity, summary: string, approvalPending?: boolean): void {
   const current = liveBySessionName.get(sessionName);
+  const now = Date.now();
+  const nextBusySince = isBusyOverlayActivity(activity)
+    ? (current?.busySince ?? (isBusyOverlayActivity(current?.activity) ? current?.updatedAt : undefined) ?? now)
+    : undefined;
   liveBySessionName.set(sessionName, {
     ...current,
     activity,
     summary,
     approvalPending: approvalPending ?? current?.approvalPending,
-    updatedAt: Date.now(),
+    updatedAt: now,
+    busySince: nextBusySince,
   });
 }
 
@@ -2023,6 +2548,7 @@ function pushLiveEvent(sessionName: string, event: OverlaySessionEvent): void {
     ...current,
     activity: current?.activity ?? "unknown",
     updatedAt: event.timestamp,
+    busySince: current?.busySince,
     events: next,
   });
 }
@@ -2033,6 +2559,7 @@ function pushLiveArtifact(sessionName: string, artifact: OverlayChatArtifact): v
     ...current,
     activity: current?.activity ?? "unknown",
     updatedAt: artifact.updatedAt ?? artifact.createdAt,
+    busySince: current?.busySince,
     artifacts: upsertOverlayChatArtifact(current?.artifacts, artifact),
   });
 }
@@ -2159,8 +2686,13 @@ function updateStreamEvent(sessionName: string, detail: string): void {
     ...current,
     activity: current?.activity ?? "streaming",
     updatedAt: timestamp,
+    busySince: current?.busySince ?? timestamp,
     events: previous.sort((a, b) => b.timestamp - a.timestamp).slice(0, 12),
   });
+}
+
+function isBusyOverlayActivity(activity: OverlayActivity | null | undefined): boolean {
+  return Boolean(activity && activity !== "idle" && activity !== "unknown");
 }
 
 function formatLiveText(value: string, max = 3200): string {

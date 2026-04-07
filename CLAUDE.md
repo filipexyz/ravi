@@ -486,6 +486,34 @@ ravi whatsapp connect --account suporte --agent suporte --mode sentinel
 
 ## CLI
 
+### CLI Runtime Hierarchy
+
+The CLI is only trustworthy when it is targeting the same runtime and database as the live daemon.
+
+- **Authority order:** live daemon/runtime > repo wrapper (`bin/ravi`) > stale/global PATH wrappers
+- **Canonical wrapper:** prefer `./bin/ravi` from this repo when mutating `agents`, `instances`, `routes`, or `sessions`
+- **Mutations must make target explicit:**
+  - which CLI bundle is running
+  - which SQLite DB is being changed
+  - which instance is being targeted
+  - whether that instance affects the live `main`
+- **Live routing beats apparent success:** if a route mutation succeeds but the live resolver still picks a different winner, the operation is not done
+- **Fail closed on runtime split:** when the CLI bundle differs from the daemon bundle, mutating commands should refuse by default unless the caller explicitly overrides the mismatch
+
+Recommended inspection flow before/after route mutations:
+
+```bash
+./bin/ravi instances target main --pattern group:120363426276457547
+./bin/ravi instances routes add main group:120363426276457547 energia-video-dev
+./bin/ravi instances target main --pattern group:120363426276457547
+```
+
+This keeps three truths aligned:
+
+1. the runtime/db you mutated
+2. the instance you think you changed
+3. the live routing winner the daemon will actually use
+
 ```bash
 # Setup
 ravi setup             # Interactive setup wizard
@@ -536,12 +564,26 @@ ravi contacts set <phone> notes '{"company":"Acme"}'
 ravi contacts set <phone> opt-out true
 
 # Cross-session messaging
-ravi sessions send <session> "prompt"   # Send prompt to session
+ravi sessions send <session> "prompt"   # Send context/prompt to session (fire-and-forget)
+ravi sessions send <session> "prompt" -w # Wait and stream response
 ravi sessions send <session> -i         # Interactive mode
 ravi sessions execute <session> "task"  # Execute task
 ravi sessions ask <session> "question"  # Ask another session
 ravi sessions answer <session> "reply"  # Reply to a previous ask
 ravi sessions inform <session> "info"   # Send context info
+
+# Tasks
+ravi tasks create "Title" --instructions "..."  # Create tracked work
+ravi tasks dispatch <task-id> --agent <id>      # Dispatch to an agent/session
+ravi tasks watch [task-id]                      # Watch live task events
+ravi tasks report <task-id> --progress 30 --message "..."  # Report concrete progress
+ravi tasks done <task-id> --summary "..."      # Mark task done
+ravi tasks block <task-id> --reason "..."      # Mark task blocked
+ravi tasks fail <task-id> --reason "..."       # Mark task failed
+
+# Eval
+ravi eval run <spec.json>        # Run reproducible eval
+ravi eval run <spec.json> --json # Emit machine-readable result
 
 # Heartbeat
 ravi heartbeat status                # Show all agents
@@ -711,9 +753,23 @@ RAVI_LOG_LEVEL=info         # debug | info | warn | error
 NATS_PORT=4222              # Default
 ```
 
-## Cross-Session Messaging
+## Operational Triangle
 
-Agents can send typed messages to other sessions using CLI tools:
+Use the three surfaces for different jobs:
+
+- `ravi sessions ...` = communication between sessions. Ask, inform, answer, or send lightweight prompts/context.
+- `ravi tasks ...` = tracked execution. Clear owner, dedicated work session, progress, blocked/done/failed.
+- `ravi eval ...` = measurement. Reproducible runs, artifacts, diff, and rubric for regression/benchmark.
+
+Rule of thumb:
+
+- If it only needs message passing or short coordination, use `sessions`.
+- If it needs `watch/report/done/block/fail`, use `tasks`.
+- If you changed behavior and need evidence, use `eval` after the change.
+
+### Cross-Session Messaging
+
+Agents can send typed messages to other sessions using CLI tools. This is the communication layer, not the task runtime:
 
 ```bash
 ravi sessions send agent:main:dm:5511999 "Lembrete: reunião em 10 minutos"
@@ -721,19 +777,21 @@ ravi sessions send agent:main:dm:5511999 "Lembrete: reunião em 10 minutos"
 
 **Message Types:**
 
-| Type | Prefix | Behavior |
-|------|--------|----------|
-| `send` | `[System] Send:` | Agent responds with ONLY the message, adding nothing |
-| `contextualize` | `[System] Context:` | Agent remembers the info, no tools. Replies with short text or `@@SILENT@@` |
-| `execute` | `[System] Execute:` | Agent performs the task using tools, responds with result |
-| `ask` | `[System] Ask:` | Asks another agent a question. Includes `[from: <session>]` |
-| `answer` | `[System] Answer:` | Delivers a response to a previous `ask`. Includes `[from: <session>]` |
+| CLI | Injected prompt | Intended use |
+|-----|-----------------|--------------|
+| `ravi sessions send` | `[System] Inform: [from: <origin>] ...` | Default fire-and-forget send. Use `-w` to wait for a response or `-i` for interactive mode. |
+| `ravi sessions inform` | `[System] Inform: ...` | Fire-and-forget context with no tracked work item. |
+| `ravi sessions execute` | `[System] Execute: ...` | Ask another session to execute something operationally. |
+| `ravi sessions ask` | `[System] Ask: [from: <session>] ...` | Structured question that can be relayed back over time. |
+| `ravi sessions answer` | `[System] Answer: [from: <session>] ...` | Deliver an answer back to the origin session. |
+
+There is no separate `[System] Send:` or `contextualize` contract in the current CLI surface.
 
 **Ask/Answer flow:**
-1. Agent A: `cross_send(sessionB, "ask", "qual o status do deploy?")`
+1. Agent A: `ravi sessions ask sessionB "qual o status do deploy?"`
 2. Agent B receives `[System] Ask: [from: sessionA] qual o status do deploy?`
-3. Agent B: `cross_send(sessionA, "answer", "deploy concluído com sucesso")`
-4. Agent A receives `[System] Answer: [from: sessionB] deploy concluído com sucesso` — can use tools and respond normally
+3. Agent B: `ravi sessions answer sessionA "deploy concluído com sucesso"`
+4. Agent A receives `[System] Answer: [from: sessionB] deploy concluído com sucesso` and can keep working normally
 
 ## NATS JetStream Debugging
 

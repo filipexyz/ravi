@@ -3,12 +3,20 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { ChatView } from "./components/ChatView.js";
+import {
+  CockpitView,
+  type CockpitActionsSnapshot,
+  type CockpitActivitySnapshot,
+  type CockpitLanesSnapshot,
+  type CockpitStatusSnapshot,
+} from "./components/CockpitView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { InputBar } from "./components/InputBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { SLASH_COMMANDS } from "./components/SlashMenu.js";
-import { useNats } from "./hooks/useNats.js";
+import { useRc505Bridge } from "./hooks/useRc505Bridge.js";
+import { useNats, type TimelineEntry } from "./hooks/useNats.js";
 import { resolveRuntimeDisplayLabel } from "./hooks/runtime-display.js";
 import { useSessions } from "./hooks/useSessions.js";
 import { applyAgentRuntimeSelection } from "./runtime-config.js";
@@ -19,6 +27,7 @@ import { resetSession, resolveSession } from "../router/sessions.js";
 
 const initialSessionName = process.argv[2] || "main";
 const tmuxAgentId = process.env.RAVI_TMUX_AGENT || null;
+type ActiveView = "chat" | "cockpit";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -45,12 +54,32 @@ function RavigatingIndicator() {
   );
 }
 
+function summarizeCockpitActivity(entry: TimelineEntry): string {
+  if (entry.type === "tool") {
+    const status = entry.isError ? "error" : entry.status;
+    return truncateCockpitLine(`tool ${entry.toolName} ${status}`);
+  }
+
+  const role = entry.role === "user" ? "user" : entry.streaming ? "assistant..." : "assistant";
+  return truncateCockpitLine(`${role}: ${entry.content.replace(/\s+/g, " ").trim()}`);
+}
+
+function truncateCockpitLine(value: string, max = 56): string {
+  if (value.length <= max) {
+    return value;
+  }
+  return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+}
+
 export function App() {
   const renderer = useRenderer();
   const [sessionName, setSessionName] = useState(initialSessionName);
+  const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const lastRcEventAtRef = useRef<number | null>(null);
   const { sessions, refresh: refreshSessions } = useSessions({ agentId: tmuxAgentId });
+  const rc505 = useRc505Bridge();
 
   // Auto-copy selected text to clipboard via OSC 52
   useEffect(() => {
@@ -93,6 +122,67 @@ export function App() {
     configuredModel: currentSession?.modelOverride ?? agent?.model ?? loadConfig().model,
     executionModel: runtimeInfo.executionModel,
   });
+  const channelParts = [
+    currentSession?.lastChannel ?? currentSession?.channel,
+    currentSession?.chatType,
+    currentSession?.accountId,
+  ].filter(Boolean);
+  const alerts: string[] = [];
+  if (!isConnected) {
+    alerts.push("session bus disconnected");
+  }
+  if (currentSession?.abortedLastRun) {
+    alerts.push("last run aborted");
+  }
+  const cockpitStatus: CockpitStatusSnapshot = {
+    daemon: isConnected ? "reachable via NATS" : "unreachable",
+    runtime: `${runtimeLabel.provider}/${runtimeLabel.model}`,
+    channel: channelParts.length > 0 ? channelParts.join(" / ") : undefined,
+    activity: isCompacting ? "compacting" : isWorking ? "working" : isTyping ? "typing" : "idle",
+    alerts,
+    session: `${sessionName} (${agentId})`,
+  };
+  const recentThresholdMs = 15 * 60 * 1000;
+  const now = Date.now();
+  const cockpitLanes: CockpitLanesSnapshot = {
+    totalSessions: sessions.length,
+    recentSessions: sessions.filter((session) => now - session.updatedAt <= recentThresholdMs).length,
+    queuedSessions: sessions.filter((session) => Boolean(session.queueMode)).length,
+    blockedSessions: sessions.filter((session) => session.abortedLastRun).length,
+    ephemeralSessions: sessions.filter((session) => session.ephemeral).length,
+    focusSession: sessionName,
+  };
+  const cockpitActions: CockpitActionsSnapshot = {
+    items: [
+      { id: "switch", label: "Switch", trigger: "Ctrl+K or /switch", enabled: true },
+      { id: "reset", label: "Reset", trigger: "/reset", enabled: Boolean(currentSession?.sessionKey) },
+      { id: "model", label: "Model", trigger: "/model", enabled: Boolean(currentSession && agent) },
+    ],
+  };
+  const activityFeed = messages.slice(-3).map(summarizeCockpitActivity);
+  if (rc505.lastEvent) {
+    activityFeed.push(truncateCockpitLine(`rc505 ${rc505.lastEvent.kind}: ${rc505.lastEvent.summary}`));
+  } else if (rc505.message) {
+    activityFeed.push(truncateCockpitLine(`rc505 bridge: ${rc505.message}`));
+  }
+  const cockpitActivity: CockpitActivitySnapshot = {
+    feed: activityFeed.slice(-4),
+  };
+
+  useEffect(() => {
+    if (activeView === "cockpit") {
+      refreshSessions();
+    }
+  }, [activeView, refreshSessions]);
+
+  useEffect(() => {
+    const lastEventAt = rc505.lastEvent?.receivedAt;
+    if (!lastEventAt || lastRcEventAtRef.current === lastEventAt) {
+      return;
+    }
+    lastRcEventAtRef.current = lastEventAt;
+    setActiveView("cockpit");
+  }, [rc505.lastEvent?.receivedAt]);
 
   // Toggle command palette with Ctrl+K
   useKeyboard((key) => {
@@ -104,6 +194,10 @@ export function App() {
         }
         return !prev;
       });
+      return;
+    }
+    if (key.ctrl && key.name === "o") {
+      setActiveView((prev) => (prev === "chat" ? "cockpit" : "chat"));
     }
   });
 
@@ -131,6 +225,16 @@ export function App() {
       timestamp: Date.now(),
     });
   }, [currentSession, sessionName, isWorking, stopWorking, pushMessage]);
+
+  const handleSend = useCallback(
+    (text: string) => {
+      sendMessage(text);
+      if (activeView === "cockpit") {
+        setActiveView("chat");
+      }
+    },
+    [sendMessage, activeView],
+  );
 
   const handleSlashCommand = useCallback(
     (cmd: string) => {
@@ -169,6 +273,12 @@ export function App() {
         case "model":
           setModelPickerOpen(true);
           break;
+        case "cockpit":
+          setActiveView("cockpit");
+          break;
+        case "chat":
+          setActiveView("chat");
+          break;
       }
     },
     [refreshSessions, clearMessages, pushMessage, currentSession, sessionName],
@@ -176,8 +286,11 @@ export function App() {
 
   return (
     <box flexDirection="column" width="100%" height="100%">
-      {/* Chat area */}
-      <ChatView messages={messages} />
+      {activeView === "cockpit" ? (
+        <CockpitView status={cockpitStatus} lanes={cockpitLanes} actions={cockpitActions} activity={cockpitActivity} />
+      ) : (
+        <ChatView messages={messages} />
+      )}
 
       {/* Typing / compacting indicator */}
       {isCompacting ? (
@@ -190,9 +303,14 @@ export function App() {
 
       {/* Input bar */}
       <InputBar
-        onSend={sendMessage}
+        onSend={handleSend}
         onSlashCommand={handleSlashCommand}
         onAbort={handleAbort}
+        placeholder={
+          activeView === "cockpit"
+            ? "Cockpit mode. Use /chat or Ctrl+O to return."
+            : "Type a message... (\\ for newline)"
+        }
         isWorking={isWorking}
         active={!paletteOpen && !modelPickerOpen}
         extraOffset={isCompacting || isWorking ? 1 : 0}

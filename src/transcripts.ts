@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeProviderId } from "./runtime/types.js";
@@ -34,8 +34,14 @@ export function locateRuntimeTranscript(input: TranscriptLocatorInput): Transcri
     }
 
     const escapedCwd = input.agentCwd.replace(/\//g, "-");
-    const path = `${homedir()}/.claude/projects/${escapedCwd}/${providerSessionId}.jsonl`;
-    return existsSync(path) ? { path } : { reason: `Transcript not found at ${path}` };
+    const root = `${homedir()}/.claude/projects/${escapedCwd}`;
+    const path = `${root}/${providerSessionId}.jsonl`;
+    if (existsSync(path)) {
+      return { path };
+    }
+
+    const fallback = findClaudeSessionFile(root, providerSessionId);
+    return fallback ? { path: fallback } : { reason: `Transcript not found at ${path}` };
   }
 
   if (provider === "codex") {
@@ -79,6 +85,45 @@ function findCodexSessionFile(sessionId: string): string | undefined {
   }
 
   return undefined;
+}
+
+function findClaudeSessionFile(projectRoot: string, sessionId: string): string | undefined {
+  const nestedRoot = join(projectRoot, sessionId);
+  if (!existsSync(nestedRoot)) {
+    return undefined;
+  }
+
+  let bestPath: string | undefined;
+  let bestSize = -1;
+  const stack = [nestedRoot];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    const entries = safeReadDir(current);
+    for (const entry of entries) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(path);
+        continue;
+      }
+
+      if (!entry.isFile() || !path.endsWith(".jsonl")) {
+        continue;
+      }
+
+      try {
+        const size = statSync(path).size;
+        if (size > bestSize) {
+          bestPath = path;
+          bestSize = size;
+        }
+      } catch {
+        // Ignore unreadable files.
+      }
+    }
+  }
+
+  return bestPath;
 }
 
 function extractCodexSessionId(raw: string, path: string): string | undefined {

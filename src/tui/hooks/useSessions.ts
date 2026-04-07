@@ -8,6 +8,9 @@ export interface SessionItem {
   agentId: string;
   model: string | null;
   updatedAt: number;
+  queueMode?: "steer" | "followup" | "collect" | "queue" | "interrupt";
+  abortedLastRun?: boolean;
+  ephemeral?: boolean;
 }
 
 export interface UseSessionsResult {
@@ -40,6 +43,9 @@ export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult
           agentId: entry.agentId,
           model,
           updatedAt: entry.updatedAt,
+          queueMode: entry.queueMode,
+          abortedLastRun: entry.abortedLastRun,
+          ephemeral: entry.ephemeral,
         };
       });
       setSessions(items);

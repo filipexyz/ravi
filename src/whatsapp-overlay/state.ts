@@ -24,6 +24,8 @@ export interface OverlayChatRowState {
   chatIdCandidate?: string | null;
   selected?: boolean;
   unreadCount?: number | null;
+  preview?: string | null;
+  timeLabel?: string | null;
   text?: string | null;
 }
 

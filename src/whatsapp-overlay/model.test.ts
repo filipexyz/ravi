@@ -106,6 +106,21 @@ describe("whatsapp overlay model", () => {
     expect(matches).toHaveLength(0);
   });
 
+  it("fails closed for single-token dm-style titles without an exact match", () => {
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:marina:whatsapp:main:group:120363409474752492",
+        name: "marina-ravi-marina",
+        displayName: "Ravi - Marina",
+        lastTo: "group:120363409474752492",
+        updatedAt: 20,
+      }),
+    ];
+
+    const matches = resolveByTitle("Marina", sessions);
+    expect(matches).toHaveLength(0);
+  });
+
   it("merges live runtime state into the snapshot", () => {
     const session = makeSession({
       name: "dev-main",

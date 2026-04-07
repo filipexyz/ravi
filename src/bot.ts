@@ -1,6 +1,11 @@
 import { StringCodec } from "nats";
 import { nats, getNats } from "./nats.js";
-import { SESSION_STREAM, getConsumerName, ensureSessionConsumer } from "./omni/session-stream.js";
+import {
+  SESSION_STREAM,
+  getConsumerName,
+  ensureSessionConsumer,
+  ensureSessionPromptsStream,
+} from "./omni/session-stream.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
 import { saveMessage, backfillProviderSessionId, close as closeDb } from "./db.js";
@@ -38,9 +43,19 @@ import { join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
 import { agentCan } from "./permissions/engine.js";
+import { requestCascadingApproval, requestPollAnswer } from "./approval/service.js";
+import {
+  DEFAULT_DELIVERY_BARRIER,
+  chooseMoreUrgentBarrier,
+  describeDeliveryBarrier,
+  type DeliveryBarrier,
+} from "./delivery-barriers.js";
+import { dbHasActiveTaskForSession } from "./tasks/task-db.js";
 import {
   assertRuntimeCompatibility,
+  createRuntimeContext,
   createRuntimeProvider,
+  snapshotAgentCapabilities,
   type RuntimeProviderId,
   type RuntimeSessionHandle,
   type RuntimeStartRequest,
@@ -201,6 +216,16 @@ export interface MessageTarget {
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
+  /**
+   * Message delivery barrier:
+   * - immediate_interrupt: interrupt current turn as soon as it is safe
+   * - after_tool: wait for tool/compaction startup barriers, then preempt text response
+   * - after_response: wait until the current turn completes
+   * - after_task: wait until the session has no active task assignment
+   */
+  deliveryBarrier?: DeliveryBarrier;
+  /** Task ID exempted from after_task blocking (used by task dispatch to avoid self-deadlock) */
+  taskBarrierTaskId?: string;
   source?: MessageTarget;
   context?: MessageContext;
   /** Outbound system context injected by outbound module */
@@ -232,6 +257,8 @@ interface StreamingSession {
   abortController: AbortController;
   /** Resolve function to unblock the generator when waiting between turns */
   pushMessage: ((msg: UserMessage | null) => void) | null;
+  /** Sticky wake-up flag for queue releases that happen between generator loops */
+  pendingWake: boolean;
   /** Queue of messages — stays in queue until turn completes without interrupt */
   pendingMessages: UserMessage[];
   /** Current response source for routing */
@@ -247,6 +274,8 @@ interface StreamingSession {
   done: boolean;
   /** Whether the current turn was interrupted (discard response, keep queue) */
   interrupted: boolean;
+  /** Whether a provider turn is currently active until a terminal event arrives */
+  turnActive: boolean;
   /** Signal from result handler to unblock generator after turn completes */
   onTurnComplete: (() => void) | null;
   /** Flag: SDK returned "Prompt is too long" — session needs reset */
@@ -270,6 +299,10 @@ interface UserMessage {
   };
   session_id: string;
   parent_tool_use_id: string | null;
+  deliveryBarrier?: DeliveryBarrier;
+  taskBarrierTaskId?: string;
+  pendingId?: string;
+  queuedAt?: number;
 }
 
 export interface RaviBotOptions {
@@ -283,40 +316,18 @@ interface PendingStart {
   resolve: () => void;
 }
 
-/** Pending approval waiting for a reaction or reply */
-interface PendingApproval {
-  resolve: (result: { approved: boolean; reason?: string }) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-/** Pending poll question waiting for a vote or text reply */
-interface PendingPollQuestion {
-  resolve: (result: { selectedLabels: string[] } | { freeText: string }) => void;
-  timer: ReturnType<typeof setTimeout>;
-  /** Poll option labels for mapping votes back */
-  optionLabels: string[];
-}
-
-/**
- * In-process reply callbacks for replyTopic.
- * Used by gateway to resolve send results without SSE round-trip.
- */
-export const pendingReplyCallbacks = new Map<string, (data: { messageId?: string }) => void>();
-
 export class RaviBot {
   private config: Config;
   private running = false;
   private streamingSessions = new Map<string, StreamingSession>();
   private debounceStates = new Map<string, DebounceState>();
   private promptSubscriptionActive = false;
-  /** Pending approvals keyed by outbound messageId */
-  private pendingApprovals = new Map<string, PendingApproval>();
-  /** Pending poll questions keyed by poll messageId */
-  private pendingPollQuestions = new Map<string, PendingPollQuestion>();
+  /** Cold-start prompts parked behind an active task before a runtime session exists */
+  private deferredAfterTaskStarts = new Map<string, PromptMessage[]>();
   /** Queued session starts waiting for a concurrency slot */
   private pendingStarts: PendingStart[] = [];
   /** Messages stashed from aborted sessions — re-injected on next prompt */
-  private stashedMessages = new Map<string, string[]>();
+  private stashedMessages = new Map<string, UserMessage[]>();
   /** Unique instance ID to trace responses back to this daemon instance */
   readonly instanceId = Math.random().toString(36).slice(2, 8);
   /** Subscriber health: incremented on every prompt received */
@@ -326,6 +337,7 @@ export class RaviBot {
   /** Resolves when the JetStream consumer is active and ready to receive messages */
   readonly consumerReady: Promise<void>;
   private resolveConsumerReady!: () => void;
+  private consumerReadyResolved = false;
 
   constructor(options: RaviBotOptions) {
     this.consumerReady = new Promise<void>((resolve) => {
@@ -333,6 +345,21 @@ export class RaviBot {
     });
     this.config = options.config;
     logger.setLevel(options.config.logLevel);
+  }
+
+  private markConsumerReady(): void {
+    if (this.consumerReadyResolved) return;
+    this.consumerReadyResolved = true;
+    this.resolveConsumerReady();
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isPromptBootstrapError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    return message.includes("stream not found") || message.includes("consumer not found");
   }
 
   /** Mark a streaming session as finished and wake any idle waiters. */
@@ -361,10 +388,8 @@ export class RaviBot {
     log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
     this.running = true;
     this.subscribeToPrompts();
-    this.subscribeToInboundReactions();
-    this.subscribeToInboundReplies();
-    this.subscribeToInboundPollVotes();
     this.subscribeToSessionAborts();
+    this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
     log.info("Ravi bot started", {
       pid: process.pid,
@@ -402,26 +427,6 @@ export class RaviBot {
       this.streamingSessions.clear();
     }
 
-    // Cancel all pending approvals
-    if (this.pendingApprovals.size > 0) {
-      log.info("Cancelling pending approvals", { count: this.pendingApprovals.size });
-      for (const [_messageId, approval] of this.pendingApprovals) {
-        clearTimeout(approval.timer);
-        approval.resolve({ approved: false, reason: "Bot shutting down." });
-      }
-      this.pendingApprovals.clear();
-    }
-
-    // Cancel all pending poll questions
-    if (this.pendingPollQuestions.size > 0) {
-      log.info("Cancelling pending poll questions", { count: this.pendingPollQuestions.size });
-      for (const [, pending] of this.pendingPollQuestions) {
-        clearTimeout(pending.timer);
-        pending.resolve({ freeText: "Bot shutting down." });
-      }
-      this.pendingPollQuestions.clear();
-    }
-
     closeDb();
     closeRouterDb();
     log.info("Ravi bot stopped");
@@ -455,141 +460,17 @@ export class RaviBot {
 
     // Stash pending messages so they're re-injected on next prompt
     if (session.pendingMessages.length > 0) {
-      const texts = session.pendingMessages.map((m) => m.message.content);
-      log.info("Stashing aborted messages", { sessionName, count: texts.length });
-      this.stashedMessages.set(sessionName, texts);
+      log.info("Stashing aborted messages", { sessionName, count: session.pendingMessages.length });
+      this.stashedMessages.set(
+        sessionName,
+        session.pendingMessages.map((message) => ({ ...message })),
+      );
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done });
     this.signalStreamingSessionShutdown(session);
     this.streamingSessions.delete(sessionName);
     return true;
-  }
-
-  /**
-   * Listen for inbound reactions and resolve pending approvals.
-   */
-  private async subscribeToInboundReactions(): Promise<void> {
-    while (this.running) {
-      try {
-        for await (const event of nats.subscribe("ravi.inbound.reaction")) {
-          if (!this.running) break;
-          const data = event.data as {
-            targetMessageId: string;
-            emoji: string;
-            senderId: string;
-          };
-
-          const pending = this.pendingApprovals.get(data.targetMessageId);
-          if (!pending) continue;
-
-          const approved = data.emoji === "👍" || data.emoji === "❤️" || data.emoji === "❤";
-          log.info("Approval reaction received", {
-            targetMessageId: data.targetMessageId,
-            emoji: data.emoji,
-            approved,
-            senderId: data.senderId,
-          });
-
-          clearTimeout(pending.timer);
-          this.pendingApprovals.delete(data.targetMessageId);
-          pending.resolve({ approved });
-        }
-      } catch (err) {
-        if (!this.running) break;
-        log.warn("Reaction subscription error, reconnecting in 2s", { error: err });
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-  }
-
-  /**
-   * Listen for inbound replies and resolve pending approvals as rejections.
-   */
-  private async subscribeToInboundReplies(): Promise<void> {
-    while (this.running) {
-      try {
-        for await (const event of nats.subscribe("ravi.inbound.reply")) {
-          if (!this.running) break;
-          const data = event.data as {
-            targetMessageId: string;
-            text: string;
-            senderId: string;
-          };
-
-          // Check pending approvals
-          const pending = this.pendingApprovals.get(data.targetMessageId);
-          if (pending) {
-            log.info("Approval reply received (rejection)", {
-              targetMessageId: data.targetMessageId,
-              text: data.text,
-              senderId: data.senderId,
-            });
-
-            clearTimeout(pending.timer);
-            this.pendingApprovals.delete(data.targetMessageId);
-            pending.resolve({ approved: false, reason: data.text });
-            continue;
-          }
-
-          // Check pending poll questions (text reply = free text answer)
-          const pendingPoll = this.pendingPollQuestions.get(data.targetMessageId);
-          if (pendingPoll) {
-            log.info("Poll question answered via text reply", {
-              pollMessageId: data.targetMessageId,
-              text: data.text,
-              senderId: data.senderId,
-            });
-
-            clearTimeout(pendingPoll.timer);
-            this.pendingPollQuestions.delete(data.targetMessageId);
-            pendingPoll.resolve({ freeText: data.text });
-          }
-        }
-      } catch (err) {
-        if (!this.running) break;
-        log.warn("Reply subscription error, reconnecting in 2s", { error: err });
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-  }
-
-  /**
-   * Listen for inbound poll votes and resolve pending poll questions.
-   */
-  private async subscribeToInboundPollVotes(): Promise<void> {
-    while (this.running) {
-      try {
-        for await (const event of nats.subscribe("ravi.inbound.pollVote")) {
-          if (!this.running) break;
-          const data = event.data as {
-            pollMessageId: string;
-            votes: Array<{ name: string; voters: string[] }>;
-          };
-
-          const pending = this.pendingPollQuestions.get(data.pollMessageId);
-          if (!pending) continue;
-
-          // Find which options got votes (from any voter — in DMs there's only one)
-          const selected = data.votes.filter((v) => v.voters.length > 0).map((v) => v.name);
-
-          if (selected.length === 0) continue; // vote retracted, keep waiting
-
-          log.info("Poll vote received for pending question", {
-            pollMessageId: data.pollMessageId,
-            selected,
-          });
-
-          clearTimeout(pending.timer);
-          this.pendingPollQuestions.delete(data.pollMessageId);
-          pending.resolve({ selectedLabels: selected });
-        }
-      } catch (err) {
-        if (!this.running) break;
-        log.warn("Poll vote subscription error, reconnecting in 2s", { error: err });
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
   }
 
   /**
@@ -617,177 +498,189 @@ export class RaviBot {
   }
 
   /**
-   * Send a message to WhatsApp and wait for a reaction (👍) or reply (rejection).
-   * Returns { approved, reason } — reason is the reply text if rejected.
+   * Wake sessions that were waiting on an active task barrier once the task ends.
    */
-  private async requestApproval(
-    source: MessageTarget,
-    text: string,
-    options?: { timeoutMs?: number },
-  ): Promise<{ approved: boolean; reason?: string }> {
-    const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000; // 5 minutes
-    // Use in-process callback to capture messageId (avoids SSE round-trip race condition)
-    const replyTopic = `ravi.approval.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
-
-    const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
-      const timeout = setTimeout(
-        () => {
-          pendingReplyCallbacks.delete(replyTopic);
-          resolve({});
-        },
-        5 * 60 * 1000,
-      );
-      pendingReplyCallbacks.set(replyTopic, (data) => {
-        clearTimeout(timeout);
-        pendingReplyCallbacks.delete(replyTopic);
-        resolve(data);
-      });
-    });
-
-    await nats.emit("ravi.outbound.deliver", {
-      channel: source.channel,
-      accountId: source.accountId,
-      to: source.chatId,
-      text,
-      replyTopic,
-    });
-
-    const sendResult = await sendResultPromise;
-
-    if (!sendResult.messageId) {
-      log.warn("Failed to get messageId for approval/poll message (send timeout)");
-      return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
+  private async subscribeToTaskEvents(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of nats.subscribe("ravi.task.*.event")) {
+          if (!this.running) break;
+          const data = event.data as {
+            type?: string;
+            assigneeSessionName?: string | null;
+            event?: { type?: string; sessionName?: string | null };
+          };
+          const type = data.event?.type ?? data.type;
+          const sessionName =
+            type === "task.done" || type === "task.failed"
+              ? (data.assigneeSessionName ?? data.event?.sessionName ?? undefined)
+              : (data.event?.sessionName ?? data.assigneeSessionName ?? undefined);
+          if (!sessionName) continue;
+          if (type !== "task.done" && type !== "task.failed") continue;
+          await this.startDeferredAfterTaskSessionIfDeliverable(sessionName);
+          this.wakeStreamingSessionIfDeliverable(sessionName);
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Task event subscription error, reconnecting in 2s", { error: err });
+        await new Promise((r) => setTimeout(r, 2000));
+      }
     }
-
-    log.info("Waiting for approval reaction or reply", { messageId: sendResult.messageId });
-
-    return new Promise<{ approved: boolean; reason?: string }>((resolve) => {
-      const timer = setTimeout(() => {
-        this.pendingApprovals.delete(sendResult.messageId!);
-        log.warn("Approval timed out", { messageId: sendResult.messageId });
-        resolve({ approved: false, reason: "Timeout — nenhuma resposta em 5 minutos." });
-      }, timeoutMs);
-
-      this.pendingApprovals.set(sendResult.messageId!, { resolve, timer });
-    });
   }
 
-  /**
-   * Send a WhatsApp poll and wait for a vote or text reply.
-   * Returns selected option labels or free text.
-   */
-  private async requestPollAnswer(
-    source: MessageTarget,
-    pollName: string,
-    optionLabels: string[],
-    options?: { timeoutMs?: number; selectableCount?: number },
-  ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
-    const timeoutMs = options?.timeoutMs ?? 5 * 60 * 1000;
-    const replyTopic = `ravi.poll.reply.${Date.now()}.${Math.random().toString(36).slice(2, 6)}`;
-
-    const sendResultPromise = new Promise<{ messageId?: string }>((resolve) => {
-      const timeout = setTimeout(
-        () => {
-          pendingReplyCallbacks.delete(replyTopic);
-          resolve({});
-        },
-        5 * 60 * 1000,
-      );
-      pendingReplyCallbacks.set(replyTopic, (data) => {
-        clearTimeout(timeout);
-        pendingReplyCallbacks.delete(replyTopic);
-        resolve(data);
-      });
-    });
-
-    await nats.emit("ravi.outbound.deliver", {
-      channel: source.channel,
-      accountId: source.accountId,
-      to: source.chatId,
-      poll: {
-        name: pollName,
-        values: optionLabels,
-        selectableCount: options?.selectableCount ?? 1,
-      },
-      replyTopic,
-    });
-
-    const sendResult = await sendResultPromise;
-
-    if (!sendResult.messageId) {
-      log.warn("Failed to get messageId for poll — falling back to free text");
-      return { freeText: "Failed to send poll." };
-    }
-
-    log.info("Poll sent, waiting for vote or reply", { messageId: sendResult.messageId, optionLabels });
-
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        this.pendingPollQuestions.delete(sendResult.messageId!);
-        log.warn("Poll answer timed out", { messageId: sendResult.messageId });
-        resolve({ freeText: "Timeout — nenhuma resposta." });
-      }, timeoutMs);
-
-      this.pendingPollQuestions.set(sendResult.messageId!, {
-        resolve,
-        timer,
-        optionLabels,
-      });
-    });
+  private getPromptDeliveryBarrier(prompt: PromptMessage): DeliveryBarrier {
+    return prompt.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
   }
 
-  /**
-   * Request approval via cascading: uses resolvedSource (direct) or approvalSource (delegated).
-   * Emits ravi.approval.request/response events for audit trail.
-   */
-  private async requestCascadingApproval(opts: {
-    resolvedSource?: MessageTarget;
-    approvalSource?: MessageTarget;
-    type: "plan" | "spec";
-    sessionName: string;
-    agentId: string;
-    text: string;
-  }): Promise<{ approved: boolean; reason?: string; isDelegated: boolean }> {
-    const targetSource = opts.resolvedSource ?? opts.approvalSource;
-    if (!targetSource) {
-      log.info(`${opts.type} auto-approved (no source available)`, { sessionName: opts.sessionName });
-      return { approved: true, isDelegated: false };
+  private createQueuedUserMessage(prompt: PromptMessage): UserMessage {
+    return {
+      type: "user",
+      message: { role: "user", content: prompt.prompt },
+      session_id: "",
+      parent_tool_use_id: null,
+      deliveryBarrier: this.getPromptDeliveryBarrier(prompt),
+      taskBarrierTaskId: prompt.taskBarrierTaskId,
+      pendingId: Math.random().toString(36).slice(2, 10),
+      queuedAt: Date.now(),
+    };
+  }
+
+  private isGeneratingText(session: StreamingSession): boolean {
+    return !session.done && session.turnActive && !session.compacting && !session.toolRunning;
+  }
+
+  private canReleaseBarrier(
+    sessionName: string,
+    session: StreamingSession,
+    barrier: DeliveryBarrier,
+    taskBarrierTaskId?: string,
+    hasActiveTask = dbHasActiveTaskForSession(sessionName, taskBarrierTaskId),
+  ): boolean {
+    switch (barrier) {
+      case "immediate_interrupt":
+        if (session.starting || session.compacting) return false;
+        if (session.toolRunning && session.currentToolSafety === "unsafe") return false;
+        return true;
+      case "after_tool":
+        return !session.starting && !session.compacting && !session.toolRunning;
+      case "after_response":
+        return !session.starting && !session.compacting && !session.toolRunning && !this.isGeneratingText(session);
+      case "after_task":
+        return (
+          !hasActiveTask &&
+          !session.starting &&
+          !session.compacting &&
+          !session.toolRunning &&
+          !this.isGeneratingText(session)
+        );
+    }
+  }
+
+  private getDeliverablePendingMessages(sessionName: string, session: StreamingSession): UserMessage[] {
+    if (session.pendingMessages.length === 0) {
+      return [];
     }
 
-    const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
-    log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
+    const activeTaskByExemption = new Map<string, boolean>();
+    return session.pendingMessages.filter((message) =>
+      this.canReleaseBarrier(
+        sessionName,
+        session,
+        message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER,
+        message.taskBarrierTaskId,
+        (() => {
+          const key = message.taskBarrierTaskId ?? "__default__";
+          if (!activeTaskByExemption.has(key)) {
+            activeTaskByExemption.set(key, dbHasActiveTaskForSession(sessionName, message.taskBarrierTaskId));
+          }
+          return activeTaskByExemption.get(key) ?? false;
+        })(),
+      ),
+    );
+  }
 
-    nats
-      .emit("ravi.approval.request", {
-        type: opts.type,
-        sessionName: opts.sessionName,
-        agentId: opts.agentId,
-        delegated: isDelegated,
-        channel: targetSource.channel,
-        chatId: targetSource.chatId,
-        timestamp: Date.now(),
-      })
-      .catch(() => {});
+  private hasDeliverablePendingMessages(sessionName: string, session: StreamingSession): boolean {
+    return this.getDeliverablePendingMessages(sessionName, session).length > 0;
+  }
 
-    const label = opts.type === "plan" ? "Plano pendente" : "Spec pendente";
-    const approvalText = isDelegated
-      ? `📋 *${label}* (de _${opts.agentId}_)\n\n${opts.text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`
-      : `📋 *${label}*\n\n${opts.text}\n\n_Reaja com 👍 ou ❤️ pra aprovar, ou responda pra rejeitar._`;
+  private shouldInterruptForIncoming(
+    sessionName: string,
+    session: StreamingSession,
+    barrier: DeliveryBarrier,
+    taskBarrierTaskId?: string,
+  ): { interrupt: boolean; reason: string } {
+    if (session.pushMessage) {
+      return { interrupt: false, reason: "waiting" };
+    }
+    if (session.starting) {
+      return { interrupt: false, reason: "starting" };
+    }
+    if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
+      return { interrupt: false, reason: "active_task" };
+    }
+    if (session.compacting) {
+      return { interrupt: false, reason: "compacting" };
+    }
+    if (session.toolRunning) {
+      if (barrier !== "immediate_interrupt") {
+        return { interrupt: false, reason: "tool" };
+      }
+      if (session.currentToolSafety === "unsafe") {
+        return { interrupt: false, reason: "unsafe_tool" };
+      }
+      return { interrupt: true, reason: "safe_tool" };
+    }
+    if (barrier === "after_response" || barrier === "after_task") {
+      return { interrupt: false, reason: "response" };
+    }
+    return { interrupt: true, reason: "response" };
+  }
 
-    const result = await this.requestApproval(targetSource, approvalText);
+  private wakeStreamingSessionIfDeliverable(sessionName: string): void {
+    const session = this.streamingSessions.get(sessionName);
+    if (!session || !session.pushMessage) {
+      if (session) {
+        session.pendingWake = true;
+      }
+      return;
+    }
+    if (!this.hasDeliverablePendingMessages(sessionName, session)) {
+      return;
+    }
+    const resolver = session.pushMessage;
+    session.pushMessage = null;
+    session.pendingWake = false;
+    resolver(null);
+  }
 
-    nats
-      .emit("ravi.approval.response", {
-        type: opts.type,
-        sessionName: opts.sessionName,
-        agentId: opts.agentId,
-        approved: result.approved,
-        reason: result.reason,
-        timestamp: Date.now(),
-      })
-      .catch(() => {});
+  private async startDeferredAfterTaskSessionIfDeliverable(sessionName: string): Promise<void> {
+    const queued = this.deferredAfterTaskStarts.get(sessionName);
+    if (!queued || queued.length === 0) {
+      return;
+    }
+    const first = queued[0];
+    if (!first) {
+      this.deferredAfterTaskStarts.delete(sessionName);
+      return;
+    }
+    if (dbHasActiveTaskForSession(sessionName, first.taskBarrierTaskId)) {
+      return;
+    }
 
-    return { ...result, isDelegated };
+    this.deferredAfterTaskStarts.delete(sessionName);
+
+    if (this.streamingSessions.has(sessionName)) {
+      for (const prompt of queued) {
+        await this.handlePromptImmediate(sessionName, prompt);
+      }
+      return;
+    }
+
+    const [, ...rest] = queued;
+    await this.startStreamingSession(sessionName, first);
+    for (const prompt of rest) {
+      await this.handlePromptImmediate(sessionName, prompt);
+    }
   }
 
   /**
@@ -830,51 +723,73 @@ export class RaviBot {
       const jsm = await nc.jetstreamManager();
       const js = nc.jetstream();
 
-      // Each daemon registers its own consumer so NATS distributes prompts across all daemons.
-      // WorkQueuePolicy ensures each prompt is delivered to exactly one consumer (one daemon).
       const consumerName = getConsumerName();
+      await ensureSessionPromptsStream();
       await ensureSessionConsumer(jsm);
 
-      const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
-      // expires: 2s — consumer renews pull requests every 2s, so published messages
-      // are picked up within 2s instead of the default 30s window.
-      const messages = await consumer.consume({ expires: 2000 });
-
-      // Signal ready immediately — the pull request is sent synchronously by consume()
-      this.resolveConsumerReady();
-
-      for await (const msg of messages) {
-        if (!this.running) {
-          msg.nak();
-          break;
-        }
-
-        let prompt: PromptMessage;
+      while (this.running) {
         try {
-          const raw = sc.decode(msg.data);
-          prompt = JSON.parse(raw) as PromptMessage;
+          const consumer = await js.consumers.get(SESSION_STREAM, consumerName);
+          // expires: 2s — renew pull requests aggressively without tearing down the subscriber.
+          const messages = await consumer.consume({ expires: 2000 });
+
+          // Signal ready immediately — the pull request is sent synchronously by consume()
+          this.markConsumerReady();
+
+          for await (const msg of messages) {
+            if (!this.running) {
+              msg.nak();
+              break;
+            }
+
+            let prompt: PromptMessage;
+            try {
+              const raw = sc.decode(msg.data);
+              prompt = JSON.parse(raw) as PromptMessage;
+            } catch (err) {
+              log.error("Failed to parse session prompt", { error: err, subject: msg.subject });
+              msg.nak();
+              continue;
+            }
+
+            // Ack immediately — signals this daemon has claimed the prompt.
+            // Another daemon won't receive it. If we crash mid-turn the user
+            // will need to resend (acceptable trade-off vs blocking the stream).
+            msg.ack();
+            this.promptsReceived++;
+
+            // Extract session name from subject: ravi.session.{name}.prompt
+            const sessionName = msg.subject.split(".")[2];
+
+            // Don't await - handle concurrently
+            this.handlePrompt(sessionName, prompt).catch((err) => {
+              log.error("Failed to handle prompt", err);
+            });
+          }
+
+          if (!this.running) {
+            break;
+          }
+
+          log.debug("Prompt pull window ended, renewing", { promptsReceived: this.promptsReceived });
         } catch (err) {
-          log.error("Failed to parse session prompt", { error: err, subject: msg.subject });
-          msg.nak();
-          continue;
+          if (!this.running) {
+            break;
+          }
+
+          if (this.isPromptBootstrapError(err)) {
+            log.warn("Prompt pull unavailable during bootstrap, re-ensuring stream/consumer", { error: err });
+            await ensureSessionPromptsStream();
+            await ensureSessionConsumer(jsm);
+          } else {
+            log.error("Prompt subscription error — will reconnect pull", { error: err });
+          }
+
+          await this.delay(1000);
         }
-
-        // Ack immediately — signals this daemon has claimed the prompt.
-        // Another daemon won't receive it. If we crash mid-turn the user
-        // will need to resend (acceptable trade-off vs blocking the stream).
-        msg.ack();
-        this.promptsReceived++;
-
-        // Extract session name from subject: ravi.session.{name}.prompt
-        const sessionName = msg.subject.split(".")[2];
-
-        // Don't await - handle concurrently
-        this.handlePrompt(sessionName, prompt).catch((err) => {
-          log.error("Failed to handle prompt", err);
-        });
       }
     } catch (err) {
-      log.error("Prompt subscription error — will reconnect", { error: err });
+      log.error("Prompt subscription setup error", { error: err });
     } finally {
       this.promptSubscriptionActive = false;
       log.warn("Prompt subscription ended", { running: this.running, promptsReceived: this.promptsReceived });
@@ -936,12 +851,17 @@ export class RaviBot {
     // Combine all messages into one
     const combinedPrompt = state.messages.map((m) => m.prompt.prompt).join("\n\n");
     const lastSource = state.messages[state.messages.length - 1].source;
+    const combinedBarrier = state.messages.reduce<DeliveryBarrier>(
+      (current, entry) => chooseMoreUrgentBarrier(current, this.getPromptDeliveryBarrier(entry.prompt)),
+      DEFAULT_DELIVERY_BARRIER,
+    );
 
     log.info("Debounce: flushing", { sessionName, messageCount: state.messages.length });
 
     // Process the combined message
     await this.handlePromptImmediate(sessionName, {
       prompt: combinedPrompt,
+      deliveryBarrier: combinedBarrier,
       source: lastSource,
     });
   }
@@ -964,8 +884,10 @@ export class RaviBot {
         });
 
         if (existing.pendingMessages.length > 0) {
-          const texts = existing.pendingMessages.map((message) => message.message.content);
-          this.stashedMessages.set(sessionName, texts);
+          this.stashedMessages.set(
+            sessionName,
+            existing.pendingMessages.map((message) => ({ ...message })),
+          );
         }
 
         this.signalStreamingSessionShutdown(existing);
@@ -985,42 +907,53 @@ export class RaviBot {
         }
 
         const userMsg: UserMessage = {
-          type: "user",
-          message: { role: "user", content: prompt.prompt },
-          session_id: "",
-          parent_tool_use_id: null,
+          ...this.createQueuedUserMessage(prompt),
         };
 
         // Always enqueue — messages only leave the queue when a turn completes without interrupt
         existing.pendingMessages.push(userMsg);
 
+        const barrier = userMsg.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+
         if (existing.pushMessage) {
           // Generator waiting between turns — wake it up to yield the queue
-          log.info("Streaming: waking generator", { sessionName, queueSize: existing.pendingMessages.length });
-          const resolver = existing.pushMessage;
-          existing.pushMessage = null;
-          resolver(null); // wake-up signal
-        } else if (existing.starting) {
-          log.info("Streaming: queueing while session starts", {
-            sessionName,
-            queueSize: existing.pendingMessages.length,
-          });
-        } else if (existing.toolRunning || existing.compacting) {
-          // Tool running or compacting — just enqueue, don't interrupt
-          log.info("Streaming: queueing (busy)", {
-            sessionName,
-            queueSize: existing.pendingMessages.length,
-            reason: existing.compacting ? "compacting" : "tool",
-            tool: existing.currentToolName,
-          });
+          if (this.hasDeliverablePendingMessages(sessionName, existing)) {
+            log.info("Streaming: waking generator", {
+              sessionName,
+              queueSize: existing.pendingMessages.length,
+              barrier: describeDeliveryBarrier(barrier),
+            });
+            const resolver = existing.pushMessage;
+            existing.pushMessage = null;
+            resolver(null); // wake-up signal
+          } else {
+            log.info("Streaming: queued without wake", {
+              sessionName,
+              queueSize: existing.pendingMessages.length,
+              barrier: describeDeliveryBarrier(barrier),
+              reason: "waiting_for_barrier",
+            });
+          }
         } else {
-          // SDK generating text — interrupt, discard response, re-process with full queue
-          log.info("Streaming: interrupting turn", {
-            sessionName,
-            queueSize: existing.pendingMessages.length,
-          });
-          existing.interrupted = true;
-          existing.queryHandle.interrupt().catch(() => {});
+          const decision = this.shouldInterruptForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
+          if (!decision.interrupt) {
+            log.info("Streaming: queueing (busy)", {
+              sessionName,
+              queueSize: existing.pendingMessages.length,
+              barrier: describeDeliveryBarrier(barrier),
+              reason: decision.reason,
+              tool: existing.currentToolName,
+            });
+          } else {
+            log.info("Streaming: interrupting turn", {
+              sessionName,
+              queueSize: existing.pendingMessages.length,
+              barrier: describeDeliveryBarrier(barrier),
+              reason: decision.reason,
+            });
+            existing.interrupted = true;
+            existing.queryHandle.interrupt().catch(() => {});
+          }
         }
         return;
       }
@@ -1030,6 +963,22 @@ export class RaviBot {
     if (existing?.done) {
       this.streamingSessions.delete(sessionName);
     }
+
+    if (
+      !existing &&
+      this.getPromptDeliveryBarrier(prompt) === "after_task" &&
+      dbHasActiveTaskForSession(sessionName, prompt.taskBarrierTaskId)
+    ) {
+      const queued = this.deferredAfterTaskStarts.get(sessionName) ?? [];
+      queued.push(prompt);
+      this.deferredAfterTaskStarts.set(sessionName, queued);
+      log.info("Streaming: deferring cold start until task release", {
+        sessionName,
+        queued: queued.length,
+      });
+      return;
+    }
+
     await this.startStreamingSession(sessionName, prompt);
   }
 
@@ -1241,7 +1190,7 @@ export class RaviBot {
           }
           if (!planText) planText = "(plano vazio)";
 
-          const result = await this.requestCascadingApproval({
+          const result = await requestCascadingApproval({
             resolvedSource,
             approvalSource,
             type: "plan",
@@ -1316,7 +1265,7 @@ export class RaviBot {
           }
           pollName += "\n(responda a mensagem para outro)";
 
-          const result = await this.requestPollAnswer(targetSource, pollName, optionLabels, {
+          const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
             selectableCount: q.multiSelect ? optionLabels.length : 1,
           });
 
@@ -1377,7 +1326,7 @@ export class RaviBot {
           const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
           if (!spec) return {};
 
-          const result = await this.requestCascadingApproval({
+          const result = await requestCascadingApproval({
             resolvedSource,
             approvalSource,
             type: "spec",
@@ -1428,19 +1377,14 @@ export class RaviBot {
       starting: true,
       abortController,
       pushMessage: null,
-      pendingMessages: [
-        {
-          type: "user",
-          message: { role: "user", content: prompt.prompt },
-          session_id: "",
-          parent_tool_use_id: null,
-        },
-      ],
+      pendingWake: false,
+      pendingMessages: [this.createQueuedUserMessage(prompt)],
       currentSource: resolvedSource,
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
       interrupted: false,
+      turnActive: false,
       compacting: false,
       onTurnComplete: null,
       currentToolSafety: null,
@@ -1474,8 +1418,29 @@ export class RaviBot {
         resuming: !!resumableProviderSessionId,
       });
 
+      const runtimeContext = createRuntimeContext({
+        kind: "agent-runtime",
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        sessionName,
+        source: resolvedSource
+          ? {
+              channel: resolvedSource.channel,
+              accountId: resolvedSource.accountId,
+              chatId: resolvedSource.chatId,
+              ...(resolvedSource.threadId ? { threadId: resolvedSource.threadId } : {}),
+            }
+          : undefined,
+        capabilities: snapshotAgentCapabilities(agent.id),
+        metadata: {
+          runtimeProvider: runtimeProviderId,
+          ...(approvalSource ? { approvalSource } : {}),
+        },
+      });
+
       // Build RAVI_* env vars for session context (available in Bash tools)
       const raviEnv: Record<string, string> = {
+        RAVI_CONTEXT_KEY: runtimeContext.contextKey,
         RAVI_SESSION_KEY: dbSessionKey,
         RAVI_SESSION_NAME: sessionName,
         RAVI_AGENT_ID: agent.id,
@@ -1584,7 +1549,10 @@ export class RaviBot {
 
       // Build tool context for CLI tools
       const toolContext = {
-        sessionKey: sessionName,
+        contextId: runtimeContext.contextId,
+        context: runtimeContext,
+        sessionKey: dbSessionKey,
+        sessionName,
         agentId: agent.id,
         source: resolvedSource,
       };
@@ -1644,33 +1612,37 @@ export class RaviBot {
     const stashed = this.stashedMessages.get(sessionName);
     if (stashed && stashed.length > 0) {
       log.info("Re-injecting stashed messages", { sessionName, count: stashed.length });
-      for (const text of [...stashed].reverse()) {
-        session.pendingMessages.unshift({
-          type: "user" as const,
-          message: { role: "user" as const, content: text },
-          session_id: "",
-          parent_tool_use_id: null,
-        });
+      for (const message of [...stashed].reverse()) {
+        session.pendingMessages.unshift({ ...message });
       }
       this.stashedMessages.delete(sessionName);
     }
 
     while (!session.done) {
-      // Wait for messages if queue is empty
-      if (session.pendingMessages.length === 0) {
+      const deliverable = this.getDeliverablePendingMessages(sessionName, session);
+
+      // Wait for messages if queue is empty or still blocked by delivery barriers
+      if (deliverable.length === 0) {
+        if (session.pendingWake) {
+          session.pendingWake = false;
+          continue;
+        }
         await new Promise<void>((resolve) => {
-          session.pushMessage = () => resolve();
+          session.pushMessage = () => {
+            session.pendingWake = false;
+            resolve();
+          };
         });
         if (session.pendingMessages.length === 0 && session.done) break;
-        if (session.pendingMessages.length === 0) continue;
+        continue;
       }
 
-      // Snapshot how many messages we're yielding (more may arrive during the turn)
-      const yieldedCount = session.pendingMessages.length;
-      const combined = session.pendingMessages.map((m) => m.message.content).join("\n\n");
+      const yieldedIds = new Set(deliverable.map((message) => message.pendingId).filter(Boolean));
+      const combined = deliverable.map((m) => m.message.content).join("\n\n");
       log.info("Generator: yielding", {
         sessionName,
-        count: yieldedCount,
+        count: deliverable.length,
+        queued: session.pendingMessages.length,
       });
 
       // Arm the turn-complete signal before yielding. AsyncGenerator consumers only
@@ -1679,6 +1651,7 @@ export class RaviBot {
       const turnCompleted = new Promise<void>((resolve) => {
         session.onTurnComplete = resolve;
       });
+      session.turnActive = true;
 
       yield {
         type: "user" as const,
@@ -1698,12 +1671,12 @@ export class RaviBot {
         });
         session.interrupted = false;
       } else {
-        // Turn completed normally — remove only the messages that were yielded
-        // New messages that arrived during the turn (e.g. during tool execution) stay
-        session.pendingMessages.splice(0, yieldedCount);
+        // Turn completed normally — remove only the messages that were yielded.
+        // Lower-priority blocked messages stay parked in the queue.
+        session.pendingMessages = session.pendingMessages.filter((message) => !yieldedIds.has(message.pendingId));
         log.info("Generator: turn complete", {
           sessionName,
-          cleared: yieldedCount,
+          cleared: deliverable.length,
           remaining: session.pendingMessages.length,
         });
       }
@@ -1951,9 +1924,14 @@ export class RaviBot {
           // Execute deferred abort now that unsafe tool has completed
           if (streaming.pendingAbort) {
             if (streaming.pendingMessages.length > 0) {
-              const texts = streaming.pendingMessages.map((m) => m.message.content);
-              log.info("Stashing aborted messages (deferred)", { sessionName, count: texts.length });
-              this.stashedMessages.set(sessionName, texts);
+              log.info("Stashing aborted messages (deferred)", {
+                sessionName,
+                count: streaming.pendingMessages.length,
+              });
+              this.stashedMessages.set(
+                sessionName,
+                streaming.pendingMessages.map((message) => ({ ...message })),
+              );
             }
             log.info("Executing deferred abort after unsafe tool completed", { sessionName });
             streaming.abortController.abort();
@@ -2065,6 +2043,7 @@ export class RaviBot {
           responseText = "";
           clearActiveToolState();
           streaming.pendingAbort = false;
+          streaming.turnActive = false;
 
           // Signal generator to continue (it will clear or keep queue based on interrupted flag)
           signalTurnComplete();
@@ -2076,6 +2055,7 @@ export class RaviBot {
           streaming.interrupted = true;
           responseText = "";
           clearActiveToolState();
+          streaming.turnActive = false;
           signalTurnComplete();
           continue;
         }
@@ -2091,6 +2071,7 @@ export class RaviBot {
           responseText = "";
           clearActiveToolState();
           streaming.pendingAbort = false;
+          streaming.turnActive = false;
 
           if (streaming.agentMode !== "sentinel") {
             await emitResponse(`Error: ${event.error}`);

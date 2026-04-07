@@ -58,7 +58,7 @@ const {
   canAccessContact,
   canWriteContacts,
   canAccessResource,
-} = await import("./scope");
+} = await import("./scope.js");
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {

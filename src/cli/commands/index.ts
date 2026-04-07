@@ -5,11 +5,15 @@
  * Run: bun run gen:commands
  */
 
+export * from "./adapters.js";
 export * from "./agents.js";
 export * from "./audio.js";
 export * from "./contacts.js";
+export * from "./context.js";
+export * from "./costs.js";
 export * from "./cron.js";
 export * from "./daemon.js";
+export * from "./eval.js";
 export * from "./events.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
@@ -23,6 +27,7 @@ export * from "./service.js";
 export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
+export * from "./tasks.js";
 export * from "./tmux.js";
 export * from "./tools.js";
 export * from "./transcribe.js";

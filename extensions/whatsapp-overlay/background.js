@@ -8,8 +8,36 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ravi:get-session-workspace") {
+    fetchSessionWorkspace(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:session-prompt") {
+    postSessionPrompt(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "ravi:publish-view-state") {
     publishViewState(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:get-v3-placeholders") {
+    fetchV3Placeholders()
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:v3-command") {
+    postV3Command(message.payload)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
@@ -84,8 +112,25 @@ async function fetchSnapshot(payload = {}) {
   return response.json();
 }
 
+async function fetchSessionWorkspace(payload = {}) {
+  const params = new URLSearchParams();
+  if (payload.session) params.set("session", payload.session);
+
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/workspace?${params.toString()}`);
+  return response.json();
+}
+
 async function postAction(payload = {}) {
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/action`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+async function postSessionPrompt(payload = {}) {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/prompt`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -104,6 +149,20 @@ async function publishViewState(payload = {}) {
 
 async function resolveChatList(payload = {}) {
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/chat-list/resolve`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
+}
+
+async function fetchV3Placeholders() {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/placeholders`);
+  return response.json();
+}
+
+async function postV3Command(payload = {}) {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/command`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),

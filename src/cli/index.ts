@@ -54,6 +54,21 @@ program
     await launchTmuxTui(target);
   });
 
+program
+  .command("stream")
+  .description("Run the Ravi JSONL stdio stream server")
+  .option("--scope <scope>", "Stream scope preset", "events")
+  .option("--topic <pattern...>", "Override topic patterns")
+  .option("--heartbeat-ms <ms>", "Heartbeat interval in milliseconds", "5000")
+  .action(async (options: { scope: string; topic?: string[]; heartbeatMs: string }) => {
+    const { runCliStreamServer } = await import("../stream/server.js");
+    await runCliStreamServer({
+      scope: options.scope,
+      topicPatterns: options.topic,
+      heartbeatMs: Number.parseInt(options.heartbeatMs, 10) || 5000,
+    });
+  });
+
 // Parse and execute
 program.parse();
 

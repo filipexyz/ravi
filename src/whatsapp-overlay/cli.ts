@@ -16,6 +16,116 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
 const DEFAULT_BASE_URL = process.env.RAVI_WA_OVERLAY_URL ?? "http://127.0.0.1:4210";
 
+type CurrentResponse = {
+  current?: OverlayPublishedState | null;
+  snapshot?: {
+    resolved?: boolean;
+    session?: {
+      sessionName?: string | null;
+      agentId?: string | null;
+      live?: { activity?: string | null; summary?: string | null; updatedAt?: number | null };
+      chatId?: string | null;
+    } | null;
+  } | null;
+  history?: OverlayPublishedState[];
+};
+
+type PlaceholderResponse = {
+  ok?: boolean;
+  enabled?: boolean;
+  relay?: {
+    status?: string | null;
+    lastCursor?: string | null;
+    lastHeartbeatAt?: string | null;
+    lastError?: string | null;
+  } | null;
+  page?: {
+    screen?: string | null;
+    title?: string | null;
+    componentCount?: number | null;
+    chatRowCount?: number | null;
+  } | null;
+  placeholders?: Array<{
+    componentId?: string | null;
+    label?: string | null;
+    selector?: string | null;
+    confidence?: string | null;
+    count?: number | null;
+  }>;
+  missing?: Array<{
+    componentId?: string | null;
+    label?: string | null;
+  }>;
+};
+
+type OmniPanelResponse = {
+  actor?: {
+    sessionName?: string | null;
+    sessionKey?: string | null;
+  } | null;
+  preferredInstance?: {
+    name?: string | null;
+  } | null;
+  currentChat?: {
+    name?: string | null;
+    externalId?: string | null;
+    canonicalId?: string | null;
+    instanceName?: string | null;
+    chatType?: string | null;
+  } | null;
+};
+
+type V3CommandResponse = {
+  ok?: boolean;
+  ack?: {
+    body?: {
+      commandId?: string;
+      ok?: boolean;
+      result?: unknown;
+    };
+  } | null;
+  error?: string | null;
+  code?: string | null;
+  retryable?: boolean;
+  details?: unknown;
+};
+
+type ResolveChatListItem = {
+  id: string;
+  query?: { chatId?: string | null; title?: string | null; session?: string | null };
+  matchSource?: string | null;
+  matchedChat?: {
+    externalId?: string | null;
+    canonicalId?: string | null;
+    name?: string | null;
+    lastMessageAt?: string | null;
+    lastMessagePreview?: string | null;
+  } | null;
+  session?: {
+    sessionName?: string | null;
+    agentId?: string | null;
+    chatId?: string | null;
+    live?: { activity?: string | null } | null;
+  } | null;
+  resolved?: boolean;
+  warnings?: string[];
+};
+
+type ResolveChatListResponse = {
+  ok?: boolean;
+  items?: ResolveChatListItem[];
+};
+
+type DomCommandCreateResponse = {
+  ok?: boolean;
+  commandId?: string;
+};
+
+type DomCommandStatusResponse = {
+  ok?: boolean;
+  result?: OverlayDomCommandResult | null;
+};
+
 const program = new Command();
 program.name("ravi-overlay").description("WhatsApp Web overlay inspector").version(pkg.version);
 
@@ -42,29 +152,115 @@ program
   });
 
 program
+  .command("placeholders")
+  .description("Show the v3 placeholder state derived from relay + published page map")
+  .option("--url <baseUrl>", "Bridge base URL", DEFAULT_BASE_URL)
+  .option("--json", "Print raw JSON")
+  .action(async (options: { url: string; json?: boolean }) => {
+    const state = await fetchPlaceholders(options.url);
+    if (options.json) {
+      console.log(JSON.stringify(state, null, 2));
+      return;
+    }
+    renderPlaceholders(state);
+  });
+
+program
+  .command("placeholders-outline <componentId>")
+  .description("Trigger the first real v3 action: outline a mapped placeholder slot in the browser")
+  .option("--url <baseUrl>", "Bridge base URL", DEFAULT_BASE_URL)
+  .option("--color <hex>", "Outline color", "#53bdeb")
+  .option("--duration <ms>", "How long to keep the outline visible", "2200")
+  .option("--json", "Print raw JSON")
+  .action(async (componentId: string, options: { url: string; color: string; duration: string; json?: boolean }) => {
+    const response = await postV3Command(options.url, {
+      name: "placeholder.outline",
+      args: {
+        componentId,
+        color: options.color,
+        durationMs: Number.parseInt(options.duration, 10) || 2200,
+      },
+    });
+
+    if (options.json) {
+      console.log(JSON.stringify(response, null, 2));
+      return;
+    }
+
+    if (!response?.ok) {
+      const code = response?.code ? ` (${response.code})` : "";
+      throw new Error(`${response?.error || "v3 command failed"}${code}`);
+    }
+
+    const result = response.ack?.body?.result;
+    console.log(`outlined ${componentId}`);
+    if (result) {
+      console.log(JSON.stringify(result, null, 2));
+    }
+  });
+
+program
   .command("bind <session>")
-  .description("Bind the currently open WhatsApp chat to a Ravi session")
+  .description("Bind the current Omni/WhatsApp chat to an existing Ravi session through the v3 command path")
   .option("--url <baseUrl>", "Bridge base URL", DEFAULT_BASE_URL)
   .option("--title <title>", "Override chat title")
   .option("--chat-id <chatId>", "Override chat id")
-  .action(async (session: string, options: { url: string; title?: string; chatId?: string }) => {
-    const state = await fetchCurrent(options.url);
-    const current = state.current;
-    const title = options.title ?? current?.context?.title ?? current?.view?.selectedChat ?? null;
-    const chatId = options.chatId ?? current?.context?.chatId ?? current?.view?.chatIdCandidate ?? null;
+  .option("--instance <name>", "Override Omni instance name")
+  .option("--chat-type <type>", "Override chat type (group|dm)")
+  .option("--json", "Print raw JSON")
+  .action(
+    async (
+      session: string,
+      options: { url: string; title?: string; chatId?: string; instance?: string; chatType?: string; json?: boolean },
+    ) => {
+      const state = await fetchCurrent(options.url);
+      const panel = await fetchOmniPanel(options.url).catch(() => null);
+      const current = state.current;
+      const currentChat = panel?.currentChat ?? null;
+      const title =
+        options.title ?? currentChat?.name ?? current?.context?.title ?? current?.view?.selectedChat ?? null;
+      const chatId =
+        options.chatId ??
+        currentChat?.externalId ??
+        currentChat?.canonicalId ??
+        current?.context?.chatId ??
+        current?.view?.chatIdCandidate ??
+        null;
+      const instance = options.instance ?? currentChat?.instanceName ?? panel?.preferredInstance?.name ?? null;
+      const chatType = options.chatType ?? currentChat?.chatType ?? null;
+      const actorSession =
+        panel?.actor?.sessionName ?? panel?.actor?.sessionKey ?? state.snapshot?.session?.sessionName ?? null;
 
-    if (!title && !chatId) {
-      throw new Error("No current chat title or chatId available to bind.");
-    }
+      if (!chatId || !instance) {
+        throw new Error("No current Omni chat available to bind. Open a real chat or pass --chat-id and --instance.");
+      }
 
-    const result = await postJson(`${options.url}/api/whatsapp-overlay/bind`, {
-      session,
-      title,
-      chatId,
-    });
+      const result = await postV3Command(options.url, {
+        name: "chat.bindSession",
+        args: {
+          actorSession,
+          session,
+          title,
+          chatId,
+          instance,
+          chatType,
+          chatName: title,
+        },
+      });
 
-    console.log(JSON.stringify(result, null, 2));
-  });
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+
+      if (!result?.ok) {
+        const code = result?.code ? ` (${result.code})` : "";
+        throw new Error(`${result?.error || "bind failed"}${code}`);
+      }
+
+      console.log(JSON.stringify(result.ack?.body?.result ?? result, null, 2));
+    },
+  );
 
 program
   .command("watch")
@@ -342,26 +538,55 @@ dom
 
 program.parse();
 
-async function fetchCurrent(baseUrl: string) {
+async function fetchCurrent(baseUrl: string): Promise<CurrentResponse> {
   return fetchJson(`${baseUrl}/api/whatsapp-overlay/current`);
+}
+
+async function fetchPlaceholders(baseUrl: string): Promise<PlaceholderResponse> {
+  return fetchJson(`${baseUrl}/api/whatsapp-overlay/v3/placeholders`);
+}
+
+async function fetchOmniPanel(baseUrl: string): Promise<OmniPanelResponse> {
+  return fetchJson(`${baseUrl}/api/whatsapp-overlay/omni/panel`);
+}
+
+async function postV3Command(
+  baseUrl: string,
+  payload: { name: string; args?: Record<string, unknown> },
+): Promise<V3CommandResponse> {
+  const response = await fetch(`${baseUrl}/api/whatsapp-overlay/v3/command`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return response.json();
 }
 
 async function resolveChatList(
   baseUrl: string,
-  payload: { entries: Array<{ id: string; chatId?: string | null; title?: string | null; session?: string | null }> },
-) {
+  payload: {
+    entries: Array<{
+      id: string;
+      chatId?: string | null;
+      title?: string | null;
+      session?: string | null;
+      preview?: string | null;
+      timeLabel?: string | null;
+    }>;
+  },
+): Promise<ResolveChatListResponse> {
   return postJson(`${baseUrl}/api/whatsapp-overlay/chat-list/resolve`, payload);
 }
 
-async function fetchJson(url: string) {
+async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${url}`);
   }
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
-async function postJson(url: string, body: unknown) {
+async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -370,11 +595,11 @@ async function postJson(url: string, body: unknown) {
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${url}`);
   }
-  return response.json();
+  return response.json() as Promise<T>;
 }
 
 async function runDomCommand(baseUrl: string, request: OverlayDomCommandRequest): Promise<OverlayDomCommandResult> {
-  const created = await postJson(`${baseUrl}/api/whatsapp-overlay/dom/command`, request);
+  const created = await postJson<DomCommandCreateResponse>(`${baseUrl}/api/whatsapp-overlay/dom/command`, request);
   const commandId = created?.commandId;
   if (!commandId) {
     throw new Error("DOM command was not created");
@@ -382,7 +607,9 @@ async function runDomCommand(baseUrl: string, request: OverlayDomCommandRequest)
 
   const deadline = Date.now() + 8000;
   for (;;) {
-    const status = await fetchJson(`${baseUrl}/api/whatsapp-overlay/dom/result?id=${encodeURIComponent(commandId)}`);
+    const status = await fetchJson<DomCommandStatusResponse>(
+      `${baseUrl}/api/whatsapp-overlay/dom/result?id=${encodeURIComponent(commandId)}`,
+    );
     if (status?.result) {
       return status.result as OverlayDomCommandResult;
     }
@@ -393,19 +620,7 @@ async function runDomCommand(baseUrl: string, request: OverlayDomCommandRequest)
   }
 }
 
-function renderCurrent(state: {
-  current?: OverlayPublishedState | null;
-  snapshot?: {
-    resolved?: boolean;
-    session?: {
-      sessionName?: string | null;
-      agentId?: string | null;
-      live?: { activity?: string | null; summary?: string | null; updatedAt?: number | null };
-      chatId?: string | null;
-    } | null;
-  } | null;
-  history?: OverlayPublishedState[];
-}): void {
+function renderCurrent(state: CurrentResponse): void {
   if (!state.current) {
     console.log("No WhatsApp Web state published yet.");
     return;
@@ -444,6 +659,38 @@ function renderCurrent(state: {
   }
 }
 
+function renderPlaceholders(state: PlaceholderResponse): void {
+  const placeholders = state.placeholders ?? [];
+  const missing = state.missing ?? [];
+  const lines = [
+    `relay:    ${state.relay?.status ?? "-"}`,
+    `cursor:   ${state.relay?.lastCursor ?? "-"}`,
+    `screen:   ${state.page?.screen ?? "-"}`,
+    `title:    ${state.page?.title ?? "-"}`,
+    `mapped:   ${placeholders.length}`,
+    `missing:  ${missing.length}`,
+    "",
+  ];
+
+  if (placeholders.length === 0) {
+    lines.push("No mapped placeholders yet.");
+  } else {
+    for (const item of placeholders) {
+      lines.push(
+        `- ${item.label || item.componentId || "-"} · ${item.confidence || "-"}${typeof item.count === "number" ? ` · ${item.count}` : ""}`,
+      );
+      lines.push(`  ${item.selector || "-"}`);
+    }
+  }
+
+  if (missing.length > 0) {
+    lines.push("");
+    lines.push(`missing slots: ${missing.map((item) => item.label || item.componentId || "-").join(", ")}`);
+  }
+
+  console.log(lines.join("\n"));
+}
+
 function buildInspectRows(
   rows: OverlayChatRowState[],
   options: { index?: string; title?: string },
@@ -471,6 +718,14 @@ async function resolveInspectRows(
     OverlayChatRowState & {
       index: number;
       query: { chatId: string | null; title: string | null; session: string | null };
+      matchSource: string | null;
+      matchedChat: {
+        externalId: string | null;
+        canonicalId: string | null;
+        name: string | null;
+        lastMessageAt: string | null;
+        lastMessagePreview: string | null;
+      } | null;
       matchedSession: {
         sessionName: string | null;
         agentId: string | null;
@@ -488,6 +743,8 @@ async function resolveInspectRows(
       chatId: row.chatIdCandidate ?? null,
       title: row.title,
       session: null,
+      preview: row.preview ?? null,
+      timeLabel: row.timeLabel ?? null,
     })),
   });
 
@@ -502,6 +759,16 @@ async function resolveInspectRows(
         title: item?.query?.title ?? row.title,
         session: item?.query?.session ?? null,
       },
+      matchSource: typeof item?.matchSource === "string" ? item.matchSource : null,
+      matchedChat: item?.matchedChat
+        ? {
+            externalId: item.matchedChat.externalId ?? null,
+            canonicalId: item.matchedChat.canonicalId ?? null,
+            name: item.matchedChat.name ?? null,
+            lastMessageAt: item.matchedChat.lastMessageAt ?? null,
+            lastMessagePreview: item.matchedChat.lastMessagePreview ?? null,
+          }
+        : null,
       matchedSession: item?.session
         ? {
             sessionName: item.session.sessionName ?? null,
@@ -538,6 +805,14 @@ function renderInspectRows(
         chatId: string | null;
         status: string | null;
       } | null;
+      matchSource: string | null;
+      matchedChat: {
+        externalId: string | null;
+        canonicalId: string | null;
+        name: string | null;
+        lastMessageAt: string | null;
+        lastMessagePreview: string | null;
+      } | null;
       resolved: boolean;
       warnings: string[];
     }
@@ -551,12 +826,20 @@ function renderInspectRows(
   for (const row of rows) {
     console.log(`[${row.index}] ${row.title}`);
     console.log(`  chatId:  ${row.chatIdCandidate ?? "-"}`);
+    console.log(`  time:    ${row.timeLabel ?? "-"}`);
+    console.log(`  preview: ${row.preview ?? "-"}`);
     console.log(`  unread:  ${row.unreadCount ?? 0}`);
     console.log(`  selected:${row.selected ? " yes" : " no"}`);
+    console.log(`  via:     ${row.matchSource ?? "-"}`);
     console.log(`  session: ${row.matchedSession?.sessionName ?? "-"}`);
     console.log(`  status:  ${row.matchedSession?.status ?? "-"}`);
     console.log(`  agent:   ${row.matchedSession?.agentId ?? "-"}`);
     console.log(`  linked:  ${row.matchedSession?.chatId ?? "-"}`);
+    if (row.matchedChat) {
+      console.log(
+        `  omni:    ${row.matchedChat.name ?? "-"} · ${row.matchedChat.externalId ?? row.matchedChat.canonicalId ?? "-"}`,
+      );
+    }
     if (row.warnings.length > 0) {
       console.log(`  warn:    ${row.warnings.join(" | ")}`);
     }

@@ -211,6 +211,15 @@ mock.module("./hooks/sanitize-bash.js", () => ({
 
 mock.module("./permissions/engine.js", () => ({
   agentCan: () => true,
+  canWithCapabilities: (
+    capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
+    permission: string,
+    objectType: string,
+    objectId: string,
+  ) =>
+    capabilities.some(
+      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+    ),
 }));
 
 mock.module("./constants.js", () => ({

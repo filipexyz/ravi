@@ -15,6 +15,8 @@ description: |
 
 Sessões são conversas persistentes entre agents e usuários. Cada sessão tem um nome único, um agent associado, e pode ter canal de saída (WhatsApp, Matrix, etc).
 
+Sessões são a superfície de comunicação do Ravi. Não são o task runtime. Se o trabalho precisa de dono, progresso e estado terminal, use `ravi tasks ...`. Se a pergunta é medir regressão ou comparar comportamento, use `ravi eval ...`.
+
 ## Tipos de Sessão
 
 - **Permanent** (padrão): Sessão normal, sem expiração.
@@ -82,9 +84,10 @@ ravi sessions keep <name>
 ### Comunicação Inter-Sessão
 
 ```bash
-# Enviar prompt e esperar resposta (streaming)
-ravi sessions send <name> "mensagem" [-a agent] [-i]
-# -a: criar sessão com esse agent se não existir
+# Enviar prompt/contexto
+ravi sessions send <name> "mensagem" [-w] [-a agent] [-i]
+# -w: espera e streama a resposta
+# -a: cria sessão com esse agent se não existir
 # -i: modo interativo (loop)
 
 # Perguntar algo (fire-and-forget, agent pergunta no chat se não souber)
@@ -105,3 +108,4 @@ ravi sessions inform <name> "info"
 - **Reset vs Delete**: `reset` limpa a conversa mas mantém nome/routing/config. `delete` remove a sessão inteira.
 - **Session names**: Nomes legíveis, únicos, sem pontos (`.`). Gerados automaticamente ou definidos manualmente.
 - **Source automático**: Todos os comandos de comunicação incluem source (channel/chatId) automaticamente — o agent sabe onde responder.
+- **`send` vs `inform`**: `send` é a opção mais geral e pode esperar resposta com `-w`; `inform` é fogo-e-esqueça explícito para contexto.

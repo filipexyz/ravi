@@ -7,6 +7,8 @@ description: Manage agent sessions, ephemeral TTLs, cross-session messaging, and
 
 A session is a persistent conversation between an agent and a user (or system). Each session has a unique key, an associated agent, and optional channel routing for message delivery. Sessions store conversation history, token counts, model overrides, and metadata.
 
+Sessions are the communication boundary, not the unit of tracked work. Use `ravi tasks` when the work needs an owner, progress, and a terminal state. Use `ravi eval` when you need reproducible measurement or regression checks.
+
 ## Session Types
 
 ### Permanent Sessions
@@ -181,7 +183,7 @@ Converts an ephemeral session back to a permanent one, removing the TTL and expi
 
 ## Cross-Session Messaging
 
-Sessions can communicate with each other using five message types. This enables multi-agent coordination, task delegation, and information sharing.
+Sessions can communicate with each other using five message types. This enables multi-agent coordination and information sharing. For tracked execution with progress, dispatch `ravi tasks` instead of treating session messaging as backlog management.
 
 ### Message Types
 
@@ -207,6 +209,8 @@ ravi sessions send <name> "What is the current status?" -w
 # Interactive mode: open a chat loop with the target session
 ravi sessions send <name> -i
 ```
+
+By default, `send` is still fire-and-forget. Internally it injects an informational prompt with source attribution. Use `-w` only when the caller needs to wait for and stream the response.
 
 Use `-a <agent>` to auto-create the session if it does not exist:
 

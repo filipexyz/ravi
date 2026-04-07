@@ -22,6 +22,7 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
@@ -82,6 +83,7 @@ process.on("unhandledRejection", (reason, promise) => {
 
 let bot: RaviBot | null = null;
 let gateway: ReturnType<typeof createGateway> | null = null;
+let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 
@@ -121,6 +123,10 @@ async function shutdown(signal: string) {
     // Stop gateway
     if (gateway) {
       await gateway.stop();
+    }
+
+    if (sessionAdapterBus) {
+      await sessionAdapterBus.stop();
     }
 
     // Stop omni consumer
@@ -244,6 +250,10 @@ export async function startDaemon() {
 
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
+
+  sessionAdapterBus = createSessionAdapterBus();
+  await sessionAdapterBus.start();
+  log.info("Session adapter bus started");
 
   log.info("Daemon ready");
 

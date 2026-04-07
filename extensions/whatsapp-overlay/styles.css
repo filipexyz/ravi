@@ -13,6 +13,7 @@
 }
 
 .ravi-wa-main-pane {
+  position: relative;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -45,6 +46,102 @@
 
 .ravi-hidden {
   display: none !important;
+}
+
+#ravi-wa-v3-placeholder-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  pointer-events: none;
+}
+
+.ravi-wa-v3-placeholder-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482000;
+  pointer-events: none;
+}
+
+.ravi-wa-v3-placeholder__banner {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(17, 27, 33, 0.9);
+  color: #d8fdd2;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  pointer-events: auto;
+}
+
+.ravi-wa-v3-placeholder__banner strong {
+  font-size: 11px;
+  color: #25d366;
+  text-transform: lowercase;
+}
+
+.ravi-wa-v3-placeholder {
+  position: fixed;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 220px;
+}
+
+.ravi-wa-v3-placeholder__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: rgba(17, 27, 33, 0.88);
+  color: #f0f2f5;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(10px);
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    transform 120ms ease,
+    background 120ms ease;
+}
+
+.ravi-wa-v3-placeholder__item:hover {
+  transform: translateY(-1px);
+  background: rgba(17, 27, 33, 0.94);
+}
+
+.ravi-wa-v3-placeholder__item strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: #d8fdd2;
+  text-transform: lowercase;
+}
+
+.ravi-wa-v3-placeholder__item span {
+  font-size: 10px;
+  color: #9fb0b8;
+  text-transform: lowercase;
+}
+
+.ravi-wa-v3-placeholder__notice {
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-v3-placeholder__notice--ok {
+  color: #d8fdd2;
+}
+
+.ravi-wa-v3-placeholder__notice--error {
+  color: #ffb3b3;
 }
 
 #ravi-wa-overlay-pill {
@@ -322,7 +419,7 @@
 
 .ravi-wa-drawer-header {
   display: flex;
-  justify-content: flex-start;
+  justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
@@ -337,6 +434,40 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.ravi-wa-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 74px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #8696a0 !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.ravi-wa-toggle:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #d1d7db !important;
+  transform: translateY(-1px);
+}
+
+.ravi-wa-toggle--active {
+  background: rgba(37, 211, 102, 0.12) !important;
+  border-color: rgba(37, 211, 102, 0.24) !important;
+  color: #d8fdd2 !important;
 }
 
 .ravi-wa-drawer-header button {
@@ -666,6 +797,211 @@
   display: flex;
   min-height: calc(100vh - 110px);
   flex-direction: column;
+}
+
+#ravi-wa-session-main-host {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  color: #e9edef;
+  background:
+    radial-gradient(circle at top right, rgba(0, 168, 132, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(11, 20, 26, 0.985), rgba(17, 27, 33, 0.99));
+  pointer-events: auto;
+}
+
+.ravi-wa-session-main {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.ravi-wa-session-main__header {
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(32, 44, 51, 0.88);
+  backdrop-filter: blur(18px);
+}
+
+.ravi-wa-session-main__titleblock {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ravi-wa-session-main__titleblock > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ravi-wa-session-main__titleblock strong {
+  display: block;
+  color: #f7f8fa;
+  font-size: 16px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ravi-wa-session-main__titleblock span {
+  display: block;
+  margin-top: 4px;
+  color: #8696a0;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ravi-wa-session-main__titleblock .ravi-wa-state-pill {
+  flex: 0 0 auto;
+}
+
+.ravi-wa-session-main__thread {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding: 18px 18px 10px;
+}
+
+.ravi-wa-session-main__empty {
+  align-self: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(32, 44, 51, 0.78);
+  color: #aebac1;
+  font-size: 12px;
+}
+
+.ravi-wa-session-bubble {
+  display: flex;
+  max-width: min(82%, 760px);
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.22);
+}
+
+.ravi-wa-session-bubble--user {
+  align-self: flex-end;
+  background: #005c4b;
+  color: #e9edef;
+}
+
+.ravi-wa-session-bubble--assistant {
+  align-self: flex-start;
+  background: #202c33;
+  color: #e9edef;
+}
+
+.ravi-wa-session-bubble--system {
+  align-self: center;
+  background: rgba(32, 44, 51, 0.76);
+  color: #aebac1;
+}
+
+.ravi-wa-session-bubble__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #8696a0;
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.ravi-wa-session-bubble__meta strong {
+  color: inherit;
+  font-size: 11px;
+}
+
+.ravi-wa-session-bubble__body {
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ravi-wa-session-main__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(32, 44, 51, 0.94);
+}
+
+.ravi-wa-session-main__composer textarea {
+  min-height: 82px;
+  max-height: 180px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: #2a3942;
+  color: #e9edef;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.ravi-wa-session-main__composer textarea::placeholder {
+  color: #8696a0;
+}
+
+.ravi-wa-session-main__composer textarea:focus {
+  border-color: rgba(0, 168, 132, 0.42);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.12);
+}
+
+.ravi-wa-session-main .ravi-wa-actions button {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(42, 57, 66, 0.94);
+  color: #e9edef;
+}
+
+.ravi-wa-session-main .ravi-wa-actions button:hover {
+  background: rgba(55, 74, 82, 0.98);
+  border-color: rgba(0, 168, 132, 0.28);
+}
+
+.ravi-wa-session-main__composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ravi-wa-session-main__composer-actions span {
+  color: #8696a0;
+  font-size: 11px;
+}
+
+.ravi-wa-session-main__composer-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: #00a884;
+  color: #0b141a;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ravi-wa-session-main__composer-actions button[disabled] {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .ravi-wa-omni-hero {

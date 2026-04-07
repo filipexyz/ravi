@@ -59,6 +59,17 @@ export {
   dbDeleteRoute,
   dbRestoreRoute,
   dbListDeletedRoutes,
+  // Context registry
+  dbCreateContext,
+  dbGetContext,
+  dbGetContextByKey,
+  dbTouchContext,
+  dbRevokeContext,
+  dbUpdateContextCapabilities,
+  dbDeleteContext,
+  type ContextCapability,
+  type ContextRecord,
+  type ContextSource,
   // Settings
   dbGetSetting,
   dbSetSetting,

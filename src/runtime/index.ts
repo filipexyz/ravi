@@ -1,6 +1,7 @@
 export * from "./types.js";
 export * from "./claude-provider.js";
 export * from "./codex-provider.js";
+export * from "./context-registry.js";
 
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";

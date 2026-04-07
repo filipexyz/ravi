@@ -4,6 +4,7 @@ const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 1100;
 const VIEW_STATE_REPUBLISH_MS = 2500;
 const ROOT_ID = "ravi-wa-overlay-root";
 const DRAWER_ID = "ravi-wa-overlay-drawer";
+const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
 const LAYOUT_CLASS = "ravi-wa-layout-active";
 const LAYOUT_HOST_CLASS = "ravi-wa-layout-host";
 const MAIN_PANE_CLASS = "ravi-wa-main-pane";
@@ -26,9 +27,13 @@ const PAGE_CHAT_RESPONSE_EVENT = "ravi-wa-active-chat";
 const LOG_LIMIT = 12;
 const CLIENT_ID_KEY = "ravi-wa-overlay-client-id";
 const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
+const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
+const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 2600;
+const V3_PLACEHOLDER_POLL_INTERVAL_MS = 1800;
 const OMNI_NAV_ID = "ravi-wa-omni-launcher";
+const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
 const SELECTOR_PROBE_DEFS = [
@@ -50,11 +55,14 @@ const SELECTOR_PROBE_DEFS = [
 ];
 
 let latestSnapshot = null;
+let latestSessionWorkspace = null;
 let latestViewState = null;
 let latestTimelineDebug = null;
 let latestChatListItems = [];
 let latestPageChat = null;
 let latestOmniPanel = null;
+let latestV3Placeholders = null;
+let v3CommandNotice = null;
 const messageMetaCache = new Map();
 const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
 let lastPublishedAt = 0;
@@ -73,7 +81,9 @@ let sidebarNotice = null;
 let sidebarNoticeTimer = null;
 let pinnedSessionKey = loadPinnedSessionKey();
 let activeWorkspace = loadActiveWorkspace();
+let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
 let preferredOmniInstance = loadPreferredOmniInstance();
+let v3PlaceholdersEnabled = loadV3PlaceholdersEnabled();
 let selectedOmniChatId = null;
 let selectedOmniSessionKey = null;
 let selectedOmniRouteAgentId = null;
@@ -84,10 +94,19 @@ let currentLayoutHost = null;
 let currentLayoutMain = null;
 let currentLayoutSideBranch = null;
 let currentLayoutMainBranch = null;
+let currentSessionMainHost = null;
+let sessionWorkspaceDraft = "";
+let sessionWorkspaceSubmitting = false;
+let sessionWorkspaceShouldScrollToEnd = false;
+let lastSessionWorkspaceRenderKey = null;
+let lastSessionWorkspaceRenderSessionKey = null;
 const intervalIds = [];
 const clientId = getOrCreateClientId();
 let omniPanelInFlight = false;
 let omniRouteActionInFlight = false;
+let v3PlaceholderInFlight = false;
+let v3PlaceholderRenderScheduled = false;
+let v3CommandNoticeTimer = null;
 
 boot();
 
@@ -100,13 +119,17 @@ function boot() {
   ensureMessagePopover();
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshSessionWorkspace, SNAPSHOT_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshViewState, 700));
   intervalIds.push(setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS));
   intervalIds.push(setInterval(refreshMessageChips, MESSAGE_CHIP_REFRESH_INTERVAL_MS));
   intervalIds.push(setInterval(refreshOmniPanel, OMNI_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshV3Placeholders, V3_PLACEHOLDER_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, 700));
   window.addEventListener("resize", syncMessagePopoverPosition);
+  window.addEventListener("resize", scheduleV3PlaceholderRender);
   document.addEventListener("scroll", syncMessagePopoverPosition, true);
+  document.addEventListener("scroll", scheduleV3PlaceholderRender, true);
 }
 
 function shouldDeferOmniRender() {
@@ -145,6 +168,28 @@ async function refreshSnapshot() {
   }
 }
 
+async function refreshSessionWorkspace(force = false) {
+  if (pollingStopped) return;
+  if (!selectedWorkspaceSessionKey) return;
+  if (!force && activeWorkspace === "omni") return;
+  const requestedSessionKey = selectedWorkspaceSessionKey;
+
+  try {
+    const workspace = await chrome.runtime.sendMessage({
+      type: "ravi:get-session-workspace",
+      payload: {
+        session: requestedSessionKey,
+      },
+    });
+    if (requestedSessionKey !== selectedWorkspaceSessionKey) return;
+    bridgeError = null;
+    latestSessionWorkspace = workspace;
+    requestRender();
+  } catch (error) {
+    handleRuntimeError(error);
+  }
+}
+
 async function refreshOmniPanel(force = false) {
   if (pollingStopped || omniPanelInFlight) return;
   if (!force && activeWorkspace !== "omni") return;
@@ -175,12 +220,46 @@ async function refreshOmniPanel(force = false) {
   }
 }
 
+async function refreshV3Placeholders(force = false) {
+  if (pollingStopped || v3PlaceholderInFlight) return;
+  if (!force && activeWorkspace === "omni") {
+    latestV3Placeholders = null;
+    scheduleV3PlaceholderRender();
+    return;
+  }
+
+  v3PlaceholderInFlight = true;
+  try {
+    const next = await chrome.runtime.sendMessage({
+      type: "ravi:get-v3-placeholders",
+    });
+    if (next?.ok) {
+      latestV3Placeholders = next;
+      bridgeError = null;
+      scheduleV3PlaceholderRender();
+    }
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    v3PlaceholderInFlight = false;
+  }
+}
+
+async function sendV3Command(name, args = {}) {
+  return chrome.runtime.sendMessage({
+    type: "ravi:v3-command",
+    payload: { name, args },
+  });
+}
+
 function refreshAll() {
   refreshViewState();
   refreshSnapshot();
+  refreshSessionWorkspace(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshOmniPanel();
+  refreshV3Placeholders();
 }
 
 function refreshViewState() {
@@ -644,7 +723,7 @@ function resolveChatRowChatIdCandidate(row, { selected }) {
     return latestPageChat.chatId;
   }
 
-  const fromMarkup = extractChatIdCandidates(row)[0] || null;
+  const fromMarkup = extractChatIdCandidates(row, { includeAncestors: false })[0] || null;
   if (fromMarkup) {
     return fromMarkup;
   }
@@ -659,14 +738,21 @@ function resolveChatRowChatIdCandidate(row, { selected }) {
 function buildPublishedChatRows(limit = 20) {
   return detectVisibleChatRows()
     .slice(0, limit)
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      chatIdCandidate: row.chatIdCandidate || null,
-      selected: row.selected === true,
-      unreadCount: extractChatRowUnreadCount(row.row),
-      text: row.row?.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 240) || null,
-    }));
+    .map((row) => {
+      const unreadCount = extractChatRowUnreadCount(row.row);
+      const timeLabel = extractChatRowTimeLabel(row.row);
+      const preview = extractChatRowPreview(row.row, row.title, timeLabel);
+      return {
+        id: row.id,
+        title: row.title,
+        chatIdCandidate: row.chatIdCandidate || null,
+        selected: row.selected === true,
+        unreadCount,
+        preview,
+        timeLabel,
+        text: extractChatRowText(row.row),
+      };
+    });
 }
 
 function extractChatRowUnreadCount(row) {
@@ -681,6 +767,75 @@ function extractChatRowUnreadCount(row) {
   }
   const value = Number.parseInt(match[1], 10);
   return Number.isFinite(value) ? value : null;
+}
+
+function extractChatRowTimeLabel(row) {
+  const texts = extractChatRowLeafTexts(row).map((entry) => entry.text);
+  for (let index = texts.length - 1; index >= 0; index -= 1) {
+    const text = texts[index];
+    if (looksLikeChatRowTimeLabel(text)) {
+      return text;
+    }
+  }
+  return null;
+}
+
+function extractChatRowPreview(row, title, timeLabel) {
+  const preview = extractChatRowLeafTexts(row)
+    .map((entry) => entry.text)
+    .filter((text) => text && text !== title && text !== timeLabel)
+    .filter((text) => !looksLikeUnreadLabel(text))
+    .filter((text) => !looksLikeChatRowTimeLabel(text))
+    .sort((a, b) => b.length - a.length)[0];
+  return preview || null;
+}
+
+function extractChatRowText(row) {
+  if (!(row instanceof Element)) return null;
+  const clone = row.cloneNode(true);
+  clone.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => node.remove());
+  return clone.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 240) || null;
+}
+
+function extractChatRowLeafTexts(row) {
+  if (!(row instanceof Element)) return [];
+  const source = row.cloneNode(true);
+  if (!(source instanceof Element)) return [];
+  source.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => node.remove());
+  const seen = new Set();
+  return Array.from(source.querySelectorAll("span, div, p"))
+    .map((element) => ({
+      element,
+      text: (element.textContent || "").trim().replace(/\s+/g, " "),
+    }))
+    .filter(({ text }) => text.length > 0)
+    .filter(({ element, text }) => {
+      return !Array.from(element.children).some((child) => {
+        const childText = (child.textContent || "").trim().replace(/\s+/g, " ");
+        return childText === text;
+      });
+    })
+    .filter(({ text }) => {
+      const key = text.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function looksLikeUnreadLabel(text) {
+  return /mensagens?\s+n[aã]o\s+lidas?|unread|new message/i.test(text || "");
+}
+
+function looksLikeChatRowTimeLabel(text) {
+  if (!text) return false;
+  const normalized = text.trim().toLowerCase().replace(/\./g, "");
+  return (
+    /^\d{1,2}:\d{2}$/.test(normalized) ||
+    /^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(normalized) ||
+    /^(hoje|ontem|today|yesterday)$/.test(normalized) ||
+    /^(seg|ter|qua|qui|sex|sab|dom|mon|tue|wed|thu|fri|sat|sun)$/.test(normalized)
+  );
 }
 
 function extractChatRowTitleNode(row) {
@@ -730,8 +885,9 @@ function detectChatIdCandidate() {
   return null;
 }
 
-function extractChatIdCandidates(node) {
+function extractChatIdCandidates(node, options = {}) {
   if (!(node instanceof Element)) return [];
+  const includeAncestors = options.includeAncestors !== false;
 
   const snippets = [];
   const addSnippet = (value) => {
@@ -747,14 +903,16 @@ function extractChatIdCandidates(node) {
     addSnippet(attr.value);
   }
 
-  let parent = node.parentElement;
-  let depth = 0;
-  while (parent && depth < 2) {
-    if (parent.outerHTML.length <= 20_000) {
-      addSnippet(parent.outerHTML);
+  if (includeAncestors) {
+    let parent = node.parentElement;
+    let depth = 0;
+    while (parent && depth < 2) {
+      if (parent.outerHTML.length <= 20_000) {
+        addSnippet(parent.outerHTML);
+      }
+      parent = parent.parentElement;
+      depth += 1;
     }
-    parent = parent.parentElement;
-    depth += 1;
   }
 
   const matches = new Set();
@@ -872,6 +1030,8 @@ async function refreshChatListOverlay() {
           id: row.id,
           chatId: row.chatIdCandidate,
           title: row.title,
+          preview: extractChatRowPreview(row.row, row.title, extractChatRowTimeLabel(row.row)),
+          timeLabel: extractChatRowTimeLabel(row.row),
         })),
       },
     });
@@ -1832,8 +1992,22 @@ function clearMessageChips() {
 
 function formatChatListBadge(session) {
   const name = shorten(session.sessionName || session.agentId || "session", 16);
-  const elapsed = formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt);
+  const elapsed = formatSessionElapsedCompact(session);
   return elapsed ? `${name} · ${chipActivityLabel(session.live?.activity)} · ${elapsed}` : `${name} · ${chipActivityLabel(session.live?.activity)}`;
+}
+
+function formatSessionElapsedCompact(session) {
+  const timestamp = getSessionElapsedTimestamp(session);
+  return formatElapsedCompact(timestamp);
+}
+
+function getSessionElapsedTimestamp(session) {
+  const live = session?.live || null;
+  const activity = live?.activity || "idle";
+  if (activity !== "idle" && activity !== "unknown") {
+    return live?.busySince ?? live?.updatedAt ?? session?.updatedAt ?? null;
+  }
+  return live?.updatedAt ?? session?.updatedAt ?? null;
 }
 
 function chipActivityLabel(activity) {
@@ -1900,6 +2074,15 @@ function ensureShell() {
           <strong id="ravi-wa-overlay-panel-title">Ravi</strong>
           <span id="ravi-wa-overlay-panel-subtitle">cockpit</span>
         </div>
+        <button
+          id="ravi-wa-v3-toggle"
+          class="ravi-wa-toggle${v3PlaceholdersEnabled ? " ravi-wa-toggle--active" : ""}"
+          type="button"
+          aria-pressed="${v3PlaceholdersEnabled ? "true" : "false"}"
+          title="ativar/desativar placeholders do mapa v3"
+        >
+          mapa v3
+        </button>
       </div>
       <div id="ravi-wa-overlay-body"></div>
     </aside>
@@ -1912,6 +2095,14 @@ function ensureShell() {
     if (openMessageChip) {
       closeMessagePopover();
     }
+  });
+
+  const toggle = document.getElementById("ravi-wa-v3-toggle");
+  toggle?.addEventListener("click", () => {
+    v3PlaceholdersEnabled = !v3PlaceholdersEnabled;
+    persistV3PlaceholdersEnabled(v3PlaceholdersEnabled);
+    render();
+    scheduleV3PlaceholderRender();
   });
 }
 
@@ -1950,9 +2141,10 @@ function syncLayoutChrome() {
   mainPane.classList.add(MAIN_PANE_CLASS);
   root.setAttribute("data-workspace", activeWorkspace);
   host.setAttribute("data-ravi-workspace", activeWorkspace);
-  mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, activeWorkspace === "omni");
-  sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, activeWorkspace === "omni");
-  mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, activeWorkspace === "omni");
+  const fullWorkspace = activeWorkspace === "omni";
+  mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
+  sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
+  mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   drawer.classList.remove("ravi-hidden");
 
   currentLayoutHost = host;
@@ -2066,7 +2258,13 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   const panelTitle = document.getElementById("ravi-wa-overlay-panel-title");
   const panelSubtitle = document.getElementById("ravi-wa-overlay-panel-subtitle");
   const recentStack = document.getElementById(RECENT_STACK_ID);
+  const v3Toggle = document.getElementById("ravi-wa-v3-toggle");
+  scheduleV3PlaceholderRender();
   if (!body || !panelTitle || !panelSubtitle || !recentStack) return;
+  if (v3Toggle) {
+    v3Toggle.setAttribute("aria-pressed", v3PlaceholdersEnabled ? "true" : "false");
+    v3Toggle.classList.toggle("ravi-wa-toggle--active", v3PlaceholdersEnabled);
+  }
 
   const session = snapshot?.session;
   const view = latestViewState;
@@ -2076,6 +2274,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   syncWorkspaceLauncher();
 
   if (activeWorkspace === "omni") {
+    hideSessionWorkspaceMain();
     panelTitle.textContent = "Omni";
     panelSubtitle.textContent =
       latestOmniPanel?.preferredInstance?.profileName ||
@@ -2165,7 +2364,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   const heroStateLabel = focusedSession ? focusedActivityLabel : "unbound";
   const heroTitle = focusedSession ? focusedSession.sessionName : "nenhuma sessão";
   const heroLinkedChat = focusedSession ? getLinkedChatLabel(focusedSession) : null;
-  const heroElapsed = focusedSession ? formatElapsedCompact(focusedLive?.updatedAt ?? focusedSession.updatedAt) || "agora" : "-";
+  const heroElapsed = focusedSession ? formatSessionElapsedCompact(focusedSession) || "agora" : "-";
   const heroModeLabel = isPinned ? "pinada" : followedSession ? "seguindo chat" : "sem vínculo";
   const canFollowCurrent = Boolean(isPinned && followedSession);
   const canPinFocused = Boolean(focusedSession && !isPinned);
@@ -2303,9 +2502,9 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     button.addEventListener("click", () => {
       const sessionKey = button.getAttribute("data-ravi-focus-session");
       if (!sessionKey) return;
-      pinnedSessionKey = sessionKey;
-      persistPinnedSessionKey(sessionKey);
-      render(snapshot, context);
+      const target = navTargets.find((item) => item.sessionKey === sessionKey) || null;
+      if (!target) return;
+      openSessionWorkspace(target);
     });
   });
 
@@ -2330,6 +2529,8 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       }
     });
   });
+
+  syncSessionWorkspaceMain(snapshot);
 }
 
 function renderOmniWorkspace(body, context) {
@@ -2553,25 +2754,32 @@ function renderOmniWorkspace(body, context) {
       if (!formState.selectedChat || !formState.selectedSession) return;
       await runOmniRouteAction(async () => {
         try {
-          const result = await chrome.runtime.sendMessage({
-            type: "ravi:omni-route",
+          const response = await chrome.runtime.sendMessage({
+            type: "ravi:v3-command",
             payload: {
-              action: "bind-existing",
-              actorSession: getCurrentOmniActorSession(),
-              session: formState.selectedSession.sessionName,
-              title: formState.selectedChat.name,
-              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
-              instance: formState.selectedChat.instanceName,
-              chatType: formState.selectedChat.chatType,
-              chatName: formState.selectedChat.name,
+              name: "chat.bindSession",
+              args: {
+                actorSession: getCurrentOmniActorSession(),
+                session: formState.selectedSession.sessionName,
+                title: formState.selectedChat.name,
+                chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+                instance: formState.selectedChat.instanceName,
+                chatType: formState.selectedChat.chatType,
+                chatName: formState.selectedChat.name,
+              },
             },
           });
+          const result = response?.ack?.body?.result || null;
+          if (response?.ok === false || !result) {
+            setSidebarNotice("error", formatOmniRouteError(response, "falha ao vincular chat"));
+            return;
+          }
           if (result?.ok === false) {
             setSidebarNotice("error", formatOmniRouteError(result, "falha ao vincular chat"));
             return;
           }
-          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || formState.selectedSession.sessionKey;
-          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          selectedOmniSessionKey = result.snapshot?.session?.sessionKey || formState.selectedSession.sessionKey;
+          selectedOmniRouteAgentId = result.snapshot?.session?.agentId || formState.selectedRouteAgentId;
           setSidebarNotice(
             "success",
             buildOmniRouteNotice("bind-existing", result, formState.selectedChat, formState.selectedSession),
@@ -2969,7 +3177,7 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
                 <span class="ravi-wa-nav-row__subline">${escapeHtml(currentSessionOpaque ? describeOmniMissingRelations(currentLinkedSession?.auth?.view?.missing) || "sem permissão para detalhes da sessão" : currentLinkedSession.chatId || currentLinkedSession.displayName || "sem chat vinculado")}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
-                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(currentLinkedSession.live?.updatedAt ?? currentLinkedSession.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatSessionElapsedCompact(currentLinkedSession) || "-")}</span>
                 <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${currentSessionOpaque ? "locked" : chipActivityClass(currentLinkedSession.live?.activity)}">${escapeHtml(currentSessionOpaque ? "opaque" : chipActivityLabel(currentLinkedSession.live?.activity))}</span>
               </span>
             </button>
@@ -3091,7 +3299,7 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
                 <span class="ravi-wa-nav-row__subline">${escapeHtml(shorten(linkedChat || session.chatId || "sem chat vinculado", 46))}</span>
               </span>
               <span class="ravi-wa-nav-row__aside">
-                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt) || "-")}</span>
+                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatSessionElapsedCompact(session) || "-")}</span>
                 <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(opaque ? "opaque" : chipActivityLabel(session.live?.activity))}</span>
               </span>
             </button>
@@ -3185,6 +3393,295 @@ function renderLiveEventsCard(session) {
   `;
 }
 
+function getSelectedWorkspaceSession(snapshot = latestSnapshot) {
+  if (!selectedWorkspaceSessionKey) return null;
+
+  if (latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey) {
+    return latestSessionWorkspace.session;
+  }
+
+  return (
+    dedupeSessionsByKey([snapshot?.session, ...(snapshot?.hotSessions || []), ...(snapshot?.recentSessions || snapshot?.recentChats || [])].filter(Boolean)).find(
+      (item) => item.sessionKey === selectedWorkspaceSessionKey,
+    ) || null
+  );
+}
+
+function ensureSessionWorkspaceMainHost() {
+  const mainPane = document.getElementById("main");
+  if (!(mainPane instanceof HTMLElement)) return null;
+
+  if (currentSessionMainHost && currentSessionMainHost.parentElement !== mainPane) {
+    currentSessionMainHost.remove();
+    currentSessionMainHost = null;
+  }
+
+  let host = mainPane.querySelector(`#${SESSION_MAIN_HOST_ID}`);
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement("section");
+    host.id = SESSION_MAIN_HOST_ID;
+    host.className = "ravi-hidden";
+    mainPane.appendChild(host);
+  }
+
+  currentSessionMainHost = host;
+  return host;
+}
+
+function hideSessionWorkspaceMain() {
+  const host = currentSessionMainHost || document.getElementById(SESSION_MAIN_HOST_ID);
+  if (!(host instanceof HTMLElement)) return;
+  host.classList.add("ravi-hidden");
+  host.innerHTML = "";
+  lastSessionWorkspaceRenderKey = null;
+  lastSessionWorkspaceRenderSessionKey = null;
+}
+
+function shouldDeferSessionWorkspaceMainRender(host) {
+  if (!(host instanceof HTMLElement)) return false;
+  const active = document.activeElement;
+  if (!active || !host.contains(active)) return false;
+  if (active.tagName === "TEXTAREA" || active.tagName === "INPUT" || active.tagName === "SELECT") {
+    return true;
+  }
+  return active.getAttribute?.("contenteditable") === "true";
+}
+
+function buildSessionWorkspaceMainMarkup(session, workspace) {
+  const messages = Array.isArray(workspace?.messages) ? workspace.messages : [];
+  const activity = session?.live?.activity || "idle";
+  const stateClass = chipActivityClass(activity);
+  const stateLabel = chipActivityLabel(activity);
+  const summary = session?.live?.summary || "sem evento vivo";
+  const linkedChat = session ? getLinkedChatLabel(session) : null;
+  const elapsed = session ? formatSessionElapsedCompact(session) || "agora" : "-";
+  const historySource = workspace?.historySource || "recent-history";
+
+  return `
+    <div class="ravi-wa-session-main">
+      <header class="ravi-wa-session-main__header">
+        <div class="ravi-wa-session-main__titleblock">
+          <div>
+            <strong>${escapeHtml(session?.sessionName || "sessão desconhecida")}</strong>
+            <span>${escapeHtml(summary)}</span>
+          </div>
+          <span class="ravi-wa-state-pill ravi-wa-state-pill--${stateClass}">${escapeHtml(stateLabel)}</span>
+        </div>
+        <div class="ravi-wa-chip-row">
+          <span class="ravi-wa-meta-chip">agent ${escapeHtml(session?.agentId || "-")}</span>
+          <span class="ravi-wa-meta-chip">tempo ${escapeHtml(elapsed)}</span>
+          <span class="ravi-wa-meta-chip">histórico ${escapeHtml(historySource)}</span>
+          ${linkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(linkedChat, 32))}</span>` : ""}
+        </div>
+        <div class="ravi-wa-actions">
+          <button type="button" data-ravi-session-workspace-close="true">Voltar</button>
+          ${session?.chatId ? `<button type="button" data-ravi-open-chat="${escapeAttribute(session.sessionKey)}">Abrir chat</button>` : ""}
+        </div>
+      </header>
+      <div class="ravi-wa-session-main__thread" data-ravi-session-thread="true">
+        ${
+          messages.length
+            ? messages
+                .map((message) => {
+                  const role = message.role || "unknown";
+                  const bubbleRole = role === "user" ? "user" : role === "assistant" ? "assistant" : "system";
+                  return `
+                    <article class="ravi-wa-session-bubble ravi-wa-session-bubble--${escapeAttribute(bubbleRole)}">
+                      <div class="ravi-wa-session-bubble__meta">
+                        <strong>${escapeHtml(role)}</strong>
+                        <span>${escapeHtml(formatTimestamp(message.createdAt) || "-")}</span>
+                      </div>
+                      <pre class="ravi-wa-session-bubble__body">${escapeHtml(message.content || "")}</pre>
+                    </article>
+                  `;
+                })
+                .join("")
+            : `<div class="ravi-wa-session-main__empty">sem mensagens recentes dessa sessão ainda.</div>`
+        }
+      </div>
+      <form class="ravi-wa-session-main__composer" data-ravi-session-compose="true">
+        <textarea
+          data-ravi-session-compose-input="true"
+          placeholder="mandar mensagem pra sessão..."
+          ${sessionWorkspaceSubmitting ? "disabled" : ""}
+        >${escapeHtml(sessionWorkspaceDraft)}</textarea>
+        <div class="ravi-wa-session-main__composer-actions">
+          <span>${escapeHtml(sessionWorkspaceSubmitting ? "enviando..." : "enter envia · shift+enter quebra")}</span>
+          <button type="submit" ${sessionWorkspaceSubmitting ? "disabled" : ""}>Enviar</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function computeSessionWorkspaceRenderKey(session, workspace) {
+  const messages = Array.isArray(workspace?.messages) ? workspace.messages : [];
+  return JSON.stringify({
+    sessionKey: session?.sessionKey || null,
+    sessionName: session?.sessionName || null,
+    agentId: session?.agentId || null,
+    activity: session?.live?.activity || null,
+    summary: session?.live?.summary || null,
+    busySince: session?.live?.busySince || null,
+    historySource: workspace?.historySource || null,
+    messageCount: messages.length,
+    messages: messages.map((message) => [message.id || null, message.role || null, message.createdAt || null, message.content || ""]),
+    submitting: sessionWorkspaceSubmitting,
+  });
+}
+
+function isNearScrollBottom(element, threshold = 56) {
+  if (!(element instanceof HTMLElement)) return false;
+  return element.scrollHeight - element.clientHeight - element.scrollTop <= threshold;
+}
+
+function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
+  const host = ensureSessionWorkspaceMainHost();
+  if (!(host instanceof HTMLElement)) return;
+
+  if (activeWorkspace === "omni" || !selectedWorkspaceSessionKey) {
+    hideSessionWorkspaceMain();
+    return;
+  }
+
+  if (!options.force && shouldDeferSessionWorkspaceMainRender(host)) {
+    return;
+  }
+
+  const session = getSelectedWorkspaceSession(snapshot);
+  const workspace =
+    latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey ? latestSessionWorkspace : null;
+  const previousThread = host.querySelector("[data-ravi-session-thread]");
+  const previousScrollTop = previousThread instanceof HTMLElement ? previousThread.scrollTop : 0;
+  const previousWasNearBottom = previousThread instanceof HTMLElement ? isNearScrollBottom(previousThread) : false;
+  const renderKey = computeSessionWorkspaceRenderKey(session, workspace);
+  const sessionKey = session?.sessionKey || selectedWorkspaceSessionKey || null;
+
+  if (!options.force && renderKey === lastSessionWorkspaceRenderKey && sessionKey === lastSessionWorkspaceRenderSessionKey) {
+    return;
+  }
+
+  host.classList.remove("ravi-hidden");
+  host.innerHTML = buildSessionWorkspaceMainMarkup(session, workspace);
+  lastSessionWorkspaceRenderKey = renderKey;
+  lastSessionWorkspaceRenderSessionKey = sessionKey;
+
+  host.querySelectorAll("[data-ravi-session-workspace-close]").forEach((button) => {
+    button.addEventListener("click", () => {
+      clearSessionWorkspace();
+    });
+  });
+
+  host.querySelectorAll("[data-ravi-open-chat]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sessionKey = button.getAttribute("data-ravi-open-chat");
+      if (!sessionKey) return;
+      const target = session || workspace?.session || null;
+      if (!target || target.sessionKey !== sessionKey) return;
+      const opened = await openCockpitChat(target);
+      if (opened) {
+        clearSessionWorkspace();
+      }
+    });
+  });
+
+  const textarea = host.querySelector("[data-ravi-session-compose-input]");
+  if (textarea instanceof HTMLTextAreaElement) {
+    textarea.addEventListener("input", () => {
+      sessionWorkspaceDraft = textarea.value;
+    });
+    textarea.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        host.querySelector("[data-ravi-session-compose]")?.dispatchEvent(
+          new Event("submit", { cancelable: true, bubbles: true }),
+        );
+      }
+    });
+  }
+
+  host.querySelectorAll("[data-ravi-session-compose]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await submitSessionWorkspacePrompt();
+    });
+  });
+
+  const thread = host.querySelector("[data-ravi-session-thread]");
+  if (thread instanceof HTMLElement) {
+    const shouldStickToBottom = Boolean(options.scrollToEnd || sessionWorkspaceShouldScrollToEnd || previousWasNearBottom);
+    requestAnimationFrame(() => {
+      if (shouldStickToBottom) {
+        thread.scrollTop = thread.scrollHeight;
+      } else {
+        const maxScrollTop = Math.max(0, thread.scrollHeight - thread.clientHeight);
+        thread.scrollTop = Math.min(previousScrollTop, maxScrollTop);
+      }
+    });
+  }
+  sessionWorkspaceShouldScrollToEnd = false;
+}
+
+function clearSessionWorkspace() {
+  selectedWorkspaceSessionKey = null;
+  persistWorkspaceSessionKey(null);
+  latestSessionWorkspace = null;
+  sessionWorkspaceDraft = "";
+  sessionWorkspaceSubmitting = false;
+  sessionWorkspaceShouldScrollToEnd = false;
+  hideSessionWorkspaceMain();
+  render();
+}
+
+async function submitSessionWorkspacePrompt() {
+  const session = getSelectedWorkspaceSession();
+  const prompt = sessionWorkspaceDraft.trim();
+  if (!session?.sessionKey || !prompt || sessionWorkspaceSubmitting) return;
+
+  sessionWorkspaceSubmitting = true;
+  sessionWorkspaceShouldScrollToEnd = true;
+  syncSessionWorkspaceMain(latestSnapshot, { force: true });
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      type: "ravi:session-prompt",
+      payload: {
+        session: session.sessionKey,
+        prompt,
+      },
+    });
+
+    if (!result?.ok) {
+      setSidebarNotice("error", result?.error || "não consegui enviar o prompt");
+      return;
+    }
+
+    sessionWorkspaceDraft = "";
+    bridgeError = null;
+    setSidebarNotice("success", `enviei pra ${session.sessionName}`);
+    await refreshSessionWorkspace(true);
+    await refreshSnapshot();
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    sessionWorkspaceSubmitting = false;
+    syncSessionWorkspaceMain(latestSnapshot, { force: true });
+  }
+}
+
+function openSessionWorkspace(session) {
+  if (!session?.sessionKey) return;
+  selectedWorkspaceSessionKey = session.sessionKey;
+  persistWorkspaceSessionKey(selectedWorkspaceSessionKey);
+  latestSessionWorkspace = null;
+  sessionWorkspaceDraft = "";
+  pinnedSessionKey = session.sessionKey;
+  persistPinnedSessionKey(session.sessionKey);
+  sessionWorkspaceShouldScrollToEnd = true;
+  setActiveWorkspace("ravi");
+  refreshSessionWorkspace(true);
+}
+
 function renderCockpitRows(items, currentSession, emptyText) {
   if (!items.length) {
     return `<p class="ravi-wa-empty">${escapeHtml(emptyText)}</p>`;
@@ -3197,7 +3694,7 @@ function renderCockpitRows(items, currentSession, emptyText) {
           const activityClass = chipActivityClass(session.live?.activity);
           const activityLabel = chipActivityLabel(session.live?.activity);
           const linkedChat = getLinkedChatLabel(session);
-          const elapsed = formatElapsedCompact(session.live?.updatedAt ?? session.updatedAt) || "now";
+          const elapsed = formatSessionElapsedCompact(session) || "now";
           const subline = linkedChat
             ? shorten(linkedChat, 34)
             : session.channel
@@ -3885,9 +4382,17 @@ function loadPinnedSessionKey() {
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
-    return stored === "omni" ? "omni" : "ravi";
+    return stored === "omni" ? stored : "ravi";
   } catch {
     return "ravi";
+  }
+}
+
+function loadWorkspaceSessionKey() {
+  try {
+    return window.localStorage.getItem(WORKSPACE_SESSION_KEY_STORAGE);
+  } catch {
+    return null;
   }
 }
 
@@ -3899,11 +4404,31 @@ function persistActiveWorkspace(value) {
   }
 }
 
+function persistWorkspaceSessionKey(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(WORKSPACE_SESSION_KEY_STORAGE, value);
+    } else {
+      window.localStorage.removeItem(WORKSPACE_SESSION_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
 function loadPreferredOmniInstance() {
   try {
     return window.localStorage.getItem(OMNI_INSTANCE_KEY_STORAGE);
   } catch {
     return null;
+  }
+}
+
+function loadV3PlaceholdersEnabled() {
+  try {
+    return window.localStorage.getItem(V3_PLACEHOLDERS_KEY_STORAGE) === "true";
+  } catch {
+    return false;
   }
 }
 
@@ -3919,13 +4444,27 @@ function persistPreferredOmniInstance(value) {
   }
 }
 
+function persistV3PlaceholdersEnabled(value) {
+  try {
+    if (value) {
+      window.localStorage.setItem(V3_PLACEHOLDERS_KEY_STORAGE, "true");
+    } else {
+      window.localStorage.removeItem(V3_PLACEHOLDERS_KEY_STORAGE);
+    }
+  } catch {
+    // ignore localStorage failures inside WhatsApp Web
+  }
+}
+
 function setActiveWorkspace(nextWorkspace) {
-  activeWorkspace = nextWorkspace === "omni" ? "omni" : "ravi";
+  activeWorkspace = nextWorkspace === "omni" ? nextWorkspace : "ravi";
   persistActiveWorkspace(activeWorkspace);
   syncWorkspaceLauncher();
   render();
   if (activeWorkspace === "omni") {
     refreshOmniPanel(true);
+  } else if (selectedWorkspaceSessionKey) {
+    refreshSessionWorkspace(true);
   }
 }
 
@@ -4013,6 +4552,159 @@ function formatElapsedCompact(value) {
 
   const days = Math.floor(hours / 24);
   return `${days}d`;
+}
+
+function scheduleV3PlaceholderRender() {
+  if (v3PlaceholderRenderScheduled) return;
+  v3PlaceholderRenderScheduled = true;
+  requestAnimationFrame(() => {
+    v3PlaceholderRenderScheduled = false;
+    syncV3PlaceholderLayer();
+  });
+}
+
+function ensureV3PlaceholderLayer() {
+  let layer = document.getElementById(V3_PLACEHOLDER_LAYER_ID);
+  if (layer) return layer;
+
+  layer = document.createElement("div");
+  layer.id = V3_PLACEHOLDER_LAYER_ID;
+  layer.addEventListener("click", handleV3PlaceholderLayerClick);
+  document.body.appendChild(layer);
+  return layer;
+}
+
+async function handleV3PlaceholderLayerClick(event) {
+  const target = event.target instanceof HTMLElement ? event.target.closest("[data-ravi-v3-component-id]") : null;
+  if (!(target instanceof HTMLElement)) return;
+
+  const componentId = target.getAttribute("data-ravi-v3-component-id");
+  if (!componentId) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  try {
+    const response = await sendV3Command("placeholder.outline", {
+      componentId,
+      durationMs: 2200,
+    });
+    if (response?.ok) {
+      setV3CommandNotice("ok", `outlined ${componentId}`);
+      return;
+    }
+    setV3CommandNotice("error", response?.error || "v3 command failed");
+  } catch (error) {
+    setV3CommandNotice("error", error instanceof Error ? error.message : String(error));
+  }
+}
+
+function setV3CommandNotice(kind, message) {
+  v3CommandNotice = {
+    kind,
+    message: String(message || ""),
+  };
+  if (v3CommandNoticeTimer) {
+    clearTimeout(v3CommandNoticeTimer);
+  }
+  v3CommandNoticeTimer = setTimeout(() => {
+    v3CommandNotice = null;
+    scheduleV3PlaceholderRender();
+  }, kind === "error" ? 3500 : 1800);
+  scheduleV3PlaceholderRender();
+}
+
+function syncV3PlaceholderLayer() {
+  const layer = ensureV3PlaceholderLayer();
+  if (
+    !v3PlaceholdersEnabled ||
+    !latestV3Placeholders?.ok ||
+    !latestV3Placeholders?.enabled ||
+    activeWorkspace === "omni" ||
+    latestViewState?.hasModal
+  ) {
+    layer.innerHTML = "";
+    layer.className = "ravi-hidden";
+    return;
+  }
+
+  const groups = new Map();
+  for (const placeholder of latestV3Placeholders.placeholders || []) {
+    const selector = placeholder.selector || resolvePlaceholderSelector(placeholder.componentId);
+    const node = selector ? findVisibleElementBySelector(selector) : null;
+    if (!(node instanceof HTMLElement)) continue;
+    const current = groups.get(node) || [];
+    current.push(placeholder);
+    groups.set(node, current);
+  }
+
+  if (groups.size === 0) {
+    layer.innerHTML = "";
+    layer.className = "ravi-hidden";
+    return;
+  }
+
+  layer.className = "ravi-wa-v3-placeholder-layer";
+  const badges = [];
+  for (const [node, placeholders] of groups.entries()) {
+    const rect = node.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) continue;
+    const top = Math.max(10, rect.top + 8);
+    const left = Math.max(10, rect.left + 12);
+
+    badges.push(`
+      <div class="ravi-wa-v3-placeholder" style="top:${Math.round(top)}px;left:${Math.round(left)}px;">
+        ${placeholders
+          .map(
+            (placeholder) => `
+              <div class="ravi-wa-v3-placeholder__item" data-ravi-v3-component-id="${escapeHtml(placeholder.componentId)}">
+                <strong>${escapeHtml(placeholder.label)}</strong>
+                <span>${escapeHtml(buildPlaceholderDetail(placeholder))}</span>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    `);
+  }
+
+  const relayStatus = latestV3Placeholders.relay?.status || "stopped";
+  const relayCursor = latestV3Placeholders.relay?.lastCursor || "-";
+  const mapped = latestV3Placeholders.placeholders?.length || 0;
+  const missing = latestV3Placeholders.missing?.length || 0;
+
+  layer.innerHTML = `
+    <div class="ravi-wa-v3-placeholder__banner">
+      <strong>ravi v3</strong>
+      <span>${escapeHtml(`${relayStatus} · ${mapped} mapped · ${missing} missing · ${relayCursor}`)}</span>
+      ${
+        v3CommandNotice?.message
+          ? `<span class="ravi-wa-v3-placeholder__notice ravi-wa-v3-placeholder__notice--${escapeHtml(v3CommandNotice.kind)}">${escapeHtml(v3CommandNotice.message)}</span>`
+          : ""
+      }
+    </div>
+    ${badges.join("")}
+  `;
+}
+
+function resolvePlaceholderSelector(componentId) {
+  const component = (latestViewState?.components || []).find((entry) => entry.id === componentId);
+  return component?.selector || null;
+}
+
+function findVisibleElementBySelector(selector) {
+  if (!selector) return null;
+  try {
+    const nodes = Array.from(document.querySelectorAll(selector));
+    return nodes.find(isVisibleElement) || nodes[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildPlaceholderDetail(placeholder) {
+  const count = typeof placeholder.count === "number" && placeholder.count > 1 ? ` · ${placeholder.count}` : "";
+  return `${placeholder.confidence}${count}`;
 }
 
 function hasViewChanged(prev, next) {

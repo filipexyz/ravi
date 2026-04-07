@@ -7,6 +7,7 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
 import {
   listSessions,
   getSessionsByAgent,
@@ -98,6 +99,89 @@ function extractRuntimeTerminalError(data: Record<string, unknown>): string | un
 function formatWaitTimeoutError(sessionName: string): string {
   const seconds = Math.round(SEND_TIMEOUT_MS / 1000);
   return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
+}
+
+function resolveDeliveryBarrierOptionWithDefault(
+  value: string | undefined,
+  fallback: DeliveryBarrier,
+): DeliveryBarrier {
+  const barrier = normalizeDeliveryBarrier(value);
+  if (!value) {
+    return fallback;
+  }
+  if (!barrier) {
+    throw new Error(`Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`);
+  }
+  return barrier;
+}
+
+function trimDebugText(value: string, max = 160): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max - 3)}...`;
+}
+
+function formatDebugPayload(topic: string, data: Record<string, unknown>): string {
+  if (topic.endsWith(".prompt")) {
+    return trimDebugText(typeof data.prompt === "string" ? data.prompt : "");
+  }
+
+  if (topic.endsWith(".response")) {
+    return trimDebugText(typeof data.response === "string" ? data.response : "");
+  }
+
+  if (topic.endsWith(".stream")) {
+    return trimDebugText(typeof data.chunk === "string" ? data.chunk : "");
+  }
+
+  if (topic.endsWith(".tool")) {
+    const event = typeof data.event === "string" ? data.event : "event";
+    const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
+    const duration =
+      typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
+        ? ` ${Math.round(data.durationMs)}ms`
+        : "";
+    const suffix = data.isError === true ? " error" : "";
+    return `${toolName} ${event}${duration}${suffix}`.trim();
+  }
+
+  if (topic.endsWith(".runtime") || topic.endsWith(".claude")) {
+    const type = typeof data.type === "string" ? data.type : "";
+    const subtype = typeof data.subtype === "string" ? `.${data.subtype}` : "";
+    const status = typeof data.status === "string" ? ` status=${data.status}` : "";
+    const error = extractRuntimeTerminalError(data);
+    return `${type}${subtype}${status}${error ? ` error=${trimDebugText(error, 80)}` : ""}`.trim();
+  }
+
+  if (topic.endsWith(".delivery")) {
+    const messageId = typeof data.messageId === "string" ? data.messageId : "";
+    const emitId = typeof data.emitId === "string" ? data.emitId : "";
+    return [messageId && `messageId=${messageId}`, emitId && `emitId=${emitId}`].filter(Boolean).join(" ");
+  }
+
+  if (topic === "ravi.approval.request" || topic === "ravi.approval.response") {
+    const type = typeof data.type === "string" ? data.type : "approval";
+    const approved = typeof data.approved === "boolean" ? ` approved=${data.approved}` : "";
+    return `${type}${approved}`;
+  }
+
+  return trimDebugText(JSON.stringify(data));
+}
+
+function formatDebugLine(topic: string, data: Record<string, unknown>, asJson?: boolean): string {
+  const time = new Date().toLocaleTimeString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  if (asJson) {
+    return JSON.stringify({ time, topic, data });
+  }
+
+  const label = topic.replace(/^ravi\./, "");
+  const summary = formatDebugPayload(topic, data);
+  return summary ? `[${time}] ${label} :: ${summary}` : `[${time}] ${label}`;
 }
 
 @Group({
@@ -472,6 +556,7 @@ export class SessionCommands {
     @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(nameOrKey, agentId);
     if (!session) return;
@@ -485,6 +570,8 @@ export class SessionCommands {
       return;
     }
 
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_tool");
+
     if (interactive || !prompt) {
       return this.interactiveMode(sessionName, session, channel, to);
     }
@@ -496,11 +583,11 @@ export class SessionCommands {
       console.log(`\n📤 Sending to ${sessionName}\n`);
       console.log(`Prompt: ${prompt}\n`);
       console.log("─".repeat(50));
-      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to);
+      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
       console.log("\n" + "─".repeat(50));
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
-      await this.emitToSession(sessionName, fullPrompt, session, channel, to);
+      await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
       console.log(`📤 Sent to ${sessionName}`);
     }
   }
@@ -512,6 +599,7 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -520,7 +608,14 @@ export class SessionCommands {
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time. Only forward messages related to this question — ignore unrelated conversation.)`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
+    );
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
 
@@ -531,6 +626,7 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -539,7 +635,14 @@ export class SessionCommands {
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt"),
+    );
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
 
@@ -549,13 +652,21 @@ export class SessionCommands {
     @Arg("message", { description: "Task to execute" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Execute: ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_task"),
+    );
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
 
@@ -565,13 +676,21 @@ export class SessionCommands {
     @Arg("message", { description: "Information to send" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Inform: ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
+    );
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
 
@@ -606,54 +725,9 @@ export class SessionCommands {
 
     const maxMessages = parseInt(countStr ?? "20", 10);
     const raw = readFileSync(transcript.path, "utf-8") as string;
-    const lines = raw.trim().split("\n").filter(Boolean);
+    const _lines = raw.trim().split("\n").filter(Boolean);
 
-    interface Message {
-      role: string;
-      text: string;
-      time: string;
-    }
-
-    const messages: Message[] = [];
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-
-        if (entry.type === "user" && entry.message?.content) {
-          const content =
-            typeof entry.message.content === "string"
-              ? entry.message.content
-              : Array.isArray(entry.message.content)
-                ? entry.message.content
-                    .filter((p: { type: string }) => p.type === "text")
-                    .map((p: { text?: string }) => p.text ?? "")
-                    .join(" ")
-                : "";
-          if (!content.trim()) continue;
-          messages.push({
-            role: "user",
-            text: content.trim(),
-            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
-          });
-        } else if (entry.type === "assistant" && entry.message?.content) {
-          const parts = entry.message.content as Array<{ type: string; text?: string }>;
-          const text = parts
-            .filter((p) => p.type === "text")
-            .map((p) => p.text ?? "")
-            .join(" ")
-            .trim();
-          if (!text || text === "@@SILENT@@") continue;
-          messages.push({
-            role: "assistant",
-            text,
-            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
-          });
-        }
-      } catch {
-        // skip malformed
-      }
-    }
+    const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
 
     const recent = messages.slice(-maxMessages);
     console.log(`\n💬 ${session.name ?? nameOrKey} — last ${recent.length} of ${messages.length} messages\n`);
@@ -662,6 +736,105 @@ export class SessionCommands {
       const who = msg.role === "user" ? "👤" : "🤖";
       const timeStr = msg.time ? ` [${msg.time}]` : "";
       console.log(`${who}${timeStr} ${msg.text}\n`);
+    }
+  }
+
+  @Command({
+    name: "debug",
+    description: "Tail live runtime events for a session (defaults to current session when available)",
+  })
+  async debug(
+    @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,
+    @Option({ flags: "-t, --timeout <seconds>", description: "Stop after N seconds (default: 60)" })
+    timeoutStr?: string,
+    @Option({ flags: "--json", description: "Print raw events as JSONL" }) asJson?: boolean,
+  ) {
+    const fallbackTarget = getContext()?.sessionName ?? getContext()?.sessionKey;
+    const target = nameOrKey?.trim() || fallbackTarget?.trim();
+    if (!target) {
+      fail("No session specified. Use ravi sessions debug <name> or run from inside a session.");
+      return;
+    }
+
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const sessionName = session.name ?? target;
+    const timeoutSeconds = Number.parseInt(timeoutStr ?? "60", 10);
+    const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 60_000;
+
+    console.log(`\n🔎 Session debug: ${sessionName}`);
+    console.log(`Agent: ${session.agentId}`);
+    console.log(
+      `Runtime: ${session.runtimeProvider ?? "(unknown)"} :: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`,
+    );
+    console.log(`Channel: ${session.lastChannel ?? "-"} -> ${session.lastTo ?? "-"}`);
+    console.log(`Window: ${Math.round(timeoutMs / 1000)}s\n`);
+
+    let resolveCompletion: (() => void) | undefined;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    let closed = false;
+
+    const subscriptions = [
+      nats.subscribe(`ravi.session.${sessionName}.prompt`),
+      nats.subscribe(`ravi.session.${sessionName}.response`),
+      nats.subscribe(`ravi.session.${sessionName}.stream`),
+      nats.subscribe(`ravi.session.${sessionName}.tool`),
+      nats.subscribe(`ravi.session.${sessionName}.runtime`),
+      nats.subscribe(`ravi.session.${sessionName}.claude`),
+      nats.subscribe(`ravi.session.${sessionName}.delivery`),
+      nats.subscribe("ravi.approval.request"),
+      nats.subscribe("ravi.approval.response"),
+    ];
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      for (const sub of subscriptions) sub.return(undefined);
+      resolveCompletion?.();
+    };
+
+    const timer = setTimeout(() => {
+      console.log(`\n⏱️  Debug window ended after ${Math.round(timeoutMs / 1000)}s`);
+      cleanup();
+    }, timeoutMs);
+
+    const pump = async (sub: AsyncGenerator<{ topic: string; data: Record<string, unknown> }>) => {
+      try {
+        for await (const event of sub) {
+          if (closed) break;
+
+          if (
+            (event.topic === "ravi.approval.request" || event.topic === "ravi.approval.response") &&
+            event.data.sessionName !== sessionName
+          ) {
+            continue;
+          }
+
+          console.log(formatDebugLine(event.topic, event.data, asJson));
+        }
+      } catch {
+        // ignore subscription shutdown
+      }
+    };
+
+    const tasks = subscriptions.map((sub) => pump(sub));
+
+    const sigintHandler = () => {
+      console.log("\n🛑 Debug interrupted");
+      cleanup();
+    };
+    process.once("SIGINT", sigintHandler);
+
+    try {
+      await completion;
+      await nats.close();
+      await Promise.allSettled(tasks);
+    } finally {
+      clearTimeout(timer);
+      process.removeListener("SIGINT", sigintHandler);
     }
   }
 
@@ -788,13 +961,17 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string,
+    deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
+      string,
+      unknown
+    >);
   }
 
   /**
@@ -806,6 +983,7 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string,
+    deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
@@ -900,7 +1078,10 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
+      string,
+      unknown
+    >);
 
     const completionState = await completion;
     cleanup();
@@ -989,4 +1170,113 @@ export class SessionCommands {
 
     ask();
   }
+}
+
+export interface NormalizedTranscriptMessage {
+  role: "user" | "assistant";
+  text: string;
+  time: string;
+}
+
+export function extractNormalizedTranscriptMessages(
+  raw: string,
+  runtimeProvider?: "claude" | "codex",
+): NormalizedTranscriptMessage[] {
+  if (runtimeProvider === "codex") {
+    const messages = extractCodexTranscriptMessages(raw);
+    if (messages.length > 0) {
+      return messages;
+    }
+  }
+
+  return extractClaudeTranscriptMessages(raw);
+}
+
+function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessage[] {
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const messages: NormalizedTranscriptMessage[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+
+      if (entry.type === "user" && entry.message?.content) {
+        const content =
+          typeof entry.message.content === "string"
+            ? entry.message.content
+            : Array.isArray(entry.message.content)
+              ? entry.message.content
+                  .filter((p: { type: string }) => p.type === "text")
+                  .map((p: { text?: string }) => p.text ?? "")
+                  .join(" ")
+              : "";
+        if (!content.trim()) continue;
+        messages.push({
+          role: "user",
+          text: content.trim(),
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      } else if (entry.type === "assistant" && entry.message?.content) {
+        const parts = entry.message.content as Array<{ type: string; text?: string }>;
+        const text = parts
+          .filter((p) => p.type === "text")
+          .map((p) => p.text ?? "")
+          .join(" ")
+          .trim();
+        if (!text || text === "@@SILENT@@") continue;
+        messages.push({
+          role: "assistant",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
+  return messages;
+}
+
+function extractCodexTranscriptMessages(raw: string): NormalizedTranscriptMessage[] {
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const messages: NormalizedTranscriptMessage[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line) as {
+        timestamp?: string;
+        type?: string;
+        payload?: { type?: string; message?: string };
+      };
+
+      if (entry.type !== "event_msg") {
+        continue;
+      }
+
+      const payloadType = entry.payload?.type;
+      const text = entry.payload?.message?.trim();
+      if (!text || text === "@@SILENT@@") {
+        continue;
+      }
+
+      if (payloadType === "user_message") {
+        messages.push({
+          role: "user",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      } else if (payloadType === "agent_message") {
+        messages.push({
+          role: "assistant",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
+  return messages;
 }

@@ -4,6 +4,7 @@ const publishCalls: Array<[string, Record<string, unknown>]> = [];
 const warnCalls: Array<[string, Record<string, unknown> | undefined]> = [];
 const infoCalls: Array<[string, Record<string, unknown> | undefined]> = [];
 const debugCalls: Array<[string, Record<string, unknown> | undefined]> = [];
+const errorCalls: Array<[string, Record<string, unknown> | undefined]> = [];
 
 let configValue = {
   instanceToAccount: {} as Record<string, string>,
@@ -63,7 +64,9 @@ mock.module("../utils/logger.js", () => ({
       info: (message: string, meta?: Record<string, unknown>) => {
         infoCalls.push([message, meta]);
       },
-      error: () => {},
+      error: (message: string, meta?: Record<string, unknown>) => {
+        errorCalls.push([message, meta]);
+      },
       warn: (message: string, meta?: Record<string, unknown>) => {
         warnCalls.push([message, meta]);
       },
@@ -129,6 +132,7 @@ describe("OmniConsumer instance gating", () => {
     warnCalls.length = 0;
     infoCalls.length = 0;
     debugCalls.length = 0;
+    errorCalls.length = 0;
     publishMock.mockClear();
   });
 
@@ -212,5 +216,71 @@ describe("OmniConsumer instance gating", () => {
         { instanceId: "ignored-instance", channelType: "whatsapp-baileys" },
       ],
     ]);
+  });
+
+  it("times out cleanly without touching consumer APIs when the stream is still missing", async () => {
+    const consumer = new OmniConsumer({} as never, "http://omni.local", "test-key");
+    consumer["running"] = true;
+    consumer["delay"] = async () => {};
+
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => {
+      const value = now;
+      now += 1_000;
+      return value;
+    };
+
+    const consumersInfo = mock(async () => ({}));
+    const consumersAdd = mock(async () => ({}));
+    const jsm = {
+      streams: {
+        info: mock(async () => {
+          throw new Error("stream not found");
+        }),
+      },
+      consumers: {
+        info: consumersInfo,
+        add: consumersAdd,
+      },
+    } as never;
+
+    try {
+      const ready = await consumer["ensureConsumer"](jsm, "MESSAGE", "ravi-messages", "message.received.>", 1_500);
+      expect(ready).toBe(false);
+    } finally {
+      Date.now = originalNow;
+    }
+
+    expect(consumersInfo).not.toHaveBeenCalled();
+    expect(consumersAdd).not.toHaveBeenCalled();
+    expect(errorCalls).toContainEqual([
+      "Timed out waiting for JetStream stream to appear",
+      { stream: "MESSAGE", name: "ravi-messages" },
+    ]);
+  });
+
+  it("does not call consumers.get when ensureConsumer says the stream is not ready", async () => {
+    const consumer = new OmniConsumer({} as never, "http://omni.local", "test-key");
+    consumer["running"] = true;
+    consumer["jsm"] = {} as never;
+    consumer["ensureConsumer"] = mock(async () => {
+      consumer["running"] = false;
+      return false;
+    });
+    consumer["delay"] = async () => {};
+
+    const getConsumer = mock(async () => ({
+      consume: async function* () {},
+    }));
+    const js = {
+      consumers: {
+        get: getConsumer,
+      },
+    } as never;
+
+    await consumer["consumeLoop"](js, "MESSAGE", "ravi-messages", "message.received.>", async () => {});
+
+    expect(getConsumer).not.toHaveBeenCalled();
   });
 });

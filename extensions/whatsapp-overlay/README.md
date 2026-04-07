@@ -26,11 +26,15 @@ What already exists in code:
 - message-level chips inside the conversation timeline
 - compact `quiet rail` below the conversation app bar
 - local bridge + CLI for DOM inspection, preview injection, and live state resolution
+- first v3 placeholder layer fed by `relay + published DOM map`
+- first real v3 action: clicking a placeholder outlines the mapped slot through `command -> ack/error`
+- first useful v3 mutation: binding the current chat to an existing session now goes through `chat.bindSession` on the same command boundary
 
 These surfaces work as a product lab:
 
 - the left pane proves session correlation at scale
 - the center pane proves message enrichment and per-chat context
+- the placeholder layer proves mapped anchors before richer widgets
 - the CLI keeps us from hardcoding UI too early
 
 ## Navigation Lessons
@@ -68,6 +72,10 @@ That sidebar should be:
 Reference spec:
 
 - [`docs/whatsapp-overlay-cockpit-v1.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-cockpit-v1.md)
+- Canonical current status:
+  - [`docs/whatsapp-overlay-status.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-status.md)
+- Canonical next substrate:
+  - [`docs/ravi-v3-cli-stream-core.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/ravi-v3-cli-stream-core.md)
 
 ## Run
 

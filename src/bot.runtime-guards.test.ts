@@ -53,6 +53,7 @@ let runtimePrepareImpl: (
 ) => Promise<{ env?: Record<string, string> } | undefined>;
 let runtimeStartImpl: (providerId: RuntimeProviderId, request: RuntimeStartRequest) => RuntimeHandle;
 let discoveredPlugins: RuntimePlugin[] = [];
+let hasActiveTaskForSession = (_sessionName: string, _excludeTaskId?: string) => false;
 
 const clearProviderSession = mock((sessionKey: string) => {
   const session = sessions.get(sessionKey);
@@ -254,9 +255,39 @@ mock.module("./remote-spawn-nats.js", () => ({
 
 mock.module("./permissions/engine.js", () => ({
   agentCan: () => true,
+  canWithCapabilities: (
+    capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
+    permission: string,
+    objectType: string,
+    objectId: string,
+  ) =>
+    capabilities.some(
+      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+    ),
 }));
 
 mock.module("./runtime/index.js", () => ({
+  createRuntimeContext: (input: {
+    kind?: string;
+    agentId?: string;
+    sessionKey?: string;
+    sessionName?: string;
+    source?: { channel: string; accountId: string; chatId: string; threadId?: string };
+    capabilities?: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+    metadata?: Record<string, unknown>;
+  }) => ({
+    contextId: "ctx_test_runtime",
+    contextKey: "rctx_test_runtime",
+    kind: input.kind ?? "runtime",
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    sessionName: input.sessionName,
+    source: input.source,
+    capabilities: input.capabilities ?? [],
+    metadata: input.metadata,
+    createdAt: Date.now(),
+  }),
+  snapshotAgentCapabilities: () => [],
   createRuntimeProvider: (providerId: RuntimeProviderId = "claude") => {
     const capabilities =
       providerId === "codex"
@@ -316,6 +347,11 @@ mock.module("./runtime/index.js", () => ({
   },
 }));
 
+mock.module("./tasks/task-db.js", () => ({
+  dbHasActiveTaskForSession: (sessionName: string, excludeTaskId?: string) =>
+    hasActiveTaskForSession(sessionName, excludeTaskId),
+}));
+
 mock.module("./utils/logger.js", () => {
   const noop = () => loggerChild;
   const loggerChild = { info: noop, warn: noop, error: noop, debug: noop, child: noop };
@@ -348,6 +384,7 @@ describe("RaviBot runtime guards", () => {
     clearProviderSession.mockClear();
     activeProvider = "claude";
     resetRuntimeDoubles();
+    hasActiveTaskForSession = () => false;
   });
 
   it("clears legacy provider session state before switching an agent to Codex", async () => {
@@ -591,5 +628,183 @@ describe("RaviBot runtime guards", () => {
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "provider.raw",
       ),
     ).toBe(true);
+  });
+
+  it("interrupts an active text turn for p0/immediate_interrupt prompts", async () => {
+    const sessionKey = "agent:main:p0-interrupt";
+    const interrupt = mock(async () => {});
+
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        expect(first.value?.message.content).toBe("first");
+        await new Promise(() => {});
+      })(),
+      interrupt,
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("urgent"),
+      deliveryBarrier: "immediate_interrupt",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues p2/after_response prompts until the current turn completes", async () => {
+    const sessionKey = "agent:main:p2-after-response";
+    const interrupt = mock(async () => {});
+    let releaseFirstTurn: (() => void) | undefined;
+    const firstTurnDone = new Promise<void>((resolve) => {
+      releaseFirstTurn = resolve;
+    });
+    let secondPrompt = "";
+
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        expect(first.value?.message.content).toBe("first");
+        await firstTurnDone;
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+        const second = await request.prompt.next();
+        secondPrompt = second.value?.message.content ?? "";
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt,
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("follow after response"),
+      deliveryBarrier: "after_response",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(interrupt).not.toHaveBeenCalled();
+    expect(secondPrompt).toBe("");
+
+    releaseFirstTurn?.();
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(secondPrompt).toBe("follow after response");
+  });
+
+  it("keeps p3/after_task prompts parked until the task becomes inactive", async () => {
+    const sessionKey = "agent:main:p3-after-task";
+    let woken = false;
+    hasActiveTaskForSession = (name) => name === sessionKey;
+
+    const bot = createBot();
+    (bot as any).streamingSessions.set(sessionKey, {
+      queryHandle: { provider: "claude", interrupt: async () => {} },
+      abortController: new AbortController(),
+      pushMessage: () => {
+        woken = true;
+      },
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: { channel: "whatsapp", accountId: "main", chatId: "test" },
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      starting: false,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("wait for task"),
+      deliveryBarrier: "after_task",
+    });
+
+    expect(woken).toBe(false);
+
+    hasActiveTaskForSession = () => false;
+    (bot as any).wakeStreamingSessionIfDeliverable(sessionKey);
+
+    expect(woken).toBe(true);
+  });
+
+  it("defers cold-start p3/after_task prompts until the task is released", async () => {
+    const sessionKey = "agent:main:p3-cold-start";
+    hasActiveTaskForSession = (name) => name === sessionKey;
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("cold start after task"),
+      deliveryBarrier: "after_task",
+    });
+
+    expect(runtimeStartCalls).toHaveLength(0);
+    expect((bot as any).deferredAfterTaskStarts.get(sessionKey)).toHaveLength(1);
+
+    hasActiveTaskForSession = () => false;
+    await (bot as any).startDeferredAfterTaskSessionIfDeliverable(sessionKey);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect((bot as any).deferredAfterTaskStarts.has(sessionKey)).toBe(false);
+  });
+
+  it("lets a task dispatch use after_task while ignoring its own task id", async () => {
+    const sessionKey = "agent:main:p3-self-task";
+    hasActiveTaskForSession = (name, excludeTaskId) => name === sessionKey && excludeTaskId !== "task-self";
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("task dispatch prompt"),
+      deliveryBarrier: "after_task",
+      taskBarrierTaskId: "task-self",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect((bot as any).deferredAfterTaskStarts.has(sessionKey)).toBe(false);
+  });
+
+  it("releases a deferred task dispatch once only the dispatched task itself remains active", async () => {
+    const sessionKey = "agent:main:p3-deferred-self-task";
+    let blockerActive = true;
+    hasActiveTaskForSession = (name, excludeTaskId) =>
+      name === sessionKey && (blockerActive || excludeTaskId !== "task-self");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("task dispatch prompt waiting on previous task"),
+      deliveryBarrier: "after_task",
+      taskBarrierTaskId: "task-self",
+    });
+
+    expect(runtimeStartCalls).toHaveLength(0);
+    expect((bot as any).deferredAfterTaskStarts.get(sessionKey)).toHaveLength(1);
+
+    blockerActive = false;
+    await (bot as any).startDeferredAfterTaskSessionIfDeliverable(sessionKey);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect((bot as any).deferredAfterTaskStarts.has(sessionKey)).toBe(false);
   });
 });

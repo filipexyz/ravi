@@ -65,6 +65,33 @@ export const RouteInputSchema = z.object({
 
 export const GroupPolicySchema = z.enum(["open", "allowlist", "closed"]);
 export const DmPolicySchema = z.enum(["open", "pairing", "closed"]);
+export const ContextSourceSchema = z.object({
+  channel: z.string().min(1),
+  accountId: z.string().min(1),
+  chatId: z.string().min(1),
+  threadId: z.string().min(1).optional(),
+});
+export const ContextCapabilitySchema = z.object({
+  permission: z.string().min(1),
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  source: z.string().optional(),
+});
+export const ContextInputSchema = z.object({
+  contextId: z.string().min(1),
+  contextKey: z.string().min(1),
+  kind: z.string().min(1).default("runtime"),
+  agentId: z.string().min(1).optional(),
+  sessionKey: z.string().min(1).optional(),
+  sessionName: z.string().min(1).optional(),
+  source: ContextSourceSchema.optional(),
+  capabilities: z.array(ContextCapabilitySchema).default([]),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  createdAt: z.number().int().optional(),
+  expiresAt: z.number().int().optional(),
+  lastUsedAt: z.number().int().optional(),
+  revokedAt: z.number().int().optional(),
+});
 
 export const InstanceInputSchema = z.object({
   name: z.string().min(1),
@@ -144,6 +171,22 @@ interface InstanceRow {
   deleted_at: number | null;
 }
 
+interface ContextRow {
+  context_id: string;
+  context_key: string;
+  kind: string;
+  agent_id: string | null;
+  session_key: string | null;
+  session_name: string | null;
+  source_json: string | null;
+  capabilities_json: string;
+  metadata_json: string | null;
+  created_at: number;
+  expires_at: number | null;
+  last_used_at: number | null;
+  revoked_at: number | null;
+}
+
 export interface InstanceConfig {
   name: string;
   instanceId?: string;
@@ -182,6 +225,43 @@ export interface MatrixAccount {
   deviceId?: string;
   createdAt: number;
   lastUsedAt?: number;
+}
+
+export interface ContextSource {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  threadId?: string;
+}
+
+export interface ContextCapability {
+  permission: string;
+  objectType: string;
+  objectId: string;
+  source?: string;
+}
+
+export interface ContextRecord {
+  contextId: string;
+  contextKey: string;
+  kind: string;
+  agentId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  source?: ContextSource;
+  capabilities: ContextCapability[];
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  expiresAt?: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+}
+
+export interface ListContextsOptions {
+  agentId?: string;
+  sessionKey?: string;
+  kind?: string;
+  includeInactive?: boolean;
 }
 
 // ============================================================================
@@ -328,16 +408,6 @@ function getDb(): Database {
       created_at INTEGER NOT NULL
     );
 
-    -- Message metadata (transcriptions, media paths — for reply reinjection)
-    CREATE TABLE IF NOT EXISTS message_metadata (
-      message_id TEXT PRIMARY KEY,
-      chat_id TEXT NOT NULL,
-      transcription TEXT,
-      media_path TEXT,
-      media_type TEXT,
-      created_at INTEGER NOT NULL
-    );
-
     -- Cost tracking: granular per-turn cost events
     CREATE TABLE IF NOT EXISTS cost_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -371,6 +441,22 @@ function getDb(): Database {
       enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS contexts (
+      context_id TEXT PRIMARY KEY,
+      context_key TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL DEFAULT 'runtime',
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      session_key TEXT REFERENCES sessions(session_key) ON DELETE SET NULL,
+      session_name TEXT,
+      source_json TEXT,
+      capabilities_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER,
+      last_used_at INTEGER,
+      revoked_at INTEGER
     );
 
     -- Matrix accounts (all users - both regular users and agents)
@@ -915,6 +1001,83 @@ function getDb(): Database {
     db.exec("ALTER TABLE instances ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
     log.info("Added enabled column to instances table");
   }
+
+  const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
+  if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
+    db.exec("PRAGMA foreign_keys=OFF");
+    try {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE contexts_new (
+          context_id TEXT PRIMARY KEY,
+          context_key TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL DEFAULT 'runtime',
+          agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+          session_key TEXT REFERENCES sessions(session_key) ON DELETE SET NULL,
+          session_name TEXT,
+          source_json TEXT,
+          capabilities_json TEXT NOT NULL DEFAULT '[]',
+          metadata_json TEXT,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER,
+          last_used_at INTEGER,
+          revoked_at INTEGER
+        );
+        INSERT INTO contexts_new (
+          context_id, context_key, kind, agent_id, session_key, session_name,
+          source_json, capabilities_json, metadata_json, created_at, expires_at, last_used_at, revoked_at
+        )
+        SELECT
+          'ctx_legacy_' || lower(hex(randomblob(12))),
+          context_key,
+          'legacy',
+          agent_id,
+          session_key,
+          session_name,
+          CASE
+            WHEN source_channel IS NOT NULL AND source_account_id IS NOT NULL AND source_chat_id IS NOT NULL
+              THEN json_object('channel', source_channel, 'accountId', source_account_id, 'chatId', source_chat_id)
+            ELSE NULL
+          END,
+          '[]',
+          NULL,
+          created_at,
+          NULL,
+          updated_at,
+          NULL
+        FROM contexts;
+        DROP TABLE contexts;
+        ALTER TABLE contexts_new RENAME TO contexts;
+        COMMIT;
+      `);
+      log.info("Migrated contexts table to central registry schema");
+    } finally {
+      db.exec("PRAGMA foreign_keys=ON");
+    }
+  }
+  const contextColumnsNow = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
+  if (!contextColumnsNow.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN kind TEXT NOT NULL DEFAULT 'runtime'");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "capabilities_json")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "metadata_json")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN metadata_json TEXT");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "expires_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN expires_at INTEGER");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "last_used_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN last_used_at INTEGER");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "revoked_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN revoked_at INTEGER");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_key ON contexts(context_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent ON contexts(agent_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session ON contexts(session_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires ON contexts(expires_at)");
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1016,6 +1179,14 @@ interface PreparedStatements {
   listInstances: Statement;
   deleteInstance: Statement;
   updateInstance: Statement;
+  // Contexts
+  insertContext: Statement;
+  getContextById: Statement;
+  getContextByKey: Statement;
+  touchContext: Statement;
+  revokeContext: Statement;
+  updateContextCapabilities: Statement;
+  deleteContext: Statement;
 }
 
 let stmts: PreparedStatements | null = null;
@@ -1136,17 +1307,6 @@ function getStatements(): PreparedStatements {
     `),
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
-    // Message metadata
-    upsertMessageMeta: database.prepare(`
-      INSERT INTO message_metadata (message_id, chat_id, transcription, media_path, media_type, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(message_id) DO UPDATE SET
-        transcription = COALESCE(excluded.transcription, message_metadata.transcription),
-        media_path = COALESCE(excluded.media_path, message_metadata.media_path),
-        media_type = COALESCE(excluded.media_type, message_metadata.media_type)
-    `),
-    getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
-    cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
     cleanupExpiredSessions: database.prepare(
       "DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
     ),
@@ -1206,6 +1366,26 @@ function getStatements(): PreparedStatements {
         updated_at   = ?
       WHERE name = ?
     `),
+    // Contexts
+    insertContext: database.prepare(`
+      INSERT INTO contexts (
+        context_id, context_key, kind, agent_id, session_key, session_name,
+        source_json, capabilities_json, metadata_json, created_at, expires_at, last_used_at, revoked_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    getContextById: database.prepare("SELECT * FROM contexts WHERE context_id = ?"),
+    getContextByKey: database.prepare("SELECT * FROM contexts WHERE context_key = ?"),
+    listContexts: database.prepare("SELECT * FROM contexts ORDER BY created_at DESC"),
+    touchContext: database.prepare("UPDATE contexts SET last_used_at = ? WHERE context_id = ?"),
+    revokeContext: database.prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = ?"),
+    updateContextCapabilities: database.prepare(`
+      UPDATE contexts SET
+        capabilities_json = ?,
+        last_used_at = ?
+      WHERE context_id = ?
+    `),
+    deleteContext: database.prepare("DELETE FROM contexts WHERE context_id = ?"),
   };
 
   return stmts;
@@ -1334,6 +1514,50 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
     if (parsed.success) result.dmScope = parsed.data;
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
+  return result;
+}
+
+function rowToContext(row: ContextRow): ContextRecord {
+  const result: ContextRecord = {
+    contextId: row.context_id,
+    contextKey: row.context_key,
+    kind: row.kind,
+    capabilities: [],
+    createdAt: row.created_at,
+  };
+
+  if (row.agent_id) result.agentId = row.agent_id;
+  if (row.session_key) result.sessionKey = row.session_key;
+  if (row.session_name) result.sessionName = row.session_name;
+  if (row.expires_at) result.expiresAt = row.expires_at;
+  if (row.last_used_at) result.lastUsedAt = row.last_used_at;
+  if (row.revoked_at) result.revokedAt = row.revoked_at;
+
+  if (row.source_json) {
+    try {
+      const parsed = ContextSourceSchema.safeParse(JSON.parse(row.source_json));
+      if (parsed.success) result.source = parsed.data;
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
+  try {
+    const parsed = z.array(ContextCapabilitySchema).safeParse(JSON.parse(row.capabilities_json));
+    if (parsed.success) result.capabilities = parsed.data;
+  } catch {
+    // Ignore invalid JSON
+  }
+
+  if (row.metadata_json) {
+    try {
+      const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(row.metadata_json));
+      if (parsed.success) result.metadata = parsed.data;
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
   return result;
 }
 
@@ -1858,6 +2082,109 @@ export function dbListDeletedInstances(): InstanceConfig[] {
 }
 
 // ============================================================================
+// Context Registry
+// ============================================================================
+
+export function dbCreateContext(input: z.infer<typeof ContextInputSchema>): ContextRecord {
+  const validated = ContextInputSchema.parse(input);
+  if (validated.agentId && !dbGetAgent(validated.agentId)) {
+    throw new Error(`Agent not found: ${validated.agentId}`);
+  }
+
+  const s = getStatements();
+  const createdAt = validated.createdAt ?? Date.now();
+
+  try {
+    s.insertContext.run(
+      validated.contextId,
+      validated.contextKey,
+      validated.kind,
+      validated.agentId ?? null,
+      validated.sessionKey ?? null,
+      validated.sessionName ?? null,
+      validated.source ? JSON.stringify(validated.source) : null,
+      JSON.stringify(validated.capabilities),
+      validated.metadata ? JSON.stringify(validated.metadata) : null,
+      createdAt,
+      validated.expiresAt ?? null,
+      validated.lastUsedAt ?? null,
+      validated.revokedAt ?? null,
+    );
+  } catch (err) {
+    if ((err as Error).message.includes("UNIQUE constraint failed")) {
+      throw new Error(`Context already exists: ${validated.contextId}`);
+    }
+    throw err;
+  }
+
+  return dbGetContext(validated.contextId)!;
+}
+
+export function dbGetContext(contextId: string): ContextRecord | null {
+  const s = getStatements();
+  const row = s.getContextById.get(contextId) as ContextRow | undefined;
+  return row ? rowToContext(row) : null;
+}
+
+export function dbGetContextByKey(contextKey: string): ContextRecord | null {
+  const s = getStatements();
+  const row = s.getContextByKey.get(contextKey) as ContextRow | undefined;
+  return row ? rowToContext(row) : null;
+}
+
+export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {
+  const s = getStatements();
+  const now = Date.now();
+  const rows = s.listContexts.all() as ContextRow[];
+
+  return rows
+    .map((row) => rowToContext(row))
+    .filter((context) => {
+      if (options.agentId && context.agentId !== options.agentId) return false;
+      if (options.sessionKey && context.sessionKey !== options.sessionKey) return false;
+      if (options.kind && context.kind !== options.kind) return false;
+
+      if (!options.includeInactive) {
+        if (context.revokedAt && context.revokedAt <= now) return false;
+        if (context.expiresAt && context.expiresAt <= now) return false;
+      }
+
+      return true;
+    });
+}
+
+export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
+  const s = getStatements();
+  s.touchContext.run(lastUsedAt, contextId);
+}
+
+export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
+  const s = getStatements();
+  const existing = dbGetContext(contextId);
+  if (!existing) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  s.revokeContext.run(revokedAt, contextId);
+  return dbGetContext(contextId)!;
+}
+
+export function dbUpdateContextCapabilities(contextId: string, capabilities: ContextCapability[]): ContextRecord {
+  const s = getStatements();
+  if (!dbGetContext(contextId)) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  const validated = z.array(ContextCapabilitySchema).parse(capabilities);
+  s.updateContextCapabilities.run(JSON.stringify(validated), Date.now(), contextId);
+  return dbGetContext(contextId)!;
+}
+
+export function dbDeleteContext(contextId: string): boolean {
+  const s = getStatements();
+  s.deleteContext.run(contextId);
+  return getDbChanges() > 0;
+}
+
+// ============================================================================
 // Convenience Getters
 // ============================================================================
 
@@ -2041,75 +2368,6 @@ export function dbGetAgentMatrixAccount(agentId: string): MatrixAccount | null {
   const agent = dbGetAgent(agentId);
   if (!agent?.matrixAccount) return null;
   return dbGetMatrixAccount(agent.matrixAccount);
-}
-
-// ============================================================================
-// Message Metadata (transcriptions + media paths for reply reinjection)
-// ============================================================================
-
-export interface MessageMetadata {
-  messageId: string;
-  chatId: string;
-  transcription?: string;
-  mediaPath?: string;
-  mediaType?: string;
-  createdAt: number;
-}
-
-/**
- * Store message metadata (transcription/media path).
- * Upserts — safe to call multiple times for the same message.
- */
-export function dbSaveMessageMeta(
-  messageId: string,
-  chatId: string,
-  opts: { transcription?: string; mediaPath?: string; mediaType?: string },
-): void {
-  const s = getStatements();
-  s.upsertMessageMeta.run(
-    messageId,
-    chatId,
-    opts.transcription ?? null,
-    opts.mediaPath ?? null,
-    opts.mediaType ?? null,
-    Date.now(),
-  );
-}
-
-/**
- * Get message metadata by message ID.
- */
-export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
-  const s = getStatements();
-  const row = s.getMessageMeta.get(messageId) as {
-    message_id: string;
-    chat_id: string;
-    transcription: string | null;
-    media_path: string | null;
-    media_type: string | null;
-    created_at: number;
-  } | null;
-  if (!row) return null;
-  return {
-    messageId: row.message_id,
-    chatId: row.chat_id,
-    transcription: row.transcription ?? undefined,
-    mediaPath: row.media_path ?? undefined,
-    mediaType: row.media_type ?? undefined,
-    createdAt: row.created_at,
-  };
-}
-
-const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-
-/**
- * Delete message metadata older than 7 days.
- * Returns number of rows deleted.
- */
-export function dbCleanupMessageMeta(cutoff = Date.now() - MESSAGE_META_TTL_MS): number {
-  const s = getStatements();
-  s.cleanupMessageMeta.run(cutoff);
-  return getDbChanges();
 }
 
 // ============================================================================

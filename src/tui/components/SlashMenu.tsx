@@ -10,6 +10,8 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { name: "reset", description: "Reset session (clear context)" },
   { name: "help", description: "Show available commands" },
   { name: "model", description: "Switch provider/model for this agent" },
+  { name: "cockpit", description: "Open cockpit view (Ctrl+O)" },
+  { name: "chat", description: "Return to chat view (Ctrl+O)" },
 ];
 
 export function filterCommands(query: string): SlashCommand[] {

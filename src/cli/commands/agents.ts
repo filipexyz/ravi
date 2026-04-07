@@ -24,10 +24,26 @@ import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
+import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function printAgentMutationTarget(): void {
+  const summary = inspectCliRuntimeTarget();
+  for (const line of formatCliRuntimeTarget(summary)) {
+    console.log(line);
+  }
+}
+
+function assertAgentMutationRuntime(allowRuntimeMismatch?: boolean): void {
+  const summary = inspectCliRuntimeTarget();
+  const mismatch = getCliRuntimeMismatchMessage(summary);
+  if (mismatch && !allowRuntimeMismatch) {
+    fail(`${mismatch}\nRe-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.`);
+  }
 }
 
 interface DebugTurn {
@@ -223,11 +239,17 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
     @Option({ flags: "--provider <provider>", description: "Runtime provider: claude or codex" }) provider?: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (provider && provider !== "claude" && provider !== "codex") {
       fail(`Invalid provider: ${provider}. Valid providers: claude, codex`);
     }
     const normalizedProvider = provider === "claude" || provider === "codex" ? provider : undefined;
+    assertAgentMutationRuntime(allowRuntimeMismatch);
 
     try {
       createAgent({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) });
@@ -239,6 +261,7 @@ export class AgentsCommands {
         createClaudeStub: `# ${id}\n\nInstruções do agente aqui.\n`,
       });
 
+      printAgentMutationTarget();
       console.log(`\u2713 Agent created: ${id}`);
       console.log(`  CWD: ${cwd}`);
       if (normalizedProvider) {

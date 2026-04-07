@@ -47,6 +47,7 @@ export interface OverlayLiveState {
   approvalPending?: boolean;
   summary?: string;
   updatedAt?: number;
+  busySince?: number;
   events?: OverlaySessionEvent[];
   artifacts?: OverlayChatArtifact[];
 }
@@ -401,7 +402,13 @@ function isRelevantOverlaySession(session: SessionEntry): boolean {
 
 function defaultLiveState(session: SessionEntry): OverlayLiveState {
   if (session.abortedLastRun) {
-    return { activity: "blocked", summary: "last run aborted", updatedAt: session.updatedAt, artifacts: [] };
+    return {
+      activity: "blocked",
+      summary: "last run aborted",
+      updatedAt: session.updatedAt,
+      busySince: session.updatedAt,
+      artifacts: [],
+    };
   }
   return { activity: "idle", updatedAt: session.updatedAt, artifacts: [] };
 }
@@ -434,9 +441,7 @@ function scoreTitleMatch(session: SessionEntry, needle: string): number {
 
 function shouldDisableFuzzyTitleMatching(needle: string): boolean {
   const tokens = tokenizeComparable(needle);
-  if (tokens.length !== 1) return false;
-  const token = tokens[0] ?? "";
-  return token.length <= 5;
+  return tokens.length === 1;
 }
 
 function scoreComparableField(rawField: string | null | undefined, needle: string, baseWeight: number): number {

@@ -158,6 +158,29 @@ mock.module("./plugins/index.js", () => ({
   discoverPlugins: () => [],
 }));
 
+mock.module("./runtime/context-registry.js", () => ({
+  createRuntimeContext: (input: {
+    kind?: string;
+    agentId?: string;
+    sessionKey?: string;
+    sessionName?: string;
+    source?: { channel: string; accountId: string; chatId: string; threadId?: string };
+    capabilities?: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+    metadata?: Record<string, unknown>;
+  }) => ({
+    contextId: "ctx_test_runtime",
+    contextKey: "rctx_test_runtime",
+    kind: input.kind ?? "runtime",
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    sessionName: input.sessionName,
+    source: input.source,
+    capabilities: input.capabilities ?? [],
+    metadata: input.metadata,
+    createdAt: Date.now(),
+  }),
+}));
+
 mock.module("./utils/logger.js", () => {
   const noop = () => loggerChild;
   const loggerChild = { info: noop, warn: noop, error: noop, debug: noop, child: noop };
@@ -165,6 +188,10 @@ mock.module("./utils/logger.js", () => {
 });
 
 mock.module("./utils/config.js", () => ({}));
+
+mock.module("./tasks/task-db.js", () => ({
+  dbHasActiveTaskForSession: () => false,
+}));
 
 // ── Import after mocks ─────────────────────────────────────────────────────
 

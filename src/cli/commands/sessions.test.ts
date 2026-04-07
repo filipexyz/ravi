@@ -87,6 +87,7 @@ mock.module("../../transcripts.js", () => ({
 }));
 
 const { SessionCommands } = await import("./sessions.js");
+const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
 
 describe("SessionCommands wait mode", () => {
   beforeEach(() => {
@@ -174,5 +175,36 @@ describe("SessionCommands wait mode", () => {
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;
     }
+  });
+});
+
+describe("extractNormalizedTranscriptMessages", () => {
+  it("reads codex event_msg transcripts as user/assistant history", () => {
+    const raw = [
+      JSON.stringify({
+        timestamp: "2026-03-22T14:00:00.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "[WhatsApp] Luís: oi" },
+      }),
+      JSON.stringify({
+        timestamp: "2026-03-22T14:00:05.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Vou olhar isso agora.", phase: "commentary" },
+      }),
+      JSON.stringify({
+        timestamp: "2026-03-22T14:00:10.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Feito.", phase: "final_answer" },
+      }),
+    ].join("\n");
+
+    const messages = extractNormalizedTranscriptMessages(raw, "codex");
+
+    expect(messages).toHaveLength(3);
+    expect(messages.map((message) => [message.role, message.text])).toEqual([
+      ["user", "[WhatsApp] Luís: oi"],
+      ["assistant", "Vou olhar isso agora."],
+      ["assistant", "Feito."],
+    ]);
   });
 });

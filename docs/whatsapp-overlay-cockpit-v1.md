@@ -242,6 +242,10 @@ Implement reliable open behavior:
 - selected-row confirmation
 - explicit failure feedback
 
+Manual validation checklist for this phase:
+
+- [`docs/whatsapp-overlay-manual-checklist.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-manual-checklist.md)
+
 ### Phase 4. Operational Polish
 
 Only after navigation feels solid:

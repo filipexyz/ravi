@@ -54,6 +54,7 @@ import {
   dbGetSetting,
   dbSetSetting,
 } from "../../router/router-db.js";
+import { loadRouterConfig, matchRoute } from "../../router/index.js";
 import {
   IGNORED_OMNI_INSTANCE_IDS_SETTING,
   parseIgnoredOmniInstanceIds,
@@ -68,6 +69,7 @@ import {
   type AccountPendingEntry,
 } from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
+import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
@@ -91,6 +93,87 @@ function saveIgnoredOmniInstanceIds(instanceIds: Iterable<string>): void {
 
 function resolveInstanceByNameOrId(value: string) {
   return dbGetInstance(value) ?? dbGetInstanceByInstanceId(value);
+}
+
+function printInstanceMutationTarget(name: string): void {
+  const summary = inspectCliRuntimeTarget(name);
+  for (const line of formatCliRuntimeTarget(summary)) {
+    console.log(line);
+  }
+}
+
+function assertInstanceMutationRuntime(name: string, allowRuntimeMismatch?: boolean): void {
+  const summary = inspectCliRuntimeTarget(name);
+  const mismatch = getCliRuntimeMismatchMessage(summary);
+  if (mismatch && !allowRuntimeMismatch) {
+    fail(
+      `${mismatch}\nTarget instance: ${name}\nRe-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.`,
+    );
+  }
+}
+
+function inspectRouteLiveWinner(
+  name: string,
+  pattern: string,
+  channel?: string,
+): { winningPattern: string; winningAgent: string } | null {
+  const config = loadRouterConfig();
+
+  if (pattern.startsWith("group:")) {
+    const groupId = pattern.slice("group:".length);
+    const resolved = matchRoute(config, {
+      phone: groupId,
+      groupId,
+      isGroup: true,
+      accountId: name,
+      ...(channel ? { channel } : {}),
+    });
+
+    if (!resolved) {
+      return null;
+    }
+
+    return {
+      winningPattern: resolved.route?.pattern ?? "(instance default)",
+      winningAgent: resolved.agentId,
+    };
+  }
+
+  if (!pattern.includes("*") && /^\d+$/.test(pattern)) {
+    const resolved = matchRoute(config, {
+      phone: pattern,
+      accountId: name,
+      ...(channel ? { channel } : {}),
+    });
+
+    if (!resolved) {
+      return null;
+    }
+
+    return {
+      winningPattern: resolved.route?.pattern ?? "(instance default)",
+      winningAgent: resolved.agentId,
+    };
+  }
+
+  return null;
+}
+
+function printRouteLiveEffect(name: string, pattern: string, expectedAgent: string, channel?: string): void {
+  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  if (!winner) {
+    if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
+      console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+      return;
+    }
+    console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
+    return;
+  }
+
+  const verified = winner.winningPattern === pattern && winner.winningAgent === expectedAgent;
+  console.log(`  Live effect:   ${verified ? "verified" : "different winner"}`);
+  console.log(`  Winning route: ${winner.winningPattern}`);
+  console.log(`  Winning agent: ${winner.winningAgent}`);
 }
 
 function deleteConflictingSessions(pattern: string, targetAgent: string): number {
@@ -613,6 +696,56 @@ export class InstancesCommands {
       fail(`Error fetching status: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  @Command({ name: "target", description: "Explain which runtime, DB, and live instance this CLI would affect" })
+  target(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({
+      flags: "--pattern <pattern>",
+      description: "Optional exact pattern to inspect against the live resolver (e.g. group:123456)",
+    })
+    pattern?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Optional channel hint for live route inspection",
+    })
+    channel?: string,
+  ) {
+    const summary = inspectCliRuntimeTarget(name);
+    for (const line of formatCliRuntimeTarget(summary)) {
+      console.log(line);
+    }
+
+    if (!summary.instance?.exists) {
+      fail(`Instance not found: ${name}`);
+    }
+
+    if (!pattern) {
+      return;
+    }
+
+    const configuredRoute = dbGetRoute(pattern, name);
+    if (configuredRoute) {
+      console.log(`  Config route:  ${configuredRoute.pattern} → ${configuredRoute.agent}`);
+      printRouteLiveEffect(name, pattern, configuredRoute.agent, channel ?? configuredRoute.channel ?? undefined);
+      return;
+    }
+
+    const winner = inspectRouteLiveWinner(name, pattern, channel);
+    if (!winner) {
+      if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
+        console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+      } else {
+        console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
+      }
+      return;
+    }
+
+    console.log("  Config route:  (none)");
+    console.log("  Live effect:   different winner");
+    console.log(`  Winning route: ${winner.winningPattern}`);
+    console.log(`  Winning agent: ${winner.winningAgent}`);
+  }
 }
 
 // ============================================================================
@@ -693,6 +826,11 @@ export class InstancesRoutesCommands {
       description: "Limit route to a specific channel (e.g. whatsapp, telegram). Omit for all channels.",
     })
     channel?: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
     if (!dbGetAgent(agent))
@@ -707,6 +845,7 @@ export class InstancesRoutesCommands {
     }
     const pri = priority !== undefined ? parseInt(priority, 10) : 0;
     if (Number.isNaN(pri)) fail(`Invalid priority: ${priority}`);
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
       dbCreateRoute({
@@ -719,9 +858,11 @@ export class InstancesRoutesCommands {
         dmScope: dmScope as typeof DmScopeSchema._type | undefined,
         channel: channel ?? undefined,
       });
+      printInstanceMutationTarget(name);
       const policyLabel = policy ? ` [policy:${policy}]` : "";
       const channelLabel = channel ? ` [channel:${channel}]` : "";
       console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
+      printRouteLiveEffect(name, pattern, agent, channel);
       emitConfigChanged();
 
       // Remove from pending if applicable
@@ -751,10 +892,17 @@ export class InstancesRoutesCommands {
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
+      printInstanceMutationTarget(name);
       console.log(
         `✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`,
       );
@@ -768,9 +916,16 @@ export class InstancesRoutesCommands {
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
     const ok = dbRestoreRoute(pattern, name);
     if (ok) {
+      printInstanceMutationTarget(name);
       console.log(`✓ Route restored: ${pattern} (instance: ${name})`);
       emitConfigChanged();
     } else {
@@ -798,6 +953,11 @@ export class InstancesRoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: `Property key (${ROUTE_SETTABLE_KEYS.join(", ")})` }) key: string,
     @Arg("value", { description: "Property value (use '-' to clear)" }) value: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     if (!dbGetRoute(pattern, name)) fail(`Route not found: ${pattern} (instance: ${name})`);
@@ -828,10 +988,15 @@ export class InstancesRoutesCommands {
     } else if (key === "channel") {
       updates.channel = clear ? null : value;
     }
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
       dbUpdateRoute(pattern, updates, name);
+      printInstanceMutationTarget(name);
       console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
+      if (key === "agent" && !clear) {
+        printRouteLiveEffect(name, pattern, value, null);
+      }
       emitConfigChanged();
 
       if (key === "agent") {

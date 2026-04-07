@@ -16,6 +16,7 @@
 
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { getNats, ensureConnected } from "../nats.js";
+import { inferDeliveryBarrier } from "../delivery-barriers.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("session-stream");
@@ -128,6 +129,11 @@ export async function ensureSessionConsumer(jsm: JetStreamManager): Promise<void
  */
 export async function publishSessionPrompt(sessionName: string, payload: Record<string, unknown>): Promise<void> {
   const nc = await ensureConnected();
+  await ensureSessionPromptsStream();
   const js = nc.jetstream();
-  await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(payload)));
+  const enrichedPayload = {
+    ...payload,
+    deliveryBarrier: inferDeliveryBarrier(payload),
+  };
+  await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
 }

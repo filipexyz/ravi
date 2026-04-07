@@ -14,6 +14,8 @@
 
 import { hasRelation, listRelations } from "./relations.js";
 import { resolveToolGroup } from "../cli/tool-registry.js";
+import { getContext } from "../cli/context.js";
+import type { ContextCapability } from "../router/router-db.js";
 
 // ============================================================================
 // Core Engine
@@ -84,6 +86,60 @@ export function can(
   return false;
 }
 
+/**
+ * Check if a runtime context capability snapshot allows an action.
+ * This makes context leases the source of truth once a session is running.
+ */
+export function canWithCapabilities(
+  capabilities: ContextCapability[],
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  // 1. Superadmin capability
+  if (capabilities.some((cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*")) {
+    return true;
+  }
+
+  // 2. Direct relation
+  if (
+    capabilities.some(
+      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+    )
+  ) {
+    return true;
+  }
+
+  // 3. Wildcard on object_id
+  if (
+    objectId !== "*" &&
+    capabilities.some((cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === "*")
+  ) {
+    return true;
+  }
+
+  // 4. Pattern match
+  if (objectId !== "*") {
+    for (const cap of capabilities) {
+      if (cap.permission !== permission || cap.objectType !== objectType) continue;
+      if (cap.objectId.includes("*") && matchPattern(cap.objectId, objectId)) {
+        return true;
+      }
+    }
+  }
+
+  // 5. Tool group resolution
+  if (permission === "use" && objectType === "tool" && objectId !== "*") {
+    for (const cap of capabilities) {
+      if (cap.permission !== "use" || cap.objectType !== "toolgroup") continue;
+      const members = resolveToolGroup(cap.objectId);
+      if (members?.includes(objectId)) return true;
+    }
+  }
+
+  return false;
+}
+
 // ============================================================================
 // Scope Integration
 // ============================================================================
@@ -102,6 +158,11 @@ export function agentCan(
 ): boolean {
   // No agent context → always allowed (CLI direct)
   if (!agentId) return true;
+
+  const scopedCapabilities = getScopedCapabilities(agentId);
+  if (scopedCapabilities) {
+    return canWithCapabilities(scopedCapabilities, permission, objectType, objectId);
+  }
 
   return can("agent", agentId, permission, objectType, objectId);
 }
@@ -123,4 +184,11 @@ function matchPattern(pattern: string, value: string): boolean {
   }
 
   return false;
+}
+
+function getScopedCapabilities(agentId: string): ContextCapability[] | undefined {
+  const ctx = getContext();
+  if (!ctx?.context) return undefined;
+  if (ctx.agentId && ctx.agentId !== agentId) return undefined;
+  return ctx.context.capabilities;
 }
