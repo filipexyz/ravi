@@ -19,9 +19,12 @@ import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
 import { runSetup } from "./commands/setup.js";
+import { configureCliLogging } from "./logging.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
+
+configureCliLogging();
 
 const program = new Command();
 

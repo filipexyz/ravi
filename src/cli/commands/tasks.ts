@@ -2,7 +2,6 @@ import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
-import { logger } from "../../utils/logger.js";
 import {
   completeTask,
   createTask,
@@ -200,10 +199,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function silenceCliInfraLogs(): void {
-  logger.setLevel("error");
-}
-
 @Group({
   name: "tasks",
   description: "Task runtime for dispatching work to Ravi agents",
@@ -229,7 +224,6 @@ export class TaskCommands {
     worktreeBranch?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     if (!instructions?.trim()) {
       fail("--instructions is required");
     }
@@ -299,7 +293,6 @@ export class TaskCommands {
     @Option({ flags: "--mine", description: "Filter by current agent/session context" }) mine?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     const ctx = getContext();
     const tasks = listTasks({
       status: requireStatus(status),
@@ -338,7 +331,6 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     const details = getTaskDetails(taskId);
     if (!details.task) {
       fail(`Task not found: ${taskId}`);
@@ -384,7 +376,6 @@ export class TaskCommands {
     sessionName?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     if (!agentId?.trim()) {
       fail("--agent is required");
     }
@@ -420,7 +411,6 @@ export class TaskCommands {
     @Option({ flags: "--progress <n>", description: "Progress percentage 0-100" }) progress?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     const actor = getTaskActor();
     const progressValue = progress !== undefined ? Number.parseInt(progress, 10) : undefined;
     if (!message?.trim() && !Number.isFinite(progressValue)) {
@@ -449,7 +439,6 @@ export class TaskCommands {
     @Option({ flags: "--summary <text>", description: "Completion summary" }) summary?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     if (!summary?.trim()) {
       fail("--summary is required");
     }
@@ -476,7 +465,6 @@ export class TaskCommands {
     @Option({ flags: "--reason <text>", description: "Concrete blocker reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     if (!reason?.trim()) {
       fail("--reason is required");
     }
@@ -503,7 +491,6 @@ export class TaskCommands {
     @Option({ flags: "--reason <text>", description: "Failure reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     if (!reason?.trim()) {
       fail("--reason is required");
     }
@@ -529,7 +516,6 @@ export class TaskCommands {
     @Arg("taskId", { description: "Task ID (optional)", required: false }) taskId?: string,
     @Option({ flags: "--json", description: "Print raw JSONL events" }) asJson?: boolean,
   ) {
-    silenceCliInfraLogs();
     let lastSeenEventId = 0;
     if (taskId) {
       const details = getTaskDetails(taskId);

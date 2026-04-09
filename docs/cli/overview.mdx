@@ -3,6 +3,16 @@ title: CLI Reference
 description: Complete command reference for the ravi CLI — all groups, subcommands, arguments, and options extracted from source.
 ---
 
+## Output Contract
+
+`stdout` is reserved for the command payload only.
+
+- Human-readable command results and `--json` payloads are written to `stdout`.
+- User-facing CLI commands suppress infrastructure `INFO/WARN/DEBUG` logs by default.
+- When explicitly enabled for diagnosis, infrastructure logs and internal diagnostics go to `stderr`.
+- Set `RAVI_CLI_LOG_LEVEL=info` to opt into verbose CLI diagnostics temporarily.
+- Machine-readable modes like `ravi stream` also reserve `stdout` for protocol frames only.
+
 ## Setup
 
 ```bash
