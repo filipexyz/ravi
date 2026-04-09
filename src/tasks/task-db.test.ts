@@ -26,11 +26,15 @@ describe("task-db", () => {
       title: "Task DB Smoke",
       instructions: "Validate create -> dispatch -> report -> done",
       createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "dev",
     });
     createdTaskIds.push(created.task.id);
 
     expect(created.task.status).toBe("open");
     expect(created.event.type).toBe("task.created");
+    expect(created.task.createdByAgentId).toBe("main");
+    expect(created.task.createdBySessionName).toBe("dev");
 
     const dispatched = dbDispatchTask(created.task.id, {
       agentId: "dev",

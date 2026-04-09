@@ -67,6 +67,8 @@ export interface TaskStreamTaskEntity {
   priority: TaskPriority;
   progress: number;
   createdBy: string | null;
+  createdByAgentId: string | null;
+  createdBySessionName: string | null;
   assigneeAgentId: string | null;
   assigneeSessionName: string | null;
   worktree: TaskWorktreeConfig | null;
@@ -117,6 +119,8 @@ export interface TaskStreamEventPayload {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  createdByAgentId: string | null;
+  createdBySessionName: string | null;
   assigneeAgentId: string | null;
   assigneeSessionName: string | null;
   task: TaskStreamTaskEntity;
@@ -165,6 +169,8 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   title: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
+  createdByAgentId: z.string().trim().min(1).optional(),
+  createdBySessionName: z.string().trim().min(1).optional(),
   agentId: z.string().trim().min(1).optional(),
   createdBy: z.string().trim().min(1).optional(),
   assigneeAgentId: z.string().trim().min(1).optional(),
@@ -327,6 +333,8 @@ function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
     priority: task.priority,
     progress: task.progress,
     createdBy: task.createdBy ?? null,
+    createdByAgentId: task.createdByAgentId ?? null,
+    createdBySessionName: task.createdBySessionName ?? null,
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
     worktree: task.worktree ?? null,
@@ -400,6 +408,8 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     status: task.status,
     priority: task.priority,
     progress: task.progress,
+    createdByAgentId: task.createdByAgentId ?? null,
+    createdBySessionName: task.createdBySessionName ?? null,
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
     task: toTaskStreamEntity(task),
@@ -470,6 +480,8 @@ export async function executeTaskStreamCommand(
         instructions: args.instructions,
         priority: args.priority,
         createdBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
+        createdByAgentId: args.createdByAgentId,
+        createdBySessionName: args.createdBySessionName,
         ...(args.worktree ? { worktree: args.worktree } : {}),
       });
       await emitTaskEvent(created.task, created.event);

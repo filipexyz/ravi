@@ -20,6 +20,8 @@ interface TaskRow {
   priority: TaskRecord["priority"];
   progress: number;
   created_by: string | null;
+  created_by_agent_id: string | null;
+  created_by_session_name: string | null;
   assignee_agent_id: string | null;
   assignee_session_name: string | null;
   worktree_mode: string | null;
@@ -77,6 +79,12 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("worktree_branch")) {
     db.exec("ALTER TABLE tasks ADD COLUMN worktree_branch TEXT");
   }
+  if (!taskColumns.has("created_by_agent_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN created_by_agent_id TEXT");
+  }
+  if (!taskColumns.has("created_by_session_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN created_by_session_name TEXT");
+  }
 
   const assignmentColumns = new Set(
     (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -104,6 +112,8 @@ function ensureTaskSchema(): void {
       priority TEXT NOT NULL DEFAULT 'normal',
       progress INTEGER NOT NULL DEFAULT 0,
       created_by TEXT,
+      created_by_agent_id TEXT,
+      created_by_session_name TEXT,
       assignee_agent_id TEXT,
       assignee_session_name TEXT,
       worktree_mode TEXT,
@@ -186,6 +196,8 @@ function rowToTask(row: TaskRow): TaskRecord {
     priority: row.priority,
     progress: row.progress,
     ...(row.created_by ? { createdBy: row.created_by } : {}),
+    ...(row.created_by_agent_id ? { createdByAgentId: row.created_by_agent_id } : {}),
+    ...(row.created_by_session_name ? { createdBySessionName: row.created_by_session_name } : {}),
     ...(row.assignee_agent_id ? { assigneeAgentId: row.assignee_agent_id } : {}),
     ...(row.assignee_session_name ? { assigneeSessionName: row.assignee_session_name } : {}),
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
@@ -307,15 +319,17 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
 
   db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, priority, progress, created_by, worktree_mode, worktree_path, worktree_branch,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?)
+      id, title, instructions, status, priority, progress, created_by, created_by_agent_id, created_by_session_name,
+      worktree_mode, worktree_path, worktree_branch, created_at, updated_at
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
     input.instructions,
     input.priority ?? "normal",
     input.createdBy ?? null,
+    input.createdByAgentId ?? null,
+    input.createdBySessionName ?? null,
     worktreeMode,
     worktreePath,
     worktreeBranch,

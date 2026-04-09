@@ -47,6 +47,8 @@ mock.module("../../tasks/index.js", () => ({
         priority: input.priority ?? "normal",
         progress: 0,
         createdBy: input.createdBy,
+        createdByAgentId: input.createdByAgentId,
+        createdBySessionName: input.createdBySessionName,
         worktree: input.worktree,
         createdAt: 1,
         updatedAt: 1,
@@ -155,6 +157,8 @@ describe("TaskCommands create", () => {
       instructions: "do the thing",
       priority: "high",
       createdBy: "dev-session",
+      createdByAgentId: "dev",
+      createdBySessionName: "dev-session",
     });
     expect(dispatchCalls).toHaveLength(0);
     expect(emittedEvents.map((event) => event.type)).toEqual(["task.created"]);
@@ -183,6 +187,11 @@ describe("TaskCommands create", () => {
     }
 
     expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      createdBy: "dev-session",
+      createdByAgentId: "dev",
+      createdBySessionName: "dev-session",
+    });
     expect(createCalls[0]?.worktree).toEqual({
       mode: "path",
       path: "../feature-worktree",

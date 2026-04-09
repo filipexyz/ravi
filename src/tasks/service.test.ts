@@ -26,6 +26,8 @@ describe("task substrate contract", () => {
       title: "Stream payload smoke",
       instructions: "Create an event payload with the canonical task entity",
       createdBy: "test",
+      createdByAgentId: "main",
+      createdBySessionName: "dev",
       worktree: {
         mode: "path",
         path: "../stream-worktree",
@@ -39,6 +41,10 @@ describe("task substrate contract", () => {
     expect(payload.kind).toBe("task.event");
     expect(payload.task.id).toBe(created.task.id);
     expect(payload.task.createdBy).toBe("test");
+    expect(payload.task.createdByAgentId).toBe("main");
+    expect(payload.task.createdBySessionName).toBe("dev");
+    expect(payload.createdByAgentId).toBe("main");
+    expect(payload.createdBySessionName).toBe("dev");
     expect(payload.task.worktree).toEqual({
       mode: "path",
       path: "../stream-worktree",

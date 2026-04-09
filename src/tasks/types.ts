@@ -26,6 +26,8 @@ export interface TaskRecord {
   priority: TaskPriority;
   progress: number;
   createdBy?: string;
+  createdByAgentId?: string;
+  createdBySessionName?: string;
   assigneeAgentId?: string;
   assigneeSessionName?: string;
   worktree?: TaskWorktreeConfig;
@@ -68,6 +70,8 @@ export interface CreateTaskInput {
   instructions: string;
   priority?: TaskPriority;
   createdBy?: string;
+  createdByAgentId?: string;
+  createdBySessionName?: string;
   worktree?: TaskWorktreeConfig;
 }
 

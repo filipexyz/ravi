@@ -240,12 +240,14 @@ export class TaskCommands {
     }
 
     const worktree = requireTaskWorktree(worktreeMode, worktreePath, worktreeBranch);
-    const actor = getTaskActor().actor;
+    const actor = getTaskActor();
     const created = createTask({
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
-      createdBy: actor,
+      createdBy: actor.actor,
+      createdByAgentId: actor.agentId,
+      createdBySessionName: actor.sessionName,
       ...(worktree ? { worktree } : {}),
     });
     await emitTaskEvent(created.task, created.event);
@@ -256,7 +258,7 @@ export class TaskCommands {
       dispatched = await dispatchTask(created.task.id, {
         agentId: assigneeAgentId,
         sessionName: sessionName?.trim() || getDefaultTaskSessionName(created.task.id),
-        assignedBy: actor,
+        assignedBy: actor.actor,
         ...(worktree ? { worktree } : {}),
       });
       await emitTaskEvent(dispatched.task, dispatched.event);
