@@ -3,21 +3,27 @@ import { nats } from "../nats.js";
 import { expandHome, loadRouterConfig } from "../router/index.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { rmSync } from "node:fs";
 import { isAbsolute, resolve as resolvePath } from "node:path";
 import { z } from "zod";
 import {
+  dbAppendTaskEvent,
   dbCompleteTask,
   dbCreateTask,
+  dbDeleteTask,
   dbDispatchTask,
   dbFailTask,
   dbBlockTask,
   dbGetTask,
   dbGetActiveAssignment,
   dbListAssignments,
+  dbListChildTasks,
   dbListTaskEvents,
   dbListTasks,
   dbReportTaskProgress,
+  dbSetTaskDir,
 } from "./task-db.js";
+import { getCanonicalTaskDir, getTaskDocPath, taskDocExists, writeTaskDoc, type TaskDocSection } from "./task-doc.js";
 import type {
   CreateTaskInput,
   DispatchTaskInput,
@@ -66,6 +72,8 @@ export interface TaskStreamTaskEntity {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  parentTaskId: string | null;
+  taskDir: string | null;
   createdBy: string | null;
   createdByAgentId: string | null;
   createdBySessionName: string | null;
@@ -94,6 +102,8 @@ export interface TaskStreamStats {
 
 export interface TaskStreamSelection {
   task: TaskStreamTaskEntity;
+  parentTask: TaskStreamTaskEntity | null;
+  childTasks: TaskStreamTaskEntity[];
   activeAssignment: TaskAssignment | null;
   assignments: TaskAssignment[];
   events: TaskEvent[];
@@ -119,6 +129,7 @@ export interface TaskStreamEventPayload {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  parentTaskId: string | null;
   createdByAgentId: string | null;
   createdBySessionName: string | null;
   assigneeAgentId: string | null;
@@ -169,6 +180,7 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   title: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
+  parentTaskId: z.string().trim().min(1).optional(),
   createdByAgentId: z.string().trim().min(1).optional(),
   createdBySessionName: z.string().trim().min(1).optional(),
   agentId: z.string().trim().min(1).optional(),
@@ -271,6 +283,88 @@ export function formatTaskWorktree(worktree?: TaskWorktreeConfig | null): string
   return `${worktree.path}${worktree.branch ? ` (branch ${worktree.branch})` : ""}`;
 }
 
+function buildTaskDocSection(title: string, timestamp: number | undefined, lines: string[]): TaskDocSection {
+  return {
+    title,
+    timestamp,
+    lines,
+  };
+}
+
+function buildTaskCreatedDocSection(task: TaskRecord, event: TaskEvent): TaskDocSection {
+  return buildTaskDocSection("Task Created", event.createdAt, [
+    `Status inicial: \`${task.status}\``,
+    `Prioridade: \`${task.priority}\``,
+    ...(task.parentTaskId ? [`Task pai: \`${task.parentTaskId}\``] : []),
+    "TASK.md inicializado pelo task runtime.",
+  ]);
+}
+
+function buildTaskMaterializedDocSection(task: TaskRecord): TaskDocSection {
+  return buildTaskDocSection("Task Document Materialized", task.updatedAt, [
+    "TASK.md materializado a partir do estado atual do runtime.",
+    `Status atual: \`${task.status}\``,
+    `Progresso atual: \`${task.progress}%\``,
+    ...(task.parentTaskId ? [`Task pai: \`${task.parentTaskId}\``] : []),
+  ]);
+}
+
+function buildChildTerminalEventType(
+  task: TaskRecord,
+): Extract<TaskEvent["type"], "task.child.done" | "task.child.failed"> {
+  return task.status === "done" ? "task.child.done" : "task.child.failed";
+}
+
+function buildChildTerminalCallbackMessage(task: TaskRecord, event: TaskEvent): string {
+  const summary = event.message ?? task.summary ?? task.blockerReason ?? task.status;
+  return [
+    `Task filha ${task.id} (${task.title}) terminalizou com status ${task.status}.`,
+    `Assignee: ${task.assigneeAgentId ?? "-"}.`,
+    `Session: ${task.assigneeSessionName ?? "-"}.`,
+    `TASK.md: ${getTaskDocPath(task)}.`,
+    `Resumo: ${summary}.`,
+  ].join(" ");
+}
+
+function buildChildTerminalDocSection(task: TaskRecord, callbackEvent: TaskEvent): TaskDocSection {
+  const summary = task.summary ?? task.blockerReason ?? task.status;
+  const title = task.status === "done" ? "Child Task Done" : "Child Task Failed";
+  return buildTaskDocSection(title, callbackEvent.createdAt, [
+    `Filha: \`${task.id}\` - ${task.title}`,
+    `Status final: \`${task.status}\``,
+    `Assignee: \`${task.assigneeAgentId ?? "-"}\``,
+    `Session: \`${task.assigneeSessionName ?? "-"}\``,
+    `TASK.md: \`${getTaskDocPath(task)}\``,
+    `Resumo: ${summary}`,
+  ]);
+}
+
+function ensureTaskDocument(
+  task: TaskRecord,
+  options: {
+    initializeSection?: TaskDocSection;
+  } = {},
+): TaskRecord {
+  let ensuredTask = task;
+  let initializeSection = options.initializeSection;
+
+  if (!ensuredTask.taskDir) {
+    ensuredTask = dbSetTaskDir(ensuredTask.id, getCanonicalTaskDir(ensuredTask.id));
+  }
+
+  if (!taskDocExists(ensuredTask) && !initializeSection) {
+    initializeSection = buildTaskMaterializedDocSection(ensuredTask);
+  }
+
+  if (!taskDocExists(ensuredTask)) {
+    writeTaskDoc(ensuredTask, {
+      ...(initializeSection ? { initializeSection } : {}),
+    });
+  }
+
+  return ensuredTask;
+}
+
 function resolveTaskSessionWorkspace(
   agentCwd: string,
   worktree?: TaskWorktreeConfig,
@@ -332,6 +426,8 @@ function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
     status: task.status,
     priority: task.priority,
     progress: task.progress,
+    parentTaskId: task.parentTaskId ?? null,
+    taskDir: task.taskDir ?? null,
     createdBy: task.createdBy ?? null,
     createdByAgentId: task.createdByAgentId ?? null,
     createdBySessionName: task.createdBySessionName ?? null,
@@ -408,6 +504,7 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     status: task.status,
     priority: task.priority,
     progress: task.progress,
+    parentTaskId: task.parentTaskId ?? null,
     createdByAgentId: task.createdByAgentId ?? null,
     createdBySessionName: task.createdBySessionName ?? null,
     assigneeAgentId: task.assigneeAgentId ?? null,
@@ -439,6 +536,8 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
       artifacts: createTaskArtifactPlaceholder(),
       selectedTask: {
         task: toTaskStreamEntity(details.task),
+        parentTask: details.parentTask ? toTaskStreamEntity(details.parentTask) : null,
+        childTasks: details.childTasks.map(toTaskStreamEntity),
         activeAssignment: details.activeAssignment,
         assignments: details.assignments,
         events: details.events.slice(-parsed.eventsLimit),
@@ -479,6 +578,7 @@ export async function executeTaskStreamCommand(
         title: args.title,
         instructions: args.instructions,
         priority: args.priority,
+        ...(args.parentTaskId ? { parentTaskId: args.parentTaskId } : {}),
         createdBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
         createdByAgentId: args.createdByAgentId,
         createdBySessionName: args.createdBySessionName,
@@ -549,17 +649,20 @@ export async function executeTaskStreamCommand(
 
     case "task.done": {
       const args = TaskDoneCommandArgsSchema.parse(rawArgs);
-      const { task, event } = completeTask(args.taskId, {
+      const completion = completeTask(args.taskId, {
         ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
         ...(args.agentId ? { agentId: args.agentId } : {}),
         ...(args.sessionName ? { sessionName: args.sessionName } : {}),
         message: args.summary,
       });
-      await emitTaskEvent(task, event);
+      await emitTaskEvent(completion.task, completion.event);
+      for (const relatedEvent of completion.relatedEvents) {
+        await emitTaskEvent(relatedEvent.task, relatedEvent.event);
+      }
       return {
         action: name,
-        task: toTaskStreamEntity(task),
-        event,
+        task: toTaskStreamEntity(completion.task),
+        event: completion.event,
       };
     }
 
@@ -581,17 +684,20 @@ export async function executeTaskStreamCommand(
 
     case "task.fail": {
       const args = TaskFailCommandArgsSchema.parse(rawArgs);
-      const { task, event } = failTask(args.taskId, {
+      const failure = failTask(args.taskId, {
         ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
         ...(args.agentId ? { agentId: args.agentId } : {}),
         ...(args.sessionName ? { sessionName: args.sessionName } : {}),
         message: args.reason,
       });
-      await emitTaskEvent(task, event);
+      await emitTaskEvent(failure.task, failure.event);
+      for (const relatedEvent of failure.relatedEvents) {
+        await emitTaskEvent(relatedEvent.task, relatedEvent.event);
+      }
       return {
         action: name,
-        task: toTaskStreamEntity(task),
-        event,
+        task: toTaskStreamEntity(failure.task),
+        event: failure.event,
       };
     }
   }
@@ -614,7 +720,10 @@ export function getTaskActor(): { actor?: string; agentId?: string; sessionName?
 }
 
 export async function emitTaskEvent(task: TaskRecord, event: TaskEvent): Promise<void> {
-  await nats.emit(`${TASK_EVENT_PREFIX}.${task.id}.event`, buildTaskEventPayload(task, event));
+  await nats.emit(
+    `${TASK_EVENT_PREFIX}.${task.id}.event`,
+    buildTaskEventPayload(task, event) as unknown as Record<string, unknown>,
+  );
 }
 
 export function buildTaskDispatchPrompt(
@@ -624,6 +733,7 @@ export function buildTaskDispatchPrompt(
   options: {
     effectiveCwd: string;
     worktree?: TaskWorktreeConfig;
+    taskDocPath: string;
   },
 ): string {
   return `[System] Execute: Você assumiu a task ${task.id} no Ravi.
@@ -636,27 +746,34 @@ Agent responsável: ${agentId}
 Contexto operacional:
 - diretório efetivo: ${options.effectiveCwd}
 - worktree: ${formatTaskWorktree(options.worktree)}
+- task pai: ${task.parentTaskId ?? "-"}
+- TASK.md: ${options.taskDocPath}
 
 Objetivo:
 ${task.instructions}
 
+Instruções de execução:
+- carregue a skill \`ravi-system-tasks-manager\` antes de editar a task
+- trabalhe a partir de ${options.taskDocPath}
+- faça toda escrita primeiro no TASK.md
+- depois de editar o frontmatter/corpo, use \`ravi tasks ...\` para o runtime reconhecer as mudanças
+
 Flow obrigatório:
-1. Comece reportando progresso:
-   ravi tasks report ${task.id} --progress 5 --message "assumi a task e comecei a investigar"
-2. Sempre que avançar de verdade:
-   ravi tasks report ${task.id} --progress <0-100> --message "<o que mudou>"
-3. Se travar:
-   ravi tasks block ${task.id} --reason "<bloqueio concreto>"
-4. Se der erro terminal:
-   ravi tasks fail ${task.id} --reason "<falha concreta>"
-5. Quando concluir:
-   ravi tasks done ${task.id} --summary "<o que foi entregue>"
+1. Abra o TASK.md e atualize o frontmatter/corpo seguindo a skill.
+2. Ao iniciar ou avançar de verdade, sincronize:
+   ravi tasks report ${task.id}
+3. Se travar, registre no TASK.md e sincronize:
+   ravi tasks block ${task.id}
+4. Se der erro terminal, registre no TASK.md e sincronize:
+   ravi tasks fail ${task.id}
+5. Quando concluir, registre no TASK.md e sincronize:
+   ravi tasks done ${task.id}
 
 Regras:
 - trabalhe nesta sessão até concluir ou bloquear
 - não responda descrevendo o protocolo
 - use o CLI de tasks para atualizar o estado real da task
-- progresso é binário e operacional, não narrativo`;
+- o corpo rico da task vive no TASK.md; DB/NATS continuam sendo a fonte autoritativa do estado`;
 }
 
 export function buildTaskResumePrompt(
@@ -666,6 +783,7 @@ export function buildTaskResumePrompt(
   options: {
     effectiveCwd: string;
     worktree?: TaskWorktreeConfig;
+    taskDocPath: string;
   },
 ): string {
   return `[System] Execute: O daemon do Ravi reiniciou enquanto você trabalhava na task ${task.id}.
@@ -680,20 +798,28 @@ Agent responsável: ${agentId}
 Contexto operacional:
 - diretório efetivo: ${options.effectiveCwd}
 - worktree: ${formatTaskWorktree(options.worktree)}
+- task pai: ${task.parentTaskId ?? "-"}
+- TASK.md: ${options.taskDocPath}
 
 Objetivo:
 ${task.instructions}
 
+Instruções de retomada:
+- carregue a skill \`ravi-system-tasks-manager\` antes de editar a task
+- retome a partir de ${options.taskDocPath}
+- faça toda escrita primeiro no TASK.md
+- depois de editar o frontmatter/corpo, use \`ravi tasks ...\` para o runtime reconhecer as mudanças
+
 Flow obrigatório de retomada:
 1. Retome do ponto onde parou; não recomece do zero.
-2. No primeiro avanço real depois da retomada:
-   ravi tasks report ${task.id} --progress <${Math.max(task.progress, 5)}-100> --message "retomei a task apos restart e avancei em <o que mudou>"
-3. Se travar:
-   ravi tasks block ${task.id} --reason "<bloqueio concreto>"
-4. Se der erro terminal:
-   ravi tasks fail ${task.id} --reason "<falha concreta>"
-5. Quando concluir:
-   ravi tasks done ${task.id} --summary "<o que foi entregue>"
+2. Atualize o TASK.md com o que avançou após a retomada e sincronize:
+   ravi tasks report ${task.id}
+3. Se travar, registre no TASK.md e sincronize:
+   ravi tasks block ${task.id}
+4. Se der erro terminal, registre no TASK.md e sincronize:
+   ravi tasks fail ${task.id}
+5. Quando concluir, registre no TASK.md e sincronize:
+   ravi tasks done ${task.id}
 
 Regras:
 - trabalhe nesta sessão até concluir ou bloquear
@@ -703,7 +829,25 @@ Regras:
 }
 
 export function createTask(input: CreateTaskInput): { task: TaskRecord; event: TaskEvent } {
-  return dbCreateTask(input);
+  if (input.parentTaskId) {
+    const parentTask = dbGetTask(input.parentTaskId);
+    if (!parentTask) {
+      throw new Error(`Parent task not found: ${input.parentTaskId}`);
+    }
+  }
+
+  const created = dbCreateTask(input);
+
+  try {
+    const task = ensureTaskDocument(created.task, {
+      initializeSection: buildTaskCreatedDocSection(created.task, created.event),
+    });
+    return { task, event: created.event };
+  } catch (error) {
+    dbDeleteTask(created.task.id);
+    rmSync(getCanonicalTaskDir(created.task.id), { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export function listTasks(options: ListTasksOptions = {}): TaskRecord[] {
@@ -712,16 +856,61 @@ export function listTasks(options: ListTasksOptions = {}): TaskRecord[] {
 
 export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
+  parentTask: TaskRecord | null;
+  childTasks: TaskRecord[];
   activeAssignment: ReturnType<typeof dbGetActiveAssignment>;
   assignments: ReturnType<typeof dbListAssignments>;
   events: ReturnType<typeof dbListTaskEvents>;
 } {
+  const task = dbGetTask(taskId);
+  const documentedTask = task ? ensureTaskDocument(task) : null;
+  const parentTask =
+    documentedTask?.parentTaskId && dbGetTask(documentedTask.parentTaskId)
+      ? ensureTaskDocument(dbGetTask(documentedTask.parentTaskId)!)
+      : null;
   return {
-    task: dbGetTask(taskId),
+    task: documentedTask,
+    parentTask,
+    childTasks: documentedTask
+      ? dbListChildTasks(documentedTask.id).map((childTask) => ensureTaskDocument(childTask))
+      : [],
     activeAssignment: dbGetActiveAssignment(taskId),
     assignments: dbListAssignments(taskId),
     events: dbListTaskEvents(taskId, 200),
   };
+}
+
+function buildTerminalTaskRelatedEvents(
+  task: TaskRecord,
+  event: TaskEvent,
+): Array<{ task: TaskRecord; event: TaskEvent }> {
+  if (!task.parentTaskId || (task.status !== "done" && task.status !== "failed")) {
+    return [];
+  }
+
+  const parentTask = dbGetTask(task.parentTaskId);
+  if (!parentTask) {
+    return [];
+  }
+
+  const callback = dbAppendTaskEvent(
+    parentTask.id,
+    buildChildTerminalEventType(task),
+    {
+      actor: event.actor,
+      agentId: task.assigneeAgentId ?? event.agentId,
+      sessionName: task.assigneeSessionName ?? event.sessionName,
+      message: buildChildTerminalCallbackMessage(task, event),
+      progress: task.progress,
+      relatedTaskId: task.id,
+    },
+    { touchTask: true },
+  );
+  const documentedParent = ensureTaskDocument(callback.task);
+  writeTaskDoc(documentedParent, {
+    appendSection: buildChildTerminalDocSection(task, callback.event),
+  });
+  return [{ task: documentedParent, event: callback.event }];
 }
 
 export async function dispatchTask(
@@ -748,18 +937,21 @@ export async function dispatchTask(
     sessionName,
     ...(worktree ? { worktree } : {}),
   });
+  const documentedTask = ensureTaskDocument(task);
+  const taskDocPath = getTaskDocPath(documentedTask);
 
-  const prompt = buildTaskDispatchPrompt(task, input.agentId, sessionName, {
+  const prompt = buildTaskDispatchPrompt(documentedTask, input.agentId, sessionName, {
     effectiveCwd,
     worktree,
+    taskDocPath,
   });
   await publishSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
-    taskBarrierTaskId: task.id,
+    taskBarrierTaskId: documentedTask.id,
   });
 
-  return { task, event, sessionName };
+  return { task: documentedTask, event, sessionName };
 }
 
 export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
@@ -785,22 +977,24 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
       }
 
       try {
+        const documentedTask = ensureTaskDocument(task);
         const { sessionName, effectiveCwd, worktree } = resolveTaskSessionContext(
-          task,
+          documentedTask,
           assignment.agentId,
           assignment.sessionName,
-          assignment.worktree ?? task.worktree,
+          assignment.worktree ?? documentedTask.worktree,
         );
-        const prompt = buildTaskResumePrompt(task, assignment.agentId, sessionName, {
+        const prompt = buildTaskResumePrompt(documentedTask, assignment.agentId, sessionName, {
           effectiveCwd,
           worktree,
+          taskDocPath: getTaskDocPath(documentedTask),
         });
         await publishSessionPrompt(sessionName, {
           prompt,
           deliveryBarrier: "after_task",
-          taskBarrierTaskId: task.id,
+          taskBarrierTaskId: documentedTask.id,
         });
-        recoveredTaskIds.push(task.id);
+        recoveredTaskIds.push(documentedTask.id);
       } catch (error) {
         skipped.push({
           taskId: task.id,
@@ -821,10 +1015,32 @@ export function blockTask(taskId: string, input: TaskTerminalInput): { task: Tas
   return dbBlockTask(taskId, input);
 }
 
-export function failTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {
-  return dbFailTask(taskId, input);
+export function failTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+} {
+  const result = dbFailTask(taskId, input);
+  return {
+    ...result,
+    relatedEvents: buildTerminalTaskRelatedEvents(result.task, result.event),
+  };
 }
 
-export function completeTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {
-  return dbCompleteTask(taskId, input);
+export function completeTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+} {
+  const result = dbCompleteTask(taskId, input);
+  return {
+    ...result,
+    relatedEvents: buildTerminalTaskRelatedEvents(result.task, result.event),
+  };
 }

@@ -7,6 +7,7 @@ import {
   dbDispatchTask,
   dbGetActiveAssignment,
   dbGetTask,
+  dbListChildTasks,
   dbListTaskEvents,
   dbReportTaskProgress,
 } from "./task-db.js";
@@ -209,5 +210,23 @@ describe("task-db", () => {
       path: "/tmp/ravi-task-worktree",
       branch: "feature/task-runtime",
     });
+  });
+
+  it("persists parent-child lineage in the runtime", () => {
+    const parent = dbCreateTask({
+      title: "Parent task",
+      instructions: "Owns child work",
+      createdBy: "test",
+    });
+    const child = dbCreateTask({
+      title: "Child task",
+      instructions: "Linked to the parent task",
+      createdBy: "test",
+      parentTaskId: parent.task.id,
+    });
+    createdTaskIds.push(parent.task.id, child.task.id);
+
+    expect(dbGetTask(child.task.id)?.parentTaskId).toBe(parent.task.id);
+    expect(dbListChildTasks(parent.task.id).map((task) => task.id)).toEqual([child.task.id]);
   });
 });

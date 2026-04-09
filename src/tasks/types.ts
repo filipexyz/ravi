@@ -10,7 +10,9 @@ export type TaskEventType =
   | "task.progress"
   | "task.blocked"
   | "task.done"
-  | "task.failed";
+  | "task.failed"
+  | "task.child.done"
+  | "task.child.failed";
 
 export interface TaskWorktreeConfig {
   mode: TaskWorktreeMode;
@@ -25,6 +27,8 @@ export interface TaskRecord {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  parentTaskId?: string;
+  taskDir?: string;
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
@@ -62,6 +66,7 @@ export interface TaskEvent {
   sessionName?: string;
   message?: string;
   progress?: number;
+  relatedTaskId?: string;
   createdAt: number;
 }
 
@@ -72,6 +77,7 @@ export interface CreateTaskInput {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+  parentTaskId?: string;
   worktree?: TaskWorktreeConfig;
 }
 
@@ -101,4 +107,5 @@ export interface ListTasksOptions {
   status?: TaskStatus;
   agentId?: string;
   sessionName?: string;
+  parentTaskId?: string;
 }

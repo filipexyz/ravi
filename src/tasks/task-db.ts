@@ -19,6 +19,8 @@ interface TaskRow {
   status: TaskRecord["status"];
   priority: TaskRecord["priority"];
   progress: number;
+  parent_task_id: string | null;
+  task_dir: string | null;
   created_by: string | null;
   created_by_agent_id: string | null;
   created_by_session_name: string | null;
@@ -60,6 +62,7 @@ interface TaskEventRow {
   session_name: string | null;
   message: string | null;
   progress: number | null;
+  related_task_id: string | null;
   created_at: number;
 }
 
@@ -85,6 +88,12 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("created_by_session_name")) {
     db.exec("ALTER TABLE tasks ADD COLUMN created_by_session_name TEXT");
   }
+  if (!taskColumns.has("parent_task_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN parent_task_id TEXT");
+  }
+  if (!taskColumns.has("task_dir")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN task_dir TEXT");
+  }
 
   const assignmentColumns = new Set(
     (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -97,6 +106,13 @@ function applyTaskWorktreeSchemaMigrations(): void {
   }
   if (!assignmentColumns.has("worktree_branch")) {
     db.exec("ALTER TABLE task_assignments ADD COLUMN worktree_branch TEXT");
+  }
+
+  const eventColumns = new Set(
+    (db.prepare("PRAGMA table_info(task_events)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!eventColumns.has("related_task_id")) {
+    db.exec("ALTER TABLE task_events ADD COLUMN related_task_id TEXT");
   }
 }
 
@@ -111,6 +127,8 @@ function ensureTaskSchema(): void {
       status TEXT NOT NULL,
       priority TEXT NOT NULL DEFAULT 'normal',
       progress INTEGER NOT NULL DEFAULT 0,
+      parent_task_id TEXT,
+      task_dir TEXT,
       created_by TEXT,
       created_by_agent_id TEXT,
       created_by_session_name TEXT,
@@ -153,6 +171,7 @@ function ensureTaskSchema(): void {
       session_name TEXT,
       message TEXT,
       progress INTEGER,
+      related_task_id TEXT,
       created_at INTEGER NOT NULL,
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
@@ -164,6 +183,7 @@ function ensureTaskSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at ASC);
   `);
   applyTaskWorktreeSchemaMigrations();
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
   schemaReady = true;
 }
 
@@ -195,6 +215,8 @@ function rowToTask(row: TaskRow): TaskRecord {
     status: row.status,
     priority: row.priority,
     progress: row.progress,
+    ...(row.parent_task_id ? { parentTaskId: row.parent_task_id } : {}),
+    ...(row.task_dir ? { taskDir: row.task_dir } : {}),
     ...(row.created_by ? { createdBy: row.created_by } : {}),
     ...(row.created_by_agent_id ? { createdByAgentId: row.created_by_agent_id } : {}),
     ...(row.created_by_session_name ? { createdBySessionName: row.created_by_session_name } : {}),
@@ -240,6 +262,7 @@ function rowToEvent(row: TaskEventRow): TaskEvent {
     ...(row.session_name ? { sessionName: row.session_name } : {}),
     ...(row.message ? { message: row.message } : {}),
     ...(typeof row.progress === "number" ? { progress: row.progress } : {}),
+    ...(row.related_task_id ? { relatedTaskId: row.related_task_id } : {}),
     createdAt: row.created_at,
   };
 }
@@ -261,6 +284,7 @@ function appendTaskEvent(
     sessionName?: string;
     message?: string;
     progress?: number;
+    relatedTaskId?: string;
   },
 ): TaskEvent {
   ensureTaskSchema();
@@ -268,8 +292,8 @@ function appendTaskEvent(
   const now = Date.now();
   const statement = db.prepare(`
     INSERT INTO task_events (
-      task_id, type, actor, agent_id, session_name, message, progress, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      task_id, type, actor, agent_id, session_name, message, progress, related_task_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   statement.run(
     taskId,
@@ -279,6 +303,7 @@ function appendTaskEvent(
     input.sessionName ?? null,
     input.message ?? null,
     typeof input.progress === "number" ? Math.max(0, Math.min(100, Math.round(input.progress))) : null,
+    input.relatedTaskId ?? null,
     now,
   );
   const row = db.prepare("SELECT * FROM task_events WHERE id = last_insert_rowid()").get() as TaskEventRow | undefined;
@@ -319,14 +344,15 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
 
   db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, priority, progress, created_by, created_by_agent_id, created_by_session_name,
-      worktree_mode, worktree_path, worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, title, instructions, status, priority, progress, parent_task_id, task_dir, created_by, created_by_agent_id,
+      created_by_session_name, worktree_mode, worktree_path, worktree_branch, created_at, updated_at
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
     input.instructions,
     input.priority ?? "normal",
+    input.parentTaskId ?? null,
     input.createdBy ?? null,
     input.createdByAgentId ?? null,
     input.createdBySessionName ?? null,
@@ -343,6 +369,17 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
     progress: 0,
   });
   return { task: getTaskOrThrow(id), event };
+}
+
+export function dbSetTaskDir(taskId: string, taskDir: string): TaskRecord {
+  ensureTaskSchema();
+  const db = getDb();
+  db.prepare(`
+    UPDATE tasks
+    SET task_dir = ?
+    WHERE id = ?
+  `).run(taskDir, taskId);
+  return getTaskOrThrow(taskId);
 }
 
 export function dbGetTask(id: string): TaskRecord | null {
@@ -370,9 +407,22 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     filters.push("assignee_session_name = ?");
     params.push(options.sessionName);
   }
+  if (options.parentTaskId) {
+    filters.push("parent_task_id = ?");
+    params.push(options.parentTaskId);
+  }
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const rows = db.prepare(`SELECT * FROM tasks ${where} ORDER BY updated_at DESC`).all(...params) as TaskRow[];
+  return rows.map(rowToTask);
+}
+
+export function dbListChildTasks(parentTaskId: string): TaskRecord[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC")
+    .all(parentTaskId) as TaskRow[];
   return rows.map(rowToTask);
 }
 
@@ -642,4 +692,35 @@ export function dbDeleteTask(taskId: string): boolean {
   const db = getDb();
   const result = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   return result.changes > 0;
+}
+
+export function dbAppendTaskEvent(
+  taskId: string,
+  type: TaskEvent["type"],
+  input: {
+    actor?: string;
+    agentId?: string;
+    sessionName?: string;
+    message?: string;
+    progress?: number;
+    relatedTaskId?: string;
+  },
+  options: {
+    touchTask?: boolean;
+  } = {},
+): { task: TaskRecord; event: TaskEvent } {
+  ensureTaskSchema();
+  const db = getDb();
+  getTaskOrThrow(taskId);
+
+  if (options.touchTask) {
+    db.prepare(`
+      UPDATE tasks
+      SET updated_at = ?
+      WHERE id = ?
+    `).run(Date.now(), taskId);
+  }
+
+  const event = appendTaskEvent(taskId, type, input);
+  return { task: getTaskOrThrow(taskId), event };
 }

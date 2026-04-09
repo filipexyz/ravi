@@ -10,9 +10,11 @@ import {
   emitTaskEvent,
   formatTaskWorktree,
   getDefaultTaskSessionName,
+  getTaskDocPath,
   getTaskActor,
   getTaskDetails,
   listTasks,
+  readTaskDocFrontmatter,
   reportTaskProgress,
   blockTask,
   failTask,
@@ -103,15 +105,50 @@ function printTaskSummary(task: TaskRecord): void {
   console.log(`Status:      ${formatTaskStatus(task.status)}`);
   console.log(`Priority:    ${task.priority}`);
   console.log(`Progress:    ${task.progress}%`);
+  if (task.parentTaskId) console.log(`Parent:      ${task.parentTaskId}`);
   console.log(`Agent:       ${task.assigneeAgentId ?? "-"}`);
   console.log(`Session:     ${task.assigneeSessionName ?? "-"}`);
   if (task.worktree) console.log(`Worktree:    ${formatTaskWorktree(task.worktree)}`);
+  if (task.taskDir) console.log(`Task dir:    ${task.taskDir}`);
+  if (task.taskDir) console.log(`TASK.md:     ${getTaskDocPath(task)}`);
   console.log(`Created:     ${formatTime(task.createdAt)}`);
   console.log(`Updated:     ${formatTime(task.updatedAt)} (${timeAgo(task.updatedAt)})`);
   if (task.summary) console.log(`Summary:     ${task.summary}`);
   if (task.blockerReason) console.log(`Blocked by:  ${task.blockerReason}`);
   console.log("\nInstructions:");
   console.log(`  ${task.instructions.split("\n").join("\n  ")}`);
+}
+
+function buildTaskDocumentSummary(task: TaskRecord) {
+  return {
+    taskDir: task.taskDir ?? null,
+    path: getTaskDocPath(task),
+    frontmatter: readTaskDocFrontmatter(task),
+  };
+}
+
+function buildTaskLineageNode(task: TaskRecord) {
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    progress: task.progress,
+    assigneeAgentId: task.assigneeAgentId ?? null,
+    assigneeSessionName: task.assigneeSessionName ?? null,
+    taskDir: task.taskDir ?? null,
+    path: getTaskDocPath(task),
+  };
+}
+
+async function emitMutationEvents(result: {
+  task: TaskRecord;
+  event: TaskEvent;
+  relatedEvents?: Array<{ task: TaskRecord; event: TaskEvent }>;
+}) {
+  await emitTaskEvent(result.task, result.event);
+  for (const relatedEvent of result.relatedEvents ?? []) {
+    await emitTaskEvent(relatedEvent.task, relatedEvent.event);
+  }
 }
 
 function printNextSteps(task: TaskRecord): void {
@@ -123,10 +160,10 @@ function printNextSteps(task: TaskRecord): void {
 
   if (task.status === "dispatched" || task.status === "in_progress" || task.status === "blocked") {
     console.log(`  ravi tasks watch ${task.id}`);
-    console.log(`  ravi tasks report ${task.id} --progress <0-100> --message "..."`);
-    console.log(`  ravi tasks done ${task.id} --summary "..."`);
-    console.log(`  ravi tasks block ${task.id} --reason "..."`);
-    console.log(`  ravi tasks fail ${task.id} --reason "..."`);
+    console.log(`  ravi tasks report ${task.id}`);
+    console.log(`  ravi tasks done ${task.id}`);
+    console.log(`  ravi tasks block ${task.id}`);
+    console.log(`  ravi tasks fail ${task.id}`);
     return;
   }
 
@@ -222,6 +259,8 @@ export class TaskCommands {
     worktreePath?: string,
     @Option({ flags: "--worktree-branch <name>", description: "Optional branch label for the task worktree" })
     worktreeBranch?: string,
+    @Option({ flags: "--parent <task-id>", description: "Create this task as a child of another task" })
+    parentTaskId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!instructions?.trim()) {
@@ -242,9 +281,10 @@ export class TaskCommands {
       createdBy: actor.actor,
       createdByAgentId: actor.agentId,
       createdBySessionName: actor.sessionName,
+      ...(parentTaskId?.trim() ? { parentTaskId: parentTaskId.trim() } : {}),
       ...(worktree ? { worktree } : {}),
     });
-    await emitTaskEvent(created.task, created.event);
+    await emitMutationEvents(created);
 
     let task = created.task;
     let dispatched: Awaited<ReturnType<typeof dispatchTask>> | null = null;
@@ -255,7 +295,7 @@ export class TaskCommands {
         assignedBy: actor.actor,
         ...(worktree ? { worktree } : {}),
       });
-      await emitTaskEvent(dispatched.task, dispatched.event);
+      await emitMutationEvents(dispatched);
       task = dispatched.task;
     }
 
@@ -265,6 +305,7 @@ export class TaskCommands {
           {
             task,
             event: created.event,
+            parentTaskId: task.parentTaskId ?? null,
             ...(dispatched
               ? {
                   dispatch: {
@@ -337,11 +378,39 @@ export class TaskCommands {
     }
 
     if (asJson) {
-      console.log(JSON.stringify(details, null, 2));
+      console.log(
+        JSON.stringify(
+          {
+            ...details,
+            parentTask: details.parentTask ? buildTaskLineageNode(details.parentTask) : null,
+            childTasks: details.childTasks.map(buildTaskLineageNode),
+            taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
+          },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
     printTaskSummary(details.task);
+
+    const taskDocument = buildTaskDocumentSummary(details.task);
+    console.log("\nTASK.md:");
+    console.log(`  Dir:        ${taskDocument.taskDir ?? "-"}`);
+    console.log(`  Path:       ${taskDocument.path}`);
+    if (taskDocument.frontmatter.status) {
+      console.log(`  FM status:  ${taskDocument.frontmatter.status}`);
+    }
+    if (typeof taskDocument.frontmatter.progress === "number") {
+      console.log(`  FM prog.:   ${taskDocument.frontmatter.progress}%`);
+    }
+    if (taskDocument.frontmatter.summary) {
+      console.log(`  FM summary: ${taskDocument.frontmatter.summary}`);
+    }
+    if (taskDocument.frontmatter.blockerReason) {
+      console.log(`  FM block:   ${taskDocument.frontmatter.blockerReason}`);
+    }
 
     if (details.activeAssignment) {
       console.log("\nActive assignment:");
@@ -352,6 +421,23 @@ export class TaskCommands {
       }
       console.log(`  Status:      ${details.activeAssignment.status}`);
       console.log(`  Assigned at: ${formatTime(details.activeAssignment.assignedAt)}`);
+    }
+
+    if (details.parentTask) {
+      const parentTask = buildTaskLineageNode(details.parentTask);
+      console.log("\nParent task:");
+      console.log(
+        `  ${parentTask.id} :: ${formatTaskStatus(parentTask.status)} :: ${parentTask.assigneeAgentId ?? "-"} :: ${parentTask.assigneeSessionName ?? "-"} :: ${parentTask.path}`,
+      );
+    }
+
+    if (details.childTasks.length > 0) {
+      console.log("\nChild tasks:");
+      for (const childTask of details.childTasks.map(buildTaskLineageNode)) {
+        console.log(
+          `  - ${childTask.id} :: ${formatTaskStatus(childTask.status)} :: ${childTask.assigneeAgentId ?? "-"} :: ${childTask.assigneeSessionName ?? "-"} :: ${childTask.path}`,
+        );
+      }
     }
 
     if (details.events.length > 0) {
@@ -386,7 +472,7 @@ export class TaskCommands {
       sessionName: sessionName?.trim() || getDefaultTaskSessionName(taskId),
       assignedBy: actor,
     });
-    await emitTaskEvent(result.task, result.event);
+    await emitMutationEvents(result);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -397,11 +483,12 @@ export class TaskCommands {
     console.log(`  Agent:    ${result.task.assigneeAgentId}`);
     console.log(`  Session:  ${result.sessionName}`);
     console.log(`  Status:   ${formatTaskStatus(result.task.status)}`);
-    console.log("\nThe target session was instructed to report progress through:");
-    console.log(`  ravi tasks report ${taskId} --progress <0-100> --message "..."`);
-    console.log(`  ravi tasks done ${taskId} --summary "..."`);
-    console.log(`  ravi tasks block ${taskId} --reason "..."`);
-    console.log(`  ravi tasks fail ${taskId} --reason "..."`);
+    console.log(`  TASK.md:  ${getTaskDocPath(result.task)}`);
+    console.log("\nThe target session was instructed to edit TASK.md first, then sync through:");
+    console.log(`  ravi tasks report ${taskId}`);
+    console.log(`  ravi tasks done ${taskId}`);
+    console.log(`  ravi tasks block ${taskId}`);
+    console.log(`  ravi tasks fail ${taskId}`);
   }
 
   @Command({ name: "report", description: "Report task progress from a CLI or agent session" })
@@ -411,10 +498,17 @@ export class TaskCommands {
     @Option({ flags: "--progress <n>", description: "Progress percentage 0-100" }) progress?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const details = getTaskDetails(taskId);
+    if (!details.task) {
+      fail(`Task not found: ${taskId}`);
+    }
+
     const actor = getTaskActor();
-    const progressValue = progress !== undefined ? Number.parseInt(progress, 10) : undefined;
+    const docState = readTaskDocFrontmatter(details.task);
+    const cliProgressValue = progress !== undefined ? Number.parseInt(progress, 10) : undefined;
+    const progressValue = Number.isFinite(cliProgressValue) ? cliProgressValue : docState.progress;
     if (!message?.trim() && !Number.isFinite(progressValue)) {
-      fail("Provide --message, --progress, or both.");
+      fail("Update TASK.md frontmatter.progress or provide --message/--progress.");
     }
 
     const result = reportTaskProgress(taskId, {
@@ -422,7 +516,7 @@ export class TaskCommands {
       ...(message?.trim() ? { message: message.trim() } : {}),
       ...(Number.isFinite(progressValue) ? { progress: progressValue } : {}),
     });
-    await emitTaskEvent(result.task, result.event);
+    await emitMutationEvents(result);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -439,16 +533,23 @@ export class TaskCommands {
     @Option({ flags: "--summary <text>", description: "Completion summary" }) summary?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!summary?.trim()) {
-      fail("--summary is required");
+    const details = getTaskDetails(taskId);
+    if (!details.task) {
+      fail(`Task not found: ${taskId}`);
+    }
+
+    const docState = readTaskDocFrontmatter(details.task);
+    const finalSummary = summary?.trim() || docState.summary;
+    if (!finalSummary) {
+      fail("Update TASK.md frontmatter.summary or provide --summary.");
     }
 
     const actor = getTaskActor();
     const result = completeTask(taskId, {
       ...actor,
-      message: summary.trim(),
+      message: finalSummary,
     });
-    await emitTaskEvent(result.task, result.event);
+    await emitMutationEvents(result);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -456,7 +557,7 @@ export class TaskCommands {
     }
 
     console.log(`✓ Task ${taskId} done`);
-    console.log(`  ${summary.trim()}`);
+    console.log(`  ${finalSummary}`);
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
@@ -465,16 +566,23 @@ export class TaskCommands {
     @Option({ flags: "--reason <text>", description: "Concrete blocker reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!reason?.trim()) {
-      fail("--reason is required");
+    const details = getTaskDetails(taskId);
+    if (!details.task) {
+      fail(`Task not found: ${taskId}`);
+    }
+
+    const docState = readTaskDocFrontmatter(details.task);
+    const finalReason = reason?.trim() || docState.blockerReason;
+    if (!finalReason) {
+      fail("Update TASK.md frontmatter.blocker_reason or provide --reason.");
     }
 
     const actor = getTaskActor();
     const result = blockTask(taskId, {
       ...actor,
-      message: reason.trim(),
+      message: finalReason,
     });
-    await emitTaskEvent(result.task, result.event);
+    await emitMutationEvents(result);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -482,7 +590,7 @@ export class TaskCommands {
     }
 
     console.log(`⚠️  Task ${taskId} blocked`);
-    console.log(`  ${reason.trim()}`);
+    console.log(`  ${finalReason}`);
   }
 
   @Command({ name: "fail", description: "Mark a task as failed" })
@@ -491,16 +599,23 @@ export class TaskCommands {
     @Option({ flags: "--reason <text>", description: "Failure reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!reason?.trim()) {
-      fail("--reason is required");
+    const details = getTaskDetails(taskId);
+    if (!details.task) {
+      fail(`Task not found: ${taskId}`);
+    }
+
+    const docState = readTaskDocFrontmatter(details.task);
+    const finalReason = reason?.trim() || docState.summary || docState.blockerReason;
+    if (!finalReason) {
+      fail("Update TASK.md frontmatter.summary/blocker_reason or provide --reason.");
     }
 
     const actor = getTaskActor();
     const result = failTask(taskId, {
       ...actor,
-      message: reason.trim(),
+      message: finalReason,
     });
-    await emitTaskEvent(result.task, result.event);
+    await emitMutationEvents(result);
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -508,7 +623,7 @@ export class TaskCommands {
     }
 
     console.log(`✗ Task ${taskId} failed`);
-    console.log(`  ${reason.trim()}`);
+    console.log(`  ${finalReason}`);
   }
 
   @Command({ name: "watch", description: "Watch task events live" })
