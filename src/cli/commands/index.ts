@@ -27,6 +27,7 @@ export * from "./service.js";
 export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
+export * from "./tags.js";
 export * from "./tasks.js";
 export * from "./tmux.js";
 export * from "./tools.js";
