@@ -3,314 +3,269 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ravi &mdash; Claude on WhatsApp, Telegram, Discord</title>
-  <meta name="description" content="A daemon that runs Claude agents on your messaging apps. WhatsApp, Telegram, Discord. Sessions, cron, triggers, outbound campaigns. Runs locally, no cloud." />
+  <title>Ravi — A personal agent harness in WhatsApp</title>
+  <meta
+    name="description"
+    content="A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across the day."
+  />
   <meta property="og:title" content="Ravi" />
-  <meta property="og:description" content="Claude on WhatsApp, Telegram, Discord. Runs locally." />
+  <meta
+    property="og:description"
+    content="A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across the day."
+  />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://ravi.bot" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230f172a'/><text x='50' y='62' text-anchor='middle' font-size='46' fill='%23e2e8f0'>R</text></svg>" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            cyan: {
-              50: '#ecfeff', 100: '#cffafe', 200: '#a5f3fc', 300: '#67e8f9',
-              400: '#22d3ee', 500: '#06b6d4', 600: '#0891b2', 700: '#0e7490',
-              800: '#155e75', 900: '#164e63', 950: '#083344',
-            },
+            ink: {
+              50: "#f8fafc",
+              100: "#f1f5f9",
+              200: "#e2e8f0",
+              300: "#cbd5e1",
+              400: "#94a3b8",
+              500: "#64748b",
+              600: "#475569",
+              700: "#334155",
+              800: "#1e293b",
+              900: "#0f172a",
+              950: "#020617"
+            }
           },
           fontFamily: {
-            sans: ['DM Sans', 'system-ui', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace'],
-          },
-        },
-      },
+            sans: ["IBM Plex Sans", "system-ui", "sans-serif"],
+            mono: ["IBM Plex Mono", "monospace"]
+          }
+        }
+      }
     }
   </script>
-  <style>
-    .gradient-text {
-      background: linear-gradient(135deg, #22d3ee, #06b6d4, #0891b2);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .glow { box-shadow: 0 0 60px rgba(6, 182, 212, 0.15); }
-    .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
-    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.3); }
-    pre code { font-size: 0.85rem; line-height: 1.6; }
-    .fade-in { animation: fadeIn 0.6s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes pulse-slow { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
-    .pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }
-  </style>
 </head>
-<body class="bg-gray-950 text-gray-100 font-sans antialiased">
-
-  <!-- Nav -->
-  <nav class="fixed top-0 w-full z-50 bg-gray-950/80 backdrop-blur-lg border-b border-gray-800/50">
-    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-      <a href="/" class="flex items-center gap-2.5">
-        <span class="text-xl font-bold tracking-tight text-white">ravi</span>
-      </a>
-      <div class="flex items-center gap-6">
-        <a href="https://docs.ravi.bot" class="text-sm text-gray-400 hover:text-white transition-colors">Docs</a>
-        <a href="https://github.com/filipexyz/ravi" class="text-sm text-gray-400 hover:text-white transition-colors">GitHub</a>
-      </div>
-    </div>
-  </nav>
-
-  <!-- Hero -->
-  <section class="relative pt-32 pb-20 px-6 overflow-hidden">
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(6,182,212,0.08)_0%,_transparent_60%)]"></div>
-    <div class="max-w-4xl mx-auto text-center relative fade-in">
-      <div class="mb-8 flex justify-center">
-        <div class="w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-cyan-600/10 border border-cyan-500/20 flex items-center justify-center glow">
-          <svg viewBox="0 0 155 58" class="w-12 h-12" fill="#22d3ee">
-            <g><path transform="translate(8.03,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(24.10,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(48.20,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(72.31,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(88.37,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(120.51,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(128.54,11.00) scale(0.013,-0.013)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(136.58,11.00) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,11.00) scale(0.013,-0.013)" d="M241 -81H151Q318 110 318 349Q318 588 151 779H241Q313 698 356.0 585.5Q399 473 399 349Q399 225 356.0 112.5Q313 0 241 -81Z"/><path transform="translate(0,25) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,25) scale(0.013,-0.013)" d="M258 548V699H360V548L333 390H285Z"/><path transform="translate(24.10,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(32.14,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(40.17,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(56.24,25) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,25) scale(0.013,-0.013)" d="M359 592H299L150 740H263Z"/><path transform="translate(80.34,25) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(96.41,25) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(112.48,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,25) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(144.61,25) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(0,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(16.07,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(32.14,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(48.20,39) scale(0.013,-0.013)" d="M377 780H467Q300 589 300 350Q300 111 467 -80H377Q305 1 262.0 113.5Q219 226 219 350Q219 474 262.0 586.5Q305 699 377 780Z"/><path transform="translate(56.24,39) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(80.34,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(88.37,39) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,39) scale(0.013,-0.013)" d="M588 699 363 0H255L30 699H128L310 96L491 699Z"/><path transform="translate(120.51,39) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(144.61,39) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(0,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(8.03,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(16.07,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(40.17,53) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(48.20,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(56.24,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(64.27,53) scale(0.013,-0.013)" d="M241 0V136H377V-35Q377 -95 343.5 -130.0Q310 -165 244 -165H226V-114H242Q321 -114 321 -38V0Z"/><path transform="translate(72.31,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(80.34,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(96.41,53) scale(0.013,-0.013)" d="M520 -80H435L98 794H183Z"/><path transform="translate(104.44,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(112.48,53) scale(0.013,-0.013)" d="M98 -80 435 794H520L183 -80Z"/><path transform="translate(128.54,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/><path transform="translate(136.58,53) scale(0.013,-0.013)" d="M0 -146H618V-218H0Z"/><path transform="translate(144.61,53) scale(0.013,-0.013)" d="M268 -80V779H350V-80Z"/></g>
-          </svg>
+<body class="bg-ink-950 text-ink-100 font-sans antialiased">
+  <div class="min-h-screen">
+    <nav class="border-b border-ink-800 bg-ink-950/95 backdrop-blur">
+      <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <a href="/" class="text-sm font-semibold tracking-[0.24em] uppercase text-ink-200">Ravi</a>
+        <div class="flex items-center gap-5 text-sm text-ink-400">
+          <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
+          <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
         </div>
       </div>
-      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight mb-4">
-        Claude on your<br /><span class="gradient-text">messaging apps</span>
-      </h1>
-      <p class="text-lg text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-        Ravi is a daemon that runs Claude agents on WhatsApp, Telegram, and Discord.
-        It handles sessions, queues messages, runs cron jobs, fires triggers, and manages outbound campaigns.
-        Runs on your machine. No cloud. No SaaS.
-      </p>
-      <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
-        <a href="https://docs.ravi.bot/start" class="px-6 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-medium rounded-lg transition-colors text-sm">
-          Read the docs
-        </a>
-        <a href="https://github.com/filipexyz/ravi" class="px-6 py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors text-sm border border-gray-700">
-          Source code
-        </a>
-      </div>
-    </div>
-  </section>
+    </nav>
 
-  <!-- Architecture -->
-  <section class="py-16 px-6">
-    <div class="max-w-4xl mx-auto">
-      <div class="rounded-xl bg-gray-900/60 border border-gray-800 p-8 glow">
-        <pre class="font-mono text-sm text-cyan-300 overflow-x-auto"><code><span class="text-gray-500">$</span> ravi daemon start
-
-  <span class="text-gray-500">├──</span> <span class="text-cyan-400">nats-server</span> <span class="text-gray-600">:4222</span>  <span class="text-gray-500">(JetStream)</span>
-  <span class="text-gray-500">├──</span> <span class="text-cyan-400">omni API</span>    <span class="text-gray-600">:8882</span>  <span class="text-gray-500">(channel adapter)</span>
-  <span class="text-gray-500">│</span>     <span class="text-gray-500">├──</span> WhatsApp <span class="text-gray-600">(Baileys)</span>
-  <span class="text-gray-500">│</span>     <span class="text-gray-500">├──</span> Telegram
-  <span class="text-gray-500">│</span>     <span class="text-gray-500">└──</span> Discord
-  <span class="text-gray-500">└──</span> <span class="text-cyan-400">ravi bot</span>
-        <span class="text-gray-500">├──</span> OmniConsumer  <span class="text-gray-600">→ pulls messages from JetStream</span>
-        <span class="text-gray-500">├──</span> Claude SDK    <span class="text-gray-600">→ runs agent sessions</span>
-        <span class="text-gray-500">├──</span> OmniSender    <span class="text-gray-600">→ sends replies back to channels</span>
-        <span class="text-gray-500">└──</span> Runners       <span class="text-gray-600">→ cron, heartbeat, triggers, outbound</span></code></pre>
-      </div>
-      <p class="text-sm text-gray-500 text-center mt-4">One command starts everything. NATS and omni run as child processes.</p>
-    </div>
-  </section>
-
-  <!-- What it does -->
-  <section class="py-16 px-6" id="features">
-    <div class="max-w-6xl mx-auto">
-      <h2 class="text-3xl font-bold text-center mb-12">What it does</h2>
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">channels</div>
-          <h3 class="font-semibold mb-1">Receives and sends messages</h3>
-          <p class="text-sm text-gray-400">WhatsApp via Baileys, Telegram, Discord. Multiple accounts, each routed to a different agent. Scan a QR code and go.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">agents</div>
-          <h3 class="font-semibold mb-1">Runs multiple Claude agents</h3>
-          <p class="text-sm text-gray-400">Each agent has its own CLAUDE.md, model, tools, and permissions. One handles sales, another monitors&nbsp;&mdash; same daemon.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">sessions</div>
-          <h3 class="font-semibold mb-1">Isolates conversations</h3>
-          <p class="text-sm text-gray-400">Each contact, group, or thread gets its own session. Agents can also talk to each other across sessions.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">cron</div>
-          <h3 class="font-semibold mb-1">Runs things on a schedule</h3>
-          <p class="text-sm text-gray-400">"Every morning at 9, send a summary." Cron expressions, intervals, one-shot timers. Timezone-aware.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">triggers</div>
-          <h3 class="font-semibold mb-1">Reacts to events</h3>
-          <p class="text-sm text-gray-400">"When a contact is added, notify the team." Subscribe to any NATS topic, fire a prompt, with cooldowns and filters.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">outbound</div>
-          <h3 class="font-semibold mb-1">Runs outreach campaigns</h3>
-          <p class="text-sm text-gray-400">Queue up contacts, set follow-up intervals, track cold/warm/qualified. The agent writes the messages and handles replies.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">heartbeat</div>
-          <h3 class="font-semibold mb-1">Checks in proactively</h3>
-          <p class="text-sm text-gray-400">The agent wakes up every N minutes, reads its HEARTBEAT.md, and acts on pending tasks. If nothing to do, stays quiet.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">permissions</div>
-          <h3 class="font-semibold mb-1">Controls what agents can do</h3>
-          <p class="text-sm text-gray-400">REBAC-based. Grant or deny access to tools, CLI commands, contacts, and sessions per agent. Closed by default.</p>
-        </div>
-
-        <div class="p-5 rounded-xl bg-gray-900/40 border border-gray-800/60 card-hover">
-          <div class="text-cyan-400 text-sm font-mono mb-2">media</div>
-          <h3 class="font-semibold mb-1">Handles voice, video, images</h3>
-          <p class="text-sm text-gray-400">Transcribes audio with Whisper, analyzes video with Gemini, generates images, sends files through any channel.</p>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- Quick Start -->
-  <section class="py-16 px-6" id="quickstart">
-    <div class="max-w-3xl mx-auto">
-      <h2 class="text-3xl font-bold text-center mb-12">Setup</h2>
-      <div class="space-y-4">
-        <div class="flex gap-4 items-start">
-          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
-            <span class="text-cyan-400 text-sm font-mono font-bold">1</span>
+    <main>
+      <section class="border-b border-ink-900">
+        <div class="mx-auto grid max-w-6xl gap-16 px-6 py-24 lg:grid-cols-[minmax(0,1fr)_28rem] lg:items-start">
+          <div>
+            <p class="mb-4 text-xs font-medium uppercase tracking-[0.28em] text-ink-500">Personal Operating Layer</p>
+            <h1 class="max-w-4xl text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+              A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across my day.
+            </h1>
+            <p class="mt-6 max-w-3xl text-lg leading-8 text-ink-300">
+              Ravi is the operating layer behind a personal agent system that lives where the day already happens.
+              It keeps durable context per conversation, routes work into the right session or specialist agent, and
+              coordinates follow-through across tasks, messages, and background runs.
+            </p>
+            <p class="mt-4 max-w-3xl text-base leading-7 text-ink-400">
+              <span class="text-ink-200">omni</span> handles transport and channels. Ravi keeps memory, routing,
+              permissions, task execution, and cross-agent coordination coherent. Genie and the WhatsApp overlay can
+              sit on top as operator surfaces, but the harness itself lives here.
+            </p>
+            <div class="mt-10 flex flex-col gap-3 sm:flex-row">
+              <a
+                href="https://github.com/filipexyz/ravi"
+                class="inline-flex items-center justify-center rounded-md bg-white px-5 py-3 text-sm font-medium text-ink-950 transition hover:bg-ink-100"
+              >
+                View source
+              </a>
+              <a
+                href="https://docs.ravi.bot/start"
+                class="inline-flex items-center justify-center rounded-md border border-ink-700 px-5 py-3 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-white"
+              >
+                Read the docs
+              </a>
+            </div>
           </div>
-          <div class="flex-1">
-            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
-              <code class="font-mono text-sm text-gray-300">git clone https://github.com/filipexyz/ravi.git && cd ravi<br />bun install && bun run build && bun link</code>
+
+          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-6">
+            <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Mental Model</p>
+            <div class="mt-6 space-y-4 text-sm leading-6 text-ink-300">
+              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
+                <div class="font-mono text-ink-200">omni</div>
+                <div class="mt-1 text-ink-400">Transport and channel APIs.</div>
+              </div>
+              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
+                <div class="font-mono text-ink-200">JetStream</div>
+                <div class="mt-1 text-ink-400">The event backbone for routing and automation.</div>
+              </div>
+              <div class="rounded-xl border border-ink-700 bg-ink-900 p-4">
+                <div class="font-mono text-white">Ravi</div>
+                <div class="mt-1 text-ink-300">The harness that keeps context, routing, tasks, permissions, and coordination stable.</div>
+              </div>
+              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
+                <div class="font-mono text-ink-200">Genie / Overlay</div>
+                <div class="mt-1 text-ink-400">Operator surfaces on top of the same runtime.</div>
+              </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="flex gap-4 items-start">
-          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
-            <span class="text-cyan-400 text-sm font-mono font-bold">2</span>
-          </div>
-          <div class="flex-1">
-            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
-              <code class="font-mono text-sm text-gray-300">ravi setup</code>
+      <section class="border-b border-ink-900">
+        <div class="mx-auto max-w-6xl px-6 py-20">
+          <div class="grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">What Ravi Handles</p>
+              <h2 class="mt-4 text-3xl font-semibold tracking-tight text-white">Context, work routing, and follow-through.</h2>
             </div>
-            <p class="text-sm text-gray-500 mt-2">Downloads nats-server, asks for your Claude API key, creates the default agent.</p>
-          </div>
-        </div>
-
-        <div class="flex gap-4 items-start">
-          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
-            <span class="text-cyan-400 text-sm font-mono font-bold">3</span>
-          </div>
-          <div class="flex-1">
-            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
-              <code class="font-mono text-sm text-gray-300">ravi daemon start</code>
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-5">
+                <h3 class="text-base font-semibold text-white">Sessions and routing</h3>
+                <p class="mt-2 text-sm leading-6 text-ink-400">
+                  Durable session context for DMs, groups, threads, and workflow lanes, with routing that decides where each message should land.
+                </p>
+              </div>
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-5">
+                <h3 class="text-base font-semibold text-white">Specialized agents</h3>
+                <p class="mt-2 text-sm leading-6 text-ink-400">
+                  Multiple agents with separate prompts, models, scopes, permissions, and working directories.
+                </p>
+              </div>
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-5">
+                <h3 class="text-base font-semibold text-white">Task runtime</h3>
+                <p class="mt-2 text-sm leading-6 text-ink-400">
+                  `TASK.md`-first tasks, assignments, comments, parent-child lineage, callbacks, and tracked execution lanes.
+                </p>
+              </div>
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-5">
+                <h3 class="text-base font-semibold text-white">Automation</h3>
+                <p class="mt-2 text-sm leading-6 text-ink-400">
+                  Cron, triggers, heartbeat, outbound flows, and event-driven coordination on the same backbone.
+                </p>
+              </div>
             </div>
-            <p class="text-sm text-gray-500 mt-2">Starts NATS, omni, and the bot. Everything in one process.</p>
           </div>
         </div>
+      </section>
 
-        <div class="flex gap-4 items-start">
-          <div class="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-600/30 flex items-center justify-center flex-shrink-0 mt-1">
-            <span class="text-cyan-400 text-sm font-mono font-bold">4</span>
-          </div>
-          <div class="flex-1">
-            <div class="rounded-lg bg-gray-900 border border-gray-800 p-4">
-              <code class="font-mono text-sm text-gray-300">ravi whatsapp connect</code>
+      <section class="border-b border-ink-900">
+        <div class="mx-auto max-w-6xl px-6 py-20">
+          <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_24rem]">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Architecture</p>
+              <pre class="mt-6 overflow-x-auto rounded-2xl border border-ink-800 bg-ink-900/70 p-6 font-mono text-sm leading-7 text-ink-300"><code>$ ravi daemon start
+
+├── nats-server :4222  (JetStream)
+├── omni API    :8882
+│   ├── WhatsApp
+│   ├── Telegram
+│   └── Discord
+└── ravi runtime
+    ├── session routing
+    ├── agent runtimes
+    ├── task runtime
+    ├── permissions + policies
+    ├── runners (cron, heartbeat, triggers, outbound)
+    └── CLI + operator surfaces</code></pre>
             </div>
-            <p class="text-sm text-gray-500 mt-2">Scan the QR code. That's it. Send a message to yourself on WhatsApp and Claude answers.</p>
+            <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-6">
+              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Primary Surface</p>
+              <h3 class="mt-4 text-xl font-semibold text-white">WhatsApp first</h3>
+              <p class="mt-3 text-sm leading-6 text-ink-400">
+                WhatsApp is the main operator surface today. Telegram and Discord can use the same backbone when omni
+                is configured, but Ravi is shaped around durable personal operations in WhatsApp.
+              </p>
+              <div class="mt-6 space-y-3 text-sm text-ink-300">
+                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">CLI for control and inspection</div>
+                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">WhatsApp overlay for live operational context</div>
+                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">Genie as a richer surface on top of the same runtime</div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
+      </section>
 
-  <!-- How messages flow -->
-  <section class="py-16 px-6">
-    <div class="max-w-4xl mx-auto">
-      <h2 class="text-3xl font-bold text-center mb-10">How a message gets processed</h2>
-      <div class="rounded-xl bg-gray-900/60 border border-gray-800 p-8">
-        <div class="flex flex-col items-center gap-2 font-mono text-sm">
-          <div class="flex items-center gap-3">
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">WhatsApp</span>
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Telegram</span>
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Discord</span>
+      <section class="border-b border-ink-900">
+        <div class="mx-auto max-w-5xl px-6 py-20">
+          <div class="grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Quick Start</p>
+              <h2 class="mt-4 text-3xl font-semibold tracking-tight text-white">Bring the harness up locally.</h2>
+            </div>
+            <div class="space-y-5">
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
+                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">1. Install</p>
+                <pre class="mt-3 overflow-x-auto font-mono text-sm leading-7 text-ink-200"><code>git clone https://github.com/filipexyz/ravi.git
+cd ravi
+bun install
+bun run build
+bun link</code></pre>
+              </div>
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
+                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">2. Configure</p>
+                <pre class="mt-3 overflow-x-auto font-mono text-sm leading-7 text-ink-200"><code>ravi setup
+
+# then configure ~/.ravi/.env
+OMNI_DIR=/path/to/omni-v2
+DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni</code></pre>
+              </div>
+              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5">
+                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">3. Start</p>
+                <pre class="mt-3 overflow-x-auto font-mono text-sm leading-7 text-ink-200"><code>ravi daemon start
+ravi whatsapp connect</code></pre>
+              </div>
+            </div>
           </div>
-          <span class="text-gray-600">&darr;</span>
-          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">omni API</span>
-          <span class="text-gray-600">&darr;</span>
-          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">NATS JetStream</span>
-          <span class="text-gray-600">&darr;</span>
-          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">Router &rarr; session key</span>
-          <span class="text-gray-600">&darr;</span>
-          <div class="px-6 py-3 rounded-lg bg-gradient-to-r from-cyan-950/80 to-cyan-900/40 text-cyan-300 border border-cyan-700/30 font-semibold">
-            Claude SDK &middot; agent session
+        </div>
+      </section>
+
+      <section>
+        <div class="mx-auto max-w-6xl px-6 py-20">
+          <div class="grid gap-8 rounded-3xl border border-ink-800 bg-ink-900/60 p-8 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Positioning</p>
+              <h2 class="mt-4 text-3xl font-semibold tracking-tight text-white">Ravi is the harness. Not the gimmick.</h2>
+              <p class="mt-4 max-w-3xl text-base leading-7 text-ink-400">
+                The system is centered on durable context, routing, task execution, and agent coordination inside the
+                conversations where work is already happening. The interface can evolve. The operating layer stays here.
+              </p>
+            </div>
+            <div class="flex flex-col gap-3">
+              <a
+                href="https://docs.ravi.bot"
+                class="inline-flex items-center justify-center rounded-md bg-white px-5 py-3 text-sm font-medium text-ink-950 transition hover:bg-ink-100"
+              >
+                Open docs
+              </a>
+              <a
+                href="https://github.com/filipexyz/ravi"
+                class="inline-flex items-center justify-center rounded-md border border-ink-700 px-5 py-3 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-white"
+              >
+                GitHub
+              </a>
+            </div>
           </div>
-          <span class="text-gray-600">&darr;</span>
-          <span class="px-4 py-2 rounded bg-cyan-950/50 text-cyan-400 border border-cyan-800/40">Gateway &rarr; omni API</span>
-          <span class="text-gray-600">&darr;</span>
-          <div class="flex items-center gap-3">
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">WhatsApp</span>
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Telegram</span>
-            <span class="px-3 py-1.5 rounded bg-gray-800 text-gray-300 border border-gray-700">Discord</span>
-          </div>
         </div>
-      </div>
-      <p class="text-sm text-gray-500 text-center mt-4">If a new message arrives while the agent is using a tool, it queues. When the tool finishes, the agent sees all queued messages at once.</p>
-    </div>
-  </section>
+      </section>
+    </main>
 
-  <!-- Stack -->
-  <section class="py-16 px-6">
-    <div class="max-w-4xl mx-auto text-center">
-      <div class="flex flex-wrap items-center justify-center gap-8 text-sm text-gray-500">
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
-          <span>Bun</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
-          <span>TypeScript</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
-          <span>NATS JetStream</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
-          <span>SQLite</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-cyan-500 pulse-slow"></span>
-          <span>Claude Agent SDK</span>
+    <footer class="border-t border-ink-900">
+      <div class="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-8 text-sm text-ink-500 sm:flex-row sm:items-center sm:justify-between">
+        <div>filipe labs</div>
+        <div class="flex items-center gap-5">
+          <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
+          <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
+          <span>MIT</span>
         </div>
       </div>
-    </div>
-  </section>
-
-  <!-- Footer -->
-  <footer class="border-t border-gray-800/50 py-10 px-6">
-    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div class="text-sm text-gray-500">
-        <a href="https://github.com/filipexyz" class="text-gray-400 hover:text-white transition-colors">filipe labs</a>
-      </div>
-      <div class="flex items-center gap-6 text-sm text-gray-500">
-        <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
-        <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
-        <span>MIT</span>
-      </div>
-    </div>
-  </footer>
-
+    </footer>
+  </div>
 </body>
 </html>
