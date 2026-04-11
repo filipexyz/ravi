@@ -17,6 +17,7 @@ export * from "./eval.js";
 export * from "./events.js";
 export * from "./group.js";
 export * from "./heartbeat.js";
+export * from "./hooks.js";
 export * from "./image.js";
 export * from "./instances.js";
 export * from "./media.js";

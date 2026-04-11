@@ -85,9 +85,22 @@ ravi instances disconnect <name>              # Disconnect from omni
 ravi instances status <name>                  # Show connection status
 ```
 
+## Routes
+
+Read route config and live routing without drilling into the `instances` subtree.
+
+```bash
+ravi routes list [name]                       # List routes across all instances or for one instance
+ravi routes show <name> <pattern>             # Show route details
+ravi routes explain <name> <pattern>          # Explain config vs live route winner
+  --channel <channel>                         #   Optional channel hint for live route inspection
+```
+
+Use `ravi instances routes ...` when you need to mutate route config.
+
 ### Instance Routes
 
-Per-instance routing rules that map patterns to agents.
+Per-instance routing rules that map patterns to agents. Use this subtree for mutations; use `ravi routes ...` for discovery/read paths.
 
 ```bash
 ravi instances routes list <name>             # List routes for instance
@@ -184,13 +197,14 @@ ravi sessions inform <target> <message>           # Send informational message t
 Global configuration stored in SQLite.
 
 ```bash
-ravi settings list                            # List all settings with descriptions
+ravi settings list                            # List live settings; legacy account.* is hidden by default
+ravi settings list --legacy                   # Inspect legacy account.* rows shadowed by instances
 ravi settings get <key>                       # Get a setting value
 ravi settings set <key> <value>               # Set a setting value
 ravi settings delete <key>                    # Delete a setting
 ```
 
-**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Also supports per-account patterns like `account.<name>.dmPolicy`.
+**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Legacy `account.*` rows are shadowed by `instances` and should not be used as live config.
 
 ## Permissions
 

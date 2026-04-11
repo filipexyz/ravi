@@ -85,8 +85,35 @@ export class DaemonCommands {
   restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
+    @Option({ flags: "-f, --force", description: "Bypass safety checks (active tasks)" }) force?: boolean,
   ) {
     requirePm2();
+
+    // Safety check: block restart if tasks are actively running
+    if (!force) {
+      try {
+        const { dbGetActiveTasksBlocking } = require("../../tasks/task-db.js");
+        const activeTasks = dbGetActiveTasksBlocking();
+        if (activeTasks.length > 0) {
+          const summary = activeTasks
+            .slice(0, 5)
+            .map(
+              (t: { id: string; title: string; status: string; assigneeAgentId?: string }) =>
+                `  - ${t.id} "${t.title}" (${t.status}, agent: ${t.assigneeAgentId || "none"})`,
+            )
+            .join("\n");
+          const extra = activeTasks.length > 5 ? `\n  ... e mais ${activeTasks.length - 5} tasks` : "";
+          fail(
+            `Restart bloqueado: ${activeTasks.length} task(s) em andamento.\n\n` +
+              `${summary}${extra}\n\n` +
+              `O restart mata todas as sessões ativas e interrompe o trabalho em andamento.\n` +
+              `Aguarde as tasks terminarem ou use --force para ignorar esta verificação.`,
+          );
+        }
+      } catch {
+        // If task DB is unavailable (e.g. outside daemon), skip check
+      }
+    }
 
     // When called inside daemon, spawn detached restart and return immediately
     if (hasContext()) {

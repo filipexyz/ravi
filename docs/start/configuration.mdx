@@ -249,6 +249,7 @@ Global settings are stored in SQLite and managed via CLI.
 
 ```bash
 ravi settings list
+ravi settings list --legacy
 ravi settings get <key>
 ravi settings set <key> <value>
 ravi settings delete <key>
@@ -264,14 +265,11 @@ ravi settings delete <key>
 | `whatsapp.groupPolicy` | `open` | Global WhatsApp group policy: `open`, `allowlist`, `closed` |
 | `whatsapp.dmPolicy` | `open` | Global WhatsApp DM policy: `open`, `pairing`, `closed` |
 
-### Per-Account Policy Overrides
-
-Override policies for specific accounts using dot-notation:
+Legacy `account.*` rows are no longer part of the normal settings surface. They are shadowed by `instances`, hidden from `ravi settings list` by default, and should be replaced with instance configuration:
 
 ```bash
-ravi settings set account.vendas.dmPolicy pairing
-ravi settings set account.vendas.groupPolicy closed
-ravi settings set account.vendas.whatsapp.dmPolicy closed
+ravi instances set vendas dmPolicy pairing
+ravi instances set vendas groupPolicy closed
 ```
 
 ## Permissions (REBAC)

@@ -591,10 +591,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         turnId: turn.turnId,
       });
     } catch {
-      currentChild().kill("SIGINT");
+      if (!child || closed) {
+        return;
+      }
+      child.kill("SIGINT");
       forcedKillTimer = setTimeout(() => {
-        if (!closed) {
-          currentChild().kill("SIGKILL");
+        if (!closed && child) {
+          child.kill("SIGKILL");
         }
       }, INTERRUPT_GRACE_MS);
       forcedKillTimer.unref?.();

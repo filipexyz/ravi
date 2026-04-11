@@ -1,15 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "../router/router-db.js";
-import type {
-  CreateTaskInput,
-  DispatchTaskInput,
-  ListTasksOptions,
-  TaskAssignment,
-  TaskEvent,
-  TaskProgressInput,
-  TaskRecord,
-  TaskTerminalInput,
-  TaskWorktreeConfig,
+import {
+  DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
+  computeTaskCheckpointDueAt,
+  calculateTaskCheckpointMiss,
+  resolveTaskCheckpointIntervalMs,
+} from "./checkpoint.js";
+import {
+  TASK_REPORT_EVENTS,
+  type CreateTaskInput,
+  type DispatchTaskInput,
+  type ListTasksOptions,
+  type TaskAssignment,
+  type TaskComment,
+  type TaskCommentInput,
+  type TaskEvent,
+  type TaskProgressInput,
+  type TaskRecord,
+  type TaskReportEvent,
+  type TaskTerminalInput,
+  type TaskWorktreeConfig,
 } from "./types.js";
 
 interface TaskRow {
@@ -19,6 +29,9 @@ interface TaskRow {
   status: TaskRecord["status"];
   priority: TaskRecord["priority"];
   progress: number;
+  checkpoint_interval_ms: number | null;
+  report_to_session_name: string | null;
+  report_events: string | null;
   parent_task_id: string | null;
   task_dir: string | null;
   created_by: string | null;
@@ -44,9 +57,17 @@ interface TaskAssignmentRow {
   agent_id: string;
   session_name: string;
   assigned_by: string | null;
+  assigned_by_agent_id: string | null;
+  assigned_by_session_name: string | null;
   worktree_mode: string | null;
   worktree_path: string | null;
   worktree_branch: string | null;
+  checkpoint_interval_ms: number | null;
+  report_to_session_name: string | null;
+  report_events: string | null;
+  checkpoint_last_report_at: number | null;
+  checkpoint_due_at: number | null;
+  checkpoint_overdue_count: number | null;
   status: TaskAssignment["status"];
   assigned_at: number;
   accepted_at: number | null;
@@ -66,7 +87,50 @@ interface TaskEventRow {
   created_at: number;
 }
 
+interface TaskCommentRow {
+  id: string;
+  task_id: string;
+  author: string | null;
+  author_agent_id: string | null;
+  author_session_name: string | null;
+  body: string;
+  created_at: number;
+}
+
 let schemaReady = false;
+const DEFAULT_TASK_REPORT_EVENTS_JSON = JSON.stringify(["done"] satisfies TaskReportEvent[]);
+
+function normalizeTaskReportToSessionName(sessionName?: string | null): string | null {
+  const trimmed = sessionName?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function normalizeTaskReportEvents(events?: readonly TaskReportEvent[] | null): TaskReportEvent[] {
+  const allowed = new Set<string>(TASK_REPORT_EVENTS);
+  const normalized = [...new Set((events ?? []).filter((event): event is TaskReportEvent => allowed.has(event)))];
+  return normalized.length > 0 ? normalized : ["done"];
+}
+
+function serializeTaskReportEvents(events?: readonly TaskReportEvent[] | null): string {
+  return JSON.stringify(normalizeTaskReportEvents(events));
+}
+
+function deserializeTaskReportEvents(raw: string | null | undefined): TaskReportEvent[] {
+  if (!raw?.trim()) {
+    return normalizeTaskReportEvents();
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return normalizeTaskReportEvents(parsed as TaskReportEvent[]);
+    }
+  } catch {
+    // Fall back to a simple CSV parser for older rows or hand-edited values.
+  }
+
+  return normalizeTaskReportEvents(raw.split(",").map((value) => value.trim()) as TaskReportEvent[]);
+}
 
 function applyTaskWorktreeSchemaMigrations(): void {
   const db = getDb();
@@ -94,6 +158,15 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("task_dir")) {
     db.exec("ALTER TABLE tasks ADD COLUMN task_dir TEXT");
   }
+  if (!taskColumns.has("checkpoint_interval_ms")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN checkpoint_interval_ms INTEGER");
+  }
+  if (!taskColumns.has("report_to_session_name")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN report_to_session_name TEXT");
+  }
+  if (!taskColumns.has("report_events")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN report_events TEXT");
+  }
 
   const assignmentColumns = new Set(
     (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -107,6 +180,30 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!assignmentColumns.has("worktree_branch")) {
     db.exec("ALTER TABLE task_assignments ADD COLUMN worktree_branch TEXT");
   }
+  if (!assignmentColumns.has("checkpoint_interval_ms")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN checkpoint_interval_ms INTEGER");
+  }
+  if (!assignmentColumns.has("report_to_session_name")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN report_to_session_name TEXT");
+  }
+  if (!assignmentColumns.has("report_events")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN report_events TEXT");
+  }
+  if (!assignmentColumns.has("checkpoint_last_report_at")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN checkpoint_last_report_at INTEGER");
+  }
+  if (!assignmentColumns.has("checkpoint_due_at")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN checkpoint_due_at INTEGER");
+  }
+  if (!assignmentColumns.has("checkpoint_overdue_count")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN checkpoint_overdue_count INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!assignmentColumns.has("assigned_by_agent_id")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN assigned_by_agent_id TEXT");
+  }
+  if (!assignmentColumns.has("assigned_by_session_name")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN assigned_by_session_name TEXT");
+  }
 
   const eventColumns = new Set(
     (db.prepare("PRAGMA table_info(task_events)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -114,6 +211,33 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!eventColumns.has("related_task_id")) {
     db.exec("ALTER TABLE task_events ADD COLUMN related_task_id TEXT");
   }
+
+  db.prepare(`
+    UPDATE tasks
+    SET checkpoint_interval_ms = COALESCE(checkpoint_interval_ms, ?),
+        report_to_session_name = COALESCE(report_to_session_name, created_by_session_name),
+        report_events = COALESCE(report_events, ?)
+  `).run(DEFAULT_TASK_CHECKPOINT_INTERVAL_MS, DEFAULT_TASK_REPORT_EVENTS_JSON);
+
+  db.prepare(`
+    UPDATE task_assignments
+    SET checkpoint_interval_ms = COALESCE(checkpoint_interval_ms, ?),
+        report_to_session_name = COALESCE(
+          report_to_session_name,
+          (SELECT tasks.report_to_session_name FROM tasks WHERE tasks.id = task_assignments.task_id)
+        ),
+        report_events = COALESCE(
+          report_events,
+          (SELECT tasks.report_events FROM tasks WHERE tasks.id = task_assignments.task_id),
+          ?
+        ),
+        checkpoint_due_at = CASE
+          WHEN status IN ('assigned', 'accepted') AND checkpoint_due_at IS NULL
+            THEN COALESCE(checkpoint_last_report_at, accepted_at, assigned_at) + COALESCE(checkpoint_interval_ms, ?)
+          ELSE checkpoint_due_at
+        END,
+        checkpoint_overdue_count = COALESCE(checkpoint_overdue_count, 0)
+  `).run(DEFAULT_TASK_CHECKPOINT_INTERVAL_MS, DEFAULT_TASK_REPORT_EVENTS_JSON, DEFAULT_TASK_CHECKPOINT_INTERVAL_MS);
 }
 
 function ensureTaskSchema(): void {
@@ -127,6 +251,9 @@ function ensureTaskSchema(): void {
       status TEXT NOT NULL,
       priority TEXT NOT NULL DEFAULT 'normal',
       progress INTEGER NOT NULL DEFAULT 0,
+      checkpoint_interval_ms INTEGER,
+      report_to_session_name TEXT,
+      report_events TEXT,
       parent_task_id TEXT,
       task_dir TEXT,
       created_by TEXT,
@@ -152,9 +279,17 @@ function ensureTaskSchema(): void {
       agent_id TEXT NOT NULL,
       session_name TEXT NOT NULL,
       assigned_by TEXT,
+      assigned_by_agent_id TEXT,
+      assigned_by_session_name TEXT,
       worktree_mode TEXT,
       worktree_path TEXT,
       worktree_branch TEXT,
+      checkpoint_interval_ms INTEGER,
+      report_to_session_name TEXT,
+      report_events TEXT,
+      checkpoint_last_report_at INTEGER,
+      checkpoint_due_at INTEGER,
+      checkpoint_overdue_count INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
       assigned_at INTEGER NOT NULL,
       accepted_at INTEGER,
@@ -176,14 +311,29 @@ function ensureTaskSchema(): void {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS task_comments (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      author TEXT,
+      author_agent_id TEXT,
+      author_session_name TEXT,
+      body TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee_agent ON tasks(assignee_agent_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee_session ON tasks(assignee_session_name);
     CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id, assigned_at DESC);
     CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at ASC);
   `);
   applyTaskWorktreeSchemaMigrations();
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_task_assignments_checkpoint_due ON task_assignments(status, checkpoint_due_at)",
+  );
   schemaReady = true;
 }
 
@@ -215,6 +365,9 @@ function rowToTask(row: TaskRow): TaskRecord {
     status: row.status,
     priority: row.priority,
     progress: row.progress,
+    ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
+    ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
+    reportEvents: deserializeTaskReportEvents(row.report_events),
     ...(row.parent_task_id ? { parentTaskId: row.parent_task_id } : {}),
     ...(row.task_dir ? { taskDir: row.task_dir } : {}),
     ...(row.created_by ? { createdBy: row.created_by } : {}),
@@ -242,9 +395,17 @@ function rowToAssignment(row: TaskAssignmentRow): TaskAssignment {
     agentId: row.agent_id,
     sessionName: row.session_name,
     ...(row.assigned_by ? { assignedBy: row.assigned_by } : {}),
+    ...(row.assigned_by_agent_id ? { assignedByAgentId: row.assigned_by_agent_id } : {}),
+    ...(row.assigned_by_session_name ? { assignedBySessionName: row.assigned_by_session_name } : {}),
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
       ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
       : {}),
+    ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
+    ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
+    reportEvents: deserializeTaskReportEvents(row.report_events),
+    ...(row.checkpoint_last_report_at ? { checkpointLastReportAt: row.checkpoint_last_report_at } : {}),
+    ...(row.checkpoint_due_at ? { checkpointDueAt: row.checkpoint_due_at } : {}),
+    checkpointOverdueCount: row.checkpoint_overdue_count ?? 0,
     status: row.status,
     assignedAt: row.assigned_at,
     ...(row.accepted_at ? { acceptedAt: row.accepted_at } : {}),
@@ -267,12 +428,62 @@ function rowToEvent(row: TaskEventRow): TaskEvent {
   };
 }
 
+function rowToComment(row: TaskCommentRow): TaskComment {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    ...(row.author ? { author: row.author } : {}),
+    ...(row.author_agent_id ? { authorAgentId: row.author_agent_id } : {}),
+    ...(row.author_session_name ? { authorSessionName: row.author_session_name } : {}),
+    body: row.body,
+    createdAt: row.created_at,
+  };
+}
+
+function getAssignmentRowById(assignmentId: string): TaskAssignmentRow | undefined {
+  ensureTaskSchema();
+  const db = getDb();
+  return db.prepare("SELECT * FROM task_assignments WHERE id = ?").get(assignmentId) as TaskAssignmentRow | undefined;
+}
+
 function getTaskOrThrow(id: string): TaskRecord {
   const task = dbGetTask(id);
   if (!task) {
     throw new Error(`Task not found: ${id}`);
   }
   return task;
+}
+
+function getLatestTaskEvent(taskId: string, type?: TaskEvent["type"]): TaskEvent | undefined {
+  ensureTaskSchema();
+  const db = getDb();
+  const row = type
+    ? (db
+        .prepare(`
+          SELECT * FROM task_events
+          WHERE task_id = ? AND type = ?
+          ORDER BY id DESC
+          LIMIT 1
+        `)
+        .get(taskId, type) as TaskEventRow | undefined)
+    : (db
+        .prepare(`
+          SELECT * FROM task_events
+          WHERE task_id = ?
+          ORDER BY id DESC
+          LIMIT 1
+        `)
+        .get(taskId) as TaskEventRow | undefined);
+  return row ? rowToEvent(row) : undefined;
+}
+
+function buildDispatchEventMessage(input: DispatchTaskInput): string {
+  return [
+    `Dispatched to ${input.agentId}/${input.sessionName}.`,
+    "Dispatch summary surfaced here:",
+    "load ravi-system-tasks-manager, edit TASK.md first,",
+    "then sync via ravi tasks report|done|block|fail.",
+  ].join(" ");
 }
 
 function appendTaskEvent(
@@ -320,18 +531,18 @@ function markActiveAssignmentAccepted(taskId: string, sessionName?: string): voi
   if (sessionName) {
     db.prepare(`
       UPDATE task_assignments
-      SET status = CASE WHEN status = 'assigned' THEN 'accepted' ELSE status END,
+      SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
           accepted_at = COALESCE(accepted_at, ?)
-      WHERE task_id = ? AND session_name = ? AND status IN ('assigned', 'accepted')
+      WHERE task_id = ? AND session_name = ? AND status IN ('assigned', 'accepted', 'blocked')
     `).run(now, taskId, sessionName);
     return;
   }
 
   db.prepare(`
     UPDATE task_assignments
-    SET status = CASE WHEN status = 'assigned' THEN 'accepted' ELSE status END,
+    SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
         accepted_at = COALESCE(accepted_at, ?)
-    WHERE task_id = ? AND status IN ('assigned', 'accepted')
+    WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, taskId);
 }
 
@@ -341,17 +552,24 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   const id = `task-${randomUUID().slice(0, 8)}`;
   const now = Date.now();
   const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
+  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs);
+  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? input.createdBySessionName);
+  const reportEvents = serializeTaskReportEvents(input.reportEvents);
 
   db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, priority, progress, parent_task_id, task_dir, created_by, created_by_agent_id,
-      created_by_session_name, worktree_mode, worktree_path, worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+      id, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
+      parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
+      worktree_branch, created_at, updated_at
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
     input.instructions,
     input.priority ?? "normal",
+    checkpointIntervalMs,
+    reportToSessionName,
+    reportEvents,
     input.parentTaskId ?? null,
     input.createdBy ?? null,
     input.createdByAgentId ?? null,
@@ -461,6 +679,50 @@ export function dbListTaskEvents(taskId: string, limit = 100): TaskEvent[] {
   return rows.map(rowToEvent);
 }
 
+export function dbAddTaskComment(taskId: string, input: TaskCommentInput): TaskComment {
+  ensureTaskSchema();
+  const db = getDb();
+  getTaskOrThrow(taskId);
+
+  const now = Date.now();
+  const id = `cmt-${randomUUID().slice(0, 8)}`;
+  db.prepare(`
+    INSERT INTO task_comments (
+      id, task_id, author, author_agent_id, author_session_name, body, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    taskId,
+    input.author ?? null,
+    input.authorAgentId ?? null,
+    input.authorSessionName ?? null,
+    input.body,
+    now,
+  );
+
+  db.prepare(`
+    UPDATE tasks
+    SET updated_at = ?
+    WHERE id = ?
+  `).run(now, taskId);
+
+  const row = db.prepare("SELECT * FROM task_comments WHERE id = ?").get(id) as TaskCommentRow | undefined;
+  if (!row) {
+    throw new Error(`Failed to fetch newly created task comment: ${id}`);
+  }
+  return rowToComment(row);
+}
+
+export function dbListTaskComments(taskId: string, limit = 100): TaskComment[] {
+  ensureTaskSchema();
+  getTaskOrThrow(taskId);
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC LIMIT ?")
+    .all(taskId, limit) as TaskCommentRow[];
+  return rows.map(rowToComment);
+}
+
 export function dbGetActiveAssignment(taskId: string): TaskAssignment | null {
   ensureTaskSchema();
   const db = getDb();
@@ -484,6 +746,69 @@ export function dbListAssignments(taskId: string): TaskAssignment[] {
   return rows.map(rowToAssignment);
 }
 
+export function dbRegisterTaskCheckpointMiss(
+  taskId: string,
+  assignmentId: string,
+  now = Date.now(),
+): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent; missedCount: number } | null {
+  ensureTaskSchema();
+  const db = getDb();
+  getTaskOrThrow(taskId);
+
+  const row = getAssignmentRowById(assignmentId);
+  if (!row || row.task_id !== taskId) {
+    return null;
+  }
+  if (!["assigned", "accepted"].includes(row.status)) {
+    return null;
+  }
+  if (!row.checkpoint_due_at) {
+    return null;
+  }
+
+  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(row.checkpoint_interval_ms);
+  const { missedCount, nextDueAt } = calculateTaskCheckpointMiss(row.checkpoint_due_at, checkpointIntervalMs, now);
+  if (missedCount <= 0) {
+    return null;
+  }
+
+  const nextOverdueCount = (row.checkpoint_overdue_count ?? 0) + missedCount;
+  const result = db
+    .prepare(`
+      UPDATE task_assignments
+      SET checkpoint_due_at = ?,
+          checkpoint_overdue_count = ?
+      WHERE id = ?
+        AND task_id = ?
+        AND status IN ('assigned', 'accepted')
+        AND checkpoint_due_at = ?
+    `)
+    .run(nextDueAt, nextOverdueCount, assignmentId, taskId, row.checkpoint_due_at);
+  if (result.changes === 0) {
+    return null;
+  }
+
+  const assignmentRow = getAssignmentRowById(assignmentId);
+  if (!assignmentRow) {
+    return null;
+  }
+  const assignment = rowToAssignment(assignmentRow);
+  const event = appendTaskEvent(taskId, "task.checkpoint.missed", {
+    actor: "task-checkpoint-runner",
+    agentId: assignment.agentId,
+    sessionName: assignment.sessionName,
+    message: `Checkpoint overdue ${assignment.checkpointOverdueCount ?? nextOverdueCount}x; real report still pending.`,
+    progress: getTaskOrThrow(taskId).progress,
+  });
+
+  return {
+    task: getTaskOrThrow(taskId),
+    assignment,
+    event,
+    missedCount,
+  };
+}
+
 export function dbDispatchTask(
   taskId: string,
   input: DispatchTaskInput,
@@ -492,28 +817,42 @@ export function dbDispatchTask(
   const db = getDb();
   const now = Date.now();
   const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
-  getTaskOrThrow(taskId);
+  const task = getTaskOrThrow(taskId);
+  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs ?? task.checkpointIntervalMs);
+  const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? task.reportToSessionName);
+  const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
+  const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
 
   db.prepare(`
     UPDATE task_assignments
-    SET status = 'superseded', completed_at = COALESCE(completed_at, ?)
+    SET status = 'superseded',
+        completed_at = COALESCE(completed_at, ?),
+        checkpoint_due_at = NULL
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, taskId);
 
   const assignmentId = `asg-${randomUUID().slice(0, 8)}`;
   db.prepare(`
     INSERT INTO task_assignments (
-      id, task_id, agent_id, session_name, assigned_by, worktree_mode, worktree_path, worktree_branch, status, assigned_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'assigned', ?)
+      id, task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
+      worktree_mode, worktree_path, worktree_branch, checkpoint_interval_ms, report_to_session_name, report_events,
+      checkpoint_last_report_at, checkpoint_due_at, checkpoint_overdue_count, status, assigned_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 'assigned', ?)
   `).run(
     assignmentId,
     taskId,
     input.agentId,
     input.sessionName,
     input.assignedBy ?? null,
+    input.assignedByAgentId ?? null,
+    input.assignedBySessionName ?? null,
     worktreeMode,
     worktreePath,
     worktreeBranch,
+    checkpointIntervalMs,
+    reportToSessionName,
+    reportEvents,
+    checkpointDueAt,
     now,
   );
 
@@ -531,7 +870,7 @@ export function dbDispatchTask(
     actor: input.assignedBy,
     agentId: input.agentId,
     sessionName: input.sessionName,
-    message: `Dispatched to ${input.agentId}/${input.sessionName}`,
+    message: buildDispatchEventMessage(input),
     progress: 0,
   });
 
@@ -560,6 +899,7 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
   }
 
   const now = Date.now();
+  const resetCheckpoint = input.resetCheckpoint ?? true;
   const progress =
     typeof input.progress === "number" ? Math.max(0, Math.min(100, Math.round(input.progress))) : task.progress;
   const nextStatus: TaskRecord["status"] = "in_progress";
@@ -575,7 +915,38 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
     WHERE id = ?
   `).run(nextStatus, progress, startedAt, now, taskId);
 
-  markActiveAssignmentAccepted(taskId, input.sessionName);
+  if (resetCheckpoint) {
+    const activeAssignment = dbGetActiveAssignment(taskId);
+    const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+      activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
+    );
+    const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
+
+    if (input.sessionName) {
+      db.prepare(`
+        UPDATE task_assignments
+        SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
+            accepted_at = COALESCE(accepted_at, ?),
+            checkpoint_last_report_at = ?,
+            checkpoint_due_at = ?,
+            checkpoint_overdue_count = 0
+        WHERE task_id = ? AND session_name = ? AND status IN ('assigned', 'accepted', 'blocked')
+      `).run(now, now, checkpointDueAt, taskId, input.sessionName);
+    } else {
+      db.prepare(`
+        UPDATE task_assignments
+        SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
+            accepted_at = COALESCE(accepted_at, ?),
+            checkpoint_last_report_at = ?,
+            checkpoint_due_at = ?,
+            checkpoint_overdue_count = 0
+        WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
+      `).run(now, now, checkpointDueAt, taskId);
+    }
+  } else {
+    markActiveAssignmentAccepted(taskId, input.sessionName);
+  }
+
   const event = appendTaskEvent(taskId, "task.progress", {
     actor: input.actor,
     agentId: input.agentId,
@@ -591,7 +962,10 @@ export function dbBlockTask(taskId: string, input: TaskTerminalInput): { task: T
   const db = getDb();
   const task = getTaskOrThrow(taskId);
   const now = Date.now();
-  const progress = Math.max(task.progress, 1);
+  const progress =
+    typeof input.progress === "number"
+      ? Math.max(0, Math.min(100, Math.round(input.progress)))
+      : Math.max(task.progress, 1);
 
   db.prepare(`
     UPDATE tasks
@@ -606,7 +980,8 @@ export function dbBlockTask(taskId: string, input: TaskTerminalInput): { task: T
   db.prepare(`
     UPDATE task_assignments
     SET status = 'blocked',
-        accepted_at = COALESCE(accepted_at, ?)
+        accepted_at = COALESCE(accepted_at, ?),
+        checkpoint_due_at = NULL
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, taskId);
 
@@ -638,7 +1013,8 @@ export function dbFailTask(taskId: string, input: TaskTerminalInput): { task: Ta
     UPDATE task_assignments
     SET status = 'failed',
         accepted_at = COALESCE(accepted_at, ?),
-        completed_at = COALESCE(completed_at, ?)
+        completed_at = COALESCE(completed_at, ?),
+        checkpoint_due_at = NULL
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, now, taskId);
 
@@ -652,8 +1028,28 @@ export function dbFailTask(taskId: string, input: TaskTerminalInput): { task: Ta
   return { task: getTaskOrThrow(taskId), event };
 }
 
-export function dbCompleteTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {
+export function dbCompleteTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
+  const task = getTaskOrThrow(taskId);
+  if (task.status === "done") {
+    return {
+      task,
+      event:
+        getLatestTaskEvent(taskId, "task.done") ??
+        appendTaskEvent(taskId, "task.done", {
+          actor: input.actor,
+          agentId: input.agentId,
+          sessionName: input.sessionName,
+          message: task.summary ?? input.message,
+          progress: 100,
+        }),
+      wasNoop: true,
+    };
+  }
+
   const db = getDb();
   const now = Date.now();
 
@@ -673,7 +1069,8 @@ export function dbCompleteTask(taskId: string, input: TaskTerminalInput): { task
     UPDATE task_assignments
     SET status = 'done',
         accepted_at = COALESCE(accepted_at, ?),
-        completed_at = COALESCE(completed_at, ?)
+        completed_at = COALESCE(completed_at, ?),
+        checkpoint_due_at = NULL
     WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
   `).run(now, now, taskId);
 
@@ -685,6 +1082,15 @@ export function dbCompleteTask(taskId: string, input: TaskTerminalInput): { task
     progress: 100,
   });
   return { task: getTaskOrThrow(taskId), event };
+}
+
+export function dbGetActiveTasksBlocking(): TaskRecord[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM tasks WHERE status IN ('dispatched', 'in_progress') ORDER BY updated_at DESC")
+    .all() as TaskRow[];
+  return rows.map(rowToTask);
 }
 
 export function dbDeleteTask(taskId: string): boolean {

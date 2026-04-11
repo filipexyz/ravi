@@ -5,7 +5,6 @@ import {
   getConsumerName,
   ensureSessionConsumer,
   ensureSessionPromptsStream,
-  publishSessionPrompt,
 } from "./omni/session-stream.js";
 import { logger } from "./utils/logger.js";
 import type { Config } from "./utils/config.js";
@@ -114,28 +113,6 @@ async function safeEmit(topic: string, data: Record<string, unknown>): Promise<v
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
-
-function buildTaskCompletionAnswerMessage(input: {
-  taskId: string;
-  title?: string | null;
-  summary?: string | null;
-  assigneeAgentId?: string | null;
-  assigneeSessionName?: string | null;
-}): string {
-  const parts = [`Task concluída: ${input.taskId}`];
-  if (input.title?.trim()) {
-    parts.push(input.title.trim());
-  }
-
-  let message = parts.join(" · ");
-  if (input.summary?.trim()) {
-    message += `\nResumo: ${input.summary.trim()}`;
-  }
-  if (input.assigneeAgentId || input.assigneeSessionName) {
-    message += `\nResponsável: ${input.assigneeAgentId ?? "-"}${input.assigneeSessionName ? `/${input.assigneeSessionName}` : ""}`;
-  }
-  return message;
-}
 
 function createPendingRuntimeHandle(provider: RuntimeProviderId): RuntimeSessionHandle {
   return {
@@ -548,14 +525,12 @@ export class RaviBot {
           const data = event.data as {
             type?: string;
             taskId?: string;
-            createdBySessionName?: string | null;
             assigneeSessionName?: string | null;
             assigneeAgentId?: string | null;
             task?: { title?: string | null; summary?: string | null };
             event?: { type?: string; sessionName?: string | null };
           };
           const type = data.event?.type ?? data.type;
-          const creatorSessionName = data.createdBySessionName ?? undefined;
           const sessionName =
             type === "task.done" || type === "task.failed"
               ? (data.assigneeSessionName ?? data.event?.sessionName ?? undefined)
@@ -566,21 +541,6 @@ export class RaviBot {
               this.wakeStreamingSessionIfDeliverable(sessionName);
             }
           }
-          if (type !== "task.done") continue;
-          if (!creatorSessionName) continue;
-
-          await publishSessionPrompt(creatorSessionName, {
-            prompt: `[System] Answer: [from: ${sessionName ?? data.taskId ?? "task"}] ${buildTaskCompletionAnswerMessage(
-              {
-                taskId: data.taskId ?? "task",
-                title: data.task?.title,
-                summary: data.task?.summary ?? data.event?.message ?? null,
-                assigneeAgentId: data.assigneeAgentId ?? null,
-                assigneeSessionName: data.assigneeSessionName ?? null,
-              },
-            )}`,
-            deliveryBarrier: "after_response",
-          });
         }
       } catch (err) {
         if (!this.running) break;

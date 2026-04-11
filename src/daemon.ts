@@ -22,6 +22,8 @@ import { startCronRunner, stopCronRunner } from "./cron/index.js";
 import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
+import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
+import { startTaskCheckpointRunner, stopTaskCheckpointRunner } from "./tasks/index.js";
 import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
@@ -114,10 +116,12 @@ async function shutdown(signal: string) {
 
     // Stop runners and release leadership so another daemon can take over
     await stopEphemeralRunner();
+    await stopHookRunner();
     await stopTriggerRunner();
     await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
+    await stopTaskCheckpointRunner();
     await releaseLeadership("runners");
 
     // Stop gateway
@@ -232,13 +236,16 @@ export async function startDaemon() {
     log.info("Heartbeat runner started (leader)");
     await startCronRunner();
     log.info("Cron runner started (leader)");
+    await startTaskCheckpointRunner();
+    log.info("Task checkpoint runner started (leader)");
   } else {
-    log.info("Not leader — heartbeat and cron runners skipped (another daemon is running them)");
+    log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
     watchForLeadershipVacancy("runners", async () => {
-      log.info("Leadership vacancy detected — starting heartbeat and cron runners");
+      log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
       await startHeartbeatRunner();
       await startCronRunner();
-      log.info("Heartbeat and cron runners started (new leader)");
+      await startTaskCheckpointRunner();
+      log.info("Heartbeat, cron, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
 
@@ -247,6 +254,9 @@ export async function startDaemon() {
 
   await startTriggerRunner();
   log.info("Trigger runner started");
+
+  await startHookRunner();
+  log.info("Hook runner started");
 
   await startEphemeralRunner();
   log.info("Ephemeral runner started");
@@ -339,7 +349,7 @@ async function notifyRestartReason() {
   }
 
   const payload: Record<string, unknown> = {
-    prompt: `[System] Inform: Daemon reiniciou. Motivo: ${reason}`,
+    prompt: `[System] Daemon reiniciou (${reason}). Continue de onde parou.`,
   };
 
   try {

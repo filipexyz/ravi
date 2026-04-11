@@ -32,6 +32,9 @@ Não é um Jira. É a primitive mínima para:
 
 ```text
 ravi tasks create
+-> task nasce em draft/open com TASK.md
+-> humano ou agent faz brainstorm/edicao no TASK.md
+-> despacho so acontece com aprovacao explicita
 -> ravi tasks dispatch
 -> agent abre a skill + TASK.md
 -> agent edita frontmatter/corpo no TASK.md
@@ -44,6 +47,30 @@ Tudo fica rastreado em:
 - `tasks`
 - `task_assignments`
 - `task_events`
+- `task_comments`
+
+## Processo recomendado
+
+Use este fluxo por default quando a task ainda precisa ser refinada:
+
+1. `ravi tasks create ...`
+2. abrir o `TASK.md`
+3. fazer brainstorm/edicao no proprio doc ate a task ficar boa
+4. obter aprovacao explicita para subir
+5. so entao rodar `ravi tasks dispatch ...`
+
+Ou seja:
+
+- o CLI cria a task
+- o `TASK.md` amadurece a task
+- o dispatch acontece depois da aprovacao
+
+`--agent` no `create` continua existindo para caminho direto, mas o processo recomendado para trabalho que ainda precisa de shaping e:
+
+- criar
+- editar/brainstorm
+- aprovar
+- despachar
 
 ## TASK.md
 
@@ -119,6 +146,7 @@ Mostra:
 - path do `TASK.md`
 - frontmatter reconhecido do `TASK.md`
 - histórico de eventos
+- comentários da task
 
 ### Despachar
 
@@ -155,6 +183,20 @@ Retrocompatibilidade:
 ravi tasks report <task-id> --progress 30 --message "investigando resolver"
 ```
 
+### Comentar / steer
+
+```bash
+ravi tasks comment <task-id> "nova direção / observação"
+```
+
+Semântica:
+
+- comentário é entidade própria, separada de `task_events`
+- o comentário aparece em `ravi tasks show`
+- o runtime também emite `task.comment`
+- se a task estiver `dispatched`, `in_progress` ou `blocked`, o comentário faz steer da sessão responsável
+- steer não substitui progresso/estado; o agent continua precisando usar `report|block|done|fail` quando houver mudança real
+
 ### Encerrar
 
 Bloqueio:
@@ -164,6 +206,7 @@ ravi tasks block <task-id>
 ```
 
 O CLI reconhece `frontmatter.blocker_reason`.
+Se `frontmatter.progress` estiver presente, o `block` também sincroniza esse progresso.
 
 Conclusão:
 

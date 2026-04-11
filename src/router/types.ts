@@ -104,7 +104,7 @@ export interface AgentConfig {
   /** SSH user for remote execution (default: "root") */
   remoteUser?: string;
 
-  /** Generic key-value defaults for CLI tools (e.g., tts voice, image mode) */
+  /** Generic key-value defaults for CLI tools and agent-scoped extensions (e.g., context guardians) */
   defaults?: Record<string, unknown>;
 }
 

@@ -9,6 +9,12 @@ import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
 import {
+  getSessionAdapterDebugSnapshot,
+  listSessionAdapters,
+  type SessionAdapterDebugSnapshot,
+  type SessionAdapterRecord,
+} from "../../adapters/index.js";
+import {
   listSessions,
   getSessionsByAgent,
   deleteSession,
@@ -26,6 +32,7 @@ import {
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
+import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
@@ -35,8 +42,16 @@ import {
   canModifySession,
   filterAccessibleSessions,
 } from "../../permissions/scope.js";
+import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
+const CONFIG_DB_META = { source: "config-db", freshness: "persisted", via: "router-config" } as const;
+const SESSION_DB_META = { source: "session-db", freshness: "persisted" } as const;
+const RUNTIME_SNAPSHOT_META = { source: "runtime-snapshot", freshness: "persisted" } as const;
+const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as const;
+const ADAPTER_DB_META = { source: "adapter-db", freshness: "persisted" } as const;
+const SESSION_KEY_META = { source: "resolver", freshness: "derived-now", via: "session-key" } as const;
+const NEXT_COMMANDS_META = { source: "derived", freshness: "derived-now", via: "session-inspect" } as const;
 
 type StreamTerminalState =
   | { kind: "complete" }
@@ -184,6 +199,168 @@ function formatDebugLine(topic: string, data: Record<string, unknown>, asJson?: 
   return summary ? `[${time}] ${label} :: ${summary}` : `[${time}] ${label}`;
 }
 
+type AdapterInspectionState = "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
+
+function stringifyInspectionValue(value: unknown, max = 160): string {
+  if (value === null || value === undefined) {
+    return "(none)";
+  }
+
+  const rendered =
+    typeof value === "string"
+      ? value
+      : (() => {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return String(value);
+          }
+        })();
+
+  return rendered.length <= max ? rendered : `${rendered.slice(0, max - 3)}...`;
+}
+
+function formatContextStatus(context: ContextRecord): "active" | "expired" | "revoked" {
+  if (context.revokedAt && context.revokedAt <= Date.now()) return "revoked";
+  if (context.expiresAt && context.expiresAt <= Date.now()) return "expired";
+  return "active";
+}
+
+function formatContextSource(context: ContextRecord): string | undefined {
+  if (!context.source) return undefined;
+  const thread = context.source.threadId ? `#${context.source.threadId}` : "";
+  return `${context.source.channel}/${context.source.accountId}/${context.source.chatId}${thread}`;
+}
+
+function readContextMetadata(context: ContextRecord, key: string): string | undefined {
+  const value = context.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function formatContextInspectionLine(context: ContextRecord): string {
+  const parts = [formatContextStatus(context), context.contextId, context.kind, `caps=${context.capabilities.length}`];
+
+  const source = formatContextSource(context);
+  if (source) parts.push(`source=${source}`);
+
+  const runtimeProvider = readContextMetadata(context, "runtimeProvider");
+  if (runtimeProvider) parts.push(`provider=${runtimeProvider}`);
+
+  const parentContextId = readContextMetadata(context, "parentContextId");
+  if (parentContextId) parts.push(`parent=${parentContextId}`);
+
+  const issuedFor = readContextMetadata(context, "issuedFor");
+  if (issuedFor) parts.push(`issuedFor=${issuedFor}`);
+
+  const issuanceMode = readContextMetadata(context, "issuanceMode");
+  if (issuanceMode) parts.push(`mode=${issuanceMode}`);
+
+  if (context.lastUsedAt) {
+    parts.push(`lastUsed=${formatDate(context.lastUsedAt)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function resolveAdapterInspectionState(
+  adapter: SessionAdapterRecord,
+  snapshot: SessionAdapterDebugSnapshot | null,
+): AdapterInspectionState {
+  if (!snapshot) {
+    if (adapter.status === "broken") return "dead";
+    if (adapter.status === "stopped") return "stopped";
+    if (adapter.status === "configured") return "configured";
+    return "unbound";
+  }
+
+  if (snapshot.lastProtocolError) {
+    return "protocol-invalid";
+  }
+
+  const bound = Boolean(snapshot.bind.contextId);
+  if (!bound) {
+    return "unbound";
+  }
+
+  if (snapshot.health.state === "running" && adapter.status === "running") {
+    return "live";
+  }
+
+  if (snapshot.health.state === "broken" || adapter.status === "broken") {
+    return "dead";
+  }
+
+  if (snapshot.health.state === "stopped") {
+    return "stopped";
+  }
+
+  return "configured";
+}
+
+function formatAdapterInspectionLine(
+  adapter: SessionAdapterRecord,
+  snapshot: SessionAdapterDebugSnapshot | null,
+): string {
+  const state = resolveAdapterInspectionState(adapter, snapshot);
+  const parts = [adapter.name, state, `transport=${adapter.transport}`];
+
+  parts.push(`status=${adapter.status}`);
+  if (snapshot?.health.state) {
+    parts.push(`health=${snapshot.health.state}`);
+  }
+
+  const contextId = snapshot?.bind.contextId;
+  if (contextId) {
+    parts.push(`ctx=${contextId}`);
+  }
+
+  const cliName = snapshot?.bind.cliName ?? adapter.definition.bindings.context.cliName;
+  if (cliName) {
+    parts.push(`cli=${cliName}`);
+  }
+
+  if (typeof snapshot?.health.pendingCommands === "number") {
+    parts.push(`pending=${snapshot.health.pendingCommands}`);
+  }
+
+  const lastError =
+    snapshot?.lastProtocolError?.reason ??
+    snapshot?.lastProtocolError?.message ??
+    snapshot?.health.lastError ??
+    adapter.lastError;
+  if (typeof lastError === "string" && lastError.trim()) {
+    parts.push(`error=${trimDebugText(lastError, 60)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function buildSuggestedDebugCommands(
+  session: SessionEntry,
+  contexts: ContextRecord[],
+  adapters: SessionAdapterRecord[],
+): string[] {
+  const target = session.name ?? session.sessionKey;
+  const commands = [
+    `ravi sessions debug ${target}`,
+    `ravi sessions read ${target}`,
+    `ravi agents session ${session.agentId}`,
+    `ravi agents debug ${session.agentId} ${target}`,
+    `ravi context list --session ${session.sessionKey}`,
+    `ravi adapters list --session ${session.sessionKey}`,
+  ];
+
+  if (contexts.length > 0) {
+    commands.push(`ravi context info ${contexts[0]!.contextId}`);
+  }
+
+  for (const adapter of adapters.slice(0, 3)) {
+    commands.push(`ravi adapters show ${adapter.adapterId}`);
+  }
+
+  return commands;
+}
+
 @Group({
   name: "sessions",
   description: "Manage agent sessions",
@@ -251,9 +428,17 @@ export class SessionCommands {
     return { sessions, total: sessions.length };
   }
 
-  @Command({ name: "info", description: "Show session details" })
+  @Command({
+    name: "info",
+    description: "Show unified session inspection details",
+    aliases: ["inspect"],
+  })
   info(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
-    const s = resolveSession(nameOrKey);
+    let s = resolveSession(nameOrKey);
+    if (!s) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) s = match;
+    }
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
       return;
@@ -266,38 +451,110 @@ export class SessionCommands {
       return;
     }
 
-    console.log(`\nSession:     ${s.name ?? s.sessionKey}`);
-    console.log(`Key:         ${s.sessionKey}`);
-    console.log(`Display:     ${s.displayName ?? "(none)"}`);
-    console.log(`Agent:       ${s.agentId}`);
-    console.log(`Model:       ${s.modelOverride ?? "(agent default)"}`);
-    console.log(`Thinking:    ${s.thinkingLevel ?? "(default)"}`);
-    console.log(`Runtime ID:  ${s.providerSessionId ?? s.sdkSessionId ?? "(none)"}`);
-    console.log(
-      `Tokens:      input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+    const config = loadRouterConfig();
+    const agentConfig = config.agents[s.agentId];
+    const derivedSource = deriveSourceFromSessionKey(s.sessionKey);
+    const relatedContexts = dbListContexts({ sessionKey: s.sessionKey, includeInactive: true });
+    const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
+    const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
+
+    console.log(`\nSession: ${s.name ?? s.sessionKey}`);
+    printInspectionField("Key", s.sessionKey, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Display", s.displayName ?? "(none)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Agent", s.agentId, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
+    printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
+    printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Thinking", s.thinkingLevel ?? "(default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Runtime", s.runtimeProvider ?? "(unknown)", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Runtime ID", s.providerSessionId ?? s.sdkSessionId ?? "(none)", RUNTIME_SNAPSHOT_META, {
+      labelWidth: 14,
+    });
+    if (s.runtimeSessionParams) {
+      printInspectionField("Runtime ctx", stringifyInspectionValue(s.runtimeSessionParams), RUNTIME_SNAPSHOT_META, {
+        labelWidth: 14,
+      });
+    }
+    printInspectionField(
+      "Tokens",
+      `input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+      RUNTIME_SNAPSHOT_META,
+      { labelWidth: 14 },
     );
 
     if (s.lastChannel || s.lastTo) {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
       const account = s.lastAccountId ? ` (account: ${s.lastAccountId})` : "";
-      console.log(`Channel:     ${routing}${account}`);
+      printInspectionField("Channel", `${routing}${account}`, SESSION_DB_META, { labelWidth: 14 });
+    }
+
+    if (derivedSource) {
+      printInspectionBlock(
+        "Derived route",
+        SESSION_KEY_META,
+        [
+          `channel=${derivedSource.channel}`,
+          `account=${derivedSource.accountId || "(none)"}`,
+          `chatId=${derivedSource.chatId}`,
+          ...(derivedSource.threadId ? [`thread=${derivedSource.threadId}`] : []),
+        ],
+        { labelWidth: 14 },
+      );
     }
 
     if (s.ephemeral) {
       const expiresStr = s.expiresAt ? formatDate(s.expiresAt) : "unknown";
       const remaining = s.expiresAt ? Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000)) : 0;
-      console.log(`Ephemeral:   ⏳ yes — expires ${expiresStr} (${remaining}min left)`);
+      printInspectionField("Ephemeral", `yes — expires ${expiresStr} (${remaining}min left)`, SESSION_DB_META, {
+        labelWidth: 14,
+      });
     }
 
-    console.log(
-      `Queue:       ${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`,
+    printInspectionField(
+      "Queue",
+      `${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
     );
-    console.log(`Compactions: ${s.compactionCount ?? 0}`);
-    console.log(`Created:     ${formatDate(s.createdAt)}`);
-    console.log(`Updated:     ${formatDate(s.updatedAt)}`);
+    printInspectionField("Compactions", s.compactionCount ?? 0, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Created", formatDate(s.createdAt), SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Updated", formatDate(s.updatedAt), SESSION_DB_META, { labelWidth: 14 });
+
+    console.log();
+    console.log(formatInspectionSection(`Related contexts (${relatedContexts.length}):`, CONTEXT_DB_META));
+    if (relatedContexts.length === 0) {
+      console.log("  (none)");
+    } else {
+      for (const context of relatedContexts) {
+        console.log(`  ${formatContextInspectionLine(context)}`);
+      }
+    }
+
+    console.log();
+    console.log(formatInspectionSection(`Adapters (${relatedAdapters.length}):`, ADAPTER_DB_META));
+    if (relatedAdapters.length === 0) {
+      console.log("  (none)");
+    } else {
+      for (const adapter of relatedAdapters) {
+        const snapshot = getSessionAdapterDebugSnapshot(adapter.adapterId);
+        console.log(`  ${formatAdapterInspectionLine(adapter, snapshot)}`);
+      }
+    }
+
+    console.log();
+    console.log(formatInspectionSection("Next debug commands:", NEXT_COMMANDS_META));
+    for (const command of suggestedCommands) {
+      console.log(`  ${command}`);
+    }
     console.log();
 
-    return s;
+    return {
+      session: s,
+      contexts: relatedContexts,
+      adapters: relatedAdapters,
+      commands: suggestedCommands,
+    };
   }
 
   @Command({ name: "rename", description: "Set session display name" })

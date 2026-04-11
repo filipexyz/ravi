@@ -244,7 +244,7 @@ describe("ContextCommands", () => {
     revokedContext = undefined;
   });
 
-  it("lists contexts with visible lineage and no context key", () => {
+  it("lists contexts with visible lineage and no context key in --json mode", () => {
     listedContexts = [
       resolvedContext!,
       {
@@ -274,7 +274,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.list(undefined, undefined, undefined, false);
+      command.list(undefined, undefined, undefined, false, true);
     } finally {
       console.log = originalLog;
     }
@@ -295,7 +295,47 @@ describe("ContextCommands", () => {
     expect(JSON.stringify(payload)).not.toContain("rctx_child_123");
   });
 
-  it("shows context info with lineage, source and capabilities", () => {
+  it("lists contexts in a human-readable summary by default", () => {
+    listedContexts = [
+      resolvedContext!,
+      {
+        contextId: "ctx_child_123",
+        contextKey: "rctx_child_123",
+        kind: "cli-runtime",
+        agentId: "dev",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+        metadata: {
+          parentContextId: "ctx_123",
+          issuanceMode: "explicit",
+          issuedFor: "sync-cli",
+        },
+        createdAt: 3000,
+      },
+    ];
+
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    try {
+      command.list(undefined, undefined, undefined, false, false);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join("\n");
+    expect(output).toContain("Contexts (2)");
+    expect(output).toContain("- ctx_child_123 :: active :: cli-runtime :: caps=1");
+    expect(output).toContain("lineage=parent=ctx_123 issuedFor=sync-cli mode=explicit");
+    expect(output).not.toContain("rctx_child_123");
+  });
+
+  it("shows context info with lineage, source and capabilities in --json mode", () => {
     fetchedContext = {
       contextId: "ctx_child_123",
       contextKey: "rctx_child_123",
@@ -323,7 +363,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.info("ctx_child_123");
+      command.info("ctx_child_123", true);
     } finally {
       console.log = originalLog;
     }
@@ -354,7 +394,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.whoami();
+      command.whoami(true);
     } finally {
       console.log = originalLog;
     }
@@ -371,6 +411,26 @@ describe("ContextCommands", () => {
     });
   });
 
+  it("prints a human-readable current context by default", () => {
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    try {
+      command.whoami();
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join("\n");
+    expect(output).toContain("Current Context: ctx_123");
+    expect(output).toContain("Capabilities (1)");
+    expect(output).toContain("execute:group:context");
+  });
+
   it("prints capabilities as JSON from the resolved runtime context", () => {
     const command = new ContextCommands();
     const lines: string[] = [];
@@ -380,7 +440,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.capabilities();
+      command.capabilities(true);
     } finally {
       console.log = originalLog;
     }
@@ -399,7 +459,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.check("execute", "group", "context");
+      command.check("execute", "group", "context", true);
     } finally {
       console.log = originalLog;
     }
@@ -423,7 +483,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      await command.authorize("execute", "group", "daemon");
+      await command.authorize("execute", "group", "daemon", true);
     } finally {
       console.log = originalLog;
     }
@@ -440,7 +500,7 @@ describe("ContextCommands", () => {
     });
   });
 
-  it("issues a least-privilege child context for an external CLI", () => {
+  it("issues a least-privilege child context for an external CLI in --json mode", () => {
     const command = new ContextCommands();
     const lines: string[] = [];
     const originalLog = console.log;
@@ -449,7 +509,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.issue("sync-cli", "execute:group:daemon,access:session:agent:dev:main", "2h", false);
+      command.issue("sync-cli", "execute:group:daemon,access:session:agent:dev:main", "2h", false, true);
     } finally {
       console.log = originalLog;
     }
@@ -466,7 +526,27 @@ describe("ContextCommands", () => {
     expect(payload.env).toEqual({ RAVI_CONTEXT_KEY: "rctx_child_123" });
   });
 
-  it("revokes a context and prints the updated state", () => {
+  it("prints the child context export instructions by default", () => {
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    try {
+      command.issue("sync-cli", "execute:group:daemon,access:session:agent:dev:main", "2h", false);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const output = lines.join("\n");
+    expect(output).toContain("Issued Context: ctx_child_123");
+    expect(output).toContain("Capabilities (1)");
+    expect(output).toContain("RAVI_CONTEXT_KEY=rctx_child_123");
+  });
+
+  it("revokes a context and prints the updated state in --json mode", () => {
     revokedContext = {
       ...(fetchedContext ?? resolvedContext!),
       revokedAt: 5000,
@@ -480,7 +560,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.revoke("ctx_123");
+      command.revoke("ctx_123", true);
     } finally {
       console.log = originalLog;
     }
@@ -527,7 +607,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.whoami();
+      command.whoami(true);
     } finally {
       console.log = originalLog;
     }

@@ -26,7 +26,14 @@ mock.module("../../nats.js", () => ({
 mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => undefined,
   isScopeEnforced: () => false,
+  canAccessSession: () => true,
+  canModifySession: () => true,
+  canAccessContact: () => true,
   canAccessResource: () => true,
+  canViewAgent: () => true,
+  canWriteContacts: () => true,
+  filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
+  filterVisibleAgents: <T>(_: unknown, agents: T[]) => agents,
 }));
 
 mock.module("../../router/config.js", () => ({

@@ -11,6 +11,92 @@ import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/r
 import { canWithCapabilities } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
+import {
+  formatInspectionSection,
+  printInspectionBlock,
+  printInspectionField,
+  type InspectionMeta,
+} from "../inspection-output.js";
+
+const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as const;
+const RESOLVER_META = { source: "resolver", freshness: "live" } as const;
+const DERIVED_META = { source: "derived", freshness: "derived-now" } as const;
+
+interface ContextLineageSummary {
+  parentContextId: string | null;
+  parentContextKind: string | null;
+  issuedFor: string | null;
+  issuedAt: number | null;
+  issuanceMode: string | null;
+  approvalSource: unknown;
+}
+
+interface SerializedContextSummary {
+  contextId: string;
+  kind: string;
+  status: "active" | "expired" | "revoked";
+  agentId: string | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  createdAt: number;
+  expiresAt: number | null;
+  lastUsedAt: number | null;
+  revokedAt: number | null;
+  capabilitiesCount: number;
+  parentContextId: string | null;
+  issuedFor: string | null;
+  issuanceMode: string | null;
+}
+
+interface SerializedContextDetail extends SerializedContextSummary {
+  source: ContextRecord["source"] | null;
+  metadata: Record<string, unknown> | null;
+  capabilities: ContextCapability[];
+  lineage: ContextLineageSummary;
+}
+
+interface ContextCapabilitiesPayload {
+  contextId: string;
+  kind: string;
+  agentId: string | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  capabilities: ContextCapability[];
+}
+
+interface ContextCheckPayload {
+  contextId: string;
+  agentId: string | null;
+  permission: string;
+  objectType: string;
+  objectId: string;
+  allowed: boolean;
+  capabilitiesCount: number;
+}
+
+interface ContextAuthorizePayload extends ContextCheckPayload {
+  approved: boolean;
+  inherited: boolean;
+  reason: string | null;
+}
+
+interface ContextIssuePayload {
+  contextId: string;
+  contextKey: string;
+  kind: string;
+  cliName: string;
+  agentId: string | null;
+  sessionKey: string | null;
+  sessionName: string | null;
+  parentContextId: string;
+  createdAt: number;
+  expiresAt: number | null;
+  capabilities: ContextCapability[];
+  capabilitiesCount: number;
+  source: ContextRecord["source"] | null;
+  metadata: Record<string, unknown> | null;
+  env: Record<string, string>;
+}
 
 @Group({
   name: "context",
@@ -24,41 +110,51 @@ export class ContextCommands {
     @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
     @Option({ flags: "--kind <kind>", description: "Filter by context kind" }) kind?: string,
     @Option({ flags: "--all", description: "Include revoked and expired contexts" }) includeInactive = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const contexts = dbListContexts({ agentId, sessionKey, kind, includeInactive });
-    this.printJson({
+    const payload = {
       count: contexts.length,
       contexts: contexts.map((context) => this.serializeContextSummary(context)),
-    });
+    };
+
+    this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
   }
 
   @Command({ name: "info", description: "Show full runtime context details without exposing the context key" })
-  info(@Arg("contextId", { description: "Context ID to inspect" }) contextId: string) {
+  info(
+    @Arg("contextId", { description: "Context ID to inspect" }) contextId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
     const context = dbGetContext(contextId);
     if (!context) {
       fail(`Context not found: ${contextId}`);
     }
 
-    this.printJson(this.serializeContextDetail(context));
+    const payload = this.serializeContextDetail(context);
+    this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Context"));
   }
 
   @Command({ name: "whoami", description: "Resolve the current runtime context" })
-  whoami() {
+  whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const context = this.requireResolvedContext();
-    this.printJson(this.serializeContextDetail(context));
+    const payload = this.serializeContextDetail(context);
+    this.printPayload(payload, asJson, () => this.printContextRecord(payload, RESOLVER_META, "Current Context"));
   }
 
   @Command({ name: "capabilities", description: "List inherited capabilities for the current runtime context" })
-  capabilities() {
+  capabilities(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const context = this.requireResolvedContext();
-    this.printJson({
+    const payload: ContextCapabilitiesPayload = {
       contextId: context.contextId,
       kind: context.kind,
       agentId: context.agentId ?? null,
       sessionKey: context.sessionKey ?? null,
       sessionName: context.sessionName ?? null,
       capabilities: context.capabilities,
-    });
+    };
+
+    this.printPayload(payload, asJson, () => this.printCapabilitiesPayload(payload));
   }
 
   @Command({ name: "check", description: "Check whether the current runtime context allows an action" })
@@ -66,9 +162,10 @@ export class ContextCommands {
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
     @Arg("objectId", { description: "Object identifier or pattern target" }) objectId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const context = this.requireResolvedContext();
-    this.printJson({
+    const payload: ContextCheckPayload = {
       contextId: context.contextId,
       agentId: context.agentId ?? null,
       permission,
@@ -76,7 +173,9 @@ export class ContextCommands {
       objectId,
       allowed: canWithCapabilities(context.capabilities, permission, objectType, objectId),
       capabilitiesCount: context.capabilities.length,
-    });
+    };
+
+    this.printPayload(payload, asJson, () => this.printCheckResult(payload));
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
@@ -84,6 +183,7 @@ export class ContextCommands {
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
     @Arg("objectId", { description: "Object identifier or pattern target" }) objectId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const context = this.requireResolvedContext();
     const result = await authorizeRuntimeContext({
@@ -93,7 +193,7 @@ export class ContextCommands {
       objectId,
     });
 
-    this.printJson({
+    const payload: ContextAuthorizePayload = {
       contextId: result.context.contextId,
       agentId: result.context.agentId ?? null,
       permission,
@@ -104,7 +204,9 @@ export class ContextCommands {
       inherited: result.inherited,
       reason: result.reason ?? null,
       capabilitiesCount: result.context.capabilities.length,
-    });
+    };
+
+    this.printPayload(payload, asJson, () => this.printAuthorizeResult(payload));
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
@@ -121,6 +223,7 @@ export class ContextCommands {
     })
     ttl?: string,
     @Option({ flags: "--inherit", description: "Inherit all capabilities from the current context" }) inherit = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const parent = this.requireResolvedContext();
     const child = issueRuntimeContext({
@@ -131,7 +234,7 @@ export class ContextCommands {
       inheritCapabilities: inherit,
     });
 
-    this.printJson({
+    const payload: ContextIssuePayload = {
       contextId: child.contextId,
       contextKey: child.contextKey,
       kind: child.kind,
@@ -149,13 +252,19 @@ export class ContextCommands {
       env: {
         [RAVI_CONTEXT_KEY_ENV]: child.contextKey,
       },
-    });
+    };
+
+    this.printPayload(payload, asJson, () => this.printIssuedContext(payload));
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
-  revoke(@Arg("contextId", { description: "Context ID to revoke" }) contextId: string) {
+  revoke(
+    @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
     const context = revokeRuntimeContext(contextId);
-    this.printJson(this.serializeContextDetail(context));
+    const payload = this.serializeContextDetail(context);
+    this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Revoked Context"));
   }
 
   private requireResolvedContext() {
@@ -180,7 +289,161 @@ export class ContextCommands {
     console.log(JSON.stringify(payload, null, 2));
   }
 
-  private serializeContextSummary(context: ContextRecord) {
+  private printPayload(payload: unknown, asJson: boolean, printer: () => void): void {
+    if (asJson) {
+      this.printJson(payload);
+      return;
+    }
+    printer();
+  }
+
+  private printContextList(contexts: SerializedContextSummary[]): void {
+    if (contexts.length === 0) {
+      console.log(`\n${formatInspectionSection("Contexts (0)", CONTEXT_DB_META)}\n`);
+      console.log("  (none)");
+      return;
+    }
+
+    console.log(`\n${formatInspectionSection(`Contexts (${contexts.length})`, CONTEXT_DB_META)}\n`);
+    for (const context of contexts) {
+      console.log(
+        `- ${context.contextId} :: ${context.status} :: ${context.kind} :: caps=${context.capabilitiesCount}`,
+      );
+      console.log(
+        `  agent=${context.agentId ?? "-"} session=${context.sessionName ?? context.sessionKey ?? "-"} created=${formatTimestamp(
+          context.createdAt,
+        )}`,
+      );
+      console.log(
+        `  expires=${formatTimestamp(context.expiresAt)} lastUsed=${formatTimestamp(context.lastUsedAt)} revoked=${formatTimestamp(
+          context.revokedAt,
+        )}`,
+      );
+      const lineage = this.formatLineageSummary(context);
+      if (lineage) {
+        console.log(`  lineage=${lineage}`);
+      }
+    }
+  }
+
+  private printContextRecord(detail: SerializedContextDetail, meta: InspectionMeta, heading: string): void {
+    console.log(`\n${heading}: ${detail.contextId}\n`);
+    printInspectionField("Kind", detail.kind, meta);
+    printInspectionField("Status", detail.status, DERIVED_META);
+    printInspectionField("Agent", detail.agentId ?? "-", meta);
+    printInspectionField("Session Key", detail.sessionKey ?? "-", meta);
+    printInspectionField("Session Name", detail.sessionName ?? "-", meta);
+    printInspectionField("Created", formatTimestamp(detail.createdAt), meta);
+    printInspectionField("Expires", formatTimestamp(detail.expiresAt), meta);
+    printInspectionField("Last Used", formatTimestamp(detail.lastUsedAt), meta);
+    printInspectionField("Revoked", formatTimestamp(detail.revokedAt), meta);
+    printInspectionField("Capabilities", detail.capabilitiesCount, meta);
+
+    const lineageLines = this.formatLineageLines(detail.lineage);
+    if (lineageLines.length > 0) {
+      console.log(`\n${formatInspectionSection("  Lineage", DERIVED_META)}`);
+      for (const line of lineageLines) {
+        console.log(`    ${line}`);
+      }
+    }
+
+    if (detail.source) {
+      console.log(`\n${formatInspectionSection("  Source", meta)}`);
+      console.log(
+        `    channel=${detail.source.channel} account=${detail.source.accountId} chat=${detail.source.chatId}`,
+      );
+    }
+
+    console.log(`\n${formatInspectionSection(`  Capabilities (${detail.capabilitiesCount})`, meta)}`);
+    this.printCapabilitiesList(detail.capabilities);
+
+    if (detail.metadata && Object.keys(detail.metadata).length > 0) {
+      printInspectionBlock("Metadata", DERIVED_META, JSON.stringify(detail.metadata, null, 2).split("\n"), {
+        indent: 2,
+        labelWidth: 14,
+      });
+    }
+  }
+
+  private printCapabilitiesPayload(payload: ContextCapabilitiesPayload): void {
+    console.log(`\nCurrent Context: ${payload.contextId}\n`);
+    printInspectionField("Kind", payload.kind, RESOLVER_META);
+    printInspectionField("Agent", payload.agentId ?? "-", RESOLVER_META);
+    printInspectionField("Session Key", payload.sessionKey ?? "-", RESOLVER_META);
+    printInspectionField("Session Name", payload.sessionName ?? "-", RESOLVER_META);
+    console.log(`\n${formatInspectionSection(`  Capabilities (${payload.capabilities.length})`, RESOLVER_META)}`);
+    this.printCapabilitiesList(payload.capabilities);
+  }
+
+  private printCheckResult(payload: ContextCheckPayload): void {
+    console.log(`\nPermission Check: ${payload.allowed ? "allowed" : "denied"}\n`);
+    printInspectionField("Context", payload.contextId, RESOLVER_META);
+    printInspectionField("Agent", payload.agentId ?? "-", RESOLVER_META);
+    printInspectionField("Permission", payload.permission, DERIVED_META);
+    printInspectionField("Object", `${payload.objectType}:${payload.objectId}`, DERIVED_META);
+    printInspectionField("Matched Caps", payload.capabilitiesCount, RESOLVER_META);
+  }
+
+  private printAuthorizeResult(payload: ContextAuthorizePayload): void {
+    console.log(`\nAuthorization: ${payload.allowed ? "allowed" : "denied"}\n`);
+    printInspectionField("Context", payload.contextId, RESOLVER_META);
+    printInspectionField("Permission", payload.permission, DERIVED_META);
+    printInspectionField("Object", `${payload.objectType}:${payload.objectId}`, DERIVED_META);
+    printInspectionField("Approved", payload.approved ? "yes" : "no", DERIVED_META);
+    printInspectionField("Inherited", payload.inherited ? "yes" : "no", DERIVED_META);
+    printInspectionField("Reason", payload.reason ?? "-", DERIVED_META);
+    printInspectionField("Capabilities", payload.capabilitiesCount, RESOLVER_META);
+  }
+
+  private printIssuedContext(payload: ContextIssuePayload): void {
+    console.log(`\nIssued Context: ${payload.contextId}\n`);
+    printInspectionField("Kind", payload.kind, DERIVED_META);
+    printInspectionField("CLI", payload.cliName, DERIVED_META);
+    printInspectionField("Agent", payload.agentId ?? "-", DERIVED_META);
+    printInspectionField("Session Key", payload.sessionKey ?? "-", DERIVED_META);
+    printInspectionField("Session Name", payload.sessionName ?? "-", DERIVED_META);
+    printInspectionField("Parent", payload.parentContextId, DERIVED_META);
+    printInspectionField("Created", formatTimestamp(payload.createdAt), DERIVED_META);
+    printInspectionField("Expires", formatTimestamp(payload.expiresAt), DERIVED_META);
+    console.log(`\n${formatInspectionSection(`  Capabilities (${payload.capabilitiesCount})`, DERIVED_META)}`);
+    this.printCapabilitiesList(payload.capabilities);
+    console.log(`\n${formatInspectionSection("  Export", DERIVED_META)}`);
+    for (const [name, value] of Object.entries(payload.env)) {
+      console.log(`    ${name}=${value}`);
+    }
+  }
+
+  private printCapabilitiesList(capabilities: ContextCapability[]): void {
+    if (capabilities.length === 0) {
+      console.log("    (none)");
+      return;
+    }
+    for (const capability of capabilities) {
+      console.log(`    - ${capability.permission}:${capability.objectType}:${capability.objectId}`);
+    }
+  }
+
+  private formatLineageSummary(context: SerializedContextSummary): string | null {
+    const parts = [
+      context.parentContextId ? `parent=${context.parentContextId}` : null,
+      context.issuedFor ? `issuedFor=${context.issuedFor}` : null,
+      context.issuanceMode ? `mode=${context.issuanceMode}` : null,
+    ].filter((value): value is string => Boolean(value));
+    return parts.length > 0 ? parts.join(" ") : null;
+  }
+
+  private formatLineageLines(lineage: ContextLineageSummary): string[] {
+    return [
+      lineage.parentContextId ? `parentContextId=${lineage.parentContextId}` : null,
+      lineage.parentContextKind ? `parentContextKind=${lineage.parentContextKind}` : null,
+      lineage.issuedFor ? `issuedFor=${lineage.issuedFor}` : null,
+      lineage.issuedAt ? `issuedAt=${formatTimestamp(lineage.issuedAt)}` : null,
+      lineage.issuanceMode ? `issuanceMode=${lineage.issuanceMode}` : null,
+      lineage.approvalSource ? `approvalSource=${JSON.stringify(lineage.approvalSource)}` : null,
+    ].filter((value): value is string => Boolean(value));
+  }
+
+  private serializeContextSummary(context: ContextRecord): SerializedContextSummary {
     const lineage = this.extractLineage(context);
     return {
       contextId: context.contextId,
@@ -200,7 +463,7 @@ export class ContextCommands {
     };
   }
 
-  private serializeContextDetail(context: ContextRecord) {
+  private serializeContextDetail(context: ContextRecord): SerializedContextDetail {
     return {
       ...this.serializeContextSummary(context),
       source: context.source ?? null,
@@ -227,6 +490,10 @@ export class ContextCommands {
     if (context.expiresAt && context.expiresAt <= Date.now()) return "expired";
     return "active";
   }
+}
+
+function formatTimestamp(value: number | null | undefined): string {
+  return typeof value === "number" ? new Date(value).toISOString() : "-";
 }
 
 function parseCapabilityList(input: string | undefined): ContextCapability[] {

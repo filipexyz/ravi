@@ -7,6 +7,12 @@ let runtimeEvents: RuntimeEventPayload[] = [];
 let claudeEvents: RuntimeEventPayload[] = [];
 let responseEvents: ResponseEventPayload[] = [];
 const publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+let resolvedSession: Record<string, unknown> | null = null;
+let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
+let listedContexts: Array<Record<string, unknown>> = [];
+let listedAdapters: Array<Record<string, unknown>> = [];
+const adapterSnapshots = new Map<string, Record<string, unknown>>();
+let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents: {} };
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -19,6 +25,7 @@ function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -54,7 +61,7 @@ mock.module("../../router/sessions.js", () => ({
   getSessionsByAgent: () => [],
   deleteSession: () => {},
   resetSession: () => {},
-  resolveSession: () => null,
+  resolveSession: () => resolvedSession,
   getOrCreateSession: () => null,
   findSessionByChatId: () => null,
   updateSessionDisplayName: () => {},
@@ -66,12 +73,30 @@ mock.module("../../router/sessions.js", () => ({
 }));
 
 mock.module("../../router/session-key.js", () => ({
-  deriveSourceFromSessionKey: () => undefined,
+  deriveSourceFromSessionKey: () => sessionDerivedSource,
 }));
 
 mock.module("../../router/index.js", () => ({
-  loadRouterConfig: () => ({ agents: {} }),
+  loadRouterConfig: () => routerConfig,
   expandHome: (path: string) => path,
+}));
+
+mock.module("../../router/router-db.js", () => ({
+  dbListContexts: (options?: { sessionKey?: string }) =>
+    listedContexts.filter((context) => {
+      if (!options?.sessionKey) return true;
+      return context.sessionKey === options.sessionKey;
+    }),
+}));
+
+mock.module("../../adapters/index.js", () => ({
+  listSessionAdapters: (options?: { sessionKey?: string; status?: string }) =>
+    listedAdapters.filter((adapter) => {
+      if (options?.sessionKey && adapter.sessionKey !== options.sessionKey) return false;
+      if (options?.status && adapter.status !== options.status) return false;
+      return true;
+    }),
+  getSessionAdapterDebugSnapshot: (adapterId: string) => adapterSnapshots.get(adapterId) ?? null,
 }));
 
 mock.module("../../permissions/scope.js", () => ({
@@ -79,6 +104,7 @@ mock.module("../../permissions/scope.js", () => ({
   isScopeEnforced: () => false,
   canAccessSession: () => true,
   canModifySession: () => true,
+  canAccessContact: () => true,
   filterAccessibleSessions: <T>(_: unknown, sessions: T[]) => sessions,
 }));
 
@@ -89,12 +115,34 @@ mock.module("../../transcripts.js", () => ({
 const { SessionCommands } = await import("./sessions.js");
 const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
 
+function captureLogs(run: () => void): string {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    run();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return lines.join("\n");
+}
+
 describe("SessionCommands wait mode", () => {
   beforeEach(() => {
     runtimeEvents = [];
     claudeEvents = [];
     responseEvents = [];
     publishedPrompts.length = 0;
+    resolvedSession = null;
+    sessionDerivedSource = undefined;
+    listedContexts = [];
+    listedAdapters = [];
+    adapterSnapshots.clear();
+    routerConfig = { agents: {} };
   });
 
   it("throws the runtime failure when a waited session fails without response output", async () => {
@@ -175,6 +223,150 @@ describe("SessionCommands wait mode", () => {
       globalThis.setTimeout = originalSetTimeout;
       globalThis.clearTimeout = originalClearTimeout;
     }
+  });
+});
+
+describe("SessionCommands info", () => {
+  beforeEach(() => {
+    resolvedSession = null;
+    sessionDerivedSource = undefined;
+    listedContexts = [];
+    listedAdapters = [];
+    adapterSnapshots.clear();
+    routerConfig = { agents: {} };
+  });
+
+  it("prints a unified inspect view with runtime identity, contexts, adapters, and next commands", () => {
+    resolvedSession = {
+      sessionKey: "agent:main:whatsapp:main:group:123456",
+      name: "support-group",
+      displayName: "Support",
+      agentId: "main",
+      modelOverride: "gpt-5.4-mini",
+      thinkingLevel: "verbose",
+      runtimeProvider: "codex",
+      providerSessionId: "resp_123",
+      runtimeSessionParams: { sessionId: "resp_123", cwd: "/tmp/main" },
+      inputTokens: 1200,
+      outputTokens: 300,
+      totalTokens: 1500,
+      contextTokens: 2200,
+      lastChannel: "whatsapp",
+      lastTo: "group:123456",
+      lastAccountId: "main",
+      queueMode: "queue",
+      queueDebounceMs: 500,
+      queueCap: 10,
+      compactionCount: 2,
+      createdAt: Date.UTC(2026, 3, 11, 12, 0, 0),
+      updatedAt: Date.UTC(2026, 3, 11, 12, 30, 0),
+      agentCwd: "/tmp/main",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          provider: "codex",
+          model: "gpt-5",
+        },
+      },
+    };
+    sessionDerivedSource = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "group:123456",
+      threadId: "thread-1",
+    };
+    listedContexts = [
+      {
+        contextId: "ctx_runtime",
+        kind: "runtime",
+        sessionKey: "agent:main:whatsapp:main:group:123456",
+        sessionName: "support-group",
+        agentId: "main",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "group:123456",
+        },
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "context" }],
+        metadata: { runtimeProvider: "codex" },
+        createdAt: Date.UTC(2026, 3, 11, 12, 0, 0),
+        lastUsedAt: Date.UTC(2026, 3, 11, 12, 25, 0),
+      },
+      {
+        contextId: "ctx_child",
+        kind: "cli-runtime",
+        sessionKey: "agent:main:whatsapp:main:group:123456",
+        sessionName: "support-group",
+        agentId: "main",
+        capabilities: [
+          { permission: "execute", objectType: "group", objectId: "context" },
+          { permission: "access", objectType: "tool", objectId: "slack" },
+        ],
+        metadata: {
+          parentContextId: "ctx_runtime",
+          issuedFor: "adapter-cli",
+          issuanceMode: "inherit",
+        },
+        createdAt: Date.UTC(2026, 3, 11, 12, 5, 0),
+      },
+    ];
+    listedAdapters = [
+      {
+        adapterId: "adapter-1",
+        name: "slack-bridge",
+        transport: "stdio-json",
+        sessionKey: "agent:main:whatsapp:main:group:123456",
+        sessionName: "support-group",
+        agentId: "main",
+        status: "running",
+        definition: {
+          bindings: {
+            context: {
+              cliName: "adapter-cli",
+            },
+          },
+        },
+      },
+    ];
+    adapterSnapshots.set("adapter-1", {
+      bind: {
+        contextId: "ctx_child",
+        cliName: "adapter-cli",
+      },
+      health: {
+        state: "running",
+        pendingCommands: 0,
+        lastError: null,
+      },
+    });
+
+    const output = captureLogs(() => {
+      new SessionCommands().info("support-group");
+    });
+
+    expect(output).toContain(
+      "Key:          agent:main:whatsapp:main:group:123456  [source=session-db freshness=persisted]",
+    );
+    expect(output).toContain("Configured:   codex  [source=config-db freshness=persisted via=router-config]");
+    expect(output).toContain("Model:        gpt-5  [source=config-db freshness=persisted via=router-config]");
+    expect(output).toContain("Override:     gpt-5.4-mini  [source=session-db freshness=persisted]");
+    expect(output).toContain("Runtime:      codex  [source=runtime-snapshot freshness=persisted]");
+    expect(output).toContain(
+      'Runtime ctx:  {"sessionId":"resp_123","cwd":"/tmp/main"}  [source=runtime-snapshot freshness=persisted]',
+    );
+    expect(output).toContain("Derived route:[source=resolver freshness=derived-now via=session-key]");
+    expect(output).toContain("thread=thread-1");
+    expect(output).toContain("Related contexts (2): [source=context-db freshness=persisted]");
+    expect(output).toContain("ctx_runtime runtime caps=1 source=whatsapp/main/group:123456 provider=codex");
+    expect(output).toContain("ctx_child cli-runtime caps=2 parent=ctx_runtime issuedFor=adapter-cli mode=inherit");
+    expect(output).toContain("Adapters (1): [source=adapter-db freshness=persisted]");
+    expect(output).toContain(
+      "slack-bridge live transport=stdio-json status=running health=running ctx=ctx_child cli=adapter-cli pending=0",
+    );
+    expect(output).toContain("Next debug commands: [source=derived freshness=derived-now via=session-inspect]");
+    expect(output).toContain("ravi context list --session agent:main:whatsapp:main:group:123456");
+    expect(output).toContain("ravi adapters show adapter-1");
   });
 });
 

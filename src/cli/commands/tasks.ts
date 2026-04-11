@@ -2,8 +2,13 @@ import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
+import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
+import { resolveTaskCheckpointIntervalMs } from "../../tasks/checkpoint.js";
 import {
+  TASK_REPORT_EVENTS,
+  buildTaskSessionLink,
   completeTask,
+  commentTask,
   createTask,
   createTaskWorktreeConfig,
   dispatchTask,
@@ -19,7 +24,14 @@ import {
   blockTask,
   failTask,
 } from "../../tasks/index.js";
-import type { TaskEvent, TaskPriority, TaskRecord, TaskStatus } from "../../tasks/types.js";
+import type {
+  TaskComment,
+  TaskEvent,
+  TaskPriority,
+  TaskRecord,
+  TaskReportEvent,
+  TaskStatus,
+} from "../../tasks/types.js";
 
 const VALID_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
 const VALID_STATUSES = new Set<TaskStatus>(["open", "dispatched", "in_progress", "blocked", "done", "failed"]);
@@ -65,6 +77,25 @@ function timeAgo(ts?: number): string {
   return `${days}d ago`;
 }
 
+function timeUntil(ts?: number): string {
+  if (!ts) return "-";
+  const diff = ts - Date.now();
+  const abs = Math.abs(diff);
+  const mins = Math.floor(abs / 60000);
+  if (abs < 60000) {
+    return diff >= 0 ? "due now" : "just overdue";
+  }
+  if (mins < 60) {
+    return diff >= 0 ? `in ${mins}m` : `${mins}m overdue`;
+  }
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) {
+    return diff >= 0 ? `in ${hours}h` : `${hours}h overdue`;
+  }
+  const days = Math.floor(hours / 24);
+  return diff >= 0 ? `in ${days}d` : `${days}d overdue`;
+}
+
 function requirePriority(value?: string): TaskPriority {
   const normalized = (value ?? "normal").trim().toLowerCase() as TaskPriority;
   if (!VALID_PRIORITIES.has(normalized)) {
@@ -99,12 +130,65 @@ function requireTaskWorktree(mode?: string, path?: string, branch?: string) {
   }
 }
 
+function parseCheckpointInterval(value?: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    return parseDurationMs(value.trim());
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function parseReportEvents(value?: string): TaskReportEvent[] | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = value
+    .split(",")
+    .map((event) => event.trim())
+    .filter(Boolean);
+  if (parsed.length === 0) {
+    fail("Report events cannot be empty. Use blocked,done,failed.");
+  }
+
+  const invalid = parsed.filter((event) => !TASK_REPORT_EVENTS.includes(event as TaskReportEvent));
+  if (invalid.length > 0) {
+    fail(`Invalid report event(s): ${invalid.join(", ")}. Use ${TASK_REPORT_EVENTS.join(",")}.`);
+  }
+
+  return [...new Set(parsed as TaskReportEvent[])];
+}
+
+function formatTaskReportEvents(events?: readonly TaskReportEvent[] | null): string {
+  const normalized = Array.isArray(events) && events.length > 0 ? events : ["done"];
+  return normalized.join(",");
+}
+
+function formatCheckpointSummary(
+  assignment?: {
+    checkpointIntervalMs?: number;
+    checkpointLastReportAt?: number;
+    checkpointDueAt?: number;
+    checkpointOverdueCount?: number;
+  } | null,
+): string {
+  if (!assignment) return "-";
+  const interval = formatDurationMs(resolveTaskCheckpointIntervalMs(assignment.checkpointIntervalMs));
+  const lastReport = formatTime(assignment.checkpointLastReportAt);
+  const dueAt = assignment.checkpointDueAt
+    ? `${formatTime(assignment.checkpointDueAt)} (${timeUntil(assignment.checkpointDueAt)})`
+    : "paused";
+  const overdueCount = assignment.checkpointOverdueCount ?? 0;
+  return `checkpoint ${interval} | last ${lastReport} | next ${dueAt} | overdue ${overdueCount}`;
+}
+
 function printTaskSummary(task: TaskRecord): void {
   console.log(`\nTask:        ${task.id}`);
   console.log(`Title:       ${task.title}`);
   console.log(`Status:      ${formatTaskStatus(task.status)}`);
   console.log(`Priority:    ${task.priority}`);
   console.log(`Progress:    ${task.progress}%`);
+  console.log(`Checkpoint:  ${formatDurationMs(resolveTaskCheckpointIntervalMs(task.checkpointIntervalMs))}`);
+  console.log(`Report to:   ${task.reportToSessionName ?? "-"}`);
+  console.log(`Report on:   ${formatTaskReportEvents(task.reportEvents)}`);
   if (task.parentTaskId) console.log(`Parent:      ${task.parentTaskId}`);
   console.log(`Agent:       ${task.assigneeAgentId ?? "-"}`);
   console.log(`Session:     ${task.assigneeSessionName ?? "-"}`);
@@ -135,16 +219,26 @@ function buildTaskLineageNode(task: TaskRecord) {
     progress: task.progress,
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
+    workSessionName: task.assigneeSessionName ?? null,
     taskDir: task.taskDir ?? null,
     path: getTaskDocPath(task),
   };
+}
+
+function formatTaskComment(comment: TaskComment): string {
+  const author = comment.authorSessionName ?? comment.authorAgentId ?? comment.author ?? "unknown";
+  return `  - ${formatTime(comment.createdAt)} ${author} :: ${comment.body}`;
 }
 
 async function emitMutationEvents(result: {
   task: TaskRecord;
   event: TaskEvent;
   relatedEvents?: Array<{ task: TaskRecord; event: TaskEvent }>;
+  wasNoop?: boolean;
 }) {
+  if (result.wasNoop) {
+    return;
+  }
   await emitTaskEvent(result.task, result.event);
   for (const relatedEvent of result.relatedEvents ?? []) {
     await emitTaskEvent(relatedEvent.task, relatedEvent.event);
@@ -154,7 +248,10 @@ async function emitMutationEvents(result: {
 function printNextSteps(task: TaskRecord): void {
   console.log("\nNext:");
   if (task.status === "open") {
-    console.log(`  ravi tasks dispatch ${task.id} --agent <agent>`);
+    console.log(`  1. abrir ${getTaskDocPath(task)}`);
+    console.log("  2. refinar o TASK.md via brainstorm/edicao antes de subir");
+    console.log(`  3. revisar com o dono da task`);
+    console.log(`  4. so depois despachar: ravi tasks dispatch ${task.id} --agent <agent>`);
     return;
   }
 
@@ -184,7 +281,18 @@ function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): st
   const message = typeof event.message === "string" ? event.message : "";
   const taskId = typeof payload.taskId === "string" ? payload.taskId : "task";
   const status = typeof payload.status === "string" ? payload.status : "unknown";
-  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}`;
+  const checkpoint = formatCheckpointSummary(
+    (payload.activeAssignment as
+      | {
+          checkpointIntervalMs?: number;
+          checkpointLastReportAt?: number;
+          checkpointDueAt?: number;
+          checkpointOverdueCount?: number;
+        }
+      | null
+      | undefined) ?? null,
+  );
+  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}${checkpoint !== "-" ? ` :: ${checkpoint}` : ""}`;
 }
 
 function deriveWatchStatus(event: TaskEvent, fallback?: TaskStatus): TaskStatus {
@@ -206,11 +314,17 @@ function deriveWatchStatus(event: TaskEvent, fallback?: TaskStatus): TaskStatus 
   }
 }
 
-function buildWatchPayload(taskId: string, task: TaskRecord | null, event: TaskEvent): Record<string, unknown> {
+function buildWatchPayload(
+  taskId: string,
+  task: TaskRecord | null,
+  event: TaskEvent,
+  activeAssignment?: Record<string, unknown> | null,
+): Record<string, unknown> {
   return {
     taskId,
     status: deriveWatchStatus(event, task?.status),
     progress: typeof event.progress === "number" ? event.progress : (task?.progress ?? 0),
+    activeAssignment: activeAssignment ?? null,
     event,
   };
 }
@@ -225,7 +339,7 @@ function printTaskEventsSince(
   let lastSeenEventId = sinceEventId;
 
   for (const event of unseenEvents) {
-    console.log(formatWatchLine(buildWatchPayload(taskId, details.task, event), asJson));
+    console.log(formatWatchLine(buildWatchPayload(taskId, details.task, event, details.activeAssignment), asJson));
     lastSeenEventId = Math.max(lastSeenEventId, event.id ?? lastSeenEventId);
   }
 
@@ -261,6 +375,12 @@ export class TaskCommands {
     worktreeBranch?: string,
     @Option({ flags: "--parent <task-id>", description: "Create this task as a child of another task" })
     parentTaskId?: string,
+    @Option({ flags: "--checkpoint <duration>", description: "Assignment checkpoint interval (e.g. 5m, 30s, 1h)" })
+    checkpoint?: string,
+    @Option({ flags: "--report-to <session>", description: "Session to receive explicit task reports" })
+    reportToSessionName?: string,
+    @Option({ flags: "--report-events <events>", description: "Comma-separated report events: blocked,done,failed" })
+    reportEvents?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!instructions?.trim()) {
@@ -273,11 +393,16 @@ export class TaskCommands {
     }
 
     const worktree = requireTaskWorktree(worktreeMode, worktreePath, worktreeBranch);
+    const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
+    const parsedReportEvents = parseReportEvents(reportEvents);
     const actor = getTaskActor();
     const created = createTask({
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
+      ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
+      ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
+      ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
       createdBy: actor.actor,
       createdByAgentId: actor.agentId,
       createdBySessionName: actor.sessionName,
@@ -293,6 +418,9 @@ export class TaskCommands {
         agentId: assigneeAgentId,
         sessionName: sessionName?.trim() || getDefaultTaskSessionName(created.task.id),
         assignedBy: actor.actor,
+        ...(actor.agentId ? { assignedByAgentId: actor.agentId } : {}),
+        ...(actor.sessionName ? { assignedBySessionName: actor.sessionName } : {}),
+        ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
         ...(worktree ? { worktree } : {}),
       });
       await emitMutationEvents(dispatched);
@@ -309,6 +437,7 @@ export class TaskCommands {
             ...(dispatched
               ? {
                   dispatch: {
+                    assignment: dispatched.assignment,
                     event: dispatched.event,
                     sessionName: dispatched.sessionName,
                   },
@@ -382,6 +511,7 @@ export class TaskCommands {
         JSON.stringify(
           {
             ...details,
+            taskSession: details.task ? buildTaskSessionLink(details.task) : null,
             parentTask: details.parentTask ? buildTaskLineageNode(details.parentTask) : null,
             childTasks: details.childTasks.map(buildTaskLineageNode),
             taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
@@ -394,6 +524,16 @@ export class TaskCommands {
     }
 
     printTaskSummary(details.task);
+
+    const taskSession = buildTaskSessionLink(details.task);
+    if (taskSession) {
+      console.log("\nTask session:");
+      console.log(`  Alias:      ${taskSession.alias}`);
+      console.log(`  Session:    ${taskSession.sessionName}`);
+      console.log(`  Tool topic: ${taskSession.toolTopic}`);
+      console.log(`  Read:       ${taskSession.readCommand}`);
+      console.log(`  Debug:      ${taskSession.debugCommand}`);
+    }
 
     const taskDocument = buildTaskDocumentSummary(details.task);
     console.log("\nTASK.md:");
@@ -421,6 +561,20 @@ export class TaskCommands {
       }
       console.log(`  Status:      ${details.activeAssignment.status}`);
       console.log(`  Assigned at: ${formatTime(details.activeAssignment.assignedAt)}`);
+      console.log(
+        `  Checkpoint:  ${formatDurationMs(resolveTaskCheckpointIntervalMs(details.activeAssignment.checkpointIntervalMs))}`,
+      );
+      console.log(`  Report to:   ${details.activeAssignment.reportToSessionName ?? "-"}`);
+      console.log(`  Report on:   ${formatTaskReportEvents(details.activeAssignment.reportEvents)}`);
+      console.log(`  Last report: ${formatTime(details.activeAssignment.checkpointLastReportAt)}`);
+      if (details.activeAssignment.checkpointDueAt) {
+        console.log(
+          `  Next due:    ${formatTime(details.activeAssignment.checkpointDueAt)} (${timeUntil(details.activeAssignment.checkpointDueAt)})`,
+        );
+      } else {
+        console.log("  Next due:    paused");
+      }
+      console.log(`  Overdue:     ${details.activeAssignment.checkpointOverdueCount ?? 0}`);
     }
 
     if (details.parentTask) {
@@ -451,7 +605,46 @@ export class TaskCommands {
       }
     }
 
+    if (details.comments.length > 0) {
+      console.log("\nComments:");
+      for (const comment of details.comments.slice(-12)) {
+        console.log(formatTaskComment(comment));
+      }
+    }
+
     printNextSteps(details.task);
+  }
+
+  @Command({ name: "comment", description: "Add a comment to a task and steer the assignee if it is active" })
+  async comment(
+    @Arg("taskId", { description: "Task ID" }) taskId: string,
+    @Arg("body", { description: "Comment body" }) body: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const trimmedBody = body.trim();
+    if (!trimmedBody) {
+      fail("Comment body cannot be empty.");
+    }
+
+    const actor = getTaskActor();
+    const result = await commentTask(taskId, {
+      author: actor.actor,
+      authorAgentId: actor.agentId,
+      authorSessionName: actor.sessionName,
+      body: trimmedBody,
+    });
+    await emitMutationEvents(result);
+
+    if (asJson) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    console.log(`✓ Comment added to ${taskId}`);
+    console.log(`  ${result.comment.body}`);
+    if (result.steeredSessionName) {
+      console.log(`  Steer: ${result.steeredSessionName}`);
+    }
   }
 
   @Command({ name: "dispatch", description: "Dispatch a task to an agent session" })
@@ -460,17 +653,30 @@ export class TaskCommands {
     @Option({ flags: "--agent <id>", description: "Agent ID to receive the task" }) agentId?: string,
     @Option({ flags: "--session <name>", description: "Target session name (defaults to task-specific session)" })
     sessionName?: string,
+    @Option({ flags: "--checkpoint <duration>", description: "Override the assignment checkpoint interval" })
+    checkpoint?: string,
+    @Option({ flags: "--report-to <session>", description: "Override the report target for this assignment" })
+    reportToSessionName?: string,
+    @Option({ flags: "--report-events <events>", description: "Override report events for this assignment" })
+    reportEvents?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!agentId?.trim()) {
       fail("--agent is required");
     }
 
-    const actor = getTaskActor().actor;
+    const actor = getTaskActor();
+    const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
+    const parsedReportEvents = parseReportEvents(reportEvents);
     const result = await dispatchTask(taskId, {
       agentId: agentId.trim(),
       sessionName: sessionName?.trim() || getDefaultTaskSessionName(taskId),
-      assignedBy: actor,
+      assignedBy: actor.actor,
+      ...(actor.agentId ? { assignedByAgentId: actor.agentId } : {}),
+      ...(actor.sessionName ? { assignedBySessionName: actor.sessionName } : {}),
+      ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
+      ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
+      ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
     });
     await emitMutationEvents(result);
 
@@ -483,6 +689,9 @@ export class TaskCommands {
     console.log(`  Agent:    ${result.task.assigneeAgentId}`);
     console.log(`  Session:  ${result.sessionName}`);
     console.log(`  Status:   ${formatTaskStatus(result.task.status)}`);
+    console.log(`  Checkpoint: ${formatCheckpointSummary(result.assignment)}`);
+    console.log(`  Report to: ${result.assignment.reportToSessionName ?? "-"}`);
+    console.log(`  Report on: ${formatTaskReportEvents(result.assignment.reportEvents)}`);
     console.log(`  TASK.md:  ${getTaskDocPath(result.task)}`);
     console.log("\nThe target session was instructed to edit TASK.md first, then sync through:");
     console.log(`  ravi tasks report ${taskId}`);
@@ -556,8 +765,9 @@ export class TaskCommands {
       return;
     }
 
-    console.log(`✓ Task ${taskId} done`);
-    console.log(`  ${finalSummary}`);
+    const effectiveSummary = result.task.summary ?? finalSummary;
+    console.log(`✓ Task ${taskId} ${result.wasNoop ? "already done" : "done"}`);
+    console.log(`  ${effectiveSummary}`);
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
@@ -576,11 +786,13 @@ export class TaskCommands {
     if (!finalReason) {
       fail("Update TASK.md frontmatter.blocker_reason or provide --reason.");
     }
+    const progressValue = typeof docState.progress === "number" ? docState.progress : undefined;
 
     const actor = getTaskActor();
     const result = blockTask(taskId, {
       ...actor,
       message: finalReason,
+      ...(typeof progressValue === "number" ? { progress: progressValue } : {}),
     });
     await emitMutationEvents(result);
 
@@ -638,8 +850,12 @@ export class TaskCommands {
         fail(`Task not found: ${taskId}`);
       }
       console.log(`\nWatching ${taskId}\n`);
+      if (details.activeAssignment) {
+        console.log(`Checkpoint: ${formatCheckpointSummary(details.activeAssignment)}`);
+        console.log("");
+      }
       for (const event of details.events.slice(-20)) {
-        console.log(formatWatchLine(buildWatchPayload(taskId, details.task, event), asJson));
+        console.log(formatWatchLine(buildWatchPayload(taskId, details.task, event, details.activeAssignment), asJson));
         lastSeenEventId = Math.max(lastSeenEventId, event.id ?? lastSeenEventId);
       }
     } else {
