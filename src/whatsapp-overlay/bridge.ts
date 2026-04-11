@@ -55,6 +55,9 @@ import { matchOmniChatFromRow } from "./chat-list-match.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import {
   buildTaskStreamSnapshot,
+  getTaskDocPath,
+  readTaskDocFrontmatter,
+  type TaskDocFrontmatterState,
   type TaskStatus,
   type TaskStreamSelection,
   type TaskStreamTaskEntity,
@@ -164,7 +167,17 @@ type OverlayTasksSnapshot = {
   };
   items: TaskStreamTaskEntity[];
   activeItems: TaskStreamTaskEntity[];
-  selectedTask: TaskStreamSelection | null;
+  selectedTask: OverlayTaskSelection | null;
+};
+
+type OverlayTaskDocumentSummary = {
+  taskDir: string | null;
+  path: string;
+  frontmatter: TaskDocFrontmatterState;
+};
+
+type OverlayTaskSelection = TaskStreamSelection & {
+  taskDocument: OverlayTaskDocumentSummary | null;
 };
 
 type OmniInstanceRecord = {
@@ -986,6 +999,17 @@ function handleTasks(url: URL): Response {
       }
     }
 
+    const selectedTaskWithDocument: OverlayTaskSelection | null = selectedTask
+      ? {
+          ...selectedTask,
+          taskDocument: {
+            taskDir: selectedTask.task.taskDir ?? null,
+            path: getTaskDocPath(selectedTask.task),
+            frontmatter: readTaskDocFrontmatter(selectedTask.task),
+          },
+        }
+      : null;
+
     const payload: OverlayTasksSnapshot = {
       ok: true,
       generatedAt: Date.now(),
@@ -999,7 +1023,7 @@ function handleTasks(url: URL): Response {
       stats: listSnapshot.stats,
       items,
       activeItems,
-      selectedTask,
+      selectedTask: selectedTaskWithDocument,
     };
 
     return withCors(Response.json(payload), url);

@@ -47,7 +47,8 @@ const TASK_KANBAN_COLUMNS = [
   { id: "queued", label: "queued", statuses: ["dispatched"] },
   { id: "working", label: "working", statuses: ["in_progress"] },
   { id: "blocked", label: "blocked", statuses: ["blocked"] },
-  { id: "done", label: "done / failed", statuses: ["done", "failed"] },
+  { id: "done", label: "done", statuses: ["done"] },
+  { id: "failed", label: "failed", statuses: ["failed"] },
 ];
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
@@ -3968,12 +3969,15 @@ function formatTaskElapsed(task) {
   return formatElapsedCompact(task?.updatedAt || task?.createdAt || null) || "agora";
 }
 
-function getTaskWorktreeLabel(task) {
-  const worktree = task?.worktree;
+function formatTaskWorktree(worktree) {
   if (!worktree) return null;
   if (worktree.mode === "inherit") return "inherit";
   if (!worktree.path) return "path";
   return worktree.branch ? `${worktree.path} (${worktree.branch})` : worktree.path;
+}
+
+function getTaskWorktreeLabel(task) {
+  return formatTaskWorktree(task?.worktree || null);
 }
 
 function formatTaskShortId(taskId) {
@@ -4005,12 +4009,247 @@ function taskPriorityClass(priority) {
 function buildTasksWorkspaceSubtitle(snapshot) {
   const stats = snapshot?.stats || null;
   if (!stats) return "kanban do runtime";
-  return `open ${stats.open ?? 0} · queued ${stats.dispatched ?? 0} · working ${stats.inProgress ?? 0} · blocked ${stats.blocked ?? 0}`;
+  return `open ${stats.open ?? 0} · queued ${stats.dispatched ?? 0} · working ${stats.inProgress ?? 0} · blocked ${stats.blocked ?? 0} · done ${stats.done ?? 0} · failed ${stats.failed ?? 0}`;
 }
 
 function summarizeTaskCardCopy(task) {
   const value = task?.summary || task?.blockerReason || task?.instructions || "";
   return shorten(String(value).replace(/\s+/g, " ").trim(), 96);
+}
+
+function buildTaskAssigneeLabel(task, activeAssignment = null) {
+  const agentId = activeAssignment?.agentId || task?.assigneeAgentId || null;
+  const sessionName = activeAssignment?.sessionName || task?.assigneeSessionName || null;
+  return [agentId, sessionName].filter(Boolean).join(" · ") || null;
+}
+
+function describeTaskStatus(status, signal = null, assigneeLabel = null) {
+  switch (status) {
+    case "open":
+      return "ready in runtime, awaiting dispatch";
+    case "dispatched":
+      return assigneeLabel ? `queued for ${assigneeLabel}` : "dispatch recorded, waiting for work to start";
+    case "in_progress":
+      return assigneeLabel ? `running with ${assigneeLabel}` : "work started in runtime";
+    case "blocked":
+      return signal || "blocked until a new report or unblock";
+    case "done":
+      return signal || "completed in runtime";
+    case "failed":
+      return signal || "ended with failure in runtime";
+    default:
+      return "status unavailable";
+  }
+}
+
+function describeTaskRuntimeStatus(task, activeAssignment = null) {
+  return describeTaskStatus(task?.status, task?.blockerReason || task?.summary || null, buildTaskAssigneeLabel(task, activeAssignment));
+}
+
+function describeTaskDocumentStatus(frontmatter) {
+  if (!frontmatter) {
+    return "TASK.md is not available in the overlay snapshot";
+  }
+
+  if (frontmatter.status) {
+    return describeTaskStatus(frontmatter.status, frontmatter.blockerReason || frontmatter.summary || null, null);
+  }
+
+  return frontmatter.blockerReason || frontmatter.summary || "TASK.md found without status fields in frontmatter";
+}
+
+function renderTaskStatusPanel({ eyebrow, status, title, detail, meta }) {
+  const hasStatus = typeof status === "string" && status;
+  const statusClass = hasStatus ? taskStatusClass(status) : "idle";
+  const statusLabel = hasStatus ? taskStatusLabel(status) : "n/a";
+
+  return `
+    <article class="ravi-wa-task-status-panel ravi-wa-task-status-panel--${statusClass}">
+      <div class="ravi-wa-task-status-panel__head">
+        <span class="ravi-wa-task-status-panel__eyebrow">${escapeHtml(eyebrow)}</span>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+      </div>
+      <strong class="ravi-wa-task-status-panel__title">${escapeHtml(title)}</strong>
+      ${detail ? `<p class="ravi-wa-task-status-panel__detail">${escapeHtml(detail)}</p>` : ""}
+      ${meta ? `<span class="ravi-wa-task-status-panel__meta">${escapeHtml(meta)}</span>` : ""}
+    </article>
+  `;
+}
+
+function renderTaskStatusSyncBanner(task, frontmatter, progress) {
+  if (!frontmatter) {
+    return `
+      <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--idle">
+        <strong>status sync</strong>
+        <p>runtime visible no overlay, mas o frontmatter do TASK.md ainda nao apareceu nesse snapshot.</p>
+      </div>
+    `;
+  }
+
+  const hasComparableFrontmatter = Boolean(frontmatter.status) || typeof frontmatter.progress === "number";
+  if (!hasComparableFrontmatter) {
+    return `
+      <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--idle">
+        <strong>status sync</strong>
+        <p>TASK.md presente, mas sem campos de status ou progresso no frontmatter para comparar com o runtime.</p>
+      </div>
+    `;
+  }
+
+  const issues = [];
+  if (frontmatter.status && frontmatter.status !== task.status) {
+    issues.push(`runtime ${taskStatusLabel(task.status)} (${task.status}) vs TASK.md ${taskStatusLabel(frontmatter.status)} (${frontmatter.status})`);
+  }
+  if (typeof frontmatter.progress === "number" && frontmatter.progress !== progress) {
+    issues.push(`runtime ${progress}% vs TASK.md ${frontmatter.progress}%`);
+  }
+
+  if (!issues.length) {
+    return `
+      <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--done">
+        <strong>status sync</strong>
+        <p>runtime e frontmatter do TASK.md estao alinhados no snapshot atual.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--blocked">
+      <strong>status sync</strong>
+      <p>${escapeHtml(issues.join(" · "))}</p>
+    </div>
+  `;
+}
+
+function formatTaskActorLabel(actor, agentId, sessionName) {
+  return [actor, agentId, sessionName].filter(Boolean).join(" · ") || "-";
+}
+
+function renderTaskFactGrid(items) {
+  const rows = Array.isArray(items)
+    ? items.filter((item) => item && item.value !== null && item.value !== undefined && String(item.value).trim())
+    : [];
+
+  if (!rows.length) {
+    return `<p class="ravi-wa-empty">sem dados extras nesse bloco.</p>`;
+  }
+
+  return `
+    <dl class="ravi-wa-task-facts">
+      ${rows
+        .map(
+          (item) => `
+            <div class="ravi-wa-task-facts__item">
+              <dt>${escapeHtml(item.label)}</dt>
+              <dd class="ravi-wa-task-facts__value${item.monospace ? " ravi-wa-task-facts__value--mono" : ""}">${escapeHtml(
+                String(item.value),
+              )}</dd>
+            </div>
+          `,
+        )
+        .join("")}
+    </dl>
+  `;
+}
+
+function renderTaskRelationCard(task) {
+  if (!task) {
+    return `<p class="ravi-wa-empty">nenhuma task relacionada nesse bloco.</p>`;
+  }
+
+  const statusClass = taskStatusClass(task.status);
+  const summary = summarizeTaskCardCopy(task);
+  const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-task-link"
+      data-ravi-focus-task="${escapeAttribute(task.id)}"
+      title="${escapeAttribute(`${task.title} · ${task.id}`)}"
+    >
+      <span class="ravi-wa-task-link__eyebrow">
+        <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+      </span>
+      <strong class="ravi-wa-task-link__title">${escapeHtml(task.title || task.id)}</strong>
+      ${summary ? `<p class="ravi-wa-task-link__summary">${escapeHtml(summary)}</p>` : ""}
+      <span class="ravi-wa-task-link__meta">
+        <span>${escapeHtml(task.assigneeAgentId || "-")}</span>
+        <span>${escapeHtml(String(progress))}%</span>
+        <span>${escapeHtml(formatTaskUpdatedLabel(task) || "-")}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderTaskAssignments(assignments, activeAssignment) {
+  const list = Array.isArray(assignments)
+    ? [...assignments].sort((left, right) => {
+        const leftTime = left?.acceptedAt || left?.completedAt || left?.assignedAt || 0;
+        const rightTime = right?.acceptedAt || right?.completedAt || right?.assignedAt || 0;
+        return rightTime - leftTime;
+      })
+    : [];
+
+  if (!list.length) {
+    return `<p class="ravi-wa-empty">sem assignments registrados para essa task.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-task-assignment-list">
+      ${list
+        .map((assignment) => {
+          const worktreeLabel = formatTaskWorktree(assignment?.worktree || null);
+          const isActive = activeAssignment?.id && activeAssignment.id === assignment.id;
+          return `
+            <article class="ravi-wa-task-assignment${isActive ? " ravi-wa-task-assignment--active" : ""}">
+              <div class="ravi-wa-task-assignment__head">
+                <div>
+                  <strong>${escapeHtml(assignment.agentId || "-")}</strong>
+                  <span>${escapeHtml(assignment.sessionName || "-")}</span>
+                </div>
+                <span class="ravi-wa-meta-chip">${escapeHtml(assignment.status || "assigned")}</span>
+              </div>
+              <dl class="ravi-wa-task-assignment__facts">
+                <div><dt>assigned</dt><dd>${escapeHtml(formatTimestamp(assignment.assignedAt) || "-")}</dd></div>
+                <div><dt>accepted</dt><dd>${escapeHtml(formatTimestamp(assignment.acceptedAt) || "-")}</dd></div>
+                <div><dt>completed</dt><dd>${escapeHtml(formatTimestamp(assignment.completedAt) || "-")}</dd></div>
+                <div><dt>by</dt><dd>${escapeHtml(assignment.assignedBy || "-")}</dd></div>
+                ${worktreeLabel ? `<div><dt>worktree</dt><dd>${escapeHtml(worktreeLabel)}</dd></div>` : ""}
+              </dl>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTaskComments(comments) {
+  const list = Array.isArray(comments) ? comments.slice(-8).reverse() : [];
+  if (!list.length) {
+    return `<p class="ravi-wa-empty">sem comentarios nessa task ainda.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-task-activity-list">
+      ${list
+        .map((comment) => {
+          const authorLabel = formatTaskActorLabel(comment.author, comment.authorAgentId, comment.authorSessionName);
+          return `
+            <article class="ravi-wa-task-activity">
+              <div class="ravi-wa-task-activity__meta">
+                <strong>${escapeHtml(authorLabel)}</strong>
+                <span>${escapeHtml(formatTimestamp(comment.createdAt) || "-")}</span>
+              </div>
+              <div class="ravi-wa-task-activity__body">${escapeHtml(comment.body || "")}</div>
+            </article>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function renderTasksWorkspace(body) {
@@ -4034,7 +4273,8 @@ function renderTasksWorkspace(body) {
           <span class="ravi-wa-meta-chip">queued ${escapeHtml(String(stats?.dispatched ?? 0))}</span>
           <span class="ravi-wa-meta-chip">working ${escapeHtml(String(stats?.inProgress ?? 0))}</span>
           <span class="ravi-wa-meta-chip">blocked ${escapeHtml(String(stats?.blocked ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">done ${escapeHtml(String((stats?.done ?? 0) + (stats?.failed ?? 0)))}</span>
+          <span class="ravi-wa-meta-chip">done ${escapeHtml(String(stats?.done ?? 0))}</span>
+          <span class="ravi-wa-meta-chip">failed ${escapeHtml(String(stats?.failed ?? 0))}</span>
         </div>
       </section>
       ${
@@ -4084,6 +4324,15 @@ function renderTaskKanbanColumn(column, items, currentTaskId) {
           <strong>${escapeHtml(column.label)}</strong>
           <span>${escapeHtml(String(items.length))} task${items.length === 1 ? "" : "s"}</span>
         </div>
+        <div class="ravi-wa-task-column__legend">
+          ${column.statuses
+            .map(
+              (status) => `
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskStatusClass(status)}">${escapeHtml(taskStatusLabel(status))}</span>
+              `,
+            )
+            .join("")}
+        </div>
       </div>
       <div class="ravi-wa-task-column__list">
         ${
@@ -4103,6 +4352,8 @@ function renderTaskCard(task, currentTaskId) {
   const selected = currentTaskId && currentTaskId === task.id ? "true" : "false";
   const summary = summarizeTaskCardCopy(task);
   const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
+  const showSummary = summary && summary.toLowerCase() !== statusCopy.toLowerCase();
 
   return `
     <button
@@ -4114,47 +4365,72 @@ function renderTaskCard(task, currentTaskId) {
     >
       <span class="ravi-wa-task-card__eyebrow">
         <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
-        <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
+        <span class="ravi-wa-task-card__eyebrow-aside">
+          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+          <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
+        </span>
       </span>
       <strong class="ravi-wa-task-card__title">${escapeHtml(task.title || task.id)}</strong>
-      ${summary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
+      <div class="ravi-wa-task-card__status">
+        <span class="ravi-wa-task-card__status-label">runtime status</span>
+        <p>${escapeHtml(statusCopy)}</p>
+      </div>
+      ${showSummary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
       <div class="ravi-wa-task-card__progress">
         <span>progress ${escapeHtml(String(progress))}%</span>
-        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+        <span>${escapeHtml(formatTaskUpdatedLabel(task))}</span>
       </div>
       <div class="ravi-wa-task-card__bar" aria-hidden="true">
         <span style="width: ${progress}%"></span>
       </div>
       <div class="ravi-wa-task-card__meta">
         <span><strong>agent</strong>${escapeHtml(task.assigneeAgentId || "-")}</span>
-        <span><strong>sessão</strong>${escapeHtml(task.assigneeSessionName || "-")}</span>
-        <span><strong>updated</strong>${escapeHtml(formatTaskUpdatedLabel(task))}</span>
+        <span><strong>session</strong>${escapeHtml(task.assigneeSessionName || "-")}</span>
       </div>
     </button>
   `;
 }
 
 function renderTaskEvents(events) {
-  const list = Array.isArray(events) ? events.slice(-10).reverse() : [];
+  const list = Array.isArray(events)
+    ? events
+        .filter((event) => event?.type !== "task.comment")
+        .slice(-12)
+        .reverse()
+    : [];
   if (!list.length) {
-    return `<p class="ravi-wa-empty">sem eventos dessa task ainda.</p>`;
+    return `<p class="ravi-wa-empty">sem eventos de lifecycle dessa task ainda.</p>`;
   }
 
   return `
-    <div class="ravi-wa-live-log">
+    <div class="ravi-wa-task-activity-list">
       ${list
         .map((event) => {
-          const kind = taskStatusClass(event.type === "task.blocked" ? "blocked" : event.type === "task.done" ? "done" : event.type === "task.failed" ? "failed" : event.type === "task.progress" ? "in_progress" : "dispatched");
+          const kind = taskStatusClass(
+            event.type === "task.blocked"
+              ? "blocked"
+              : event.type === "task.done"
+                ? "done"
+                : event.type === "task.failed"
+                  ? "failed"
+                  : event.type === "task.progress"
+                    ? "in_progress"
+                    : "dispatched",
+          );
           const label = typeof event.type === "string" ? event.type.replace("task.", "") : "event";
           const detail = event.message || event.actor || event.sessionName || label;
+          const actorLabel = formatTaskActorLabel(event.actor, event.agentId, event.sessionName);
+          const progress = typeof event.progress === "number" ? `${Math.max(0, Math.min(100, event.progress))}%` : null;
           return `
-            <div class="ravi-wa-live-line ravi-wa-live-line--${kind}">
-              <div class="ravi-wa-live-line__meta">
+            <article class="ravi-wa-task-activity ravi-wa-task-activity--${kind}">
+              <div class="ravi-wa-task-activity__meta">
+                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${kind}">${escapeHtml(label)}</span>
+                <strong>${escapeHtml(actorLabel)}</strong>
                 <span>${escapeHtml(formatTimestamp(event.createdAt) || "-")}</span>
-                <strong>${escapeHtml(label)}</strong>
+                ${progress ? `<span>${escapeHtml(progress)}</span>` : ""}
               </div>
-              <div class="ravi-wa-live-line__text">${escapeHtml(detail)}</div>
-            </div>
+              <div class="ravi-wa-task-activity__body">${escapeHtml(detail)}</div>
+            </article>
           `;
         })
         .join("")}
@@ -4173,44 +4449,213 @@ function renderTaskDetailCard(selectedTask) {
   }
 
   const activeAssignment = selectedTask?.activeAssignment || null;
+  const assignments = Array.isArray(selectedTask?.assignments) ? selectedTask.assignments : [];
+  const parentTask = selectedTask?.parentTask || null;
+  const childTasks = Array.isArray(selectedTask?.childTasks) ? selectedTask.childTasks : [];
+  const comments = Array.isArray(selectedTask?.comments) ? selectedTask.comments : [];
+  const lifecycleEvents = Array.isArray(selectedTask?.events)
+    ? selectedTask.events.filter((event) => event?.type !== "task.comment")
+    : [];
+  const taskDocument = selectedTask?.taskDocument || null;
+  const frontmatter = taskDocument?.frontmatter || null;
   const worktreeLabel = getTaskWorktreeLabel(task);
   const statusClass = taskStatusClass(task.status);
+  const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const frontmatterStatus = frontmatter?.status || null;
+  const frontmatterProgress = typeof frontmatter?.progress === "number" ? frontmatter.progress : null;
+  const docPath = taskDocument?.path || (task.taskDir ? `${task.taskDir}/TASK.md` : null);
+  const taskDir = taskDocument?.taskDir || task.taskDir || null;
+  const frontmatterChips = [
+    frontmatter?.priority ? `fm priority ${frontmatter.priority}` : null,
+    frontmatter?.summary ? `fm summary ${shorten(frontmatter.summary, 48)}` : null,
+    frontmatter?.blockerReason ? `fm blocker ${shorten(frontmatter.blockerReason, 48)}` : null,
+  ].filter(Boolean);
+  const heroSummary = task.summary || task.blockerReason || summarizeTaskCardCopy(task) || "sem resumo ainda";
+  const taskSignal = task.blockerReason || task.summary || null;
+  const taskSignalLabel = task.blockerReason ? "blocker" : "summary";
+  const taskSignalClass = task.blockerReason ? "blocked" : "summary";
+  const runtimeStatusTitle = describeTaskRuntimeStatus(task, activeAssignment);
+  const documentStatusTitle = describeTaskDocumentStatus(frontmatter);
+  const runtimeFacts = [
+    {
+      label: "created by",
+      value: formatTaskActorLabel(task.createdBy, task.createdByAgentId, task.createdBySessionName),
+    },
+    {
+      label: "active assignment",
+      value: activeAssignment
+        ? `${activeAssignment.status} · ${formatTaskActorLabel(null, activeAssignment.agentId, activeAssignment.sessionName)}`
+        : "none",
+    },
+    { label: "updated", value: formatTaskUpdatedLabel(task) || "-" },
+    { label: "created", value: formatTimestamp(task.createdAt) || "-" },
+    { label: "dispatched", value: formatTimestamp(task.dispatchedAt) || "-" },
+    { label: "started", value: formatTimestamp(task.startedAt) || "-" },
+    { label: "completed", value: formatTimestamp(task.completedAt) || "-" },
+    { label: "worktree", value: worktreeLabel || "-" },
+  ];
 
   return `
-    <section class="ravi-wa-card ravi-wa-task-detail-pane__card">
-      <div class="ravi-wa-section-head">
-        <h3>task selecionada</h3>
-        <span>${escapeHtml(formatTaskShortId(task.id))}</span>
+    <section class="ravi-wa-card ravi-wa-task-detail-hero-card">
+      <div class="ravi-wa-task-detail-hero__eyebrow">
+        <span class="ravi-wa-task-detail-hero__label">task detail</span>
+        <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
       </div>
-      <div class="ravi-wa-hero-top">
-        <div>
-          <h3>${escapeHtml(task.title)}</h3>
-          <p>${escapeHtml(task.summary || task.blockerReason || task.instructions || "sem descrição")}</p>
+      <div class="ravi-wa-task-detail-hero__top">
+        <div class="ravi-wa-task-detail-hero__copy">
+          <h3>${escapeHtml(task.title || task.id)}</h3>
+          <p>${escapeHtml(heroSummary)}</p>
         </div>
-        <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+        <div class="ravi-wa-task-detail-hero__status">
+          <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+          <span class="ravi-wa-task-detail-hero__progress">${escapeHtml(String(progress))}%</span>
+        </div>
       </div>
       <div class="ravi-wa-chip-row">
         <span class="ravi-wa-meta-chip">id ${escapeHtml(task.id)}</span>
         <span class="ravi-wa-meta-chip">priority ${escapeHtml(task.priority || "normal")}</span>
-        <span class="ravi-wa-meta-chip">progresso ${escapeHtml(String(task.progress ?? 0))}%</span>
-        <span class="ravi-wa-meta-chip">agent ${escapeHtml(task.assigneeAgentId || "-")}</span>
-        <span class="ravi-wa-meta-chip">sessão ${escapeHtml(activeAssignment?.sessionName || task.assigneeSessionName || "-")}</span>
-        <span class="ravi-wa-meta-chip">updated ${escapeHtml(formatTaskUpdatedLabel(task))}</span>
-        ${worktreeLabel ? `<span class="ravi-wa-meta-chip">worktree ${escapeHtml(shorten(worktreeLabel, 36))}</span>` : ""}
+        <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(progress))}%</span>
+        <span class="ravi-wa-meta-chip">agent ${escapeHtml(task.assigneeAgentId || activeAssignment?.agentId || "-")}</span>
+        <span class="ravi-wa-meta-chip">session ${escapeHtml(activeAssignment?.sessionName || task.assigneeSessionName || "-")}</span>
+        <span class="ravi-wa-meta-chip">comments ${escapeHtml(String(comments.length))}</span>
+        <span class="ravi-wa-meta-chip">events ${escapeHtml(String(lifecycleEvents.length))}</span>
       </div>
-      <dl class="ravi-wa-grid">
-        <div><dt>criada</dt><dd>${escapeHtml(formatTimestamp(task.createdAt))}</dd></div>
-        <div><dt>updated</dt><dd>${escapeHtml(formatTimestamp(task.updatedAt))}</dd></div>
-        <div><dt>dispatched</dt><dd>${escapeHtml(formatTimestamp(task.dispatchedAt))}</dd></div>
-        <div><dt>done</dt><dd>${escapeHtml(formatTimestamp(task.completedAt))}</dd></div>
-      </dl>
-      <div class="ravi-wa-task-copy">
-        <strong>instructions</strong>
-        <pre>${escapeHtml(task.instructions || "")}</pre>
+      <div class="ravi-wa-task-detail-progress">
+        <div class="ravi-wa-task-detail-progress__bar" aria-hidden="true">
+          <span style="width: ${progress}%"></span>
+        </div>
       </div>
-      <div class="ravi-wa-section-head ravi-wa-section-head--inline">
-        <h3>timeline</h3>
-        <span>${escapeHtml(String(selectedTask?.events?.length || 0))}</span>
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>status</h3>
+        <span>${escapeHtml(frontmatter ? "runtime x TASK.md" : "runtime only")}</span>
+      </div>
+      <div class="ravi-wa-task-status-grid">
+        ${renderTaskStatusPanel({
+          eyebrow: "runtime status",
+          status: task.status,
+          title: runtimeStatusTitle,
+          detail: `raw ${task.status} · progress ${progress}%`,
+          meta: formatTaskUpdatedLabel(task) || "-",
+        })}
+        ${renderTaskStatusPanel({
+          eyebrow: "TASK.md status",
+          status: frontmatterStatus,
+          title: documentStatusTitle,
+          detail: frontmatter
+            ? frontmatterStatus
+              ? `frontmatter ${frontmatterStatus}${frontmatterProgress !== null ? ` · ${frontmatterProgress}%` : ""}`
+              : frontmatterProgress !== null
+                ? `TASK.md progress ${frontmatterProgress}% sem campo de status`
+                : "TASK.md presente, mas sem campo de status no frontmatter"
+            : "TASK.md ainda nao chegou nesse snapshot",
+          meta: taskDocument ? "bridge document snapshot" : "runtime snapshot only",
+        })}
+      </div>
+      ${renderTaskStatusSyncBanner(task, frontmatter, progress)}
+    </section>
+
+    ${
+      taskSignal
+        ? `
+      <section class="ravi-wa-card ravi-wa-task-callout ravi-wa-task-callout--${taskSignalClass}">
+        <span class="ravi-wa-task-callout__label">${escapeHtml(taskSignalLabel)}</span>
+        <p>${escapeHtml(taskSignal)}</p>
+      </section>
+    `
+        : ""
+    }
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>runtime</h3>
+        <span>${escapeHtml(activeAssignment?.status || "no active assignment")}</span>
+      </div>
+      ${renderTaskFactGrid(runtimeFacts)}
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>task document</h3>
+        <span>${escapeHtml(taskDocument ? "TASK.md synced" : "runtime path only")}</span>
+      </div>
+      ${
+        docPath
+          ? `<div class="ravi-wa-task-path">${escapeHtml(docPath)}</div>`
+          : `<p class="ravi-wa-empty">TASK.md ainda nao foi materializado no runtime.</p>`
+      }
+      ${
+        frontmatterChips.length || taskDir
+          ? `
+        <div class="ravi-wa-chip-row ravi-wa-chip-row--compact">
+          ${taskDir ? `<span class="ravi-wa-meta-chip">task dir ${escapeHtml(shorten(taskDir, 52))}</span>` : ""}
+          ${frontmatterChips.map((chip) => `<span class="ravi-wa-meta-chip">${escapeHtml(chip)}</span>`).join("")}
+        </div>
+      `
+          : ""
+      }
+      ${renderTaskFactGrid([{ label: "task dir", value: taskDir || "-", monospace: true }])}
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>relationships</h3>
+        <span>${escapeHtml(`${parentTask || task.parentTaskId ? 1 : 0} up · ${childTasks.length} down`)}</span>
+      </div>
+      <div class="ravi-wa-task-relations">
+        <div class="ravi-wa-task-relations__group">
+          <span class="ravi-wa-task-relations__label">parent</span>
+          ${
+            parentTask
+              ? renderTaskRelationCard(parentTask)
+              : task.parentTaskId
+                ? `<p class="ravi-wa-task-relations__empty">parent ${escapeHtml(formatTaskShortId(task.parentTaskId))} fora do snapshot atual.</p>`
+                : `<p class="ravi-wa-empty">sem parent task.</p>`
+          }
+        </div>
+        <div class="ravi-wa-task-relations__group">
+          <span class="ravi-wa-task-relations__label">children</span>
+          ${
+            childTasks.length
+              ? `<div class="ravi-wa-task-relations__list">${childTasks.map((childTask) => renderTaskRelationCard(childTask)).join("")}</div>`
+              : `<p class="ravi-wa-empty">sem child tasks vinculadas.</p>`
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>assignments</h3>
+        <span>${escapeHtml(String(assignments.length))}</span>
+      </div>
+      ${renderTaskAssignments(assignments, activeAssignment)}
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>instructions</h3>
+        <span>${escapeHtml(task.instructions ? "runtime body" : "empty")}</span>
+      </div>
+      <div class="ravi-wa-task-copy ravi-wa-task-copy--flush">
+        <pre>${escapeHtml(task.instructions || "sem instructions no runtime.")}</pre>
+      </div>
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>comments</h3>
+        <span>${escapeHtml(String(comments.length))}</span>
+      </div>
+      ${renderTaskComments(comments)}
+    </section>
+
+    <section class="ravi-wa-card ravi-wa-task-detail-section">
+      <div class="ravi-wa-section-head">
+        <h3>lifecycle</h3>
+        <span>${escapeHtml(String(lifecycleEvents.length))}</span>
       </div>
       ${renderTaskEvents(selectedTask?.events)}
     </section>
