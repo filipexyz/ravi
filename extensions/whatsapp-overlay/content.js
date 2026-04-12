@@ -130,6 +130,8 @@ let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
 let lastTaskSessionLookupSnapshot = null;
 let lastTaskSessionLookup = new Map();
+let lastTaskHierarchySnapshot = null;
+let lastTaskHierarchyState = { roots: [], nodes: new Map(), parentByTaskId: new Map() };
 
 boot();
 
@@ -269,6 +271,28 @@ async function refreshV3Placeholders(force = false) {
   }
 }
 
+function resolveOverlayTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildOverlayTodayKey(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function buildTasksRequestPayload(taskId = selectedTaskId) {
+  const timeZone = resolveOverlayTimeZone();
+  return {
+    taskId,
+    eventsLimit: TASKS_EVENTS_LIMIT,
+    ...(timeZone ? { timeZone } : {}),
+    todayKey: buildOverlayTodayKey(),
+  };
+}
+
 async function refreshTasks(force = false) {
   if (pollingStopped || tasksInFlight) return;
   if (!force && activeWorkspace === "omni") return;
@@ -277,10 +301,7 @@ async function refreshTasks(force = false) {
   try {
     const next = await chrome.runtime.sendMessage({
       type: "ravi:get-tasks",
-      payload: {
-        taskId: selectedTaskId,
-        eventsLimit: TASKS_EVENTS_LIMIT,
-      },
+      payload: buildTasksRequestPayload(selectedTaskId),
     });
     if (next?.ok) {
       latestTasksSnapshot = next;
@@ -2371,8 +2392,8 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   panelSubtitle.textContent = title;
 
   const recentSessions = filterCockpitSessions(snapshot?.recentSessions || snapshot?.recentChats || []);
-  const hotSessions = filterCockpitSessions(snapshot?.hotSessions || []);
-  const navTargets = dedupeSessionsByKey([session, ...hotSessions, ...recentSessions].filter(Boolean));
+  const activeSessions = filterCockpitSessions(snapshot?.activeSessions || snapshot?.hotSessions || []);
+  const navTargets = dedupeSessionsByKey([session, ...activeSessions, ...recentSessions].filter(Boolean));
   const followedSession = session || null;
   const pinnedSession = pinnedSessionKey ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null : null;
   if (pinnedSessionKey && !pinnedSession) {
@@ -2390,9 +2411,9 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   const focusedActivity = focusedLive?.activity || "idle";
   const focusedActivityLabel = chipActivityLabel(focusedActivity);
   const focusedActivityClass = chipActivityClass(focusedActivity);
-  const listedSessions = focusedSession
-    ? navTargets.filter((item) => item.sessionKey !== focusedSession.sessionKey)
-    : navTargets;
+  const listedRecentSessions = focusedSession
+    ? recentSessions.filter((item) => item.sessionKey !== focusedSession.sessionKey)
+    : recentSessions;
 
   const debugCard = `
     <details class="ravi-wa-disclosure">
@@ -2454,6 +2475,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   const heroTitle = focusedTask ? focusedTask.title || focusedSession?.sessionName || "task" : focusedSession ? focusedSession.sessionName : "nenhuma sessão";
   const heroLinkedChat = focusedSession ? getLinkedChatLabel(focusedSession) : null;
   const heroElapsed = focusedTask ? formatTaskElapsed(focusedTask) : focusedSession ? formatSessionElapsedCompact(focusedSession) || "agora" : "-";
+  const heroElapsedLabel = focusedTask ? "duration" : "updated";
   const heroModeLabel = isPinned ? "pinada" : followedSession ? "seguindo chat" : "sem vínculo";
   const canFollowCurrent = Boolean(isPinned && followedSession);
   const canPinFocused = Boolean(focusedSession && !isPinned);
@@ -2473,7 +2495,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
         ${
           focusedSession
             ? `<span class="ravi-wa-meta-chip">agent ${escapeHtml(focusedSession.agentId)}</span>
-               <span class="ravi-wa-meta-chip">updated ${escapeHtml(heroElapsed)}</span>
+               <span class="ravi-wa-meta-chip">${escapeHtml(heroElapsedLabel)} ${escapeHtml(heroElapsed)}</span>
                ${
                  focusedTask
                    ? `<span class="ravi-wa-meta-chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
@@ -2496,17 +2518,17 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     </section>
     <section class="ravi-wa-card">
       <div class="ravi-wa-section-head">
-        <h3>sessões quentes</h3>
-        <span>${hotSessions.length}</span>
+        <h3>sessões ativas</h3>
+        <span>${activeSessions.length}</span>
       </div>
-      ${renderCockpitRows(hotSessions, focusedSession, "Nenhuma sessão quente agora.")}
+      ${renderCockpitRows(activeSessions, focusedSession, "Nenhuma sessão ativa agora.")}
     </section>
     <section class="ravi-wa-card">
       <div class="ravi-wa-section-head">
         <h3>sessões recentes</h3>
-        <span>${listedSessions.length}</span>
+        <span>${listedRecentSessions.length}</span>
       </div>
-      ${renderCockpitRows(listedSessions, focusedSession, "Nenhuma sessão recente do Ravi.")}
+      ${renderCockpitRows(listedRecentSessions, focusedSession, "Nenhuma sessão recente do Ravi.")}
     </section>
     ${liveEventsCard}
     ${
@@ -3502,9 +3524,11 @@ function getSelectedWorkspaceSession(snapshot = latestSnapshot) {
   }
 
   return (
-    dedupeSessionsByKey([snapshot?.session, ...(snapshot?.hotSessions || []), ...(snapshot?.recentSessions || snapshot?.recentChats || [])].filter(Boolean)).find(
-      (item) => item.sessionKey === selectedWorkspaceSessionKey,
-    ) || null
+    dedupeSessionsByKey(
+      [snapshot?.session, ...(snapshot?.activeSessions || snapshot?.hotSessions || []), ...(snapshot?.recentSessions || snapshot?.recentChats || [])].filter(
+        Boolean,
+      ),
+    ).find((item) => item.sessionKey === selectedWorkspaceSessionKey) || null
   );
 }
 
@@ -4021,10 +4045,7 @@ async function ensureTaskSelection(taskId) {
   try {
     const next = await chrome.runtime.sendMessage({
       type: "ravi:get-tasks",
-      payload: {
-        taskId,
-        eventsLimit: TASKS_EVENTS_LIMIT,
-      },
+      payload: buildTasksRequestPayload(taskId),
     });
     if (next?.ok && next?.selectedTask?.task?.id === taskId) {
       rememberTaskSelection(next.selectedTask);
@@ -4090,7 +4111,7 @@ function renderGenericCockpitRow(session, currentSession) {
   `;
 }
 
-function renderTaskAwareCockpitRow(session, currentSession, match) {
+function renderTaskAwareCockpitRow(session, currentSession, match, options = {}) {
   const task = match.task;
   const statusClass = taskStatusClass(task.status);
   const statusLabel = taskStatusLabel(task.status);
@@ -4098,21 +4119,33 @@ function renderTaskAwareCockpitRow(session, currentSession, match) {
   const linkedChat = getLinkedChatLabel(session);
   const progress = clampTaskProgressValue(task?.progress ?? 0);
   const shortTaskId = formatTaskShortId(task.id);
-  const avatarLabel = shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
-  const note = shorten(match.note.text, 108);
-  const debugMeta = [
-    `session ${session.sessionName}`,
-    session.agentId ? `agent ${session.agentId}` : null,
-    linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const taskMeta = [`task ${shortTaskId}`, task.priority ? `priority ${task.priority}` : null].filter(Boolean).join(" · ");
+  const grouped = Boolean(options.grouped);
+  const titleMode = options.titleMode === "session" ? "session" : "task";
+  const avatarLabel =
+    titleMode === "session"
+      ? shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2)
+      : shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
+  const note = shorten(match.note.text, grouped ? 96 : 108);
+  const debugMeta = grouped
+    ? buildGroupedTaskAwareSessionMeta(session, linkedChat, titleMode)
+    : [
+        `session ${session.sessionName}`,
+        session.agentId ? `agent ${session.agentId}` : null,
+        linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  const taskMeta = grouped
+    ? buildGroupedTaskAwareEyebrow(session, task, shortTaskId, titleMode)
+    : [`task ${shortTaskId}`, task.priority ? `priority ${task.priority}` : null].filter(Boolean).join(" · ");
+  const titleText = grouped
+    ? buildGroupedTaskAwareTitle(session, task, options.parentTask, titleMode)
+    : task.title || task.id;
 
   return `
     <button
       type="button"
-      class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-row--${statusClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+      class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-row--${statusClass}${grouped ? " ravi-wa-nav-row--task-compact" : ""}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
       data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
       data-ravi-focus-task="${escapeAttribute(task.id)}"
       aria-pressed="${selected}"
@@ -4122,7 +4155,7 @@ function renderTaskAwareCockpitRow(session, currentSession, match) {
       <span class="ravi-wa-nav-row__body">
         <span class="ravi-wa-nav-row__eyebrow">${escapeHtml(taskMeta)}</span>
         <span class="ravi-wa-nav-row__titleline">
-          <strong>${escapeHtml(task.title || task.id)}</strong>
+          <strong>${escapeHtml(titleText)}</strong>
         </span>
         <span class="ravi-wa-nav-row__subline${match.note.fallback ? " ravi-wa-nav-row__subline--fallback" : ""}">${escapeHtml(note)}</span>
         <span class="ravi-wa-nav-row__progress">
@@ -4153,19 +4186,259 @@ function renderCockpitRows(items, currentSession, emptyText) {
       .map((row) => row.taskMatch)
       .filter(Boolean),
   );
+  const entries = buildCockpitNavigationEntries(rows);
 
   return `
     <div class="ravi-wa-nav-list">
-      ${rows
-        .map(({ session, taskMatch }) => {
-          if (taskMatch) {
-            return renderTaskAwareCockpitRow(session, currentSession, taskMatch);
+      ${entries
+        .map((entry) => {
+          if (entry.kind === "task-group") {
+            return renderCockpitTaskGroup(entry.node, currentSession);
           }
-          return renderGenericCockpitRow(session, currentSession);
+          if (entry.taskMatch) {
+            return renderTaskAwareCockpitRow(entry.session, currentSession, entry.taskMatch);
+          }
+          return renderGenericCockpitRow(entry.session, currentSession);
         })
         .join("")}
     </div>
   `;
+}
+
+function buildCockpitNavigationEntries(rows) {
+  const hierarchyState = getTaskHierarchyState();
+  const groupedRows = new Map();
+  const entries = [];
+
+  rows.forEach(({ session, taskMatch }, order) => {
+    const taskId = taskMatch?.task?.id || null;
+    const taskNode = taskId ? hierarchyState.nodes.get(taskId) : null;
+    if (!taskId || !taskNode) {
+      entries.push({
+        kind: "session",
+        order,
+        session,
+        taskMatch,
+      });
+      return;
+    }
+
+    const rootTaskId = getTaskRootTaskId(taskId, hierarchyState);
+    const rootNode = hierarchyState.nodes.get(rootTaskId) || taskNode;
+    const currentGroup = groupedRows.get(rootTaskId) || {
+      rootNode,
+      rowsByTaskId: new Map(),
+    };
+    const taskRows = currentGroup.rowsByTaskId.get(taskId) || [];
+    taskRows.push({ session, taskMatch, order });
+    currentGroup.rowsByTaskId.set(taskId, taskRows);
+    groupedRows.set(rootTaskId, currentGroup);
+  });
+
+  const groupedEntries = [...groupedRows.values()].flatMap((group) => {
+    const visibleNode = buildVisibleCockpitTaskNode(group.rootNode, group.rowsByTaskId);
+    if (!visibleNode) return [];
+    if (!shouldRenderCockpitTaskGroup(visibleNode)) {
+      return visibleNode.rows.map((row) => ({
+        kind: "session",
+        order: row.order,
+        session: row.session,
+        taskMatch: row.taskMatch,
+      }));
+    }
+    return [{ kind: "task-group", order: visibleNode.order, node: visibleNode }];
+  });
+
+  return [...entries, ...groupedEntries].sort((left, right) => left.order - right.order);
+}
+
+function renderCockpitTaskGroup(node, currentSession, parentTask = null, depth = 0) {
+  if (!node?.task) return "";
+
+  const ownRowsHtml = (Array.isArray(node.rows) ? node.rows : [])
+    .map((row) =>
+      renderTaskAwareCockpitRow(row.session, currentSession, row.taskMatch, {
+        grouped: true,
+        titleMode: depth === 0 ? "session" : "task",
+        parentTask: depth === 0 ? node.task : parentTask,
+      }),
+    )
+    .join("");
+  const childHtml = (Array.isArray(node.children) ? node.children : [])
+    .map((child) => renderCockpitTaskGroup(child, currentSession, node.task, depth + 1))
+    .join("");
+
+  if (depth === 0) {
+    return `
+      <div class="ravi-wa-nav-group">
+        ${renderCockpitTaskGroupHeader(node)}
+        <div class="ravi-wa-nav-group__children">
+          ${ownRowsHtml}
+          ${childHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ravi-wa-nav-group__branch">
+      ${ownRowsHtml ? "" : renderCockpitTaskGroupBranchHeader(node, parentTask)}
+      ${ownRowsHtml}
+      ${
+        childHtml
+          ? `<div class="ravi-wa-nav-group__children ravi-wa-nav-group__children--nested">${childHtml}</div>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderCockpitTaskGroupHeader(node) {
+  const task = node.task;
+  const statusClass = taskStatusClass(task.status);
+  const statusLabel = taskStatusLabel(task.status);
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const shortTaskId = formatTaskShortId(task.id);
+  const avatarLabel = shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
+  const sessionCount = countVisibleCockpitTaskRows(node);
+  const subtaskCount = countVisibleCockpitTaskDescendants(node);
+  const summary = shorten(summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task), 132);
+  const eyebrow = [
+    `task ${shortTaskId}`,
+    `${sessionCount} ${sessionCount === 1 ? "sessao" : "sessoes"}`,
+    subtaskCount ? `${subtaskCount} ${subtaskCount === 1 ? "subtask" : "subtasks"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <div class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-group__head ravi-wa-nav-group__head--${statusClass}">
+      <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
+      <span class="ravi-wa-nav-row__body">
+        <span class="ravi-wa-nav-row__eyebrow">${escapeHtml(eyebrow)}</span>
+        <span class="ravi-wa-nav-row__titleline">
+          <strong>${escapeHtml(task.title || task.id)}</strong>
+        </span>
+        <span class="ravi-wa-nav-row__subline">${escapeHtml(summary)}</span>
+        <span class="ravi-wa-nav-row__progress">
+          <span class="ravi-wa-nav-row__progress-label">${escapeHtml(String(progress))}%</span>
+          <span class="ravi-wa-nav-row__progress-bar" aria-hidden="true"><span style="width: ${progress}%"></span></span>
+        </span>
+      </span>
+      <span class="ravi-wa-nav-row__aside">
+        <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatTaskElapsed(task))}</span>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+      </span>
+    </div>
+  `;
+}
+
+function renderCockpitTaskGroupBranchHeader(node, parentTask) {
+  const task = node.task;
+  const statusClass = taskStatusClass(task.status);
+  const shortTaskId = formatTaskShortId(task.id);
+  const visibleSessions = countVisibleCockpitTaskRows(node);
+  const title = buildGroupedTaskAwareTitle(null, task, parentTask, "task");
+  const summary = shorten(summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task), 108);
+  const eyebrow = [`subtask ${shortTaskId}`, `${visibleSessions} ${visibleSessions === 1 ? "sessao" : "sessoes"}`]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <div class="ravi-wa-nav-group__label ravi-wa-nav-group__label--${statusClass}">
+      <span class="ravi-wa-nav-group__label-eyebrow">${escapeHtml(eyebrow)}</span>
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(summary)}</span>
+    </div>
+  `;
+}
+
+function buildGroupedTaskAwareTitle(session, task, parentTask, titleMode) {
+  if (titleMode === "session") {
+    return session?.sessionName || task?.title || task?.id || "task";
+  }
+  const taskTitle = task?.title || task?.id || session?.sessionName || "task";
+  return stripTaskTitlePrefix(taskTitle, parentTask?.title || null) || taskTitle;
+}
+
+function buildGroupedTaskAwareEyebrow(session, task, shortTaskId, titleMode) {
+  const priority = task?.priority && task.priority !== "normal" ? `priority ${task.priority}` : null;
+  if (titleMode === "session") {
+    return [`task ${shortTaskId}`, priority].filter(Boolean).join(" · ");
+  }
+  return [`subtask ${shortTaskId}`, priority].filter(Boolean).join(" · ");
+}
+
+function buildGroupedTaskAwareSessionMeta(session, linkedChat, titleMode) {
+  const location = linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : "sem chat vinculado";
+  if (titleMode === "session") {
+    return [session.agentId ? `agent ${session.agentId}` : null, location].filter(Boolean).join(" · ");
+  }
+  return [`session ${session.sessionName}`, session.agentId ? `agent ${session.agentId}` : null, location]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function stripTaskTitlePrefix(taskTitle, parentTaskTitle) {
+  const child = typeof taskTitle === "string" ? taskTitle.trim() : "";
+  const parent = typeof parentTaskTitle === "string" ? parentTaskTitle.trim() : "";
+  if (!child || !parent) return child;
+
+  const prefixPattern = new RegExp(`^${escapeRegexToken(parent)}(?:\\s*[:/|\\-–—>]+\\s*)?`, "i");
+  const stripped = child.replace(prefixPattern, "").trim();
+  return stripped || child;
+}
+
+function escapeRegexToken(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function countVisibleCockpitTaskRows(node) {
+  if (!node) return 0;
+  return (Array.isArray(node.rows) ? node.rows.length : 0) + (Array.isArray(node.children) ? node.children.reduce((total, child) => total + countVisibleCockpitTaskRows(child), 0) : 0);
+}
+
+function countVisibleCockpitTaskDescendants(node) {
+  return Array.isArray(node?.children)
+    ? node.children.reduce((total, child) => total + 1 + countVisibleCockpitTaskDescendants(child), 0)
+    : 0;
+}
+
+function shouldRenderCockpitTaskGroup(node) {
+  return (Array.isArray(node?.children) ? node.children.length : 0) > 0 || (Array.isArray(node?.rows) ? node.rows.length : 0) > 1;
+}
+
+function buildVisibleCockpitTaskNode(node, rowsByTaskId) {
+  if (!node?.task?.id) return null;
+
+  const ownRows = (rowsByTaskId.get(node.task.id) || []).slice().sort((left, right) => left.order - right.order);
+  const children = (Array.isArray(node.children) ? node.children : [])
+    .map((child) => buildVisibleCockpitTaskNode(child, rowsByTaskId))
+    .filter(Boolean)
+    .sort((left, right) => left.order - right.order);
+
+  if (!ownRows.length && !children.length) {
+    return null;
+  }
+
+  return {
+    task: node.task,
+    rows: ownRows,
+    children,
+    order: Math.min(ownRows[0]?.order ?? Number.POSITIVE_INFINITY, children[0]?.order ?? Number.POSITIVE_INFINITY),
+  };
+}
+
+function getTaskRootTaskId(taskId, hierarchyState) {
+  let currentTaskId = taskId;
+  let parentTaskId = hierarchyState.parentByTaskId.get(currentTaskId) || null;
+
+  while (parentTaskId) {
+    currentTaskId = parentTaskId;
+    parentTaskId = hierarchyState.parentByTaskId.get(currentTaskId) || null;
+  }
+
+  return currentTaskId;
 }
 
 function taskStatusClass(status) {
@@ -4197,7 +4470,17 @@ function taskStatusLabel(status) {
 }
 
 function formatTaskElapsed(task) {
-  return formatElapsedCompact(task?.updatedAt || task?.createdAt || null) || "agora";
+  const duration = formatTaskDurationValue(task);
+  if (duration) return duration;
+
+  switch (task?.status) {
+    case "dispatched":
+      return "na fila";
+    case "open":
+      return "nao iniciada";
+    default:
+      return "sem duracao";
+  }
 }
 
 function formatTaskWorktree(worktree) {
@@ -4217,11 +4500,81 @@ function formatTaskShortId(taskId) {
   return normalized.length > 10 ? normalized.slice(0, 10) : normalized;
 }
 
-function formatTaskUpdatedLabel(task) {
-  const wallClock = formatTimestamp(task?.updatedAt || task?.createdAt || null);
-  const elapsed = formatTaskElapsed(task);
-  if (wallClock !== "-" && elapsed) return `${wallClock} · ${elapsed}`;
-  return wallClock !== "-" ? wallClock : elapsed;
+function toPositiveTaskTimestamp(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function getTaskDurationStartTimestamp(task) {
+  const sharedStart = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationStartTimestamp?.(task);
+  if (typeof sharedStart === "number" && Number.isFinite(sharedStart) && sharedStart > 0) {
+    return sharedStart;
+  }
+
+  return (
+    toPositiveTaskTimestamp(task?.dispatchedAt) ??
+    toPositiveTaskTimestamp(task?.createdAt) ??
+    toPositiveTaskTimestamp(task?.startedAt)
+  );
+}
+
+function getTaskDurationEndTimestamp(task) {
+  const sharedEnd = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationEndTimestamp?.(task);
+  if (typeof sharedEnd === "number" && Number.isFinite(sharedEnd) && sharedEnd > 0) {
+    return sharedEnd;
+  }
+
+  const status = task?.status || null;
+  if (status === "dispatched" || status === "in_progress") {
+    return Date.now();
+  }
+
+  if (status === "done" || status === "failed") {
+    return toPositiveTaskTimestamp(task?.completedAt) ?? toPositiveTaskTimestamp(task?.updatedAt);
+  }
+
+  if (status === "blocked") {
+    return toPositiveTaskTimestamp(task?.updatedAt);
+  }
+
+  return null;
+}
+
+function getTaskDurationMs(task) {
+  const sharedDuration = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationMs?.(task);
+  if (typeof sharedDuration === "number" && Number.isFinite(sharedDuration) && sharedDuration >= 0) {
+    return sharedDuration;
+  }
+
+  const startedAt = getTaskDurationStartTimestamp(task);
+  if (startedAt === null) return null;
+
+  const endedAt = getTaskDurationEndTimestamp(task);
+  if (endedAt === null || endedAt < startedAt) {
+    return null;
+  }
+
+  return Math.max(0, endedAt - startedAt);
+}
+
+function formatTaskDurationValue(task) {
+  const durationMs = getTaskDurationMs(task);
+  if (typeof durationMs !== "number") return null;
+  return formatDurationCompactMs(durationMs);
+}
+
+function formatTaskDurationLabel(task) {
+  const duration = formatTaskDurationValue(task);
+  if (duration) return `duration ${duration}`;
+
+  switch (task?.status) {
+    case "dispatched":
+      return "aguarda start";
+    case "open":
+      return "nao iniciada";
+    default:
+      return "sem duracao";
+  }
 }
 
 function clampTaskProgressValue(value) {
@@ -4384,6 +4737,152 @@ function buildTasksWorkspaceSubtitle(snapshot) {
   const stats = snapshot?.stats || null;
   if (!stats) return "kanban do runtime";
   return `open ${stats.open ?? 0} · queued ${stats.dispatched ?? 0} · working ${stats.inProgress ?? 0} · blocked ${stats.blocked ?? 0} · done ${stats.done ?? 0} · failed ${stats.failed ?? 0}`;
+}
+
+function parseLocalDateKey(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) {
+    return null;
+  }
+
+  return new Date(year, monthIndex, day);
+}
+
+function formatTaskActivityDate(value, options) {
+  const date = parseLocalDateKey(value);
+  if (!date) return value || "-";
+  return date.toLocaleDateString(undefined, options);
+}
+
+function formatTaskActivityShortDate(value) {
+  return formatTaskActivityDate(value, { day: "numeric", month: "short" });
+}
+
+function formatTaskActivityLongDate(value) {
+  return formatTaskActivityDate(value, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatTaskActivityPeriodLabel(activity) {
+  if (!activity?.startDate || !activity?.endDate) {
+    return "ultimo recorte do runtime";
+  }
+
+  return `${formatTaskActivityShortDate(activity.startDate)} - ${formatTaskActivityShortDate(activity.endDate)}`;
+}
+
+function formatTaskActivityStreak(value) {
+  const days = Math.max(0, Number(value) || 0);
+  return `${days} ${days === 1 ? "dia" : "dias"}`;
+}
+
+function resolveTaskActivityIntensity(doneCount, maxDoneCount) {
+  const count = Number(doneCount) || 0;
+  const max = Number(maxDoneCount) || 0;
+  if (count <= 0 || max <= 0) return 0;
+  return Math.max(1, Math.min(4, Math.ceil((count / max) * 4)));
+}
+
+function formatTaskActivityTooltip(bucket) {
+  const doneCount = Math.max(0, Number(bucket?.doneCount) || 0);
+  const failedCount = Math.max(0, Number(bucket?.failedCount) || 0);
+  const parts = [
+    formatTaskActivityLongDate(bucket?.date || ""),
+    `${doneCount} ${doneCount === 1 ? "task concluida" : "tasks concluidas"}`,
+  ];
+
+  if (failedCount > 0) {
+    parts.push(`${failedCount} ${failedCount === 1 ? "falha terminal" : "falhas terminais"}`);
+  }
+
+  return parts.join(" · ");
+}
+
+function renderTasksDailyActivityCard(activity) {
+  const buckets = Array.isArray(activity?.buckets) ? activity.buckets : [];
+  const totalDoneCount = Math.max(0, Number(activity?.totalDoneCount) || 0);
+  const maxDoneCount = Math.max(0, Number(activity?.maxDoneCount) || 0);
+  const bestDay = activity?.bestDay || null;
+  const legendLevels = [0, 1, 2, 3, 4];
+  const timeZoneLabel = activity?.timeZone ? ` · ${activity.timeZone}` : "";
+  const daysLabel = Math.max(0, Number(activity?.days) || buckets.length || 84);
+
+  return `
+    <section class="ravi-wa-card ravi-wa-tasks-activity">
+      <div class="ravi-wa-tasks-activity__head">
+        <div class="ravi-wa-tasks-activity__copy">
+          <span class="ravi-wa-tasks-activity__eyebrow">daily activity</span>
+          <div>
+            <h3>Done heatmap</h3>
+            <p>${escapeHtml(`ultimos ${daysLabel} dias por completedAt local${timeZoneLabel}.`)}</p>
+          </div>
+        </div>
+        <div class="ravi-wa-tasks-activity__summary">
+          <article class="ravi-wa-tasks-activity__stat">
+            <span>total no periodo</span>
+            <strong>${escapeHtml(String(totalDoneCount))}</strong>
+            <small>${escapeHtml(formatTaskActivityPeriodLabel(activity))}</small>
+          </article>
+          <article class="ravi-wa-tasks-activity__stat">
+            <span>melhor dia</span>
+            <strong>${escapeHtml(bestDay ? String(bestDay.doneCount) : "-")}</strong>
+            <small>${escapeHtml(bestDay ? formatTaskActivityShortDate(bestDay.date) : "sem concluidas")}</small>
+          </article>
+          <article class="ravi-wa-tasks-activity__stat">
+            <span>streak atual</span>
+            <strong>${escapeHtml(formatTaskActivityStreak(activity?.currentStreak))}</strong>
+            <small>${escapeHtml(`${activity?.activeDays ?? 0} dias ativos`)}</small>
+          </article>
+        </div>
+      </div>
+      <div class="ravi-wa-tasks-activity__grid-wrap">
+        <div class="ravi-wa-tasks-activity__grid" aria-label="${escapeAttribute(`Heatmap de tasks concluidas nos ultimos ${daysLabel} dias`)}}">
+          ${buckets
+            .map((bucket) => {
+              const intensity = resolveTaskActivityIntensity(bucket?.doneCount, maxDoneCount);
+              return `
+                <span
+                  class="ravi-wa-tasks-activity__cell ravi-wa-tasks-activity__cell--lv${intensity}"
+                  title="${escapeAttribute(formatTaskActivityTooltip(bucket))}"
+                  data-date="${escapeAttribute(bucket?.date || "")}"
+                  data-count="${escapeAttribute(String(bucket?.doneCount ?? 0))}"
+                ></span>
+              `;
+            })
+            .join("")}
+        </div>
+      </div>
+      <div class="ravi-wa-tasks-activity__legend">
+        ${
+          totalDoneCount > 0
+            ? `
+          <span>menos</span>
+          <div class="ravi-wa-tasks-activity__legend-scale">
+            ${legendLevels
+              .map(
+                (level) => `
+              <span class="ravi-wa-tasks-activity__cell ravi-wa-tasks-activity__cell--lv${level}" aria-hidden="true"></span>
+            `,
+              )
+              .join("")}
+          </div>
+          <span>mais</span>
+        `
+            : `
+          <div class="ravi-wa-tasks-activity__empty">
+            <strong>Sem concluicoes recentes</strong>
+            <p>O runtime ainda nao registrou tasks concluídas nesse recorte.</p>
+          </div>
+        `
+        }
+      </div>
+    </section>
+  `;
 }
 
 function summarizeTaskCardCopy(task) {
@@ -4560,7 +5059,7 @@ function renderTaskRelationCard(task) {
       <span class="ravi-wa-task-link__meta">
         <span>${escapeHtml(task.assigneeAgentId || "-")}</span>
         <span>${escapeHtml(String(progress))}%</span>
-        <span>${escapeHtml(formatTaskUpdatedLabel(task) || "-")}</span>
+        <span>${escapeHtml(formatTaskDurationLabel(task))}</span>
       </span>
     </button>
   `;
@@ -4638,7 +5137,9 @@ function renderTaskComments(comments) {
 function renderTasksWorkspace(body) {
   const snapshot = latestTasksSnapshot;
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const taskRoots = buildTaskHierarchy(items);
   const stats = snapshot?.stats || null;
+  const dailyActivity = snapshot?.dailyActivity || null;
   const selectedTask = snapshot?.selectedTask || null;
   const selectedTaskKey = selectedTask?.task?.id || snapshot?.query?.taskId || selectedTaskId || null;
 
@@ -4669,13 +5170,14 @@ function renderTasksWorkspace(body) {
       `
           : ""
       }
+      ${renderTasksDailyActivityCard(dailyActivity)}
       <div class="ravi-wa-tasks-layout">
         <div class="ravi-wa-task-board-wrap">
           <div class="ravi-wa-task-board">
             ${TASK_KANBAN_COLUMNS.map((column) =>
               renderTaskKanbanColumn(
                 column,
-                items.filter((task) => column.statuses.includes(task.status)),
+                taskRoots.filter((node) => column.statuses.includes(node.task.status)),
                 selectedTaskKey,
               ),
             ).join("")}
@@ -4699,13 +5201,88 @@ function renderTasksWorkspace(body) {
   });
 }
 
-function renderTaskKanbanColumn(column, items, currentTaskId) {
+function getTaskHierarchyState(snapshot = latestTasksSnapshot) {
+  if (!snapshot) {
+    lastTaskHierarchySnapshot = snapshot;
+    lastTaskHierarchyState = { roots: [], nodes: new Map(), parentByTaskId: new Map() };
+    return lastTaskHierarchyState;
+  }
+
+  if (snapshot === lastTaskHierarchySnapshot) {
+    return lastTaskHierarchyState;
+  }
+
+  lastTaskHierarchySnapshot = snapshot;
+  lastTaskHierarchyState = createTaskHierarchyState(snapshot?.items);
+  return lastTaskHierarchyState;
+}
+
+function createTaskHierarchyState(items) {
+  const list = Array.isArray(items) ? [...items].sort(compareTaskCreatedAtAsc) : [];
+  const nodes = new Map(list.map((task) => [task.id, { task, children: [] }]));
+  const roots = [];
+  const parentByTaskId = new Map();
+
+  list.forEach((task) => {
+    const node = nodes.get(task.id);
+    if (!node) return;
+
+    const parentNode = task?.parentTaskId ? nodes.get(task.parentTaskId) : null;
+    if (parentNode) {
+      parentByTaskId.set(task.id, parentNode.task.id);
+      parentNode.children.push(node);
+      return;
+    }
+
+    roots.push(node);
+  });
+
+  return { roots, nodes, parentByTaskId };
+}
+
+function buildTaskHierarchy(items) {
+  return createTaskHierarchyState(items).roots;
+}
+
+function getTaskLineage(taskId, hierarchyState = getTaskHierarchyState()) {
+  const lineage = [];
+  let currentTaskId = taskId;
+
+  while (currentTaskId) {
+    const node = hierarchyState.nodes.get(currentTaskId);
+    if (node?.task) {
+      lineage.unshift(node.task);
+    }
+    currentTaskId = hierarchyState.parentByTaskId.get(currentTaskId) || null;
+  }
+
+  return lineage;
+}
+
+function countTaskTreeNodes(nodes) {
+  return (Array.isArray(nodes) ? nodes : []).reduce(
+    (total, node) => total + 1 + countTaskTreeNodes(Array.isArray(node?.children) ? node.children : []),
+    0,
+  );
+}
+
+function compareTaskCreatedAtAsc(left, right) {
+  return (
+    (Number(left?.createdAt) || 0) - (Number(right?.createdAt) || 0) ||
+    (Number(left?.updatedAt) || 0) - (Number(right?.updatedAt) || 0) ||
+    String(left?.id || "").localeCompare(String(right?.id || ""))
+  );
+}
+
+function renderTaskKanbanColumn(column, nodes, currentTaskId) {
+  const list = Array.isArray(nodes) ? nodes : [];
+  const visibleCount = countTaskTreeNodes(list);
   return `
     <section class="ravi-wa-task-column">
       <div class="ravi-wa-task-column__head">
         <div class="ravi-wa-task-column__copy">
           <strong>${escapeHtml(column.label)}</strong>
-          <span>${escapeHtml(String(items.length))} task${items.length === 1 ? "" : "s"}</span>
+          <span>${escapeHtml(String(visibleCount))} item${visibleCount === 1 ? "" : "s"} em ${escapeHtml(String(list.length))} grupo${list.length === 1 ? "" : "s"}</span>
         </div>
         <div class="ravi-wa-task-column__legend">
           ${column.statuses
@@ -4719,8 +5296,8 @@ function renderTaskKanbanColumn(column, items, currentTaskId) {
       </div>
       <div class="ravi-wa-task-column__list">
         ${
-          items.length
-            ? items.map((task) => renderTaskCard(task, currentTaskId)).join("")
+          list.length
+            ? list.map((node) => renderTaskCard(node, currentTaskId)).join("")
             : `<p class="ravi-wa-task-column__empty">nenhuma task nesse status agora.</p>`
         }
       </div>
@@ -4728,7 +5305,10 @@ function renderTaskKanbanColumn(column, items, currentTaskId) {
   `;
 }
 
-function renderTaskCard(task, currentTaskId) {
+function renderTaskCard(node, currentTaskId) {
+  const task = node?.task || null;
+  const childNodes = Array.isArray(node?.children) ? node.children : [];
+  if (!task) return "";
   const statusClass = taskStatusClass(task.status);
   const statusLabel = taskStatusLabel(task.status);
   const priorityClass = taskPriorityClass(task.priority);
@@ -4738,43 +5318,92 @@ function renderTaskCard(task, currentTaskId) {
   const progressInfo = describeTaskProgressText(task);
   const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
   const showSummary = summary && summary.toLowerCase() !== statusCopy.toLowerCase();
+  const footerMeta = `${task.assigneeSessionName || "-"} | ${task.assigneeAgentId || "-"}`;
 
   return `
-    <button
-      type="button"
-      class="ravi-wa-task-card ravi-wa-task-card--${statusClass}${selected === "true" ? " ravi-wa-task-card--selected" : ""}"
-      data-ravi-focus-task="${escapeAttribute(task.id)}"
-      aria-pressed="${selected}"
-      title="${escapeAttribute(`${task.title} · ${task.id}`)}"
-    >
-      <span class="ravi-wa-task-card__eyebrow">
-        <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
-        <span class="ravi-wa-task-card__eyebrow-aside">
-          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
-          <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
+    <article class="ravi-wa-task-card ravi-wa-task-card--${statusClass}${selected === "true" ? " ravi-wa-task-card--selected" : ""}">
+      <button
+        type="button"
+        class="ravi-wa-task-card__main"
+        data-ravi-focus-task="${escapeAttribute(task.id)}"
+        aria-pressed="${selected}"
+        title="${escapeAttribute(`${task.title} · ${task.id}`)}"
+      >
+        <span class="ravi-wa-task-card__eyebrow">
+          <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+          <span class="ravi-wa-task-card__eyebrow-aside">
+            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+            <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
+          </span>
         </span>
-      </span>
-      <strong class="ravi-wa-task-card__title">${escapeHtml(task.title || task.id)}</strong>
-      <div class="ravi-wa-task-card__status">
-        <span class="ravi-wa-task-card__status-label">runtime status</span>
-        <p>${escapeHtml(statusCopy)}</p>
-      </div>
-      ${showSummary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
-      <div class="ravi-wa-task-card__progress">
-        <div class="ravi-wa-task-card__progress-copy">
-          <span class="ravi-wa-task-card__progress-label">progress ${escapeHtml(String(progress))}%</span>
-          <p>${escapeHtml(shorten(progressInfo.text, 84))}</p>
+        <strong class="ravi-wa-task-card__title">${escapeHtml(task.title || task.id)}</strong>
+        <div class="ravi-wa-task-card__status">
+          <span class="ravi-wa-task-card__status-label">runtime status</span>
+          <p>${escapeHtml(statusCopy)}</p>
         </div>
-        <span class="ravi-wa-task-card__progress-time">${escapeHtml(formatTaskUpdatedLabel(task))}</span>
-      </div>
-      <div class="ravi-wa-task-card__bar" aria-hidden="true">
-        <span style="width: ${progress}%"></span>
-      </div>
-      <div class="ravi-wa-task-card__meta">
-        <span><strong>agent</strong>${escapeHtml(task.assigneeAgentId || "-")}</span>
-        <span><strong>session</strong>${escapeHtml(task.assigneeSessionName || "-")}</span>
-      </div>
-    </button>
+        ${showSummary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
+        <div class="ravi-wa-task-card__progress">
+          <div class="ravi-wa-task-card__progress-copy">
+            <span class="ravi-wa-task-card__progress-label">progress ${escapeHtml(String(progress))}%</span>
+            <p>${escapeHtml(shorten(progressInfo.text, 84))}</p>
+          </div>
+          <span class="ravi-wa-task-card__progress-time">${escapeHtml(formatTaskDurationLabel(task))}</span>
+        </div>
+        <div class="ravi-wa-task-card__bar" aria-hidden="true">
+          <span style="width: ${progress}%"></span>
+        </div>
+        <div class="ravi-wa-task-card__meta">
+          <span>${escapeHtml(footerMeta)}</span>
+        </div>
+      </button>
+      ${
+        childNodes.length
+          ? `<div class="ravi-wa-task-card__children">${childNodes
+              .map((childNode) => renderTaskChildCard(childNode, currentTaskId))
+              .join("")}</div>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function renderTaskChildCard(node, currentTaskId, depth = 1) {
+  const task = node?.task || null;
+  if (!task) return "";
+
+  const childNodes = Array.isArray(node?.children) ? node.children : [];
+  const selected = currentTaskId && currentTaskId === task.id ? "true" : "false";
+  const statusClass = taskStatusClass(task.status);
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const summary = summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
+
+  return `
+    <div class="ravi-wa-task-child-wrap${depth > 1 ? " ravi-wa-task-child-wrap--nested" : ""}">
+      <button
+        type="button"
+        class="ravi-wa-task-child ravi-wa-task-child--${statusClass}${selected === "true" ? " ravi-wa-task-child--selected" : ""}"
+        data-ravi-focus-task="${escapeAttribute(task.id)}"
+        aria-pressed="${selected}"
+        title="${escapeAttribute(`${task.title} · ${task.id}`)}"
+      >
+        <span class="ravi-wa-task-child__titleline">
+          <strong>${escapeHtml(task.title || task.id)}</strong>
+          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+        </span>
+        <span class="ravi-wa-task-child__summary">${escapeHtml(shorten(summary, 96))}</span>
+        <span class="ravi-wa-task-child__progress">
+          <span class="ravi-wa-task-child__progress-label">${escapeHtml(String(progress))}%</span>
+          <span class="ravi-wa-task-child__progress-bar" aria-hidden="true"><span style="width: ${progress}%"></span></span>
+        </span>
+      </button>
+      ${
+        childNodes.length
+          ? `<div class="ravi-wa-task-child__children">${childNodes
+              .map((childNode) => renderTaskChildCard(childNode, currentTaskId, depth + 1))
+              .join("")}</div>`
+          : ""
+      }
+    </div>
   `;
 }
 
@@ -4875,11 +5504,12 @@ function renderTaskDetailCard(selectedTask) {
         ? `${activeAssignment.status} · ${formatTaskActorLabel(null, activeAssignment.agentId, activeAssignment.sessionName)}`
         : "none",
     },
-    { label: "updated", value: formatTaskUpdatedLabel(task) || "-" },
-    { label: "created", value: formatTimestamp(task.createdAt) || "-" },
-    { label: "dispatched", value: formatTimestamp(task.dispatchedAt) || "-" },
-    { label: "started", value: formatTimestamp(task.startedAt) || "-" },
-    { label: "completed", value: formatTimestamp(task.completedAt) || "-" },
+    { label: "duration", value: formatTaskElapsed(task) },
+    { label: "updated at", value: formatTimestamp(task.updatedAt) || "-" },
+    { label: "created at", value: formatTimestamp(task.createdAt) || "-" },
+    { label: "dispatched at", value: formatTimestamp(task.dispatchedAt) || "-" },
+    { label: "started at", value: formatTimestamp(task.startedAt) || "-" },
+    { label: "completed at", value: formatTimestamp(task.completedAt) || "-" },
     { label: "worktree", value: worktreeLabel || "-" },
   ];
 
@@ -4911,7 +5541,7 @@ function renderTaskDetailCard(selectedTask) {
       <div class="ravi-wa-task-detail-progress">
         <div class="ravi-wa-task-detail-progress__head">
           <span>progress ${escapeHtml(String(progress))}%</span>
-          <span>${escapeHtml(formatTaskUpdatedLabel(task) || "-")}</span>
+          <span>${escapeHtml(formatTaskDurationLabel(task))}</span>
         </div>
         <div class="ravi-wa-task-detail-progress__bar" aria-hidden="true">
           <span style="width: ${progress}%"></span>
@@ -4933,7 +5563,7 @@ function renderTaskDetailCard(selectedTask) {
           status: task.status,
           title: runtimeStatusTitle,
           detail: `raw ${task.status} · progress ${progress}%`,
-          meta: formatTaskUpdatedLabel(task) || "-",
+          meta: formatTaskDurationLabel(task),
         })}
         ${renderTaskStatusPanel({
           eyebrow: "TASK.md status",
@@ -5078,8 +5708,10 @@ function filterCockpitSessions(items) {
   const list = Array.isArray(items) ? items : [];
   const needle = normalizeLookupToken(sidebarFilter);
   if (!needle) return list;
+  const taskHierarchyState = getTaskHierarchyState();
   return list.filter((session) => {
     const taskMatch = resolveTaskSessionMatch(session);
+    const lineage = taskMatch?.task?.id ? getTaskLineage(taskMatch.task.id, taskHierarchyState) : [];
     return [
       session.displayName,
       session.subject,
@@ -5093,6 +5725,8 @@ function filterCockpitSessions(items) {
       taskMatch?.task?.assigneeSessionName,
       taskMatch?.task?.workSessionName,
       taskMatch?.note?.text,
+      ...lineage.map((task) => task?.title),
+      ...lineage.map((task) => task?.id),
     ]
       .map(normalizeLookupToken)
       .some((value) => value && value.includes(needle));
@@ -5915,6 +6549,30 @@ function formatElapsedCompact(value) {
 
   const days = Math.floor(hours / 24);
   return `${days}d`;
+}
+
+function formatDurationCompactMs(durationMs) {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) return "";
+  if (durationMs < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
+
+  const seconds = Math.floor(durationMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    const remainderSeconds = seconds % 60;
+    return remainderSeconds ? `${minutes}m ${remainderSeconds}s` : `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const remainderMinutes = minutes % 60;
+  if (hours < 24) {
+    return remainderMinutes ? `${hours}h ${remainderMinutes}m` : `${hours}h`;
+  }
+
+  const days = Math.floor(hours / 24);
+  const remainderHours = hours % 24;
+  return remainderHours ? `${days}d ${remainderHours}h` : `${days}d`;
 }
 
 function scheduleV3PlaceholderRender() {

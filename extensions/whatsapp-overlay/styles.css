@@ -652,6 +652,32 @@
   gap: 6px;
 }
 
+.ravi-wa-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-nav-group__children {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-nav-group__children--nested {
+  margin-left: 12px;
+  padding-left: 10px;
+}
+
+.ravi-wa-nav-group__branch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .ravi-wa-nav-row {
   display: flex;
   align-items: center;
@@ -698,6 +724,68 @@
 
 .ravi-wa-nav-row--task {
   align-items: flex-start;
+}
+
+.ravi-wa-nav-row--task-compact {
+  padding: 8px 10px;
+  border-radius: 14px;
+}
+
+.ravi-wa-nav-row--task-compact .ravi-wa-nav-row__avatar {
+  width: 32px;
+  height: 32px;
+  font-size: 10px;
+}
+
+.ravi-wa-nav-group__head {
+  cursor: default;
+  background: rgba(255, 255, 255, 0.026);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.ravi-wa-nav-group__head:hover {
+  background: rgba(255, 255, 255, 0.026);
+  transform: none;
+}
+
+.ravi-wa-nav-group__label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ravi-wa-nav-group__label--blocked,
+.ravi-wa-nav-group__label--failed {
+  border-color: rgba(248, 113, 113, 0.16);
+}
+
+.ravi-wa-nav-group__label--done {
+  border-color: rgba(74, 222, 128, 0.16);
+}
+
+.ravi-wa-nav-group__label-eyebrow {
+  color: #9fb0b8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+
+.ravi-wa-nav-group__label strong {
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ravi-wa-nav-group__label span {
+  color: #8696a0;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .ravi-wa-nav-row__avatar {
@@ -1153,6 +1241,10 @@
   margin: 12px 20px 0;
 }
 
+.ravi-wa-tasks-page > .ravi-wa-tasks-activity {
+  margin: 12px 20px 0;
+}
+
 .ravi-wa-tasks-hero {
   display: flex;
   align-items: flex-end;
@@ -1194,6 +1286,187 @@
 .ravi-wa-tasks-hero .ravi-wa-chip-row {
   justify-content: flex-end;
   margin-top: 0;
+}
+
+.ravi-wa-tasks-activity {
+  padding: 16px 18px;
+  background:
+    radial-gradient(circle at top right, rgba(37, 211, 102, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.038), rgba(255, 255, 255, 0.022));
+}
+
+.ravi-wa-tasks-activity__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.ravi-wa-tasks-activity__copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-tasks-activity__eyebrow {
+  color: #25d366;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ravi-wa-tasks-activity__copy h3 {
+  margin: 0;
+  color: #f7f8fa;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.ravi-wa-tasks-activity__copy p {
+  margin: 6px 0 0;
+  color: #9fb0b8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ravi-wa-tasks-activity__summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 10px;
+  flex: 1 1 360px;
+}
+
+.ravi-wa-tasks-activity__stat {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  background: rgba(11, 20, 26, 0.72);
+}
+
+.ravi-wa-tasks-activity__stat span {
+  color: #8696a0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ravi-wa-tasks-activity__stat strong {
+  color: #f7f8fa;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.ravi-wa-tasks-activity__stat small {
+  color: #aebac1;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ravi-wa-tasks-activity__grid-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.ravi-wa-tasks-activity__grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 12px);
+  grid-auto-columns: 12px;
+  gap: 4px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.ravi-wa-tasks-activity__cell {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.045);
+  box-sizing: border-box;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.ravi-wa-tasks-activity__cell:hover {
+  transform: scale(1.12);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.ravi-wa-tasks-activity__cell--lv0 {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.ravi-wa-tasks-activity__cell--lv1 {
+  background: rgba(37, 211, 102, 0.22);
+}
+
+.ravi-wa-tasks-activity__cell--lv2 {
+  background: rgba(37, 211, 102, 0.38);
+}
+
+.ravi-wa-tasks-activity__cell--lv3 {
+  background: rgba(37, 211, 102, 0.58);
+}
+
+.ravi-wa-tasks-activity__cell--lv4 {
+  background: #25d366;
+}
+
+.ravi-wa-tasks-activity__legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.ravi-wa-tasks-activity__legend > span {
+  color: #8696a0;
+  font-size: 11px;
+}
+
+.ravi-wa-tasks-activity__legend-scale {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ravi-wa-tasks-activity__empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ravi-wa-tasks-activity__empty strong {
+  color: #f7f8fa;
+  font-size: 12px;
+}
+
+.ravi-wa-tasks-activity__empty p {
+  margin: 0;
+  color: #8696a0;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .ravi-wa-tasks-layout {
@@ -1299,6 +1572,21 @@
     border-color 140ms ease,
     background 140ms ease,
     box-shadow 140ms ease;
+}
+
+.ravi-wa-task-card__main {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
 }
 
 .ravi-wa-task-card:hover {
@@ -1490,6 +1778,122 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+
+.ravi-wa-task-card__children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ravi-wa-task-child-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-task-child-wrap--nested {
+  margin-left: 12px;
+}
+
+.ravi-wa-task-child__children {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ravi-wa-task-child {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.ravi-wa-task-child:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ravi-wa-task-child--selected {
+  border-color: rgba(37, 211, 102, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(37, 211, 102, 0.16);
+}
+
+.ravi-wa-task-child--blocked,
+.ravi-wa-task-child--failed {
+  border-color: rgba(248, 113, 113, 0.16);
+}
+
+.ravi-wa-task-child--done {
+  border-color: rgba(74, 222, 128, 0.16);
+}
+
+.ravi-wa-task-child__titleline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ravi-wa-task-child__titleline strong {
+  min-width: 0;
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ravi-wa-task-child__summary {
+  color: #9fb0b8;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ravi-wa-task-child__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ravi-wa-task-child__progress-label {
+  flex: 0 0 auto;
+  color: #dfe6ea;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ravi-wa-task-child__progress-bar {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ravi-wa-task-child__progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00a884, #86efac);
 }
 
 .ravi-wa-task-detail-pane {
@@ -2130,11 +2534,26 @@
     border-right: 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
+
+  .ravi-wa-tasks-activity__summary {
+    grid-template-columns: repeat(3, minmax(110px, 1fr));
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
+  .ravi-wa-tasks-page > .ravi-wa-tasks-activity,
   .ravi-wa-task-detail-pane {
     padding: 16px;
+  }
+
+  .ravi-wa-tasks-activity__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .ravi-wa-tasks-activity__empty {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .ravi-wa-task-detail-hero__top {

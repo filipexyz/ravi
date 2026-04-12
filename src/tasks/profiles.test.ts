@@ -531,7 +531,7 @@ describe("task profile catalog", () => {
     expect(preview.primaryArtifact?.kind).toBe("video-runner-state");
     expect(preview.primaryArtifact?.path).toBe(`${videoWorkspace}/out/silveira-nuclear/.wf-eb-state.json`);
     expect(preview.rendered.dispatch).toContain(`project root: ${videoWorkspace}/out/silveira-nuclear`);
-    expect(preview.rendered.dispatch).toContain("runner canônico: wf eb silveira-nuclear");
+    expect(preview.rendered.dispatch).toContain("CLI canônica: `video`");
     expect(preview.rendered.dispatchSummary).toContain("videomaker worktree");
   });
 });

@@ -271,7 +271,7 @@ describe("whatsapp overlay model", () => {
     expect(entries[2]?.resolved).toBe(false);
   });
 
-  it("builds recent sessions as one row per session in the last 24h", () => {
+  it("builds recent sessions by creation time with the newest recent entry first", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
@@ -281,12 +281,14 @@ describe("whatsapp overlay model", () => {
         lastChannel: "whatsapp",
         lastTo: "120363424772797713@g.us",
         updatedAt: now,
+        createdAt: now - 10_000,
       }),
       makeSession({
         name: "sales-a",
         agentId: "sales",
         displayName: "Ops sem chat",
         updatedAt: now - 1_000,
+        createdAt: now - 5_000,
       }),
       makeSession({
         name: "sales-b",
@@ -295,6 +297,7 @@ describe("whatsapp overlay model", () => {
         lastChannel: "whatsapp",
         lastTo: "5511999999999@s.whatsapp.net",
         updatedAt: now - 10_000,
+        createdAt: now - 1_000,
       }),
       makeSession({
         name: "ops-stale",
@@ -303,6 +306,7 @@ describe("whatsapp overlay model", () => {
         lastChannel: "whatsapp",
         lastTo: "5511777777777@s.whatsapp.net",
         updatedAt: now - 2 * 24 * 60 * 60 * 1000,
+        createdAt: now - 2 * 24 * 60 * 60 * 1000,
       }),
       makeSession({
         name: "telegram-recent",
@@ -311,6 +315,7 @@ describe("whatsapp overlay model", () => {
         lastChannel: "telegram",
         lastTo: "chat-1",
         updatedAt: now - 2_000,
+        createdAt: now - 2_000,
       }),
     ];
 
@@ -323,9 +328,9 @@ describe("whatsapp overlay model", () => {
     expect(snapshot.recentSessions).toHaveLength(3);
     expect(snapshot.recentChats).toEqual(snapshot.recentSessions);
     expect(snapshot.recentSessions[0]).toMatchObject({
-      sessionName: "dev-main",
-      agentId: "main",
-      chatId: "120363424772797713@g.us",
+      sessionName: "sales-b",
+      agentId: "ops",
+      chatId: "5511999999999@s.whatsapp.net",
     });
     expect(snapshot.recentSessions[1]).toMatchObject({
       sessionName: "sales-a",
@@ -334,19 +339,20 @@ describe("whatsapp overlay model", () => {
       channel: null,
     });
     expect(snapshot.recentSessions[2]).toMatchObject({
-      sessionName: "sales-b",
-      agentId: "ops",
-      chatId: "5511999999999@s.whatsapp.net",
+      sessionName: "dev-main",
+      agentId: "main",
+      chatId: "120363424772797713@g.us",
     });
   });
 
-  it("builds hot sessions from live session activity independently of chat linkage", () => {
+  it("builds active sessions only from explicit live activity", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
         name: "thinking-session",
         displayName: "Thinking",
         updatedAt: now - 1_000,
+        createdAt: now - 20_000,
       }),
       makeSession({
         name: "idle-chat",
@@ -354,6 +360,14 @@ describe("whatsapp overlay model", () => {
         lastChannel: "whatsapp",
         lastTo: "5511222222222@s.whatsapp.net",
         updatedAt: now - 2_000,
+        createdAt: now - 10_000,
+      }),
+      makeSession({
+        name: "aborted-stale",
+        displayName: "Aborted stale",
+        updatedAt: now - 500,
+        createdAt: now - 30_000,
+        abortedLastRun: true,
       }),
     ];
     const live = new Map<string, OverlayLiveState>([
@@ -367,26 +381,120 @@ describe("whatsapp overlay model", () => {
       liveBySessionName: live,
     });
 
-    expect(snapshot.hotSessions).toHaveLength(1);
-    expect(snapshot.hotSessions[0]).toMatchObject({
+    expect(snapshot.activeSessions).toHaveLength(1);
+    expect(snapshot.hotSessions).toEqual(snapshot.activeSessions);
+    expect(snapshot.activeSessions[0]).toMatchObject({
       sessionName: "thinking-session",
       displayName: "Thinking",
       chatId: null,
     });
   });
 
-  it("removes hot sessions linked to terminal tasks by canonical session join", () => {
+  it("keeps active sessions oldest-first and excludes them from recent sessions", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        sessionKey: "agent:ops:dm:1",
+        name: "old-active",
+        agentId: "ops",
+        displayName: "Old active",
+        updatedAt: now - 2_000,
+        createdAt: now - 20_000,
+      }),
+      makeSession({
+        sessionKey: "agent:ops:dm:2",
+        name: "new-active",
+        agentId: "ops",
+        displayName: "New active",
+        updatedAt: now - 1_000,
+        createdAt: now - 5_000,
+      }),
+      makeSession({
+        sessionKey: "agent:ops:dm:3",
+        name: "recent-idle",
+        agentId: "ops",
+        displayName: "Recent idle",
+        updatedAt: now - 500,
+        createdAt: now - 1_000,
+      }),
+      makeSession({
+        sessionKey: "agent:ops:dm:4",
+        name: "older-idle",
+        agentId: "ops",
+        displayName: "Older idle",
+        updatedAt: now - 3_000,
+        createdAt: now - 10_000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([
+      ["old-active", { activity: "thinking", updatedAt: now - 100 }],
+      ["new-active", { activity: "streaming", updatedAt: now }],
+    ]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "new-active" },
+      sessions,
+      liveBySessionName: live,
+    });
+
+    expect(snapshot.activeSessions.map((session) => session.sessionName)).toEqual(["old-active", "new-active"]);
+    expect(snapshot.recentSessions.map((session) => session.sessionName)).toEqual(["recent-idle", "older-idle"]);
+  });
+
+  it("does not cap active sessions when more than eight are live", () => {
+    const now = Date.now();
+    const sessions = Array.from({ length: 10 }, (_, index) =>
+      makeSession({
+        sessionKey: `agent:ops:dm:${index}`,
+        name: `active-${index}`,
+        agentId: "ops",
+        displayName: `Active ${index}`,
+        updatedAt: now - (10 - index) * 100,
+        createdAt: now - (10 - index) * 1_000,
+      }),
+    );
+    const live = new Map<string, OverlayLiveState>(
+      sessions.map((session, index) => [
+        session.name,
+        { activity: index % 2 === 0 ? "thinking" : "streaming", updatedAt: now - index },
+      ]),
+    );
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "active-9" },
+      sessions,
+      liveBySessionName: live,
+    });
+
+    expect(snapshot.activeSessions.map((session) => session.sessionName)).toEqual([
+      "active-0",
+      "active-1",
+      "active-2",
+      "active-3",
+      "active-4",
+      "active-5",
+      "active-6",
+      "active-7",
+      "active-8",
+      "active-9",
+    ]);
+    expect(snapshot.recentSessions).toEqual([]);
+  });
+
+  it("removes active sessions linked to terminal tasks by canonical session join", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
         name: "task-done-session",
         displayName: "Done task",
         updatedAt: now - 2_000,
+        createdAt: now - 20_000,
       }),
       makeSession({
         name: "task-active-session",
         displayName: "Active task",
         updatedAt: now - 1_000,
+        createdAt: now - 10_000,
       }),
     ];
     const live = new Map<string, OverlayLiveState>([
@@ -414,17 +522,18 @@ describe("whatsapp overlay model", () => {
       ],
     });
 
-    expect(snapshot.hotSessions).toHaveLength(1);
-    expect(snapshot.hotSessions[0]?.sessionName).toBe("task-active-session");
+    expect(snapshot.activeSessions).toHaveLength(1);
+    expect(snapshot.activeSessions[0]?.sessionName).toBe("task-active-session");
   });
 
-  it("keeps a hot session visible when a newer live task supersedes an older terminal task on the same session", () => {
+  it("keeps an active session visible when a newer live task supersedes an older terminal task on the same session", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
         name: "shared-task-session",
         displayName: "Shared task session",
         updatedAt: now - 1_000,
+        createdAt: now - 10_000,
       }),
     ];
     const live = new Map<string, OverlayLiveState>([
@@ -453,17 +562,18 @@ describe("whatsapp overlay model", () => {
       ],
     });
 
-    expect(snapshot.hotSessions).toHaveLength(1);
-    expect(snapshot.hotSessions[0]?.sessionName).toBe("shared-task-session");
+    expect(snapshot.activeSessions).toHaveLength(1);
+    expect(snapshot.activeSessions[0]?.sessionName).toBe("shared-task-session");
   });
 
-  it("removes hot sessions linked to archived tasks", () => {
+  it("removes active sessions linked to archived tasks", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
         name: "archived-task-session",
         displayName: "Archived task",
         updatedAt: now - 500,
+        createdAt: now - 10_000,
       }),
     ];
     const live = new Map<string, OverlayLiveState>([
@@ -485,6 +595,7 @@ describe("whatsapp overlay model", () => {
       ],
     });
 
+    expect(snapshot.activeSessions).toEqual([]);
     expect(snapshot.hotSessions).toEqual([]);
   });
 });

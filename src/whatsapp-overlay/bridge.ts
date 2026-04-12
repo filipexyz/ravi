@@ -50,6 +50,7 @@ import { deriveOmniRouteTarget, isOmniGroupChat } from "./routing.js";
 import { CliStreamRelayCommandError, createCliStreamRelay } from "../stream/relay.js";
 import type { StreamEventMessage } from "../stream/protocol.js";
 import { buildOverlayV3PlaceholderSnapshot, type OverlayV3RelayHealth } from "./placeholders.js";
+import { buildOverlayTasksDailyActivity, type OverlayTasksDailyActivitySummary } from "./tasks-activity.js";
 import type { SessionEntry } from "../router/types.js";
 import { matchOmniChatFromRow } from "./chat-list-match.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
@@ -160,6 +161,8 @@ type OverlayTasksQuery = {
   agentId: string | null;
   sessionName: string | null;
   eventsLimit: number;
+  timeZone: string | null;
+  todayKey: string | null;
 };
 
 type OverlayTasksSnapshot = {
@@ -177,6 +180,7 @@ type OverlayTasksSnapshot = {
   };
   items: TaskStreamTaskEntity[];
   activeItems: TaskStreamTaskEntity[];
+  dailyActivity: OverlayTasksDailyActivitySummary;
   selectedTask: OverlayTaskSelection | null;
 };
 
@@ -975,6 +979,8 @@ function handleTasks(url: URL): Response {
     const agentId = cleanNullable(url.searchParams.get("agentId"));
     const sessionName = cleanNullable(url.searchParams.get("sessionName"));
     const eventsLimit = normalizeTaskEventsLimit(url.searchParams.get("eventsLimit"));
+    const timeZone = cleanNullable(url.searchParams.get("timeZone"));
+    const todayKey = cleanNullable(url.searchParams.get("todayKey"));
 
     const listSnapshot = buildTaskStreamSnapshot({
       ...(status ? { status } : {}),
@@ -1031,10 +1037,13 @@ function handleTasks(url: URL): Response {
         agentId,
         sessionName,
         eventsLimit,
+        timeZone,
+        todayKey,
       },
       stats: listSnapshot.stats,
       items,
       activeItems,
+      dailyActivity: buildOverlayTasksDailyActivity({ tasks: items, timeZone, todayKey }),
       selectedTask: selectedTaskWithDocument,
     };
 

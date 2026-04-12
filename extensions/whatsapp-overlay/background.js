@@ -134,6 +134,8 @@ async function fetchTasks(payload = {}) {
   if (payload.agentId) params.set("agentId", payload.agentId);
   if (payload.sessionName) params.set("sessionName", payload.sessionName);
   if (payload.eventsLimit) params.set("eventsLimit", String(payload.eventsLimit));
+  if (payload.timeZone) params.set("timeZone", payload.timeZone);
+  if (payload.todayKey) params.set("todayKey", payload.todayKey);
 
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
   return response.json();

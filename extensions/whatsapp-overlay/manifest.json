@@ -20,6 +20,7 @@
         "https://web.whatsapp.com/*"
       ],
       "js": [
+        "task-duration.js",
         "content.js"
       ],
       "css": [

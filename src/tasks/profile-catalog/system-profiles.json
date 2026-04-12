@@ -175,7 +175,7 @@
     "id": "video-rapha",
     "version": "1",
     "label": "Video Rapha",
-    "description": "Specialized content profile for the Rapha video pipeline rooted in the videomaker workspace. v0 requires a brief and drives the canonical runner wf eb <video_id>.",
+    "description": "Specialized content profile for the video pipeline rooted in the videomaker workspace. v0 requires a brief and uses the canonical `video` CLI surface under out/<video_id>.",
     "sessionNameTemplate": "<task-id>-work",
     "workspaceBootstrap": {
       "mode": "path",
@@ -261,7 +261,7 @@
     },
     "progress": {
       "requireMessage": true,
-      "notes": "Use o runner wf eb como fonte de verdade; checkpoints F2/F4/F5 continuam in_progress ate haver impedimento real."
+      "notes": "Use a CLI `video` como surface canônica; `wf eb` fica só como alias legado. Checkpoints F2/F4/F5 continuam in_progress ate haver impedimento real."
     },
     "artifacts": [
       {
@@ -274,6 +274,21 @@
         "kind": "video-meta",
         "label": "Project meta",
         "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/00-meta.md"
+      },
+      {
+        "kind": "video-project-spec",
+        "label": "Project spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/project.json"
+      },
+      {
+        "kind": "video-story-spec",
+        "label": "Story spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/story.json"
+      },
+      {
+        "kind": "video-scene-specs",
+        "label": "Scene specs",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scenes"
       },
       {
         "kind": "video-runner-log",
@@ -332,6 +347,16 @@
         "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F4-checklist.md"
       },
       {
+        "kind": "video-render-spec",
+        "label": "Render spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/render-props.json"
+      },
+      {
+        "kind": "video-qc",
+        "label": "QC report",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/qc.json"
+      },
+      {
         "kind": "video-render",
         "label": "Rendered video",
         "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/render/video.mp4",
@@ -366,9 +391,9 @@
       }
     ],
     "templates": {
-      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- runner canônico: wf eb {{input.video_id}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInputs do projeto:\n- video_id: {{input.video_id}}\n- titulo: {{input.titulo}}\n- publico: {{input.publico}}\n- tese: {{input.tese}}\n- acao: {{input.acao}}\n\nBrief:\n{{input.brief}}\n\nInstruções de execução:\n- use o worktree contextual como base operacional do videomaker\n- trate {{worktree.path}}/out/{{input.video_id}} como o projeto canônico deste vídeo\n- rode o método do Rapha via `wf eb {{input.video_id}}`; não invente runtime paralelo e não derive progresso por heurística\n- trate {{artifacts.primary.path}} como a fonte primária do runner enquanto a task estiver ativa\n- use `00-meta.md`, `script.json`, `F2-design.md`, `props/`, `props.json`, `F4-checklist.md` e `render/video.mp4` como artifacts do processo conforme a fase\n- se consultar uma skill do task runtime, use `ravi-system-tasks`; não use o legado `ravi-system-tasks-manager`\n- checkpoints F2/F4/F5 não significam `blocked`; mantenha a task `in_progress` até haver impedimento real\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
-      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | phase: {{profileState.video.phase}} | step: {{profileState.video.step}} | runner: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- runner canônico: wf eb {{input.video_id}}",
-      "dispatchSummary": "The target session was instructed to operate inside the videomaker worktree, run `wf eb {{input.video_id}}`, and keep the project rooted at {{worktree.path}}/out/{{input.video_id}}.",
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- CLI canônica: `video`\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInputs do projeto:\n- video_id: {{input.video_id}}\n- titulo: {{input.titulo}}\n- publico: {{input.publico}}\n- tese: {{input.tese}}\n- acao: {{input.acao}}\n\nBrief:\n{{input.brief}}\n\nInstruções de execução:\n- use o worktree contextual como base operacional do videomaker\n- trate {{worktree.path}}/out/{{input.video_id}} como o projeto canônico deste vídeo\n- use a surface `video` como protocolo principal (`video status`, `video advance`, `video scenes`, `video sync`, `video compile`, `video qc`); `wf eb` ficou só como alias legado\n- trate {{artifacts.primary.path}} como a fonte primária do runner enquanto a task estiver ativa\n- trate `project.json`, `story.json`, `scenes/`, `render-props.json` e `qc.json` como specs do projeto; `00-meta.md`, `script.json`, `F2-design.md`, `props/`, `props.json`, `F4-checklist.md` e `render/video.mp4` continuam como artifacts do processo\n- se consultar uma skill do task runtime, use `ravi-system-tasks`; não use o legado `ravi-system-tasks-manager`\n- checkpoints F2/F4/F5 não significam `blocked`; mantenha a task `in_progress` até haver impedimento real\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | phase: {{profileState.video.phase}} | step: {{profileState.video.step}} | runner: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- CLI canônica: `video`",
+      "dispatchSummary": "The target session was instructed to operate inside the videomaker worktree, use the `video` CLI surface, and keep the project rooted at {{worktree.path}}/out/{{input.video_id}}.",
       "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Video Rapha project rooted at {{worktree.path}}/out/{{input.video_id}} with runner state {{artifacts.primary.path}}; keep checkpoints F2/F4/F5 in-progress and sync via ravi tasks report|done|block|fail {{task.id}}."
     }
   },
@@ -450,6 +475,11 @@
         "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scene{{input.scene_id}}.mp3"
       },
       {
+        "kind": "video-scene-spec",
+        "label": "Scene spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scenes/scene{{input.scene_id}}.json"
+      },
+      {
         "kind": "video-scene-words",
         "label": "Scene word timings",
         "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scene{{input.scene_id}}-words.json"
@@ -485,7 +515,7 @@
       }
     ],
     "templates": {
-      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- video_id: {{input.video_id}}\n- scene_id: {{input.scene_id}}\n- beat_type: {{input.beat_type}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nTexto da cena:\n{{input.scene_text}}\n\nInstruções de execução:\n- você é dono apenas da cena {{input.scene_id}} dentro de {{worktree.path}}/out/{{input.video_id}}\n- leia `F2-design.md`, `script.json`, `scene{{input.scene_id}}.mp3`, `scene{{input.scene_id}}-words.json` e trabalhe só nos artifacts locais da cena\n- produza e valide `assets/scene{{input.scene_id}}-manifest.json`, `props/scene{{input.scene_id}}-props.json`, `stills/scene{{input.scene_id}}.png` e a entrada append-only correspondente em `.wf-eb-scenes.jsonl`\n- não avance o runner linear, não rode `wf eb {{input.video_id}} --next` e não toque em `.wf-eb-state.json`\n- não mexa em outras cenas, em `props.json` final, em `F4-*` ou em `render/video.mp4`\n- se faltar asset, timing ou decisão de design, bloqueie a scene task com contexto suficiente para o parent reorquestrar\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- video_id: {{input.video_id}}\n- scene_id: {{input.scene_id}}\n- beat_type: {{input.beat_type}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nTexto da cena:\n{{input.scene_text}}\n\nInstruções de execução:\n- você é dono apenas da cena {{input.scene_id}} dentro de {{worktree.path}}/out/{{input.video_id}}\n- leia `scenes/scene{{input.scene_id}}.json` como contrato canônico da cena; use `F2-design.md` como contexto visual complementar\n- use `scene{{input.scene_id}}.mp3` e `scene{{input.scene_id}}-words.json` já gerados pelo parent e trabalhe só nos artifacts locais da cena\n- produza e valide `assets/scene{{input.scene_id}}-manifest.json`, `props/scene{{input.scene_id}}-props.json`, `stills/scene{{input.scene_id}}.png` e a entrada append-only correspondente em `.wf-eb-scenes.jsonl`\n- não avance o runner linear, não rode `video advance {{input.video_id}}` e não toque em `.wf-eb-state.json`\n- não mexa em outras cenas, em `props.json` final, em `F4-*` ou em `render/video.mp4`\n- se faltar asset, timing ou decisão de design, bloqueie a scene task com contexto suficiente para o parent reorquestrar\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
       "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | scene: {{input.scene_id}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}",
       "dispatchSummary": "The target session now owns exactly one scene under {{worktree.path}}/out/{{input.video_id}}. Build the scene-local artifacts and sync through:",
       "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Scene {{input.scene_id}} for {{input.video_id}} now lives in the task runtime; keep work local to that scene and sync via ravi tasks report|done|block|fail {{task.id}}."

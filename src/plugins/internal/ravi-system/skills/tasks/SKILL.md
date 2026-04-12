@@ -84,7 +84,8 @@ Resumo:
 - `video-rapha`
   - worktree contextual = `~/ravi/videomaker`
   - projeto = `out/<video_id>/`
-  - runner = `wf eb <video_id>`
+  - CLI canônica = `video`
+  - specs = `project.json`, `story.json`, `scenes/`, `render-props.json`, `qc.json`
   - artifact primário ativo = `.wf-eb-state.json`
   - artifact terminal = `render/video.mp4`
 - `video-rapha-scene`
@@ -163,7 +164,8 @@ ravi tasks create --profile <id>
 
 - usar o worktree contextual do `videomaker`
 - tratar `out/<video_id>/` como projeto canônico
-- rodar `wf eb <video_id>`
+- usar a surface `video` (`video status|advance|scenes|sync|compile|qc`)
+- tratar `project.json`, `story.json`, `scenes/`, `render-props.json` e `qc.json` como specs do projeto
 - ler `.wf-eb-state.json` como artifact primário ativo
 - tratar checkpoints F2/F4/F5 como `in_progress`, não `blocked`
 
@@ -171,8 +173,9 @@ ravi tasks create --profile <id>
 
 - tratar `out/<video_id>/` como projeto compartilhado
 - trabalhar só na cena atribuída
+- usar `scenes/sceneN.json` como contrato canônico da cena
 - produzir `assets/sceneN-manifest.json`, `props/sceneN-props.json`, `stills/sceneN.png`
-- não rodar `wf eb <video_id> --next`
+- não rodar `video advance <video_id>`
 - não tocar em `.wf-eb-state.json`
 
 ## Skill Certa
