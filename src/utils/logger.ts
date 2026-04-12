@@ -55,6 +55,10 @@ class Logger {
     Logger.terminalStream = stream;
   }
 
+  setTerminalStream(stream: TerminalStream): void {
+    Logger.terminalStream = stream;
+  }
+
   static enableFileLogging(): void {
     try {
       mkdirSync(LOG_DIR, { recursive: true });
@@ -66,10 +70,6 @@ class Logger {
 
   setLevel(level: LogLevel): void {
     Logger.globalLevel = level;
-  }
-
-  setTerminalStream(stream: TerminalStream): void {
-    Logger.terminalStream = stream;
   }
 
   private shouldLog(level: LogLevel): boolean {

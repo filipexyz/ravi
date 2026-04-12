@@ -4,6 +4,22 @@ export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
 export type TaskWorktreeMode = "inherit" | "path";
 
+export type TaskArchiveMode = "include" | "exclude" | "only";
+
+export type TaskProfileTaskDocumentMode = "required" | "optional";
+
+export type TaskProfileTaskDocumentUsage = TaskProfileTaskDocumentMode | "none";
+
+export type TaskWorkspaceBootstrapMode = "inherit" | "task_dir" | "path";
+
+export type TaskProfileScaffoldPreset = "doc-first" | "brainstorm" | "runtime-only" | "content";
+
+export type TaskProfileSourceKind = "system" | "plugin" | "workspace" | "user";
+
+export type TaskProfileArtifactKind = string;
+
+export type TaskProfileStateTransform = "identity" | "slug";
+
 export const TASK_REPORT_EVENTS = ["blocked", "done", "failed"] as const;
 
 export type TaskReportEvent = (typeof TASK_REPORT_EVENTS)[number];
@@ -14,6 +30,8 @@ export type TaskEventType =
   | "task.progress"
   | "task.checkpoint.missed"
   | "task.comment"
+  | "task.archived"
+  | "task.unarchived"
   | "task.blocked"
   | "task.done"
   | "task.failed"
@@ -27,6 +45,116 @@ export interface TaskWorktreeConfig {
   branch?: string;
 }
 
+export interface TaskProfileWorkspaceBootstrap {
+  mode: TaskWorkspaceBootstrapMode;
+  path?: string;
+  branch?: string;
+  ensureTaskDir: boolean;
+}
+
+export interface TaskProfileRendererHints {
+  label: string;
+  showTaskDoc: boolean;
+  showWorkspace: boolean;
+}
+
+export interface TaskProfileTaskDocumentSyncPolicy {
+  mode: TaskProfileTaskDocumentMode;
+}
+
+export interface TaskProfileSyncPolicy {
+  artifactFirst?: boolean;
+  taskDocument?: TaskProfileTaskDocumentSyncPolicy;
+}
+
+export interface TaskProfileInputDefinition {
+  key: string;
+  label?: string;
+  description?: string;
+  required?: boolean;
+  defaultValue?: string;
+}
+
+export type TaskProfileInputValues = Record<string, string>;
+
+export interface TaskProfileCompletionPolicy {
+  summaryRequired?: boolean;
+  summaryLabel?: string;
+  notes?: string;
+}
+
+export interface TaskProfileProgressPolicy {
+  requireMessage?: boolean;
+  notes?: string;
+}
+
+export interface TaskProfileTemplates {
+  dispatch: string;
+  resume: string;
+  dispatchSummary: string;
+  dispatchEventMessage: string;
+}
+
+export interface TaskProfileArtifactDefinition {
+  kind: TaskProfileArtifactKind;
+  label: string;
+  pathTemplate: string;
+  primary?: boolean;
+  primaryWhenStatuses?: TaskStatus[];
+  showWhenStatuses?: TaskStatus[];
+}
+
+export interface TaskProfileArtifactRef {
+  kind: TaskProfileArtifactKind;
+  label: string;
+  path: string;
+}
+
+export interface BrainstormTaskProfileState {
+  slug: string;
+}
+
+export interface TaskProfileState {
+  brainstorm?: BrainstormTaskProfileState;
+  [key: string]: unknown;
+}
+
+export interface TaskProfileStateFieldDefinition {
+  path: string;
+  valueTemplate: string;
+  transform?: TaskProfileStateTransform;
+}
+
+export interface TaskProfileDefinition {
+  id: string;
+  version: string;
+  label: string;
+  description: string;
+  sessionNameTemplate: string;
+  workspaceBootstrap: TaskProfileWorkspaceBootstrap;
+  sync: TaskProfileSyncPolicy;
+  rendererHints: TaskProfileRendererHints;
+  defaultTags: string[];
+  inputs: TaskProfileInputDefinition[];
+  completion: TaskProfileCompletionPolicy;
+  progress: TaskProfileProgressPolicy;
+  templates: TaskProfileTemplates;
+  artifacts: TaskProfileArtifactDefinition[];
+  state: TaskProfileStateFieldDefinition[];
+  sourceKind: TaskProfileSourceKind;
+  source: string;
+  manifestPath?: string | null;
+}
+
+export interface TaskProfileSnapshot extends TaskProfileDefinition {
+  manifestPath?: string | null;
+}
+
+export interface ResolvedTaskProfile extends TaskProfileDefinition {
+  requestedId: string | null;
+  resolvedFromFallback: boolean;
+}
+
 export interface TaskRecord {
   id: string;
   title: string;
@@ -34,6 +162,12 @@ export interface TaskRecord {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  profileId?: string;
+  profileVersion?: string;
+  profileSource?: string;
+  profileSnapshot?: TaskProfileSnapshot;
+  profileState?: TaskProfileState;
+  profileInput?: TaskProfileInputValues;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -47,6 +181,9 @@ export interface TaskRecord {
   worktree?: TaskWorktreeConfig;
   summary?: string;
   blockerReason?: string;
+  archivedAt?: number;
+  archivedBy?: string;
+  archiveReason?: string;
   createdAt: number;
   updatedAt: number;
   dispatchedAt?: number;
@@ -102,6 +239,12 @@ export interface CreateTaskInput {
   title: string;
   instructions: string;
   priority?: TaskPriority;
+  profileId?: string;
+  profileVersion?: string;
+  profileSource?: string;
+  profileSnapshot?: TaskProfileSnapshot;
+  profileState?: TaskProfileState;
+  profileInput?: TaskProfileInputValues;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -128,9 +271,22 @@ export interface TaskProgressInput {
   actor?: string;
   agentId?: string;
   sessionName?: string;
-  message?: string;
+  message: string;
   progress?: number;
   resetCheckpoint?: boolean;
+}
+
+export interface TaskArchiveInput {
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
+  reason: string;
+}
+
+export interface TaskUnarchiveInput {
+  actor?: string;
+  agentId?: string;
+  sessionName?: string;
 }
 
 export interface TaskTerminalInput {
@@ -153,4 +309,10 @@ export interface ListTasksOptions {
   agentId?: string;
   sessionName?: string;
   parentTaskId?: string;
+  rootTaskId?: string;
+  onlyRootTasks?: boolean;
+  profileId?: string;
+  query?: string;
+  limit?: number;
+  archiveMode?: TaskArchiveMode;
 }

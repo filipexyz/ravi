@@ -56,4 +56,31 @@ describe("task comments steering", () => {
     expect(String(publishCalls[0]?.payload.prompt)).toContain("Novo comentário na task");
     expect(String(publishCalls[0]?.payload.prompt)).toContain("ajusta a direção do patch antes de continuar");
   });
+
+  it("keeps comment steering profile-first for runtime-only tasks", async () => {
+    const created = createTask({
+      title: "Runtime-only comment steer",
+      instructions: "Do not leak TASK.md into the steer prompt",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    await commentTask(created.task.id, {
+      author: "operator",
+      authorAgentId: "main",
+      authorSessionName: "dev",
+      body: "sincroniza pelo runtime sem cair no legado doc-first",
+    });
+
+    expect(publishCalls).toHaveLength(1);
+    expect(String(publishCalls[0]?.payload.prompt)).toContain("Profile: task-doc-none");
+    expect(String(publishCalls[0]?.payload.prompt)).not.toContain("TASK.md");
+  });
 });

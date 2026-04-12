@@ -50,7 +50,7 @@ import {
   describeDeliveryBarrier,
   type DeliveryBarrier,
 } from "./delivery-barriers.js";
-import { dbHasActiveTaskForSession } from "./tasks/task-db.js";
+import { dbHasActiveTaskForSession, dbResolveActiveTaskBindingForSession } from "./tasks/task-db.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeContext,
@@ -165,6 +165,32 @@ function buildRuntimeEnv(
   }
 
   return runtimeEnv;
+}
+
+function buildTaskRuntimeEnv(
+  sessionName: string,
+  sessionCwd: string,
+  taskBarrierTaskId?: string,
+): Record<string, string> {
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskBarrierTaskId);
+  if (!binding) {
+    return {};
+  }
+
+  const { task, assignment } = binding;
+  const workspaceRoot =
+    (assignment.worktree?.mode === "path" ? assignment.worktree.path : undefined) ??
+    (task.worktree?.mode === "path" ? task.worktree.path : undefined) ??
+    task.taskDir ??
+    sessionCwd;
+
+  return {
+    RAVI_TASK_ID: task.id,
+    ...(task.profileId ? { RAVI_TASK_PROFILE_ID: task.profileId } : {}),
+    ...(task.parentTaskId ? { RAVI_PARENT_TASK_ID: task.parentTaskId } : {}),
+    RAVI_TASK_SESSION: assignment.sessionName,
+    ...(workspaceRoot ? { RAVI_TASK_WORKSPACE: workspaceRoot } : {}),
+  };
 }
 
 /** Message context for structured prompts */
@@ -1490,6 +1516,7 @@ export class RaviBot {
           if (prompt.context.groupName) raviEnv.RAVI_GROUP_NAME = prompt.context.groupName;
         }
       }
+      Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));
 
       const providerBootstrap = await runtimeProvider.prepareSession?.({
         agentId: agent.id,

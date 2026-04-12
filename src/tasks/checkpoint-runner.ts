@@ -2,7 +2,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { TASK_CHECKPOINT_SWEEP_INTERVAL_MS } from "./checkpoint.js";
 import { dbGetActiveAssignment, dbListTasks, dbRegisterTaskCheckpointMiss } from "./task-db.js";
-import { emitTaskEvent } from "./service.js";
+import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
 
 const log = logger.child("tasks:checkpoint-runner");
 
@@ -66,7 +66,10 @@ export class TaskCheckpointRunner {
           await emitTaskEvent(missed.task, missed.event);
 
           await publishSessionPrompt(missed.assignment.sessionName, {
-            prompt: `[System] Inform: O checkpoint de progresso da task ${task.id} venceu (${missed.assignment.checkpointOverdueCount ?? missed.missedCount}x em atraso). Quando terminar o passo atual, atualize o TASK.md e sincronize com \`ravi tasks report ${task.id}\` ou encerre com \`done|block|fail\` se for o caso.`,
+            prompt: buildTaskCheckpointReminderPrompt(missed.task, {
+              ...missed.assignment,
+              checkpointOverdueCount: missed.assignment.checkpointOverdueCount ?? missed.missedCount,
+            }),
             deliveryBarrier: "after_response",
           });
         } catch (error) {

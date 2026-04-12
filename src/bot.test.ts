@@ -90,9 +90,11 @@ mock.module("./router/index.js", () => ({
     routes: [],
     settings: {},
   }),
-  getOrCreateSession: (key: string, agentId: string) => ({
+  getOrCreateSession: (key: string, agentId: string, agentCwd: string, defaults?: { name?: string }) => ({
     sessionKey: key,
+    name: defaults?.name ?? key,
     agentId,
+    agentCwd,
     sdkSessionId: null,
   }),
   getSession: mock(() => null),
@@ -108,7 +110,7 @@ mock.module("./router/index.js", () => ({
   getAnnounceCompaction: mock(() => false),
   getAccountForAgent: mock(() => null),
   dbInsertCostEvent: mock(() => {}),
-  expandHome: (p: string) => p.replace("~", "/tmp/ravi-test-bot"),
+  expandHome: (p?: string) => (typeof p === "string" ? p.replace("~", "/tmp/ravi-test-bot") : p),
 }));
 
 mock.module("./config-store.js", () => ({
@@ -191,6 +193,7 @@ mock.module("./utils/config.js", () => ({}));
 
 mock.module("./tasks/task-db.js", () => ({
   dbHasActiveTaskForSession: () => false,
+  dbResolveActiveTaskBindingForSession: () => null,
 }));
 
 // ── Import after mocks ─────────────────────────────────────────────────────

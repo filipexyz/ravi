@@ -81,6 +81,8 @@ let latestOmniPanel = null;
 let latestV3Placeholders = null;
 let v3CommandNotice = null;
 const messageMetaCache = new Map();
+const taskSelectionCache = new Map();
+const taskSelectionInFlight = new Set();
 const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
 let lastPublishedAt = 0;
 const detectionLogs = [];
@@ -126,6 +128,8 @@ let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
+let lastTaskSessionLookupSnapshot = null;
+let lastTaskSessionLookup = new Map();
 
 boot();
 
@@ -280,6 +284,7 @@ async function refreshTasks(force = false) {
     });
     if (next?.ok) {
       latestTasksSnapshot = next;
+      rememberTaskSelection(next?.selectedTask);
       bridgeError = null;
       const nextSelectedTaskId = next?.query?.taskId || next?.selectedTask?.task?.id || null;
       if (nextSelectedTaskId !== selectedTaskId) {
@@ -2375,6 +2380,11 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     persistPinnedSessionKey(null);
   }
   const focusedSession = pinnedSession || followedSession || navTargets[0] || null;
+  const focusedTaskMatch = focusedSession ? resolveTaskSessionMatch(focusedSession) : null;
+  if (focusedTaskMatch) {
+    primeTaskSessionDetails([focusedTaskMatch]);
+  }
+  const focusedTask = focusedTaskMatch?.task || null;
   const isPinned = Boolean(pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey);
   const focusedLive = focusedSession?.live;
   const focusedActivity = focusedLive?.activity || "idle";
@@ -2434,14 +2444,16 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     `
     : "";
 
-  const heroSummary = focusedSession
-    ? escapeHtml(focusedLive?.summary || "sem evento vivo")
-    : escapeHtml((snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]).join(" "));
-  const heroStateClass = focusedSession ? focusedActivityClass : "idle";
-  const heroStateLabel = focusedSession ? focusedActivityLabel : "unbound";
-  const heroTitle = focusedSession ? focusedSession.sessionName : "nenhuma sessão";
+  const heroSummary = focusedTaskMatch
+    ? escapeHtml(shorten(focusedTaskMatch.note.text, 160))
+    : focusedSession
+      ? escapeHtml(focusedLive?.summary || "sem evento vivo")
+      : escapeHtml((snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]).join(" "));
+  const heroStateClass = focusedTask ? taskStatusClass(focusedTask.status) : focusedSession ? focusedActivityClass : "idle";
+  const heroStateLabel = focusedTask ? taskStatusLabel(focusedTask.status) : focusedSession ? focusedActivityLabel : "unbound";
+  const heroTitle = focusedTask ? focusedTask.title || focusedSession?.sessionName || "task" : focusedSession ? focusedSession.sessionName : "nenhuma sessão";
   const heroLinkedChat = focusedSession ? getLinkedChatLabel(focusedSession) : null;
-  const heroElapsed = focusedSession ? formatSessionElapsedCompact(focusedSession) || "agora" : "-";
+  const heroElapsed = focusedTask ? formatTaskElapsed(focusedTask) : focusedSession ? formatSessionElapsedCompact(focusedSession) || "agora" : "-";
   const heroModeLabel = isPinned ? "pinada" : followedSession ? "seguindo chat" : "sem vínculo";
   const canFollowCurrent = Boolean(isPinned && followedSession);
   const canPinFocused = Boolean(focusedSession && !isPinned);
@@ -2462,6 +2474,13 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
           focusedSession
             ? `<span class="ravi-wa-meta-chip">agent ${escapeHtml(focusedSession.agentId)}</span>
                <span class="ravi-wa-meta-chip">updated ${escapeHtml(heroElapsed)}</span>
+               ${
+                 focusedTask
+                   ? `<span class="ravi-wa-meta-chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
+                      <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(clampTaskProgressValue(focusedTask.progress ?? 0)))}%</span>
+                      <span class="ravi-wa-meta-chip">session ${escapeHtml(focusedSession.sessionName)}</span>`
+                   : ""
+               }
                ${heroLinkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(heroLinkedChat, 22))}</span>` : ""}
                ${focusedSession.channel ? `<span class="ravi-wa-meta-chip">channel ${escapeHtml(focusedSession.channel)}</span>` : ""}
                ${focusedSession.accountId ? `<span class="ravi-wa-meta-chip">instance ${escapeHtml(shorten(focusedSession.accountId, 18))}</span>` : ""}`
@@ -2577,9 +2596,15 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   body.querySelectorAll("[data-ravi-focus-session]").forEach((button) => {
     button.addEventListener("click", () => {
       const sessionKey = button.getAttribute("data-ravi-focus-session");
+      const taskId = button.getAttribute("data-ravi-focus-task");
       if (!sessionKey) return;
       const target = navTargets.find((item) => item.sessionKey === sessionKey) || null;
       if (!target) return;
+      if (taskId) {
+        selectedTaskId = taskId;
+        persistSelectedTaskId(taskId);
+        void ensureTaskSelection(taskId);
+      }
       openSessionWorkspace(target);
     });
   });
@@ -3889,48 +3914,254 @@ function openSessionWorkspace(session) {
   refreshSessionWorkspace(true);
 }
 
+function rememberTaskSelection(selection) {
+  const taskId = typeof selection?.task?.id === "string" ? selection.task.id : null;
+  if (!taskId) return;
+  taskSelectionCache.set(taskId, selection);
+}
+
+function normalizeTaskSessionName(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+function isLiveTaskStatus(status) {
+  return status !== "done" && status !== "failed";
+}
+
+function shouldReplaceTaskSessionMatch(currentTask, nextTask) {
+  const currentIsLive = isLiveTaskStatus(currentTask?.status);
+  const nextIsLive = isLiveTaskStatus(nextTask?.status);
+  if (currentIsLive !== nextIsLive) {
+    return nextIsLive;
+  }
+  return (Number(nextTask?.updatedAt) || 0) > (Number(currentTask?.updatedAt) || 0);
+}
+
+function getTaskSessionLookup(snapshot = latestTasksSnapshot) {
+  if (!snapshot) {
+    lastTaskSessionLookupSnapshot = snapshot;
+    lastTaskSessionLookup = new Map();
+    return lastTaskSessionLookup;
+  }
+
+  if (snapshot === lastTaskSessionLookupSnapshot) {
+    return lastTaskSessionLookup;
+  }
+
+  const lookup = new Map();
+  const tasks = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  tasks.forEach((task) => {
+    const sessionNames = [...new Set([normalizeTaskSessionName(task?.workSessionName), normalizeTaskSessionName(task?.assigneeSessionName)].filter(Boolean))];
+    sessionNames.forEach((sessionName) => {
+      const existing = lookup.get(sessionName);
+      if (!existing || shouldReplaceTaskSessionMatch(existing, task)) {
+        lookup.set(sessionName, task);
+      }
+    });
+  });
+
+  lastTaskSessionLookupSnapshot = snapshot;
+  lastTaskSessionLookup = lookup;
+  return lookup;
+}
+
+function getCachedTaskSelection(taskId) {
+  if (!taskId) return null;
+  const selectedTask = latestTasksSnapshot?.selectedTask;
+  if (selectedTask?.task?.id === taskId) {
+    return selectedTask;
+  }
+  return taskSelectionCache.get(taskId) || null;
+}
+
+function getTaskLifecycleEvents(selection) {
+  return Array.isArray(selection?.events) ? selection.events.filter((event) => event?.type !== "task.comment") : [];
+}
+
+function describeTaskSessionNote(task, session, selection) {
+  const progressInfo = describeTaskProgressText(task, getTaskLifecycleEvents(selection));
+  if (!progressInfo.fallback) {
+    return progressInfo;
+  }
+
+  const taskSignal = normalizeTaskMessage(task?.blockerReason || task?.summary);
+  if (taskSignal) {
+    return { text: taskSignal, fallback: false };
+  }
+
+  const liveSummary = normalizeTaskMessage(session?.live?.summary);
+  if (liveSummary) {
+    return { text: liveSummary, fallback: false };
+  }
+
+  return progressInfo;
+}
+
+function resolveTaskSessionMatch(session) {
+  const sessionName = normalizeTaskSessionName(session?.sessionName);
+  if (!sessionName) return null;
+
+  const task = getTaskSessionLookup().get(sessionName) || null;
+  if (!task) return null;
+
+  const selection = getCachedTaskSelection(task.id);
+  return {
+    task,
+    selection,
+    note: describeTaskSessionNote(task, session, selection),
+  };
+}
+
+async function ensureTaskSelection(taskId) {
+  if (!taskId || taskSelectionInFlight.has(taskId) || getCachedTaskSelection(taskId)) return;
+
+  taskSelectionInFlight.add(taskId);
+  try {
+    const next = await chrome.runtime.sendMessage({
+      type: "ravi:get-tasks",
+      payload: {
+        taskId,
+        eventsLimit: TASKS_EVENTS_LIMIT,
+      },
+    });
+    if (next?.ok && next?.selectedTask?.task?.id === taskId) {
+      rememberTaskSelection(next.selectedTask);
+      if (activeWorkspace !== "omni") {
+        requestRender();
+      }
+    }
+  } catch (error) {
+    console.warn("[ravi-wa-overlay] failed to hydrate task selection", taskId, error);
+  } finally {
+    taskSelectionInFlight.delete(taskId);
+  }
+}
+
+function primeTaskSessionDetails(matches) {
+  const queue = [];
+  const seen = new Set();
+  (Array.isArray(matches) ? matches : []).forEach((match) => {
+    const taskId = match?.task?.id;
+    if (!taskId || seen.has(taskId) || getCachedTaskSelection(taskId) || taskSelectionInFlight.has(taskId)) return;
+    seen.add(taskId);
+    queue.push(taskId);
+  });
+
+  queue.slice(0, 4).forEach((taskId) => {
+    void ensureTaskSelection(taskId);
+  });
+}
+
+function renderGenericCockpitRow(session, currentSession) {
+  const activityClass = chipActivityClass(session.live?.activity);
+  const activityLabel = chipActivityLabel(session.live?.activity);
+  const linkedChat = getLinkedChatLabel(session);
+  const elapsed = formatSessionElapsedCompact(session) || "now";
+  const subline = linkedChat
+    ? shorten(linkedChat, 34)
+    : session.channel
+      ? `canal ${session.channel}`
+      : "sem chat vinculado";
+  const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
+  const avatarLabel = shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2);
+  return `
+    <button
+      type="button"
+      class="ravi-wa-nav-row ravi-wa-nav-row--${activityClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+      data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
+      aria-pressed="${selected}"
+      title="${escapeAttribute(`${session.sessionName} · ${linkedChat || session.chatId || "-"}`)}"
+    >
+      <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
+      <span class="ravi-wa-nav-row__body">
+        <span class="ravi-wa-nav-row__titleline">
+          <strong>${escapeHtml(session.sessionName)}</strong>
+          <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
+        </span>
+        <span class="ravi-wa-nav-row__subline">${escapeHtml(subline)}</span>
+      </span>
+      <span class="ravi-wa-nav-row__aside">
+        <span class="ravi-wa-nav-row__elapsed">${escapeHtml(elapsed)}</span>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(activityLabel)}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderTaskAwareCockpitRow(session, currentSession, match) {
+  const task = match.task;
+  const statusClass = taskStatusClass(task.status);
+  const statusLabel = taskStatusLabel(task.status);
+  const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
+  const linkedChat = getLinkedChatLabel(session);
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const shortTaskId = formatTaskShortId(task.id);
+  const avatarLabel = shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
+  const note = shorten(match.note.text, 108);
+  const debugMeta = [
+    `session ${session.sessionName}`,
+    session.agentId ? `agent ${session.agentId}` : null,
+    linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const taskMeta = [`task ${shortTaskId}`, task.priority ? `priority ${task.priority}` : null].filter(Boolean).join(" · ");
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-row--${statusClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+      data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
+      data-ravi-focus-task="${escapeAttribute(task.id)}"
+      aria-pressed="${selected}"
+      title="${escapeAttribute(`${task.title || task.id} · ${task.id} · ${session.sessionName}`)}"
+    >
+      <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
+      <span class="ravi-wa-nav-row__body">
+        <span class="ravi-wa-nav-row__eyebrow">${escapeHtml(taskMeta)}</span>
+        <span class="ravi-wa-nav-row__titleline">
+          <strong>${escapeHtml(task.title || task.id)}</strong>
+        </span>
+        <span class="ravi-wa-nav-row__subline${match.note.fallback ? " ravi-wa-nav-row__subline--fallback" : ""}">${escapeHtml(note)}</span>
+        <span class="ravi-wa-nav-row__progress">
+          <span class="ravi-wa-nav-row__progress-label">${escapeHtml(String(progress))}%</span>
+          <span class="ravi-wa-nav-row__progress-bar" aria-hidden="true"><span style="width: ${progress}%"></span></span>
+        </span>
+        <span class="ravi-wa-nav-row__subline ravi-wa-nav-row__subline--session">${escapeHtml(debugMeta)}</span>
+      </span>
+      <span class="ravi-wa-nav-row__aside">
+        <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatTaskElapsed(task))}</span>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+      </span>
+    </button>
+  `;
+}
+
 function renderCockpitRows(items, currentSession, emptyText) {
   if (!items.length) {
     return `<p class="ravi-wa-empty">${escapeHtml(emptyText)}</p>`;
   }
 
+  const rows = items.map((session) => ({
+    session,
+    taskMatch: resolveTaskSessionMatch(session),
+  }));
+  primeTaskSessionDetails(
+    rows
+      .map((row) => row.taskMatch)
+      .filter(Boolean),
+  );
+
   return `
     <div class="ravi-wa-nav-list">
-      ${items
-        .map((session) => {
-          const activityClass = chipActivityClass(session.live?.activity);
-          const activityLabel = chipActivityLabel(session.live?.activity);
-          const linkedChat = getLinkedChatLabel(session);
-          const elapsed = formatSessionElapsedCompact(session) || "now";
-          const subline = linkedChat
-            ? shorten(linkedChat, 34)
-            : session.channel
-              ? `canal ${session.channel}`
-              : "sem chat vinculado";
-          const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
-          const avatarLabel = shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2);
-          return `
-            <button
-              type="button"
-              class="ravi-wa-nav-row ravi-wa-nav-row--${activityClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
-              data-ravi-focus-session="${escapeAttribute(session.sessionKey)}"
-              aria-pressed="${selected}"
-              title="${escapeHtml(`${session.sessionName} · ${linkedChat || session.chatId || "-"}`)}"
-            >
-              <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
-              <span class="ravi-wa-nav-row__body">
-                <span class="ravi-wa-nav-row__titleline">
-                  <strong>${escapeHtml(session.sessionName)}</strong>
-                  <span class="ravi-wa-nav-row__agent">${escapeHtml(session.agentId)}</span>
-                </span>
-                <span class="ravi-wa-nav-row__subline">${escapeHtml(subline)}</span>
-              </span>
-              <span class="ravi-wa-nav-row__aside">
-                <span class="ravi-wa-nav-row__elapsed">${escapeHtml(elapsed)}</span>
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${activityClass}">${escapeHtml(activityLabel)}</span>
-              </span>
-            </button>
-          `;
+      ${rows
+        .map(({ session, taskMatch }) => {
+          if (taskMatch) {
+            return renderTaskAwareCockpitRow(session, currentSession, taskMatch);
+          }
+          return renderGenericCockpitRow(session, currentSession);
         })
         .join("")}
     </div>
@@ -3993,6 +4224,149 @@ function formatTaskUpdatedLabel(task) {
   return wallClock !== "-" ? wallClock : elapsed;
 }
 
+function clampTaskProgressValue(value) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function formatTaskProgressLabel(value) {
+  return `${clampTaskProgressValue(value)}%`;
+}
+
+function normalizeTaskMessage(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized || null;
+}
+
+function findLatestTaskProgressEvent(events) {
+  const list = Array.isArray(events) ? events : [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const event = list[index];
+    if (event?.type === "task.progress") {
+      return event;
+    }
+  }
+  return null;
+}
+
+function describeTaskProgressState(task) {
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progressLabel = `${progress}%`;
+
+  switch (task?.status) {
+    case "open":
+      return progress > 0 ? `progresso inicial marcado em ${progressLabel}.` : "sem progresso reportado ainda.";
+    case "dispatched":
+      return progress > 0 ? `na fila com ${progressLabel} ja sincronizados.` : "na fila, aguardando o primeiro report.";
+    case "in_progress":
+      return progress > 0 ? `progresso sincronizado em ${progressLabel}.` : "trabalho iniciado, aguardando o primeiro report.";
+    case "blocked":
+      return progress > 0 ? `task bloqueada em ${progressLabel}.` : "task bloqueada antes do primeiro report.";
+    case "done":
+      return `task concluida com ${progressLabel}.`;
+    case "failed":
+      return progress > 0 ? `task falhou em ${progressLabel}.` : "task falhou antes do progresso andar.";
+    default:
+      return `progresso atual ${progressLabel}.`;
+  }
+}
+
+function describeTaskProgressText(task, events) {
+  const latestProgressEvent = findLatestTaskProgressEvent(events);
+  const message = normalizeTaskMessage(latestProgressEvent?.message);
+  if (message) {
+    return { text: message, fallback: false };
+  }
+
+  if (latestProgressEvent) {
+    const progressLabel =
+      typeof latestProgressEvent.progress === "number"
+        ? formatTaskProgressLabel(latestProgressEvent.progress)
+        : formatTaskProgressLabel(task?.progress ?? 0);
+    return {
+      text: `progresso atualizado para ${progressLabel} sem nota textual.`,
+      fallback: true,
+    };
+  }
+
+  return {
+    text: describeTaskProgressState(task),
+    fallback: true,
+  };
+}
+
+function describeTaskEventBody(event) {
+  const message = normalizeTaskMessage(event?.message);
+  if (message) {
+    return { text: message, fallback: false };
+  }
+
+  const progressLabel = typeof event?.progress === "number" ? formatTaskProgressLabel(event.progress) : null;
+  switch (event?.type) {
+    case "task.created":
+      return {
+        text: progressLabel ? `task criada com progresso inicial em ${progressLabel}.` : "task criada no runtime.",
+        fallback: true,
+      };
+    case "task.dispatched":
+      return {
+        text: "task despachada para o worker responsavel.",
+        fallback: true,
+      };
+    case "task.progress":
+      return {
+        text: progressLabel
+          ? `progresso atualizado para ${progressLabel} sem nota textual.`
+          : "progresso atualizado no runtime sem nota textual.",
+        fallback: true,
+      };
+    case "task.checkpoint.missed":
+      return {
+        text: progressLabel
+          ? `checkpoint vencido com progresso em ${progressLabel}.`
+          : "checkpoint vencido para esta task.",
+        fallback: true,
+      };
+    case "task.blocked":
+      return {
+        text: progressLabel ? `task marcada como bloqueada em ${progressLabel}.` : "task marcada como bloqueada no runtime.",
+        fallback: true,
+      };
+    case "task.done":
+      return {
+        text: progressLabel ? `task marcada como concluida em ${progressLabel}.` : "task marcada como concluida no runtime.",
+        fallback: true,
+      };
+    case "task.failed":
+      return {
+        text: progressLabel ? `task marcada como falha em ${progressLabel}.` : "task marcada como falha no runtime.",
+        fallback: true,
+      };
+    case "task.child.blocked":
+      return {
+        text: "child task marcada como bloqueada.",
+        fallback: true,
+      };
+    case "task.child.done":
+      return {
+        text: "child task marcada como concluida.",
+        fallback: true,
+      };
+    case "task.child.failed":
+      return {
+        text: "child task marcada como falha.",
+        fallback: true,
+      };
+    default:
+      return {
+        text: "evento registrado no runtime.",
+        fallback: true,
+      };
+  }
+}
+
 function taskPriorityClass(priority) {
   switch (priority) {
     case "urgent":
@@ -4020,7 +4394,7 @@ function summarizeTaskCardCopy(task) {
 function buildTaskAssigneeLabel(task, activeAssignment = null) {
   const agentId = activeAssignment?.agentId || task?.assigneeAgentId || null;
   const sessionName = activeAssignment?.sessionName || task?.assigneeSessionName || null;
-  return [agentId, sessionName].filter(Boolean).join(" · ") || null;
+  return agentId || sessionName || null;
 }
 
 function describeTaskStatus(status, signal = null, assigneeLabel = null) {
@@ -4122,7 +4496,16 @@ function renderTaskStatusSyncBanner(task, frontmatter, progress) {
 }
 
 function formatTaskActorLabel(actor, agentId, sessionName) {
-  return [actor, agentId, sessionName].filter(Boolean).join(" · ") || "-";
+  const actorValue = typeof actor === "string" ? actor.trim() : "";
+  const agentValue = typeof agentId === "string" ? agentId.trim() : "";
+  const sessionValue = typeof sessionName === "string" ? sessionName.trim() : "";
+  const ordered = actorValue && actorValue === sessionValue ? [agentValue, actorValue, sessionValue] : [actorValue, agentValue, sessionValue];
+  const values = [];
+  for (const value of ordered) {
+    if (!value || values.includes(value)) continue;
+    values.push(value);
+  }
+  return values.join(" · ") || "-";
 }
 
 function renderTaskFactGrid(items) {
@@ -4351,7 +4734,8 @@ function renderTaskCard(task, currentTaskId) {
   const priorityClass = taskPriorityClass(task.priority);
   const selected = currentTaskId && currentTaskId === task.id ? "true" : "false";
   const summary = summarizeTaskCardCopy(task);
-  const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progressInfo = describeTaskProgressText(task);
   const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
   const showSummary = summary && summary.toLowerCase() !== statusCopy.toLowerCase();
 
@@ -4377,8 +4761,11 @@ function renderTaskCard(task, currentTaskId) {
       </div>
       ${showSummary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
       <div class="ravi-wa-task-card__progress">
-        <span>progress ${escapeHtml(String(progress))}%</span>
-        <span>${escapeHtml(formatTaskUpdatedLabel(task))}</span>
+        <div class="ravi-wa-task-card__progress-copy">
+          <span class="ravi-wa-task-card__progress-label">progress ${escapeHtml(String(progress))}%</span>
+          <p>${escapeHtml(shorten(progressInfo.text, 84))}</p>
+        </div>
+        <span class="ravi-wa-task-card__progress-time">${escapeHtml(formatTaskUpdatedLabel(task))}</span>
       </div>
       <div class="ravi-wa-task-card__bar" aria-hidden="true">
         <span style="width: ${progress}%"></span>
@@ -4418,9 +4805,9 @@ function renderTaskEvents(events) {
                     : "dispatched",
           );
           const label = typeof event.type === "string" ? event.type.replace("task.", "") : "event";
-          const detail = event.message || event.actor || event.sessionName || label;
+          const detail = describeTaskEventBody(event);
           const actorLabel = formatTaskActorLabel(event.actor, event.agentId, event.sessionName);
-          const progress = typeof event.progress === "number" ? `${Math.max(0, Math.min(100, event.progress))}%` : null;
+          const progress = typeof event.progress === "number" ? formatTaskProgressLabel(event.progress) : null;
           return `
             <article class="ravi-wa-task-activity ravi-wa-task-activity--${kind}">
               <div class="ravi-wa-task-activity__meta">
@@ -4429,7 +4816,7 @@ function renderTaskEvents(events) {
                 <span>${escapeHtml(formatTimestamp(event.createdAt) || "-")}</span>
                 ${progress ? `<span>${escapeHtml(progress)}</span>` : ""}
               </div>
-              <div class="ravi-wa-task-activity__body">${escapeHtml(detail)}</div>
+              <div class="ravi-wa-task-activity__body${detail.fallback ? " ravi-wa-task-activity__body--fallback" : ""}">${escapeHtml(detail.text)}</div>
             </article>
           `;
         })
@@ -4460,7 +4847,8 @@ function renderTaskDetailCard(selectedTask) {
   const frontmatter = taskDocument?.frontmatter || null;
   const worktreeLabel = getTaskWorktreeLabel(task);
   const statusClass = taskStatusClass(task.status);
-  const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progressInfo = describeTaskProgressText(task, lifecycleEvents);
   const frontmatterStatus = frontmatter?.status || null;
   const frontmatterProgress = typeof frontmatter?.progress === "number" ? frontmatter.progress : null;
   const docPath = taskDocument?.path || (task.taskDir ? `${task.taskDir}/TASK.md` : null);
@@ -4521,9 +4909,16 @@ function renderTaskDetailCard(selectedTask) {
         <span class="ravi-wa-meta-chip">events ${escapeHtml(String(lifecycleEvents.length))}</span>
       </div>
       <div class="ravi-wa-task-detail-progress">
+        <div class="ravi-wa-task-detail-progress__head">
+          <span>progress ${escapeHtml(String(progress))}%</span>
+          <span>${escapeHtml(formatTaskUpdatedLabel(task) || "-")}</span>
+        </div>
         <div class="ravi-wa-task-detail-progress__bar" aria-hidden="true">
           <span style="width: ${progress}%"></span>
         </div>
+        <p class="ravi-wa-task-detail-progress__copy${progressInfo.fallback ? " ravi-wa-task-detail-progress__copy--fallback" : ""}">
+          ${escapeHtml(shorten(progressInfo.text, 160))}
+        </p>
       </div>
     </section>
 
@@ -4683,11 +5078,25 @@ function filterCockpitSessions(items) {
   const list = Array.isArray(items) ? items : [];
   const needle = normalizeLookupToken(sidebarFilter);
   if (!needle) return list;
-  return list.filter((session) =>
-    [session.displayName, session.subject, session.chatId, session.sessionName, session.agentId, session.channel]
+  return list.filter((session) => {
+    const taskMatch = resolveTaskSessionMatch(session);
+    return [
+      session.displayName,
+      session.subject,
+      session.chatId,
+      session.sessionName,
+      session.agentId,
+      session.channel,
+      taskMatch?.task?.id,
+      taskMatch?.task?.title,
+      taskMatch?.task?.assigneeAgentId,
+      taskMatch?.task?.assigneeSessionName,
+      taskMatch?.task?.workSessionName,
+      taskMatch?.note?.text,
+    ]
       .map(normalizeLookupToken)
-      .some((value) => value && value.includes(needle)),
-  );
+      .some((value) => value && value.includes(needle));
+  });
 }
 
 function filterOmniInstances(items) {

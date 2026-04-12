@@ -100,6 +100,14 @@ export interface OverlaySessionSnapshot {
   auth?: OverlayItemAuth;
 }
 
+export interface OverlayTaskSessionCandidate {
+  status: "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
+  archivedAt?: number | null;
+  updatedAt: number;
+  workSessionName?: string | null;
+  assigneeSessionName?: string | null;
+}
+
 export interface OverlaySnapshot {
   ok: true;
   query: {
@@ -139,10 +147,12 @@ export function buildOverlaySnapshot(args: {
   query: OverlayQuery;
   sessions: SessionEntry[];
   liveBySessionName?: Map<string, OverlayLiveState>;
+  taskSessions?: OverlayTaskSessionCandidate[];
 }): OverlaySnapshot {
   const resolved = resolveSessionForOverlay(args.query, args.sessions);
   const live = resolved.session?.name ? args.liveBySessionName?.get(resolved.session.name) : undefined;
   const recentSessions = buildRecentSessions(args.sessions, args.liveBySessionName);
+  const hiddenHotSessionNames = buildHiddenHotSessionNames(args.taskSessions ?? []);
 
   return {
     ok: true,
@@ -156,7 +166,7 @@ export function buildOverlaySnapshot(args: {
     candidates: resolved.candidates,
     recentSessions,
     recentChats: recentSessions,
-    hotSessions: buildHotSessions(args.sessions, args.liveBySessionName),
+    hotSessions: buildHotSessions(args.sessions, args.liveBySessionName, hiddenHotSessionNames),
     warnings: buildWarnings(args.query, resolved.session, resolved.candidates),
     generatedAt: Date.now(),
   };
@@ -384,15 +394,62 @@ function buildRecentSessions(
 function buildHotSessions(
   sessions: SessionEntry[],
   liveBySessionName?: Map<string, OverlayLiveState>,
+  hiddenHotSessionNames: Set<string> = new Set(),
 ): OverlaySessionSnapshot[] {
   return sessions
     .filter(isRelevantOverlaySession)
     .map((session) =>
       toOverlaySessionSnapshot(session, session.name ? liveBySessionName?.get(session.name) : undefined),
     )
-    .filter((session) => session.live.activity !== "idle" && session.live.activity !== "unknown")
+    .filter(
+      (session) =>
+        session.live.activity !== "idle" &&
+        session.live.activity !== "unknown" &&
+        !hiddenHotSessionNames.has(session.sessionName),
+    )
     .sort((a, b) => (b.live.updatedAt ?? b.updatedAt) - (a.live.updatedAt ?? a.updatedAt))
     .slice(0, 8);
+}
+
+function buildHiddenHotSessionNames(taskSessions: OverlayTaskSessionCandidate[]): Set<string> {
+  const resolvedTaskBySessionName = new Map<string, OverlayTaskSessionCandidate>();
+
+  for (const task of taskSessions) {
+    for (const sessionName of getTaskSessionNames(task)) {
+      const current = resolvedTaskBySessionName.get(sessionName);
+      if (!current || shouldReplaceTaskSessionCandidate(current, task)) {
+        resolvedTaskBySessionName.set(sessionName, task);
+      }
+    }
+  }
+
+  return new Set(
+    [...resolvedTaskBySessionName.entries()]
+      .filter(([, task]) => shouldHideTaskSessionFromHotSessions(task))
+      .map(([sessionName]) => sessionName),
+  );
+}
+
+function getTaskSessionNames(task: OverlayTaskSessionCandidate): string[] {
+  return [
+    ...new Set([cleanNullable(task.workSessionName), cleanNullable(task.assigneeSessionName)].filter(Boolean)),
+  ] as string[];
+}
+
+function shouldHideTaskSessionFromHotSessions(task: OverlayTaskSessionCandidate): boolean {
+  return task.status === "done" || task.status === "failed" || Boolean(task.archivedAt);
+}
+
+function shouldReplaceTaskSessionCandidate(
+  current: OverlayTaskSessionCandidate,
+  next: OverlayTaskSessionCandidate,
+): boolean {
+  const currentHidden = shouldHideTaskSessionFromHotSessions(current);
+  const nextHidden = shouldHideTaskSessionFromHotSessions(next);
+  if (currentHidden !== nextHidden) {
+    return !nextHidden;
+  }
+  return next.updatedAt > current.updatedAt;
 }
 
 function isRelevantOverlaySession(session: SessionEntry): boolean {

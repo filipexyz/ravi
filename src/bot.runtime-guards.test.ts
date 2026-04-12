@@ -54,6 +54,7 @@ let runtimePrepareImpl: (
 let runtimeStartImpl: (providerId: RuntimeProviderId, request: RuntimeStartRequest) => RuntimeHandle;
 let discoveredPlugins: RuntimePlugin[] = [];
 let hasActiveTaskForSession = (_sessionName: string, _excludeTaskId?: string) => false;
+let resolveActiveTaskBindingForSession = (_sessionName: string, _taskId?: string) => null;
 
 const clearProviderSession = mock((sessionKey: string) => {
   const session = sessions.get(sessionKey);
@@ -350,6 +351,8 @@ mock.module("./runtime/index.js", () => ({
 mock.module("./tasks/task-db.js", () => ({
   dbHasActiveTaskForSession: (sessionName: string, excludeTaskId?: string) =>
     hasActiveTaskForSession(sessionName, excludeTaskId),
+  dbResolveActiveTaskBindingForSession: (sessionName: string, taskId?: string) =>
+    resolveActiveTaskBindingForSession(sessionName, taskId),
 }));
 
 mock.module("./tasks/service.js", () => ({
@@ -392,6 +395,7 @@ describe("RaviBot runtime guards", () => {
     activeProvider = "claude";
     resetRuntimeDoubles();
     hasActiveTaskForSession = () => false;
+    resolveActiveTaskBindingForSession = () => null;
   });
 
   it("clears legacy provider session state before switching an agent to Codex", async () => {
@@ -518,6 +522,54 @@ describe("RaviBot runtime guards", () => {
     expect(preparedCwd).toBe("/tmp/ravi-test-bot/worktrees/task-worktree");
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.cwd).toBe("/tmp/ravi-test-bot/worktrees/task-worktree");
+  });
+
+  it("injects task identity env from the explicit task barrier binding", async () => {
+    const sessionKey = "agent:main:task-env";
+    resolveActiveTaskBindingForSession = (sessionName: string, taskId?: string) =>
+      sessionName === sessionKey && taskId === "task-explicit"
+        ? {
+            task: {
+              id: "task-explicit",
+              title: "Task env",
+              instructions: "Inject task env",
+              status: "in_progress",
+              priority: "normal",
+              progress: 25,
+              profileId: "brainstorm",
+              parentTaskId: "task-parent",
+              taskDir: "/tmp/ravi-test-bot/tasks/task-explicit",
+              createdAt: 1,
+              updatedAt: 2,
+            },
+            assignment: {
+              id: "asg-explicit",
+              taskId: "task-explicit",
+              agentId: "main",
+              sessionName,
+              status: "accepted",
+              assignedAt: 1,
+              reportEvents: ["done"],
+              checkpointOverdueCount: 0,
+            },
+          }
+        : null;
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("execute task turn"),
+      taskBarrierTaskId: "task-explicit",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect(runtimeStartCalls[0]?.env).toMatchObject({
+      RAVI_TASK_ID: "task-explicit",
+      RAVI_TASK_PROFILE_ID: "brainstorm",
+      RAVI_PARENT_TASK_ID: "task-parent",
+      RAVI_TASK_SESSION: sessionKey,
+      RAVI_TASK_WORKSPACE: "/tmp/ravi-test-bot/tasks/task-explicit",
+    });
   });
 
   it("accepts the next prompt after a completed Codex turn without interrupting the session", async () => {

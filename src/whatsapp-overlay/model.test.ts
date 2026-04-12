@@ -374,4 +374,117 @@ describe("whatsapp overlay model", () => {
       chatId: null,
     });
   });
+
+  it("removes hot sessions linked to terminal tasks by canonical session join", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "task-done-session",
+        displayName: "Done task",
+        updatedAt: now - 2_000,
+      }),
+      makeSession({
+        name: "task-active-session",
+        displayName: "Active task",
+        updatedAt: now - 1_000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([
+      ["task-done-session", { activity: "thinking", updatedAt: now }],
+      ["task-active-session", { activity: "thinking", updatedAt: now - 250 }],
+    ]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { title: "Active task" },
+      sessions,
+      liveBySessionName: live,
+      taskSessions: [
+        {
+          status: "done",
+          updatedAt: now,
+          workSessionName: "task-done-session",
+          assigneeSessionName: null,
+        },
+        {
+          status: "in_progress",
+          updatedAt: now - 100,
+          workSessionName: null,
+          assigneeSessionName: "task-active-session",
+        },
+      ],
+    });
+
+    expect(snapshot.hotSessions).toHaveLength(1);
+    expect(snapshot.hotSessions[0]?.sessionName).toBe("task-active-session");
+  });
+
+  it("keeps a hot session visible when a newer live task supersedes an older terminal task on the same session", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "shared-task-session",
+        displayName: "Shared task session",
+        updatedAt: now - 1_000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([
+      ["shared-task-session", { activity: "streaming", updatedAt: now }],
+    ]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "shared-task-session" },
+      sessions,
+      liveBySessionName: live,
+      taskSessions: [
+        {
+          status: "done",
+          archivedAt: null,
+          updatedAt: now - 10_000,
+          workSessionName: "shared-task-session",
+          assigneeSessionName: null,
+        },
+        {
+          status: "blocked",
+          archivedAt: null,
+          updatedAt: now - 100,
+          workSessionName: null,
+          assigneeSessionName: "shared-task-session",
+        },
+      ],
+    });
+
+    expect(snapshot.hotSessions).toHaveLength(1);
+    expect(snapshot.hotSessions[0]?.sessionName).toBe("shared-task-session");
+  });
+
+  it("removes hot sessions linked to archived tasks", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "archived-task-session",
+        displayName: "Archived task",
+        updatedAt: now - 500,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([
+      ["archived-task-session", { activity: "thinking", updatedAt: now }],
+    ]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "archived-task-session" },
+      sessions,
+      liveBySessionName: live,
+      taskSessions: [
+        {
+          status: "done",
+          archivedAt: now - 50,
+          updatedAt: now - 50,
+          workSessionName: "archived-task-session",
+          assigneeSessionName: null,
+        },
+      ],
+    });
+
+    expect(snapshot.hotSessions).toEqual([]);
+  });
 });

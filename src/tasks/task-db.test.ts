@@ -1,19 +1,24 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   dbAddTaskComment,
+  dbArchiveTask,
   dbBlockTask,
   dbCompleteTask,
   dbCreateTask,
   dbHasActiveTaskForSession,
+  dbResolveActiveTaskBindingForSession,
   dbDeleteTask,
   dbDispatchTask,
   dbGetActiveAssignment,
   dbGetTask,
+  dbSetTaskDir,
   dbListChildTasks,
+  dbListTasks,
   dbListTaskComments,
   dbListTaskEvents,
   dbRegisterTaskCheckpointMiss,
   dbReportTaskProgress,
+  dbUnarchiveTask,
 } from "./task-db.js";
 
 const createdTaskIds: string[] = [];
@@ -38,6 +43,7 @@ describe("task-db", () => {
 
     expect(created.task.status).toBe("open");
     expect(created.event.type).toBe("task.created");
+    expect(created.task.profileId).toBe("default");
     expect(created.task.createdByAgentId).toBe("main");
     expect(created.task.createdBySessionName).toBe("dev");
     expect(created.task.reportToSessionName).toBe("dev");
@@ -61,7 +67,7 @@ describe("task-db", () => {
       actor: "test",
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
-      message: "working",
+      message: "investigando o fluxo principal da task",
       progress: 35,
     });
     expect(progressed.task.status).toBe("in_progress");
@@ -79,6 +85,275 @@ describe("task-db", () => {
 
     const eventTypes = dbListTaskEvents(created.task.id).map((event) => event.type);
     expect(eventTypes).toEqual(["task.created", "task.dispatched", "task.progress", "task.done"]);
+  });
+
+  it("resolves the active task binding for a dispatched session", () => {
+    const created = dbCreateTask({
+      title: "Resolve active task binding",
+      instructions: "Bind the active assignment back to the session env",
+      createdBy: "test",
+      parentTaskId: "task-parent-1",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const sessionName = `${created.task.id}-work`;
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+      worktree: {
+        mode: "path",
+        path: `/tmp/${created.task.id}`,
+      },
+    });
+
+    expect(dbResolveActiveTaskBindingForSession(sessionName)).toEqual({
+      task: expect.objectContaining({
+        id: created.task.id,
+        parentTaskId: "task-parent-1",
+        assigneeSessionName: sessionName,
+      }),
+      assignment: expect.objectContaining({
+        taskId: created.task.id,
+        agentId: "dev",
+        sessionName,
+        worktree: {
+          mode: "path",
+          path: `/tmp/${created.task.id}`,
+        },
+      }),
+    });
+    expect(dbResolveActiveTaskBindingForSession(sessionName, created.task.id)?.task.id).toBe(created.task.id);
+  });
+
+  it("does not guess a current task when a session has multiple active assignments", () => {
+    const sessionName = "shared-runtime-session";
+    const first = dbCreateTask({
+      title: "Shared session A",
+      instructions: "Keep the session ambiguous",
+      createdBy: "test",
+    });
+    const second = dbCreateTask({
+      title: "Shared session B",
+      instructions: "Keep the session ambiguous",
+      createdBy: "test",
+    });
+    createdTaskIds.push(first.task.id, second.task.id);
+
+    dbDispatchTask(first.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+    });
+    dbDispatchTask(second.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+    });
+
+    expect(dbResolveActiveTaskBindingForSession(sessionName)).toBeNull();
+    expect(dbResolveActiveTaskBindingForSession(sessionName, second.task.id)?.task.id).toBe(second.task.id);
+  });
+
+  it("archives and restores visibility without changing execution status", () => {
+    const created = dbCreateTask({
+      title: "Archive visibility smoke",
+      instructions: "Archive should be orthogonal to execution status",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+    dbReportTaskProgress(created.task.id, {
+      actor: "worker",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "investigando o core de tasks",
+      progress: 40,
+    });
+
+    const archived = dbArchiveTask(created.task.id, {
+      actor: "operator",
+      reason: "tirar backlog antigo da lista default",
+    });
+
+    expect(archived.task.status).toBe("in_progress");
+    expect(archived.task.progress).toBe(40);
+    expect(archived.task.archivedAt).toBeDefined();
+    expect(archived.task.archivedBy).toBe("operator");
+    expect(archived.task.archiveReason).toBe("tirar backlog antigo da lista default");
+    expect(dbGetActiveAssignment(created.task.id)?.status).toBe("accepted");
+    expect(dbListTasks({ archiveMode: "exclude" }).map((task) => task.id)).not.toContain(created.task.id);
+    expect(dbListTasks({ archiveMode: "only" }).map((task) => task.id)).toContain(created.task.id);
+    expect(dbListTasks({ archiveMode: "include" }).map((task) => task.id)).toContain(created.task.id);
+
+    const unarchived = dbUnarchiveTask(created.task.id, {
+      actor: "operator",
+    });
+
+    expect(unarchived.task.status).toBe("in_progress");
+    expect(unarchived.task.archivedAt).toBeUndefined();
+    expect(unarchived.task.archivedBy).toBeUndefined();
+    expect(unarchived.task.archiveReason).toBeUndefined();
+    expect(dbListTasks({ archiveMode: "exclude" }).map((task) => task.id)).toContain(created.task.id);
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual([
+      "task.created",
+      "task.dispatched",
+      "task.progress",
+      "task.archived",
+      "task.unarchived",
+    ]);
+  });
+
+  it("persists an explicit task profile on create", () => {
+    const created = dbCreateTask({
+      title: "Task profile persistence",
+      instructions: "Persist the selected task profile in the row",
+      createdBy: "test",
+      profileId: "task-doc-none",
+      profileInput: {
+        flavor: "matcha",
+      },
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(created.task.profileId).toBe("task-doc-none");
+    expect(created.task.profileInput).toEqual({
+      flavor: "matcha",
+    });
+    expect(dbGetTask(created.task.id)?.profileId).toBe("task-doc-none");
+    expect(dbGetTask(created.task.id)?.profileInput).toEqual({
+      flavor: "matcha",
+    });
+  });
+
+  it("filters tasks by profile, text, lineage, assignee, and limit", () => {
+    const root = dbCreateTask({
+      title: "Pipeline root",
+      instructions: "Track the main pipeline work",
+      createdBy: "test",
+    });
+    const child = dbCreateTask({
+      title: "Pipeline child",
+      instructions: "Investigate the child branch of the pipeline",
+      createdBy: "test",
+      parentTaskId: root.task.id,
+      profileId: "brainstorm",
+    });
+    const grandchild = dbCreateTask({
+      title: "Pipeline grandchild",
+      instructions: "Follow the nested pipeline branch",
+      createdBy: "test",
+      parentTaskId: child.task.id,
+      profileId: "brainstorm",
+    });
+    const otherRoot = dbCreateTask({
+      title: "WhatsApp ergonomics",
+      instructions: "Inspect another operational surface",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(root.task.id, child.task.id, grandchild.task.id, otherRoot.task.id);
+
+    dbDispatchTask(child.task.id, {
+      agentId: "dev",
+      sessionName: `${child.task.id}-work`,
+      assignedBy: "test",
+    });
+    dbReportTaskProgress(child.task.id, {
+      actor: "worker",
+      agentId: "dev",
+      sessionName: `${child.task.id}-work`,
+      message: "Investigando a pipeline principal",
+      progress: 45,
+    });
+
+    dbDispatchTask(grandchild.task.id, {
+      agentId: "qa",
+      sessionName: `${grandchild.task.id}-work`,
+      assignedBy: "test",
+    });
+    dbReportTaskProgress(grandchild.task.id, {
+      actor: "worker",
+      agentId: "qa",
+      sessionName: `${grandchild.task.id}-work`,
+      message: "Detalhando a pipeline derivada",
+      progress: 25,
+    });
+
+    expect(dbListTasks({ profileId: "task-doc-none" }).map((task) => task.id)).toEqual([otherRoot.task.id]);
+    expect(dbListTasks({ parentTaskId: root.task.id }).map((task) => task.id)).toEqual([child.task.id]);
+    expect(dbListTasks({ rootTaskId: root.task.id }).map((task) => task.id)).toEqual(
+      expect.arrayContaining([root.task.id, child.task.id, grandchild.task.id]),
+    );
+    expect(dbListTasks({ rootTaskId: root.task.id }).map((task) => task.id)).not.toContain(otherRoot.task.id);
+    expect(dbListTasks({ onlyRootTasks: true }).map((task) => task.id)).toEqual(
+      expect.arrayContaining([root.task.id, otherRoot.task.id]),
+    );
+    expect(dbListTasks({ onlyRootTasks: true }).map((task) => task.id)).not.toContain(child.task.id);
+    expect(
+      dbListTasks({
+        status: "in_progress",
+        agentId: "dev",
+        query: "pipeline",
+        limit: 1,
+      }).map((task) => task.id),
+    ).toEqual([child.task.id]);
+  });
+
+  it("rejects task_dir persistence for profiles that do not bootstrap a canonical task dir", () => {
+    const created = dbCreateTask({
+      title: "Video Rapha dir guard",
+      instructions: "video-rapha must not persist task_dir",
+      createdBy: "test",
+      profileId: "video-rapha",
+      profileVersion: "1",
+      profileSource: "system:video-rapha",
+      profileSnapshot: {
+        id: "video-rapha",
+        version: "1",
+        label: "Video Rapha",
+        description: "guard",
+        sessionNameTemplate: "<task-id>-work",
+        workspaceBootstrap: {
+          mode: "path",
+          path: "~/ravi/videomaker",
+          ensureTaskDir: false,
+        },
+        sync: {
+          artifactFirst: false,
+        },
+        rendererHints: {
+          label: "Video Rapha project",
+          showTaskDoc: false,
+          showWorkspace: true,
+        },
+        defaultTags: [],
+        inputs: [],
+        completion: {},
+        progress: {},
+        templates: {
+          dispatch: "dispatch",
+          resume: "resume",
+          dispatchSummary: "summary",
+          dispatchEventMessage: "event",
+        },
+        artifacts: [],
+        state: [],
+        sourceKind: "system",
+        source: "system:video-rapha",
+        manifestPath: null,
+      },
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(() => dbSetTaskDir(created.task.id, `/tmp/${created.task.id}`)).toThrow(
+      `Task ${created.task.id} profile video-rapha forbids task_dir persistence.`,
+    );
   });
 
   it("stores a task-level checkpoint default and materializes it on dispatch", () => {
@@ -145,6 +420,7 @@ describe("task-db", () => {
       actor: "sync",
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
+      message: "sincronizando progresso vindo do TASK.md",
       progress: 10,
       resetCheckpoint: false,
     });
@@ -160,6 +436,7 @@ describe("task-db", () => {
       actor: "test",
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
+      message: "retomando o trabalho depois do checkpoint perdido",
       progress: 35,
     });
 
@@ -230,6 +507,33 @@ describe("task-db", () => {
     expect(dbGetTask(created.task.id)?.status).toBe("done");
   });
 
+  it("rejects progress reports without descriptive text", () => {
+    const created = dbCreateTask({
+      title: "Progress message contract",
+      instructions: "Progress updates must always include useful text",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    expect(() =>
+      dbReportTaskProgress(created.task.id, {
+        actor: "test",
+        agentId: "dev",
+        sessionName: `${created.task.id}-work`,
+        message: "ok",
+        progress: 10,
+      }),
+    ).toThrow("Task progress requires a descriptive message.");
+    expect(dbGetTask(created.task.id)?.status).toBe("dispatched");
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual(["task.created", "task.dispatched"]);
+  });
+
   it("tracks whether a session still has an active task", () => {
     const created = dbCreateTask({
       title: "Task activity lookup",
@@ -296,8 +600,7 @@ describe("task-db", () => {
 
     expect(dispatched.event.type).toBe("task.dispatched");
     expect(dispatched.event.message).toContain("Dispatch summary surfaced here");
-    expect(dispatched.event.message).toContain("ravi-system-tasks-manager");
-    expect(dispatched.event.message).toContain("edit TASK.md first");
+    expect(dispatched.event.message).toContain("did not provide a profile-specific summary");
     expect(dispatched.event.message).toContain("ravi tasks report|done|block|fail");
   });
 

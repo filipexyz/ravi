@@ -57,6 +57,7 @@ import {
   buildTaskStreamSnapshot,
   getTaskDocPath,
   readTaskDocFrontmatter,
+  taskProfileUsesTaskDocument,
   type TaskDocFrontmatterState,
   type TaskStatus,
   type TaskStreamSelection,
@@ -68,6 +69,14 @@ const REPO_ROOT = join(__dirname, "../..");
 const PORT = Number(process.env.RAVI_WA_OVERLAY_PORT ?? 4210);
 const HOST = process.env.RAVI_WA_OVERLAY_HOST ?? "127.0.0.1";
 const CHAT_LIST_OMNI_CACHE_TTL_MS = 5_000;
+const HOT_SESSION_TASK_CACHE_TTL_MS = 1_000;
+
+function toTaskDocRef(task: { id: string; taskDir: string | null }) {
+  return {
+    id: task.id,
+    taskDir: task.taskDir ?? undefined,
+  };
+}
 
 const liveBySessionName = new Map<string, OverlayLiveState>();
 type SessionArtifactTurnState = {
@@ -84,6 +93,7 @@ const pendingDomCommands: OverlayDomCommandEnvelope[] = [];
 const domCommandResults = new Map<string, OverlayDomCommandResult>();
 const runtimeTrackerTasks = new Set<Promise<void>>();
 let chatListResolveOmniCache: { expiresAt: number; chats: OmniPanelChat[] } | null = null;
+let hotSessionTaskCache: { expiresAt: number; items: TaskStreamTaskEntity[] } | null = null;
 
 type ActionName = "abort" | "reset" | "set-thinking" | "rename";
 
@@ -1002,11 +1012,13 @@ function handleTasks(url: URL): Response {
     const selectedTaskWithDocument: OverlayTaskSelection | null = selectedTask
       ? {
           ...selectedTask,
-          taskDocument: {
-            taskDir: selectedTask.task.taskDir ?? null,
-            path: getTaskDocPath(selectedTask.task),
-            frontmatter: readTaskDocFrontmatter(selectedTask.task),
-          },
+          taskDocument: !taskProfileUsesTaskDocument(selectedTask.task.taskProfile)
+            ? null
+            : {
+                taskDir: selectedTask.task.taskDir ?? null,
+                path: getTaskDocPath(toTaskDocRef(selectedTask.task)),
+                frontmatter: readTaskDocFrontmatter(toTaskDocRef(selectedTask.task)),
+              },
         }
       : null;
 
@@ -1641,6 +1653,24 @@ function getOverlaySessions(): SessionEntry[] {
   });
 }
 
+function getHotSessionTaskCandidates(): TaskStreamTaskEntity[] {
+  const now = Date.now();
+  if (hotSessionTaskCache && hotSessionTaskCache.expiresAt > now) {
+    return hotSessionTaskCache.items;
+  }
+
+  const items = buildTaskStreamSnapshot({
+    all: true,
+    eventsLimit: 1,
+  }).items;
+
+  hotSessionTaskCache = {
+    expiresAt: now + HOT_SESSION_TASK_CACHE_TTL_MS,
+    items,
+  };
+  return items;
+}
+
 function buildSnapshotWithSessions(query: OverlayQuery, sessions: ReturnType<typeof getOverlaySessions>) {
   const binding = getBindingForQuery(query);
   const boundSession = binding ? resolveSession(binding.session) : null;
@@ -1655,6 +1685,7 @@ function buildSnapshotWithSessions(query: OverlayQuery, sessions: ReturnType<typ
     query: effectiveQuery,
     sessions,
     liveBySessionName,
+    taskSessions: getHotSessionTaskCandidates(),
   });
 }
 

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
-import type { TaskPriority, TaskRecord, TaskStatus } from "./types.js";
+import { resolveTaskProfileForTask, taskProfileRequiresTaskDocument, taskProfileUsesTaskDocument } from "./profiles.js";
+import type { ResolvedTaskProfile, TaskPriority, TaskRecord, TaskStatus } from "./types.js";
 
 export const TASK_DOC_FILENAME = "TASK.md";
 
@@ -18,6 +19,7 @@ export interface TaskDocFrontmatterState {
   status?: TaskStatus;
   priority?: TaskPriority;
   progress?: number;
+  progressNote?: string;
   summary?: string;
   blockerReason?: string;
 }
@@ -51,7 +53,7 @@ function parseFrontmatterScalar(raw: string): string | number | null {
   return trimmed;
 }
 
-function buildTaskFrontmatter(task: TaskRecord): string {
+function buildTaskFrontmatter(task: TaskRecord, preservedFrontmatter?: TaskDocFrontmatterState): string {
   const lines = [
     "---",
     `id: ${yamlScalar(task.id)}`,
@@ -60,6 +62,7 @@ function buildTaskFrontmatter(task: TaskRecord): string {
     `status: ${yamlScalar(task.status)}`,
     `priority: ${yamlScalar(task.priority)}`,
     `progress: ${yamlScalar(task.progress)}`,
+    `progress_note: ${yamlScalar(preservedFrontmatter?.progressNote)}`,
     `summary: ${yamlScalar(task.summary)}`,
     `blocker_reason: ${yamlScalar(task.blockerReason)}`,
     "---",
@@ -165,6 +168,9 @@ export function readTaskDocFrontmatter(task: Pick<TaskRecord, "id" | "taskDir">)
           state.progress = Math.max(0, Math.min(100, Math.round(parsed)));
         }
         break;
+      case "progress_note":
+        state.progressNote = typeof parsed === "string" && parsed ? parsed : undefined;
+        break;
       case "summary":
         state.summary = typeof parsed === "string" && parsed ? parsed : undefined;
         break;
@@ -184,6 +190,10 @@ export function writeTaskDoc(
     appendSection?: TaskDocSection;
   } = {},
 ): string {
+  const profile = resolveTaskProfileForTask(task);
+  if (!taskProfileUsesTaskDocument(profile)) {
+    throw new Error(`Task ${task.id} profile ${profile.id} forbids TASK.md materialization.`);
+  }
   const taskDir = task.taskDir ?? getCanonicalTaskDir(task.id);
   const docTask: TaskRecord = task.taskDir ? task : { ...task, taskDir };
   const docPath = getTaskDocPath(docTask);
@@ -192,6 +202,7 @@ export function writeTaskDoc(
 
   const fileExists = existsSync(docPath);
   let body = fileExists ? stripFrontmatter(readFileSync(docPath, "utf8")) : buildInitialTaskBody(docTask);
+  const preservedFrontmatter = fileExists ? readTaskDocFrontmatter(docTask) : undefined;
 
   if (!fileExists && options.initializeSection) {
     body = appendSection(body, options.initializeSection);
@@ -200,6 +211,59 @@ export function writeTaskDoc(
     body = appendSection(body, options.appendSection);
   }
 
-  writeFileSync(docPath, `${buildTaskFrontmatter(docTask)}${body.trimEnd()}\n`, "utf8");
+  writeFileSync(docPath, `${buildTaskFrontmatter(docTask, preservedFrontmatter)}${body.trimEnd()}\n`, "utf8");
   return docPath;
+}
+
+function withCanonicalTaskDir(task: TaskRecord): TaskRecord {
+  return task.taskDir ? task : { ...task, taskDir: getCanonicalTaskDir(task.id) };
+}
+
+export function ensureRequiredTaskDocument(
+  task: TaskRecord,
+  options: {
+    profile?: ResolvedTaskProfile;
+    initializeSection?: TaskDocSection;
+  } = {},
+): TaskRecord {
+  const profile = options.profile ?? resolveTaskProfileForTask(task);
+  if (!taskProfileRequiresTaskDocument(profile)) {
+    return task;
+  }
+
+  const documentedTask = withCanonicalTaskDir(task);
+  if (!taskDocExists(documentedTask)) {
+    writeTaskDoc(documentedTask, {
+      ...(options.initializeSection ? { initializeSection: options.initializeSection } : {}),
+    });
+  }
+
+  return documentedTask;
+}
+
+export function appendTaskDocumentSection(
+  task: TaskRecord,
+  section: TaskDocSection,
+  options: {
+    profile?: ResolvedTaskProfile;
+    initializeSection?: TaskDocSection;
+  } = {},
+): TaskRecord {
+  const profile = options.profile ?? resolveTaskProfileForTask(task);
+  if (!taskProfileUsesTaskDocument(profile)) {
+    return task;
+  }
+
+  if (!taskProfileRequiresTaskDocument(profile) && !taskDocExists(task)) {
+    return task;
+  }
+
+  const documentedTask = taskDocExists(task)
+    ? task
+    : ensureRequiredTaskDocument(task, {
+        profile,
+        ...(options.initializeSection ? { initializeSection: options.initializeSection } : {}),
+      });
+  writeTaskDoc(documentedTask, { appendSection: section });
+  return documentedTask;
 }

@@ -6,21 +6,29 @@ import {
   calculateTaskCheckpointMiss,
   resolveTaskCheckpointIntervalMs,
 } from "./checkpoint.js";
+import { DEFAULT_TASK_PROFILE_ID, resolveTaskProfileForTask } from "./profiles.js";
 import {
+  type TaskArchiveInput,
   TASK_REPORT_EVENTS,
+  type TaskProfileSnapshot,
+  type TaskProfileState,
   type CreateTaskInput,
   type DispatchTaskInput,
   type ListTasksOptions,
+  type TaskArchiveMode,
   type TaskAssignment,
   type TaskComment,
   type TaskCommentInput,
   type TaskEvent,
+  type TaskProfileInputValues,
   type TaskProgressInput,
   type TaskRecord,
   type TaskReportEvent,
   type TaskTerminalInput,
+  type TaskUnarchiveInput,
   type TaskWorktreeConfig,
 } from "./types.js";
+import { requireTaskProgressMessage } from "./progress-contract.js";
 
 interface TaskRow {
   id: string;
@@ -29,6 +37,12 @@ interface TaskRow {
   status: TaskRecord["status"];
   priority: TaskRecord["priority"];
   progress: number;
+  profile_id: string | null;
+  profile_version: string | null;
+  profile_source: string | null;
+  profile_snapshot_json: string | null;
+  profile_state_json: string | null;
+  profile_input_json: string | null;
   checkpoint_interval_ms: number | null;
   report_to_session_name: string | null;
   report_events: string | null;
@@ -44,6 +58,9 @@ interface TaskRow {
   worktree_branch: string | null;
   summary: string | null;
   blocker_reason: string | null;
+  archived_at: number | null;
+  archived_by: string | null;
+  archive_reason: string | null;
   created_at: number;
   updated_at: number;
   dispatched_at: number | null;
@@ -167,6 +184,33 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("report_events")) {
     db.exec("ALTER TABLE tasks ADD COLUMN report_events TEXT");
   }
+  if (!taskColumns.has("archived_at")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN archived_at INTEGER");
+  }
+  if (!taskColumns.has("archived_by")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN archived_by TEXT");
+  }
+  if (!taskColumns.has("archive_reason")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN archive_reason TEXT");
+  }
+  if (!taskColumns.has("profile_id")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_id TEXT");
+  }
+  if (!taskColumns.has("profile_version")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_version TEXT");
+  }
+  if (!taskColumns.has("profile_source")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_source TEXT");
+  }
+  if (!taskColumns.has("profile_snapshot_json")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_snapshot_json TEXT");
+  }
+  if (!taskColumns.has("profile_state_json")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_state_json TEXT");
+  }
+  if (!taskColumns.has("profile_input_json")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN profile_input_json TEXT");
+  }
 
   const assignmentColumns = new Set(
     (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -216,8 +260,9 @@ function applyTaskWorktreeSchemaMigrations(): void {
     UPDATE tasks
     SET checkpoint_interval_ms = COALESCE(checkpoint_interval_ms, ?),
         report_to_session_name = COALESCE(report_to_session_name, created_by_session_name),
-        report_events = COALESCE(report_events, ?)
-  `).run(DEFAULT_TASK_CHECKPOINT_INTERVAL_MS, DEFAULT_TASK_REPORT_EVENTS_JSON);
+        report_events = COALESCE(report_events, ?),
+        profile_id = COALESCE(profile_id, ?)
+  `).run(DEFAULT_TASK_CHECKPOINT_INTERVAL_MS, DEFAULT_TASK_REPORT_EVENTS_JSON, DEFAULT_TASK_PROFILE_ID);
 
   db.prepare(`
     UPDATE task_assignments
@@ -251,6 +296,12 @@ function ensureTaskSchema(): void {
       status TEXT NOT NULL,
       priority TEXT NOT NULL DEFAULT 'normal',
       progress INTEGER NOT NULL DEFAULT 0,
+      profile_id TEXT,
+      profile_version TEXT,
+      profile_source TEXT,
+      profile_snapshot_json TEXT,
+      profile_state_json TEXT,
+      profile_input_json TEXT,
       checkpoint_interval_ms INTEGER,
       report_to_session_name TEXT,
       report_events TEXT,
@@ -266,6 +317,9 @@ function ensureTaskSchema(): void {
       worktree_branch TEXT,
       summary TEXT,
       blocker_reason TEXT,
+      archived_at INTEGER,
+      archived_by TEXT,
+      archive_reason TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       dispatched_at INTEGER,
@@ -331,6 +385,7 @@ function ensureTaskSchema(): void {
   `);
   applyTaskWorktreeSchemaMigrations();
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_archived_updated ON tasks(archived_at, updated_at DESC)");
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_task_assignments_checkpoint_due ON task_assignments(status, checkpoint_due_at)",
   );
@@ -357,6 +412,55 @@ function worktreeToColumns(worktree?: TaskWorktreeConfig): [string | null, strin
   return [worktree?.mode ?? null, worktree?.path ?? null, worktree?.branch ?? null];
 }
 
+function resolveTaskArchiveMode(mode?: TaskArchiveMode): TaskArchiveMode {
+  return mode ?? "include";
+}
+
+function parseTaskProfileState(raw: string | null): TaskProfileState | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as TaskProfileState;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeTaskProfileState(state?: TaskProfileState | null): string | null {
+  if (!state) return null;
+  return JSON.stringify(state);
+}
+
+function parseTaskProfileInput(raw: string | null): TaskProfileInputValues | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as TaskProfileInputValues;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeTaskProfileInput(input?: TaskProfileInputValues | null): string | null {
+  if (!input) return null;
+  return JSON.stringify(input);
+}
+
+function parseTaskProfileSnapshot(raw: string | null): TaskProfileSnapshot | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as TaskProfileSnapshot;
+    return parsed && typeof parsed === "object" ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeTaskProfileSnapshot(snapshot?: TaskProfileSnapshot | null): string | null {
+  if (!snapshot) return null;
+  return JSON.stringify(snapshot);
+}
+
 function rowToTask(row: TaskRow): TaskRecord {
   return {
     id: row.id,
@@ -365,6 +469,12 @@ function rowToTask(row: TaskRow): TaskRecord {
     status: row.status,
     priority: row.priority,
     progress: row.progress,
+    ...(row.profile_id ? { profileId: row.profile_id } : {}),
+    ...(row.profile_version ? { profileVersion: row.profile_version } : {}),
+    ...(row.profile_source ? { profileSource: row.profile_source } : {}),
+    ...(row.profile_snapshot_json ? { profileSnapshot: parseTaskProfileSnapshot(row.profile_snapshot_json) } : {}),
+    ...(row.profile_state_json ? { profileState: parseTaskProfileState(row.profile_state_json) } : {}),
+    ...(row.profile_input_json ? { profileInput: parseTaskProfileInput(row.profile_input_json) } : {}),
     ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
     ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
     reportEvents: deserializeTaskReportEvents(row.report_events),
@@ -380,6 +490,9 @@ function rowToTask(row: TaskRow): TaskRecord {
       : {}),
     ...(row.summary ? { summary: row.summary } : {}),
     ...(row.blocker_reason ? { blockerReason: row.blocker_reason } : {}),
+    ...(row.archived_at ? { archivedAt: row.archived_at } : {}),
+    ...(row.archived_by ? { archivedBy: row.archived_by } : {}),
+    ...(row.archive_reason ? { archiveReason: row.archive_reason } : {}),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.dispatched_at ? { dispatchedAt: row.dispatched_at } : {}),
@@ -481,8 +594,8 @@ function buildDispatchEventMessage(input: DispatchTaskInput): string {
   return [
     `Dispatched to ${input.agentId}/${input.sessionName}.`,
     "Dispatch summary surfaced here:",
-    "load ravi-system-tasks-manager, edit TASK.md first,",
-    "then sync via ravi tasks report|done|block|fail.",
+    "the runtime caller did not provide a profile-specific summary,",
+    "so treat this as a generic dispatch and sync via ravi tasks report|done|block|fail.",
   ].join(" ");
 }
 
@@ -559,9 +672,9 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   db.prepare(`
     INSERT INTO tasks (
       id, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
-      parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
+      profile_id, profile_version, profile_source, profile_snapshot_json, profile_state_json, profile_input_json, parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
       worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
@@ -570,6 +683,12 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
     checkpointIntervalMs,
     reportToSessionName,
     reportEvents,
+    input.profileId ?? DEFAULT_TASK_PROFILE_ID,
+    input.profileVersion ?? null,
+    input.profileSource ?? null,
+    serializeTaskProfileSnapshot(input.profileSnapshot),
+    serializeTaskProfileState(input.profileState),
+    serializeTaskProfileInput(input.profileInput),
     input.parentTaskId ?? null,
     input.createdBy ?? null,
     input.createdByAgentId ?? null,
@@ -592,11 +711,66 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
 export function dbSetTaskDir(taskId: string, taskDir: string): TaskRecord {
   ensureTaskSchema();
   const db = getDb();
+  const task = getTaskOrThrow(taskId);
+  const profile = resolveTaskProfileForTask(task);
+  if (!profile.workspaceBootstrap.ensureTaskDir) {
+    throw new Error(`Task ${taskId} profile ${profile.id} forbids task_dir persistence.`);
+  }
   db.prepare(`
     UPDATE tasks
     SET task_dir = ?
     WHERE id = ?
   `).run(taskDir, taskId);
+  return getTaskOrThrow(taskId);
+}
+
+export function dbSetTaskProfileId(taskId: string, profileId: string): TaskRecord {
+  ensureTaskSchema();
+  const db = getDb();
+  db.prepare(`
+    UPDATE tasks
+    SET profile_id = ?
+    WHERE id = ?
+  `).run(profileId, taskId);
+  return getTaskOrThrow(taskId);
+}
+
+export function dbSetTaskProfileResolution(
+  taskId: string,
+  input: {
+    profileId: string;
+    profileVersion: string;
+    profileSource: string;
+    profileSnapshot: TaskProfileSnapshot;
+  },
+): TaskRecord {
+  ensureTaskSchema();
+  const db = getDb();
+  db.prepare(`
+    UPDATE tasks
+    SET profile_id = ?,
+        profile_version = ?,
+        profile_source = ?,
+        profile_snapshot_json = ?
+    WHERE id = ?
+  `).run(
+    input.profileId,
+    input.profileVersion,
+    input.profileSource,
+    serializeTaskProfileSnapshot(input.profileSnapshot),
+    taskId,
+  );
+  return getTaskOrThrow(taskId);
+}
+
+export function dbSetTaskProfileState(taskId: string, profileState: TaskProfileState): TaskRecord {
+  ensureTaskSchema();
+  const db = getDb();
+  db.prepare(`
+    UPDATE tasks
+    SET profile_state_json = ?
+    WHERE id = ?
+  `).run(serializeTaskProfileState(profileState), taskId);
   return getTaskOrThrow(taskId);
 }
 
@@ -611,7 +785,13 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
   ensureTaskSchema();
   const db = getDb();
   const filters: string[] = [];
-  const params: Array<string> = [];
+  const params: Array<string | number> = [];
+  const archiveMode = resolveTaskArchiveMode(options.archiveMode);
+  const normalizedQuery = options.query?.trim().toLowerCase() ?? "";
+  const normalizedLimit =
+    typeof options.limit === "number" && Number.isFinite(options.limit) && options.limit > 0
+      ? Math.floor(options.limit)
+      : null;
 
   if (options.status) {
     filters.push("status = ?");
@@ -629,9 +809,48 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     filters.push("parent_task_id = ?");
     params.push(options.parentTaskId);
   }
+  if (options.onlyRootTasks) {
+    filters.push("parent_task_id IS NULL");
+  }
+  if (options.profileId) {
+    filters.push("profile_id = ?");
+    params.push(options.profileId);
+  }
+  if (normalizedQuery) {
+    filters.push("(LOWER(title) LIKE ? OR LOWER(instructions) LIKE ? OR LOWER(COALESCE(summary, '')) LIKE ?)");
+    const like = `%${normalizedQuery}%`;
+    params.push(like, like, like);
+  }
+  if (archiveMode === "exclude") {
+    filters.push("archived_at IS NULL");
+  } else if (archiveMode === "only") {
+    filters.push("archived_at IS NOT NULL");
+  }
+
+  const lineageCte = options.rootTaskId
+    ? `
+      WITH RECURSIVE task_lineage(id) AS (
+        SELECT id FROM tasks WHERE id = ?
+        UNION ALL
+        SELECT tasks.id
+        FROM tasks
+        JOIN task_lineage ON tasks.parent_task_id = task_lineage.id
+      )
+    `
+    : "";
+  if (options.rootTaskId) {
+    filters.push("id IN (SELECT id FROM task_lineage)");
+    params.unshift(options.rootTaskId);
+  }
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
-  const rows = db.prepare(`SELECT * FROM tasks ${where} ORDER BY updated_at DESC`).all(...params) as TaskRow[];
+  const limitClause = normalizedLimit ? " LIMIT ?" : "";
+  if (normalizedLimit) {
+    params.push(normalizedLimit);
+  }
+  const rows = db
+    .prepare(`${lineageCte} SELECT * FROM tasks ${where} ORDER BY updated_at DESC${limitClause}`)
+    .all(...params) as TaskRow[];
   return rows.map(rowToTask);
 }
 
@@ -668,6 +887,60 @@ export function dbHasActiveTaskForSession(sessionName: string, excludeTaskId?: s
         `)
         .get(sessionName) as { 1: number } | undefined);
   return Boolean(row);
+}
+
+export function dbResolveActiveTaskBindingForSession(
+  sessionName: string,
+  taskId?: string,
+): { task: TaskRecord; assignment: TaskAssignment } | null {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = (
+    taskId
+      ? db
+          .prepare(`
+            SELECT *
+            FROM task_assignments
+            WHERE session_name = ?
+              AND task_id = ?
+              AND status IN ('assigned', 'accepted', 'blocked')
+            ORDER BY assigned_at DESC
+          `)
+          .all(sessionName, taskId)
+      : db
+          .prepare(`
+            SELECT *
+            FROM task_assignments
+            WHERE session_name = ?
+              AND status IN ('assigned', 'accepted', 'blocked')
+            ORDER BY assigned_at DESC
+          `)
+          .all(sessionName)
+  ) as TaskAssignmentRow[];
+
+  const bindings = rows
+    .map((row) => {
+      const task = dbGetTask(row.task_id);
+      if (!task || !["dispatched", "in_progress", "blocked"].includes(task.status)) {
+        return null;
+      }
+      return {
+        task,
+        assignment: rowToAssignment(row),
+      };
+    })
+    .filter((binding): binding is { task: TaskRecord; assignment: TaskAssignment } => binding !== null);
+
+  if (typeof taskId === "string" && taskId.trim()) {
+    return bindings[0] ?? null;
+  }
+
+  const activeTaskIds = [...new Set(bindings.map((binding) => binding.task.id))];
+  if (activeTaskIds.length !== 1) {
+    return null;
+  }
+
+  return bindings[0] ?? null;
 }
 
 export function dbListTaskEvents(taskId: string, limit = 100): TaskEvent[] {
@@ -812,6 +1085,9 @@ export function dbRegisterTaskCheckpointMiss(
 export function dbDispatchTask(
   taskId: string,
   input: DispatchTaskInput,
+  options: {
+    eventMessage?: string;
+  } = {},
 ): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent } {
   ensureTaskSchema();
   const db = getDb();
@@ -870,7 +1146,7 @@ export function dbDispatchTask(
     actor: input.assignedBy,
     agentId: input.agentId,
     sessionName: input.sessionName,
-    message: buildDispatchEventMessage(input),
+    message: options.eventMessage ?? buildDispatchEventMessage(input),
     progress: 0,
   });
 
@@ -885,14 +1161,13 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
   ensureTaskSchema();
   const db = getDb();
   const task = getTaskOrThrow(taskId);
+  const message = requireTaskProgressMessage(input.message, "Task progress requires a descriptive message.");
   if (task.status === "done" || task.status === "failed") {
     const event = appendTaskEvent(taskId, "task.progress", {
       actor: input.actor,
       agentId: input.agentId,
       sessionName: input.sessionName,
-      message: input.message
-        ? `Ignored late progress after ${task.status}: ${input.message}`
-        : `Ignored late progress after ${task.status}.`,
+      message: `Ignored late progress after ${task.status}: ${message}`,
       progress: task.progress,
     });
     return { task, event };
@@ -951,10 +1226,84 @@ export function dbReportTaskProgress(taskId: string, input: TaskProgressInput): 
     actor: input.actor,
     agentId: input.agentId,
     sessionName: input.sessionName,
-    message: input.message,
+    message,
     progress,
   });
   return { task: getTaskOrThrow(taskId), event };
+}
+
+export function dbArchiveTask(
+  taskId: string,
+  input: TaskArchiveInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
+  ensureTaskSchema();
+  const db = getDb();
+  const task = getTaskOrThrow(taskId);
+  if (task.archivedAt) {
+    return {
+      task,
+      event: getLatestTaskEvent(taskId, "task.archived") ?? getLatestTaskEvent(taskId)!,
+      wasNoop: true,
+    };
+  }
+
+  const now = Date.now();
+  const archivedBy = input.actor ?? input.sessionName ?? input.agentId ?? null;
+  db.prepare(`
+    UPDATE tasks
+    SET archived_at = ?,
+        archived_by = ?,
+        archive_reason = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run(now, archivedBy, input.reason, now, taskId);
+
+  const archivedTask = getTaskOrThrow(taskId);
+  const event = appendTaskEvent(taskId, "task.archived", {
+    actor: input.actor,
+    agentId: input.agentId,
+    sessionName: input.sessionName,
+    message: input.reason,
+    progress: archivedTask.progress,
+  });
+  return { task: archivedTask, event };
+}
+
+export function dbUnarchiveTask(
+  taskId: string,
+  input: TaskUnarchiveInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
+  ensureTaskSchema();
+  const db = getDb();
+  const task = getTaskOrThrow(taskId);
+  if (!task.archivedAt) {
+    return {
+      task,
+      event: getLatestTaskEvent(taskId, "task.unarchived") ?? getLatestTaskEvent(taskId)!,
+      wasNoop: true,
+    };
+  }
+
+  const now = Date.now();
+  const previousReason = task.archiveReason;
+  db.prepare(`
+    UPDATE tasks
+    SET archived_at = NULL,
+        archived_by = NULL,
+        archive_reason = NULL,
+        updated_at = ?
+    WHERE id = ?
+  `).run(now, taskId);
+
+  const unarchivedTask = getTaskOrThrow(taskId);
+  const event = appendTaskEvent(taskId, "task.unarchived", {
+    actor: input.actor,
+    agentId: input.agentId,
+    sessionName: input.sessionName,
+    message: previousReason ? `restored visibility (${previousReason})` : "restored visibility",
+    progress: unarchivedTask.progress,
+  });
+  return { task: unarchivedTask, event };
 }
 
 export function dbBlockTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {

@@ -1,15 +1,37 @@
 import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
-import { expandHome, loadRouterConfig } from "../router/index.js";
+import { expandHome, getAgent } from "../router/index.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { rmSync } from "node:fs";
-import { isAbsolute, resolve as resolvePath } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { isAbsolute, relative as relativePath, resolve as resolvePath } from "node:path";
 import { z } from "zod";
 import {
+  buildTaskProfileSnapshot,
+  buildTaskDispatchEventMessageForProfile,
+  buildTaskDispatchPromptForProfile,
+  buildTaskDispatchSummaryForProfile,
+  buildTaskResumePromptForProfile,
+  getDefaultTaskSessionNameForProfile,
+  getDefaultTaskSessionNameForTask,
+  previewTaskProfile,
+  requireTaskProfileDefinition,
+  resolveTaskProfile,
+  resolveTaskProfileArtifacts,
+  resolveTaskProfileForTask,
+  resolveTaskProfileInputValues,
+  resolveTaskProfilePrimaryArtifact,
+  resolveTaskProfileState,
+  taskProfileRequiresTaskDocument,
+  taskProfileUsesTaskDocument,
+  shouldPersistTaskProfileState,
+} from "./profiles.js";
+import {
+  dbArchiveTask,
   dbAddTaskComment,
   dbAppendTaskEvent,
+  dbUnarchiveTask,
   dbCompleteTask,
   dbCreateTask,
   dbDeleteTask,
@@ -25,16 +47,22 @@ import {
   dbListTasks,
   dbReportTaskProgress,
   dbSetTaskDir,
+  dbSetTaskProfileResolution,
+  dbSetTaskProfileState,
 } from "./task-db.js";
 import {
+  appendTaskDocumentSection,
+  ensureRequiredTaskDocument,
   getCanonicalTaskDir,
   getTaskDocPath,
-  readTaskDocFrontmatter,
   taskDocExists,
-  writeTaskDoc,
   type TaskDocSection,
 } from "./task-doc.js";
+import { requireTaskProgressMessage } from "./progress-contract.js";
 import type {
+  ResolvedTaskProfile,
+  TaskArchiveInput,
+  TaskArchiveMode,
   CreateTaskInput,
   DispatchTaskInput,
   TaskAssignment,
@@ -43,11 +71,14 @@ import type {
   TaskEvent,
   TaskComment,
   TaskCommentInput,
+  TaskProfileArtifactKind,
+  TaskProfileArtifactRef,
   TaskProgressInput,
   TaskRecord,
   TaskReportEvent,
   TaskStatus,
   TaskTerminalInput,
+  TaskUnarchiveInput,
   TaskWorktreeConfig,
   TaskWorktreeMode,
 } from "./types.js";
@@ -70,16 +101,34 @@ export const TASK_STREAM_COMMAND_NAMES = [
   "task.dispatch",
   "task.report",
   "task.comment",
+  "task.archive",
+  "task.unarchive",
   "task.done",
   "task.block",
   "task.fail",
 ] as const;
 export const TASK_STREAM_CAPABILITIES = ["snapshot.open", "ping", ...TASK_STREAM_COMMAND_NAMES] as const;
 
-export interface TaskArtifactPlaceholder {
+export interface TaskSurfaceArtifactPath {
+  absolutePath: string | null;
+  workspaceRelativePath: string | null;
+  displayPath: string | null;
+}
+
+export interface TaskSurfaceArtifact {
+  kind: TaskProfileArtifactKind;
+  role: "primary" | "supporting";
+  label: string;
+  exists: boolean | null;
+  path: TaskSurfaceArtifactPath;
+}
+
+export interface TaskArtifactSummary {
   status: "planned";
   supportedKinds: Array<(typeof TASK_ARTIFACT_KINDS)[number]>;
-  items: [];
+  workspaceRoot: string | null;
+  items: TaskSurfaceArtifact[];
+  primary: TaskSurfaceArtifact | null;
 }
 
 export interface TaskStreamTaskEntity {
@@ -89,6 +138,8 @@ export interface TaskStreamTaskEntity {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  profileId: string;
+  taskProfile: ResolvedTaskProfile;
   checkpointIntervalMs: number | null;
   reportToSessionName: string | null;
   reportEvents: TaskReportEvent[];
@@ -103,12 +154,15 @@ export interface TaskStreamTaskEntity {
   worktree: TaskWorktreeConfig | null;
   summary: string | null;
   blockerReason: string | null;
+  archivedAt: number | null;
+  archivedBy: string | null;
+  archiveReason: string | null;
   createdAt: number;
   updatedAt: number;
   dispatchedAt: number | null;
   startedAt: number | null;
   completedAt: number | null;
-  artifacts: TaskArtifactPlaceholder;
+  artifacts: TaskArtifactSummary;
 }
 
 export interface TaskStreamStats {
@@ -137,11 +191,12 @@ export interface TaskStreamSnapshotEntity {
     status: TaskStatus | null;
     agentId: string | null;
     sessionName: string | null;
+    archiveMode: TaskArchiveMode;
     eventsLimit: number;
   };
   items: TaskStreamTaskEntity[];
   stats: TaskStreamStats;
-  artifacts: TaskArtifactPlaceholder;
+  artifacts: TaskArtifactSummary;
   selectedTask: TaskStreamSelection | null;
 }
 
@@ -151,6 +206,11 @@ export interface TaskStreamEventPayload {
   status: TaskStatus;
   priority: TaskPriority;
   progress: number;
+  profileId: string;
+  taskProfile: ResolvedTaskProfile;
+  archivedAt: number | null;
+  archivedBy: string | null;
+  archiveReason: string | null;
   parentTaskId: string | null;
   createdByAgentId: string | null;
   createdBySessionName: string | null;
@@ -162,7 +222,7 @@ export interface TaskStreamEventPayload {
   activeAssignment: TaskAssignment | null;
   task: TaskStreamTaskEntity;
   event: TaskEvent;
-  artifacts: TaskArtifactPlaceholder;
+  artifacts: TaskArtifactSummary;
 }
 
 export interface TaskRecoveryResult {
@@ -183,9 +243,20 @@ const TaskSnapshotArgsSchema = z
     status: z.enum(TASK_STATUSES).optional(),
     agentId: z.string().trim().min(1).optional(),
     sessionName: z.string().trim().min(1).optional(),
+    archived: z.boolean().optional(),
+    all: z.boolean().optional(),
     eventsLimit: z.coerce.number().int().min(1).max(200).default(50),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.archived && value.all) {
+      ctx.addIssue({
+        code: "custom",
+        message: "snapshot.open cannot combine archived=true with all=true.",
+        path: ["archived"],
+      });
+    }
+  });
 
 const TaskStreamActorSchema = z.object({
   actor: z.string().trim().min(1).optional(),
@@ -206,6 +277,7 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   title: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
+  profileId: z.string().trim().min(1).optional(),
   checkpointIntervalMs: z.coerce.number().int().positive().optional(),
   reportToSessionName: z.string().trim().min(1).optional(),
   reportEvents: z.array(z.enum(TASK_REPORT_EVENTS)).min(1).optional(),
@@ -249,6 +321,15 @@ const TaskCommentCommandArgsSchema = z
   })
   .strict();
 
+const TaskArchiveCommandArgsSchema = TaskStreamActorSchema.extend({
+  taskId: z.string().trim().min(1),
+  reason: z.string().trim().min(1),
+}).strict();
+
+const TaskUnarchiveCommandArgsSchema = TaskStreamActorSchema.extend({
+  taskId: z.string().trim().min(1),
+}).strict();
+
 const TaskDoneCommandArgsSchema = TaskStreamActorSchema.extend({
   taskId: z.string().trim().min(1),
   summary: z.string().trim().min(1),
@@ -265,17 +346,164 @@ const TaskFailCommandArgsSchema = TaskStreamActorSchema.extend({
   reason: z.string().trim().min(1),
 }).strict();
 
-function createTaskArtifactPlaceholder(): TaskArtifactPlaceholder {
+function createEmptyTaskArtifactSummary(workspaceRoot: string | null = null): TaskArtifactSummary {
   return {
     status: "planned",
     supportedKinds: [...TASK_ARTIFACT_KINDS],
+    workspaceRoot,
     items: [],
+    primary: null,
   };
+}
+
+function resolveTaskArtifactWorkspaceRoot(task: TaskRecord, activeAssignment?: TaskAssignment | null): string | null {
+  const agentId =
+    normalizeTaskString(activeAssignment?.agentId) ??
+    normalizeTaskString(task.assigneeAgentId) ??
+    normalizeTaskString(task.createdByAgentId);
+  if (!agentId) {
+    return null;
+  }
+
+  try {
+    return requireTaskRuntimeAgent(agentId).cwd;
+  } catch {
+    return null;
+  }
+}
+
+function resolveWorkspaceRelativePath(targetPath: string | null, workspaceRoot: string | null): string | null {
+  if (!targetPath || !workspaceRoot) {
+    return null;
+  }
+
+  const relativeTargetPath = relativePath(workspaceRoot, targetPath);
+  if (!relativeTargetPath) {
+    return null;
+  }
+  if (
+    relativeTargetPath === ".." ||
+    relativeTargetPath.startsWith("../") ||
+    relativeTargetPath.startsWith("..\\") ||
+    isAbsolute(relativeTargetPath)
+  ) {
+    return null;
+  }
+  return relativeTargetPath;
+}
+
+function createTaskSurfaceArtifact(input: {
+  kind: TaskProfileArtifactKind;
+  role: "primary" | "supporting";
+  label: string;
+  absolutePath: string | null;
+  workspaceRelativePath: string | null;
+  exists: boolean | null;
+}): TaskSurfaceArtifact {
+  return {
+    kind: input.kind,
+    role: input.role,
+    label: input.label,
+    exists: input.exists,
+    path: {
+      absolutePath: input.absolutePath,
+      workspaceRelativePath: input.workspaceRelativePath,
+      displayPath: input.workspaceRelativePath ?? input.absolutePath,
+    },
+  };
+}
+
+export function buildTaskArtifactSummary(
+  task: TaskRecord,
+  activeAssignment?: TaskAssignment | null,
+): TaskArtifactSummary {
+  const profile = resolveTaskProfileForTask(task);
+  const workspaceRoot = resolveTaskArtifactWorkspaceRoot(task, activeAssignment);
+  const effectiveCwd = workspaceRoot ?? "/tmp";
+  const taskDocPath = taskProfileUsesTaskDocument(profile) ? getTaskDocPath(task) : null;
+  const primaryArtifact = resolveTaskProfilePrimaryArtifact(task, {
+    effectiveCwd,
+    taskProfile: profile,
+    ...(taskDocPath !== null ? { taskDocPath } : {}),
+    ...((activeAssignment?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId)
+      ? { agentId: activeAssignment?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId }
+      : {}),
+    ...((activeAssignment?.sessionName ?? task.assigneeSessionName)
+      ? { sessionName: activeAssignment?.sessionName ?? task.assigneeSessionName }
+      : {}),
+  });
+  const items = resolveTaskProfileArtifacts(task, {
+    effectiveCwd,
+    taskProfile: profile,
+    ...(taskDocPath !== null ? { taskDocPath } : {}),
+    ...((activeAssignment?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId)
+      ? { agentId: activeAssignment?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId }
+      : {}),
+    ...((activeAssignment?.sessionName ?? task.assigneeSessionName)
+      ? { sessionName: activeAssignment?.sessionName ?? task.assigneeSessionName }
+      : {}),
+  }).map((artifact) => {
+    const absolutePath = workspaceRoot || !artifact.path.startsWith("/tmp/") ? artifact.path : null;
+    return createTaskSurfaceArtifact({
+      kind: artifact.kind,
+      role:
+        primaryArtifact && primaryArtifact.kind === artifact.kind && primaryArtifact.path === artifact.path
+          ? "primary"
+          : "supporting",
+      label: artifact.label,
+      absolutePath,
+      workspaceRelativePath: resolveWorkspaceRelativePath(absolutePath, workspaceRoot),
+      exists: absolutePath ? existsSync(absolutePath) : null,
+    });
+  });
+
+  return {
+    ...createEmptyTaskArtifactSummary(workspaceRoot),
+    items,
+    primary: items.find((item) => item.role === "primary") ?? null,
+  };
+}
+
+function resolveTaskDocumentPathForProfile(
+  task: Pick<TaskRecord, "id" | "taskDir">,
+  profile: ResolvedTaskProfile,
+): string | null {
+  return taskProfileUsesTaskDocument(profile) ? getTaskDocPath(task) : null;
+}
+
+function formatTaskSurfaceArtifactPath(artifact: TaskSurfaceArtifact | null | undefined): string | null {
+  return artifact?.path.displayPath ?? artifact?.path.absolutePath ?? null;
+}
+
+function resolvePrimaryArtifactLine(task: TaskRecord): string | null {
+  const primaryArtifact = buildTaskArtifactSummary(task).primary;
+  const primaryArtifactPath = formatTaskSurfaceArtifactPath(primaryArtifact);
+  if (!primaryArtifact || !primaryArtifactPath) {
+    return null;
+  }
+  return `${primaryArtifact.label}: ${primaryArtifactPath}`;
 }
 
 function normalizeTaskString(value?: string | null): string | undefined {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+function resolveTaskArchiveMode(input?: {
+  archived?: boolean;
+  all?: boolean;
+  archiveMode?: TaskArchiveMode;
+}): TaskArchiveMode {
+  if (input?.archiveMode) {
+    return input.archiveMode;
+  }
+  if (input?.archived) {
+    return "only";
+  }
+  if (input?.all) {
+    return "include";
+  }
+  return "exclude";
 }
 
 export function createTaskWorktreeConfig(input?: {
@@ -372,17 +600,44 @@ function buildTaskCommentEventMessage(comment: TaskComment): string {
 
 function buildTaskCommentSteerPrompt(task: TaskRecord, comment: TaskComment): string {
   const author = comment.authorSessionName ?? comment.authorAgentId ?? comment.author ?? "unknown";
+  const profile = resolveTaskProfileForTask(task);
+  const primaryArtifactLine = resolvePrimaryArtifactLine(task);
+  const syncInstruction = taskProfileRequiresTaskDocument(profile)
+    ? "Se isso mudar teu plano, atualize primeiro o TASK.md e depois sincronize o runtime com ravi tasks report|block|done|fail."
+    : "Se isso mudar teu plano, atualize o artifact/contexto do profile e sincronize o runtime com ravi tasks report|block|done|fail.";
   return `[System] Inform: Novo comentário na task ${task.id} (${task.title}).
 
 Autor: ${author}
 Status atual: ${task.status}
 Progresso atual: ${task.progress}%
-TASK.md: ${getTaskDocPath(task)}
+Profile: ${profile.id}
+${primaryArtifactLine ? `${primaryArtifactLine}\n` : ""}
 
 Comentário:
 ${comment.body}
 
-Se isso mudar teu plano, atualize primeiro o TASK.md e depois sincronize o runtime com ravi tasks report|block|done|fail.`;
+${syncInstruction}`;
+}
+
+export function buildTaskCheckpointReminderPrompt(
+  task: TaskRecord,
+  assignment: Pick<TaskAssignment, "checkpointDueAt" | "checkpointIntervalMs" | "checkpointOverdueCount">,
+): string {
+  const profile = resolveTaskProfileForTask(task);
+  const primaryArtifactLine = resolvePrimaryArtifactLine(task);
+  const syncInstruction = taskProfileRequiresTaskDocument(profile)
+    ? "Atualize primeiro o TASK.md e depois sincronize via ravi tasks report|block|done|fail."
+    : "Atualize o artifact/contexto do profile e depois sincronize via ravi tasks report|block|done|fail.";
+
+  return `[System] Inform: Checkpoint vencido na task ${task.id} (${task.title}).
+
+Status atual: ${task.status}
+Progresso atual: ${task.progress}%
+Profile: ${profile.id}
+${primaryArtifactLine ? `Artifact primário: ${primaryArtifactLine}\n` : ""}Overdues: ${assignment.checkpointOverdueCount ?? 1}
+Próximo checkpoint: ${assignment.checkpointDueAt ? new Date(assignment.checkpointDueAt).toISOString() : "-"}
+
+${syncInstruction}`;
 }
 
 function shouldSteerTaskComment(task: TaskRecord): boolean {
@@ -407,159 +662,294 @@ function buildChildStateEventType(
 
 function buildChildStateCallbackMessage(task: TaskRecord, event: TaskEvent): string {
   const summary = event.message ?? task.summary ?? task.blockerReason ?? task.status;
+  const profile = resolveTaskProfileForTask(task);
+  const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   if (task.status === "blocked") {
     return [
       `Task filha ${task.id} (${task.title}) entrou em blocked.`,
+      `Profile: ${profile.id}.`,
       `Assignee: ${task.assigneeAgentId ?? "-"}.`,
       `Session: ${task.assigneeSessionName ?? "-"}.`,
-      `TASK.md: ${getTaskDocPath(task)}.`,
+      ...(primaryArtifactLine ? [`Artifact: ${primaryArtifactLine}.`] : []),
       `Blocker: ${summary}.`,
     ].join(" ");
   }
 
   return [
     `Task filha ${task.id} (${task.title}) terminalizou com status ${task.status}.`,
+    `Profile: ${profile.id}.`,
     `Assignee: ${task.assigneeAgentId ?? "-"}.`,
     `Session: ${task.assigneeSessionName ?? "-"}.`,
-    `TASK.md: ${getTaskDocPath(task)}.`,
+    ...(primaryArtifactLine ? [`Artifact: ${primaryArtifactLine}.`] : []),
     `Resumo: ${summary}.`,
   ].join(" ");
 }
 
 function buildChildStateDocSection(task: TaskRecord, callbackEvent: TaskEvent): TaskDocSection {
   const summary = task.summary ?? task.blockerReason ?? task.status;
+  const profile = resolveTaskProfileForTask(task);
+  const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   const title =
     task.status === "blocked" ? "Child Task Blocked" : task.status === "done" ? "Child Task Done" : "Child Task Failed";
   const statusLabel = task.status === "blocked" ? "Status atual" : "Status final";
   const summaryLabel = task.status === "blocked" ? "Blocker" : "Resumo";
   return buildTaskDocSection(title, callbackEvent.createdAt, [
     `Filha: \`${task.id}\` - ${task.title}`,
+    `Profile: \`${profile.id}\``,
     `${statusLabel}: \`${task.status}\``,
     `Progresso: \`${task.progress}%\``,
     `Assignee: \`${task.assigneeAgentId ?? "-"}\``,
     `Session: \`${task.assigneeSessionName ?? "-"}\``,
-    `TASK.md: \`${getTaskDocPath(task)}\``,
+    ...(primaryArtifactLine ? [`Artifact: \`${primaryArtifactLine}\``] : []),
     `${summaryLabel}: ${summary}`,
   ]);
 }
 
-function ensureTaskDocument(
+function ensureResolvedTaskProfile(
   task: TaskRecord,
   options: {
-    initializeSection?: TaskDocSection;
+    persistMissingProfileId?: boolean;
+    persistMissingProfileState?: boolean;
   } = {},
-): TaskRecord {
-  let ensuredTask = task;
-  let initializeSection = options.initializeSection;
+): { task: TaskRecord; profile: ResolvedTaskProfile } {
+  let resolvedTask = task;
+  let profile = resolveTaskProfileForTask(resolvedTask);
 
-  if (!ensuredTask.taskDir) {
+  if (
+    !resolvedTask.profileSnapshot ||
+    !resolvedTask.profileVersion ||
+    !resolvedTask.profileSource ||
+    (options.persistMissingProfileId && !resolvedTask.profileId)
+  ) {
+    resolvedTask = dbSetTaskProfileResolution(resolvedTask.id, {
+      profileId: profile.id,
+      profileVersion: profile.version,
+      profileSource: profile.source,
+      profileSnapshot: buildTaskProfileSnapshot(profile),
+    });
+    profile = resolveTaskProfileForTask(resolvedTask);
+  }
+
+  if ((options.persistMissingProfileState ?? true) && shouldPersistTaskProfileState(resolvedTask, profile)) {
+    const profileState = resolveTaskProfileState(resolvedTask, profile);
+    if (profileState) {
+      resolvedTask = dbSetTaskProfileState(resolvedTask.id, profileState);
+    }
+  }
+
+  return { task: resolvedTask, profile };
+}
+
+function ensureTaskWorkspaceBootstrap(task: TaskRecord, profile: ResolvedTaskProfile): TaskRecord {
+  let ensuredTask = task;
+  if (profile.workspaceBootstrap.ensureTaskDir && !ensuredTask.taskDir) {
     ensuredTask = dbSetTaskDir(ensuredTask.id, getCanonicalTaskDir(ensuredTask.id));
   }
 
-  if (!taskDocExists(ensuredTask) && !initializeSection) {
-    initializeSection = buildTaskMaterializedDocSection(ensuredTask);
-  }
-
-  if (!taskDocExists(ensuredTask)) {
-    writeTaskDoc(ensuredTask, {
-      ...(initializeSection ? { initializeSection } : {}),
-    });
+  if (profile.workspaceBootstrap.ensureTaskDir && ensuredTask.taskDir) {
+    mkdirSync(ensuredTask.taskDir, { recursive: true });
   }
 
   return ensuredTask;
 }
 
-function getTaskDocSyncActor(task: TaskRecord): { actor: string; agentId?: string; sessionName?: string } {
+function assertTaskDocumentInvariant(
+  task: Pick<TaskRecord, "id" | "taskDir">,
+  profile: ResolvedTaskProfile,
+  stage: string,
+): void {
+  if (!taskProfileUsesTaskDocument(profile) && taskDocExists(task)) {
+    throw new Error(
+      `Task ${task.id} profile ${profile.id} forbids TASK.md, but found unexpected ${getTaskDocPath(task)} during ${stage}. Remove the legacy TASK.md before continuing.`,
+    );
+  }
+}
+
+function validateTaskCreateProfileOrThrow(
+  input: Pick<CreateTaskInput, "title" | "instructions" | "priority">,
+  profile: ResolvedTaskProfile,
+  profileInput: Record<string, string>,
+): void {
+  previewTaskProfile(profile.id, {
+    title: input.title,
+    instructions: input.instructions,
+    priority: input.priority,
+    input: profileInput,
+  });
+}
+
+function validateTaskProfileRuntimeOrThrow(
+  task: TaskRecord,
+  profile: ResolvedTaskProfile,
+  options: {
+    stage: string;
+    effectiveCwd: string;
+    worktree?: TaskWorktreeConfig;
+    agentId?: string;
+    sessionName?: string;
+    validateDispatch?: boolean;
+    validateResume?: boolean;
+  },
+): { taskDocPath: string | null; primaryArtifact: TaskProfileArtifactRef | null } {
+  assertTaskDocumentInvariant(task, profile, options.stage);
+
+  const taskDocPath = resolveTaskDocumentPathForProfile(task, profile);
+  const primaryArtifact = resolveTaskProfilePrimaryArtifact(task, {
+    effectiveCwd: options.effectiveCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(taskDocPath !== null ? { taskDocPath } : {}),
+    taskProfile: profile,
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+  });
+
+  resolveTaskProfileArtifacts(task, {
+    effectiveCwd: options.effectiveCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(taskDocPath !== null ? { taskDocPath } : {}),
+    taskProfile: profile,
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+  });
+
+  if (options.validateDispatch) {
+    if (!options.agentId || !options.sessionName) {
+      throw new Error(`Task ${task.id} dispatch validation requires agentId and sessionName.`);
+    }
+    buildTaskDispatchPromptForProfile(task, options.agentId, options.sessionName, {
+      effectiveCwd: options.effectiveCwd,
+      ...(options.worktree ? { worktree: options.worktree } : {}),
+      ...(taskDocPath !== null ? { taskDocPath } : {}),
+      taskProfile: profile,
+      primaryArtifact,
+    });
+    buildTaskDispatchSummaryForProfile(task, {
+      effectiveCwd: options.effectiveCwd,
+      ...(options.worktree ? { worktree: options.worktree } : {}),
+      ...(taskDocPath !== null ? { taskDocPath } : {}),
+      taskProfile: profile,
+      primaryArtifact,
+      agentId: options.agentId,
+      sessionName: options.sessionName,
+    });
+    buildTaskDispatchEventMessageForProfile(
+      task,
+      {
+        agentId: options.agentId,
+        sessionName: options.sessionName,
+      },
+      {
+        effectiveCwd: options.effectiveCwd,
+        ...(options.worktree ? { worktree: options.worktree } : {}),
+        ...(taskDocPath !== null ? { taskDocPath } : {}),
+        taskProfile: profile,
+        primaryArtifact,
+      },
+    );
+  }
+
+  if (options.validateResume) {
+    buildTaskResumePromptForProfile(task, {
+      effectiveCwd: options.effectiveCwd,
+      ...(options.worktree ? { worktree: options.worktree } : {}),
+      ...(taskDocPath !== null ? { taskDocPath } : {}),
+      taskProfile: profile,
+      primaryArtifact,
+      ...(options.agentId ? { agentId: options.agentId } : {}),
+      ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+    });
+  }
+
+  return { taskDocPath, primaryArtifact };
+}
+
+function surfaceTaskRecordForRead(task: TaskRecord): { task: TaskRecord; profile: ResolvedTaskProfile } {
+  const profile = resolveTaskProfileForTask(task);
+  assertTaskDocumentInvariant(task, profile, "task.read");
   return {
-    actor: task.assigneeSessionName ?? task.assigneeAgentId ?? task.createdBySessionName ?? "task-doc-sync",
-    ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
-    ...(task.assigneeSessionName ? { sessionName: task.assigneeSessionName } : {}),
+    task: {
+      ...task,
+      profileId: task.profileId ?? profile.id,
+      profileVersion: task.profileVersion ?? profile.version,
+      profileSource: task.profileSource ?? profile.source,
+      profileSnapshot: task.profileSnapshot ?? buildTaskProfileSnapshot(profile),
+    },
+    profile,
   };
 }
 
-function reconcileTaskRuntimeFromDocument(task: TaskRecord): TaskRecord {
-  const documentedTask = ensureTaskDocument(task);
-  const frontmatter = readTaskDocFrontmatter(documentedTask);
-
-  if (documentedTask.status === "done" || documentedTask.status === "failed") {
-    return documentedTask;
-  }
-
-  const frontmatterProgress =
-    typeof frontmatter.progress === "number"
-      ? Math.max(documentedTask.progress, frontmatter.progress)
-      : documentedTask.progress;
-
-  if (
-    frontmatter.status === "in_progress" ||
-    (documentedTask.status === "in_progress" && frontmatterProgress !== documentedTask.progress)
-  ) {
-    if (documentedTask.status !== "in_progress" || frontmatterProgress !== documentedTask.progress) {
-      return reportTaskProgress(documentedTask.id, {
-        ...getTaskDocSyncActor(documentedTask),
-        progress: frontmatterProgress,
-        resetCheckpoint: false,
-      }).task;
-    }
-  }
-
-  return documentedTask;
-}
-
-function resolveTaskSessionWorkspace(
+export function resolveTaskWorktreeContext(
   agentCwd: string,
+  task: TaskRecord,
+  profile: ResolvedTaskProfile,
   worktree?: TaskWorktreeConfig,
-): { effectiveCwd: string; worktree?: TaskWorktreeConfig } {
-  if (!worktree || worktree.mode === "inherit") {
+): TaskWorktreeConfig | undefined {
+  if (worktree) {
+    if (worktree.mode === "inherit") {
+      return worktree;
+    }
+
+    const expandedPath = expandHome(worktree.path ?? "");
+    const resolvedPath = isAbsolute(expandedPath) ? expandedPath : resolvePath(agentCwd, expandedPath);
     return {
-      effectiveCwd: agentCwd,
-      ...(worktree ? { worktree } : {}),
+      ...worktree,
+      path: resolvedPath,
     };
   }
 
-  const expandedPath = expandHome(worktree.path ?? "");
-  const effectiveCwd = isAbsolute(expandedPath) ? expandedPath : resolvePath(agentCwd, expandedPath);
-  return {
-    effectiveCwd,
-    worktree: {
-      ...worktree,
-      path: effectiveCwd,
-    },
-  };
+  if (profile.workspaceBootstrap.mode === "task_dir" && task.taskDir) {
+    return {
+      mode: "path",
+      path: task.taskDir,
+      ...(profile.workspaceBootstrap.branch ? { branch: profile.workspaceBootstrap.branch } : {}),
+    };
+  }
+
+  if (profile.workspaceBootstrap.mode === "path" && profile.workspaceBootstrap.path) {
+    const expandedPath = expandHome(profile.workspaceBootstrap.path);
+    const resolvedPath = isAbsolute(expandedPath) ? expandedPath : resolvePath(agentCwd, expandedPath);
+    return {
+      mode: "path",
+      path: resolvedPath,
+      ...(profile.workspaceBootstrap.branch ? { branch: profile.workspaceBootstrap.branch } : {}),
+    };
+  }
+
+  return undefined;
 }
 
-function resolveTaskSessionContext(
+export function resolveTaskSessionContext(
   task: TaskRecord,
+  profile: ResolvedTaskProfile,
   agentId: string,
   sessionName: string,
   worktreeInput?: TaskWorktreeConfig,
-): { sessionName: string; effectiveCwd: string; worktree?: TaskWorktreeConfig } {
-  const config = loadRouterConfig();
-  const agent = config.agents[agentId];
-  if (!agent) {
-    throw new Error(`Agent not found: ${agentId}`);
-  }
-
-  const configuredAgentCwd = expandHome(agent.cwd);
-  const { effectiveCwd, worktree } = resolveTaskSessionWorkspace(configuredAgentCwd, worktreeInput ?? task.worktree);
+): { agentId: string; sessionName: string; sessionCwd: string; worktree?: TaskWorktreeConfig } {
+  const resolvedAgent = requireTaskRuntimeAgent(agentId);
+  const sessionCwd = resolvedAgent.cwd;
+  const worktree = resolveTaskWorktreeContext(sessionCwd, task, profile, worktreeInput ?? task.worktree);
   const existingSession = resolveSession(sessionName);
-  if (existingSession && existingSession.agentId !== agentId) {
-    throw new Error(`Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${agentId}.`);
+  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
+    throw new Error(
+      `Session ${sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
+    );
   }
 
   const sessionKey = existingSession?.sessionKey ?? sessionName;
-  const session = getOrCreateSession(sessionKey, agentId, effectiveCwd, {
+  const session = getOrCreateSession(sessionKey, resolvedAgent.id, sessionCwd, {
     name: existingSession?.name ?? sessionName,
   });
 
   return {
+    agentId: resolvedAgent.id,
     sessionName: session.name ?? sessionName,
-    effectiveCwd,
+    sessionCwd,
     ...(worktree ? { worktree } : {}),
   };
 }
 
-function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
+function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment | null): TaskStreamTaskEntity {
+  const profile = resolveTaskProfileForTask(task);
   return {
     id: task.id,
     title: task.title,
@@ -567,6 +957,8 @@ function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
     status: task.status,
     priority: task.priority,
     progress: task.progress,
+    profileId: profile.id,
+    taskProfile: profile,
     checkpointIntervalMs: task.checkpointIntervalMs ?? null,
     reportToSessionName: task.reportToSessionName ?? null,
     reportEvents: resolveTaskReportEvents(task.reportEvents),
@@ -581,12 +973,15 @@ function toTaskStreamEntity(task: TaskRecord): TaskStreamTaskEntity {
     worktree: task.worktree ?? null,
     summary: task.summary ?? null,
     blockerReason: task.blockerReason ?? null,
+    archivedAt: task.archivedAt ?? null,
+    archivedBy: task.archivedBy ?? null,
+    archiveReason: task.archiveReason ?? null,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     dispatchedAt: task.dispatchedAt ?? null,
     startedAt: task.startedAt ?? null,
     completedAt: task.completedAt ?? null,
-    artifacts: createTaskArtifactPlaceholder(),
+    artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }
 
@@ -736,6 +1131,28 @@ function resolveTaskCreateAssignee(agentId?: string, assigneeAgentId?: string): 
   return agentId ?? assigneeAgentId;
 }
 
+export function requireTaskRuntimeAgent(agentId: string): { id: string; cwd: string } {
+  const normalizedAgentId = agentId.trim();
+  const agent = getAgent(normalizedAgentId);
+  if (!agent) {
+    throw new Error(`Agent not found in runtime config: ${normalizedAgentId}`);
+  }
+
+  return {
+    id: normalizedAgentId,
+    cwd: expandHome(agent.cwd),
+  };
+}
+
+export function resolveTaskCreateAssigneeAgent(agentId?: string, assigneeAgentId?: string): string | undefined {
+  const resolvedAgentId = resolveTaskCreateAssignee(agentId, assigneeAgentId);
+  if (!resolvedAgentId) {
+    return undefined;
+  }
+
+  return requireTaskRuntimeAgent(resolvedAgentId).id;
+}
+
 export function isTaskStreamCommand(name: string): name is TaskStreamCommandName {
   return (TASK_STREAM_COMMAND_NAMES as readonly string[]).includes(name);
 }
@@ -744,12 +1161,19 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
   const latestAssignment = dbListAssignments(task.id)[0] ?? null;
   const reportToSessionName = latestAssignment?.reportToSessionName ?? task.reportToSessionName ?? null;
   const reportEvents = resolveTaskReportEvents(latestAssignment?.reportEvents ?? task.reportEvents);
+  const profile = resolveTaskProfileForTask(task);
+  const artifacts = buildTaskArtifactSummary(task, latestAssignment);
   return {
     kind: "task.event",
     taskId: task.id,
     status: task.status,
     priority: task.priority,
     progress: task.progress,
+    profileId: profile.id,
+    taskProfile: profile,
+    archivedAt: task.archivedAt ?? null,
+    archivedBy: task.archivedBy ?? null,
+    archiveReason: task.archiveReason ?? null,
     parentTaskId: task.parentTaskId ?? null,
     createdByAgentId: task.createdByAgentId ?? null,
     createdBySessionName: task.createdBySessionName ?? null,
@@ -759,19 +1183,21 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
     activeAssignment: dbGetActiveAssignment(task.id),
-    task: toTaskStreamEntity(task),
+    task: toTaskStreamEntity(task, latestAssignment),
     event,
-    artifacts: createTaskArtifactPlaceholder(),
+    artifacts,
   };
 }
 
 export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): TaskStreamSnapshotEntity {
   const parsed = TaskSnapshotArgsSchema.parse(args);
+  const archiveMode = resolveTaskArchiveMode(parsed);
   if (parsed.taskId) {
     const details = getTaskDetails(parsed.taskId);
     if (!details.task) {
       throw new Error(`Task not found: ${parsed.taskId}`);
     }
+    const selectedTask = toTaskStreamEntity(details.task, details.activeAssignment);
 
     return {
       query: {
@@ -779,15 +1205,16 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
         status: null,
         agentId: null,
         sessionName: null,
+        archiveMode,
         eventsLimit: parsed.eventsLimit,
       },
-      items: [toTaskStreamEntity(details.task)],
+      items: [selectedTask],
       stats: summarizeTasks([details.task]),
-      artifacts: createTaskArtifactPlaceholder(),
+      artifacts: selectedTask.artifacts,
       selectedTask: {
-        task: toTaskStreamEntity(details.task),
+        task: selectedTask,
         parentTask: details.parentTask ? toTaskStreamEntity(details.parentTask) : null,
-        childTasks: details.childTasks.map(toTaskStreamEntity),
+        childTasks: details.childTasks.map((childTask) => toTaskStreamEntity(childTask)),
         activeAssignment: details.activeAssignment,
         assignments: details.assignments,
         events: details.events.slice(-parsed.eventsLimit),
@@ -800,6 +1227,7 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
     ...(parsed.status ? { status: parsed.status } : {}),
     ...(parsed.agentId ? { agentId: parsed.agentId } : {}),
     ...(parsed.sessionName ? { sessionName: parsed.sessionName } : {}),
+    archiveMode,
   });
 
   return {
@@ -808,11 +1236,12 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
       status: parsed.status ?? null,
       agentId: parsed.agentId ?? null,
       sessionName: parsed.sessionName ?? null,
+      archiveMode,
       eventsLimit: parsed.eventsLimit,
     },
-    items: tasks.map(toTaskStreamEntity),
+    items: tasks.map((task) => toTaskStreamEntity(task)),
     stats: summarizeTasks(tasks),
-    artifacts: createTaskArtifactPlaceholder(),
+    artifacts: createEmptyTaskArtifactSummary(),
     selectedTask: null,
   };
 }
@@ -825,10 +1254,12 @@ export async function executeTaskStreamCommand(
   switch (name) {
     case "task.create": {
       const args = TaskCreateCommandArgsSchema.parse(rawArgs);
+      const assigneeAgentId = resolveTaskCreateAssigneeAgent(args.agentId, args.assigneeAgentId);
       const created = createTask({
         title: args.title,
         instructions: args.instructions,
         priority: args.priority,
+        ...(args.profileId ? { profileId: args.profileId } : {}),
         ...(typeof args.checkpointIntervalMs === "number" ? { checkpointIntervalMs: args.checkpointIntervalMs } : {}),
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
         ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
@@ -840,11 +1271,10 @@ export async function executeTaskStreamCommand(
       });
       await emitTaskEvent(created.task, created.event);
 
-      const assigneeAgentId = resolveTaskCreateAssignee(args.agentId, args.assigneeAgentId);
       if (assigneeAgentId) {
         const dispatch = await dispatchTask(created.task.id, {
           agentId: assigneeAgentId,
-          sessionName: args.sessionName ?? getDefaultTaskSessionName(created.task.id),
+          sessionName: args.sessionName ?? getDefaultTaskSessionNameForTask(created.task),
           assignedBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
           ...(args.createdByAgentId ? { assignedByAgentId: args.createdByAgentId } : {}),
           ...(args.createdBySessionName ? { assignedBySessionName: args.createdBySessionName } : {}),
@@ -875,9 +1305,11 @@ export async function executeTaskStreamCommand(
 
     case "task.dispatch": {
       const args = TaskDispatchCommandArgsSchema.parse(rawArgs);
+      const task = dbGetTask(args.taskId);
       const result = await dispatchTask(args.taskId, {
         agentId: args.agentId,
-        sessionName: args.sessionName ?? getDefaultTaskSessionName(args.taskId),
+        sessionName:
+          args.sessionName ?? (task ? getDefaultTaskSessionNameForTask(task) : getDefaultTaskSessionName(args.taskId)),
         assignedBy: args.assignedBy ?? resolveTaskCommandActor(args.actor, options.actor),
         ...(typeof args.checkpointIntervalMs === "number" ? { checkpointIntervalMs: args.checkpointIntervalMs } : {}),
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
@@ -900,7 +1332,7 @@ export async function executeTaskStreamCommand(
         ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
         ...(args.agentId ? { agentId: args.agentId } : {}),
         ...(args.sessionName ? { sessionName: args.sessionName } : {}),
-        ...(args.message ? { message: args.message } : {}),
+        message: args.message ?? "",
         ...(typeof args.progress === "number" ? { progress: args.progress } : {}),
       });
       await emitTaskEvent(task, event);
@@ -926,6 +1358,41 @@ export async function executeTaskStreamCommand(
         event: result.event,
         comment: result.comment,
         steeredSessionName: result.steeredSessionName ?? null,
+      };
+    }
+
+    case "task.archive": {
+      const args = TaskArchiveCommandArgsSchema.parse(rawArgs);
+      const result = archiveTask(args.taskId, {
+        ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
+        ...(args.agentId ? { agentId: args.agentId } : {}),
+        ...(args.sessionName ? { sessionName: args.sessionName } : {}),
+        reason: args.reason,
+      });
+      if (!result.wasNoop) {
+        await emitTaskEvent(result.task, result.event);
+      }
+      return {
+        action: name,
+        task: toTaskStreamEntity(result.task),
+        event: result.event,
+      };
+    }
+
+    case "task.unarchive": {
+      const args = TaskUnarchiveCommandArgsSchema.parse(rawArgs);
+      const result = unarchiveTask(args.taskId, {
+        ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
+        ...(args.agentId ? { agentId: args.agentId } : {}),
+        ...(args.sessionName ? { sessionName: args.sessionName } : {}),
+      });
+      if (!result.wasNoop) {
+        await emitTaskEvent(result.task, result.event);
+      }
+      return {
+        action: name,
+        task: toTaskStreamEntity(result.task),
+        event: result.event,
       };
     }
 
@@ -994,8 +1461,8 @@ export async function executeTaskStreamCommand(
   throw new Error(`Unsupported task command: ${exhaustive}`);
 }
 
-export function getDefaultTaskSessionName(taskId: string): string {
-  return `${taskId}-work`;
+export function getDefaultTaskSessionName(taskId: string, profileId?: string | null): string {
+  return getDefaultTaskSessionNameForProfile(taskId, profileId);
 }
 
 export function getTaskActor(): { actor?: string; agentId?: string; sessionName?: string } {
@@ -1030,49 +1497,21 @@ export function buildTaskDispatchPrompt(
   agentId: string,
   sessionName: string,
   options: {
-    effectiveCwd: string;
+    sessionCwd: string;
     worktree?: TaskWorktreeConfig;
-    taskDocPath: string;
+    taskDocPath?: string | null;
+    taskProfile?: ResolvedTaskProfile;
+    primaryArtifact?: TaskProfileArtifactRef | null;
   },
 ): string {
-  return `[System] Execute: Você assumiu a task ${task.id} no Ravi.
-
-Título: ${task.title}
-Prioridade: ${task.priority}
-Sessão de trabalho: ${sessionName}
-Agent responsável: ${agentId}
-
-Contexto operacional:
-- diretório efetivo: ${options.effectiveCwd}
-- worktree: ${formatTaskWorktree(options.worktree)}
-- task pai: ${task.parentTaskId ?? "-"}
-- TASK.md: ${options.taskDocPath}
-
-Objetivo:
-${task.instructions}
-
-Instruções de execução:
-- carregue a skill \`ravi-system-tasks-manager\` antes de editar a task
-- trabalhe a partir de ${options.taskDocPath}
-- faça toda escrita primeiro no TASK.md
-- depois de editar o frontmatter/corpo, use \`ravi tasks ...\` para o runtime reconhecer as mudanças
-
-Flow obrigatório:
-1. Abra o TASK.md e atualize o frontmatter/corpo seguindo a skill.
-2. Ao iniciar ou avançar de verdade, sincronize:
-   ravi tasks report ${task.id}
-3. Se travar, registre no TASK.md e sincronize:
-   ravi tasks block ${task.id}
-4. Se der erro terminal, registre no TASK.md e sincronize:
-   ravi tasks fail ${task.id}
-5. Quando concluir, registre no TASK.md e sincronize:
-   ravi tasks done ${task.id}
-
-Regras:
-- trabalhe nesta sessão até concluir ou bloquear
-- não responda descrevendo o protocolo
-- use o CLI de tasks para atualizar o estado real da task
-- o corpo rico da task vive no TASK.md; DB/NATS continuam sendo a fonte autoritativa do estado`;
+  const taskProfile = options.taskProfile ?? resolveTaskProfileForTask(task);
+  return buildTaskDispatchPromptForProfile(task, agentId, sessionName, {
+    effectiveCwd: options.sessionCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(options.taskDocPath !== undefined ? { taskDocPath: options.taskDocPath } : {}),
+    taskProfile,
+    ...(options.primaryArtifact !== undefined ? { primaryArtifact: options.primaryArtifact } : {}),
+  });
 }
 
 export function buildTaskResumePrompt(
@@ -1080,13 +1519,21 @@ export function buildTaskResumePrompt(
   _agentId: string,
   _sessionName: string,
   options: {
-    effectiveCwd: string;
+    sessionCwd: string;
     worktree?: TaskWorktreeConfig;
-    taskDocPath: string;
+    taskDocPath?: string | null;
+    taskProfile?: ResolvedTaskProfile;
+    primaryArtifact?: TaskProfileArtifactRef | null;
   },
 ): string {
-  return `[System] Daemon reiniciou. Continue a task ${task.id} ("${task.title}") de onde parou.
-Progresso: ${task.progress}% | TASK.md: ${options.taskDocPath}`;
+  const taskProfile = options.taskProfile ?? resolveTaskProfileForTask(task);
+  return buildTaskResumePromptForProfile(task, {
+    effectiveCwd: options.sessionCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(options.taskDocPath !== undefined ? { taskDocPath: options.taskDocPath } : {}),
+    taskProfile,
+    ...(options.primaryArtifact !== undefined ? { primaryArtifact: options.primaryArtifact } : {}),
+  });
 }
 
 export function createTask(input: CreateTaskInput): { task: TaskRecord; event: TaskEvent } {
@@ -1097,12 +1544,40 @@ export function createTask(input: CreateTaskInput): { task: TaskRecord; event: T
     }
   }
 
-  const created = dbCreateTask(input);
+  const profile = resolveTaskProfile(requireTaskProfileDefinition(input.profileId).id);
+  const profileInput = resolveTaskProfileInputValues(profile, input.profileInput);
+  validateTaskCreateProfileOrThrow(input, profile, profileInput);
+  const initialProfileState = resolveTaskProfileState(
+    {
+      title: input.title,
+      profileId: profile.id,
+      profileSnapshot: buildTaskProfileSnapshot(profile),
+      profileInput,
+    },
+    profile,
+  );
+  const created = dbCreateTask({
+    ...input,
+    profileId: profile.id,
+    profileVersion: profile.version,
+    profileSource: profile.source,
+    profileSnapshot: buildTaskProfileSnapshot(profile),
+    ...(Object.keys(profileInput).length > 0 ? { profileInput } : {}),
+    ...(initialProfileState ? { profileState: initialProfileState } : {}),
+  });
 
   try {
-    const task = ensureTaskDocument(created.task, {
-      initializeSection: buildTaskCreatedDocSection(created.task, created.event),
+    const { task: profiledTask, profile: resolvedProfile } = ensureResolvedTaskProfile(created.task, {
+      persistMissingProfileState: true,
     });
+    const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, resolvedProfile);
+    const task = taskProfileRequiresTaskDocument(resolvedProfile)
+      ? ensureRequiredTaskDocument(bootstrappedTask, {
+          profile: resolvedProfile,
+          initializeSection: buildTaskCreatedDocSection(bootstrappedTask, created.event),
+        })
+      : bootstrappedTask;
+    assertTaskDocumentInvariant(task, resolvedProfile, "task.create");
     return { task, event: created.event };
   } catch (error) {
     dbDeleteTask(created.task.id);
@@ -1117,6 +1592,7 @@ export function listTasks(options: ListTasksOptions = {}): TaskRecord[] {
 
 export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
+  taskProfile: ResolvedTaskProfile | null;
   parentTask: TaskRecord | null;
   childTasks: TaskRecord[];
   activeAssignment: ReturnType<typeof dbGetActiveAssignment>;
@@ -1125,16 +1601,17 @@ export function getTaskDetails(taskId: string): {
   comments: ReturnType<typeof dbListTaskComments>;
 } {
   const task = dbGetTask(taskId);
-  const documentedTask = task ? reconcileTaskRuntimeFromDocument(task) : null;
+  const surfacedTask = task ? surfaceTaskRecordForRead(task) : null;
   const parentTask =
-    documentedTask?.parentTaskId && dbGetTask(documentedTask.parentTaskId)
-      ? reconcileTaskRuntimeFromDocument(dbGetTask(documentedTask.parentTaskId)!)
+    surfacedTask?.task.parentTaskId && dbGetTask(surfacedTask.task.parentTaskId)
+      ? surfaceTaskRecordForRead(dbGetTask(surfacedTask.task.parentTaskId)!).task
       : null;
   return {
-    task: documentedTask,
+    task: surfacedTask?.task ?? null,
+    taskProfile: surfacedTask?.profile ?? null,
     parentTask,
-    childTasks: documentedTask
-      ? dbListChildTasks(documentedTask.id).map((childTask) => reconcileTaskRuntimeFromDocument(childTask))
+    childTasks: surfacedTask
+      ? dbListChildTasks(surfacedTask.task.id).map((childTask) => surfaceTaskRecordForRead(childTask).task)
       : [],
     activeAssignment: dbGetActiveAssignment(taskId),
     assignments: dbListAssignments(taskId),
@@ -1169,9 +1646,10 @@ function buildChildStateRelatedEvents(
     },
     { touchTask: true },
   );
-  const documentedParent = ensureTaskDocument(callback.task);
-  writeTaskDoc(documentedParent, {
-    appendSection: buildChildStateDocSection(task, callback.event),
+  const { task: callbackTask, profile } = ensureResolvedTaskProfile(callback.task, { persistMissingProfileId: true });
+  const documentedParent = appendTaskDocumentSection(callbackTask, buildChildStateDocSection(task, callback.event), {
+    profile,
+    initializeSection: buildTaskMaterializedDocSection(callbackTask),
   });
   return [{ task: documentedParent, event: callback.event }];
 }
@@ -1184,30 +1662,74 @@ export async function dispatchTask(
   assignment: TaskAssignment;
   event: TaskEvent;
   sessionName: string;
+  primaryArtifact: TaskProfileArtifactRef | null;
+  dispatchSummary: string;
 }> {
   const existingTask = dbGetTask(taskId);
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  const { sessionName, effectiveCwd, worktree } = resolveTaskSessionContext(
-    existingTask,
+  const { task: profiledTask, profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
+  const { agentId, sessionName, sessionCwd, worktree } = resolveTaskSessionContext(
+    bootstrappedTask,
+    profile,
     input.agentId,
     input.sessionName,
-    input.worktree ?? existingTask.worktree,
+    input.worktree ?? bootstrappedTask.worktree,
   );
-
-  const { task, assignment, event } = dbDispatchTask(taskId, {
-    ...input,
-    sessionName,
+  const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(bootstrappedTask, profile, {
+    stage: "task.dispatch",
+    effectiveCwd: sessionCwd,
     ...(worktree ? { worktree } : {}),
+    agentId,
+    sessionName,
+    validateDispatch: true,
+    validateResume: true,
   });
-  const documentedTask = ensureTaskDocument(task);
-  const taskDocPath = getTaskDocPath(documentedTask);
 
-  const prompt = buildTaskDispatchPrompt(documentedTask, input.agentId, sessionName, {
-    effectiveCwd,
+  const { task, assignment, event } = dbDispatchTask(
+    taskId,
+    {
+      ...input,
+      agentId,
+      sessionName,
+      ...(worktree ? { worktree } : {}),
+    },
+    {
+      eventMessage: buildTaskDispatchEventMessageForProfile(
+        bootstrappedTask,
+        {
+          ...input,
+          agentId,
+          sessionName,
+          ...(worktree ? { worktree } : {}),
+        },
+        {
+          effectiveCwd: sessionCwd,
+          ...(worktree ? { worktree } : {}),
+          taskDocPath,
+          taskProfile: profile,
+          primaryArtifact,
+        },
+      ),
+    },
+  );
+  const taskProfile = resolveTaskProfileForTask(task);
+  const documentedTask = taskProfileRequiresTaskDocument(taskProfile)
+    ? ensureRequiredTaskDocument(task, {
+        profile: taskProfile,
+        initializeSection: buildTaskMaterializedDocSection(task),
+      })
+    : ensureTaskWorkspaceBootstrap(task, taskProfile);
+  const documentedTaskDocPath = resolveTaskDocumentPathForProfile(documentedTask, taskProfile);
+
+  const prompt = buildTaskDispatchPrompt(documentedTask, agentId, sessionName, {
+    sessionCwd,
     worktree,
-    taskDocPath,
+    taskDocPath: documentedTaskDocPath,
+    taskProfile,
+    primaryArtifact,
   });
   await publishSessionPrompt(sessionName, {
     prompt,
@@ -1215,7 +1737,22 @@ export async function dispatchTask(
     taskBarrierTaskId: documentedTask.id,
   });
 
-  return { task: documentedTask, assignment, event, sessionName };
+  return {
+    task: documentedTask,
+    assignment,
+    event,
+    sessionName,
+    primaryArtifact,
+    dispatchSummary: buildTaskDispatchSummaryForProfile(documentedTask, {
+      effectiveCwd: sessionCwd,
+      ...(worktree ? { worktree } : {}),
+      taskDocPath: documentedTaskDocPath,
+      taskProfile,
+      primaryArtifact,
+      agentId,
+      sessionName,
+    }),
+  };
 }
 
 export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResult> {
@@ -1241,17 +1778,34 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
       }
 
       try {
-        const documentedTask = ensureTaskDocument(task);
-        const { sessionName, effectiveCwd, worktree } = resolveTaskSessionContext(
+        const { task: profiledTask, profile } = ensureResolvedTaskProfile(task, { persistMissingProfileId: true });
+        const documentedTask = taskProfileRequiresTaskDocument(profile)
+          ? ensureRequiredTaskDocument(profiledTask, {
+              profile,
+              initializeSection: buildTaskMaterializedDocSection(profiledTask),
+            })
+          : ensureTaskWorkspaceBootstrap(profiledTask, profile);
+        const { sessionName, sessionCwd, worktree } = resolveTaskSessionContext(
           documentedTask,
+          profile,
           assignment.agentId,
           assignment.sessionName,
           assignment.worktree ?? documentedTask.worktree,
         );
+        const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(documentedTask, profile, {
+          stage: "task.resume",
+          effectiveCwd: sessionCwd,
+          ...(worktree ? { worktree } : {}),
+          agentId: assignment.agentId,
+          sessionName,
+          validateResume: true,
+        });
         const prompt = buildTaskResumePrompt(documentedTask, assignment.agentId, sessionName, {
-          effectiveCwd,
-          worktree,
-          taskDocPath: getTaskDocPath(documentedTask),
+          sessionCwd,
+          ...(worktree ? { worktree } : {}),
+          ...(taskDocPath !== null ? { taskDocPath } : {}),
+          taskProfile: profile,
+          primaryArtifact,
         });
         await publishSessionPrompt(sessionName, {
           prompt,
@@ -1272,7 +1826,50 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
 }
 
 export function reportTaskProgress(taskId: string, input: TaskProgressInput): { task: TaskRecord; event: TaskEvent } {
-  return dbReportTaskProgress(taskId, input);
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  return dbReportTaskProgress(taskId, {
+    ...input,
+    message: requireTaskProgressMessage(
+      input.message,
+      "Task progress requires a descriptive message. Update TASK.md frontmatter.progress_note or provide --message.",
+    ),
+  });
+}
+
+export function archiveTask(
+  taskId: string,
+  input: TaskArchiveInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  wasNoop?: boolean;
+} {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  return dbArchiveTask(taskId, input);
+}
+
+export function unarchiveTask(
+  taskId: string,
+  input: TaskUnarchiveInput,
+): {
+  task: TaskRecord;
+  event: TaskEvent;
+  wasNoop?: boolean;
+} {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  return dbUnarchiveTask(taskId, input);
 }
 
 export async function commentTask(
@@ -1289,7 +1886,11 @@ export async function commentTask(
     throw new Error(`Task not found: ${taskId}`);
   }
 
-  const documentedTask = reconcileTaskRuntimeFromDocument(task);
+  const { task: profiledTask, profile: taskProfile } = ensureResolvedTaskProfile(task, {
+    persistMissingProfileId: true,
+  });
+  const documentedTask = ensureTaskWorkspaceBootstrap(profiledTask, taskProfile);
+  assertTaskDocumentInvariant(documentedTask, taskProfile, "task.comment");
   const comment = dbAddTaskComment(taskId, input);
   const eventResult = dbAppendTaskEvent(
     taskId,
@@ -1303,9 +1904,9 @@ export async function commentTask(
     },
     { touchTask: true },
   );
-  const updatedTask = ensureTaskDocument(eventResult.task);
-  writeTaskDoc(updatedTask, {
-    appendSection: buildTaskCommentDocSection(comment),
+  const updatedTask = appendTaskDocumentSection(eventResult.task, buildTaskCommentDocSection(comment), {
+    profile: taskProfile,
+    initializeSection: buildTaskMaterializedDocSection(eventResult.task),
   });
 
   let steeredSessionName: string | undefined;
@@ -1333,6 +1934,11 @@ export function blockTask(
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
 } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbBlockTask(taskId, input);
   return {
     ...result,
@@ -1348,6 +1954,11 @@ export function failTask(
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
 } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbFailTask(taskId, input);
   return {
     ...result,
@@ -1364,6 +1975,11 @@ export function completeTask(
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
   wasNoop?: boolean;
 } {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbCompleteTask(taskId, input);
   return {
     ...result,

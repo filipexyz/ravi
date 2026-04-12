@@ -696,6 +696,10 @@
   filter: saturate(0.2);
 }
 
+.ravi-wa-nav-row--task {
+  align-items: flex-start;
+}
+
 .ravi-wa-nav-row__avatar {
   display: inline-flex;
   align-items: center;
@@ -717,6 +721,15 @@
   min-width: 0;
   flex-direction: column;
   gap: 4px;
+}
+
+.ravi-wa-nav-row__eyebrow {
+  color: #9fb0b8;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
 }
 
 .ravi-wa-nav-row__titleline {
@@ -757,6 +770,43 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ravi-wa-nav-row__subline--fallback {
+  color: #9fb0b8;
+}
+
+.ravi-wa-nav-row__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ravi-wa-nav-row__progress-label {
+  flex: 0 0 auto;
+  color: #dfe6ea;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ravi-wa-nav-row__progress-bar {
+  position: relative;
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ravi-wa-nav-row__progress-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #00a884, #86efac);
 }
 
 .ravi-wa-nav-row__aside {
@@ -1373,11 +1423,38 @@
 .ravi-wa-task-card__progress {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
   color: #aebac1;
   font-size: 11px;
+}
+
+.ravi-wa-task-card__progress-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 180px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-task-card__progress-label {
+  color: #dfe6ea;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.ravi-wa-task-card__progress-copy p {
+  margin: 0;
+  color: #c8d1d6;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ravi-wa-task-card__progress-time {
+  margin-left: auto;
+  text-align: right;
 }
 
 .ravi-wa-task-card__bar {
@@ -1504,6 +1581,17 @@
   margin-top: 14px;
 }
 
+.ravi-wa-task-detail-progress__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+  color: #aebac1;
+  font-size: 11px;
+}
+
 .ravi-wa-task-detail-progress__bar {
   height: 8px;
   overflow: hidden;
@@ -1516,6 +1604,17 @@
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #00a884, #86efac);
+}
+
+.ravi-wa-task-detail-progress__copy {
+  margin: 8px 0 0;
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ravi-wa-task-detail-progress__copy--fallback {
+  color: #c8d1d6;
 }
 
 .ravi-wa-task-callout {
@@ -1904,6 +2003,10 @@
   overflow-wrap: anywhere;
 }
 
+.ravi-wa-task-activity__body--fallback {
+  color: #c8d1d6;
+}
+
 .ravi-wa-route-summary {
   margin-bottom: 16px;
 }
@@ -2041,6 +2144,16 @@
   .ravi-wa-task-detail-hero__status {
     width: 100%;
     justify-content: space-between;
+  }
+
+  .ravi-wa-task-card__progress-time {
+    margin-left: 0;
+    text-align: left;
+  }
+
+  .ravi-wa-task-detail-progress__head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
