@@ -1241,6 +1241,12 @@ export class TaskCommands {
       return;
     }
 
+    if (result.wasNoop) {
+      console.log(`✓ Task ${taskId} already done`);
+      console.log(`  ${result.task.summary ?? "Block ignored because the task is already terminal."}`);
+      return;
+    }
+
     console.log(`⚠️  Task ${taskId} blocked`);
     console.log(`  ${finalReason}`);
   }

@@ -2785,7 +2785,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
                ${
                  focusedTask
                    ? `<span class="ravi-wa-meta-chip">task ${escapeHtml(formatTaskShortId(focusedTask.id))}</span>
-                      <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(clampTaskProgressValue(focusedTask.progress ?? 0)))}%</span>
+                      <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(getTaskDisplayProgress(focusedTask, resolveTaskHierarchyNode(focusedTask.id))))}%</span>
                       <span class="ravi-wa-meta-chip">session ${escapeHtml(focusedSession.sessionName)}</span>`
                    : ""
                }
@@ -5037,6 +5037,7 @@ function describeTaskSessionNote(task, session, selection) {
   const progressInfo = describeTaskProgressText(
     task,
     getTaskLifecycleEvents(selection),
+    { node: resolveTaskHierarchyNode(task?.id) },
   );
   if (!progressInfo.fallback) {
     return progressInfo;
@@ -5174,7 +5175,10 @@ function renderTaskAwareCockpitRow(
   const selected =
     currentSession?.sessionKey === session.sessionKey ? "true" : "false";
   const linkedChat = getLinkedChatLabel(session);
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progress = getTaskDisplayProgress(
+    task,
+    resolveTaskHierarchyNode(task?.id),
+  );
   const shortTaskId = formatTaskShortId(task.id);
   const grouped = Boolean(options.grouped);
   const titleMode = options.titleMode === "session" ? "session" : "task";
@@ -5354,7 +5358,7 @@ function renderCockpitTaskGroup(
   if (depth === 0) {
     return `
       <div class="ravi-wa-nav-group">
-        ${renderCockpitTaskGroupHeader(node)}
+        ${renderCockpitTaskGroupHeader(node, currentSession)}
         <div class="ravi-wa-nav-group__children">
           ${ownRowsHtml}
           ${childHtml}
@@ -5365,7 +5369,7 @@ function renderCockpitTaskGroup(
 
   return `
     <div class="ravi-wa-nav-group__branch">
-      ${ownRowsHtml ? "" : renderCockpitTaskGroupBranchHeader(node, parentTask)}
+      ${ownRowsHtml ? "" : renderCockpitTaskGroupBranchHeader(node, parentTask, currentSession)}
       ${ownRowsHtml}
       ${
         childHtml
@@ -5376,11 +5380,11 @@ function renderCockpitTaskGroup(
   `;
 }
 
-function renderCockpitTaskGroupHeader(node) {
+function renderCockpitTaskGroupHeader(node, currentSession) {
   const task = node.task;
   const statusClass = taskStatusClass(task.status);
   const statusLabel = taskStatusLabel(task.status);
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progress = getTaskDisplayProgress(task, node);
   const shortTaskId = formatTaskShortId(task.id);
   const avatarLabel =
     shortTaskId
@@ -5393,6 +5397,10 @@ function renderCockpitTaskGroupHeader(node) {
     summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task),
     132,
   );
+  const primaryRow = pickTaskGroupPrimaryRow(node);
+  const primarySession = primaryRow?.session || null;
+  const selected =
+    currentSession?.sessionKey === primarySession?.sessionKey ? "true" : "false";
   const eyebrow = [
     `task ${shortTaskId}`,
     `${sessionCount} ${sessionCount === 1 ? "sessao" : "sessoes"}`,
@@ -5404,7 +5412,14 @@ function renderCockpitTaskGroupHeader(node) {
     .join(" · ");
 
   return `
-    <div class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-group__head ravi-wa-nav-group__head--${statusClass}">
+    <button
+      type="button"
+      class="ravi-wa-nav-row ravi-wa-nav-row--task ravi-wa-nav-group__head ravi-wa-nav-group__head--${statusClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+      data-ravi-focus-task="${escapeAttribute(task.id)}"
+      ${primarySession?.sessionKey ? `data-ravi-focus-session="${escapeAttribute(primarySession.sessionKey)}"` : ""}
+      aria-pressed="${selected}"
+      title="${escapeAttribute(`${task.title || task.id} · ${task.id}${primarySession?.sessionName ? ` · ${primarySession.sessionName}` : ""}`)}"
+    >
       <span class="ravi-wa-nav-row__avatar">${escapeHtml(avatarLabel)}</span>
       <span class="ravi-wa-nav-row__body">
         <span class="ravi-wa-nav-row__eyebrow">${escapeHtml(eyebrow)}</span>
@@ -5421,11 +5436,11 @@ function renderCockpitTaskGroupHeader(node) {
         <span class="ravi-wa-nav-row__elapsed">${escapeHtml(formatTaskElapsed(task))}</span>
         <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
       </span>
-    </div>
+    </button>
   `;
 }
 
-function renderCockpitTaskGroupBranchHeader(node, parentTask) {
+function renderCockpitTaskGroupBranchHeader(node, parentTask, currentSession) {
   const task = node.task;
   const statusClass = taskStatusClass(task.status);
   const shortTaskId = formatTaskShortId(task.id);
@@ -5441,13 +5456,34 @@ function renderCockpitTaskGroupBranchHeader(node, parentTask) {
   ]
     .filter(Boolean)
     .join(" · ");
+  const primaryRow = pickTaskGroupPrimaryRow(node);
+  const primarySession = primaryRow?.session || null;
+  const selected =
+    currentSession?.sessionKey === primarySession?.sessionKey ? "true" : "false";
+
+  if (!primarySession?.sessionKey) {
+    return `
+      <div class="ravi-wa-nav-group__label ravi-wa-nav-group__label--${statusClass}">
+        <span class="ravi-wa-nav-group__label-eyebrow">${escapeHtml(eyebrow)}</span>
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(summary)}</span>
+      </div>
+    `;
+  }
 
   return `
-    <div class="ravi-wa-nav-group__label ravi-wa-nav-group__label--${statusClass}">
+    <button
+      type="button"
+      class="ravi-wa-nav-group__label ravi-wa-nav-group__label--${statusClass}${selected === "true" ? " ravi-wa-nav-row--selected" : ""}"
+      data-ravi-focus-task="${escapeAttribute(task.id)}"
+      data-ravi-focus-session="${escapeAttribute(primarySession.sessionKey)}"
+      aria-pressed="${selected}"
+      title="${escapeAttribute(`${task.title || task.id} · ${task.id} · ${primarySession.sessionName}`)}"
+    >
       <span class="ravi-wa-nav-group__label-eyebrow">${escapeHtml(eyebrow)}</span>
       <strong>${escapeHtml(title)}</strong>
       <span>${escapeHtml(summary)}</span>
-    </div>
+    </button>
   `;
 }
 
@@ -5530,6 +5566,38 @@ function countVisibleCockpitTaskDescendants(node) {
         0,
       )
     : 0;
+}
+
+function pickTaskGroupPrimaryRow(node) {
+  const sharedPicker = globalThis.RaviWaOverlayTaskPresenter?.pickTaskGroupPrimaryRow;
+  if (typeof sharedPicker === "function") {
+    return sharedPicker(node);
+  }
+
+  let bestRow = null;
+  const visit = (currentNode) => {
+    const rows = Array.isArray(currentNode?.rows) ? currentNode.rows : [];
+    rows.forEach((row) => {
+      const rowOrder = Number(row?.order);
+      const bestOrder = Number(bestRow?.order);
+      const safeRowOrder = Number.isFinite(rowOrder)
+        ? rowOrder
+        : Number.POSITIVE_INFINITY;
+      const safeBestOrder = Number.isFinite(bestOrder)
+        ? bestOrder
+        : Number.POSITIVE_INFINITY;
+      if (!bestRow || safeRowOrder < safeBestOrder) {
+        bestRow = row;
+      }
+    });
+
+    (Array.isArray(currentNode?.children) ? currentNode.children : []).forEach(
+      visit,
+    );
+  };
+
+  visit(node);
+  return bestRow;
 }
 
 function shouldRenderCockpitTaskGroup(node) {
@@ -5734,9 +5802,36 @@ function formatTaskDurationLabel(task) {
 }
 
 function clampTaskProgressValue(value) {
+  const sharedClamp =
+    globalThis.RaviWaOverlayTaskPresenter?.clampTaskProgressValue;
+  if (typeof sharedClamp === "function") {
+    return sharedClamp(value);
+  }
   const numeric = Number(value ?? 0);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+function resolveTaskHierarchyNode(taskId, snapshot = latestTasksSnapshot) {
+  if (!taskId) return null;
+  return getTaskHierarchyState(snapshot).nodes.get(taskId) || null;
+}
+
+function getTaskVisualProgressState(task, node = null) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.getTaskVisualProgressState;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(task, node || resolveTaskHierarchyNode(task?.id));
+  }
+  return {
+    progress: clampTaskProgressValue(task?.progress ?? 0),
+    source: "task",
+    childCount: 0,
+  };
+}
+
+function getTaskDisplayProgress(task, node = null) {
+  return getTaskVisualProgressState(task, node).progress;
 }
 
 function formatTaskProgressLabel(value) {
@@ -5760,9 +5855,13 @@ function findLatestTaskProgressEvent(events) {
   return null;
 }
 
-function describeTaskProgressState(task) {
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
+function describeTaskProgressState(task, node = null) {
+  const progressState = getTaskVisualProgressState(task, node);
+  const progress = progressState.progress;
   const progressLabel = `${progress}%`;
+  if (progressState.source === "children" && progressState.childCount > 0) {
+    return `agregado de ${progressState.childCount} ${progressState.childCount === 1 ? "subtask" : "subtasks"} em ${progressLabel}.`;
+  }
 
   switch (task?.status) {
     case "open":
@@ -5792,18 +5891,26 @@ function describeTaskProgressState(task) {
   }
 }
 
-function describeTaskProgressText(task, events) {
+function describeTaskProgressText(task, events, options = {}) {
+  const progressState = getTaskVisualProgressState(task, options.node || null);
   const latestProgressEvent = findLatestTaskProgressEvent(events);
   const message = normalizeTaskMessage(latestProgressEvent?.message);
   if (message) {
     return { text: message, fallback: false };
   }
 
+  if (progressState.source === "children" && progressState.childCount > 0) {
+    return {
+      text: `agregado de ${progressState.childCount} ${progressState.childCount === 1 ? "subtask" : "subtasks"} em ${formatTaskProgressLabel(progressState.progress)}.`,
+      fallback: true,
+    };
+  }
+
   if (latestProgressEvent) {
     const progressLabel =
       typeof latestProgressEvent.progress === "number"
         ? formatTaskProgressLabel(latestProgressEvent.progress)
-        : formatTaskProgressLabel(task?.progress ?? 0);
+        : formatTaskProgressLabel(progressState.progress);
     return {
       text: `progresso atualizado para ${progressLabel} sem nota textual.`,
       fallback: true,
@@ -5811,7 +5918,7 @@ function describeTaskProgressText(task, events) {
   }
 
   return {
-    text: describeTaskProgressState(task),
+    text: describeTaskProgressState(task, options.node || null),
     fallback: true,
   };
 }
@@ -6429,7 +6536,7 @@ function renderTaskRelationCard(task) {
 
   const statusClass = taskStatusClass(task.status);
   const summary = summarizeTaskCardCopy(task);
-  const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const progress = getTaskDisplayProgress(task, resolveTaskHierarchyNode(task.id));
   const primarySessionName = getTaskPrimarySessionName(task);
 
   return `
@@ -6835,8 +6942,8 @@ function renderTaskCard(node, currentTaskId) {
   const selected =
     currentTaskId && currentTaskId === task.id ? "true" : "false";
   const summary = summarizeTaskCardCopy(task);
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
-  const progressInfo = describeTaskProgressText(task);
+  const progress = getTaskDisplayProgress(task, node);
+  const progressInfo = describeTaskProgressText(task, null, { node });
   const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
   const cardCopy = summary || statusCopy;
   const primarySessionName = getTaskPrimarySessionName(task);
@@ -6910,7 +7017,7 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
   const selected =
     currentTaskId && currentTaskId === task.id ? "true" : "false";
   const statusClass = taskStatusClass(task.status);
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
+  const progress = getTaskDisplayProgress(task, node);
   const summary =
     summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
   const primarySessionName = getTaskPrimarySessionName(task);
@@ -7267,8 +7374,12 @@ function renderTaskDetailCard(selectedTask) {
   const frontmatter = taskDocument?.frontmatter || null;
   const worktreeLabel = getTaskWorktreeLabel(task);
   const statusClass = taskStatusClass(task.status);
-  const progress = clampTaskProgressValue(task?.progress ?? 0);
-  const progressInfo = describeTaskProgressText(task, lifecycleEvents);
+  const taskNode = resolveTaskHierarchyNode(task?.id);
+  const rawProgress = clampTaskProgressValue(task?.progress ?? 0);
+  const progress = getTaskDisplayProgress(task, taskNode);
+  const progressInfo = describeTaskProgressText(task, lifecycleEvents, {
+    node: taskNode,
+  });
   const frontmatterStatus = frontmatter?.status || null;
   const frontmatterProgress =
     typeof frontmatter?.progress === "number" ? frontmatter.progress : null;
@@ -7408,7 +7519,10 @@ function renderTaskDetailCard(selectedTask) {
           eyebrow: "runtime status",
           status: task.status,
           title: runtimeStatusTitle,
-          detail: `raw ${task.status} · progress ${progress}%`,
+          detail:
+            rawProgress !== progress
+              ? `raw ${task.status} · task ${rawProgress}% · agregado ${progress}%`
+              : `raw ${task.status} · progress ${progress}%`,
           meta: formatTaskDurationLabel(task),
         })}
         ${renderTaskStatusPanel({
@@ -7427,7 +7541,7 @@ function renderTaskDetailCard(selectedTask) {
             : "runtime snapshot only",
         })}
       </div>
-      ${renderTaskStatusSyncBanner(task, frontmatter, progress)}
+      ${renderTaskStatusSyncBanner(task, frontmatter, rawProgress)}
     </section>
 
     ${

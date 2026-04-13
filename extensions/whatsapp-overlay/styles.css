@@ -770,24 +770,37 @@
 }
 
 .ravi-wa-nav-group__head {
-  cursor: default;
   background: rgba(255, 255, 255, 0.026);
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .ravi-wa-nav-group__head:hover {
-  background: rgba(255, 255, 255, 0.026);
-  transform: none;
+  background: rgba(255, 255, 255, 0.042);
 }
 
 .ravi-wa-nav-group__label {
   display: flex;
+  box-sizing: border-box;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
   padding: 8px 10px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.018);
   border: 1px solid rgba(255, 255, 255, 0.05);
+  color: inherit;
+  text-align: left;
+}
+
+button.ravi-wa-nav-group__label {
+  cursor: pointer;
+  font: inherit;
+}
+
+button.ravi-wa-nav-group__label:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.085);
+  transform: translateY(-1px);
 }
 
 .ravi-wa-nav-group__label--blocked,

@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { readFileSync } from "node:fs";
 import { Arg, Group, Command, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
@@ -11,6 +12,7 @@ import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/r
 import { canWithCapabilities } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
+import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
 import {
   formatInspectionSection,
   printInspectionBlock,
@@ -267,6 +269,15 @@ export class ContextCommands {
     this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Revoked Context"));
   }
 
+  @Command({
+    name: "codex-bash-hook",
+    description: "Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context",
+  })
+  codexBashHook() {
+    const output = this.handleCodexBashHook();
+    console.log(JSON.stringify(output));
+  }
+
   private requireResolvedContext() {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
@@ -287,6 +298,44 @@ export class ContextCommands {
 
   private printJson(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
+  }
+
+  private handleCodexBashHook(): Record<string, unknown> {
+    let payload: Record<string, unknown>;
+    try {
+      payload = parseCodexHookPayload();
+    } catch (error) {
+      return buildPreToolUseDenyResult(
+        `Invalid Codex hook payload: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    try {
+      const context = this.requireResolvedContext();
+      const toolInput = asRecord(payload.tool_input);
+      const command = typeof toolInput?.command === "string" ? toolInput.command : null;
+      if (!command) {
+        return buildPreToolUseDenyResult("Codex hook payload is missing tool_input.command");
+      }
+
+      const decision = evaluateBashPermission(command, {
+        agentId: context.agentId,
+        sessionKey: context.sessionKey,
+        sessionName: context.sessionName,
+        capabilities: context.capabilities,
+      });
+
+      if (!decision.allowed) {
+        emitBashDeniedAudit(command, decision, context.agentId);
+        return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
+      }
+
+      return {};
+    } catch (error) {
+      return buildPreToolUseDenyResult(
+        `Failed to resolve Ravi context for Codex bash hook: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private printPayload(payload: unknown, asJson: boolean, printer: () => void): void {
@@ -496,6 +545,16 @@ function formatTimestamp(value: number | null | undefined): string {
   return typeof value === "number" ? new Date(value).toISOString() : "-";
 }
 
+function parseCodexHookPayload(): Record<string, unknown> {
+  const raw = readFileSync(0, "utf8").trim();
+  if (!raw) {
+    throw new Error("stdin is empty");
+  }
+
+  const parsed = JSON.parse(raw);
+  return asRecord(parsed) ?? {};
+}
+
 function parseCapabilityList(input: string | undefined): ContextCapability[] {
   if (!input) return [];
   return input
@@ -537,4 +596,8 @@ function parseDurationMs(input: string | undefined): number | undefined {
   if (unit === "d") return value * 86_400_000;
 
   fail(`Invalid duration: "${input}". Expected 30m, 2h or 1d`);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }

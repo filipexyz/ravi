@@ -142,7 +142,17 @@ function hasUnrestrictedToolExecution(agentId: string): boolean {
   );
 }
 
-function getRuntimeToolAccessMode(agentId: string): RuntimeToolAccessMode {
+function hasUnrestrictedToolSurface(agentId: string): boolean {
+  return agentCan(agentId, "admin", "system", "*") || agentCan(agentId, "use", "tool", "*");
+}
+
+function getRuntimeToolAccessMode(providerId: RuntimeProviderId, agentId: string): RuntimeToolAccessMode {
+  if (providerId === "codex") {
+    // Codex is currently Bash-governed only. Require unrestricted non-Bash tool access
+    // and let executable restrictions flow through the native Bash hook.
+    return hasUnrestrictedToolSurface(agentId) ? "unrestricted" : "restricted";
+  }
+
   return hasUnrestrictedToolExecution(agentId) ? "unrestricted" : "restricted";
 }
 
@@ -1441,7 +1451,7 @@ export class RaviBot {
       assertRuntimeCompatibility(runtimeProvider, {
         requiresMcpServers: !!agent.specMode,
         requiresRemoteSpawn: !!agent.remote,
-        toolAccessMode: getRuntimeToolAccessMode(agent.id),
+        toolAccessMode: getRuntimeToolAccessMode(runtimeProviderId, agent.id),
       });
 
       // Create spec mode MCP server for this session (only if agent has specMode enabled)

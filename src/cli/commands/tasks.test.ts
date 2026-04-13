@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 afterAll(() => mock.restore());
 const actualTasksIndexModule = await import("../../tasks/index.js");
 const actualLoggerModule = await import("../../utils/logger.js");
+const actualNatsModule = await import("../../nats.js");
 
 const createCalls: Array<Record<string, unknown>> = [];
 const dispatchCalls: Array<Record<string, unknown>> = [];
@@ -270,7 +271,13 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  ...actualNatsModule,
+  connectNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
   getNats: mock(() => ({})),
+  publish: mock(async () => {}),
+  subscribe: mock((...args: Parameters<typeof actualNatsModule.subscribe>) => subscribeImpl(args[0])),
+  closeNats: mock(async () => {}),
   nats: {
     subscribe: mock((pattern?: string) => subscribeImpl(pattern)),
     emit: mock(async () => {}),
@@ -1331,6 +1338,33 @@ describe("TaskCommands create", () => {
     }
 
     expect(doneCalls).toHaveLength(1);
+    expect(emittedEvents).toEqual([]);
+  });
+
+  it("does not re-emit task events when block becomes a noop because the task is already done", async () => {
+    taskDetailsMock = {
+      ...taskDetailsMock,
+      task: {
+        ...(taskDetailsMock.task as Record<string, unknown>),
+        status: "done",
+        progress: 100,
+        summary: "render concluído; confirmação humana é pós-entrega",
+      },
+    };
+    blockResultExtra = { wasNoop: true };
+    frontmatterMock = { blockerReason: "aguardando confirmação humana final", progress: 100 };
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.block("task-cli-1", undefined, true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(blockCalls).toHaveLength(1);
     expect(emittedEvents).toEqual([]);
   });
 

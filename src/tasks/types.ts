@@ -39,6 +39,81 @@ export type TaskEventType =
   | "task.child.done"
   | "task.child.failed";
 
+export const TASK_AUTOMATION_EVENTS = [
+  "task.blocked",
+  "task.done",
+  "task.failed",
+  "task.child.blocked",
+  "task.child.done",
+  "task.child.failed",
+] as const;
+
+export type TaskAutomationEventType = (typeof TASK_AUTOMATION_EVENTS)[number];
+
+export type TaskAutomationRunStatus = "claimed" | "spawned" | "skipped" | "failed";
+
+export interface TaskAutomation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  eventTypes: TaskAutomationEventType[];
+  filter?: string;
+  titleTemplate: string;
+  instructionsTemplate: string;
+  priority?: TaskPriority;
+  profileId?: string;
+  agentId?: string;
+  sessionNameTemplate?: string;
+  checkpointIntervalMs?: number;
+  reportToSessionNameTemplate?: string;
+  reportEvents?: TaskReportEvent[];
+  profileInput?: Record<string, string>;
+  inheritParentTask: boolean;
+  inheritWorktree: boolean;
+  inheritCheckpoint: boolean;
+  inheritReportTo: boolean;
+  inheritReportEvents: boolean;
+  fireCount: number;
+  lastFiredAt?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskAutomationInput {
+  name: string;
+  enabled?: boolean;
+  eventTypes: TaskAutomationEventType[];
+  filter?: string;
+  titleTemplate: string;
+  instructionsTemplate: string;
+  priority?: TaskPriority;
+  profileId?: string;
+  agentId?: string;
+  sessionNameTemplate?: string;
+  checkpointIntervalMs?: number;
+  reportToSessionNameTemplate?: string;
+  reportEvents?: TaskReportEvent[];
+  profileInput?: Record<string, string>;
+  inheritParentTask?: boolean;
+  inheritWorktree?: boolean;
+  inheritCheckpoint?: boolean;
+  inheritReportTo?: boolean;
+  inheritReportEvents?: boolean;
+}
+
+export interface TaskAutomationRun {
+  id: number;
+  automationId: string;
+  triggerTaskId: string;
+  triggerEventId: number;
+  triggerEventType: TaskAutomationEventType;
+  spawnedTaskId?: string;
+  status: TaskAutomationRunStatus;
+  message?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface TaskWorktreeConfig {
   mode: TaskWorktreeMode;
   path?: string;

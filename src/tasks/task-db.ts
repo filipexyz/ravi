@@ -1309,10 +1309,20 @@ export function dbUnarchiveTask(
   return { task: unarchivedTask, event };
 }
 
-export function dbBlockTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {
+export function dbBlockTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
   const db = getDb();
   const task = getTaskOrThrow(taskId);
+  if (task.status === "done") {
+    return {
+      task,
+      event: getLatestTaskEvent(taskId, "task.done") ?? getLatestTaskEvent(taskId)!,
+      wasNoop: true,
+    };
+  }
   const now = Date.now();
   const progress =
     typeof input.progress === "number"

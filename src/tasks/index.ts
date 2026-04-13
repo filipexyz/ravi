@@ -5,4 +5,6 @@ export * from "./checkpoint.js";
 export * from "./checkpoint-runner.js";
 export * from "./task-db.js";
 export * from "./task-doc.js";
+export * from "./automations-db.js";
+export * from "./automations.js";
 export * from "./service.js";

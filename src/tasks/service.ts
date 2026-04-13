@@ -1490,6 +1490,17 @@ export async function emitTaskEvent(task: TaskRecord, event: TaskEvent): Promise
       });
     }
   }
+
+  try {
+    const { executeTaskAutomationsForEvent } = await import("./automations.js");
+    await executeTaskAutomationsForEvent(task, event);
+  } catch (error) {
+    log.warn("Failed to execute task automations", {
+      taskId: task.id,
+      eventType: event.type,
+      error,
+    });
+  }
 }
 
 export function buildTaskDispatchPrompt(
@@ -1933,6 +1944,7 @@ export function blockTask(
   task: TaskRecord;
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+  wasNoop?: boolean;
 } {
   const existingTask = dbGetTask(taskId);
   if (!existingTask) {
@@ -1942,7 +1954,7 @@ export function blockTask(
   const result = dbBlockTask(taskId, input);
   return {
     ...result,
-    relatedEvents: buildChildStateRelatedEvents(result.task, result.event),
+    relatedEvents: result.wasNoop ? [] : buildChildStateRelatedEvents(result.task, result.event),
   };
 }
 

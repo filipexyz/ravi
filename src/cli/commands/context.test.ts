@@ -4,8 +4,11 @@ afterAll(() => mock.restore());
 
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
+const actualNatsModule = await import("../../nats.js");
 const actualCliContextModule = await import("../context.js");
 
+let mockStdin = "";
+let publishedAuditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let resolvedContext:
   | {
       contextId: string;
@@ -125,6 +128,10 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
+mock.module("node:fs", () => ({
+  readFileSync: () => mockStdin,
+}));
+
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   fail: (message: string) => {
@@ -199,7 +206,19 @@ mock.module("../../approval/service.js", () => ({
     },
 }));
 
+mock.module("../../nats.js", () => ({
+  ...actualNatsModule,
+  publish: async (topic: string, data: Record<string, unknown>) => {
+    publishedAuditEvents.push({ topic, data });
+  },
+}));
+
 const { ContextCommands } = await import("./context.js");
+
+function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
+  mockStdin = JSON.stringify(payload);
+  return (new ContextCommands() as any).handleCodexBashHook();
+}
 
 describe("ContextCommands", () => {
   const originalKey = process.env.RAVI_CONTEXT_KEY;
@@ -226,6 +245,8 @@ describe("ContextCommands", () => {
     fetchedContext = resolvedContext;
     listedContexts = [resolvedContext];
     revokedContext = undefined;
+    mockStdin = "";
+    publishedAuditEvents = [];
   });
 
   afterEach(() => {
@@ -241,6 +262,8 @@ describe("ContextCommands", () => {
     fetchedContext = undefined;
     listedContexts = [];
     revokedContext = undefined;
+    mockStdin = "";
+    publishedAuditEvents = [];
   });
 
   it("lists contexts with visible lineage and no context key in --json mode", () => {
@@ -618,6 +641,106 @@ describe("ContextCommands", () => {
       sessionKey: "agent:dev:inline",
       sessionName: "dev-inline",
       capabilitiesCount: 1,
+    });
+  });
+
+  describe("codex-bash-hook", () => {
+    beforeEach(() => {
+      resolvedContext = {
+        contextId: "ctx_codex",
+        contextKey: "rctx_codex",
+        kind: "agent-runtime",
+        agentId: "codex",
+        sessionKey: "agent:codex:main",
+        sessionName: "codex-main",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "context" }],
+        metadata: { runtimeProvider: "codex" },
+        createdAt: 1000,
+      };
+      fetchedContext = resolvedContext;
+      listedContexts = [resolvedContext];
+    });
+
+    it("publishes executable deny audit events for git status", () => {
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "git status",
+        },
+      });
+
+      expect(result).toMatchObject({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: "Permission denied: agent:codex cannot execute: git",
+        },
+      });
+      expect(publishedAuditEvents).toEqual([
+        {
+          topic: "ravi.audit.denied",
+          data: {
+            type: "executable",
+            agentId: "codex",
+            denied: "git",
+            reason: "Permission denied: agent:codex cannot execute: git",
+            detail: "git status",
+          },
+        },
+      ]);
+    });
+
+    it("publishes env spoofing audit events", () => {
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "RAVI_AGENT_ID=main ravi sessions list",
+        },
+      });
+
+      expect(result).toMatchObject({
+        hookSpecificOutput: {
+          permissionDecision: "deny",
+          permissionDecisionReason: "Cannot override RAVI environment variables",
+        },
+      });
+      expect(publishedAuditEvents).toEqual([
+        {
+          topic: "ravi.audit.denied",
+          data: {
+            type: "env_spoofing",
+            agentId: "codex",
+            denied: "RAVI_* override",
+            reason: "Cannot override RAVI environment variables",
+            detail: "RAVI_AGENT_ID=main ravi sessions list",
+          },
+        },
+      ]);
+    });
+
+    it("publishes session scope audit events", () => {
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "ravi sessions send main 'hello'",
+        },
+      });
+
+      expect(result).toMatchObject({
+        hookSpecificOutput: {
+          permissionDecision: "deny",
+          permissionDecisionReason: "Permission denied: agent:codex cannot access session:main",
+        },
+      });
+      expect(publishedAuditEvents).toEqual([
+        {
+          topic: "ravi.audit.denied",
+          data: {
+            type: "session_scope",
+            agentId: "codex",
+            denied: "main",
+            reason: "Permission denied: agent:codex cannot access session:main",
+            detail: "ravi sessions send main 'hello'",
+          },
+        },
+      ]);
     });
   });
 });

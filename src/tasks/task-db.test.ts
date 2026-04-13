@@ -681,6 +681,45 @@ describe("task-db", () => {
     ]);
   });
 
+  it("ignores blocked transitions after the task is already done", () => {
+    const created = dbCreateTask({
+      title: "Done stays terminal",
+      instructions: "Late HITL checkpoints must not overwrite completed video tasks",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    const completed = dbCompleteTask(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "render and QC concluídos; checkpoint final é só humano",
+    });
+    const blocked = dbBlockTask(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "aguardando confirmação humana final",
+      progress: 100,
+    });
+
+    expect(blocked.wasNoop).toBe(true);
+    expect(blocked.task.status).toBe("done");
+    expect(blocked.task.summary).toBe(completed.task.summary);
+    expect(blocked.event.id).toBe(completed.event.id);
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual([
+      "task.created",
+      "task.dispatched",
+      "task.done",
+    ]);
+  });
+
   it("can ignore the currently dispatched task when checking active work for a session", () => {
     const first = dbCreateTask({
       title: "First active task",

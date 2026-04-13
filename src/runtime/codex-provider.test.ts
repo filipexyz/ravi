@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
@@ -109,6 +109,43 @@ describe("createCodexRuntimeProvider", () => {
 
     expect(result).toEqual({});
     expect(synced).toEqual([{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }]);
+  });
+
+  it("materializes the global Codex bash hook in ~/.codex/hooks.json", () => {
+    const home = mkdtempSync(join(tmpdir(), "ravi-codex-home-"));
+    const originalHome = process.env.HOME;
+    process.env.HOME = home;
+
+    try {
+      const provider = createCodexRuntimeProvider();
+      provider.prepareSession?.({
+        agentId: "main",
+        cwd: "/tmp/ravi-codex",
+        plugins: [],
+      });
+
+      const hooksPath = join(home, ".codex", "hooks.json");
+      expect(existsSync(hooksPath)).toBe(true);
+
+      const payload = JSON.parse(readFileSync(hooksPath, "utf8"));
+      const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
+      const raviHookGroup = preToolUse.find(
+        (group: any) =>
+          group?.matcher === "^Bash$" &&
+          Array.isArray(group?.hooks) &&
+          group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
+      );
+
+      expect(raviHookGroup).toBeDefined();
+      expect(raviHookGroup.hooks[0]?.command).toContain("context");
+      expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+    }
   });
 
   it("maps CLI completion events and composes prompts with system instructions", async () => {

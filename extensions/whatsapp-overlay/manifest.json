@@ -21,6 +21,7 @@
       ],
       "js": [
         "task-duration.js",
+        "task-presenter.js",
         "task-drawer-state.js",
         "content.js"
       ],

@@ -17,8 +17,9 @@ import { publish } from "../nats.js";
 import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
-import { agentCan } from "../permissions/engine.js";
+import { agentCan, canWithCapabilities } from "../permissions/engine.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
+import type { ContextCapability } from "../router/router-db.js";
 
 const log = logger.child("bash:hook");
 
@@ -27,6 +28,51 @@ const log = logger.child("bash:hook");
  */
 function emitAudit(event: { type: string; agentId: string; denied: string; reason: string; detail?: string }): void {
   publish("ravi.audit.denied", event as unknown as Record<string, unknown>).catch(() => {});
+}
+
+function buildBashDeniedAuditEvent(
+  command: string,
+  decision: BashPermissionDecision,
+  agentId?: string,
+): { type: string; agentId: string; denied: string; reason: string; detail?: string } | null {
+  if (decision.allowed || !decision.denialType) {
+    return null;
+  }
+
+  const resolvedAgentId = agentId ?? "unknown";
+  const detail = command.slice(0, 200);
+
+  if (decision.denialType === "env_spoofing") {
+    return {
+      type: "env_spoofing",
+      agentId: resolvedAgentId,
+      denied: "RAVI_* override",
+      reason: decision.reason ?? "Cannot override RAVI environment variables",
+      detail,
+    };
+  }
+
+  if (decision.denialType === "executable") {
+    return {
+      type: "executable",
+      agentId: resolvedAgentId,
+      denied: command.split(/\s+/)[0] ?? "unknown",
+      reason: decision.reason ?? "Bash command denied by Ravi",
+      detail,
+    };
+  }
+
+  if (decision.denialType === "session_scope") {
+    return {
+      type: "session_scope",
+      agentId: resolvedAgentId,
+      denied: extractRaviTarget(command) ?? "unknown",
+      reason: decision.reason ?? "Bash command denied by Ravi",
+      detail,
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -105,65 +151,6 @@ function checkEnvSpoofing(command: string): { allowed: boolean; reason?: string 
   return { allowed: true };
 }
 
-/**
- * Check executable permissions via REBAC.
- *
- * Defense in depth:
- * 1. Check for dangerous patterns (injection attempts)
- * 2. Parse command to extract all executables
- * 3. Check each executable against unconditional blocks
- * 4. Check each executable against REBAC (execute executable:<name>)
- */
-function checkExecutablePermissions(command: string, agentId: string): { allowed: boolean; reason?: string } {
-  // If agent has wildcard access, skip expensive parsing
-  if (agentCan(agentId, "execute", "executable", "*")) {
-    return { allowed: true };
-  }
-
-  // Step 1: Check for dangerous patterns
-  const patternCheck = checkDangerousPatterns(command);
-  if (!patternCheck.safe) {
-    return { allowed: false, reason: patternCheck.reason };
-  }
-
-  // Step 2: Parse command to extract executables
-  const parsed = parseBashCommand(command);
-  if (!parsed.success) {
-    return { allowed: false, reason: parsed.error || "Failed to parse command" };
-  }
-
-  // Built-in executables: always allowed (ravi CLI is essential for all agents)
-  const BUILTIN_EXECUTABLES = new Set(["ravi"]);
-
-  // Step 3 & 4: Check each executable
-  const blocked: string[] = [];
-
-  for (const exec of parsed.executables) {
-    // Unconditional blocks (shells, eval, exec)
-    if (UNCONDITIONAL_BLOCKS.has(exec)) {
-      blocked.push(exec);
-      continue;
-    }
-
-    // Built-in executables skip REBAC check
-    if (BUILTIN_EXECUTABLES.has(exec)) continue;
-
-    // REBAC check
-    if (!agentCan(agentId, "execute", "executable", exec)) {
-      blocked.push(exec);
-    }
-  }
-
-  if (blocked.length > 0) {
-    return {
-      allowed: false,
-      reason: `Permission denied: agent:${agentId} cannot execute: ${blocked.join(", ")}`,
-    };
-  }
-
-  return { allowed: true };
-}
-
 /** Commands that require session scope check on the target argument */
 const SESSION_TARGET_COMMANDS = new Set([
   "sessions_send",
@@ -183,29 +170,123 @@ const SESSION_TARGET_COMMANDS = new Set([
   "sessions_keep",
 ]);
 
-/**
- * Check scope permissions for a ravi CLI command.
- *
- * Group-level scope enforcement is handled by enforceScopeCheck() in the CLI process.
- * The hook only needs to check session target access (inline scope checks).
- */
-function checkScopePermission(
+interface BashHookOptions {
+  getAgentId: () => string | undefined;
+}
+
+export interface BashPermissionContext {
+  agentId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  capabilities?: ContextCapability[];
+}
+
+export interface BashPermissionDecision {
+  allowed: boolean;
+  reason?: string;
+  denialType?: "env_spoofing" | "executable" | "session_scope";
+  toolName?: string | null;
+}
+
+function hasContextCapabilities(ctx: BashPermissionContext): ctx is BashPermissionContext & {
+  capabilities: ContextCapability[];
+} {
+  return Array.isArray(ctx.capabilities);
+}
+
+function canWithBashContext(
+  ctx: BashPermissionContext,
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  if (hasContextCapabilities(ctx)) {
+    return canWithCapabilities(ctx.capabilities, permission, objectType, objectId);
+  }
+  return agentCan(ctx.agentId, permission, objectType, objectId);
+}
+
+function isSuperadminContext(ctx: BashPermissionContext): boolean {
+  return canWithBashContext(ctx, "admin", "system", "*");
+}
+
+function checkExecutablePermissionsForContext(
+  command: string,
+  ctx: BashPermissionContext,
+): { allowed: boolean; reason?: string } {
+  if (canWithBashContext(ctx, "execute", "executable", "*")) {
+    return { allowed: true };
+  }
+
+  const patternCheck = checkDangerousPatterns(command);
+  if (!patternCheck.safe) {
+    return { allowed: false, reason: patternCheck.reason };
+  }
+
+  const parsed = parseBashCommand(command);
+  if (!parsed.success) {
+    return { allowed: false, reason: parsed.error || "Failed to parse command" };
+  }
+
+  const BUILTIN_EXECUTABLES = new Set(["ravi"]);
+  const blocked: string[] = [];
+
+  for (const exec of parsed.executables) {
+    if (UNCONDITIONAL_BLOCKS.has(exec)) {
+      blocked.push(exec);
+      continue;
+    }
+
+    if (BUILTIN_EXECUTABLES.has(exec)) continue;
+
+    if (!canWithBashContext(ctx, "execute", "executable", exec)) {
+      blocked.push(exec);
+    }
+  }
+
+  if (blocked.length > 0) {
+    return {
+      allowed: false,
+      reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot execute: ${blocked.join(", ")}`,
+    };
+  }
+
+  return { allowed: true };
+}
+
+function canAccessSessionWithBashContext(ctx: BashPermissionContext, targetNameOrKey: string): boolean {
+  if (!ctx.agentId && !hasContextCapabilities(ctx)) return true;
+
+  if (ctx.sessionName && ctx.sessionName === targetNameOrKey) return true;
+  if (ctx.sessionKey && ctx.sessionKey === targetNameOrKey) return true;
+
+  if (!hasContextCapabilities(ctx)) {
+    return canAccessSession(
+      {
+        agentId: ctx.agentId,
+        sessionKey: ctx.sessionKey,
+        sessionName: ctx.sessionName,
+      },
+      targetNameOrKey,
+    );
+  }
+
+  return canWithCapabilities(ctx.capabilities, "access", "session", targetNameOrKey);
+}
+
+function checkScopePermissionForContext(
   command: string,
   toolName: string | null,
-  ctx?: { agentId?: string; sessionName?: string; sessionKey?: string },
+  ctx: BashPermissionContext,
 ): { allowed: boolean; reason?: string } {
   if (!toolName) return { allowed: true };
 
-  const scopeCtx = ctx ?? getScopeContext();
-  if (!scopeCtx.agentId) return { allowed: true };
-
-  // Session target commands — check if agent can access the target session
   if (SESSION_TARGET_COMMANDS.has(toolName)) {
     const target = extractRaviTarget(command);
-    if (target && !canAccessSession(scopeCtx, target)) {
+    if (target && !canAccessSessionWithBashContext(ctx, target)) {
       return {
         allowed: false,
-        reason: `Permission denied: agent:${scopeCtx.agentId} cannot access session:${target}`,
+        reason: `Permission denied: agent:${ctx.agentId ?? "unknown"} cannot access session:${target}`,
       };
     }
   }
@@ -213,8 +294,62 @@ function checkScopePermission(
   return { allowed: true };
 }
 
-interface BashHookOptions {
-  getAgentId: () => string | undefined;
+export function buildPreToolUseDenyResult(reason: string): Record<string, unknown> {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      permissionDecision: "deny",
+      permissionDecisionReason: reason,
+    },
+  };
+}
+
+export function emitBashDeniedAudit(command: string, decision: BashPermissionDecision, agentId?: string): void {
+  const event = buildBashDeniedAuditEvent(command, decision, agentId);
+  if (!event) {
+    return;
+  }
+
+  emitAudit(event);
+}
+
+export function evaluateBashPermission(command: string, ctx: BashPermissionContext = {}): BashPermissionDecision {
+  const isSuperadmin = isSuperadminContext(ctx);
+  const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(command);
+  if (!spoofResult.allowed) {
+    return {
+      allowed: false,
+      reason: spoofResult.reason,
+      denialType: "env_spoofing",
+    };
+  }
+
+  if (ctx.agentId || hasContextCapabilities(ctx)) {
+    const execResult = checkExecutablePermissionsForContext(command, ctx);
+    if (!execResult.allowed) {
+      return {
+        allowed: false,
+        reason: execResult.reason,
+        denialType: "executable",
+      };
+    }
+  }
+
+  const toolName = extractRaviToolName(command);
+  const scopeResult = checkScopePermissionForContext(command, toolName, ctx);
+  if (!scopeResult.allowed) {
+    return {
+      allowed: false,
+      reason: scopeResult.reason,
+      denialType: "session_scope",
+      toolName,
+    };
+  }
+
+  return {
+    allowed: true,
+    toolName,
+  };
 }
 
 /**
@@ -234,88 +369,46 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
     }
 
     const agentId = options.getAgentId();
+    const scopeCtx = getScopeContext();
+    const decision = evaluateBashPermission(command, {
+      agentId,
+      sessionKey: scopeCtx.sessionKey,
+      sessionName: scopeCtx.sessionName,
+    });
 
-    // Step 0: Block RAVI_* env var spoofing (superadmins exempt — need it for testing)
-    const isSuperadmin = !agentId || agentCan(agentId, "admin", "system", "*");
-    const spoofResult = isSuperadmin ? { allowed: true } : checkEnvSpoofing(command);
-    if (!spoofResult.allowed) {
+    if (!decision.allowed && decision.denialType === "env_spoofing") {
       log.warn("Env spoofing blocked", {
         command: command.slice(0, 200),
-        reason: spoofResult.reason,
+        reason: decision.reason,
       });
-      emitAudit({
-        type: "env_spoofing",
-        agentId: agentId!,
-        denied: "RAVI_* override",
-        reason: spoofResult.reason!,
-        detail: command.slice(0, 200),
-      });
+      emitBashDeniedAudit(command, decision, agentId);
 
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: spoofResult.reason!,
-        },
-      };
+      return buildPreToolUseDenyResult(decision.reason!);
     }
 
-    // Step 1: Check executable permissions via REBAC
-    if (agentId) {
-      const execResult = checkExecutablePermissions(command, agentId);
+    if (!decision.allowed && decision.denialType === "executable") {
+      log.warn("Executable blocked", {
+        command: command.slice(0, 200),
+        reason: decision.reason,
+      });
+      emitBashDeniedAudit(command, decision, agentId);
 
-      if (!execResult.allowed) {
-        log.warn("Executable blocked", {
-          command: command.slice(0, 200),
-          reason: execResult.reason,
-        });
-        emitAudit({
-          type: "executable",
-          agentId,
-          denied: command.split(/\s+/)[0],
-          reason: execResult.reason!,
-          detail: command.slice(0, 200),
-        });
-
-        return {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: execResult.reason!,
-          },
-        };
-      }
+      return buildPreToolUseDenyResult(decision.reason!);
     }
 
-    // Step 2: Check session scope (via REBAC)
-    const toolName = extractRaviToolName(command);
-    const scopeResult = checkScopePermission(command, toolName);
-
-    if (!scopeResult.allowed) {
+    if (!decision.allowed && decision.denialType === "session_scope") {
       log.warn("Scope check blocked", {
         command: command.slice(0, 200),
-        reason: scopeResult.reason,
+        reason: decision.reason,
       });
-      emitAudit({
-        type: "session_scope",
-        agentId: agentId!,
-        denied: extractRaviTarget(command) ?? "unknown",
-        reason: scopeResult.reason!,
-        detail: command.slice(0, 200),
-      });
+      emitBashDeniedAudit(command, decision, agentId);
 
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: scopeResult.reason!,
-        },
-      };
+      return buildPreToolUseDenyResult(decision.reason!);
     }
 
     log.debug("Bash command allowed", {
       command: command.slice(0, 100),
-      raviTool: toolName,
+      raviTool: decision.toolName,
     });
 
     return {};

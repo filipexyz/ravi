@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
@@ -22,6 +25,8 @@ import type {
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
+const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
+const RAVI_CODEX_BASH_HOOK_MATCHER = "^Bash$";
 const CODEX_SKILL_DISCOVERY_NOTE = [
   "Ravi may install native Codex skills under ~/.codex/skills (or $CODEX_HOME/skills).",
   "If the task clearly matches a skill, inspect that directory and follow the relevant SKILL.md files.",
@@ -118,7 +123,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
-        supportsToolHooks: false,
+        supportsToolHooks: true,
         supportsPlugins: false,
         supportsMcpServers: false,
         supportsRemoteSpawn: false,
@@ -126,6 +131,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
+      ensureGlobalCodexBashHookConfig();
       const syncedSkills = syncSkills(input.plugins ?? []);
       syncedSkillsByCwd.set(input.cwd, Array.isArray(syncedSkills) ? syncedSkills : []);
       return {};
@@ -455,7 +461,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   const spawnChild = (input: CodexCliTurnRequest) => {
-    const spawned = spawn(command, ["app-server"], {
+    ensureGlobalCodexBashHookConfig();
+    const spawned = spawn(command, ["-c", "features.codex_hooks=true", "app-server"], {
       cwd: input.cwd,
       env: input.env,
       stdio: ["pipe", "pipe", "pipe"],
@@ -1463,6 +1470,94 @@ function extractAppServerErrorMessage(params: Record<string, unknown>): string |
     return params.message;
   }
   return extractJsonRpcError(params.error);
+}
+
+function ensureGlobalCodexBashHookConfig(): void {
+  const hooksPath = getGlobalCodexHooksPath();
+  mkdirSync(getGlobalCodexConfigDir(), { recursive: true });
+
+  const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath));
+  const nextJson = JSON.stringify(nextConfig, null, 2) + "\n";
+  const currentJson = existsSync(hooksPath) ? readFileSync(hooksPath, "utf8") : null;
+  if (currentJson !== nextJson) {
+    writeFileSync(hooksPath, nextJson, "utf8");
+  }
+}
+
+function getGlobalCodexHooksPath(): string {
+  return join(getGlobalCodexConfigDir(), "hooks.json");
+}
+
+function getGlobalCodexConfigDir(): string {
+  return join(process.env.HOME ?? homedir(), ".codex");
+}
+
+function readCodexHooksConfig(path: string): Record<string, unknown> {
+  if (!existsSync(path)) {
+    return { hooks: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return asRecord(parsed) ?? { hooks: {} };
+  } catch {
+    return { hooks: {} };
+  }
+}
+
+function upsertRaviCodexBashHook(config: Record<string, unknown>): Record<string, unknown> {
+  const hooks = asRecord(config.hooks) ?? {};
+  const preToolUse = Array.isArray(hooks.PreToolUse) ? [...hooks.PreToolUse] : [];
+  const raviGroup = {
+    matcher: RAVI_CODEX_BASH_HOOK_MATCHER,
+    hooks: [
+      {
+        type: "command",
+        command: buildRaviCodexHookCommand(),
+        statusMessage: RAVI_CODEX_BASH_HOOK_STATUS,
+      },
+    ],
+  };
+
+  const nextPreToolUse = preToolUse.filter((group) => !isRaviCodexHookGroup(group));
+  nextPreToolUse.push(raviGroup);
+
+  return {
+    ...config,
+    hooks: {
+      ...hooks,
+      PreToolUse: nextPreToolUse,
+    },
+  };
+}
+
+function isRaviCodexHookGroup(value: unknown): boolean {
+  const group = asRecord(value);
+  if (!group || group.matcher !== RAVI_CODEX_BASH_HOOK_MATCHER) {
+    return false;
+  }
+
+  const handlers = Array.isArray(group.hooks) ? group.hooks : [];
+  return handlers.some((handler) => {
+    const entry = asRecord(handler);
+    return entry?.statusMessage === RAVI_CODEX_BASH_HOOK_STATUS;
+  });
+}
+
+function buildRaviCodexHookCommand(): string {
+  const bundlePath = process.argv[1];
+  if (bundlePath) {
+    return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  }
+
+  return ["/Users/luis/dev/filipelabs/ravi.bot/bin/ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+}
+
+function shellEscape(value: string): string {
+  if (value.length === 0) {
+    return "''";
+  }
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
 const CODEX_APP_SERVER_OPTOUT_METHODS = [
