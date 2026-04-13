@@ -78,9 +78,16 @@ declare module "@opentui/core" {
     submit(): boolean;
   }
   export class TextareaRenderable extends BaseRenderable {
+    get plainText(): string;
+    get lineCount(): number;
+    onSubmit?: () => void;
     focus(): void;
     blur(): void;
     submit(): boolean;
+    clear(): void;
+    insertText(text: string): void;
+    newLine(): void;
+    handleKeyPress(event: KeyEvent): boolean;
   }
   export class CodeRenderable extends BaseRenderable {
     get content(): string;

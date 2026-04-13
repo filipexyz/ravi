@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+const actualTasksIndexModule = await import("../../tasks/index.js");
+const actualLoggerModule = await import("../../utils/logger.js");
 
 const createCalls: Array<Record<string, unknown>> = [];
 const dispatchCalls: Array<Record<string, unknown>> = [];
@@ -100,6 +104,9 @@ function buildMockResolvedProfile(profileId?: string | null): Record<string, unk
       resume: "resume {{task.id}}",
       dispatchSummary: "summary {{task.id}}",
       dispatchEventMessage: "event {{task.id}}",
+      reportDoneMessage: "{{report.text}}",
+      reportBlockedMessage: "{{report.text}}",
+      reportFailedMessage: "{{report.text}}",
     },
     sourceKind: "system",
     source: `system:${normalizedId}`,
@@ -272,12 +279,15 @@ mock.module("../../nats.js", () => ({
 }));
 
 mock.module("../../utils/logger.js", () => ({
+  ...actualLoggerModule,
   logger: {
+    ...actualLoggerModule.logger,
     setLevel: mock(() => {}),
   },
 }));
 
 mock.module("../../tasks/index.js", () => ({
+  ...actualTasksIndexModule,
   TASK_REPORT_EVENTS: ["blocked", "done", "failed"],
   createTask: (input: Record<string, unknown>) => {
     createCalls.push(input);

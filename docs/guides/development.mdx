@@ -98,7 +98,7 @@ make docs-check   # Lint + check links
 - After modifying `src/` files (daemon runs the built bundle)
 
 **No restart needed:**
-- After any CLI config command (`ravi agents set`, `ravi outbound reset`, etc.)
+- After any CLI config command (`ravi agents set`, `ravi triggers set`, etc.)
 - CLI writes directly to SQLite and emits NATS refresh signals
 - The running daemon picks up changes automatically
 
@@ -130,7 +130,6 @@ src/
 ├── heartbeat/        # Heartbeat runner
 ├── cron/             # Cron job runner
 ├── triggers/         # Event trigger runner
-├── outbound/         # Outbound queue runner
 ├── ephemeral/        # Ephemeral session cleanup
 ├── copilot/          # Claude Code inbox watcher
 ├── audio/            # TTS generation (ElevenLabs)
@@ -180,7 +179,6 @@ src/plugins/internal/ravi-system/skills/
 ├── contacts/SKILL.md
 ├── cron/SKILL.md
 ├── heartbeat/SKILL.md
-├── outbound/SKILL.md
 ├── triggers/SKILL.md
 └── ...
 ```

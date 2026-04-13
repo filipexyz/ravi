@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+const actualRouterDbModule = await import("../../router/router-db.js");
 
 const createdTriggers: Array<Record<string, unknown>> = [];
 const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -41,6 +44,7 @@ mock.module("../../router/config.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   getAccountForAgent: () => undefined,
 }));
 

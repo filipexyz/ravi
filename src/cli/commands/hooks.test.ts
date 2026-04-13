@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+const actualCliContextModule = await import("../context.js");
 
 const createdHooks: Array<Record<string, unknown>> = [];
 const updatedHooks: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -12,6 +15,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => ({ agentId: "dev", sessionName: "task-123-work" }),
   fail: (message: string) => {
     throw new Error(message);

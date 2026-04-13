@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+const actualCliContextModule = await import("../context.js");
+const actualRouterDbModule = await import("../../router/router-db.js");
 
 let settingsStore: Record<string, string> = {};
 const emitMock = mock(async () => {});
@@ -11,6 +15,8 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -23,6 +29,7 @@ mock.module("../../nats.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   dbGetSetting: (key: string) => settingsStore[key] ?? null,
   dbSetSetting: (key: string, value: string) => {
     settingsStore[key] = value;

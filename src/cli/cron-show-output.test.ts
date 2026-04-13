@@ -19,6 +19,7 @@ describe("buildCronShowOutput", () => {
         lastStatus: "ok",
         lastDurationMs: 2500,
         createdAt: Date.UTC(2026, 3, 10, 12, 0, 0),
+        updatedAt: Date.UTC(2026, 3, 11, 14, 30, 0),
         accountId: "main",
         agentId: "main",
       },

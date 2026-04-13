@@ -144,7 +144,7 @@ export class CronCommands {
     @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
-    @Option({ flags: "--account <name>", description: "Account for outbound routing (auto-detected from agent)" })
+    @Option({ flags: "--account <name>", description: "Account for channel delivery (auto-detected from agent)" })
     account?: string,
     @Option({ flags: "--description <text>", description: "Job description" }) description?: string,
   ) {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { dbCreateAgent, getDb } from "../../router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "../../router/sessions.js";
 import {
@@ -256,6 +256,7 @@ describe("AdapterCommands", () => {
           lastSignal: null,
           lastError: "stdout emitted invalid json",
           lastProtocolError: {
+            name: "Error",
             message: "Stdout protocol violation: event: Required",
             kind: "stdio-protocol-error",
             line: '{"type":"event"}',
@@ -325,6 +326,7 @@ describe("AdapterCommands", () => {
           lastSignal: null,
           lastError: "stdout emitted invalid json",
           lastProtocolError: {
+            name: "Error",
             message: "Stdout protocol violation: event: Required",
             kind: "stdio-protocol-error",
             line: '{"type":"event"}',
@@ -358,3 +360,4 @@ describe("AdapterCommands", () => {
     expect(output).not.toContain("rctx_123");
   });
 });
+afterAll(() => mock.restore());

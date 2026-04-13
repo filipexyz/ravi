@@ -1,10 +1,29 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve as resolvePath } from "node:path";
 import { tmpdir } from "node:os";
-import {
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+const actualConfigStoreModule = await import("../config-store.js");
+mock.module("../config-store.js", () => actualConfigStoreModule);
+
+const actualPluginsIndexModule = await import("../plugins/index.js");
+mock.module("../plugins/index.js", () => actualPluginsIndexModule);
+
+const actualRouterIndexModule = await import("../router/index.js");
+mock.module("../router/index.js", () => actualRouterIndexModule);
+
+mock.module("../omni/session-stream.js", () => ({
+  publishSessionPrompt: mock(async () => {}),
+}));
+
+const actualTaskServiceModule = await import("./service.js");
+mock.module("./service.js", () => actualTaskServiceModule);
+const { publishSessionPrompt } = await import("../omni/session-stream.js");
+
+const {
   archiveTask,
   blockTask,
+  buildTaskProfileSnapshot,
   createTask,
   buildTaskEventPayload,
   buildTaskDispatchPrompt,
@@ -18,6 +37,8 @@ import {
   dbGetTask,
   dbReportTaskProgress,
   dispatchTask,
+  emitTaskEvent,
+  failTask,
   getTaskDetails,
   isTaskRecoveryFresh,
   isTaskStreamCommand,
@@ -30,15 +51,24 @@ import {
   resolveTaskSessionContext,
   resolveTaskWorktreeContext,
   unarchiveTask,
-} from "./index.js";
+} = await import("./index.js");
 import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
 import { deleteSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
+
+afterAll(() => mock.restore());
 
 const createdTaskIds: string[] = [];
 const tempStateDirs: string[] = [];
 const createdAgentIds: string[] = [];
 const createdSessionNames: string[] = [];
+let stateDir: string | null = null;
+const publishSessionPromptMock = publishSessionPrompt as unknown as {
+  mockClear: () => void;
+  mock: { calls: Array<[string, { prompt: string; deliveryBarrier: string }]> };
+};
+
+setDefaultTimeout(20_000);
 
 function buildTestProfile(
   profileId: "default" | "brainstorm" | "task-doc-optional" | "task-doc-none" | string,
@@ -142,6 +172,9 @@ function buildTestProfile(
       resume: "resume {{task.id}}",
       dispatchSummary: "summary {{task.id}}",
       dispatchEventMessage: "event {{task.id}}",
+      reportDoneMessage: "{{report.text}}",
+      reportBlockedMessage: "{{report.text}}",
+      reportFailedMessage: "{{report.text}}",
     },
     sourceKind: "system",
     source: `system:${normalizedId}`,
@@ -202,6 +235,9 @@ function writeRuntimeOnlyTaskDirProfile(workspaceDir: string, profileId: string)
           resume: "Resume {{task.id}} using {{artifacts.primary.path}}",
           dispatchSummary: "Primary {{artifacts.primary.path}}",
           dispatchEventMessage: "Event {{task.id}}",
+          reportDoneMessage: "{{report.text}}",
+          reportBlockedMessage: "{{report.text}}",
+          reportFailedMessage: "{{report.text}}",
         },
       },
       null,
@@ -211,7 +247,12 @@ function writeRuntimeOnlyTaskDirProfile(workspaceDir: string, profileId: string)
   );
 }
 
-afterEach(() => {
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-task-service-test-");
+  publishSessionPromptMock.mockClear();
+});
+
+afterEach(async () => {
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
     if (id) dbDeleteTask(id);
@@ -231,12 +272,14 @@ afterEach(() => {
     if (id) dbDeleteAgent(id);
   }
 
+  const activeStateDir = process.env.RAVI_STATE_DIR ?? stateDir;
+  await cleanupIsolatedRaviState(activeStateDir);
+  stateDir = null;
+
   while (tempStateDirs.length > 0) {
     const dir = tempStateDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
-
-  delete process.env.RAVI_STATE_DIR;
 });
 
 describe("task substrate contract", () => {
@@ -525,6 +568,124 @@ describe("task substrate contract", () => {
     expect(payload.createdBySessionName).toBe("creator-session");
     expect(payload.reportToSessionName).toBe("lead-session");
     expect(payload.reportEvents).toEqual(["blocked", "done"]);
+  });
+
+  it("renders terminal report messages from profile-owned templates for done, blocked, and failed", async () => {
+    const profileSnapshot = buildTaskProfileSnapshot(
+      buildTestProfile("default", {
+        templates: {
+          dispatch: "dispatch {{task.id}}",
+          resume: "resume {{task.id}}",
+          dispatchSummary: "summary {{task.id}}",
+          dispatchEventMessage: "event {{task.id}}",
+          reportDoneMessage: "DONE {{task.id}} :: {{report.detail}} :: {{session.name}}",
+          reportBlockedMessage: "BLOCKED {{task.id}} :: {{report.detail}} :: {{session.name}}",
+          reportFailedMessage: "FAILED {{task.id}} :: {{report.detail}} :: {{session.name}}",
+        },
+      }),
+    );
+
+    const doneCreated = dbCreateTask({
+      title: "Done report template",
+      instructions: "Use custom done template",
+      createdBy: "creator",
+      createdBySessionName: "lead-session",
+      reportToSessionName: "lead-session",
+      reportEvents: ["blocked", "done", "failed"],
+      profileId: "default",
+      profileSnapshot,
+    });
+    createdTaskIds.push(doneCreated.task.id);
+    const doneResult = completeTask(doneCreated.task.id, {
+      actor: "worker",
+      sessionName: `${doneCreated.task.id}-work`,
+      message: "entregue",
+    });
+    await emitTaskEvent(doneResult.task, doneResult.event);
+
+    const blockedCreated = dbCreateTask({
+      title: "Blocked report template",
+      instructions: "Use custom blocked template",
+      createdBy: "creator",
+      createdBySessionName: "lead-session",
+      reportToSessionName: "lead-session",
+      reportEvents: ["blocked", "done", "failed"],
+      profileId: "default",
+      profileSnapshot,
+    });
+    createdTaskIds.push(blockedCreated.task.id);
+    const blockedResult = blockTask(blockedCreated.task.id, {
+      actor: "worker",
+      sessionName: `${blockedCreated.task.id}-work`,
+      message: "dependência externa",
+    });
+    await emitTaskEvent(blockedResult.task, blockedResult.event);
+
+    const failedCreated = dbCreateTask({
+      title: "Failed report template",
+      instructions: "Use custom failed template",
+      createdBy: "creator",
+      createdBySessionName: "lead-session",
+      reportToSessionName: "lead-session",
+      reportEvents: ["blocked", "done", "failed"],
+      profileId: "default",
+      profileSnapshot,
+    });
+    createdTaskIds.push(failedCreated.task.id);
+    const failure = failTask(failedCreated.task.id, {
+      actor: "worker",
+      sessionName: `${failedCreated.task.id}-work`,
+      message: "stack trace",
+    });
+    await emitTaskEvent(failure.task, failure.event);
+
+    const prompts = publishSessionPromptMock.mock.calls.map((call) => call[1].prompt);
+    expect(prompts).toContain(
+      `[System] Answer: [from: ${doneCreated.task.id}-work] DONE ${doneCreated.task.id} :: Resumo: entregue :: ${doneCreated.task.id}-work`,
+    );
+    expect(prompts).toContain(
+      `[System] Answer: [from: ${blockedCreated.task.id}-work] BLOCKED ${blockedCreated.task.id} :: Blocker: dependência externa :: ${blockedCreated.task.id}-work`,
+    );
+    expect(prompts).toContain(
+      `[System] Answer: [from: ${failedCreated.task.id}-work] FAILED ${failedCreated.task.id} :: Erro: stack trace :: ${failedCreated.task.id}-work`,
+    );
+  });
+
+  it("falls back to the legacy terminal report text when pinned profile snapshots do not define report templates", async () => {
+    const baseProfile = buildTestProfile("default");
+    const legacySnapshot = {
+      ...buildTaskProfileSnapshot(baseProfile),
+      templates: {
+        dispatch: baseProfile.templates.dispatch,
+        resume: baseProfile.templates.resume,
+        dispatchSummary: baseProfile.templates.dispatchSummary,
+        dispatchEventMessage: baseProfile.templates.dispatchEventMessage,
+      },
+    };
+
+    const created = dbCreateTask({
+      title: "Legacy snapshot report",
+      instructions: "Fallback to hardcoded report text",
+      createdBy: "creator",
+      createdBySessionName: "lead-session",
+      reportToSessionName: "lead-session",
+      reportEvents: ["done"],
+      profileId: "default",
+      profileSnapshot: legacySnapshot as never,
+    });
+    createdTaskIds.push(created.task.id);
+
+    const result = completeTask(created.task.id, {
+      actor: "worker",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "feito sem template novo",
+    });
+    await emitTaskEvent(result.task, result.event);
+
+    expect(publishSessionPromptMock.mock.calls.at(-1)?.[1].prompt).toBe(
+      `[System] Answer: [from: ${created.task.id}-work] Task concluída: ${created.task.id} · Legacy snapshot report\nResumo: feito sem template novo`,
+    );
   });
 
   it("persists task comments in details/snapshot without steering terminal work", async () => {

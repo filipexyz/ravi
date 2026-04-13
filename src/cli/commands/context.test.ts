@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
+const actualRouterDbModule = await import("../../router/router-db.js");
+const actualCliContextModule = await import("../context.js");
 
 let resolvedContext:
   | {
       contextId: string;
+      contextKey: string;
       kind: string;
       agentId?: string;
       sessionKey?: string;
@@ -19,6 +26,7 @@ let resolvedContext:
 let inlineContext:
   | {
       contextId: string;
+      contextKey: string;
       kind: string;
       agentId?: string;
       sessionKey?: string;
@@ -118,6 +126,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -125,6 +134,7 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../runtime/context-registry.js", () => ({
+  ...actualRuntimeContextRegistryModule,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
   resolveRuntimeContextOrThrow: () => {
     if (!resolvedContext) {
@@ -164,23 +174,12 @@ mock.module("../../runtime/context-registry.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   dbGetContext: (contextId: string) => {
     if (fetchedContext?.contextId === contextId) return fetchedContext;
     return listedContexts.find((context) => context.contextId === contextId) ?? null;
   },
   dbListContexts: () => listedContexts,
-}));
-
-mock.module("../../permissions/engine.js", () => ({
-  canWithCapabilities: (
-    capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
-    permission: string,
-    objectType: string,
-    objectId: string,
-  ) =>
-    capabilities.some(
-      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
-    ),
 }));
 
 mock.module("../../approval/service.js", () => ({
@@ -589,6 +588,7 @@ describe("ContextCommands", () => {
   it("uses the in-process tool context when available", () => {
     inlineContext = {
       contextId: "ctx_inline",
+      contextKey: "rctx_inline",
       kind: "agent-runtime",
       agentId: "dev",
       sessionKey: "agent:dev:inline",

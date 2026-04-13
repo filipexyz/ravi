@@ -76,7 +76,7 @@ export class TriggerRunner {
   private teardownSubscriptions(): void {
     for (const sub of this.topicSubs) {
       try {
-        sub.close();
+        sub.return?.(undefined);
       } catch {
         // ignore close errors
       }

@@ -103,7 +103,7 @@ All fields are set via `ravi agents set <id> <key> <value>`.
 | --- | --- | --- | --- |
 | `id` | string | — | Agent identifier, used in session keys |
 | `name` | string | — | Display name |
-| `cwd` | string | — | Working directory (CLAUDE.md, tools, etc.) |
+| `cwd` | string | — | Working directory (`AGENTS.md`, tools, optional `CLAUDE.md` compatibility bridge) |
 | `model` | string | `sonnet` | Model override (e.g., `sonnet`, `haiku`, `opus`) |
 | `mode` | `active` \| `sentinel` | `active` | `active` responds to messages; `sentinel` observes silently |
 | `dmScope` | DmScope | per-peer | How DMs are grouped into sessions (see below) |
@@ -308,7 +308,7 @@ ravi permissions clear     # Clear manual relations
 
 Subjects and objects use `type:id` notation. Valid types:
 
-`agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `outbound`, `team`, `tool`, `executable`, `toolgroup`
+`agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `team`, `tool`, `executable`, `toolgroup`
 
 ### Resolution Order
 
@@ -366,7 +366,8 @@ These relations have source `config` and are re-synced on every daemon start. Ma
 ~/ravi/
 ├── ravi.db              # Config and sessions (SQLite)
 └── <agent-id>/          # Agent working directory
-    └── CLAUDE.md        # Agent instructions
+    ├── AGENTS.md        # Canonical agent instructions
+    └── CLAUDE.md        # Compatibility bridge for Claude tooling (when needed)
 
 ~/.ravi/
 ├── .env                 # Environment variables

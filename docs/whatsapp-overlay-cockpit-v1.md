@@ -244,7 +244,7 @@ Implement reliable open behavior:
 
 Manual validation checklist for this phase:
 
-- [`docs/whatsapp-overlay-manual-checklist.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-manual-checklist.md)
+- [`docs/whatsapp-overlay-manual-checklist.md`](./whatsapp-overlay-manual-checklist.md)
 
 ### Phase 4. Operational Polish
 
@@ -260,15 +260,15 @@ Only after navigation feels solid:
 Current code relevant to this direction:
 
 - overlay bridge:
-  [`src/whatsapp-overlay/bridge.ts`](/Users/luis/dev/filipelabs/ravi.bot/src/whatsapp-overlay/bridge.ts)
+  `src/whatsapp-overlay/bridge.ts`
 - overlay model:
-  [`src/whatsapp-overlay/model.ts`](/Users/luis/dev/filipelabs/ravi.bot/src/whatsapp-overlay/model.ts)
+  `src/whatsapp-overlay/model.ts`
 - content script:
-  [`extensions/whatsapp-overlay/content.js`](/Users/luis/dev/filipelabs/ravi.bot/extensions/whatsapp-overlay/content.js)
+  `extensions/whatsapp-overlay/content.js`
 - extension styles:
-  [`extensions/whatsapp-overlay/styles.css`](/Users/luis/dev/filipelabs/ravi.bot/extensions/whatsapp-overlay/styles.css)
+  `extensions/whatsapp-overlay/styles.css`
 - DOM model:
-  [`src/whatsapp-overlay/DOM_MODEL.md`](/Users/luis/dev/filipelabs/ravi.bot/src/whatsapp-overlay/DOM_MODEL.md)
+  `src/whatsapp-overlay/DOM_MODEL.md`
 
 ## Summary
 

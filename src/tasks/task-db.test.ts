@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbAddTaskComment,
   dbArchiveTask,
@@ -22,12 +23,21 @@ import {
 } from "./task-db.js";
 
 const createdTaskIds: string[] = [];
+let stateDir: string | null = null;
 
-afterEach(() => {
+setDefaultTimeout(20_000);
+
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-task-db-test-");
+});
+
+afterEach(async () => {
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
     if (id) dbDeleteTask(id);
   }
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
 });
 
 describe("task-db", () => {
@@ -341,6 +351,9 @@ describe("task-db", () => {
           resume: "resume",
           dispatchSummary: "summary",
           dispatchEventMessage: "event",
+          reportDoneMessage: "{{report.text}}",
+          reportBlockedMessage: "{{report.text}}",
+          reportFailedMessage: "{{report.text}}",
         },
         artifacts: [],
         state: [],

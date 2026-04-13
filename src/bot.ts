@@ -254,8 +254,6 @@ export interface PromptMessage {
   taskBarrierTaskId?: string;
   source?: MessageTarget;
   context?: MessageContext;
-  /** Outbound system context injected by outbound module */
-  _outboundSystemContext?: string;
   /** Approval routing: channel to send approval requests when agent has no direct channel */
   _approvalSource?: MessageTarget;
 }
@@ -1143,12 +1141,9 @@ export class RaviBot {
     };
 
     // Build system prompt
-    let systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
+    const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
       agentMode: agent.mode,
     });
-    if (prompt._outboundSystemContext) {
-      systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
-    }
 
     // Build hooks (SDK expects HookCallbackMatcher[] per event)
     const hooks: Record<string, Array<{ matcher?: string; hooks: Array<(...args: any[]) => any> }>> = {};

@@ -40,7 +40,7 @@ export class TriggersCommands {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
-        '  ravi triggers add "Lead Qualificado" --topic "ravi.*.cli.outbound.qualify" --message "Notifica o grupo"',
+        '  ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "Notifica o grupo"',
       );
       console.log('  ravi triggers add "Agent Error" --topic "ravi.*.tool" --message "Analise o erro" --cooldown 1m');
       console.log("\nAvailable topics:");
@@ -129,7 +129,7 @@ export class TriggersCommands {
     agent?: string,
     @Option({
       flags: "--account <name>",
-      description: "Account for outbound routing (auto-detected from agent)",
+      description: "Account for channel delivery (auto-detected from agent)",
     })
     account?: string,
     @Option({

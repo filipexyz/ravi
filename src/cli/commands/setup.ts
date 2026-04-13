@@ -332,7 +332,7 @@ async function stepAgent(): Promise<void> {
 
   const resolvedCwd = cwd.replace("~", homedir());
   ensureAgentInstructionFiles(resolvedCwd, {
-    createClaudeStub: `# ${id}\n\nInstruções do agente aqui.\n`,
+    createAgentsStub: `# ${id}\n\nInstruções do agente aqui.\n`,
   });
 
   done(`Agente ${c.cyan}${id}${c.reset} criado em ${c.gray}${cwd}${c.reset}`);

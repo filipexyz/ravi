@@ -33,7 +33,10 @@ import { closeNats, connectNats, publish, subscribe } from "../nats.js";
 import { agentCan } from "../permissions/engine.js";
 import { canAccessSession, canModifySession, canViewAgent, type ScopeContext } from "../permissions/scope.js";
 import {
+  buildOverlaySessionWorkspaceTimeline,
   buildOverlaySnapshot,
+  mergeOverlaySessionWorkspaceMessages,
+  parseOverlayTimestamp,
   type OverlayActivity,
   type OverlayChatArtifact,
   type OverlayChatArtifactAnchor,
@@ -41,6 +44,7 @@ import {
   type OverlayQuery,
   type OverlaySessionSnapshot,
   type OverlaySessionEvent,
+  type OverlaySessionWorkspaceMessage,
   upsertOverlayChatArtifact,
 } from "./model.js";
 import type { OverlayPublishedState } from "./state.js";
@@ -56,6 +60,8 @@ import { matchOmniChatFromRow } from "./chat-list-match.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import {
   buildTaskStreamSnapshot,
+  dispatchTask,
+  emitTaskEvent,
   getTaskDocPath,
   readTaskDocFrontmatter,
   taskProfileUsesTaskDocument,
@@ -64,6 +70,7 @@ import {
   type TaskStreamSelection,
   type TaskStreamTaskEntity,
 } from "../tasks/index.js";
+import { buildOverlayTaskDispatchState, type OverlayTaskDispatchState } from "./task-dispatch.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "../..");
@@ -71,6 +78,9 @@ const PORT = Number(process.env.RAVI_WA_OVERLAY_PORT ?? 4210);
 const HOST = process.env.RAVI_WA_OVERLAY_HOST ?? "127.0.0.1";
 const CHAT_LIST_OMNI_CACHE_TTL_MS = 5_000;
 const HOT_SESSION_TASK_CACHE_TTL_MS = 1_000;
+const SESSION_LIVE_EVENT_LIMIT = 40;
+const SESSION_LIVE_MESSAGE_LIMIT = 24;
+const SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
 
 function toTaskDocRef(task: { id: string; taskDir: string | null }) {
   return {
@@ -84,6 +94,7 @@ type SessionArtifactTurnState = {
   activeResponseEmitIds: string[];
   activeDeliveredMessageIds: string[];
   activePromptMessageIds: string[];
+  activeAssistantMessageId: string | null;
   pendingArtifactId: string | null;
   pendingArtifactEmitId: string | null;
 };
@@ -160,6 +171,7 @@ type OverlayTasksQuery = {
   status: TaskStatus | null;
   agentId: string | null;
   sessionName: string | null;
+  actorSession: string | null;
   eventsLimit: number;
   timeZone: string | null;
   todayKey: string | null;
@@ -169,6 +181,8 @@ type OverlayTasksSnapshot = {
   ok: true;
   generatedAt: number;
   query: OverlayTasksQuery;
+  agents: OverlayTaskDispatchAgent[];
+  sessions: OverlayTaskDispatchSession[];
   stats: {
     total: number;
     open: number;
@@ -190,8 +204,36 @@ type OverlayTaskDocumentSummary = {
   frontmatter: TaskDocFrontmatterState;
 };
 
+type OverlayTaskDispatchAgent = {
+  id: string;
+  name: string | null;
+  provider: string | null;
+};
+
+type OverlayTaskDispatchSession = {
+  sessionKey: string;
+  sessionName: string;
+  agentId: string;
+  displayName: string | null;
+  chatLabel: string | null;
+  updatedAt: number;
+  activity: OverlayActivity;
+};
+
 type OverlayTaskSelection = TaskStreamSelection & {
   taskDocument: OverlayTaskDocumentSummary | null;
+  dispatch: OverlayTaskDispatchState | null;
+};
+
+type OverlayTaskDispatchBody = {
+  taskId?: string | null;
+  agentId?: string | null;
+  sessionName?: string | null;
+  reportToSessionName?: string | null;
+  actorSession?: string | null;
+  eventsLimit?: number | null;
+  timeZone?: string | null;
+  todayKey?: string | null;
 };
 
 type OmniInstanceRecord = {
@@ -426,6 +468,10 @@ const server = serve({
 
     if (url.pathname === "/api/whatsapp-overlay/tasks" && req.method === "GET") {
       return handleTasks(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/tasks/dispatch" && req.method === "POST") {
+      return handleTaskDispatch(req, url);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/current" && req.method === "POST") {
@@ -972,81 +1018,158 @@ function handleSnapshot(url: URL): Response {
   return withCors(Response.json(snapshot), url);
 }
 
-function handleTasks(url: URL): Response {
-  try {
-    const explicitTaskId = cleanNullable(url.searchParams.get("taskId"));
-    const status = cleanTaskStatus(url.searchParams.get("status"));
-    const agentId = cleanNullable(url.searchParams.get("agentId"));
-    const sessionName = cleanNullable(url.searchParams.get("sessionName"));
-    const eventsLimit = normalizeTaskEventsLimit(url.searchParams.get("eventsLimit"));
-    const timeZone = cleanNullable(url.searchParams.get("timeZone"));
-    const todayKey = cleanNullable(url.searchParams.get("todayKey"));
+function buildOverlayTaskDispatchAgents(): OverlayTaskDispatchAgent[] {
+  return getAllAgents()
+    .map((agent) => ({
+      id: agent.id,
+      name: cleanNullable(agent.name),
+      provider: cleanNullable(agent.provider ?? null),
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
 
-    const listSnapshot = buildTaskStreamSnapshot({
-      ...(status ? { status } : {}),
-      ...(agentId ? { agentId } : {}),
-      ...(sessionName ? { sessionName } : {}),
-      eventsLimit,
+function rankOverlayTaskDispatchSession(activity: OverlayActivity): number {
+  switch (activity) {
+    case "streaming":
+      return 5;
+    case "thinking":
+    case "awaiting_approval":
+      return 4;
+    case "compacting":
+      return 3;
+    case "blocked":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function buildOverlayTaskDispatchSessions(
+  sessions: ReturnType<typeof getOverlaySessions> = getOverlaySessions(),
+): OverlayTaskDispatchSession[] {
+  return sessions
+    .map((session) => {
+      const sessionName = cleanNullable(session.name ?? session.sessionKey);
+      if (!sessionName) return null;
+      const activity = liveBySessionName.get(session.name ?? "")?.activity ?? "idle";
+      return {
+        sessionKey: session.sessionKey,
+        sessionName,
+        agentId: session.agentId,
+        displayName: cleanNullable(session.displayName),
+        chatLabel:
+          cleanNullable(session.displayName) ?? cleanNullable(session.subject) ?? cleanNullable(session.lastTo) ?? null,
+        updatedAt: session.updatedAt,
+        activity,
+      };
+    })
+    .filter((session): session is OverlayTaskDispatchSession => Boolean(session))
+    .sort((left, right) => {
+      const rightRank = rankOverlayTaskDispatchSession(right.activity);
+      const leftRank = rankOverlayTaskDispatchSession(left.activity);
+      return (
+        rightRank - leftRank || right.updatedAt - left.updatedAt || left.sessionName.localeCompare(right.sessionName)
+      );
     });
-    const items = [...listSnapshot.items].sort((a, b) => b.updatedAt - a.updatedAt);
-    const activeItems = items.filter((item) => item.status !== "done" && item.status !== "failed");
-    let selectedTaskId = explicitTaskId ?? activeItems[0]?.id ?? items[0]?.id ?? null;
-    let selectedTask: TaskStreamSelection | null = null;
+}
 
-    if (selectedTaskId) {
-      try {
-        selectedTask =
-          buildTaskStreamSnapshot({
-            taskId: selectedTaskId,
-            eventsLimit,
-          }).selectedTask ?? null;
-      } catch (error) {
-        if (explicitTaskId && error instanceof Error && /task not found/i.test(error.message)) {
-          selectedTaskId = activeItems[0]?.id ?? items[0]?.id ?? null;
-          selectedTask = selectedTaskId
-            ? (buildTaskStreamSnapshot({
-                taskId: selectedTaskId,
-                eventsLimit,
-              }).selectedTask ?? null)
-            : null;
-        } else {
-          throw error;
-        }
+function buildOverlayTasksPayload(query: OverlayTasksQuery): OverlayTasksSnapshot {
+  const overlaySessions = getOverlaySessions();
+  const dispatchSessions = buildOverlayTaskDispatchSessions(overlaySessions);
+  const actorSession = query.actorSession ? resolveSession(query.actorSession) : null;
+  const listSnapshot = buildTaskStreamSnapshot({
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.agentId ? { agentId: query.agentId } : {}),
+    ...(query.sessionName ? { sessionName: query.sessionName } : {}),
+    eventsLimit: query.eventsLimit,
+  });
+  const items = [...listSnapshot.items].sort((a, b) => b.updatedAt - a.updatedAt);
+  const activeItems = items.filter((item) => item.status !== "done" && item.status !== "failed");
+  let selectedTaskId = query.taskId ?? activeItems[0]?.id ?? items[0]?.id ?? null;
+  let selectedTask: TaskStreamSelection | null = null;
+
+  if (selectedTaskId) {
+    try {
+      selectedTask =
+        buildTaskStreamSnapshot({
+          taskId: selectedTaskId,
+          eventsLimit: query.eventsLimit,
+        }).selectedTask ?? null;
+    } catch (error) {
+      if (query.taskId && error instanceof Error && /task not found/i.test(error.message)) {
+        selectedTaskId = activeItems[0]?.id ?? items[0]?.id ?? null;
+        selectedTask = selectedTaskId
+          ? (buildTaskStreamSnapshot({
+              taskId: selectedTaskId,
+              eventsLimit: query.eventsLimit,
+            }).selectedTask ?? null)
+          : null;
+      } else {
+        throw error;
       }
     }
+  }
 
-    const selectedTaskWithDocument: OverlayTaskSelection | null = selectedTask
-      ? {
-          ...selectedTask,
-          taskDocument: !taskProfileUsesTaskDocument(selectedTask.task.taskProfile)
-            ? null
-            : {
-                taskDir: selectedTask.task.taskDir ?? null,
-                path: getTaskDocPath(toTaskDocRef(selectedTask.task)),
-                frontmatter: readTaskDocFrontmatter(toTaskDocRef(selectedTask.task)),
-              },
-        }
-      : null;
+  const selectedTaskWithDocument: OverlayTaskSelection | null = selectedTask
+    ? {
+        ...selectedTask,
+        taskDocument: !taskProfileUsesTaskDocument(selectedTask.task.taskProfile)
+          ? null
+          : {
+              taskDir: selectedTask.task.taskDir ?? null,
+              path: getTaskDocPath(toTaskDocRef(selectedTask.task)),
+              frontmatter: readTaskDocFrontmatter(toTaskDocRef(selectedTask.task)),
+            },
+        dispatch: buildOverlayTaskDispatchState(selectedTask, {
+          actorSessionName: actorSession?.name ?? actorSession?.sessionKey ?? null,
+          actorAgentId: actorSession?.agentId ?? null,
+          availableSessions: dispatchSessions.map((session) => ({
+            sessionName: session.sessionName,
+            agentId: session.agentId,
+          })),
+        }),
+      }
+    : null;
 
-    const payload: OverlayTasksSnapshot = {
-      ok: true,
-      generatedAt: Date.now(),
-      query: {
-        taskId: selectedTaskId,
-        status,
-        agentId,
-        sessionName,
-        eventsLimit,
-        timeZone,
-        todayKey,
-      },
-      stats: listSnapshot.stats,
-      items,
-      activeItems,
-      dailyActivity: buildOverlayTasksDailyActivity({ tasks: items, timeZone, todayKey }),
-      selectedTask: selectedTaskWithDocument,
-    };
+  return {
+    ok: true,
+    generatedAt: Date.now(),
+    query: {
+      taskId: selectedTaskId,
+      status: query.status,
+      agentId: query.agentId,
+      sessionName: query.sessionName,
+      actorSession: query.actorSession,
+      eventsLimit: query.eventsLimit,
+      timeZone: query.timeZone,
+      todayKey: query.todayKey,
+    },
+    agents: buildOverlayTaskDispatchAgents(),
+    sessions: dispatchSessions,
+    stats: listSnapshot.stats,
+    items,
+    activeItems,
+    dailyActivity: buildOverlayTasksDailyActivity({
+      tasks: items,
+      timeZone: query.timeZone,
+      todayKey: query.todayKey,
+    }),
+    selectedTask: selectedTaskWithDocument,
+  };
+}
 
+function handleTasks(url: URL): Response {
+  try {
+    const payload = buildOverlayTasksPayload({
+      taskId: cleanNullable(url.searchParams.get("taskId")),
+      status: cleanTaskStatus(url.searchParams.get("status")),
+      agentId: cleanNullable(url.searchParams.get("agentId")),
+      sessionName: cleanNullable(url.searchParams.get("sessionName")),
+      actorSession: cleanNullable(url.searchParams.get("actorSession")),
+      eventsLimit: normalizeTaskEventsLimit(url.searchParams.get("eventsLimit")),
+      timeZone: cleanNullable(url.searchParams.get("timeZone")),
+      todayKey: cleanNullable(url.searchParams.get("todayKey")),
+    });
     return withCors(Response.json(payload), url);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1061,6 +1184,88 @@ function handleTasks(url: URL): Response {
       ),
       url,
     );
+  }
+}
+
+async function handleTaskDispatch(req: Request, url: URL): Promise<Response> {
+  try {
+    const body = ((await req.json()) as OverlayTaskDispatchBody | null) ?? {};
+    const taskId = cleanRequired(cleanNullable(body.taskId), "taskId");
+    const agentId = cleanRequired(cleanNullable(body.agentId), "agentId");
+    const eventsLimit = normalizeTaskEventsLimit(String(body.eventsLimit ?? 20));
+    const selection = buildTaskStreamSnapshot({
+      taskId,
+      eventsLimit,
+    }).selectedTask;
+
+    if (!selection) {
+      throw new OverlayHttpResponseError(404, { ok: false, error: `Task not found: ${taskId}` });
+    }
+
+    const actorSessionName = cleanNullable(body.actorSession);
+    const dispatchSessions = buildOverlayTaskDispatchSessions();
+    const actorSession = actorSessionName ? resolveSession(actorSessionName) : null;
+    const dispatch = buildOverlayTaskDispatchState(selection, {
+      actorSessionName: actorSession?.name ?? actorSession?.sessionKey ?? null,
+      actorAgentId: actorSession?.agentId ?? null,
+      availableSessions: dispatchSessions.map((session) => ({
+        sessionName: session.sessionName,
+        agentId: session.agentId,
+      })),
+    });
+    if (!dispatch?.allowed) {
+      const error =
+        dispatch?.reason === "assigned"
+          ? "Essa task já tem assignment ativo."
+          : dispatch?.reason === "archived"
+            ? "Task arquivada não pode ser despachada pelo kanban."
+            : "Só tasks open e ainda não despachadas podem ser enviadas pelo kanban.";
+      throw new OverlayHttpResponseError(409, { ok: false, error });
+    }
+
+    const sessionName = cleanNullable(body.sessionName) ?? dispatch.defaultSessionName;
+    const reportToSessionName = cleanNullable(body.reportToSessionName) ?? dispatch.defaultReportToSessionName;
+    const result = await dispatchTask(taskId, {
+      agentId,
+      sessionName,
+      assignedBy: actorSession?.name ?? actorSession?.sessionKey ?? "wa-overlay",
+      ...(actorSession?.agentId ? { assignedByAgentId: actorSession.agentId } : {}),
+      ...(actorSession ? { assignedBySessionName: actorSession.name ?? actorSession.sessionKey } : {}),
+      ...(reportToSessionName ? { reportToSessionName } : {}),
+    });
+    await emitTaskEvent(result.task, result.event);
+    hotSessionTaskCache = null;
+
+    const snapshot = buildOverlayTasksPayload({
+      taskId,
+      status: null,
+      agentId: null,
+      sessionName: null,
+      actorSession: actorSessionName,
+      eventsLimit,
+      timeZone: cleanNullable(body.timeZone),
+      todayKey: cleanNullable(body.todayKey),
+    });
+
+    return withCors(
+      Response.json({
+        ok: true,
+        taskId,
+        sessionName: result.sessionName,
+        reportToSessionName: result.assignment.reportToSessionName ?? reportToSessionName ?? null,
+        assignment: result.assignment,
+        dispatchSummary: result.dispatchSummary,
+        snapshot,
+      }),
+      url,
+    );
+  } catch (error) {
+    if (error instanceof OverlayHttpResponseError) {
+      return withCors(Response.json(error.payload, { status: error.status }), url);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    const status = /task not found/i.test(message) ? 404 : 400;
+    return withCors(Response.json({ ok: false, error: message }, { status }), url);
   }
 }
 
@@ -1575,6 +1780,7 @@ function handleSessionWorkspace(url: URL): Response {
           session: null,
           snapshot,
           messages: [],
+          timeline: [],
           historySource: "missing",
           generatedAt: Date.now(),
         },
@@ -1584,14 +1790,25 @@ function handleSessionWorkspace(url: URL): Response {
     );
   }
 
-  const historyMessages = getRecentSessionHistory(snapshot.session.sessionName, 80);
-  const fallbackMessages = historyMessages.length === 0 ? getRecentHistory(snapshot.session.sessionName, 80) : [];
-  const messages = (historyMessages.length > 0 ? historyMessages : fallbackMessages).map((message) => ({
-    id: message.id,
+  const providerHistoryMessages = getRecentSessionHistory(snapshot.session.sessionName, 80).map((message) => ({
+    id: String(message.id),
     role: message.role,
     content: message.content,
-    createdAt: message.created_at,
+    createdAt: parseOverlayTimestamp(message.created_at),
+    source: "history" as const,
   }));
+  const recentHistoryMessages = getRecentHistory(snapshot.session.sessionName, 80).map((message) => ({
+    id: String(message.id),
+    role: message.role,
+    content: message.content,
+    createdAt: parseOverlayTimestamp(message.created_at),
+    source: "history" as const,
+  }));
+  const messages = mergeOverlaySessionWorkspaceMessages(recentHistoryMessages, providerHistoryMessages);
+  const timeline = buildOverlaySessionWorkspaceTimeline({
+    messages,
+    live: snapshot.session.live,
+  });
 
   return withCors(
     Response.json({
@@ -1599,7 +1816,8 @@ function handleSessionWorkspace(url: URL): Response {
       session: snapshot.session,
       snapshot,
       messages,
-      historySource: historyMessages.length > 0 ? "provider-session" : "recent-history",
+      timeline,
+      historySource: providerHistoryMessages.length > 0 ? "merged-history" : "recent-history",
       generatedAt: Date.now(),
     }),
     url,
@@ -2249,6 +2467,7 @@ function toOmniPanelSessionSnapshot(session: SessionEntry): OverlaySessionSnapsh
     compactionCount: session.compactionCount ?? 0,
     runtimeProvider: session.runtimeProvider ?? null,
     providerSessionId: session.providerSessionId ?? null,
+    createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     lastHeartbeatText: session.lastHeartbeatText ?? null,
     lastHeartbeatSentAt: session.lastHeartbeatSentAt ?? null,
@@ -2471,7 +2690,7 @@ function ensureOmniAgent(agentId: string, createIfMissing: boolean): boolean {
   createAgent({ id: agentId, cwd });
   ensureAgentDirs(loadRouterConfig());
   ensureAgentInstructionFiles(cwd, {
-    createClaudeStub: `# ${agentId}\n\nInstruções do agente aqui.\n`,
+    createAgentsStub: `# ${agentId}\n\nInstruções do agente aqui.\n`,
   });
   return true;
 }
@@ -2523,6 +2742,7 @@ async function trackSessionRuntime(): Promise<void> {
     if (!sessionName) continue;
 
     if (topic.endsWith(".prompt")) {
+      const eventTimestamp = Date.now();
       const promptContext =
         data.context && typeof data.context === "object" ? (data.context as Record<string, unknown>) : null;
       const promptMessageId =
@@ -2532,11 +2752,21 @@ async function trackSessionRuntime(): Promise<void> {
       if (promptMessageId) {
         rememberPromptMessageId(sessionName, promptMessageId);
       }
+      clearActiveAssistantMessageId(sessionName);
+      const promptText = formatLiveText(typeof data.prompt === "string" ? data.prompt : "");
       pushLiveEvent(sessionName, {
         kind: "prompt",
         label: "prompt",
-        detail: formatLiveText(typeof data.prompt === "string" ? data.prompt : ""),
-        timestamp: Date.now(),
+        detail: promptText,
+        timestamp: eventTimestamp,
+      });
+      upsertLiveWorkspaceMessage(sessionName, {
+        id: `live:user:${eventTimestamp}`,
+        role: "user",
+        content: promptText,
+        createdAt: eventTimestamp,
+        source: "live",
+        pending: true,
       });
       upsertLive(sessionName, "thinking", "prompt queued");
       continue;
@@ -2561,6 +2791,7 @@ async function trackSessionRuntime(): Promise<void> {
     }
 
     if (topic.endsWith(".response")) {
+      const eventTimestamp = Date.now();
       const emitId = cleanNullable(typeof data._emitId === "string" ? data._emitId : null);
       if (emitId) {
         rememberResponseEmitId(sessionName, emitId);
@@ -2570,7 +2801,15 @@ async function trackSessionRuntime(): Promise<void> {
         kind: "response",
         label: "response",
         detail: formatLiveText(responseText),
-        timestamp: Date.now(),
+        timestamp: eventTimestamp,
+      });
+      upsertLiveWorkspaceMessage(sessionName, {
+        id: ensureActiveAssistantMessageId(sessionName, eventTimestamp),
+        role: "assistant",
+        content: formatLiveText(responseText),
+        createdAt: eventTimestamp,
+        source: "live",
+        pending: true,
       });
       upsertLive(sessionName, "streaming", "response emitted", false);
       continue;
@@ -2581,12 +2820,7 @@ async function trackSessionRuntime(): Promise<void> {
       const eventName = typeof data.event === "string" ? data.event : undefined;
       const toolId = cleanNullable(typeof data.toolId === "string" ? data.toolId : null) ?? `tool-${eventTimestamp}`;
       const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
-      const toolDetail =
-        eventName === "start"
-          ? summarizeToolInput(data.input)
-          : eventName === "end"
-            ? summarizeToolArtifactDetail(toolName, data)
-            : undefined;
+      const toolDetail = summarizeToolArtifactPreview(data, summarizeToolInput(data.input) || null) || undefined;
       pushLiveEvent(sessionName, {
         kind: "tool",
         label: toolName,
@@ -2738,7 +2972,7 @@ function upsertLive(sessionName: string, activity: OverlayActivity, summary: str
 function pushLiveEvent(sessionName: string, event: OverlaySessionEvent): void {
   const current = liveBySessionName.get(sessionName);
   const previous = Array.isArray(current?.events) ? current.events : [];
-  const next = [event, ...previous].slice(0, 12);
+  const next = [event, ...previous].slice(0, SESSION_LIVE_EVENT_LIMIT);
   liveBySessionName.set(sessionName, {
     ...current,
     activity: current?.activity ?? "unknown",
@@ -2772,6 +3006,7 @@ function getOrCreateArtifactTurnState(sessionName: string): SessionArtifactTurnS
     activeResponseEmitIds: [],
     activeDeliveredMessageIds: [],
     activePromptMessageIds: [],
+    activeAssistantMessageId: null,
     pendingArtifactId: null,
     pendingArtifactEmitId: null,
   };
@@ -2853,6 +3088,87 @@ function resetActiveArtifactTurnState(sessionName: string): void {
   state.activeResponseEmitIds = [];
   state.activeDeliveredMessageIds = [];
   state.activePromptMessageIds = [];
+  state.activeAssistantMessageId = null;
+}
+
+function ensureActiveAssistantMessageId(sessionName: string, timestamp: number): string {
+  const state = getOrCreateArtifactTurnState(sessionName);
+  if (!state.activeAssistantMessageId) {
+    state.activeAssistantMessageId = `live:assistant:${timestamp}`;
+  }
+  return state.activeAssistantMessageId;
+}
+
+function clearActiveAssistantMessageId(sessionName: string): void {
+  const state = artifactTurnStateBySessionName.get(sessionName);
+  if (!state) return;
+  state.activeAssistantMessageId = null;
+}
+
+function upsertLiveWorkspaceMessage(sessionName: string, message: OverlaySessionWorkspaceMessage): void {
+  const content = normalizeLiveWorkspaceText(message.content);
+  const createdAt = parseOverlayTimestamp(message.createdAt);
+  if (!content || !createdAt) {
+    return;
+  }
+
+  const current = liveBySessionName.get(sessionName);
+  const previous = Array.isArray(current?.messages) ? current.messages : [];
+  const next = previous.slice();
+  const index = next.findIndex((item) => {
+    const itemCreatedAt = parseOverlayTimestamp(item.createdAt);
+    if (item.role !== message.role) return false;
+    if (Math.abs(itemCreatedAt - createdAt) > SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS) {
+      return false;
+    }
+    return liveWorkspaceTextsOverlap(normalizeLiveWorkspaceText(item.content), content);
+  });
+
+  if (index === -1) {
+    next.push({
+      ...message,
+      content: message.content.trim(),
+      createdAt,
+      source: message.source ?? "live",
+    });
+  } else {
+    const existing = next[index]!;
+    const existingText = normalizeLiveWorkspaceText(existing.content);
+    const shouldReplace =
+      content.length > existingText.length ||
+      (content.length === existingText.length && createdAt >= parseOverlayTimestamp(existing.createdAt));
+    if (shouldReplace) {
+      next[index] = {
+        ...existing,
+        ...message,
+        id: existing.id,
+        createdAt: parseOverlayTimestamp(existing.createdAt) || createdAt,
+        source: existing.source ?? message.source ?? "live",
+      };
+    }
+  }
+
+  next.sort((left, right) => parseOverlayTimestamp(left.createdAt) - parseOverlayTimestamp(right.createdAt));
+
+  liveBySessionName.set(sessionName, {
+    ...current,
+    activity: current?.activity ?? "unknown",
+    updatedAt: Math.max(current?.updatedAt ?? 0, createdAt),
+    busySince: current?.busySince,
+    messages: next.slice(-SESSION_LIVE_MESSAGE_LIMIT),
+  });
+}
+
+function normalizeLiveWorkspaceText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function liveWorkspaceTextsOverlap(left: string, right: string): boolean {
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
 }
 
 function updateStreamEvent(sessionName: string, detail: string): void {
@@ -2882,7 +3198,16 @@ function updateStreamEvent(sessionName: string, detail: string): void {
     activity: current?.activity ?? "streaming",
     updatedAt: timestamp,
     busySince: current?.busySince ?? timestamp,
-    events: previous.sort((a, b) => b.timestamp - a.timestamp).slice(0, 12),
+    events: previous.sort((a, b) => b.timestamp - a.timestamp).slice(0, SESSION_LIVE_EVENT_LIMIT),
+  });
+
+  upsertLiveWorkspaceMessage(sessionName, {
+    id: ensureActiveAssistantMessageId(sessionName, timestamp),
+    role: "assistant",
+    content: nextDetail,
+    createdAt: timestamp,
+    source: "live",
+    pending: true,
   });
 }
 
@@ -2934,11 +3259,19 @@ function buildToolArtifact(
 ): OverlayChatArtifact {
   const artifactId = `${sessionName}:tool:${toolId}`;
   const existing = findLiveArtifact(sessionName, artifactId);
+  const description = summarizeToolInput(data.input) || existing?.description || null;
+  const preview = summarizeToolArtifactPreview(data, existing?.preview ?? null);
+  const fullDetail = buildToolArtifactFullDetail(data, existing?.fullDetail ?? null);
+  const status = resolveToolArtifactStatus(data, existing?.status ?? null);
   return {
     id: artifactId,
     kind: "tool",
     label: toolName,
-    detail: summarizeToolArtifactDetail(toolName, data),
+    detail: preview || description || existing?.detail || toolName,
+    description,
+    preview,
+    fullDetail,
+    status,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     anchor: existing?.anchor ?? resolveActiveArtifactAnchor(sessionName),
@@ -2979,27 +3312,17 @@ function findRecentPromptMessageIdInHistory(sessionName: string): string | null 
 }
 
 function summarizeToolInput(value: unknown): string {
-  if (value == null) return "running";
-  if (typeof value === "string") return formatLiveText(value, 240);
-  if (typeof value !== "object") return String(value);
-
-  const keys = Object.keys(value as Record<string, unknown>).slice(0, 4);
-  return keys.length ? keys.join(", ") : "running";
+  return summarizeToolValue(value, 180);
 }
 
 function summarizeToolOutput(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return formatLiveText(value, 240);
-  if (typeof value !== "object") return formatLiveText(String(value), 240);
-
-  const keys = Object.keys(value as Record<string, unknown>).slice(0, 4);
-  return keys.length ? keys.join(", ") : "";
+  return summarizeToolValue(value, 220);
 }
 
-function summarizeToolArtifactDetail(toolName: string, data: Record<string, unknown>): string {
+function summarizeToolArtifactPreview(data: Record<string, unknown>, fallback: string | null): string {
   const eventName = typeof data.event === "string" ? data.event : undefined;
   if (eventName === "start") {
-    return summarizeToolInput(data.input);
+    return fallback || "executando";
   }
 
   if (eventName === "end") {
@@ -3008,12 +3331,126 @@ function summarizeToolArtifactDetail(toolName: string, data: Record<string, unkn
       typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
         ? formatDurationCompact(data.durationMs)
         : "";
-    const outputSummary = data.isError === true ? summarizeToolOutput(data.output) : "";
+    const outputSummary = summarizeToolOutput(resolveToolArtifactResultValue(data));
     const parts = [status, duration, outputSummary].filter(Boolean);
-    return parts.join(" · ") || `${toolName} finished`;
+    return parts.join(" · ") || status;
   }
 
-  return "";
+  return fallback || "";
+}
+
+function resolveToolArtifactStatus(
+  data: Record<string, unknown>,
+  fallback: OverlayChatArtifact["status"] | null | undefined,
+): OverlayChatArtifact["status"] | null {
+  const eventName = typeof data.event === "string" ? data.event : undefined;
+  if (eventName === "start") {
+    return "running";
+  }
+  if (eventName === "end") {
+    return data.isError === true ? "error" : "ok";
+  }
+  return fallback ?? null;
+}
+
+function buildToolArtifactFullDetail(data: Record<string, unknown>, fallback: string | null): string | null {
+  const eventName = typeof data.event === "string" ? data.event : undefined;
+  if (eventName !== "end") {
+    return fallback;
+  }
+
+  const lines: string[] = [];
+  lines.push(`status: ${data.isError === true ? "error" : "ok"}`);
+
+  if (typeof data.durationMs === "number" && Number.isFinite(data.durationMs)) {
+    lines.push(`duration: ${formatDurationCompact(data.durationMs)}`);
+  }
+
+  const resultDetail = formatToolDetailValue(resolveToolArtifactResultValue(data));
+  if (resultDetail) {
+    lines.push("");
+    lines.push(data.isError === true ? "error:" : "result:");
+    lines.push(resultDetail);
+  }
+
+  const detail = lines.join("\n").trim();
+  return detail || fallback;
+}
+
+function resolveToolArtifactResultValue(data: Record<string, unknown>): unknown {
+  return data.isError === true
+    ? (data.output ?? data.error ?? data.message ?? data.reason ?? null)
+    : (data.output ?? data.result ?? data.message ?? null);
+}
+
+function summarizeToolValue(value: unknown, max = 220): string {
+  if (value == null) return "";
+  if (typeof value === "string") return formatLiveText(value, max);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  if (Array.isArray(value)) {
+    const summary = value
+      .slice(0, 3)
+      .map((entry) => summarizeToolLeafValue(entry))
+      .filter(Boolean)
+      .join(" · ");
+    return formatLiveText(summary, max);
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entryValue]) => entryValue != null && entryValue !== "")
+      .slice(0, 4)
+      .map(([key, entryValue]) => `${key}=${summarizeToolLeafValue(entryValue)}`)
+      .filter(Boolean);
+    if (entries.length > 0) {
+      return formatLiveText(entries.join(" · "), max);
+    }
+    return formatToolDetailValue(value).replace(/\s+/g, " ").trim().slice(0, max);
+  }
+
+  return formatLiveText(String(value), max);
+}
+
+function summarizeToolLeafValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") {
+    return formatLiveText(value, 40);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return formatLiveText(
+      value
+        .slice(0, 3)
+        .map((entry) => summarizeToolLeafValue(entry))
+        .filter(Boolean)
+        .join(", "),
+      40,
+    );
+  }
+  if (typeof value === "object") {
+    return formatLiveText(
+      Object.keys(value as Record<string, unknown>)
+        .slice(0, 3)
+        .join(", "),
+      40,
+    );
+  }
+  return formatLiveText(String(value), 40);
+}
+
+function formatToolDetailValue(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 function formatDurationCompact(durationMs: number): string {

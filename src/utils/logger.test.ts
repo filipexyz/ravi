@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { logger } from "./logger.js";
+const actualNatsModule = await import("nats");
 
 const fakeNatsConnection = {
   drain: mock(async () => {}),
@@ -11,6 +12,7 @@ const fakeNatsConnection = {
 const connectMock = mock(async () => fakeNatsConnection);
 
 mock.module("nats", () => ({
+  ...actualNatsModule,
   connect: connectMock,
   StringCodec: () => ({
     encode: (value: string) => Buffer.from(value),
@@ -67,8 +69,9 @@ describe("logger terminal stream", () => {
     expect(fakeNatsConnection.drain).toHaveBeenCalledTimes(1);
     expect(stdoutSpy).not.toHaveBeenCalled();
 
-    const stderrOutput = stderrSpy.mock.calls.map((call) => String(call[0] ?? "")).join("");
+    const stderrOutput = stderrSpy.mock.calls.map((call: unknown[]) => String(call[0] ?? "")).join("");
     expect(stderrOutput).toContain("[ravi:nats] Connected to NATS");
     expect(stderrOutput).toContain("[ravi:nats] NATS connection closed");
   });
 });
+afterAll(() => mock.restore());

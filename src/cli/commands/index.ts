@@ -21,7 +21,6 @@ export * from "./hooks.js";
 export * from "./image.js";
 export * from "./instances.js";
 export * from "./media.js";
-export * from "./outbound.js";
 export * from "./permissions.js";
 export * from "./react.js";
 export * from "./service.js";

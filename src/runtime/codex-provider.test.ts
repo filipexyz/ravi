@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 
@@ -214,9 +215,9 @@ describe("createCodexRuntimeProvider", () => {
     expect(completions[0]?.execution?.model).toBe("gpt-5.4");
   });
 
-  it("loads workspace instructions from CLAUDE.md into the Codex system prompt", async () => {
+  it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
-    writeFileSync(join(cwd, "CLAUDE.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
+    writeFileSync(join(cwd, "AGENTS.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
 
     const { calls, transport } = createMockTransport([
       () => ({
@@ -239,19 +240,49 @@ describe("createCodexRuntimeProvider", () => {
     await collectEvents(session.events);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.systemPromptAppend).toContain(`Workspace instructions loaded from ${join(cwd, "CLAUDE.md")}`);
+    expect(calls[0]?.systemPromptAppend).toContain(`Workspace instructions loaded from ${join(cwd, "AGENTS.md")}`);
     expect(calls[0]?.systemPromptAppend).toContain("Use the Ravi skills when helpful.");
     expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
   });
 
-  it("prepareSession creates an AGENTS.md bridge for Codex workspaces", () => {
+  it("migrates legacy CLAUDE.md workspaces before loading Codex instructions", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
     writeFileSync(join(cwd, "CLAUDE.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
+    writeFileSync(join(cwd, "AGENTS.md"), buildGeneratedAgentsBridge());
+
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_legacy_instructions" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd,
+        systemPromptAppend: "Runtime rules go here.",
+      }),
+    );
+
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.systemPromptAppend).toContain(`Workspace instructions loaded from ${join(cwd, "AGENTS.md")}`);
+    expect(calls[0]?.systemPromptAppend).toContain("Use the Ravi skills when helpful.");
+  });
+
+  it("prepareSession creates a CLAUDE.md compatibility bridge for AGENTS-first workspaces", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    writeFileSync(join(cwd, "AGENTS.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
 
     const provider = createCodexRuntimeProvider({ defaultModel: "gpt-5" });
     provider.prepareSession?.({ agentId: "main", cwd, plugins: [] });
 
-    expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+    expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
   });
 
   it("includes synchronized Ravi skill names in the Codex system prompt", async () => {

@@ -1,4 +1,9 @@
-import { describe, expect, it, beforeEach, mock } from "bun:test";
+import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../cli/context.js");
+const actualLoggerModule = await import("../utils/logger.js");
 
 // ============================================================================
 // Mock dependencies
@@ -44,12 +49,15 @@ mock.module("../permissions/relations.js", () => ({
 let mockContext: { agentId?: string; sessionKey?: string; sessionName?: string } | undefined;
 
 mock.module("../cli/context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => mockContext,
 }));
 
 // Mock logger
 mock.module("../utils/logger.js", () => ({
+  ...actualLoggerModule,
   logger: {
+    ...actualLoggerModule.logger,
     child: () => ({
       debug: () => {},
       info: () => {},
@@ -60,7 +68,7 @@ mock.module("../utils/logger.js", () => ({
 }));
 
 // Import AFTER mocks
-const { createBashPermissionHook, createToolPermissionHook } = await import("./hook");
+const { createBashPermissionHook, createToolPermissionHook } = await import("./hook.js");
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {

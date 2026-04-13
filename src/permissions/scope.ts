@@ -198,7 +198,7 @@ export function canWriteContacts(ctx: ScopeContext): boolean {
 }
 
 // ============================================================================
-// Resource Access (cron, triggers, outbound)
+// Resource Access (owned runtime resources)
 // ============================================================================
 
 /**

@@ -532,7 +532,7 @@ export class InstancesCommands {
   ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
-    const val = (inst as Record<string, unknown>)[key];
+    const val = (inst as unknown as Record<string, unknown>)[key];
     if (val === undefined) fail(`Unknown key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
     console.log(`${name}.${key}: ${val ?? "(not set)"}`);
   }
@@ -969,7 +969,7 @@ export class InstancesRoutesCommands {
         priority: pri,
         policy: policy ?? undefined,
         session: session ?? undefined,
-        dmScope: dmScope as typeof DmScopeSchema._type | undefined,
+        dmScope: dmScope ? DmScopeSchema.parse(dmScope) : undefined,
         channel: channel ?? undefined,
       });
       printInstanceMutationTarget(name);
@@ -1109,7 +1109,7 @@ export class InstancesRoutesCommands {
       printInstanceMutationTarget(name);
       console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
       if (key === "agent" && !clear) {
-        printRouteLiveEffect(name, pattern, value, null);
+        printRouteLiveEffect(name, pattern, value, undefined);
       }
       emitConfigChanged();
 

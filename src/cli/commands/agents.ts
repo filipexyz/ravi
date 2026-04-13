@@ -23,7 +23,11 @@ import {
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
-import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js";
+import {
+  ensureAgentInstructionFiles,
+  inspectAgentInstructionFiles,
+  type AgentInstructionState,
+} from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 
 /** Notify gateway that config changed */
@@ -69,6 +73,14 @@ interface DebugSessionSummary {
   compactionCount?: number;
   createdAt: number;
   updatedAt: number;
+}
+
+interface AgentInstructionSyncSummary {
+  agentId: string;
+  cwd: string;
+  before: AgentInstructionState;
+  after: AgentInstructionState;
+  changed: boolean;
 }
 
 function buildDebugSessionSummary(session: {
@@ -258,7 +270,7 @@ export class AgentsCommands {
       const config = loadRouterConfig();
       ensureAgentDirs(config);
       ensureAgentInstructionFiles(cwd.replace("~", homedir()), {
-        createClaudeStub: `# ${id}\n\nInstruções do agente aqui.\n`,
+        createAgentsStub: `# ${id}\n\nInstruções do agente aqui.\n`,
       });
 
       printAgentMutationTarget();
@@ -272,6 +284,89 @@ export class AgentsCommands {
       emitConfigChanged();
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  @Command({ name: "sync-instructions", description: "Migrate agent workspaces to AGENTS.md as the canonical file" })
+  syncInstructions(
+    @Option({ flags: "--agent <id>", description: "Sync only one agent" }) agentId?: string,
+    @Option({
+      flags: "--materialize-missing",
+      description: "Create a default AGENTS.md stub when both instruction files are missing",
+    })
+    materializeMissing?: boolean,
+    @Option({ flags: "--json", description: "Print machine-readable output" }) json?: boolean,
+  ) {
+    const ctx = getScopeContext();
+    const visibleAgents = filterVisibleAgents(ctx, getAllAgents());
+    const selectedAgents = agentId ? visibleAgents.filter((agent) => agent.id === agentId) : visibleAgents;
+
+    if (agentId && selectedAgents.length === 0) {
+      fail(`Agent not found: ${agentId}`);
+    }
+
+    const results: AgentInstructionSyncSummary[] = selectedAgents.map((agent) => {
+      const cwd = agent.cwd.replace("~", homedir());
+      const before = inspectAgentInstructionFiles(cwd);
+      ensureAgentInstructionFiles(
+        cwd,
+        materializeMissing && before.state === "missing-both"
+          ? { createAgentsStub: `# ${agent.id}\n\nInstruções do agente aqui.\n` }
+          : {},
+      );
+      const after = inspectAgentInstructionFiles(cwd);
+
+      return {
+        agentId: agent.id,
+        cwd,
+        before: before.state,
+        after: after.state,
+        changed: before.state !== after.state,
+      };
+    });
+
+    const migrated = results.filter((result) => result.changed && result.after === "agents-canonical");
+    const alreadyCanonical = results.filter((result) => !result.changed && result.after === "agents-canonical");
+    const missing = results.filter((result) => result.after === "missing-both");
+    const manualReview = results.filter(
+      (result) =>
+        result.after !== "agents-canonical" && result.after !== "missing-both" && result.after !== "agents-only",
+    );
+    const incomplete = results.filter(
+      (result) =>
+        result.after === "agents-only" || result.after === "claude-only" || result.after === "agents-bridge-only",
+    );
+
+    if (json) {
+      console.log(
+        JSON.stringify(
+          {
+            total: results.length,
+            migrated: migrated.length,
+            alreadyCanonical: alreadyCanonical.length,
+            missing: missing.length,
+            manualReview: manualReview.length,
+            incomplete: incomplete.length,
+            results,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    console.log("\nInstruction sync summary:\n");
+    console.log(`  Migrated:          ${migrated.length}`);
+    console.log(`  Already canonical: ${alreadyCanonical.length}`);
+    console.log(`  Missing files:     ${missing.length}`);
+    console.log(`  Manual review:     ${manualReview.length}`);
+    console.log(`  Incomplete:        ${incomplete.length}`);
+
+    for (const result of [...migrated, ...missing, ...manualReview, ...incomplete]) {
+      console.log(`\n  ${result.agentId}`);
+      console.log(`    ${result.cwd}`);
+      console.log(`    ${result.before} -> ${result.after}`);
     }
   }
 

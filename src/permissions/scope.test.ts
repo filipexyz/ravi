@@ -1,4 +1,8 @@
-import { describe, expect, it, beforeEach, mock } from "bun:test";
+import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../cli/context.js");
 
 // ============================================================================
 // Mock dependencies
@@ -45,6 +49,7 @@ mock.module("./relations.js", () => ({
 let mockContext: { agentId?: string; sessionKey?: string; sessionName?: string } | undefined;
 
 mock.module("../cli/context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => mockContext,
 }));
 

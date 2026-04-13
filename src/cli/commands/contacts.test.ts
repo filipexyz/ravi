@@ -1,10 +1,18 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+const actualCliContextModule = await import("../context.js");
+const actualContactsModule = await import("../../contacts.js");
+const actualRouterDbModule = await import("../../router/router-db.js");
+const actualRouterSessionsModule = await import("../../router/sessions.js");
 
 let contactRecord: Record<string, unknown> | null = null;
 let sessionRecord: Record<string, unknown> | null = null;
 let routeRecords: Array<{ pattern: string; agent: string }> = [];
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -17,6 +25,7 @@ mock.module("../../nats.js", () => ({
 }));
 
 mock.module("../../contacts.js", () => ({
+  ...actualContactsModule,
   getAllContacts: () => [],
   getContact: () => contactRecord,
   getPendingContacts: () => [],
@@ -42,10 +51,12 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   dbListRoutes: () => routeRecords,
 }));
 
 mock.module("../../router/sessions.js", () => ({
+  ...actualRouterSessionsModule,
   findSessionByChatId: () => sessionRecord,
 }));
 

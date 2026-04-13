@@ -17,6 +17,7 @@ import type {
   TaskProfileStateFieldDefinition,
   TaskProfileSourceKind,
   TaskProfileState,
+  TaskReportEvent,
   TaskRecord,
   TaskWorktreeConfig,
 } from "./types.js";
@@ -141,11 +142,14 @@ const TaskProfileManifestSchema = z.object({
     resume: TaskProfileTemplateRefSchema,
     dispatchSummary: TaskProfileTemplateRefSchema,
     dispatchEventMessage: TaskProfileTemplateRefSchema,
+    reportDoneMessage: TaskProfileTemplateRefSchema.optional(),
+    reportBlockedMessage: TaskProfileTemplateRefSchema.optional(),
+    reportFailedMessage: TaskProfileTemplateRefSchema.optional(),
   }),
 });
 
 type TaskProfileManifest = z.infer<typeof TaskProfileManifestSchema>;
-type TaskProfileTemplateKey = keyof TaskProfileManifest["templates"];
+type TaskProfileTemplateKey = keyof TaskProfileDefinition["templates"];
 
 interface ProfileLoadSource {
   sourceKind: TaskProfileSourceKind;
@@ -174,6 +178,9 @@ export interface TaskProfilePreviewResult {
     resume: string;
     dispatchSummary: string;
     dispatchEventMessage: string;
+    reportDoneMessage: string;
+    reportBlockedMessage: string;
+    reportFailedMessage: string;
   };
   input: Record<string, string>;
 }
@@ -192,6 +199,21 @@ export interface InitTaskProfileScaffoldResult {
   profileDir: string;
   manifestPath: string;
 }
+
+const TASK_REPORT_TEMPLATE_KEYS = {
+  done: "reportDoneMessage",
+  blocked: "reportBlockedMessage",
+  failed: "reportFailedMessage",
+} as const;
+
+const DEFAULT_TASK_PROFILE_REPORT_TEMPLATES: Pick<
+  TaskProfileDefinition["templates"],
+  "reportDoneMessage" | "reportBlockedMessage" | "reportFailedMessage"
+> = {
+  reportDoneMessage: "{{report.text}}",
+  reportBlockedMessage: "{{report.text}}",
+  reportFailedMessage: "{{report.text}}",
+};
 
 function normalizeTaskProfileSyncPolicy(
   sync: TaskProfileManifest["sync"] | TaskProfileDefinition["sync"],
@@ -292,10 +314,13 @@ function assertNoLegacyTaskProfileFields(raw: unknown, source: ProfileLoadSource
 }
 
 function readTemplateRef(
-  ref: TaskProfileManifest["templates"][TaskProfileTemplateKey],
+  ref: TaskProfileManifest["templates"][keyof TaskProfileManifest["templates"]],
   source: ProfileLoadSource,
   templateKey: TaskProfileTemplateKey,
 ): string {
+  if (!ref) {
+    throw new Error(`Task profile ${source.source} is missing required template ${templateKey}.`);
+  }
   if (typeof ref === "string") {
     return normalizeTemplateString(ref);
   }
@@ -315,6 +340,26 @@ function readTemplateRef(
     );
   }
   return normalizeTemplateString(readFileSync(absoluteTemplatePath, "utf8"));
+}
+
+function normalizeTaskProfileTemplates(
+  templates: Partial<TaskProfileDefinition["templates"]>,
+): TaskProfileDefinition["templates"] {
+  return {
+    dispatch: normalizeTemplateString(templates.dispatch ?? ""),
+    resume: normalizeTemplateString(templates.resume ?? ""),
+    dispatchSummary: normalizeTemplateString(templates.dispatchSummary ?? ""),
+    dispatchEventMessage: normalizeTemplateString(templates.dispatchEventMessage ?? ""),
+    reportDoneMessage: normalizeTemplateString(
+      templates.reportDoneMessage ?? DEFAULT_TASK_PROFILE_REPORT_TEMPLATES.reportDoneMessage,
+    ),
+    reportBlockedMessage: normalizeTemplateString(
+      templates.reportBlockedMessage ?? DEFAULT_TASK_PROFILE_REPORT_TEMPLATES.reportBlockedMessage,
+    ),
+    reportFailedMessage: normalizeTemplateString(
+      templates.reportFailedMessage ?? DEFAULT_TASK_PROFILE_REPORT_TEMPLATES.reportFailedMessage,
+    ),
+  };
 }
 
 function resolveManifestToProfile(manifest: TaskProfileManifest, source: ProfileLoadSource): TaskProfileSnapshot {
@@ -337,12 +382,29 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
       showWhenStatuses: [...artifact.showWhenStatuses],
     })),
     state: manifest.state.map((field) => ({ ...field })),
-    templates: {
+    templates: normalizeTaskProfileTemplates({
       dispatch: readTemplateRef(manifest.templates.dispatch, source, "dispatch"),
       resume: readTemplateRef(manifest.templates.resume, source, "resume"),
       dispatchSummary: readTemplateRef(manifest.templates.dispatchSummary, source, "dispatchSummary"),
       dispatchEventMessage: readTemplateRef(manifest.templates.dispatchEventMessage, source, "dispatchEventMessage"),
-    },
+      ...(manifest.templates.reportDoneMessage
+        ? { reportDoneMessage: readTemplateRef(manifest.templates.reportDoneMessage, source, "reportDoneMessage") }
+        : {}),
+      ...(manifest.templates.reportBlockedMessage
+        ? {
+            reportBlockedMessage: readTemplateRef(
+              manifest.templates.reportBlockedMessage,
+              source,
+              "reportBlockedMessage",
+            ),
+          }
+        : {}),
+      ...(manifest.templates.reportFailedMessage
+        ? {
+            reportFailedMessage: readTemplateRef(manifest.templates.reportFailedMessage, source, "reportFailedMessage"),
+          }
+        : {}),
+    }),
     sourceKind: source.sourceKind,
     source: source.source,
     manifestPath: source.manifestPath ?? null,
@@ -354,6 +416,7 @@ function toResolvedTaskProfile(definition: TaskProfileDefinition, requestedId: s
   return {
     ...definition,
     sync,
+    templates: normalizeTaskProfileTemplates(definition.templates ?? {}),
     defaultTags: [...(definition.defaultTags ?? [])],
     inputs: [...(definition.inputs ?? [])],
     completion: { ...(definition.completion ?? {}) },
@@ -939,7 +1002,7 @@ function renderStrictTemplate(
     }
 
     const root = key.split(".")[0];
-    if (!["task", "profile", "session", "worktree", "artifacts", "profileState", "input"].includes(root)) {
+    if (!["task", "profile", "session", "worktree", "artifacts", "profileState", "input", "report"].includes(root)) {
       throw new Error(
         `Unknown placeholder root "${root}" in task profile ${metadata.profileId} template ${metadata.templateName}.`,
       );
@@ -966,6 +1029,7 @@ function buildTemplateContext(
     agentId?: string;
     sessionName?: string;
     input?: Record<string, string>;
+    report?: Record<string, unknown>;
   },
 ): Record<string, unknown> {
   const profile = options.taskProfile ?? resolveTaskProfileForTask(task);
@@ -1032,6 +1096,7 @@ function buildTemplateContext(
     artifacts: protocolArtifacts,
     profileState,
     input: resolveProfileInputValues(profile, task.profileInput, options.input),
+    ...(options.report ? { report: options.report } : {}),
   };
 }
 
@@ -1178,6 +1243,86 @@ export function buildTaskDispatchSummaryForProfile(
   return renderProfileTemplate(profile, "dispatchSummary", context);
 }
 
+function buildTaskReportTemplateModel(
+  reportEvent: TaskReportEvent,
+  input: {
+    taskId: string;
+    title?: string | null;
+    message?: string | null;
+    assigneeAgentId?: string | null;
+    assigneeSessionName?: string | null;
+    sourceSessionName: string;
+  },
+): Record<string, string> {
+  const headline =
+    reportEvent === "done" ? "Task concluída" : reportEvent === "blocked" ? "Task bloqueada" : "Task falhou";
+  const detailLabel = reportEvent === "done" ? "Resumo" : reportEvent === "blocked" ? "Blocker" : "Erro";
+  const headerParts = [`${headline}: ${input.taskId}`];
+  if (input.title?.trim()) {
+    headerParts.push(input.title.trim());
+  }
+
+  const header = headerParts.join(" · ");
+  const message = input.message?.trim() ?? "";
+  const detail = message ? `${detailLabel}: ${message}` : "";
+  const assignee =
+    input.assigneeAgentId || input.assigneeSessionName
+      ? `${input.assigneeAgentId ?? "-"}${input.assigneeSessionName ? `/${input.assigneeSessionName}` : ""}`
+      : "";
+  const assigneeLine = assignee ? `Responsável: ${assignee}` : "";
+
+  return {
+    event: reportEvent,
+    headline,
+    detailLabel,
+    message,
+    header,
+    detail,
+    assignee,
+    assigneeLine,
+    sourceSessionName: input.sourceSessionName,
+    text: [header, detail, assigneeLine].filter((part) => part.length > 0).join("\n"),
+  };
+}
+
+export function buildTaskReportMessageForProfile(
+  task: TaskRecord,
+  reportEvent: TaskReportEvent,
+  options: {
+    effectiveCwd: string;
+    sourceSessionName: string;
+    taskDocPath?: string | null;
+    taskProfile?: ResolvedTaskProfile;
+    primaryArtifact?: TaskProfileArtifactRef | null;
+    worktree?: TaskWorktreeConfig;
+    agentId?: string;
+    sessionName?: string;
+    input?: Record<string, string>;
+    message?: string | null;
+  },
+): string {
+  const profile = options.taskProfile ?? resolveTaskProfileForTask(task);
+  const context = buildTemplateContext(task, {
+    effectiveCwd: options.effectiveCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(options.taskDocPath !== undefined ? { taskDocPath: options.taskDocPath } : {}),
+    taskProfile: profile,
+    ...(options.primaryArtifact !== undefined ? { primaryArtifact: options.primaryArtifact } : {}),
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    sessionName: options.sessionName ?? options.sourceSessionName,
+    ...(options.input ? { input: options.input } : {}),
+    report: buildTaskReportTemplateModel(reportEvent, {
+      taskId: task.id,
+      title: task.title,
+      message: options.message ?? task.summary ?? task.blockerReason ?? null,
+      assigneeAgentId: task.assigneeAgentId ?? null,
+      assigneeSessionName: task.assigneeSessionName ?? null,
+      sourceSessionName: options.sourceSessionName,
+    }),
+  });
+  return renderProfileTemplate(profile, TASK_REPORT_TEMPLATE_KEYS[reportEvent], context);
+}
+
 function resolvePreviewWorktreeContext(
   task: Pick<TaskRecord, "taskDir">,
   profile: ResolvedTaskProfile,
@@ -1271,6 +1416,32 @@ export function previewTaskProfile(
     sessionName: options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId),
     ...(options.input ? { input: options.input } : {}),
   });
+  const previewSessionName = options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId);
+  const previewAgentId = options.agentId ?? "dev";
+  const donePreviewTask: TaskRecord = {
+    ...taskWithState,
+    status: "done",
+    progress: 100,
+    summary: "Preview summary for the completed task.",
+    blockerReason: undefined,
+    assigneeAgentId: previewAgentId,
+    assigneeSessionName: previewSessionName,
+  };
+  const blockedPreviewTask: TaskRecord = {
+    ...taskWithState,
+    status: "blocked",
+    blockerReason: "Preview blocker for the blocked task.",
+    assigneeAgentId: previewAgentId,
+    assigneeSessionName: previewSessionName,
+  };
+  const failedPreviewTask: TaskRecord = {
+    ...taskWithState,
+    status: "failed",
+    summary: "Preview error for the failed task.",
+    blockerReason: undefined,
+    assigneeAgentId: previewAgentId,
+    assigneeSessionName: previewSessionName,
+  };
 
   return {
     profile,
@@ -1278,27 +1449,22 @@ export function previewTaskProfile(
     primaryArtifact,
     input: resolveProfileInputValues(profile, taskWithState.profileInput),
     rendered: {
-      dispatch: buildTaskDispatchPromptForProfile(
-        taskWithState,
-        options.agentId ?? "dev",
-        options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId),
-        {
-          effectiveCwd,
-          ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
-          ...(taskDocPath !== undefined ? { taskDocPath } : {}),
-          taskProfile: profile,
-          ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
-          ...(options.input ? { input: options.input } : {}),
-        },
-      ),
+      dispatch: buildTaskDispatchPromptForProfile(taskWithState, previewAgentId, previewSessionName, {
+        effectiveCwd,
+        ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
+        ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+        taskProfile: profile,
+        ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+        ...(options.input ? { input: options.input } : {}),
+      }),
       resume: buildTaskResumePromptForProfile(taskWithState, {
         effectiveCwd,
         ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
         ...(taskDocPath !== undefined ? { taskDocPath } : {}),
         taskProfile: profile,
         ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
-        agentId: options.agentId ?? "dev",
-        sessionName: options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
         ...(options.input ? { input: options.input } : {}),
       }),
       dispatchSummary: buildTaskDispatchSummaryForProfile(taskWithState, {
@@ -1307,15 +1473,15 @@ export function previewTaskProfile(
         ...(taskDocPath !== undefined ? { taskDocPath } : {}),
         taskProfile: profile,
         ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
-        agentId: options.agentId ?? "dev",
-        sessionName: options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
         ...(options.input ? { input: options.input } : {}),
       }),
       dispatchEventMessage: buildTaskDispatchEventMessageForProfile(
         taskWithState,
         {
-          agentId: options.agentId ?? "dev",
-          sessionName: options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId),
+          agentId: previewAgentId,
+          sessionName: previewSessionName,
         },
         {
           effectiveCwd,
@@ -1326,6 +1492,42 @@ export function previewTaskProfile(
           ...(options.input ? { input: options.input } : {}),
         },
       ),
+      reportDoneMessage: buildTaskReportMessageForProfile(donePreviewTask, "done", {
+        effectiveCwd,
+        sourceSessionName: previewSessionName,
+        ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
+        ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+        taskProfile: profile,
+        ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
+        ...(options.input ? { input: options.input } : {}),
+        message: donePreviewTask.summary,
+      }),
+      reportBlockedMessage: buildTaskReportMessageForProfile(blockedPreviewTask, "blocked", {
+        effectiveCwd,
+        sourceSessionName: previewSessionName,
+        ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
+        ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+        taskProfile: profile,
+        ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
+        ...(options.input ? { input: options.input } : {}),
+        message: blockedPreviewTask.blockerReason,
+      }),
+      reportFailedMessage: buildTaskReportMessageForProfile(failedPreviewTask, "failed", {
+        effectiveCwd,
+        sourceSessionName: previewSessionName,
+        ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
+        ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+        taskProfile: profile,
+        ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
+        ...(options.input ? { input: options.input } : {}),
+        message: failedPreviewTask.summary,
+      }),
     },
   };
 }
@@ -1484,6 +1686,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
         dispatchSummary: "The target session was instructed to edit TASK.md first, then sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Edit {{task.taskDocPath}} first, then sync via ravi tasks report|done|block|fail {{task.id}}.",
+        reportDoneMessage: "{{report.text}}",
+        reportBlockedMessage: "{{report.text}}",
+        reportFailedMessage: "{{report.text}}",
       };
     case "brainstorm":
       return {
@@ -1495,6 +1700,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
           "The target session was instructed to load brainstorm, use the draft artifact as primary state, then sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Use {{artifacts.primary.path}} as primary artifact and sync via ravi tasks report|done|block|fail {{task.id}}.",
+        reportDoneMessage: "{{report.text}}",
+        reportBlockedMessage: "{{report.text}}",
+        reportFailedMessage: "{{report.text}}",
       };
     case "runtime-only":
       return {
@@ -1505,6 +1713,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
         dispatchSummary: "The target session received the task without a task-document protocol. Sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Operate directly in the runtime substrate and sync via ravi tasks report|done|block|fail {{task.id}}.",
+        reportDoneMessage: "{{report.text}}",
+        reportBlockedMessage: "{{report.text}}",
+        reportFailedMessage: "{{report.text}}",
       };
     case "content":
       return {
@@ -1516,6 +1727,9 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
           "The target session received a content workspace rooted at task_dir. Work from the primary artifact and sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Content workspace rooted at {{task.taskDir}} with primary artifact {{artifacts.primary.path}}; keep lifecycle in the task substrate and sync via ravi tasks comment|report|done|block|fail {{task.id}}.",
+        reportDoneMessage: "{{report.text}}",
+        reportBlockedMessage: "{{report.text}}",
+        reportFailedMessage: "{{report.text}}",
       };
   }
 }
@@ -1546,6 +1760,9 @@ export function initTaskProfileScaffold(
   writeFileSync(joinPath(profileDir, "resume.md"), `${templates.resume}\n`, "utf8");
   writeFileSync(joinPath(profileDir, "dispatch-summary.txt"), `${templates.dispatchSummary}\n`, "utf8");
   writeFileSync(joinPath(profileDir, "dispatch-event.txt"), `${templates.dispatchEventMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-done.txt"), `${templates.reportDoneMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-blocked.txt"), `${templates.reportBlockedMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-failed.txt"), `${templates.reportFailedMessage}\n`, "utf8");
 
   const manifest = {
     id: normalizedId,
@@ -1589,6 +1806,9 @@ export function initTaskProfileScaffold(
       resume: { path: "./resume.md" },
       dispatchSummary: { path: "./dispatch-summary.txt" },
       dispatchEventMessage: { path: "./dispatch-event.txt" },
+      reportDoneMessage: { path: "./report-done.txt" },
+      reportBlockedMessage: { path: "./report-blocked.txt" },
+      reportFailedMessage: { path: "./report-failed.txt" },
     },
   };
 

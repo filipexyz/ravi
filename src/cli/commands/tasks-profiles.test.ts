@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+const actualCliContextModule = await import("../context.js");
 
 let pluginDescriptors: Array<{ path: string }> = [];
 
@@ -17,6 +18,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
@@ -46,6 +48,9 @@ function writeTaskProfile(
       resume?: string;
       dispatchSummary?: string;
       dispatchEventMessage?: string;
+      reportDoneMessage?: string;
+      reportBlockedMessage?: string;
+      reportFailedMessage?: string;
     };
   } = {},
 ): void {
@@ -59,6 +64,9 @@ function writeTaskProfile(
     resume: options.templateTexts?.resume ?? "Resume {{task.id}}",
     dispatchSummary: options.templateTexts?.dispatchSummary ?? "Summary {{task.id}}",
     dispatchEventMessage: options.templateTexts?.dispatchEventMessage ?? "Event {{task.id}}",
+    reportDoneMessage: options.templateTexts?.reportDoneMessage ?? "{{report.text}}",
+    reportBlockedMessage: options.templateTexts?.reportBlockedMessage ?? "{{report.text}}",
+    reportFailedMessage: options.templateTexts?.reportFailedMessage ?? "{{report.text}}",
   };
 
   if (templateMode === "path") {
@@ -66,6 +74,9 @@ function writeTaskProfile(
     writeFileSync(join(profileDir, "resume.md"), `${templateTexts.resume}\n`, "utf8");
     writeFileSync(join(profileDir, "dispatch-summary.txt"), `${templateTexts.dispatchSummary}\n`, "utf8");
     writeFileSync(join(profileDir, "dispatch-event.txt"), `${templateTexts.dispatchEventMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-done.txt"), `${templateTexts.reportDoneMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-blocked.txt"), `${templateTexts.reportBlockedMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-failed.txt"), `${templateTexts.reportFailedMessage}\n`, "utf8");
   }
 
   const manifest = {
@@ -118,6 +129,9 @@ function writeTaskProfile(
             resume: { path: "./resume.md" },
             dispatchSummary: { path: "./dispatch-summary.txt" },
             dispatchEventMessage: { path: "./dispatch-event.txt" },
+            reportDoneMessage: { path: "./report-done.txt" },
+            reportBlockedMessage: { path: "./report-blocked.txt" },
+            reportFailedMessage: { path: "./report-failed.txt" },
           }
         : templateTexts,
   };
@@ -168,6 +182,7 @@ describe("TaskProfileCommands", () => {
         resume: "Resume {{task.id}}",
         dispatchSummary: "Summary {{artifacts.primary.path}}",
         dispatchEventMessage: "Event {{session.name}}",
+        reportDoneMessage: "Done {{report.header}} / {{session.name}}",
       },
     });
 
@@ -203,6 +218,7 @@ describe("TaskProfileCommands", () => {
     expect(previewPayload.rendered.dispatch).toContain("matcha");
     expect(previewPayload.rendered.dispatch).toContain("TASK.md");
     expect(previewPayload.rendered.dispatchSummary).toContain(".ravi/artifacts/preview-cli.md");
+    expect(previewPayload.rendered.reportDoneMessage).toContain("Done Task concluída:");
   });
 
   it("prints state and artifact definitions in textual show output", () => {
@@ -236,7 +252,7 @@ describe("TaskProfileCommands", () => {
     writeTaskProfile(join(workspaceDir, ".ravi", "task-profiles"), "bad-cli", {
       templateMode: "path",
       templateTexts: {
-        dispatch: "Bad {{unknown.root}}",
+        reportFailedMessage: "Bad {{unknown.root}}",
       },
     });
 
@@ -257,3 +273,4 @@ describe("TaskProfileCommands", () => {
     expect(validateScaffoldPayload.valid).toBeTrue();
   });
 });
+afterAll(() => mock.restore());

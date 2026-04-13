@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualRouterIndexModule = await import("../router/index.js");
+const actualContactsModule = await import("../contacts.js");
+const actualLoggerModule = await import("../utils/logger.js");
 
 const publishCalls: Array<[string, Record<string, unknown>]> = [];
 const warnCalls: Array<[string, Record<string, unknown> | undefined]> = [];
@@ -41,6 +47,7 @@ mock.module("../slash/index.js", () => ({
 }));
 
 mock.module("../router/index.js", () => ({
+  ...actualRouterIndexModule,
   expandHome: (cwd: string) => cwd,
   resolveRoute: () => null,
 }));
@@ -52,6 +59,7 @@ mock.module("../config-store.js", () => ({
 }));
 
 mock.module("../contacts.js", () => ({
+  ...actualContactsModule,
   isContactAllowedForAgent: () => true,
   saveAccountPending: () => false,
   getContactName: () => undefined,
@@ -59,7 +67,9 @@ mock.module("../contacts.js", () => ({
 }));
 
 mock.module("../utils/logger.js", () => ({
+  ...actualLoggerModule,
   logger: {
+    ...actualLoggerModule.logger,
     child: () => ({
       info: (message: string, meta?: Record<string, unknown>) => {
         infoCalls.push([message, meta]);
@@ -75,12 +85,6 @@ mock.module("../utils/logger.js", () => ({
       },
     }),
   },
-}));
-
-mock.module("../outbound/index.js", () => ({
-  dbFindActiveEntryByPhone: () => null,
-  dbRecordEntryResponse: () => {},
-  dbSetEntrySenderId: () => {},
 }));
 
 mock.module("../utils/media.js", () => ({

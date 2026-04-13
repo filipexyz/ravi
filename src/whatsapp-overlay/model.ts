@@ -22,6 +22,8 @@ export interface OverlaySessionEvent {
   timestamp: number;
 }
 
+export type OverlayToolCallStatus = "running" | "ok" | "error";
+
 export type OverlayChatArtifactAnchor =
   | {
       placement: "after-last-message";
@@ -36,6 +38,10 @@ export interface OverlayChatArtifact {
   kind: string;
   label: string;
   detail?: string | null;
+  description?: string | null;
+  preview?: string | null;
+  fullDetail?: string | null;
+  status?: OverlayToolCallStatus | null;
   createdAt: number;
   updatedAt?: number;
   anchor?: OverlayChatArtifactAnchor;
@@ -49,8 +55,53 @@ export interface OverlayLiveState {
   updatedAt?: number;
   busySince?: number;
   events?: OverlaySessionEvent[];
+  messages?: OverlaySessionWorkspaceMessage[];
   artifacts?: OverlayChatArtifact[];
 }
+
+export interface OverlaySessionWorkspaceMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: number;
+  source?: "history" | "live";
+  pending?: boolean;
+}
+
+export type OverlaySessionWorkspaceTimelineItem =
+  | {
+      id: string;
+      type: "message";
+      role: "user" | "assistant";
+      content: string;
+      timestamp: number;
+      source: "history" | "live";
+      pending?: boolean;
+      eventKind?: OverlaySessionEvent["kind"];
+    }
+  | {
+      id: string;
+      type: "event";
+      kind: OverlaySessionEvent["kind"];
+      label: string;
+      detail: string;
+      timestamp: number;
+      source: "live";
+    }
+  | {
+      id: string;
+      type: "artifact";
+      kind: string;
+      label: string;
+      detail?: string | null;
+      description?: string | null;
+      preview?: string | null;
+      fullDetail?: string | null;
+      status?: OverlayToolCallStatus | null;
+      timestamp: number;
+      source: "live";
+      anchor?: OverlayChatArtifactAnchor;
+    };
 
 export interface OverlayPermissionDecision {
   allowed: boolean;
@@ -234,6 +285,123 @@ export function upsertOverlayChatArtifact(
   return next;
 }
 
+export function mergeOverlaySessionWorkspaceMessages(
+  ...groups: Array<OverlaySessionWorkspaceMessage[] | undefined>
+): OverlaySessionWorkspaceMessage[] {
+  const deduped = new Map<string, OverlaySessionWorkspaceMessage>();
+
+  for (const group of groups) {
+    for (const message of normalizeWorkspaceMessages(Array.isArray(group) ? group : [])) {
+      const key = buildWorkspaceMessageMergeKey(message);
+      const current = deduped.get(key);
+
+      if (!current || shouldReplaceWorkspaceMessage(current, message)) {
+        deduped.set(key, message);
+      }
+    }
+  }
+
+  return [...deduped.values()].sort((left, right) => left.createdAt - right.createdAt);
+}
+
+export function parseOverlayTimestamp(value: string | number | null | undefined): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value !== "string") {
+    return 0;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 0;
+  }
+
+  const sqliteTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)
+    ? `${trimmed.replace(" ", "T")}Z`
+    : trimmed;
+  const parsed = Date.parse(sqliteTimestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function buildOverlaySessionWorkspaceTimeline(args: {
+  messages: OverlaySessionWorkspaceMessage[];
+  live?: OverlayLiveState;
+}): OverlaySessionWorkspaceTimelineItem[] {
+  const historyMessages = normalizeWorkspaceMessages(args.messages).map((message) => ({
+    id: `message:${message.id}`,
+    type: "message" as const,
+    role: message.role,
+    content: message.content,
+    timestamp: message.createdAt,
+    source: message.source ?? "history",
+    pending: message.pending ?? false,
+  }));
+
+  const liveMessageItems: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>[] = [];
+  const liveDiscreteItems: Array<Extract<OverlaySessionWorkspaceTimelineItem, { type: "event" | "artifact" }>> = [];
+
+  const liveMessages = normalizeWorkspaceMessages(args.live?.messages ?? []);
+  for (const message of liveMessages) {
+    const item: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }> = {
+      id: `message:${message.id}`,
+      type: "message",
+      role: message.role,
+      content: message.content,
+      timestamp: message.createdAt,
+      source: message.source ?? "live",
+      pending: message.pending ?? false,
+    };
+
+    if (hasMatchingWorkspaceMessage(historyMessages, item)) {
+      continue;
+    }
+
+    upsertLiveWorkspaceMessage(liveMessageItems, item);
+  }
+
+  const liveEvents = [...(Array.isArray(args.live?.events) ? args.live.events : [])].sort(
+    (left, right) => left.timestamp - right.timestamp,
+  );
+  for (const event of liveEvents) {
+    const item = toWorkspaceTimelineItemFromEvent(event);
+    if (!item) continue;
+
+    if (item.type === "message") {
+      if (hasMatchingWorkspaceMessage(historyMessages, item)) {
+        continue;
+      }
+
+      upsertLiveWorkspaceMessage(liveMessageItems, item);
+      continue;
+    }
+
+    liveDiscreteItems.push(item);
+  }
+
+  const liveArtifacts = normalizeWorkspaceArtifacts(args.live?.artifacts);
+  for (const artifact of liveArtifacts) {
+    const timestamp = artifact.kind === "tool" ? artifact.createdAt : (artifact.updatedAt ?? artifact.createdAt);
+    liveDiscreteItems.push({
+      id: `artifact:${artifact.dedupeKey ?? artifact.id}`,
+      type: "artifact",
+      kind: artifact.kind || "artifact",
+      label: artifact.label || artifact.kind || "artifact",
+      detail: artifact.preview || artifact.detail || artifact.kind || "artifact",
+      description: artifact.description ?? null,
+      preview: artifact.preview ?? artifact.detail ?? null,
+      fullDetail: artifact.fullDetail ?? null,
+      status: artifact.status ?? null,
+      timestamp,
+      source: "live",
+      anchor: artifact.anchor,
+    });
+  }
+
+  return [...historyMessages, ...liveMessageItems, ...liveDiscreteItems].sort(compareWorkspaceTimelineItems);
+}
+
 export function resolveSessionForOverlay(
   query: OverlayQuery,
   sessions: SessionEntry[],
@@ -351,6 +519,213 @@ function resolveBySession(nameOrKey: string | null | undefined, sessions: Sessio
     sessions.find((session) => normalizeLookupToken(session.sessionKey) === needle) ??
     null
   );
+}
+
+function normalizeWorkspaceMessages(messages: OverlaySessionWorkspaceMessage[]): OverlaySessionWorkspaceMessage[] {
+  return [...messages]
+    .map((message) => ({
+      ...message,
+      id: String(message.id),
+      content: typeof message.content === "string" ? message.content : "",
+      createdAt: parseOverlayTimestamp(message.createdAt),
+    }))
+    .filter((message) => Boolean(message.content.trim()))
+    .sort((left, right) => left.createdAt - right.createdAt);
+}
+
+function normalizeWorkspaceArtifacts(artifacts: OverlayChatArtifact[] | undefined): OverlayChatArtifact[] {
+  let next: OverlayChatArtifact[] = [];
+
+  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
+    if (!artifact) continue;
+    next = upsertOverlayChatArtifact(next, artifact);
+  }
+
+  return next.sort((left, right) => (left.updatedAt ?? left.createdAt) - (right.updatedAt ?? right.createdAt));
+}
+
+function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySessionWorkspaceTimelineItem | null {
+  const kind = normalizeLookupToken(event.kind);
+  const detail = normalizeWorkspaceText(event.detail);
+  const timestamp = parseOverlayTimestamp(event.timestamp);
+
+  if (!kind || !timestamp) {
+    return null;
+  }
+
+  if (kind === "prompt") {
+    if (!detail) return null;
+    return {
+      id: `event:${kind}:${timestamp}`,
+      type: "message",
+      role: "user",
+      content: event.detail ?? "",
+      timestamp,
+      source: "live",
+      pending: true,
+      eventKind: event.kind,
+    };
+  }
+
+  if (kind === "stream") {
+    if (!detail) return null;
+    return {
+      id: `event:${kind}:${timestamp}`,
+      type: "message",
+      role: "assistant",
+      content: event.detail ?? "",
+      timestamp,
+      source: "live",
+      pending: true,
+      eventKind: event.kind,
+    };
+  }
+
+  if (kind === "response") {
+    if (!detail) return null;
+    return {
+      id: `event:${kind}:${timestamp}`,
+      type: "message",
+      role: "assistant",
+      content: event.detail ?? "",
+      timestamp,
+      source: "live",
+      pending: true,
+      eventKind: event.kind,
+    };
+  }
+
+  if (kind === "tool") {
+    return null;
+  }
+
+  if (kind === "runtime" && (!detail || detail === "idle" || detail === "turn.interrupted")) {
+    return null;
+  }
+
+  const label = cleanNullable(event.label) ?? cleanNullable(event.kind) ?? "evento";
+  const body = cleanNullable(event.detail) ?? label;
+  if (!body) {
+    return null;
+  }
+
+  return {
+    id: `event:${kind}:${timestamp}`,
+    type: "event",
+    kind: event.kind,
+    label,
+    detail: body,
+    timestamp,
+    source: "live",
+  };
+}
+
+function upsertLiveWorkspaceMessage(
+  items: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>[],
+  candidate: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>,
+): void {
+  const candidateText = normalizeWorkspaceText(candidate.content);
+  if (!candidateText) return;
+
+  const index = items.findIndex(
+    (item) =>
+      item.role === candidate.role && workspaceTextsOverlap(normalizeWorkspaceText(item.content), candidateText),
+  );
+  if (index === -1) {
+    items.push(candidate);
+    return;
+  }
+
+  const current = items[index]!;
+  const currentText = normalizeWorkspaceText(current.content);
+  const shouldReplace =
+    candidateText.length > currentText.length ||
+    (candidateText.length === currentText.length && candidate.timestamp >= current.timestamp);
+  if (shouldReplace) {
+    items[index] = candidate;
+  }
+}
+
+function hasMatchingWorkspaceMessage(
+  messages: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>[],
+  candidate: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>,
+): boolean {
+  const candidateText = normalizeWorkspaceText(candidate.content);
+  if (!candidateText) return true;
+
+  return messages.some(
+    (message) =>
+      message.role === candidate.role && workspaceTextsOverlap(normalizeWorkspaceText(message.content), candidateText),
+  );
+}
+
+function normalizeWorkspaceText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function buildWorkspaceMessageMergeKey(message: OverlaySessionWorkspaceMessage): string {
+  const id = cleanNullable(message.id);
+  if (id) {
+    return `id:${id}`;
+  }
+
+  return `fallback:${message.role}:${message.createdAt}:${normalizeWorkspaceText(message.content)}`;
+}
+
+function shouldReplaceWorkspaceMessage(
+  current: OverlaySessionWorkspaceMessage,
+  next: OverlaySessionWorkspaceMessage,
+): boolean {
+  if (current.content.length !== next.content.length) {
+    return next.content.length > current.content.length;
+  }
+
+  if (current.createdAt !== next.createdAt) {
+    return next.createdAt >= current.createdAt;
+  }
+
+  if ((current.source ?? "history") !== (next.source ?? "history")) {
+    return (next.source ?? "history") === "history";
+  }
+
+  return String(next.id).length >= String(current.id).length;
+}
+
+function workspaceTextsOverlap(left: string, right: string): boolean {
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+function compareWorkspaceTimelineItems(
+  left: OverlaySessionWorkspaceTimelineItem,
+  right: OverlaySessionWorkspaceTimelineItem,
+): number {
+  if (left.timestamp !== right.timestamp) {
+    return left.timestamp - right.timestamp;
+  }
+
+  const priorityDiff = workspaceTimelinePriority(left) - workspaceTimelinePriority(right);
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+
+  return left.id.localeCompare(right.id);
+}
+
+function workspaceTimelinePriority(item: OverlaySessionWorkspaceTimelineItem): number {
+  switch (item.type) {
+    case "message":
+      return 0;
+    case "artifact":
+      return 1;
+    case "event":
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 function toCandidate(session: SessionEntry, source: OverlayCandidate["source"]): OverlayCandidate {

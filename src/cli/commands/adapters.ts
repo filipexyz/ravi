@@ -186,17 +186,15 @@ export class AdapterCommands {
       diagnosticState,
       bind: {
         bound,
-        ...(snapshot?.bind ?? {
-          sessionKey: adapter.sessionKey,
-          sessionName: adapter.sessionName ?? null,
-          agentId: adapter.agentId ?? null,
-          contextId: null,
-          cliName: null,
-        }),
+        sessionKey: snapshot?.bind.sessionKey ?? adapter.sessionKey,
+        sessionName: snapshot?.bind.sessionName ?? adapter.sessionName ?? null,
+        agentId: snapshot?.bind.agentId ?? adapter.agentId ?? null,
+        contextId: snapshot?.bind.contextId ?? null,
+        cliName: snapshot?.bind.cliName ?? null,
         contextKey: undefined,
       },
       health: snapshot?.health ?? {
-        state: adapter.status,
+        state: mapAdapterStatusToHealthState(adapter.status),
         pid: null,
         startedAt: null,
         stoppedAt: null,
@@ -220,7 +218,7 @@ export class AdapterCommands {
     snapshot: SessionAdapterDebugSnapshot | null,
   ): AdapterDiagnosticState {
     if (!snapshot) {
-      return adapter.status === "running" ? "unbound" : adapter.status;
+      return adapter.status === "running" ? "unbound" : mapAdapterStatusToDiagnosticState(adapter.status);
     }
 
     if (snapshot.lastProtocolError) {
@@ -244,7 +242,7 @@ export class AdapterCommands {
       return "stopped";
     }
 
-    return adapter.status;
+    return mapAdapterStatusToDiagnosticState(adapter.status);
   }
 
   private printJson(payload: unknown): void {
@@ -254,4 +252,30 @@ export class AdapterCommands {
 
 function formatTimestamp(value: number | null | undefined): string {
   return typeof value === "number" ? new Date(value).toISOString() : "-";
+}
+function mapAdapterStatusToHealthState(status: SessionAdapterStatus): SessionAdapterDebugSnapshot["health"]["state"] {
+  switch (status) {
+    case "running":
+      return "running";
+    case "stopped":
+      return "stopped";
+    case "broken":
+      return "broken";
+    case "configured":
+    default:
+      return "stopped";
+  }
+}
+
+function mapAdapterStatusToDiagnosticState(status: SessionAdapterStatus): AdapterDiagnosticState {
+  switch (status) {
+    case "broken":
+      return "dead";
+    case "stopped":
+      return "stopped";
+    case "configured":
+    case "running":
+    default:
+      return "configured";
+  }
 }

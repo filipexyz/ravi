@@ -281,6 +281,7 @@ describe("session adapter bus", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "to-adapter",
       topic: COMMAND_TOPIC,
+      enabled: true,
     });
     saveSessionAdapterSubscription({
       subscriptionId: "adapter-bus-from-adapter",
@@ -288,6 +289,7 @@ describe("session adapter bus", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "from-adapter",
       topic: FROM_ADAPTER_TOPIC,
+      enabled: true,
     });
   });
 

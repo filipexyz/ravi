@@ -24,7 +24,7 @@ Agents são instâncias do Claude com configurações específicas (diretório, 
 ravi agents create <id> <cwd>
 ```
 
-O `cwd` é o diretório onde fica o `CLAUDE.md` do agent (suas instruções). Crie o diretório e o `CLAUDE.md` antes.
+O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
 
 ### 2. Rotear mensagens pro agent
 
@@ -106,6 +106,13 @@ ravi agents show <id>
 ### Criar agent
 ```bash
 ravi agents create <id> <cwd>
+```
+
+### Sincronizar instruções legadas
+```bash
+ravi agents sync-instructions
+ravi agents sync-instructions --agent <id>
+ravi agents sync-instructions --materialize-missing
 ```
 
 ### Deletar agent
@@ -190,17 +197,17 @@ ravi agents chat <id>
 
 Agents pessoais são agents dedicados a um aspecto da vida do usuário (comunicação, journaling, estratégia, etc). Cada um tem seu grupo WhatsApp exclusivo.
 
-**Conceito importante:** O agent já nasce dentro do WhatsApp. Ele não precisa de nenhuma tool pra enviar mensagens — toda resposta dele já chega automaticamente no WhatsApp. Ele deve saber disso no CLAUDE.md.
+**Conceito importante:** O agent já nasce dentro do WhatsApp. Ele não precisa de nenhuma tool pra enviar mensagens — toda resposta dele já chega automaticamente no WhatsApp. Ele deve saber disso no `AGENTS.md`.
 
 ### Passo a passo
 
-#### 1. Criar diretório e CLAUDE.md
+#### 1. Criar diretório e AGENTS.md
 
 ```bash
 mkdir -p ~/ravi/<agent-id>
 ```
 
-Escreva o `CLAUDE.md` com a identidade e instruções do agent. Estrutura recomendada:
+Escreva o `AGENTS.md` com a identidade e instruções do agent. Estrutura recomendada:
 
 ```markdown
 # <Nome do Agent>
@@ -222,7 +229,7 @@ Escreva o `CLAUDE.md` com a identidade e instruções do agent. Estrutura recome
 - Limites, boundaries, o que evitar
 ```
 
-**Dicas pro CLAUDE.md:**
+**Dicas pro AGENTS.md:**
 - Dê personalidade — agents genéricos são chatos
 - Seja específico sobre o que o agent faz e não faz
 - Inclua que ele já está no WhatsApp (não precisa de tool pra mensagem)
@@ -265,7 +272,7 @@ O agent já está respondendo no grupo. Não precisa reiniciar o daemon.
 # 1. Criar diretório
 mkdir -p ~/ravi/comm
 
-# 2. Escrever CLAUDE.md (com identidade de coach de comunicação)
+# 2. Escrever AGENTS.md (com identidade de coach de comunicação)
 
 # 3. Criar agent
 ravi agents create comm ~/ravi/comm
@@ -283,9 +290,9 @@ ravi instances routes add main group:120363406060070449 comm   # Roteia pro comm
 ### Criar agent pra atendimento
 
 ```bash
-# 1. Criar diretório e CLAUDE.md
+# 1. Criar diretório e AGENTS.md
 mkdir -p ~/ravi/atendimento
-# (crie o CLAUDE.md com as instruções do agent)
+# (crie o AGENTS.md com as instruções do agent)
 
 # 2. Criar agent
 ravi agents create atendimento ~/ravi/atendimento

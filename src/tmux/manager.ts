@@ -7,13 +7,8 @@ import { fileURLToPath } from "node:url";
 import { subscribe } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { ensureUniqueName, generateSessionName } from "../router/index.js";
-import {
-  getMainSession,
-  getOrCreateSession,
-  listSessions,
-  resolveSession,
-  type SessionEntry,
-} from "../router/sessions.js";
+import type { SessionEntry } from "../router/types.js";
+import { getMainSession, getOrCreateSession, listSessions, resolveSession } from "../router/sessions.js";
 import { logger } from "../utils/logger.js";
 
 const execFileAsync = promisify(execFile);

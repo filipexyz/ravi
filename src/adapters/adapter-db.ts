@@ -382,7 +382,7 @@ function selectAdapters(options: ListSessionAdaptersOptions = {}): SessionAdapte
   ensureAdapterSchema();
   const db = getDb();
   const clauses: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
 
   if (options.sessionKey) {
     clauses.push("session_key = ?");
@@ -405,7 +405,7 @@ function selectSubscriptions(options: ListSessionAdapterSubscriptionsOptions = {
   ensureAdapterSchema();
   const db = getDb();
   const clauses: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
 
   if (options.adapterId) {
     clauses.push("adapter_id = ?");

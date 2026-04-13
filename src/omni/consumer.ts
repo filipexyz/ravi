@@ -23,7 +23,6 @@ import { isContactAllowedForAgent, saveAccountPending, getContactName, getContac
 import { dbSaveMessageMeta } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../bot.js";
-import { dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId } from "../outbound/index.js";
 import type { OmniSender } from "./sender.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
@@ -461,24 +460,6 @@ export class OmniConsumer {
       ...(peerKind ? { peerKind } : {}),
       ...(threadId ? { threadId } : {}),
     });
-
-    // Check for active outbound entry — if so, record response and suppress prompt
-    if (!isGroup) {
-      const activeEntry = dbFindActiveEntryByPhone(senderPhone);
-      if (activeEntry && activeEntry.id && activeEntry.status !== "agent") {
-        log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
-          senderPhone,
-          entryId: activeEntry.id,
-        });
-        const content = this.formatContent(payload);
-        dbRecordEntryResponse(activeEntry.id, content);
-        if (!activeEntry.senderId) {
-          dbSetEntrySenderId(activeEntry.id, senderPhone);
-        }
-        nats.emit("ravi.outbound.refresh", {}).catch(() => {});
-        return;
-      }
-    }
 
     // Normalize for stable session keys:
     // - Strip channel implementation suffix (whatsapp-baileys → whatsapp)

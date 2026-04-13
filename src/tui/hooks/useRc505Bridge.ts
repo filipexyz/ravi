@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 export interface Rc505BridgeEvent {
@@ -48,7 +48,7 @@ export function useRc505Bridge(): Rc505BridgeState {
   });
 
   useEffect(() => {
-    let child: ChildProcessWithoutNullStreams | null = null;
+    let child: ChildProcess | null = null;
     let buffer = "";
 
     try {
@@ -61,6 +61,18 @@ export function useRc505Bridge(): Rc505BridgeState {
         ...prev,
         message: "failed to start bridge",
         error: error instanceof Error ? error.message : String(error),
+      }));
+      return;
+    }
+
+    const stdout = child.stdout;
+    const stderr = child.stderr;
+    if (!stdout || !stderr) {
+      child.kill();
+      setState((prev) => ({
+        ...prev,
+        message: "bridge stdio unavailable",
+        error: "rc505 bridge did not expose stdout/stderr pipes",
       }));
       return;
     }
@@ -107,8 +119,8 @@ export function useRc505Bridge(): Rc505BridgeState {
       }));
     };
 
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+    stdout.setEncoding("utf8");
+    stdout.on("data", (chunk: string) => {
       buffer += chunk;
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
@@ -117,8 +129,8 @@ export function useRc505Bridge(): Rc505BridgeState {
       }
     });
 
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
+    stderr.setEncoding("utf8");
+    stderr.on("data", (chunk: string) => {
       const text = chunk.trim();
       if (!text) return;
       setState((prev) => ({

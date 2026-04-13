@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { CliStreamRelayCommandError, createCliStreamRelay } from "./relay.js";
+import { createCliStreamRelay } from "./relay.js";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/stream-relay-fixture.ts", import.meta.url));
 
@@ -58,7 +58,7 @@ describe("cli stream relay", () => {
       },
     });
 
-    await expect(relay.sendCommand("fail")).rejects.toMatchObject<CliStreamRelayCommandError>({
+    await expect(relay.sendCommand("fail")).rejects.toMatchObject({
       code: "boom",
       message: "fixture failure",
       retryable: false,

@@ -1,13 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-declare global {
-  var RaviWaOverlayTaskDuration:
-    | {
-        getTaskDurationMs(task: Record<string, unknown> | null | undefined, now?: number): number | null;
-      }
-    | undefined;
-}
-
 await import("../../extensions/whatsapp-overlay/task-duration.js");
 
 function getTaskDurationMs(task: Record<string, unknown>, now: number): number | null {

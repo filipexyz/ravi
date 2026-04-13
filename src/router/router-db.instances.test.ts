@@ -1,11 +1,11 @@
 /**
  * Tests for instances table CRUD in router-db.ts
  *
- * Uses the real SQLite DB (same path as production: ~/.ravi/ravi.db).
- * Each test cleans up its own data in beforeEach/afterEach to avoid pollution.
+ * Each test uses an isolated Ravi state directory and cleans up its own data.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 // ============================================================================
 // Helpers for cleanup
@@ -20,6 +20,7 @@ const TEST_NAMES = [
   "test-inst-defaults",
   "test-inst-disabled",
 ];
+let stateDir: string | null = null;
 
 function cleanupInstances() {
   try {
@@ -52,7 +53,8 @@ import {
 const TEST_AGENT_ID = "test-inst-agent";
 
 describe("Instances CRUD", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-instances-test-");
     cleanupInstances();
     // Ensure the test agent exists
     try {
@@ -62,8 +64,10 @@ describe("Instances CRUD", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupInstances();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   // ============================================================================

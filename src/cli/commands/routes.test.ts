@@ -1,4 +1,12 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../context.js");
+const actualRouterIndexModule = await import("../../router/index.js");
+const actualRouterDbModule = await import("../../router/router-db.js");
+const actualContactsModule = await import("../../contacts.js");
+const actualRouterSessionsModule = await import("../../router/sessions.js");
 
 type RouteRecord = {
   id: number;
@@ -25,6 +33,8 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -54,6 +64,7 @@ mock.module("qrcode-terminal", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   dbGetInstance: (name: string) =>
     instanceNames.has(name)
       ? {
@@ -101,6 +112,7 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../router/index.js", () => ({
+  ...actualRouterIndexModule,
   loadRouterConfig: () => ({}),
   matchRoute: () => liveWinner,
 }));
@@ -119,6 +131,7 @@ mock.module("../../omni-config.js", () => ({
 }));
 
 mock.module("../../contacts.js", () => ({
+  ...actualContactsModule,
   getContact: (pattern: string) => contactStatuses.get(pattern) ?? null,
   listAccountPending: () => [],
   removeAccountPending: () => false,
@@ -126,6 +139,7 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/sessions.js", () => ({
+  ...actualRouterSessionsModule,
   listSessions: () => [],
   deleteSession: () => {},
 }));
@@ -137,11 +151,6 @@ mock.module("../runtime-target.js", () => ({
   }),
   formatCliRuntimeTarget: (summary: { name: string }) => [`Target instance: ${summary.name}`],
   getCliRuntimeMismatchMessage: () => null,
-}));
-
-mock.module("../inspection-output.js", () => ({
-  formatInspectionSection: (label: string) => label,
-  printInspectionField: () => {},
 }));
 
 const { RoutesCommands } = await import("./instances.js");

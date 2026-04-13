@@ -1,4 +1,19 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
+
+afterAll(() => mock.restore());
+
+setDefaultTimeout(20_000);
+
+const actualDbModule = await import("./db.js");
+const actualRouterIndexModule = await import("./router/index.js");
+const actualCliContextModule = await import("./cli/context.js");
+const actualRemoteSpawnNatsModule = await import("./remote-spawn-nats.js");
+const actualPermissionsEngineModule = await import("./permissions/engine.js");
+const actualRuntimeIndexModule = await import("./runtime/index.js");
+const actualTaskDbModule = await import("./tasks/task-db.js");
+const actualTaskServiceModule = await import("./tasks/service.js");
+const actualLoggerModule = await import("./utils/logger.js");
 
 type RuntimeProviderId = "claude" | "codex";
 
@@ -53,8 +68,13 @@ let runtimePrepareImpl: (
 ) => Promise<{ env?: Record<string, string> } | undefined>;
 let runtimeStartImpl: (providerId: RuntimeProviderId, request: RuntimeStartRequest) => RuntimeHandle;
 let discoveredPlugins: RuntimePlugin[] = [];
-let hasActiveTaskForSession = (_sessionName: string, _excludeTaskId?: string) => false;
-let resolveActiveTaskBindingForSession = (_sessionName: string, _taskId?: string) => null;
+const createdTaskIds: string[] = [];
+let stateDir: string | null = null;
+let saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
+let agentCanImpl = (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) =>
+  actualPermissionsEngineModule.agentCan(...args);
+let canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+  actualPermissionsEngineModule.canWithCapabilities(...args);
 
 const clearProviderSession = mock((sessionKey: string) => {
   const session = sessions.get(sessionKey);
@@ -78,6 +98,42 @@ function resetRuntimeDoubles(): void {
       };
     })(),
     interrupt: async () => {},
+  });
+}
+
+function createDispatchedTaskForSession(
+  sessionName: string,
+  options: {
+    profileId?: string;
+    parentTaskId?: string;
+    taskDir?: string;
+  } = {},
+) {
+  const created = actualTaskDbModule.dbCreateTask({
+    title: `Task for ${sessionName}`,
+    instructions: "Exercise task barrier behavior through the real task DB",
+    createdBy: "test",
+    agentId: "main",
+    profileId: options.profileId,
+    parentTaskId: options.parentTaskId,
+  } as any);
+  createdTaskIds.push(created.task.id);
+  if (options.taskDir) {
+    actualTaskDbModule.dbSetTaskDir(created.task.id, options.taskDir);
+  }
+  return actualTaskDbModule.dbDispatchTask(created.task.id, {
+    agentId: "main",
+    sessionName,
+    assignedBy: "test",
+  });
+}
+
+function completeTaskForSession(taskId: string, sessionName: string): void {
+  actualTaskDbModule.dbCompleteTask(taskId, {
+    actor: "test",
+    agentId: "main",
+    sessionName,
+    message: "done",
   });
 }
 
@@ -128,7 +184,8 @@ mock.module("./nats.js", () => ({
 }));
 
 mock.module("./db.js", () => ({
-  saveMessage: mock(() => {}),
+  ...actualDbModule,
+  saveMessage: mock((...args: Parameters<typeof actualDbModule.saveMessage>) => saveMessageImpl(...args)),
   backfillProviderSessionId: mock(() => {}),
   close: mock(() => {}),
 }));
@@ -139,6 +196,7 @@ mock.module("./prompt-builder.js", () => ({
 }));
 
 mock.module("./router/index.js", () => ({
+  ...actualRouterIndexModule,
   getOrCreateSession: (key: string, agentId: string, agentCwd: string, defaults?: Partial<SessionState>) =>
     getOrCreateSessionState(key, agentId, agentCwd, defaults),
   getSession: (key: string) => sessions.get(key) ?? null,
@@ -199,6 +257,7 @@ mock.module("./config-store.js", () => ({
 }));
 
 mock.module("./cli/context.js", () => ({
+  ...actualCliContextModule,
   runWithContext: (_ctx: unknown, fn: () => unknown) => fn(),
 }));
 
@@ -249,25 +308,21 @@ mock.module("./remote-spawn.js", () => ({
 }));
 
 mock.module("./remote-spawn-nats.js", () => ({
+  ...actualRemoteSpawnNatsModule,
   createNatsRemoteSpawn: () => {
     throw new Error("NATS remote spawn should not be used in bot runtime guard tests");
   },
 }));
 
 mock.module("./permissions/engine.js", () => ({
-  agentCan: () => true,
-  canWithCapabilities: (
-    capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
-    permission: string,
-    objectType: string,
-    objectId: string,
-  ) =>
-    capabilities.some(
-      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
-    ),
+  ...actualPermissionsEngineModule,
+  agentCan: (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) => agentCanImpl(...args),
+  canWithCapabilities: (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+    canWithCapabilitiesImpl(...args),
 }));
 
 mock.module("./runtime/index.js", () => ({
+  ...actualRuntimeIndexModule,
   createRuntimeContext: (input: {
     kind?: string;
     agentId?: string;
@@ -348,14 +403,8 @@ mock.module("./runtime/index.js", () => ({
   },
 }));
 
-mock.module("./tasks/task-db.js", () => ({
-  dbHasActiveTaskForSession: (sessionName: string, excludeTaskId?: string) =>
-    hasActiveTaskForSession(sessionName, excludeTaskId),
-  dbResolveActiveTaskBindingForSession: (sessionName: string, taskId?: string) =>
-    resolveActiveTaskBindingForSession(sessionName, taskId),
-}));
-
 mock.module("./tasks/service.js", () => ({
+  ...actualTaskServiceModule,
   recoverActiveTasksAfterRestart: mock(async () => ({
     recoveredTaskIds: [],
     skipped: [],
@@ -365,10 +414,29 @@ mock.module("./tasks/service.js", () => ({
 mock.module("./utils/logger.js", () => {
   const noop = () => loggerChild;
   const loggerChild = { info: noop, warn: noop, error: noop, debug: noop, child: noop };
-  return { logger: { child: () => loggerChild, setLevel: noop } };
+  return {
+    ...actualLoggerModule,
+    logger: { ...actualLoggerModule.logger, child: () => loggerChild, setLevel: noop },
+  };
 });
 
 const { RaviBot } = await import("./bot.js");
+
+afterEach(async () => {
+  saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
+  agentCanImpl = (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) =>
+    actualPermissionsEngineModule.agentCan(...args);
+  canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+    actualPermissionsEngineModule.canWithCapabilities(...args);
+  while (createdTaskIds.length > 0) {
+    const taskId = createdTaskIds.pop();
+    if (taskId) {
+      actualTaskDbModule.dbDeleteTask(taskId);
+    }
+  }
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
+});
 
 function createBot() {
   return new RaviBot({
@@ -388,14 +456,24 @@ function makePrompt(text: string) {
 }
 
 describe("RaviBot runtime guards", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
     emittedEvents.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
     activeProvider = "claude";
     resetRuntimeDoubles();
-    hasActiveTaskForSession = () => false;
-    resolveActiveTaskBindingForSession = () => null;
+    saveMessageImpl = () => {};
+    agentCanImpl = () => true;
+    canWithCapabilitiesImpl = (
+      capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
+      permission: string,
+      objectType: string,
+      objectId: string,
+    ) =>
+      capabilities.some(
+        (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+      );
   });
 
   it("clears legacy provider session state before switching an agent to Codex", async () => {
@@ -526,46 +604,23 @@ describe("RaviBot runtime guards", () => {
 
   it("injects task identity env from the explicit task barrier binding", async () => {
     const sessionKey = "agent:main:task-env";
-    resolveActiveTaskBindingForSession = (sessionName: string, taskId?: string) =>
-      sessionName === sessionKey && taskId === "task-explicit"
-        ? {
-            task: {
-              id: "task-explicit",
-              title: "Task env",
-              instructions: "Inject task env",
-              status: "in_progress",
-              priority: "normal",
-              progress: 25,
-              profileId: "brainstorm",
-              parentTaskId: "task-parent",
-              taskDir: "/tmp/ravi-test-bot/tasks/task-explicit",
-              createdAt: 1,
-              updatedAt: 2,
-            },
-            assignment: {
-              id: "asg-explicit",
-              taskId: "task-explicit",
-              agentId: "main",
-              sessionName,
-              status: "accepted",
-              assignedAt: 1,
-              reportEvents: ["done"],
-              checkpointOverdueCount: 0,
-            },
-          }
-        : null;
+    const dispatched = createDispatchedTaskForSession(sessionKey, {
+      profileId: "default",
+      parentTaskId: "task-parent",
+      taskDir: "/tmp/ravi-test-bot/tasks/task-explicit",
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
       ...makePrompt("execute task turn"),
-      taskBarrierTaskId: "task-explicit",
+      taskBarrierTaskId: dispatched.task.id,
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.env).toMatchObject({
-      RAVI_TASK_ID: "task-explicit",
-      RAVI_TASK_PROFILE_ID: "brainstorm",
+      RAVI_TASK_ID: dispatched.task.id,
+      RAVI_TASK_PROFILE_ID: "default",
       RAVI_PARENT_TASK_ID: "task-parent",
       RAVI_TASK_SESSION: sessionKey,
       RAVI_TASK_WORKSPACE: "/tmp/ravi-test-bot/tasks/task-explicit",
@@ -793,7 +848,7 @@ describe("RaviBot runtime guards", () => {
   it("keeps p3/after_task prompts parked until the task becomes inactive", async () => {
     const sessionKey = "agent:main:p3-after-task";
     let woken = false;
-    hasActiveTaskForSession = (name) => name === sessionKey;
+    const dispatched = createDispatchedTaskForSession(sessionKey);
 
     const bot = createBot();
     (bot as any).streamingSessions.set(sessionKey, {
@@ -824,7 +879,7 @@ describe("RaviBot runtime guards", () => {
 
     expect(woken).toBe(false);
 
-    hasActiveTaskForSession = () => false;
+    completeTaskForSession(dispatched.task.id, sessionKey);
     (bot as any).wakeStreamingSessionIfDeliverable(sessionKey);
 
     expect(woken).toBe(true);
@@ -832,7 +887,7 @@ describe("RaviBot runtime guards", () => {
 
   it("defers cold-start p3/after_task prompts until the task is released", async () => {
     const sessionKey = "agent:main:p3-cold-start";
-    hasActiveTaskForSession = (name) => name === sessionKey;
+    const dispatched = createDispatchedTaskForSession(sessionKey);
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
@@ -843,7 +898,7 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls).toHaveLength(0);
     expect((bot as any).deferredAfterTaskStarts.get(sessionKey)).toHaveLength(1);
 
-    hasActiveTaskForSession = () => false;
+    completeTaskForSession(dispatched.task.id, sessionKey);
     await (bot as any).startDeferredAfterTaskSessionIfDeliverable(sessionKey);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -853,13 +908,13 @@ describe("RaviBot runtime guards", () => {
 
   it("lets a task dispatch use after_task while ignoring its own task id", async () => {
     const sessionKey = "agent:main:p3-self-task";
-    hasActiveTaskForSession = (name, excludeTaskId) => name === sessionKey && excludeTaskId !== "task-self";
+    const dispatched = createDispatchedTaskForSession(sessionKey);
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
       ...makePrompt("task dispatch prompt"),
       deliveryBarrier: "after_task",
-      taskBarrierTaskId: "task-self",
+      taskBarrierTaskId: dispatched.task.id,
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -869,25 +924,194 @@ describe("RaviBot runtime guards", () => {
 
   it("releases a deferred task dispatch once only the dispatched task itself remains active", async () => {
     const sessionKey = "agent:main:p3-deferred-self-task";
-    let blockerActive = true;
-    hasActiveTaskForSession = (name, excludeTaskId) =>
-      name === sessionKey && (blockerActive || excludeTaskId !== "task-self");
+    const blocker = createDispatchedTaskForSession(sessionKey);
+    const self = createDispatchedTaskForSession(sessionKey);
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, {
       ...makePrompt("task dispatch prompt waiting on previous task"),
       deliveryBarrier: "after_task",
-      taskBarrierTaskId: "task-self",
+      taskBarrierTaskId: self.task.id,
     });
 
     expect(runtimeStartCalls).toHaveLength(0);
     expect((bot as any).deferredAfterTaskStarts.get(sessionKey)).toHaveLength(1);
 
-    blockerActive = false;
+    completeTaskForSession(blocker.task.id, sessionKey);
     await (bot as any).startDeferredAfterTaskSessionIfDeliverable(sessionKey);
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(runtimeStartCalls).toHaveLength(1);
     expect((bot as any).deferredAfterTaskStarts.has(sessionKey)).toBe(false);
+  });
+});
+
+describe("RaviBot streaming session lifecycle", () => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
+    emittedEvents.length = 0;
+    sessions.clear();
+    clearProviderSession.mockClear();
+    activeProvider = "claude";
+    resetRuntimeDoubles();
+    saveMessageImpl = () => {};
+    agentCanImpl = () => true;
+    canWithCapabilitiesImpl = (
+      capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
+      permission: string,
+      objectType: string,
+      objectId: string,
+    ) =>
+      capabilities.some(
+        (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
+      );
+  });
+
+  it("creates a new streaming session for first message", async () => {
+    const sessionKey = "agent:main:test-new";
+    const bot = createBot();
+
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+
+    const streamingSessions = (bot as any).streamingSessions;
+    expect(streamingSessions.has(sessionKey)).toBe(true);
+  });
+
+  it("pushes a follow-up into an existing streaming session instead of starting a new one", async () => {
+    const sessionKey = "agent:main:test-push";
+    const bot = createBot();
+    let wokenUp = false;
+
+    (bot as any).streamingSessions.set(sessionKey, {
+      queryHandle: { provider: "claude", interrupt: async () => {} },
+      abortController: new AbortController(),
+      pushMessage: (_msg: unknown) => {
+        wokenUp = true;
+      },
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: { channel: "whatsapp", accountId: "main", chatId: "test" },
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("follow-up"));
+
+    const streamingSession = (bot as any).streamingSessions.get(sessionKey);
+    expect(streamingSession.pendingMessages).toHaveLength(1);
+    expect(streamingSession.pendingMessages[0]?.message.content).toBe("follow-up");
+    expect(wokenUp).toBe(true);
+    expect(streamingSession.pushMessage).toBeNull();
+  });
+
+  it("starts a fresh streaming session when the previous one is already done", async () => {
+    const sessionKey = "agent:main:test-done";
+    const bot = createBot();
+
+    const doneSession = {
+      queryHandle: { provider: "claude", interrupt: async () => {} },
+      abortController: new AbortController(),
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: undefined,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: true,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    };
+    (bot as any).streamingSessions.set(sessionKey, doneSession);
+
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("new conversation"));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect((bot as any).streamingSessions.get(sessionKey)).not.toBe(doneSession);
+  });
+
+  it("updates the response source when pushing into an existing session", async () => {
+    const sessionKey = "agent:main:test-source";
+    const bot = createBot();
+
+    const streamingSession = {
+      queryHandle: { provider: "claude", interrupt: async () => {} },
+      abortController: new AbortController(),
+      pushMessage: (_msg: unknown) => {},
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: { channel: "whatsapp", accountId: "main", chatId: "old" },
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    };
+    (bot as any).streamingSessions.set(sessionKey, streamingSession);
+
+    const prompt = makePrompt("update source");
+    prompt.source = { channel: "whatsapp", accountId: "main", chatId: "new-chat" };
+
+    await (bot as any).handlePromptImmediate(sessionKey, prompt);
+
+    expect(streamingSession.currentSource?.chatId).toBe("new-chat");
+  });
+
+  it("aborts and clears all streaming sessions on stop", async () => {
+    const bot = createBot();
+    const abortController = new AbortController();
+    let interrupted = false;
+    let generatorWoken = false;
+    let turnSignalWoken = false;
+
+    (bot as any).streamingSessions.set("agent:main:test", {
+      queryHandle: {
+        provider: "claude",
+        interrupt: async () => {
+          interrupted = true;
+        },
+      },
+      abortController,
+      pushMessage: () => {
+        generatorWoken = true;
+      },
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: undefined,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: () => {
+        turnSignalWoken = true;
+      },
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+    (bot as any).running = true;
+
+    await bot.stop();
+
+    expect(abortController.signal.aborted).toBe(true);
+    expect(interrupted).toBe(true);
+    expect(generatorWoken).toBe(true);
+    expect(turnSignalWoken).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
   });
 });

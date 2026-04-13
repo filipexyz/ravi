@@ -65,7 +65,6 @@
           {
             "group": "Automation",
             "pages": [
-              "guides/outbound",
               "guides/cron-jobs",
               "guides/triggers"
             ]

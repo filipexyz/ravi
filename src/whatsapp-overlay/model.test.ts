@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import type { SessionEntry } from "../router/types.js";
 import {
+  buildOverlaySessionWorkspaceTimeline,
   buildOverlaySessionList,
   buildChatIdVariants,
   buildOverlaySnapshot,
+  mergeOverlaySessionWorkspaceMessages,
+  parseOverlayTimestamp,
   resolveByChatId,
   resolveByTitle,
   upsertOverlayChatArtifact,
@@ -227,6 +230,205 @@ describe("whatsapp overlay model", () => {
     expect(merged).toHaveLength(2);
     expect(merged[0]?.id).toBe("artifact-1");
     expect(merged[1]?.id).toBe("artifact-2");
+  });
+
+  it("parses sqlite timestamps into epoch milliseconds", () => {
+    expect(parseOverlayTimestamp("2026-04-12 03:04:05")).toBe(Date.parse("2026-04-12T03:04:05Z"));
+  });
+
+  it("merges recent history with provider-session history without dropping assistant replies", () => {
+    const merged = mergeOverlaySessionWorkspaceMessages(
+      [
+        {
+          id: "100",
+          role: "user",
+          content: "primeira pergunta",
+          createdAt: Date.parse("2026-04-12T03:00:00Z"),
+        },
+        {
+          id: "101",
+          role: "assistant",
+          content: "primeira resposta",
+          createdAt: Date.parse("2026-04-12T03:00:10Z"),
+        },
+        {
+          id: "102",
+          role: "user",
+          content: "segunda pergunta",
+          createdAt: Date.parse("2026-04-12T03:01:00Z"),
+        },
+      ],
+      [
+        {
+          id: "102",
+          role: "user",
+          content: "segunda pergunta",
+          createdAt: Date.parse("2026-04-12T03:01:00Z"),
+        },
+        {
+          id: "103",
+          role: "assistant",
+          content: "segunda resposta",
+          createdAt: Date.parse("2026-04-12T03:01:12Z"),
+        },
+      ],
+    );
+
+    expect(merged.map((message) => message.id)).toEqual(["100", "101", "102", "103"]);
+    expect(merged[1]).toMatchObject({
+      role: "assistant",
+      content: "primeira resposta",
+    });
+    expect(merged[3]).toMatchObject({
+      role: "assistant",
+      content: "segunda resposta",
+    });
+  });
+
+  it("builds one chronological session workspace timeline", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [
+        {
+          id: "101",
+          role: "user",
+          content: "mensagem histórica",
+          createdAt: Date.parse("2026-04-12T03:00:00Z"),
+        },
+      ],
+      live: {
+        activity: "streaming",
+        events: [
+          {
+            kind: "prompt",
+            label: "prompt",
+            detail: "mensagem histórica",
+            timestamp: Date.parse("2026-04-12T03:00:05Z"),
+          },
+          {
+            kind: "approval",
+            label: "approval",
+            detail: "pending",
+            timestamp: Date.parse("2026-04-12T03:01:00Z"),
+          },
+          {
+            kind: "stream",
+            label: "stream",
+            detail: "resposta parcial",
+            timestamp: Date.parse("2026-04-12T03:02:00Z"),
+          },
+          {
+            kind: "response",
+            label: "response",
+            detail: "resposta parcial mais completa",
+            timestamp: Date.parse("2026-04-12T03:02:30Z"),
+          },
+        ],
+        artifacts: [
+          {
+            id: "tool-1",
+            kind: "tool",
+            label: "bash",
+            detail: "bun test src/whatsapp-overlay/model.test.ts",
+            createdAt: Date.parse("2026-04-12T03:01:30Z"),
+            updatedAt: Date.parse("2026-04-12T03:01:45Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline).toHaveLength(4);
+    expect(timeline.map((item) => item.type)).toEqual(["message", "event", "artifact", "message"]);
+    expect(timeline[0]).toMatchObject({
+      type: "message",
+      role: "user",
+      content: "mensagem histórica",
+      source: "history",
+    });
+    expect(timeline[1]).toMatchObject({
+      type: "event",
+      kind: "approval",
+      detail: "pending",
+    });
+    expect(timeline[2]).toMatchObject({
+      type: "artifact",
+      kind: "tool",
+      label: "bash",
+    });
+    expect(timeline[3]).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: "resposta parcial mais completa",
+      pending: true,
+      source: "live",
+      eventKind: "response",
+    });
+  });
+
+  it("keeps the live assistant message visible when activity leaves streaming", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "stream",
+            label: "stream",
+            detail: "resposta parcial ainda viva",
+            timestamp: Date.parse("2026-04-12T03:02:00Z"),
+          },
+          {
+            kind: "tool",
+            label: "bash",
+            detail: "executando",
+            timestamp: Date.parse("2026-04-12T03:02:05Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: "resposta parcial ainda viva",
+      pending: true,
+      source: "live",
+      eventKind: "stream",
+    });
+  });
+
+  it("preserves compact tool metadata in the timeline artifact", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        artifacts: [
+          {
+            id: "tool-compact",
+            kind: "tool",
+            label: "bash",
+            description: "cmd=git status",
+            preview: "ok · clean",
+            fullDetail: "status: ok\n\nresult:\nclean",
+            status: "ok",
+            detail: "ok · clean",
+            createdAt: Date.parse("2026-04-12T03:10:00Z"),
+            updatedAt: Date.parse("2026-04-12T03:10:04Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline[0]).toMatchObject({
+      type: "artifact",
+      kind: "tool",
+      label: "bash",
+      description: "cmd=git status",
+      preview: "ok · clean",
+      fullDetail: "status: ok\n\nresult:\nclean",
+      status: "ok",
+      timestamp: Date.parse("2026-04-12T03:10:00Z"),
+    });
   });
 
   it("builds session list entries in batch", () => {
@@ -455,7 +657,7 @@ describe("whatsapp overlay model", () => {
     );
     const live = new Map<string, OverlayLiveState>(
       sessions.map((session, index) => [
-        session.name,
+        session.name ?? session.sessionKey,
         { activity: index % 2 === 0 ? "thinking" : "streaming", updatedAt: now - index },
       ]),
     );

@@ -31,7 +31,7 @@ const program = new Command();
 program.name("ravi").description("Ravi Bot CLI - Claude-powered bot management").version(pkg.version);
 
 // Register all command groups (auto-discovered from barrel)
-registerCommands(program, Object.values(allCommands));
+registerCommands(program, Object.values(allCommands) as Array<new () => object>);
 
 // Top-level commands (not via decorator groups)
 program

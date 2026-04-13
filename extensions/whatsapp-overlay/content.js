@@ -19,6 +19,7 @@ const CHAT_ARTIFACT_KEY_ATTR = "data-ravi-chat-artifact-key";
 const CHAT_ARTIFACT_STACK_ATTR = "data-ravi-chat-artifact-stack";
 const CHAT_ARTIFACT_ANCHOR_ATTR = "data-ravi-chat-artifact-anchor";
 const expandedConversationToolGroups = new Set();
+const expandedSessionWorkspaceTools = new Set();
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
@@ -52,6 +53,12 @@ const TASK_KANBAN_COLUMNS = [
 ];
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
+const taskDrawerStateApi = globalThis.__RAVI_WA_TASK_DRAWER_STATE__ || null;
+if (!taskDrawerStateApi) {
+  throw new Error("[ravi-wa-overlay] task drawer state helpers unavailable");
+}
+const { resolveTaskDetailDrawerState, syncTaskDetailDrawerState } =
+  taskDrawerStateApi;
 const SELECTOR_PROBE_DEFS = [
   ["app-root-main", "main"],
   ["app-root-role-application", "[role='application']"],
@@ -83,6 +90,7 @@ let v3CommandNotice = null;
 const messageMetaCache = new Map();
 const taskSelectionCache = new Map();
 const taskSelectionInFlight = new Set();
+const taskDispatchDraftByTaskId = new Map();
 const PINNED_SESSION_KEY_STORAGE = "ravi-wa-overlay-pinned-session";
 let lastPublishedAt = 0;
 const detectionLogs = [];
@@ -102,6 +110,8 @@ let pinnedSessionKey = loadPinnedSessionKey();
 let activeWorkspace = loadActiveWorkspace();
 let selectedWorkspaceSessionKey = loadWorkspaceSessionKey();
 let selectedTaskId = loadSelectedTaskId();
+let taskDetailDrawerOpen = false;
+let taskDetailDrawerShouldAnimate = false;
 let preferredOmniInstance = loadPreferredOmniInstance();
 let v3PlaceholdersEnabled = loadV3PlaceholdersEnabled();
 let selectedOmniChatId = null;
@@ -126,12 +136,18 @@ let omniPanelInFlight = false;
 let omniRouteActionInFlight = false;
 let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
+let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
+const taskDetailPaneScrollTopByTaskId = new Map();
 let lastTaskSessionLookupSnapshot = null;
 let lastTaskSessionLookup = new Map();
 let lastTaskHierarchySnapshot = null;
-let lastTaskHierarchyState = { roots: [], nodes: new Map(), parentByTaskId: new Map() };
+let lastTaskHierarchyState = {
+  roots: [],
+  nodes: new Map(),
+  parentByTaskId: new Map(),
+};
 
 boot();
 
@@ -144,12 +160,20 @@ function boot() {
   ensureMessagePopover();
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
-  intervalIds.push(setInterval(refreshSessionWorkspace, SNAPSHOT_POLL_INTERVAL_MS));
+  intervalIds.push(
+    setInterval(refreshSessionWorkspace, SNAPSHOT_POLL_INTERVAL_MS),
+  );
   intervalIds.push(setInterval(refreshViewState, 700));
-  intervalIds.push(setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS));
-  intervalIds.push(setInterval(refreshMessageChips, MESSAGE_CHIP_REFRESH_INTERVAL_MS));
+  intervalIds.push(
+    setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS),
+  );
+  intervalIds.push(
+    setInterval(refreshMessageChips, MESSAGE_CHIP_REFRESH_INTERVAL_MS),
+  );
   intervalIds.push(setInterval(refreshOmniPanel, OMNI_POLL_INTERVAL_MS));
-  intervalIds.push(setInterval(refreshV3Placeholders, V3_PLACEHOLDER_POLL_INTERVAL_MS));
+  intervalIds.push(
+    setInterval(refreshV3Placeholders, V3_PLACEHOLDER_POLL_INTERVAL_MS),
+  );
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, 700));
   window.addEventListener("resize", syncMessagePopoverPosition);
@@ -173,7 +197,10 @@ function shouldDeferOmniRender() {
   return active.getAttribute?.("contenteditable") === "true";
 }
 
-function requestRender(snapshot = latestSnapshot, context = detectChatContext()) {
+function requestRender(
+  snapshot = latestSnapshot,
+  context = detectChatContext(),
+) {
   if (shouldDeferOmniRender()) return;
   render(snapshot, context);
 }
@@ -285,9 +312,11 @@ function buildOverlayTodayKey(date = new Date()) {
 
 function buildTasksRequestPayload(taskId = selectedTaskId) {
   const timeZone = resolveOverlayTimeZone();
+  const actorSession = getCurrentTaskActorSession();
   return {
     taskId,
     eventsLimit: TASKS_EVENTS_LIMIT,
+    ...(actorSession ? { actorSession } : {}),
     ...(timeZone ? { timeZone } : {}),
     todayKey: buildOverlayTodayKey(),
   };
@@ -306,12 +335,8 @@ async function refreshTasks(force = false) {
     if (next?.ok) {
       latestTasksSnapshot = next;
       rememberTaskSelection(next?.selectedTask);
+      syncTaskDetailDrawerSnapshot(next);
       bridgeError = null;
-      const nextSelectedTaskId = next?.query?.taskId || next?.selectedTask?.task?.id || null;
-      if (nextSelectedTaskId !== selectedTaskId) {
-        selectedTaskId = nextSelectedTaskId;
-        persistSelectedTaskId(selectedTaskId);
-      }
       if (activeWorkspace !== "omni") {
         requestRender();
       }
@@ -367,14 +392,26 @@ function refreshViewState() {
 }
 
 function detectChatContext() {
-  const selectedChat = latestViewState?.selectedChat || detectSelectedChatLabel();
-  const detectedTitle = detectChatTitle() || latestPageChat?.title || selectedChat || detectSelectedChatLabel();
-  const title = shouldPreferSelectedChatTitle(detectedTitle, selectedChat) ? selectedChat : detectedTitle;
+  const selectedChat =
+    latestViewState?.selectedChat || detectSelectedChatLabel();
+  const detectedTitle =
+    detectChatTitle() ||
+    latestPageChat?.title ||
+    selectedChat ||
+    detectSelectedChatLabel();
+  const title = shouldPreferSelectedChatTitle(detectedTitle, selectedChat)
+    ? selectedChat
+    : detectedTitle;
   const url = new URL(window.location.href);
   const phone = url.searchParams.get("phone");
-  const chatIdCandidate = latestPageChat?.chatId || latestViewState?.chatIdCandidate || detectChatIdCandidate();
+  const chatIdCandidate =
+    latestPageChat?.chatId ||
+    latestViewState?.chatIdCandidate ||
+    detectChatIdCandidate();
   const text = url.searchParams.get("text");
-  const session = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("session");
+  const session = new URLSearchParams(
+    window.location.hash.replace(/^#/, ""),
+  ).get("session");
 
   return {
     chatId: phone || chatIdCandidate || null,
@@ -422,8 +459,16 @@ function detectChatTitle() {
   ]);
 
   for (const node of candidates) {
-    const text = (node?.getAttribute?.("title") || node?.textContent || "").trim();
-    if (text && text.toLowerCase() !== "whatsapp" && !ignoredTitles.has(text.toLowerCase())) {
+    const text = (
+      node?.getAttribute?.("title") ||
+      node?.textContent ||
+      ""
+    ).trim();
+    if (
+      text &&
+      text.toLowerCase() !== "whatsapp" &&
+      !ignoredTitles.has(text.toLowerCase())
+    ) {
       return text;
     }
   }
@@ -459,7 +504,10 @@ function detectViewState() {
     screen = "modal";
   } else if (
     composer &&
-    (conversationHeader || selectedChat || title || (timeline && messageAnchors.length > 1))
+    (conversationHeader ||
+      selectedChat ||
+      title ||
+      (timeline && messageAnchors.length > 1))
   ) {
     screen = "conversation";
   } else if (chatList) {
@@ -511,9 +559,16 @@ function buildComponentMatches(input) {
 
   if (input.main) {
     matches.push(
-      createComponentMatch("app-root", "app-shell", "main", 100, ["visible", "workspace-root"], {
-        tag: input.main.tagName.toLowerCase(),
-      }),
+      createComponentMatch(
+        "app-root",
+        "app-shell",
+        "main",
+        100,
+        ["visible", "workspace-root"],
+        {
+          tag: input.main.tagName.toLowerCase(),
+        },
+      ),
     );
   }
 
@@ -556,7 +611,9 @@ function buildComponentMatches(input) {
         "conversation-pane",
         input.timeline.selector || "main",
         input.composer ? 92 : 72,
-        input.composer ? ["center-pane", "timeline", "composer"] : ["center-pane", "timeline"],
+        input.composer
+          ? ["center-pane", "timeline", "composer"]
+          : ["center-pane", "timeline"],
       ),
     );
 
@@ -646,14 +703,25 @@ function buildComponentMatches(input) {
 
   if (input.modal) {
     matches.push(
-      createComponentMatch("modal", "modal-layer", "[role='dialog']", 100, ["visible", "overlay", "blocking"]),
+      createComponentMatch("modal", "modal-layer", "[role='dialog']", 100, [
+        "visible",
+        "overlay",
+        "blocking",
+      ]),
     );
   }
 
   return matches;
 }
 
-function createComponentMatch(id, surface, selector, score, signals, extracted = null) {
+function createComponentMatch(
+  id,
+  surface,
+  selector,
+  score,
+  signals,
+  extracted = null,
+) {
   return {
     id,
     surface,
@@ -696,7 +764,9 @@ function collectSelectorProbes() {
     const visible = nodes.filter(isVisibleElement);
     const sampleNode = visible[0] || nodes[0] || null;
     const sampleText =
-      sampleNode && typeof sampleNode.textContent === "string" ? sampleNode.textContent.trim().replace(/\s+/g, " ").slice(0, 80) : null;
+      sampleNode && typeof sampleNode.textContent === "string"
+        ? sampleNode.textContent.trim().replace(/\s+/g, " ").slice(0, 80)
+        : null;
 
     return {
       name,
@@ -727,10 +797,18 @@ function describeNode(node) {
   const attrs = [
     node.id ? `#${node.id}` : null,
     node.getAttribute("role") ? `[role=${node.getAttribute("role")}]` : null,
-    node.getAttribute("data-testid") ? `[data-testid=${node.getAttribute("data-testid")}]` : null,
-    node.getAttribute("aria-label") ? `[aria-label=${truncateAttr(node.getAttribute("aria-label"))}]` : null,
-    node.getAttribute("contenteditable") ? `[contenteditable=${node.getAttribute("contenteditable")}]` : null,
-    node.getAttribute("title") ? `[title=${truncateAttr(node.getAttribute("title"))}]` : null,
+    node.getAttribute("data-testid")
+      ? `[data-testid=${node.getAttribute("data-testid")}]`
+      : null,
+    node.getAttribute("aria-label")
+      ? `[aria-label=${truncateAttr(node.getAttribute("aria-label"))}]`
+      : null,
+    node.getAttribute("contenteditable")
+      ? `[contenteditable=${node.getAttribute("contenteditable")}]`
+      : null,
+    node.getAttribute("title")
+      ? `[title=${truncateAttr(node.getAttribute("title"))}]`
+      : null,
   ].filter(Boolean);
 
   return `${node.tagName.toLowerCase()}${attrs.length ? attrs.join("") : ""}`;
@@ -778,7 +856,11 @@ function detectVisibleChatRows() {
     .filter(isVisibleElement)
     .map((row, index) => {
       const titleNode = extractChatRowTitleNode(row);
-      const title = (titleNode?.getAttribute?.("title") || titleNode?.textContent || "").trim();
+      const title = (
+        titleNode?.getAttribute?.("title") ||
+        titleNode?.textContent ||
+        ""
+      ).trim();
       const titleContainer = titleNode?.parentElement || null;
       if (!title || !titleContainer) return null;
 
@@ -802,7 +884,8 @@ function resolveChatRowChatIdCandidate(row, { selected }) {
     return latestPageChat.chatId;
   }
 
-  const fromMarkup = extractChatIdCandidates(row, { includeAncestors: false })[0] || null;
+  const fromMarkup =
+    extractChatIdCandidates(row, { includeAncestors: false })[0] || null;
   if (fromMarkup) {
     return fromMarkup;
   }
@@ -872,7 +955,9 @@ function extractChatRowPreview(row, title, timeLabel) {
 function extractChatRowText(row) {
   if (!(row instanceof Element)) return null;
   const clone = row.cloneNode(true);
-  clone.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => node.remove());
+  clone
+    .querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)
+    .forEach((node) => node.remove());
   return clone.textContent?.trim()?.replace(/\s+/g, " ").slice(0, 240) || null;
 }
 
@@ -880,7 +965,9 @@ function extractChatRowLeafTexts(row) {
   if (!(row instanceof Element)) return [];
   const source = row.cloneNode(true);
   if (!(source instanceof Element)) return [];
-  source.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => node.remove());
+  source
+    .querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)
+    .forEach((node) => node.remove());
   const seen = new Set();
   return Array.from(source.querySelectorAll("span, div, p"))
     .map((element) => ({
@@ -913,17 +1000,24 @@ function looksLikeChatRowTimeLabel(text) {
     /^\d{1,2}:\d{2}$/.test(normalized) ||
     /^\d{1,2}\/\d{1,2}(\/\d{2,4})?$/.test(normalized) ||
     /^(hoje|ontem|today|yesterday)$/.test(normalized) ||
-    /^(seg|ter|qua|qui|sex|sab|dom|mon|tue|wed|thu|fri|sat|sun)$/.test(normalized)
+    /^(seg|ter|qua|qui|sex|sab|dom|mon|tue|wed|thu|fri|sat|sun)$/.test(
+      normalized,
+    )
   );
 }
 
 function extractChatRowTitleNode(row) {
-  const candidates = Array.from(row.querySelectorAll("span[title][dir='auto']")).filter(isVisibleElement);
+  const candidates = Array.from(
+    row.querySelectorAll("span[title][dir='auto']"),
+  ).filter(isVisibleElement);
   return candidates[0] || null;
 }
 
 function buildChatRowId(title, chatIdCandidate, index) {
-  const base = (chatIdCandidate || title || `row-${index}`).toLowerCase().replace(/\s+/g, "-").slice(0, 48);
+  const base = (chatIdCandidate || title || `row-${index}`)
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .slice(0, 48);
   return `row-${index}-${base}`;
 }
 
@@ -935,7 +1029,11 @@ function detectSelectedChatLabel() {
   ];
 
   for (const node of candidates) {
-    const text = (node?.getAttribute?.("title") || node?.textContent || "").trim();
+    const text = (
+      node?.getAttribute?.("title") ||
+      node?.textContent ||
+      ""
+    ).trim();
     if (text) return text;
   }
 
@@ -975,7 +1073,10 @@ function extractChatIdCandidates(node, options = {}) {
     }
   };
 
-  if (node !== document.querySelector("main") && node.outerHTML.length <= 20_000) {
+  if (
+    node !== document.querySelector("main") &&
+    node.outerHTML.length <= 20_000
+  ) {
     addSnippet(node.outerHTML);
   }
   for (const attr of node.attributes) {
@@ -1029,8 +1130,14 @@ function scoreChatIdCandidate(value) {
 
 function detectTimelineContainer() {
   const candidates = [
-    ["conversation-panel-body", document.querySelector("main [data-testid='conversation-panel-body']")],
-    ["message-list", document.querySelector("main [aria-label='Message list']")],
+    [
+      "conversation-panel-body",
+      document.querySelector("main [data-testid='conversation-panel-body']"),
+    ],
+    [
+      "message-list",
+      document.querySelector("main [aria-label='Message list']"),
+    ],
     ["application", document.querySelector("main [role='application']")],
     ["main", document.querySelector("main")],
   ];
@@ -1044,9 +1151,20 @@ function detectTimelineContainer() {
 
 function detectTimelineInsertionPoint() {
   const candidates = [
-    ["conversation-panel-body>div", document.querySelector("main [data-testid='conversation-panel-body'] > div")],
-    ["conversation-panel-body", document.querySelector("main [data-testid='conversation-panel-body']")],
-    ["message-list", document.querySelector("main [aria-label='Message list']")],
+    [
+      "conversation-panel-body>div",
+      document.querySelector(
+        "main [data-testid='conversation-panel-body'] > div",
+      ),
+    ],
+    [
+      "conversation-panel-body",
+      document.querySelector("main [data-testid='conversation-panel-body']"),
+    ],
+    [
+      "message-list",
+      document.querySelector("main [aria-label='Message list']"),
+    ],
     ["main", document.querySelector("main")],
   ];
 
@@ -1068,7 +1186,9 @@ function detectMessageAnchors() {
   ];
 
   for (const selector of selectors) {
-    const nodes = Array.from(document.querySelectorAll(selector)).filter(isVisibleElement);
+    const nodes = Array.from(document.querySelectorAll(selector)).filter(
+      isVisibleElement,
+    );
     if (nodes.length > 1) {
       return { selector, nodes };
     }
@@ -1109,7 +1229,11 @@ async function refreshChatListOverlay() {
           id: row.id,
           chatId: row.chatIdCandidate,
           title: row.title,
-          preview: extractChatRowPreview(row.row, row.title, extractChatRowTimeLabel(row.row)),
+          preview: extractChatRowPreview(
+            row.row,
+            row.title,
+            extractChatRowTimeLabel(row.row),
+          ),
           timeLabel: extractChatRowTimeLabel(row.row),
         })),
       },
@@ -1137,7 +1261,9 @@ function renderChatListBadges(rows, items) {
 
   for (const row of rows) {
     const item = byId.get(row.id);
-    const existing = row.titleContainer.querySelector(`[${CHAT_ROW_BADGE_ATTR}]`);
+    const existing = row.titleContainer.querySelector(
+      `[${CHAT_ROW_BADGE_ATTR}]`,
+    );
     if (!item?.resolved || !item.session) {
       existing?.remove();
       continue;
@@ -1159,7 +1285,9 @@ function createChatListBadge() {
 }
 
 function clearChatListBadges() {
-  document.querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`).forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${CHAT_ROW_BADGE_ATTR}]`)
+    .forEach((node) => node.remove());
 }
 
 function refreshMessageChips() {
@@ -1192,9 +1320,14 @@ function refreshMessageChips() {
   for (const message of messages) {
     if (!message.chipHost) continue;
 
-    const duplicates = Array.from(document.querySelectorAll(`[${MESSAGE_CHIP_ATTR}][data-ravi-message-id="${message.id}"]`));
+    const duplicates = Array.from(
+      document.querySelectorAll(
+        `[${MESSAGE_CHIP_ATTR}][data-ravi-message-id="${message.id}"]`,
+      ),
+    );
     const existing =
-      duplicates.find((node) => node.parentElement === message.chipHost) || message.chipHost.querySelector(`[${MESSAGE_CHIP_ATTR}]`);
+      duplicates.find((node) => node.parentElement === message.chipHost) ||
+      message.chipHost.querySelector(`[${MESSAGE_CHIP_ATTR}]`);
 
     duplicates.forEach((node) => {
       if (node !== existing) {
@@ -1232,7 +1365,9 @@ function refreshConversationArtifacts() {
   }
 
   const session = latestSnapshot?.session;
-  const artifacts = normalizeConversationArtifacts(session?.live?.artifacts || []);
+  const artifacts = normalizeConversationArtifacts(
+    session?.live?.artifacts || [],
+  );
   if (artifacts.length === 0) {
     clearConversationArtifacts();
     return;
@@ -1249,7 +1384,10 @@ function refreshConversationArtifacts() {
 
   for (const group of grouped) {
     const stack = createConversationArtifactStack(group.anchorKey);
-    for (const item of buildConversationArtifactRenderItems(group.artifacts, group.anchorKey)) {
+    for (const item of buildConversationArtifactRenderItems(
+      group.artifacts,
+      group.anchorKey,
+    )) {
       if (item.type === "tool-summary") {
         const row = createConversationToolSummaryRow();
         updateConversationToolSummaryRow(row, item);
@@ -1283,7 +1421,8 @@ function buildConversationArtifactRenderItems(artifacts, anchorKey) {
 
   if (toolArtifacts.length > 0) {
     const latestTimestamp = toolArtifacts.reduce(
-      (latest, artifact) => Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
+      (latest, artifact) =>
+        Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
       0,
     );
     items.push({
@@ -1321,7 +1460,9 @@ function normalizeArtifactAnchor(anchor) {
     return { placement: "after-last-message" };
   }
   if (anchor.placement === "after-message-id") {
-    const messageId = extractExternalMessageId(typeof anchor.messageId === "string" ? anchor.messageId : null);
+    const messageId = extractExternalMessageId(
+      typeof anchor.messageId === "string" ? anchor.messageId : null,
+    );
     if (!messageId) return null;
     return { placement: "after-message-id", messageId };
   }
@@ -1456,13 +1597,22 @@ function createConversationToolSummaryRow() {
     applyConversationToolSummaryExpanded(root, nextExpanded);
   });
 
-  root.__raviToolSummaryRefs = { button, dot, label, detail, time, chevron, list };
+  root.__raviToolSummaryRefs = {
+    button,
+    dot,
+    label,
+    detail,
+    time,
+    chevron,
+    list,
+  };
   return root;
 }
 
 function updateConversationArtifactRow(root, artifact) {
   if (!root.__raviArtifactRefs) {
-    root.__raviArtifactRefs = createConversationArtifactRow().__raviArtifactRefs;
+    root.__raviArtifactRefs =
+      createConversationArtifactRow().__raviArtifactRefs;
   }
   const refs = root.__raviArtifactRefs;
   const key = artifact.dedupeKey || artifact.id;
@@ -1472,7 +1622,8 @@ function updateConversationArtifactRow(root, artifact) {
   root.setAttribute(CHAT_ARTIFACT_KEY_ATTR, key);
   root.title = `${artifact.label || artifact.kind || "artifact"} · ${artifact.detail || "sem detalhe"}`;
 
-  if (refs?.label) refs.label.textContent = artifact.label || artifact.kind || "artifact";
+  if (refs?.label)
+    refs.label.textContent = artifact.label || artifact.kind || "artifact";
   if (refs?.kind) {
     refs.kind.textContent = artifact.kind || "artifact";
     refs.kind.hidden = !artifact.kind || artifact.kind === artifact.label;
@@ -1482,28 +1633,36 @@ function updateConversationArtifactRow(root, artifact) {
     refs.detail.hidden = !artifact.detail;
   }
   if (refs?.time) {
-    refs.time.textContent = formatElapsedCompact(artifact.updatedAt ?? artifact.createdAt) || "agora";
+    refs.time.textContent =
+      formatElapsedCompact(artifact.updatedAt ?? artifact.createdAt) || "agora";
   }
 }
 
 function updateConversationToolSummaryRow(root, item) {
   if (!root.__raviToolSummaryRefs) {
-    root.__raviToolSummaryRefs = createConversationToolSummaryRow().__raviToolSummaryRefs;
+    root.__raviToolSummaryRefs =
+      createConversationToolSummaryRow().__raviToolSummaryRefs;
   }
 
   const refs = root.__raviToolSummaryRefs;
   const artifacts = Array.isArray(item.artifacts) ? item.artifacts : [];
   const key = item.key;
   const active = artifacts.some(isConversationToolArtifactActive);
-  const latestTimestamp = item.latestTimestamp || artifacts.reduce(
-    (latest, artifact) => Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
-    0,
-  );
+  const latestTimestamp =
+    item.latestTimestamp ||
+    artifacts.reduce(
+      (latest, artifact) =>
+        Math.max(latest, artifact.updatedAt || artifact.createdAt || 0),
+      0,
+    );
 
   root.className = "ravi-wa-chat-artifact ravi-wa-chat-artifact--tool-group";
   root.setAttribute(CHAT_ARTIFACT_KEY_ATTR, key);
   root.title = artifacts
-    .map((artifact) => `${artifact.label || "tool"} · ${artifact.detail || "sem detalhe"}`)
+    .map(
+      (artifact) =>
+        `${artifact.label || "tool"} · ${artifact.detail || "sem detalhe"}`,
+    )
     .join("\n");
 
   if (refs?.label) {
@@ -1524,7 +1683,10 @@ function updateConversationToolSummaryRow(root, item) {
     );
   }
 
-  applyConversationToolSummaryExpanded(root, expandedConversationToolGroups.has(key));
+  applyConversationToolSummaryExpanded(
+    root,
+    expandedConversationToolGroups.has(key),
+  );
 }
 
 function createConversationToolSummaryItem(artifact) {
@@ -1546,7 +1708,10 @@ function createConversationToolSummaryItem(artifact) {
 function applyConversationToolSummaryExpanded(root, expanded) {
   root.classList.toggle("is-expanded", expanded);
   if (root.__raviToolSummaryRefs?.button) {
-    root.__raviToolSummaryRefs.button.setAttribute("aria-expanded", expanded ? "true" : "false");
+    root.__raviToolSummaryRefs.button.setAttribute(
+      "aria-expanded",
+      expanded ? "true" : "false",
+    );
   }
   if (root.__raviToolSummaryRefs?.list) {
     root.__raviToolSummaryRefs.list.hidden = !expanded;
@@ -1562,15 +1727,21 @@ function isConversationToolArtifactActive(artifact) {
 }
 
 function normalizeArtifactKindClass(kind) {
-  return String(kind || "artifact")
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "artifact";
+  return (
+    String(kind || "artifact")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "artifact"
+  );
 }
 
 function clearConversationArtifacts() {
-  document.querySelectorAll(`[${CHAT_ARTIFACT_ATTR}]`).forEach((node) => node.remove());
-  document.querySelectorAll(`[${CHAT_ARTIFACT_STACK_ATTR}]`).forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${CHAT_ARTIFACT_ATTR}]`)
+    .forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${CHAT_ARTIFACT_STACK_ATTR}]`)
+    .forEach((node) => node.remove());
 }
 
 function detectVisibleMessages() {
@@ -1588,12 +1759,23 @@ function describeVisibleMessage(node, index) {
   const mediaType = detectMessageMediaType(node);
   if (!copyable && !mediaType) return null;
 
-  const meta = copyable ? parseMessagePrePlainText(copyable.getAttribute("data-pre-plain-text") || "") : null;
+  const meta = copyable
+    ? parseMessagePrePlainText(
+        copyable.getAttribute("data-pre-plain-text") || "",
+      )
+    : null;
   const direction = detectMessageDirection(node, messageId);
-  const timestampShort = shortenMessageTimestamp(meta?.timestampLabel) || detectMessageTimestamp(node);
-  const authorAnchor = copyable ? findMessageAuthorAnchor(node, copyable) : findMediaAuthorAnchor(node, direction);
+  const timestampShort =
+    shortenMessageTimestamp(meta?.timestampLabel) ||
+    detectMessageTimestamp(node);
+  const authorAnchor = copyable
+    ? findMessageAuthorAnchor(node, copyable)
+    : findMediaAuthorAnchor(node, direction);
   const timeAnchor = findMessageTimeAnchor(node, timestampShort);
-  const author = authorAnchor?.author || meta?.author || (direction === "out" ? "você" : null);
+  const author =
+    authorAnchor?.author ||
+    meta?.author ||
+    (direction === "out" ? "você" : null);
 
   const chipHost = timeAnchor?.chipHost || authorAnchor?.chipHost || null;
   const chipVariant = timeAnchor?.chipHost ? "timestamp" : "author";
@@ -1621,7 +1803,9 @@ function describeVisibleMessage(node, index) {
 function findPrimaryMessageCopyable(node) {
   const candidates = Array.from(node.querySelectorAll("[data-pre-plain-text]"));
   return (
-    candidates.find((candidate) => candidate.getAttribute("data-pre-plain-text")?.startsWith("[")) || null
+    candidates.find((candidate) =>
+      candidate.getAttribute("data-pre-plain-text")?.startsWith("["),
+    ) || null
   );
 }
 
@@ -1648,13 +1832,17 @@ function shortenMessageTimestamp(value) {
 }
 
 function detectMessageTimestamp(node) {
-  const candidates = Array.from(node.querySelectorAll("span, div")).filter((element) => {
-    if (!(element instanceof HTMLElement)) return false;
-    if (!isVisibleElement(element)) return false;
-    const text = (element.textContent || "").trim();
-    if (!/^\d{1,2}:\d{2}$/.test(text)) return false;
-    return !Array.from(element.children).some((child) => /^\d{1,2}:\d{2}$/.test((child.textContent || "").trim()));
-  });
+  const candidates = Array.from(node.querySelectorAll("span, div")).filter(
+    (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (!isVisibleElement(element)) return false;
+      const text = (element.textContent || "").trim();
+      if (!/^\d{1,2}:\d{2}$/.test(text)) return false;
+      return !Array.from(element.children).some((child) =>
+        /^\d{1,2}:\d{2}$/.test((child.textContent || "").trim()),
+      );
+    },
+  );
 
   const leaf = candidates[candidates.length - 1] || null;
   return leaf ? (leaf.textContent || "").trim() : "";
@@ -1669,7 +1857,11 @@ function detectMessageDirection(node, messageId) {
 }
 
 function detectMessageMediaType(node) {
-  if (node.querySelector("[data-icon='ptt-status'], [aria-label*='voz'], [aria-label*='voice']")) {
+  if (
+    node.querySelector(
+      "[data-icon='ptt-status'], [aria-label*='voz'], [aria-label*='voice']",
+    )
+  ) {
     return "audio";
   }
   if (node.querySelector("video")) return "video";
@@ -1709,7 +1901,10 @@ function findMessageAuthorAnchor(node, copyable) {
 
 function findMediaAuthorAnchor(node, direction) {
   const explicitAuthor = node.querySelector("span[dir='auto']");
-  if (explicitAuthor?.parentElement instanceof Element && (explicitAuthor.textContent || "").trim()) {
+  if (
+    explicitAuthor?.parentElement instanceof Element &&
+    (explicitAuthor.textContent || "").trim()
+  ) {
     return {
       chipHost: explicitAuthor.parentElement,
       author: explicitAuthor.textContent.trim(),
@@ -1730,13 +1925,17 @@ function findMediaAuthorAnchor(node, direction) {
 function findMessageTimeAnchor(node, timestampShort) {
   if (!timestampShort || timestampShort === "-") return null;
 
-  const candidates = Array.from(node.querySelectorAll("span, div")).filter((element) => {
-    if (!(element instanceof HTMLElement)) return false;
-    if (!isVisibleElement(element)) return false;
-    const text = (element.textContent || "").trim();
-    if (text !== timestampShort) return false;
-    return !Array.from(element.children).some((child) => (child.textContent || "").trim() === timestampShort);
-  });
+  const candidates = Array.from(node.querySelectorAll("span, div")).filter(
+    (element) => {
+      if (!(element instanceof HTMLElement)) return false;
+      if (!isVisibleElement(element)) return false;
+      const text = (element.textContent || "").trim();
+      if (text !== timestampShort) return false;
+      return !Array.from(element.children).some(
+        (child) => (child.textContent || "").trim() === timestampShort,
+      );
+    },
+  );
 
   const timeLeaf = candidates[candidates.length - 1] || null;
   let chipHost = timeLeaf?.parentElement || null;
@@ -1744,7 +1943,8 @@ function findMessageTimeAnchor(node, timestampShort) {
 
   const interactiveAncestor = timeLeaf?.closest("button, [role='button']");
   const insertAfterNode =
-    interactiveAncestor instanceof Element && interactiveAncestor.parentElement instanceof Element
+    interactiveAncestor instanceof Element &&
+    interactiveAncestor.parentElement instanceof Element
       ? interactiveAncestor
       : null;
   if (insertAfterNode?.parentElement instanceof Element) {
@@ -1819,16 +2019,25 @@ function updateMessageChip(root, message) {
   const variant = message.chipVariant || "author";
   const open = openMessageId === message.id;
   const cacheKey =
-    session?.sessionName && message.externalMessageId ? `${session.sessionName}:${message.externalMessageId}` : null;
-  const cachedMeta = cacheKey && messageMetaCache.has(cacheKey) ? (messageMetaCache.get(cacheKey) ?? null) : undefined;
+    session?.sessionName && message.externalMessageId
+      ? `${session.sessionName}:${message.externalMessageId}`
+      : null;
+  const cachedMeta =
+    cacheKey && messageMetaCache.has(cacheKey)
+      ? (messageMetaCache.get(cacheKey) ?? null)
+      : undefined;
   const preservedMeta =
     open && openMessageData?.externalMessageId === message.externalMessageId
       ? (openMessageData.messageMeta ?? cachedMeta)
       : cachedMeta;
   const preservedLoading =
-    open && openMessageData?.externalMessageId === message.externalMessageId ? Boolean(openMessageData.metaLoading) : false;
+    open && openMessageData?.externalMessageId === message.externalMessageId
+      ? Boolean(openMessageData.metaLoading)
+      : false;
   const preservedCopyState =
-    open && openMessageData?.externalMessageId === message.externalMessageId ? openMessageData.copyState ?? null : null;
+    open && openMessageData?.externalMessageId === message.externalMessageId
+      ? (openMessageData.copyState ?? null)
+      : null;
 
   root.className = `ravi-wa-message-chip ravi-wa-message-chip--${variant} ravi-wa-message-chip--${activity}${open ? " ravi-wa-message-chip--open" : ""}`;
   root.title = `${message.author || "mensagem"} · ${message.timestampShort || "-"} · ${session?.sessionName || "sem sessão"}`;
@@ -1864,7 +2073,8 @@ function updateMessageChip(root, message) {
 function openMessagePopover(chip, message) {
   if (!chip || !message) return;
   openMessageChip = chip;
-  openMessageId = chip.getAttribute("data-ravi-message-id") || message.id || null;
+  openMessageId =
+    chip.getAttribute("data-ravi-message-id") || message.id || null;
   openMessageData = message;
   chip.classList.add("ravi-wa-message-chip--open");
   renderMessagePopover(message);
@@ -1898,7 +2108,12 @@ function renderMessagePopover(message) {
 
   const transcript = message.messageMeta?.transcription || "";
   const mediaLabel = message.mediaType || "texto";
-  const directionLabel = message.direction === "out" ? "out" : message.direction === "in" ? "in" : "-";
+  const directionLabel =
+    message.direction === "out"
+      ? "out"
+      : message.direction === "in"
+        ? "in"
+        : "-";
   popover.className = `ravi-wa-message-popover ravi-wa-message-popover--${message.activity || "idle"}`;
   popover.innerHTML = `
     <div class="ravi-wa-message-popover__head">
@@ -1947,7 +2162,8 @@ function renderMessagePopover(message) {
     renderMessagePopover(openMessageData);
     setTimeout(() => {
       if (!openMessageData) return;
-      if (openMessageData.externalMessageId !== message.externalMessageId) return;
+      if (openMessageData.externalMessageId !== message.externalMessageId)
+        return;
       openMessageData = { ...openMessageData, copyState: null };
       renderMessagePopover(openMessageData);
     }, 1400);
@@ -1991,7 +2207,11 @@ async function hydrateMessagePopoverMeta(message) {
   if (messageMetaCache.has(cacheKey)) {
     const cached = messageMetaCache.get(cacheKey) ?? null;
     if (openMessageData && openMessageData.externalMessageId === messageId) {
-      openMessageData = { ...openMessageData, metaLoading: false, messageMeta: cached };
+      openMessageData = {
+        ...openMessageData,
+        metaLoading: false,
+        messageMeta: cached,
+      };
       renderMessagePopover(openMessageData);
     }
     return;
@@ -2016,7 +2236,11 @@ async function hydrateMessagePopoverMeta(message) {
     messageMetaCache.set(cacheKey, meta);
 
     if (openMessageData && openMessageData.externalMessageId === messageId) {
-      openMessageData = { ...openMessageData, metaLoading: false, messageMeta: meta };
+      openMessageData = {
+        ...openMessageData,
+        metaLoading: false,
+        messageMeta: meta,
+      };
       renderMessagePopover(openMessageData);
     }
   } catch {
@@ -2046,7 +2270,8 @@ function syncMessagePopoverPosition() {
   const width = popover.offsetWidth || 220;
   const height = popover.offsetHeight || 160;
   const canPlaceAbove = rect.top - gap - height >= margin;
-  const canPlaceBelow = rect.bottom + gap + height <= window.innerHeight - margin;
+  const canPlaceBelow =
+    rect.bottom + gap + height <= window.innerHeight - margin;
   const placeAbove = !canPlaceBelow && canPlaceAbove;
 
   let top = placeAbove ? rect.top - height - gap : rect.bottom + gap;
@@ -2066,13 +2291,17 @@ function syncMessagePopoverPosition() {
 
 function clearMessageChips() {
   closeMessagePopover();
-  document.querySelectorAll(`[${MESSAGE_CHIP_ATTR}]`).forEach((node) => node.remove());
+  document
+    .querySelectorAll(`[${MESSAGE_CHIP_ATTR}]`)
+    .forEach((node) => node.remove());
 }
 
 function formatChatListBadge(session) {
   const name = shorten(session.sessionName || session.agentId || "session", 16);
   const elapsed = formatSessionElapsedCompact(session);
-  return elapsed ? `${name} · ${chipActivityLabel(session.live?.activity)} · ${elapsed}` : `${name} · ${chipActivityLabel(session.live?.activity)}`;
+  return elapsed
+    ? `${name} · ${chipActivityLabel(session.live?.activity)} · ${elapsed}`
+    : `${name} · ${chipActivityLabel(session.live?.activity)}`;
 }
 
 function formatSessionElapsedCompact(session) {
@@ -2174,6 +2403,10 @@ function ensureShell() {
     if (openMessageChip) {
       closeMessagePopover();
     }
+
+    if (taskDetailDrawerOpen) {
+      closeTaskDetailDrawer();
+    }
   });
 
   const toggle = document.getElementById("ravi-wa-v3-toggle");
@@ -2220,7 +2453,8 @@ function syncLayoutChrome() {
   mainPane.classList.add(MAIN_PANE_CLASS);
   root.setAttribute("data-workspace", activeWorkspace);
   host.setAttribute("data-ravi-workspace", activeWorkspace);
-  const fullWorkspace = activeWorkspace === "omni" || activeWorkspace === "tasks";
+  const fullWorkspace =
+    activeWorkspace === "omni" || activeWorkspace === "tasks";
   mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
   sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
@@ -2243,7 +2477,10 @@ function findLayoutHost(sidePane, mainPane) {
 
   current = sidePane.parentElement;
   while (current) {
-    if (mainAncestors.has(current) && isValidLayoutHost(current, sidePane, mainPane)) {
+    if (
+      mainAncestors.has(current) &&
+      isValidLayoutHost(current, sidePane, mainPane)
+    ) {
       return current;
     }
     current = current.parentElement;
@@ -2351,13 +2588,18 @@ function ensureMessagePopover() {
 function render(snapshot = latestSnapshot, context = detectChatContext()) {
   const body = document.getElementById("ravi-wa-overlay-body");
   const panelTitle = document.getElementById("ravi-wa-overlay-panel-title");
-  const panelSubtitle = document.getElementById("ravi-wa-overlay-panel-subtitle");
+  const panelSubtitle = document.getElementById(
+    "ravi-wa-overlay-panel-subtitle",
+  );
   const recentStack = document.getElementById(RECENT_STACK_ID);
   const v3Toggle = document.getElementById("ravi-wa-v3-toggle");
   scheduleV3PlaceholderRender();
   if (!body || !panelTitle || !panelSubtitle || !recentStack) return;
   if (v3Toggle) {
-    v3Toggle.setAttribute("aria-pressed", v3PlaceholdersEnabled ? "true" : "false");
+    v3Toggle.setAttribute(
+      "aria-pressed",
+      v3PlaceholdersEnabled ? "true" : "false",
+    );
     v3Toggle.classList.toggle("ravi-wa-toggle--active", v3PlaceholdersEnabled);
   }
 
@@ -2383,7 +2625,8 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   if (activeWorkspace === "tasks") {
     hideSessionWorkspaceMain();
     panelTitle.textContent = "Tasks";
-    panelSubtitle.textContent = buildTasksWorkspaceSubtitle(latestTasksSnapshot);
+    panelSubtitle.textContent =
+      buildTasksWorkspaceSubtitle(latestTasksSnapshot);
     renderTasksWorkspace(body);
     return;
   }
@@ -2391,28 +2634,43 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   panelTitle.textContent = "Ravi";
   panelSubtitle.textContent = title;
 
-  const recentSessions = filterCockpitSessions(snapshot?.recentSessions || snapshot?.recentChats || []);
-  const activeSessions = filterCockpitSessions(snapshot?.activeSessions || snapshot?.hotSessions || []);
-  const navTargets = dedupeSessionsByKey([session, ...activeSessions, ...recentSessions].filter(Boolean));
+  const recentSessions = filterCockpitSessions(
+    snapshot?.recentSessions || snapshot?.recentChats || [],
+  );
+  const activeSessions = filterCockpitSessions(
+    snapshot?.activeSessions || snapshot?.hotSessions || [],
+  );
+  const navTargets = dedupeSessionsByKey(
+    [session, ...activeSessions, ...recentSessions].filter(Boolean),
+  );
   const followedSession = session || null;
-  const pinnedSession = pinnedSessionKey ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null : null;
+  const pinnedSession = pinnedSessionKey
+    ? navTargets.find((item) => item.sessionKey === pinnedSessionKey) || null
+    : null;
   if (pinnedSessionKey && !pinnedSession) {
     pinnedSessionKey = null;
     persistPinnedSessionKey(null);
   }
-  const focusedSession = pinnedSession || followedSession || navTargets[0] || null;
-  const focusedTaskMatch = focusedSession ? resolveTaskSessionMatch(focusedSession) : null;
+  const focusedSession =
+    pinnedSession || followedSession || navTargets[0] || null;
+  const focusedTaskMatch = focusedSession
+    ? resolveTaskSessionMatch(focusedSession)
+    : null;
   if (focusedTaskMatch) {
     primeTaskSessionDetails([focusedTaskMatch]);
   }
   const focusedTask = focusedTaskMatch?.task || null;
-  const isPinned = Boolean(pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey);
+  const isPinned = Boolean(
+    pinnedSession && focusedSession?.sessionKey === pinnedSession.sessionKey,
+  );
   const focusedLive = focusedSession?.live;
   const focusedActivity = focusedLive?.activity || "idle";
   const focusedActivityLabel = chipActivityLabel(focusedActivity);
   const focusedActivityClass = chipActivityClass(focusedActivity);
   const listedRecentSessions = focusedSession
-    ? recentSessions.filter((item) => item.sessionKey !== focusedSession.sessionKey)
+    ? recentSessions.filter(
+        (item) => item.sessionKey !== focusedSession.sessionKey,
+      )
     : recentSessions;
 
   const debugCard = `
@@ -2469,17 +2727,45 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
     ? escapeHtml(shorten(focusedTaskMatch.note.text, 160))
     : focusedSession
       ? escapeHtml(focusedLive?.summary || "sem evento vivo")
-      : escapeHtml((snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]).join(" "));
-  const heroStateClass = focusedTask ? taskStatusClass(focusedTask.status) : focusedSession ? focusedActivityClass : "idle";
-  const heroStateLabel = focusedTask ? taskStatusLabel(focusedTask.status) : focusedSession ? focusedActivityLabel : "unbound";
-  const heroTitle = focusedTask ? focusedTask.title || focusedSession?.sessionName || "task" : focusedSession ? focusedSession.sessionName : "nenhuma sessão";
-  const heroLinkedChat = focusedSession ? getLinkedChatLabel(focusedSession) : null;
-  const heroElapsed = focusedTask ? formatTaskElapsed(focusedTask) : focusedSession ? formatSessionElapsedCompact(focusedSession) || "agora" : "-";
+      : escapeHtml(
+          (
+            snapshot?.warnings || ["Nenhuma sessão do Ravi em foco agora."]
+          ).join(" "),
+        );
+  const heroStateClass = focusedTask
+    ? taskStatusClass(focusedTask.status)
+    : focusedSession
+      ? focusedActivityClass
+      : "idle";
+  const heroStateLabel = focusedTask
+    ? taskStatusLabel(focusedTask.status)
+    : focusedSession
+      ? focusedActivityLabel
+      : "unbound";
+  const heroTitle = focusedTask
+    ? focusedTask.title || focusedSession?.sessionName || "task"
+    : focusedSession
+      ? focusedSession.sessionName
+      : "nenhuma sessão";
+  const heroLinkedChat = focusedSession
+    ? getLinkedChatLabel(focusedSession)
+    : null;
+  const heroElapsed = focusedTask
+    ? formatTaskElapsed(focusedTask)
+    : focusedSession
+      ? formatSessionElapsedCompact(focusedSession) || "agora"
+      : "-";
   const heroElapsedLabel = focusedTask ? "duration" : "updated";
-  const heroModeLabel = isPinned ? "pinada" : followedSession ? "seguindo chat" : "sem vínculo";
+  const heroModeLabel = isPinned
+    ? "pinada"
+    : followedSession
+      ? "seguindo chat"
+      : "sem vínculo";
   const canFollowCurrent = Boolean(isPinned && followedSession);
   const canPinFocused = Boolean(focusedSession && !isPinned);
-  const liveEventsCard = focusedSession ? renderLiveEventsCard(focusedSession) : "";
+  const liveEventsCard = focusedSession
+    ? renderLiveEventsCard(focusedSession)
+    : "";
   body.innerHTML = `
     ${errorCard}
     <section class="ravi-wa-card ravi-wa-hero-card">
@@ -2620,11 +2906,11 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       const sessionKey = button.getAttribute("data-ravi-focus-session");
       const taskId = button.getAttribute("data-ravi-focus-task");
       if (!sessionKey) return;
-      const target = navTargets.find((item) => item.sessionKey === sessionKey) || null;
+      const target =
+        navTargets.find((item) => item.sessionKey === sessionKey) || null;
       if (!target) return;
       if (taskId) {
-        selectedTaskId = taskId;
-        persistSelectedTaskId(taskId);
+        setSelectedTaskId(taskId);
         void ensureTaskSelection(taskId);
       }
       openSessionWorkspace(target);
@@ -2665,8 +2951,13 @@ function renderOmniWorkspace(body, context) {
   const chats = filterOmniChats(panel?.chats || []);
   const groups = filterOmniGroups(panel?.groups || []);
   const sessions = filterOmniSessions(panel?.sessions || []);
-  const fallbackChatId = selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
-  const selectedChat = chats.find((chat) => chat.id === fallbackChatId) || panel?.currentChat || chats[0] || null;
+  const fallbackChatId =
+    selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
+  const selectedChat =
+    chats.find((chat) => chat.id === fallbackChatId) ||
+    panel?.currentChat ||
+    chats[0] ||
+    null;
   selectedOmniChatId = selectedChat?.id || null;
   const fallbackSessionKey =
     selectedOmniSessionKey ||
@@ -2674,7 +2965,9 @@ function renderOmniWorkspace(body, context) {
     panel?.currentChat?.linkedSession?.sessionKey ||
     sessions[0]?.sessionKey ||
     null;
-  const selectedSession = sessions.find((session) => session.sessionKey === fallbackSessionKey) || null;
+  const selectedSession =
+    sessions.find((session) => session.sessionKey === fallbackSessionKey) ||
+    null;
   selectedOmniSessionKey = selectedSession?.sessionKey || null;
   const defaultRouteAgentId =
     selectedOmniRouteAgentId ||
@@ -2682,27 +2975,42 @@ function renderOmniWorkspace(body, context) {
     selectedChat?.linkedSession?.agentId ||
     agents[0]?.id ||
     null;
-  if (defaultRouteAgentId && agents.some((agent) => agent.id === defaultRouteAgentId)) {
+  if (
+    defaultRouteAgentId &&
+    agents.some((agent) => agent.id === defaultRouteAgentId)
+  ) {
     selectedOmniRouteAgentId = defaultRouteAgentId;
   } else if (!agents.some((agent) => agent.id === selectedOmniRouteAgentId)) {
     selectedOmniRouteAgentId = agents[0]?.id || null;
   }
   const selectedRouteAgentId = selectedOmniRouteAgentId || null;
-  const createSessionPlaceholder = buildOmniDraftSessionName(selectedChat, selectedRouteAgentId);
+  const createSessionPlaceholder = buildOmniDraftSessionName(
+    selectedChat,
+    selectedRouteAgentId,
+  );
   const createNewAgentSessionPlaceholder = buildOmniDraftSessionName(
     selectedChat,
     omniDraftNewAgentId || selectedRouteAgentId || "novo",
   );
-  const actorLabel = actor ? `${actor.sessionName} · ${actor.agentId}` : "sem ator atual";
+  const actorLabel = actor
+    ? `${actor.sessionName} · ${actor.agentId}`
+    : "sem ator atual";
 
-  const heroTitle = preferredInstance?.profileName || preferredInstance?.name || "omni";
+  const heroTitle =
+    preferredInstance?.profileName || preferredInstance?.name || "omni";
   const heroSummary = selectedChat
     ? `${selectedChat.name || selectedChat.externalId || "chat"} · ${formatOmniChatType(selectedChat.chatType)}`
     : preferredInstance
       ? `instância ${preferredInstance.name} pronta para operar`
       : "sem instância whatsapp do omni";
-  const heroStatus = preferredInstance ? formatOmniInstanceStatus(preferredInstance) : "offline";
-  const heroStateClass = preferredInstance?.isConnected ? "streaming" : preferredInstance?.isActive ? "thinking" : "idle";
+  const heroStatus = preferredInstance
+    ? formatOmniInstanceStatus(preferredInstance)
+    : "offline";
+  const heroStateClass = preferredInstance?.isConnected
+    ? "streaming"
+    : preferredInstance?.isActive
+      ? "thinking"
+      : "idle";
 
   body.innerHTML = `
     <div class="ravi-wa-omni-page">
@@ -2769,10 +3077,16 @@ function renderOmniWorkspace(body, context) {
         </section>
 
         <section class="ravi-wa-omni-column ravi-wa-omni-column--right">
-          ${renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedRouteAgentId, {
-            createSessionPlaceholder,
-            createNewAgentSessionPlaceholder,
-          })}
+          ${renderOmniRoutingPanel(
+            selectedChat,
+            selectedSession,
+            agents,
+            selectedRouteAgentId,
+            {
+              createSessionPlaceholder,
+              createNewAgentSessionPlaceholder,
+            },
+          )}
           ${
             panel?.warnings?.length
               ? `
@@ -2830,8 +3144,10 @@ function renderOmniWorkspace(body, context) {
       if (!chatId) return;
       selectedOmniChatId = chatId;
       const chat = chats.find((item) => item.id === chatId) || null;
-      selectedOmniSessionKey = chat?.linkedSession?.sessionKey || selectedOmniSessionKey;
-      selectedOmniRouteAgentId = chat?.linkedSession?.agentId || selectedOmniRouteAgentId;
+      selectedOmniSessionKey =
+        chat?.linkedSession?.sessionKey || selectedOmniSessionKey;
+      selectedOmniRouteAgentId =
+        chat?.linkedSession?.agentId || selectedOmniRouteAgentId;
       render();
     });
   });
@@ -2839,7 +3155,9 @@ function renderOmniWorkspace(body, context) {
   body.querySelectorAll("[data-ravi-omni-open-chat]").forEach((button) => {
     button.addEventListener("click", async () => {
       const chatId = button.getAttribute("data-ravi-omni-open-chat");
-      const target = chats.find((item) => item?.id === chatId) || (selectedChat?.id === chatId ? selectedChat : null);
+      const target =
+        chats.find((item) => item?.id === chatId) ||
+        (selectedChat?.id === chatId ? selectedChat : null);
       if (!target) return;
       await openOmniChatTarget(target);
     });
@@ -2848,7 +3166,9 @@ function renderOmniWorkspace(body, context) {
   body.querySelectorAll("[data-ravi-omni-open-group]").forEach((button) => {
     button.addEventListener("click", async () => {
       const externalId = button.getAttribute("data-ravi-omni-open-group");
-      const target = (panel?.groups || []).find((item) => item?.externalId === externalId);
+      const target = (panel?.groups || []).find(
+        (item) => item?.externalId === externalId,
+      );
       if (!target) return;
       await openGenericChatTarget({
         chatId: target.externalId,
@@ -2863,7 +3183,8 @@ function renderOmniWorkspace(body, context) {
       const sessionKey = button.getAttribute("data-ravi-omni-select-session");
       if (!sessionKey) return;
       selectedOmniSessionKey = sessionKey;
-      const session = sessions.find((item) => item.sessionKey === sessionKey) || null;
+      const session =
+        sessions.find((item) => item.sessionKey === sessionKey) || null;
       if (session?.agentId) {
         selectedOmniRouteAgentId = session.agentId;
       }
@@ -2873,7 +3194,13 @@ function renderOmniWorkspace(body, context) {
 
   body.querySelectorAll("[data-ravi-omni-bind-chat]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      const formState = getOmniRoutingFormState(
+        body,
+        panel,
+        chats,
+        sessions,
+        agents,
+      );
       if (!formState.selectedChat || !formState.selectedSession) return;
       await runOmniRouteAction(async () => {
         try {
@@ -2885,7 +3212,9 @@ function renderOmniWorkspace(body, context) {
                 actorSession: getCurrentOmniActorSession(),
                 session: formState.selectedSession.sessionName,
                 title: formState.selectedChat.name,
-                chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+                chatId:
+                  formState.selectedChat.externalId ||
+                  formState.selectedChat.canonicalId,
                 instance: formState.selectedChat.instanceName,
                 chatType: formState.selectedChat.chatType,
                 chatName: formState.selectedChat.name,
@@ -2894,18 +3223,32 @@ function renderOmniWorkspace(body, context) {
           });
           const result = response?.ack?.body?.result || null;
           if (response?.ok === false || !result) {
-            setSidebarNotice("error", formatOmniRouteError(response, "falha ao vincular chat"));
+            setSidebarNotice(
+              "error",
+              formatOmniRouteError(response, "falha ao vincular chat"),
+            );
             return;
           }
           if (result?.ok === false) {
-            setSidebarNotice("error", formatOmniRouteError(result, "falha ao vincular chat"));
+            setSidebarNotice(
+              "error",
+              formatOmniRouteError(result, "falha ao vincular chat"),
+            );
             return;
           }
-          selectedOmniSessionKey = result.snapshot?.session?.sessionKey || formState.selectedSession.sessionKey;
-          selectedOmniRouteAgentId = result.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          selectedOmniSessionKey =
+            result.snapshot?.session?.sessionKey ||
+            formState.selectedSession.sessionKey;
+          selectedOmniRouteAgentId =
+            result.snapshot?.session?.agentId || formState.selectedRouteAgentId;
           setSidebarNotice(
             "success",
-            buildOmniRouteNotice("bind-existing", result, formState.selectedChat, formState.selectedSession),
+            buildOmniRouteNotice(
+              "bind-existing",
+              result,
+              formState.selectedChat,
+              formState.selectedSession,
+            ),
           );
           await refreshSnapshot();
           await refreshOmniPanel(true);
@@ -2929,7 +3272,13 @@ function renderOmniWorkspace(body, context) {
 
   body.querySelectorAll("[data-ravi-omni-create-session]").forEach((button) => {
     button.addEventListener("click", async () => {
-      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
+      const formState = getOmniRoutingFormState(
+        body,
+        panel,
+        chats,
+        sessions,
+        agents,
+      );
       if (!formState.selectedChat || !formState.selectedRouteAgentId) return;
       await runOmniRouteAction(async () => {
         try {
@@ -2941,22 +3290,35 @@ function renderOmniWorkspace(body, context) {
               agentId: formState.selectedRouteAgentId,
               sessionName: formState.draftSessionName || undefined,
               title: formState.selectedChat.name,
-              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
+              chatId:
+                formState.selectedChat.externalId ||
+                formState.selectedChat.canonicalId,
               instance: formState.selectedChat.instanceName,
               chatType: formState.selectedChat.chatType,
               chatName: formState.selectedChat.name,
             },
           });
           if (result?.ok === false) {
-            setSidebarNotice("error", formatOmniRouteError(result, "falha ao criar sessão"));
+            setSidebarNotice(
+              "error",
+              formatOmniRouteError(result, "falha ao criar sessão"),
+            );
             return;
           }
-          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
-          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
+          selectedOmniSessionKey =
+            result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+          selectedOmniRouteAgentId =
+            result?.snapshot?.session?.agentId ||
+            formState.selectedRouteAgentId;
           omniDraftSessionName = "";
           setSidebarNotice(
             "success",
-            buildOmniRouteNotice("create-session", result, formState.selectedChat, result?.snapshot?.session),
+            buildOmniRouteNotice(
+              "create-session",
+              result,
+              formState.selectedChat,
+              result?.snapshot?.session,
+            ),
           );
           await refreshSnapshot();
           await refreshOmniPanel(true);
@@ -2968,117 +3330,173 @@ function renderOmniWorkspace(body, context) {
     });
   });
 
-  body.querySelectorAll("[data-ravi-omni-migrate-session]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
-      if (!formState.selectedChat || !formState.selectedRouteAgentId || !formState.currentLinkedSession) return;
-      await runOmniRouteAction(async () => {
-        try {
-          const result = await chrome.runtime.sendMessage({
-            type: "ravi:omni-route",
-            payload: {
-              action: "migrate-session",
-              actorSession: getCurrentOmniActorSession(),
-              session: formState.currentLinkedSession.sessionName,
-              agentId: formState.selectedRouteAgentId,
-              sessionName: formState.draftSessionName || undefined,
-              title: formState.selectedChat.name,
-              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
-              instance: formState.selectedChat.instanceName,
-              chatType: formState.selectedChat.chatType,
-              chatName: formState.selectedChat.name,
-            },
-          });
-          if (result?.ok === false) {
-            setSidebarNotice("error", formatOmniRouteError(result, "falha ao migrar sessão"));
-            return;
+  body
+    .querySelectorAll("[data-ravi-omni-migrate-session]")
+    .forEach((button) => {
+      button.addEventListener("click", async () => {
+        const formState = getOmniRoutingFormState(
+          body,
+          panel,
+          chats,
+          sessions,
+          agents,
+        );
+        if (
+          !formState.selectedChat ||
+          !formState.selectedRouteAgentId ||
+          !formState.currentLinkedSession
+        )
+          return;
+        await runOmniRouteAction(async () => {
+          try {
+            const result = await chrome.runtime.sendMessage({
+              type: "ravi:omni-route",
+              payload: {
+                action: "migrate-session",
+                actorSession: getCurrentOmniActorSession(),
+                session: formState.currentLinkedSession.sessionName,
+                agentId: formState.selectedRouteAgentId,
+                sessionName: formState.draftSessionName || undefined,
+                title: formState.selectedChat.name,
+                chatId:
+                  formState.selectedChat.externalId ||
+                  formState.selectedChat.canonicalId,
+                instance: formState.selectedChat.instanceName,
+                chatType: formState.selectedChat.chatType,
+                chatName: formState.selectedChat.name,
+              },
+            });
+            if (result?.ok === false) {
+              setSidebarNotice(
+                "error",
+                formatOmniRouteError(result, "falha ao migrar sessão"),
+              );
+              return;
+            }
+            selectedOmniSessionKey =
+              result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+            selectedOmniRouteAgentId =
+              result?.snapshot?.session?.agentId ||
+              formState.selectedRouteAgentId;
+            omniDraftSessionName = "";
+            setSidebarNotice(
+              "success",
+              buildOmniRouteNotice(
+                "migrate-session",
+                result,
+                formState.selectedChat,
+                result?.snapshot?.session,
+              ),
+            );
+            await refreshSnapshot();
+            await refreshOmniPanel(true);
+            render();
+          } catch (error) {
+            handleRuntimeError(error);
           }
-          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
-          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || formState.selectedRouteAgentId;
-          omniDraftSessionName = "";
-          setSidebarNotice(
-            "success",
-            buildOmniRouteNotice("migrate-session", result, formState.selectedChat, result?.snapshot?.session),
-          );
-          await refreshSnapshot();
-          await refreshOmniPanel(true);
-          render();
-        } catch (error) {
-          handleRuntimeError(error);
-        }
+        });
       });
     });
-  });
 
   const newAgentInput = body.querySelector("#ravi-wa-omni-new-agent-id");
   newAgentInput?.addEventListener("input", (event) => {
     omniDraftNewAgentId = event.target.value || "";
   });
 
-  const newAgentSessionInput = body.querySelector("#ravi-wa-omni-new-agent-session-name");
+  const newAgentSessionInput = body.querySelector(
+    "#ravi-wa-omni-new-agent-session-name",
+  );
   newAgentSessionInput?.addEventListener("input", (event) => {
     omniDraftNewAgentSessionName = event.target.value || "";
   });
 
-  body.querySelectorAll("[data-ravi-omni-create-agent-session]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const formState = getOmniRoutingFormState(body, panel, chats, sessions, agents);
-      if (!formState.selectedChat) return;
-      const nextAgentId = formState.draftNewAgentId;
-      if (!nextAgentId) {
-        setSidebarNotice("error", "preenche o id do novo agent");
-        return;
-      }
-      await runOmniRouteAction(async () => {
-        try {
-          const result = await chrome.runtime.sendMessage({
-            type: "ravi:omni-route",
-            payload: {
-              action: "create-session",
-              actorSession: getCurrentOmniActorSession(),
-              createAgent: true,
-              agentId: nextAgentId,
-              sessionName: formState.draftNewAgentSessionName || undefined,
-              title: formState.selectedChat.name,
-              chatId: formState.selectedChat.externalId || formState.selectedChat.canonicalId,
-              instance: formState.selectedChat.instanceName,
-              chatType: formState.selectedChat.chatType,
-              chatName: formState.selectedChat.name,
-            },
-          });
-          if (result?.ok === false) {
-            setSidebarNotice("error", formatOmniRouteError(result, "falha ao criar agent e sessão"));
-            return;
-          }
-          selectedOmniSessionKey = result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
-          selectedOmniRouteAgentId = result?.snapshot?.session?.agentId || nextAgentId;
-          omniDraftNewAgentId = "";
-          omniDraftNewAgentSessionName = "";
-          setSidebarNotice(
-            "success",
-            buildOmniRouteNotice("create-agent-session", result, formState.selectedChat, result?.snapshot?.session),
-          );
-          await refreshSnapshot();
-          await refreshOmniPanel(true);
-          render();
-        } catch (error) {
-          handleRuntimeError(error);
+  body
+    .querySelectorAll("[data-ravi-omni-create-agent-session]")
+    .forEach((button) => {
+      button.addEventListener("click", async () => {
+        const formState = getOmniRoutingFormState(
+          body,
+          panel,
+          chats,
+          sessions,
+          agents,
+        );
+        if (!formState.selectedChat) return;
+        const nextAgentId = formState.draftNewAgentId;
+        if (!nextAgentId) {
+          setSidebarNotice("error", "preenche o id do novo agent");
+          return;
         }
+        await runOmniRouteAction(async () => {
+          try {
+            const result = await chrome.runtime.sendMessage({
+              type: "ravi:omni-route",
+              payload: {
+                action: "create-session",
+                actorSession: getCurrentOmniActorSession(),
+                createAgent: true,
+                agentId: nextAgentId,
+                sessionName: formState.draftNewAgentSessionName || undefined,
+                title: formState.selectedChat.name,
+                chatId:
+                  formState.selectedChat.externalId ||
+                  formState.selectedChat.canonicalId,
+                instance: formState.selectedChat.instanceName,
+                chatType: formState.selectedChat.chatType,
+                chatName: formState.selectedChat.name,
+              },
+            });
+            if (result?.ok === false) {
+              setSidebarNotice(
+                "error",
+                formatOmniRouteError(result, "falha ao criar agent e sessão"),
+              );
+              return;
+            }
+            selectedOmniSessionKey =
+              result?.snapshot?.session?.sessionKey || selectedOmniSessionKey;
+            selectedOmniRouteAgentId =
+              result?.snapshot?.session?.agentId || nextAgentId;
+            omniDraftNewAgentId = "";
+            omniDraftNewAgentSessionName = "";
+            setSidebarNotice(
+              "success",
+              buildOmniRouteNotice(
+                "create-agent-session",
+                result,
+                formState.selectedChat,
+                result?.snapshot?.session,
+              ),
+            );
+            await refreshSnapshot();
+            await refreshOmniPanel(true);
+            render();
+          } catch (error) {
+            handleRuntimeError(error);
+          }
+        });
       });
     });
-  });
 }
 
 function getOmniRoutingFormState(body, panel, chats, sessions, agents) {
-  const fallbackChatId = selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
-  const selectedChat = chats.find((chat) => chat.id === fallbackChatId) || panel?.currentChat || chats[0] || null;
-  const currentLinkedSession = selectedChat?.linkedSession || panel?.currentChat?.linkedSession || null;
+  const fallbackChatId =
+    selectedOmniChatId || panel?.currentChat?.id || chats[0]?.id || null;
+  const selectedChat =
+    chats.find((chat) => chat.id === fallbackChatId) ||
+    panel?.currentChat ||
+    chats[0] ||
+    null;
+  const currentLinkedSession =
+    selectedChat?.linkedSession || panel?.currentChat?.linkedSession || null;
   const fallbackSessionKey =
     selectedOmniSessionKey ||
     currentLinkedSession?.sessionKey ||
     sessions[0]?.sessionKey ||
     null;
-  const selectedSession = sessions.find((session) => session.sessionKey === fallbackSessionKey) || null;
+  const selectedSession =
+    sessions.find((session) => session.sessionKey === fallbackSessionKey) ||
+    null;
   const agentSelect = body.querySelector("#ravi-wa-omni-target-agent");
   const nextRouteAgentId =
     (agentSelect instanceof HTMLSelectElement ? agentSelect.value : null) ||
@@ -3089,11 +3507,19 @@ function getOmniRoutingFormState(body, panel, chats, sessions, agents) {
     null;
   const newSessionInput = body.querySelector("#ravi-wa-omni-new-session-name");
   const newAgentInput = body.querySelector("#ravi-wa-omni-new-agent-id");
-  const newAgentSessionInput = body.querySelector("#ravi-wa-omni-new-agent-session-name");
+  const newAgentSessionInput = body.querySelector(
+    "#ravi-wa-omni-new-agent-session-name",
+  );
   const draftSessionName =
-    (newSessionInput instanceof HTMLInputElement ? newSessionInput.value : omniDraftSessionName).trim() || null;
+    (newSessionInput instanceof HTMLInputElement
+      ? newSessionInput.value
+      : omniDraftSessionName
+    ).trim() || null;
   const draftNewAgentId =
-    (newAgentInput instanceof HTMLInputElement ? newAgentInput.value : omniDraftNewAgentId).trim() || null;
+    (newAgentInput instanceof HTMLInputElement
+      ? newAgentInput.value
+      : omniDraftNewAgentId
+    ).trim() || null;
   const draftNewAgentSessionName =
     (newAgentSessionInput instanceof HTMLInputElement
       ? newAgentSessionInput.value
@@ -3101,7 +3527,8 @@ function getOmniRoutingFormState(body, panel, chats, sessions, agents) {
     ).trim() || null;
 
   selectedOmniChatId = selectedChat?.id || null;
-  selectedOmniSessionKey = selectedSession?.sessionKey || selectedOmniSessionKey;
+  selectedOmniSessionKey =
+    selectedSession?.sessionKey || selectedOmniSessionKey;
   selectedOmniRouteAgentId = nextRouteAgentId;
   omniDraftSessionName = draftSessionName || "";
   omniDraftNewAgentId = draftNewAgentId || "";
@@ -3137,9 +3564,20 @@ function renderOmniInstanceRows(items, preferredInstance) {
     <div class="ravi-wa-nav-list">
       ${items
         .map((instance) => {
-          const selected = preferredInstance?.id === instance.id ? "true" : "false";
-          const subline = [instance.profileName, instance.phone, shorten(instance.ownerIdentifier || "", 18)].filter(Boolean).join(" · ");
-          const stateClass = instance.isConnected ? "streaming" : instance.isActive ? "thinking" : "idle";
+          const selected =
+            preferredInstance?.id === instance.id ? "true" : "false";
+          const subline = [
+            instance.profileName,
+            instance.phone,
+            shorten(instance.ownerIdentifier || "", 18),
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          const stateClass = instance.isConnected
+            ? "streaming"
+            : instance.isActive
+              ? "thinking"
+              : "idle";
           const opaque = isOmniOpaque(instance);
           const title = buildOmniItemPermissionTitle(instance, instance.name);
           return `
@@ -3181,15 +3619,25 @@ function renderOmniChatRows(items, currentChat, emptyText) {
         .map((chat) => {
           const selected = currentChat?.id === chat.id ? "true" : "false";
           const opaque = isOmniOpaque(chat);
-          const subline = opaque ? "sem permissão para detalhes do chat" : chat.lastMessagePreview || chat.externalId || "sem preview";
+          const subline = opaque
+            ? "sem permissão para detalhes do chat"
+            : chat.lastMessagePreview || chat.externalId || "sem preview";
           const linkedSession = chat.linkedSession;
-          const linkedState = opaque ? "locked" : linkedSession ? chipActivityClass(linkedSession.live?.activity) : "idle";
-          const linkedLabel = opaque
-            ? describeOmniMissingRelations(chat?.auth?.view?.missing) || "sem permissão"
+          const linkedState = opaque
+            ? "locked"
             : linkedSession
-            ? `${linkedSession.sessionName} · ${chipActivityLabel(linkedSession.live?.activity)}`
-            : "sem sessão";
-          const title = buildOmniItemPermissionTitle(chat, chat.name || chat.externalId || chat.id);
+              ? chipActivityClass(linkedSession.live?.activity)
+              : "idle";
+          const linkedLabel = opaque
+            ? describeOmniMissingRelations(chat?.auth?.view?.missing) ||
+              "sem permissão"
+            : linkedSession
+              ? `${linkedSession.sessionName} · ${chipActivityLabel(linkedSession.live?.activity)}`
+              : "sem sessão";
+          const title = buildOmniItemPermissionTitle(
+            chat,
+            chat.name || chat.externalId || chat.id,
+          );
           return `
             <button
               type="button"
@@ -3219,7 +3667,13 @@ function renderOmniChatRows(items, currentChat, emptyText) {
   `;
 }
 
-function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedRouteAgentId, drafts) {
+function renderOmniRoutingPanel(
+  selectedChat,
+  selectedSession,
+  agents,
+  selectedRouteAgentId,
+  drafts,
+) {
   if (!selectedChat) {
     return `
       <section class="ravi-wa-card ravi-wa-card--flush">
@@ -3243,11 +3697,21 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
   const bindAction = getOmniActionState("bind-existing", routeFormState);
   const createAction = getOmniActionState("create-session", routeFormState);
   const migrateAction = getOmniActionState("migrate-session", routeFormState);
-  const createAgentAction = getOmniActionState("create-agent-session", routeFormState);
-  const bindLabel = buildOmniBindButtonLabel(currentLinkedSession, selectedSession);
+  const createAgentAction = getOmniActionState(
+    "create-agent-session",
+    routeFormState,
+  );
+  const bindLabel = buildOmniBindButtonLabel(
+    currentLinkedSession,
+    selectedSession,
+  );
   const bindDisabled =
-    !bindAction.allowed || !selectedSession || (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey);
-  const selectedRouteAgent = agents.find((agent) => agent.id === selectedRouteAgentId) || null;
+    !bindAction.allowed ||
+    !selectedSession ||
+    (currentLinkedSession &&
+      currentLinkedSession.sessionKey === selectedSession.sessionKey);
+  const selectedRouteAgent =
+    agents.find((agent) => agent.id === selectedRouteAgentId) || null;
   const migrateDisabled = !migrateAction.allowed;
   const migrateLabel = currentLinkedSession
     ? `Migrar para ${selectedRouteAgent?.id || "agent"}`
@@ -3255,8 +3719,11 @@ function renderOmniRoutingPanel(selectedChat, selectedSession, agents, selectedR
   const selectedChatOpaque = isOmniOpaque(selectedChat);
   const currentSessionOpaque = isOmniOpaque(currentLinkedSession);
   const routeSummaryText = selectedChatOpaque
-    ? describeOmniMissingRelations(selectedChat?.auth?.view?.missing) || "sem permissão para detalhes do chat"
-    : selectedChat.lastMessagePreview || selectedChat.externalId || "sem preview";
+    ? describeOmniMissingRelations(selectedChat?.auth?.view?.missing) ||
+      "sem permissão para detalhes do chat"
+    : selectedChat.lastMessagePreview ||
+      selectedChat.externalId ||
+      "sem preview";
 
   return `
     <section class="ravi-wa-card ravi-wa-card--flush">
@@ -3398,13 +3865,22 @@ function renderOmniSessionRows(items, selectedSession, emptyText) {
     <div class="ravi-wa-nav-list ravi-wa-nav-list--tall">
       ${items
         .map((session) => {
-          const selected = selectedSession?.sessionKey === session.sessionKey ? "true" : "false";
+          const selected =
+            selectedSession?.sessionKey === session.sessionKey
+              ? "true"
+              : "false";
           const opaque = isOmniOpaque(session);
-          const activityClass = opaque ? "locked" : chipActivityClass(session.live?.activity);
+          const activityClass = opaque
+            ? "locked"
+            : chipActivityClass(session.live?.activity);
           const linkedChat = opaque
-            ? describeOmniMissingRelations(session?.auth?.view?.missing) || "sem permissão para detalhes da sessão"
+            ? describeOmniMissingRelations(session?.auth?.view?.missing) ||
+              "sem permissão para detalhes da sessão"
             : getLinkedChatLabel(session);
-          const title = buildOmniItemPermissionTitle(session, session.sessionName);
+          const title = buildOmniItemPermissionTitle(
+            session,
+            session.sessionName,
+          );
           return `
             <button
               type="button"
@@ -3443,7 +3919,10 @@ function renderOmniGroupRows(items) {
       ${items
         .map((group) => {
           const opaque = isOmniOpaque(group);
-          const title = buildOmniItemPermissionTitle(group, group.name || group.externalId || "grupo");
+          const title = buildOmniItemPermissionTitle(
+            group,
+            group.name || group.externalId || "grupo",
+          );
           return `
           <button
             type="button"
@@ -3477,7 +3956,9 @@ function renderRecentStack(container) {
 }
 
 function renderLiveEventsCard(session) {
-  const events = Array.isArray(session?.live?.events) ? session.live.events.slice(0, 8) : [];
+  const events = Array.isArray(session?.live?.events)
+    ? session.live.events.slice(0, 8)
+    : [];
   if (!events.length) {
     return `
       <section class="ravi-wa-card">
@@ -3519,15 +4000,19 @@ function renderLiveEventsCard(session) {
 function getSelectedWorkspaceSession(snapshot = latestSnapshot) {
   if (!selectedWorkspaceSessionKey) return null;
 
-  if (latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey) {
+  if (
+    latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey
+  ) {
     return latestSessionWorkspace.session;
   }
 
   return (
     dedupeSessionsByKey(
-      [snapshot?.session, ...(snapshot?.activeSessions || snapshot?.hotSessions || []), ...(snapshot?.recentSessions || snapshot?.recentChats || [])].filter(
-        Boolean,
-      ),
+      [
+        snapshot?.session,
+        ...(snapshot?.activeSessions || snapshot?.hotSessions || []),
+        ...(snapshot?.recentSessions || snapshot?.recentChats || []),
+      ].filter(Boolean),
     ).find((item) => item.sessionKey === selectedWorkspaceSessionKey) || null
   );
 }
@@ -3536,7 +4021,10 @@ function ensureSessionWorkspaceMainHost() {
   const mainPane = document.getElementById("main");
   if (!(mainPane instanceof HTMLElement)) return null;
 
-  if (currentSessionMainHost && currentSessionMainHost.parentElement !== mainPane) {
+  if (
+    currentSessionMainHost &&
+    currentSessionMainHost.parentElement !== mainPane
+  ) {
     currentSessionMainHost.remove();
     currentSessionMainHost = null;
   }
@@ -3554,7 +4042,8 @@ function ensureSessionWorkspaceMainHost() {
 }
 
 function hideSessionWorkspaceMain() {
-  const host = currentSessionMainHost || document.getElementById(SESSION_MAIN_HOST_ID);
+  const host =
+    currentSessionMainHost || document.getElementById(SESSION_MAIN_HOST_ID);
   if (!(host instanceof HTMLElement)) return;
   host.classList.add("ravi-hidden");
   host.innerHTML = "";
@@ -3566,147 +4055,301 @@ function shouldDeferSessionWorkspaceMainRender(host) {
   if (!(host instanceof HTMLElement)) return false;
   const active = document.activeElement;
   if (!active || !host.contains(active)) return false;
-  if (active.tagName === "TEXTAREA" || active.tagName === "INPUT" || active.tagName === "SELECT") {
+  if (
+    active.tagName === "TEXTAREA" ||
+    active.tagName === "INPUT" ||
+    active.tagName === "SELECT"
+  ) {
     return true;
   }
   return active.getAttribute?.("contenteditable") === "true";
 }
 
-function normalizeSessionWorkspaceText(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeSessionWorkspaceArtifacts(artifacts) {
-  const seen = new Set();
-  const next = [];
-
-  for (const artifact of Array.isArray(artifacts) ? artifacts : []) {
-    if (!artifact) continue;
-    const key = artifact.dedupeKey || artifact.id;
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    next.push(artifact);
+function normalizeSessionWorkspaceTimestamp(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
   }
 
-  return next;
-}
-
-function shouldRenderSessionWorkspaceEvent(event, liveActivity, lastAssistantText) {
-  const kind = String(event?.kind || "").trim().toLowerCase();
-  if (!kind) return false;
-  if (kind === "prompt" || kind === "response" || kind === "tool") return false;
-
-  const detail = normalizeSessionWorkspaceText(event?.detail);
-  if (kind === "stream") {
-    if (liveActivity !== "streaming") return false;
-    if (
-      detail &&
-      lastAssistantText &&
-      (detail === lastAssistantText || detail.endsWith(lastAssistantText) || lastAssistantText.endsWith(detail))
-    ) {
-      return false;
-    }
+  if (typeof value !== "string") {
+    return 0;
   }
 
-  if (kind === "runtime") {
-    if (!detail || detail === "idle" || detail === "turn.interrupted") return false;
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return 0;
   }
 
-  return true;
+  const sqliteTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)
+    ? `${trimmed.replace(" ", "T")}Z`
+    : trimmed;
+  const parsed = Date.parse(sqliteTimestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function buildSessionWorkspaceLiveItems(session, messages) {
-  const liveActivity = session?.live?.activity || "idle";
-  const lastAssistant = [...(Array.isArray(messages) ? messages : [])]
-    .reverse()
-    .find((message) => message?.role === "assistant" && normalizeSessionWorkspaceText(message.content));
-  const lastAssistantText = normalizeSessionWorkspaceText(lastAssistant?.content);
+function normalizeSessionWorkspaceTimelineItem(item, index) {
+  if (!item) return null;
 
-  const events = (Array.isArray(session?.live?.events) ? session.live.events : [])
-    .filter((event) => shouldRenderSessionWorkspaceEvent(event, liveActivity, lastAssistantText))
-    .slice(0, 8)
-    .map((event, index) => ({
-      id: `event:${event.kind || "runtime"}:${event.timestamp || 0}:${index}`,
-      type: "event",
-      kind: event.kind || "runtime",
-      label: event.label || event.kind || "evento",
-      detail: event.detail || event.kind || "evento",
-      timestamp: event.timestamp || 0,
-    }));
+  const type =
+    item.type === "event" || item.type === "artifact" ? item.type : "message";
+  const timestamp = normalizeSessionWorkspaceTimestamp(
+    item.timestamp ?? item.createdAt,
+  );
 
-  const artifacts = normalizeSessionWorkspaceArtifacts(session?.live?.artifacts || [])
-    .sort((left, right) => (right.updatedAt || right.createdAt || 0) - (left.updatedAt || left.createdAt || 0))
-    .slice(0, 8)
-    .map((artifact) => ({
-      id: `artifact:${artifact.dedupeKey || artifact.id}`,
-      type: "artifact",
-      kind: artifact.kind || "artifact",
-      label: artifact.label || artifact.kind || "artifact",
-      detail: artifact.detail || artifact.kind || "artifact",
-      timestamp: artifact.updatedAt || artifact.createdAt || 0,
-    }));
+  if (type === "message") {
+    const content = String(item.content || "");
+    if (!content.trim()) return null;
+    return {
+      id: item.id || `message:${index}`,
+      type: "message",
+      role: item.role || "assistant",
+      content,
+      timestamp,
+      source: item.source || "history",
+      pending: item.pending === true,
+      eventKind: item.eventKind || null,
+    };
+  }
 
-  return [...events, ...artifacts]
-    .sort((left, right) => left.timestamp - right.timestamp)
-    .slice(-12);
+  const detail = String(item.detail || item.kind || type);
+  if (!detail.trim()) return null;
+  return {
+    id: item.id || `${type}:${index}`,
+    type,
+    kind: item.kind || type,
+    label: item.label || item.kind || type,
+    detail,
+    description:
+      typeof item.description === "string" ? item.description : null,
+    preview: typeof item.preview === "string" ? item.preview : null,
+    fullDetail:
+      typeof item.fullDetail === "string" ? item.fullDetail : null,
+    status: typeof item.status === "string" ? item.status : null,
+    timestamp,
+    source: item.source || "live",
+  };
 }
 
-function sessionWorkspaceLiveItemTone(item) {
+function compareSessionWorkspaceTimelineItems(left, right) {
+  if (left.timestamp !== right.timestamp) {
+    return left.timestamp - right.timestamp;
+  }
+
+  const leftPriority =
+    left.type === "message" ? 0 : left.type === "artifact" ? 1 : 2;
+  const rightPriority =
+    right.type === "message" ? 0 : right.type === "artifact" ? 1 : 2;
+
+  if (leftPriority !== rightPriority) {
+    return leftPriority - rightPriority;
+  }
+
+  return String(left.id || "").localeCompare(String(right.id || ""));
+}
+
+function getSessionWorkspaceTimelineItems(workspace) {
+  const sourceItems = Array.isArray(workspace?.timeline)
+    ? workspace.timeline
+    : Array.isArray(workspace?.messages)
+      ? workspace.messages.map((message, index) => ({
+          id: message?.id || `message:${index}`,
+          type: "message",
+          role: message?.role || "assistant",
+          content: message?.content || "",
+          timestamp: message?.createdAt,
+          source: "history",
+        }))
+      : [];
+
+  return sourceItems
+    .map((item, index) => normalizeSessionWorkspaceTimelineItem(item, index))
+    .filter(Boolean)
+    .sort(compareSessionWorkspaceTimelineItems);
+}
+
+function sessionWorkspaceTimelineItemTone(item) {
   if (item?.type === "artifact") {
     if (item.kind === "tool") return "tool";
     if (item.kind === "interruption") return "interruption";
     return "runtime";
   }
 
-  if (item?.kind === "stream") return "streaming";
-  if (item?.kind === "approval") return "approval";
-  if (item?.kind === "runtime") return "runtime";
-  return chipActivityClass(eventKindToActivity(item?.kind));
+  if (item?.type === "event") {
+    if (item.kind === "approval") return "approval";
+    if (item.kind === "runtime") return "runtime";
+    return chipActivityClass(eventKindToActivity(item.kind));
+  }
+
+  if (item?.pending) {
+    return item.role === "assistant" ? "streaming" : "thinking";
+  }
+
+  return "idle";
 }
 
-function buildSessionWorkspaceLiveMarkup(session, messages) {
-  const items = buildSessionWorkspaceLiveItems(session, messages);
-  if (!items.length) return "";
+function describeSessionWorkspaceTimelineSpeaker(item, session) {
+  if (item?.type === "message") {
+    if (item.role === "user") return "você";
+    if (item.role === "assistant") {
+      return session?.displayName || session?.sessionName || "sessão";
+    }
+    return "sistema";
+  }
+
+  return item?.label || item?.kind || "evento";
+}
+
+function formatSessionWorkspaceToolStatusLabel(status) {
+  switch (status) {
+    case "running":
+      return "executando";
+    case "error":
+      return "erro";
+    case "ok":
+      return "ok";
+    default:
+      return "";
+  }
+}
+
+function formatSessionWorkspaceHistorySourceLabel(source) {
+  switch (source) {
+    case "merged-history":
+      return "thread unificada";
+    case "provider-session":
+      return "sessão atual";
+    case "recent-history":
+      return "histórico recente";
+    case "missing":
+      return "sem histórico";
+    default:
+      return source || "histórico";
+  }
+}
+
+function buildSessionWorkspaceToolCallMarkup(item) {
+  const timeLabel = formatTimestamp(item.timestamp) || "-";
+  const description = item.description || "sem descrição curta";
+  const preview = item.preview || item.detail || "sem preview";
+  const fullDetail =
+    typeof item.fullDetail === "string" ? item.fullDetail.trim() : "";
+  const expandable = Boolean(fullDetail && fullDetail !== preview);
+  const expanded = expandable && expandedSessionWorkspaceTools.has(item.id);
+  const statusLabel = formatSessionWorkspaceToolStatusLabel(item.status);
+  const statusMarkup = statusLabel
+    ? `<span class="ravi-wa-session-tool__status ravi-wa-session-tool__status--${escapeAttribute(item.status || "idle")}">${escapeHtml(statusLabel)}</span>`
+    : "";
+  const headerMarkup = `
+    <div class="ravi-wa-session-tool__meta">
+      <strong>${escapeHtml(item.label || item.kind || "tool")}</strong>
+      ${statusMarkup}
+      <span class="ravi-wa-session-tool__time">${escapeHtml(timeLabel)}</span>
+      ${
+        expandable
+          ? `<span class="ravi-wa-session-tool__chevron" aria-hidden="true">▾</span>`
+          : ""
+      }
+    </div>
+  `;
+  const bodyMarkup = `
+    <div class="ravi-wa-session-tool__body">
+      <span class="ravi-wa-session-tool__description">${escapeHtml(description)}</span>
+      <span class="ravi-wa-session-tool__preview">${escapeHtml(preview)}</span>
+    </div>
+  `;
+  const summaryMarkup = expandable
+    ? `
+      <button
+        type="button"
+        class="ravi-wa-session-tool ravi-wa-session-tool--toggle"
+        data-ravi-session-tool-toggle="${escapeAttribute(item.id)}"
+        aria-expanded="${expanded ? "true" : "false"}"
+      >
+        ${headerMarkup}
+        ${bodyMarkup}
+      </button>
+    `
+    : `<div class="ravi-wa-session-tool">${headerMarkup}${bodyMarkup}</div>`;
 
   return `
-    <section class="ravi-wa-card ravi-wa-session-main__live">
-      <div class="ravi-wa-section-head">
-        <h3>tempo real</h3>
-        <span>${escapeHtml(String(items.length))}</span>
-      </div>
-      <div class="ravi-wa-live-log">
-        ${items
-          .map((item) => {
-            const tone = sessionWorkspaceLiveItemTone(item);
-            return `
-              <div class="ravi-wa-live-line ravi-wa-live-line--${escapeAttribute(tone)}">
-                <div class="ravi-wa-live-line__meta">
-                  <span>${escapeHtml(formatElapsedCompact(item.timestamp) || "agora")}</span>
-                  <strong>${escapeHtml(item.label || item.kind || item.type)}</strong>
-                </div>
-                <div class="ravi-wa-live-line__text">${escapeHtml(item.detail || item.kind || item.type || "")}</div>
-              </div>
-            `;
-          })
-          .join("")}
-      </div>
-    </section>
+    <article
+      class="ravi-wa-session-bubble ravi-wa-session-bubble--system ravi-wa-session-bubble--discrete ravi-wa-session-bubble--toolcall${expanded ? " is-expanded" : ""}"
+      data-ravi-session-tool-root="${escapeAttribute(item.id)}"
+    >
+      ${summaryMarkup}
+      ${
+        expandable
+          ? `<pre class="ravi-wa-session-tool__expanded"${expanded ? "" : " hidden"}>${escapeHtml(fullDetail)}</pre>`
+          : ""
+      }
+    </article>
   `;
 }
 
+function buildSessionWorkspaceTimelineMarkup(session, workspace) {
+  const items = getSessionWorkspaceTimelineItems(workspace);
+  if (!items.length) {
+    return `<div class="ravi-wa-session-main__empty">sem mensagens recentes dessa sessão ainda.</div>`;
+  }
+
+  return items
+    .map((item) => {
+      if (item.type === "artifact" && item.kind === "tool") {
+        return buildSessionWorkspaceToolCallMarkup(item);
+      }
+
+      const bubbleRole =
+        item.type === "message"
+          ? item.role === "user"
+            ? "user"
+            : item.role === "assistant"
+              ? "assistant"
+              : "system"
+          : "system";
+      const tone = sessionWorkspaceTimelineItemTone(item);
+      const discreteClass =
+        item.type === "message" ? "" : " ravi-wa-session-bubble--discrete";
+      const pendingClass = item.pending
+        ? " ravi-wa-session-bubble--pending"
+        : "";
+      const toneClass =
+        item.type === "message"
+          ? ""
+          : ` ravi-wa-session-bubble--tone-${escapeAttribute(tone)}`;
+      const liveBadge = item.pending
+        ? `<span class="ravi-wa-session-bubble__badge">ao vivo</span>`
+        : "";
+
+      return `
+        <article class="ravi-wa-session-bubble ravi-wa-session-bubble--${escapeAttribute(bubbleRole)}${discreteClass}${pendingClass}${toneClass}">
+          <div class="ravi-wa-session-bubble__meta">
+            <strong>${escapeHtml(describeSessionWorkspaceTimelineSpeaker(item, session))}</strong>
+            ${liveBadge}
+            <span class="ravi-wa-session-bubble__time">${escapeHtml(formatTimestamp(item.timestamp) || "-")}</span>
+          </div>
+          <pre class="ravi-wa-session-bubble__body">${escapeHtml(
+            item.type === "message"
+              ? item.content || ""
+              : item.detail || item.kind || item.type || "",
+          )}</pre>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function buildSessionWorkspaceMainMarkup(session, workspace) {
-  const messages = Array.isArray(workspace?.messages) ? workspace.messages : [];
-  const liveMarkup = buildSessionWorkspaceLiveMarkup(session, messages);
+  const timelineMarkup = buildSessionWorkspaceTimelineMarkup(session, workspace);
   const activity = session?.live?.activity || "idle";
   const stateClass = chipActivityClass(activity);
   const stateLabel = chipActivityLabel(activity);
   const summary = session?.live?.summary || "sem evento vivo";
   const linkedChat = session ? getLinkedChatLabel(session) : null;
-  const elapsed = session ? formatSessionElapsedCompact(session) || "agora" : "-";
-  const historySource = workspace?.historySource || "recent-history";
+  const elapsed = session
+    ? formatSessionElapsedCompact(session) || "agora"
+    : "-";
+  const historySource = formatSessionWorkspaceHistorySourceLabel(
+    workspace?.historySource || "recent-history",
+  );
 
   return `
     <div class="ravi-wa-session-main">
@@ -3730,28 +4373,7 @@ function buildSessionWorkspaceMainMarkup(session, workspace) {
         </div>
       </header>
       <div class="ravi-wa-session-main__thread" data-ravi-session-thread="true">
-        ${
-          messages.length
-            ? messages
-                .map((message) => {
-                  const role = message.role || "unknown";
-                  const bubbleRole = role === "user" ? "user" : role === "assistant" ? "assistant" : "system";
-                  return `
-                    <article class="ravi-wa-session-bubble ravi-wa-session-bubble--${escapeAttribute(bubbleRole)}">
-                      <div class="ravi-wa-session-bubble__meta">
-                        <strong>${escapeHtml(role)}</strong>
-                        <span>${escapeHtml(formatTimestamp(message.createdAt) || "-")}</span>
-                      </div>
-                      <pre class="ravi-wa-session-bubble__body">${escapeHtml(message.content || "")}</pre>
-                    </article>
-                  `;
-                })
-                .join("")
-            : !liveMarkup
-              ? `<div class="ravi-wa-session-main__empty">sem mensagens recentes dessa sessão ainda.</div>`
-              : ""
-        }
-        ${liveMarkup}
+        ${timelineMarkup}
       </div>
       <form class="ravi-wa-session-main__composer" data-ravi-session-compose="true">
         <textarea
@@ -3769,8 +4391,7 @@ function buildSessionWorkspaceMainMarkup(session, workspace) {
 }
 
 function computeSessionWorkspaceRenderKey(session, workspace) {
-  const messages = Array.isArray(workspace?.messages) ? workspace.messages : [];
-  const liveItems = buildSessionWorkspaceLiveItems(session, messages);
+  const timelineItems = getSessionWorkspaceTimelineItems(workspace);
   return JSON.stringify({
     sessionKey: session?.sessionKey || null,
     sessionName: session?.sessionName || null,
@@ -3779,16 +4400,60 @@ function computeSessionWorkspaceRenderKey(session, workspace) {
     summary: session?.live?.summary || null,
     busySince: session?.live?.busySince || null,
     historySource: workspace?.historySource || null,
-    messageCount: messages.length,
-    messages: messages.map((message) => [message.id || null, message.role || null, message.createdAt || null, message.content || ""]),
-    liveItems: liveItems.map((item) => [item.id || null, item.type || null, item.kind || null, item.timestamp || null, item.label || null, item.detail || null]),
+    timelineCount: timelineItems.length,
+    timeline: timelineItems.map((item) => [
+      item.id || null,
+      item.type || null,
+      item.timestamp || null,
+      item.type === "message" ? item.role || null : item.kind || null,
+      item.type === "message" ? item.content || "" : item.label || null,
+      item.type === "message" ? item.pending === true : item.detail || null,
+      item.type === "artifact" ? item.description || null : null,
+      item.type === "artifact" ? item.preview || null : null,
+      item.type === "artifact" ? item.fullDetail || null : null,
+      item.type === "artifact" ? item.status || null : null,
+    ]),
     submitting: sessionWorkspaceSubmitting,
   });
 }
 
 function isNearScrollBottom(element, threshold = 56) {
   if (!(element instanceof HTMLElement)) return false;
-  return element.scrollHeight - element.clientHeight - element.scrollTop <= threshold;
+  return (
+    element.scrollHeight - element.clientHeight - element.scrollTop <= threshold
+  );
+}
+
+function syncSessionWorkspaceToolExpandedState(root, expanded) {
+  if (!(root instanceof HTMLElement)) return;
+  root.classList.toggle("is-expanded", expanded);
+  const toggle = root.querySelector("[data-ravi-session-tool-toggle]");
+  if (toggle instanceof HTMLElement) {
+    toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+  }
+  const detail = root.querySelector(".ravi-wa-session-tool__expanded");
+  if (detail instanceof HTMLElement) {
+    detail.hidden = !expanded;
+  }
+}
+
+function bindSessionWorkspaceToolToggles(host) {
+  host
+    .querySelectorAll("[data-ravi-session-tool-toggle]")
+    .forEach((button) => {
+      button.addEventListener("click", () => {
+        const key = button.getAttribute("data-ravi-session-tool-toggle");
+        if (!key) return;
+        const root = button.closest("[data-ravi-session-tool-root]");
+        const nextExpanded = !expandedSessionWorkspaceTools.has(key);
+        if (nextExpanded) {
+          expandedSessionWorkspaceTools.add(key);
+        } else {
+          expandedSessionWorkspaceTools.delete(key);
+        }
+        syncSessionWorkspaceToolExpandedState(root, nextExpanded);
+      });
+    });
 }
 
 function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
@@ -3806,14 +4471,24 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
 
   const session = getSelectedWorkspaceSession(snapshot);
   const workspace =
-    latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey ? latestSessionWorkspace : null;
+    latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey
+      ? latestSessionWorkspace
+      : null;
   const previousThread = host.querySelector("[data-ravi-session-thread]");
-  const previousScrollTop = previousThread instanceof HTMLElement ? previousThread.scrollTop : 0;
-  const previousWasNearBottom = previousThread instanceof HTMLElement ? isNearScrollBottom(previousThread) : false;
+  const previousScrollTop =
+    previousThread instanceof HTMLElement ? previousThread.scrollTop : 0;
+  const previousWasNearBottom =
+    previousThread instanceof HTMLElement
+      ? isNearScrollBottom(previousThread)
+      : false;
   const renderKey = computeSessionWorkspaceRenderKey(session, workspace);
   const sessionKey = session?.sessionKey || selectedWorkspaceSessionKey || null;
 
-  if (!options.force && renderKey === lastSessionWorkspaceRenderKey && sessionKey === lastSessionWorkspaceRenderSessionKey) {
+  if (
+    !options.force &&
+    renderKey === lastSessionWorkspaceRenderKey &&
+    sessionKey === lastSessionWorkspaceRenderSessionKey
+  ) {
     return;
   }
 
@@ -3822,11 +4497,13 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
   lastSessionWorkspaceRenderKey = renderKey;
   lastSessionWorkspaceRenderSessionKey = sessionKey;
 
-  host.querySelectorAll("[data-ravi-session-workspace-close]").forEach((button) => {
-    button.addEventListener("click", () => {
-      clearSessionWorkspace();
+  host
+    .querySelectorAll("[data-ravi-session-workspace-close]")
+    .forEach((button) => {
+      button.addEventListener("click", () => {
+        clearSessionWorkspace();
+      });
     });
-  });
 
   host.querySelectorAll("[data-ravi-open-chat]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -3849,9 +4526,11 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
     textarea.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        host.querySelector("[data-ravi-session-compose]")?.dispatchEvent(
-          new Event("submit", { cancelable: true, bubbles: true }),
-        );
+        host
+          .querySelector("[data-ravi-session-compose]")
+          ?.dispatchEvent(
+            new Event("submit", { cancelable: true, bubbles: true }),
+          );
       }
     });
   }
@@ -3863,14 +4542,23 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
     });
   });
 
+  bindSessionWorkspaceToolToggles(host);
+
   const thread = host.querySelector("[data-ravi-session-thread]");
   if (thread instanceof HTMLElement) {
-    const shouldStickToBottom = Boolean(options.scrollToEnd || sessionWorkspaceShouldScrollToEnd || previousWasNearBottom);
+    const shouldStickToBottom = Boolean(
+      options.scrollToEnd ||
+      sessionWorkspaceShouldScrollToEnd ||
+      previousWasNearBottom,
+    );
     requestAnimationFrame(() => {
       if (shouldStickToBottom) {
         thread.scrollTop = thread.scrollHeight;
       } else {
-        const maxScrollTop = Math.max(0, thread.scrollHeight - thread.clientHeight);
+        const maxScrollTop = Math.max(
+          0,
+          thread.scrollHeight - thread.clientHeight,
+        );
         thread.scrollTop = Math.min(previousScrollTop, maxScrollTop);
       }
     });
@@ -3882,6 +4570,7 @@ function clearSessionWorkspace() {
   selectedWorkspaceSessionKey = null;
   persistWorkspaceSessionKey(null);
   latestSessionWorkspace = null;
+  expandedSessionWorkspaceTools.clear();
   sessionWorkspaceDraft = "";
   sessionWorkspaceSubmitting = false;
   sessionWorkspaceShouldScrollToEnd = false;
@@ -3908,7 +4597,10 @@ async function submitSessionWorkspacePrompt() {
     });
 
     if (!result?.ok) {
-      setSidebarNotice("error", result?.error || "não consegui enviar o prompt");
+      setSidebarNotice(
+        "error",
+        result?.error || "não consegui enviar o prompt",
+      );
       return;
     }
 
@@ -3930,6 +4622,7 @@ function openSessionWorkspace(session) {
   selectedWorkspaceSessionKey = session.sessionKey;
   persistWorkspaceSessionKey(selectedWorkspaceSessionKey);
   latestSessionWorkspace = null;
+  expandedSessionWorkspaceTools.clear();
   sessionWorkspaceDraft = "";
   pinnedSessionKey = session.sessionKey;
   persistPinnedSessionKey(session.sessionKey);
@@ -3939,15 +4632,340 @@ function openSessionWorkspace(session) {
 }
 
 function rememberTaskSelection(selection) {
-  const taskId = typeof selection?.task?.id === "string" ? selection.task.id : null;
+  const taskId =
+    typeof selection?.task?.id === "string" ? selection.task.id : null;
   if (!taskId) return;
   taskSelectionCache.set(taskId, selection);
+}
+
+function setSelectedTaskId(taskId) {
+  const nextTaskId = typeof taskId === "string" && taskId ? taskId : null;
+  if (selectedTaskId === nextTaskId) return;
+  selectedTaskId = nextTaskId;
+  persistSelectedTaskId(nextTaskId);
+}
+
+function syncTaskDetailDrawerSnapshot(snapshot) {
+  const previousSelectedTaskId = selectedTaskId;
+  const nextState = syncTaskDetailDrawerState({
+    selectedTaskId,
+    drawerOpen: taskDetailDrawerOpen,
+    snapshot,
+  });
+
+  if (
+    previousSelectedTaskId &&
+    !nextState.nextSelectedTaskId &&
+    previousSelectedTaskId !== nextState.nextSelectedTaskId
+  ) {
+    taskSelectionCache.delete(previousSelectedTaskId);
+  }
+
+  setSelectedTaskId(nextState.nextSelectedTaskId);
+  if (nextState.nextDrawerOpen !== taskDetailDrawerOpen) {
+    taskDetailDrawerOpen = nextState.nextDrawerOpen;
+    taskDetailDrawerShouldAnimate = false;
+  }
+}
+
+function openTaskDetailDrawer(taskId = selectedTaskId) {
+  if (!taskId) return;
+  const hasCachedSelection = Boolean(getCachedTaskSelection(taskId));
+  if (selectedTaskId !== taskId || !taskDetailDrawerOpen) {
+    taskDetailPaneScrollTopByTaskId.delete(taskId);
+  }
+  setSelectedTaskId(taskId);
+  taskDetailDrawerOpen = true;
+  taskDetailDrawerShouldAnimate = true;
+  if (activeWorkspace === "tasks" && hasCachedSelection) {
+    requestRender();
+  }
+}
+
+function closeTaskDetailDrawer() {
+  if (!taskDetailDrawerOpen) return;
+  taskDetailDrawerOpen = false;
+  taskDetailDrawerShouldAnimate = false;
+  if (activeWorkspace === "tasks") {
+    requestRender();
+  }
+}
+
+function rememberTaskDetailPaneScroll(taskId, scrollTop) {
+  if (!taskId || !Number.isFinite(scrollTop)) return;
+  taskDetailPaneScrollTopByTaskId.set(taskId, Math.max(0, scrollTop));
+}
+
+function captureTaskDetailPaneScroll(root) {
+  const pane = root?.querySelector?.(".ravi-wa-task-detail-pane");
+  if (!(pane instanceof HTMLElement)) return null;
+  const taskId = pane.getAttribute("data-ravi-task-id");
+  if (!taskId) return null;
+  rememberTaskDetailPaneScroll(taskId, pane.scrollTop);
+  return taskId;
+}
+
+function applyTaskDetailPaneScrollPosition(pane, scrollTop) {
+  if (!(pane instanceof HTMLElement) || !Number.isFinite(scrollTop)) return;
+  const maxScrollTop = Math.max(0, pane.scrollHeight - pane.clientHeight);
+  pane.scrollTop = Math.min(Math.max(scrollTop, 0), maxScrollTop);
+}
+
+function restoreTaskDetailPaneScroll(root, taskId, options = {}) {
+  const pane = root?.querySelector?.(".ravi-wa-task-detail-pane");
+  if (!(pane instanceof HTMLElement) || !taskId) return;
+
+  pane.addEventListener(
+    "scroll",
+    () => {
+      rememberTaskDetailPaneScroll(taskId, pane.scrollTop);
+    },
+    { passive: true },
+  );
+
+  const reset = Boolean(options.reset);
+  const savedScrollTop = reset
+    ? 0
+    : taskDetailPaneScrollTopByTaskId.get(taskId);
+  if (!reset && !Number.isFinite(savedScrollTop)) return;
+
+  const applyScroll = () =>
+    applyTaskDetailPaneScrollPosition(
+      pane,
+      Number.isFinite(savedScrollTop) ? savedScrollTop : 0,
+    );
+
+  applyScroll();
+  requestAnimationFrame(applyScroll);
+}
+
+function getCurrentTaskActorSession() {
+  return getCurrentOmniActorSession();
+}
+
+function normalizeTaskAgentId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
 }
 
 function normalizeTaskSessionName(value) {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized || null;
+}
+
+function getTaskDispatchDraft(taskId) {
+  return taskId ? taskDispatchDraftByTaskId.get(taskId) || null : null;
+}
+
+function updateTaskDispatchDraft(taskId, updates = {}) {
+  if (!taskId) return;
+  const current = getTaskDispatchDraft(taskId) || {};
+  const next = {
+    ...current,
+    ...updates,
+  };
+  if (
+    !normalizeTaskAgentId(next.agentId) &&
+    !normalizeTaskSessionName(next.sessionName) &&
+    !normalizeTaskSessionName(next.reportToSessionName)
+  ) {
+    taskDispatchDraftByTaskId.delete(taskId);
+    return;
+  }
+  taskDispatchDraftByTaskId.set(taskId, next);
+}
+
+function clearTaskDispatchDraft(taskId) {
+  if (!taskId) return;
+  taskDispatchDraftByTaskId.delete(taskId);
+}
+
+function getTaskDispatchAgents(snapshot = latestTasksSnapshot) {
+  return Array.isArray(snapshot?.agents) ? snapshot.agents : [];
+}
+
+function getTaskDispatchSessions(snapshot = latestTasksSnapshot) {
+  return Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+}
+
+function pickSuggestedTaskDispatchAgentId(selectedTask, agents) {
+  const availableAgents = Array.isArray(agents) ? agents : [];
+  if (!availableAgents.length) return null;
+  const availableIds = new Set(
+    availableAgents
+      .map((agent) => normalizeTaskAgentId(agent?.id))
+      .filter(Boolean),
+  );
+  const candidates = [
+    normalizeTaskAgentId(selectedTask?.dispatch?.defaultAgentId),
+    normalizeTaskAgentId(selectedTask?.task?.assigneeAgentId),
+    normalizeTaskAgentId(selectedTask?.activeAssignment?.agentId),
+    normalizeTaskAgentId(selectedTask?.parentTask?.assigneeAgentId),
+    normalizeTaskAgentId(latestSnapshot?.session?.agentId),
+    normalizeTaskAgentId(selectedTask?.task?.createdByAgentId),
+    normalizeTaskAgentId(availableAgents[0]?.id),
+  ];
+  return (
+    candidates.find((candidate) => candidate && availableIds.has(candidate)) ||
+    null
+  );
+}
+
+function pickSuggestedTaskReportSessionName(selectedTask, sessions) {
+  const availableSessions = Array.isArray(sessions) ? sessions : [];
+  if (!availableSessions.length) return null;
+  const availableNames = new Set(
+    availableSessions
+      .map((session) => normalizeTaskSessionName(session?.sessionName))
+      .filter(Boolean),
+  );
+  const candidates = [
+    normalizeTaskSessionName(selectedTask?.dispatch?.defaultReportToSessionName),
+    normalizeTaskSessionName(selectedTask?.activeAssignment?.reportToSessionName),
+    normalizeTaskSessionName(selectedTask?.task?.reportToSessionName),
+    normalizeTaskSessionName(getCurrentTaskActorSession()),
+    normalizeTaskSessionName(selectedTask?.task?.createdBySessionName),
+    normalizeTaskSessionName(availableSessions[0]?.sessionName),
+  ];
+  return (
+    candidates.find((candidate) => candidate && availableNames.has(candidate)) ||
+    null
+  );
+}
+
+function resolveTaskDispatchFormState(
+  selectedTask,
+  snapshot = latestTasksSnapshot,
+) {
+  const task = selectedTask?.task || null;
+  const dispatch = selectedTask?.dispatch || null;
+  const agents = getTaskDispatchAgents(snapshot);
+  const sessions = getTaskDispatchSessions(snapshot);
+  const draft = getTaskDispatchDraft(task?.id) || null;
+  const suggestedAgentId = pickSuggestedTaskDispatchAgentId(selectedTask, agents);
+  const suggestedReportToSessionName = pickSuggestedTaskReportSessionName(
+    selectedTask,
+    sessions,
+  );
+  const selectedAgentId =
+    normalizeTaskAgentId(draft?.agentId) || suggestedAgentId || "";
+  const sessionName = typeof draft?.sessionName === "string" ? draft.sessionName : "";
+  const reportToSessionName =
+    normalizeTaskSessionName(draft?.reportToSessionName) ||
+    suggestedReportToSessionName ||
+    "";
+  const defaultSessionName = dispatch?.defaultSessionName || "";
+  const defaultReportToSessionName =
+    normalizeTaskSessionName(dispatch?.defaultReportToSessionName) || "";
+
+  return {
+    task,
+    dispatch,
+    agents,
+    sessions,
+    selectedAgentId,
+    sessionName,
+    reportToSessionName,
+    defaultSessionName,
+    defaultReportToSessionName,
+    isSubmitting: taskDispatchInFlightTaskId === task?.id,
+    canSubmit: Boolean(
+      dispatch?.allowed &&
+        selectedAgentId &&
+        (defaultSessionName || normalizeTaskSessionName(sessionName)) &&
+        reportToSessionName,
+    ),
+  };
+}
+
+async function dispatchTaskFromOverlay(taskId, options = {}) {
+  return chrome.runtime.sendMessage({
+    type: "ravi:dispatch-task",
+    payload: {
+      ...buildTasksRequestPayload(taskId),
+      taskId,
+      agentId: options.agentId,
+      ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+      ...(options.reportToSessionName
+        ? { reportToSessionName: options.reportToSessionName }
+        : {}),
+      actorSession: getCurrentTaskActorSession(),
+    },
+  });
+}
+
+async function submitTaskDispatch(taskId) {
+  const selectedTask = getCachedTaskSelection(taskId);
+  const form = resolveTaskDispatchFormState(selectedTask);
+  if (!form.task || !form.dispatch?.allowed) {
+    setSidebarNotice(
+      "error",
+      "essa task não está mais pronta para dispatch no runtime.",
+    );
+    requestRender();
+    return;
+  }
+  if (!form.selectedAgentId) {
+    setSidebarNotice("error", "escolhe um agent antes de despachar.");
+    requestRender();
+    return;
+  }
+
+  const resolvedSessionName =
+    normalizeTaskSessionName(form.sessionName) || form.defaultSessionName;
+  if (!resolvedSessionName) {
+    setSidebarNotice("error", "não consegui resolver o nome da sessão dessa task.");
+    requestRender();
+    return;
+  }
+  const resolvedReportToSessionName = normalizeTaskSessionName(
+    form.reportToSessionName,
+  );
+  if (!resolvedReportToSessionName) {
+    setSidebarNotice(
+      "error",
+      "escolhe qual sessão recebe os reports dessa task.",
+    );
+    requestRender();
+    return;
+  }
+
+  taskDispatchInFlightTaskId = taskId;
+  requestRender();
+  try {
+    const result = await dispatchTaskFromOverlay(taskId, {
+      agentId: form.selectedAgentId,
+      sessionName: resolvedSessionName,
+      reportToSessionName: resolvedReportToSessionName,
+    });
+    if (result?.ok === false) {
+      setSidebarNotice(
+        "error",
+        result?.error || "falha ao despachar a task no runtime.",
+      );
+      return;
+    }
+    clearTaskDispatchDraft(taskId);
+    if (result?.snapshot?.ok) {
+      latestTasksSnapshot = result.snapshot;
+      rememberTaskSelection(result.snapshot.selectedTask);
+      syncTaskDetailDrawerSnapshot(result.snapshot);
+      setSelectedTaskId(taskId);
+      taskDetailDrawerOpen = true;
+    }
+    setSidebarNotice(
+      "success",
+      `dispatch ${formatTaskShortId(taskId)} -> ${form.selectedAgentId}/${result?.sessionName || resolvedSessionName} · reports ${result?.reportToSessionName || resolvedReportToSessionName}`,
+    );
+    requestRender();
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    taskDispatchInFlightTaskId = null;
+    requestRender();
+  }
 }
 
 function isLiveTaskStatus(status) {
@@ -3960,7 +4978,9 @@ function shouldReplaceTaskSessionMatch(currentTask, nextTask) {
   if (currentIsLive !== nextIsLive) {
     return nextIsLive;
   }
-  return (Number(nextTask?.updatedAt) || 0) > (Number(currentTask?.updatedAt) || 0);
+  return (
+    (Number(nextTask?.updatedAt) || 0) > (Number(currentTask?.updatedAt) || 0)
+  );
 }
 
 function getTaskSessionLookup(snapshot = latestTasksSnapshot) {
@@ -3977,7 +4997,14 @@ function getTaskSessionLookup(snapshot = latestTasksSnapshot) {
   const lookup = new Map();
   const tasks = Array.isArray(snapshot?.items) ? snapshot.items : [];
   tasks.forEach((task) => {
-    const sessionNames = [...new Set([normalizeTaskSessionName(task?.workSessionName), normalizeTaskSessionName(task?.assigneeSessionName)].filter(Boolean))];
+    const sessionNames = [
+      ...new Set(
+        [
+          normalizeTaskSessionName(task?.workSessionName),
+          normalizeTaskSessionName(task?.assigneeSessionName),
+        ].filter(Boolean),
+      ),
+    ];
     sessionNames.forEach((sessionName) => {
       const existing = lookup.get(sessionName);
       if (!existing || shouldReplaceTaskSessionMatch(existing, task)) {
@@ -4001,11 +5028,16 @@ function getCachedTaskSelection(taskId) {
 }
 
 function getTaskLifecycleEvents(selection) {
-  return Array.isArray(selection?.events) ? selection.events.filter((event) => event?.type !== "task.comment") : [];
+  return Array.isArray(selection?.events)
+    ? selection.events.filter((event) => event?.type !== "task.comment")
+    : [];
 }
 
 function describeTaskSessionNote(task, session, selection) {
-  const progressInfo = describeTaskProgressText(task, getTaskLifecycleEvents(selection));
+  const progressInfo = describeTaskProgressText(
+    task,
+    getTaskLifecycleEvents(selection),
+  );
   if (!progressInfo.fallback) {
     return progressInfo;
   }
@@ -4039,7 +5071,12 @@ function resolveTaskSessionMatch(session) {
 }
 
 async function ensureTaskSelection(taskId) {
-  if (!taskId || taskSelectionInFlight.has(taskId) || getCachedTaskSelection(taskId)) return;
+  if (
+    !taskId ||
+    taskSelectionInFlight.has(taskId) ||
+    getCachedTaskSelection(taskId)
+  )
+    return;
 
   taskSelectionInFlight.add(taskId);
   try {
@@ -4054,7 +5091,11 @@ async function ensureTaskSelection(taskId) {
       }
     }
   } catch (error) {
-    console.warn("[ravi-wa-overlay] failed to hydrate task selection", taskId, error);
+    console.warn(
+      "[ravi-wa-overlay] failed to hydrate task selection",
+      taskId,
+      error,
+    );
   } finally {
     taskSelectionInFlight.delete(taskId);
   }
@@ -4065,7 +5106,13 @@ function primeTaskSessionDetails(matches) {
   const seen = new Set();
   (Array.isArray(matches) ? matches : []).forEach((match) => {
     const taskId = match?.task?.id;
-    if (!taskId || seen.has(taskId) || getCachedTaskSelection(taskId) || taskSelectionInFlight.has(taskId)) return;
+    if (
+      !taskId ||
+      seen.has(taskId) ||
+      getCachedTaskSelection(taskId) ||
+      taskSelectionInFlight.has(taskId)
+    )
+      return;
     seen.add(taskId);
     queue.push(taskId);
   });
@@ -4085,8 +5132,12 @@ function renderGenericCockpitRow(session, currentSession) {
     : session.channel
       ? `canal ${session.channel}`
       : "sem chat vinculado";
-  const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
-  const avatarLabel = shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2);
+  const selected =
+    currentSession?.sessionKey === session.sessionKey ? "true" : "false";
+  const avatarLabel = shorten(
+    (session.agentId || "rv").slice(0, 2).toUpperCase(),
+    2,
+  );
   return `
     <button
       type="button"
@@ -4111,11 +5162,17 @@ function renderGenericCockpitRow(session, currentSession) {
   `;
 }
 
-function renderTaskAwareCockpitRow(session, currentSession, match, options = {}) {
+function renderTaskAwareCockpitRow(
+  session,
+  currentSession,
+  match,
+  options = {},
+) {
   const task = match.task;
   const statusClass = taskStatusClass(task.status);
   const statusLabel = taskStatusLabel(task.status);
-  const selected = currentSession?.sessionKey === session.sessionKey ? "true" : "false";
+  const selected =
+    currentSession?.sessionKey === session.sessionKey ? "true" : "false";
   const linkedChat = getLinkedChatLabel(session);
   const progress = clampTaskProgressValue(task?.progress ?? 0);
   const shortTaskId = formatTaskShortId(task.id);
@@ -4124,20 +5181,32 @@ function renderTaskAwareCockpitRow(session, currentSession, match, options = {})
   const avatarLabel =
     titleMode === "session"
       ? shorten((session.agentId || "rv").slice(0, 2).toUpperCase(), 2)
-      : shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
+      : shortTaskId
+          .replace(/[^a-z0-9]/gi, "")
+          .slice(0, 4)
+          .toUpperCase() || "TASK";
   const note = shorten(match.note.text, grouped ? 96 : 108);
   const debugMeta = grouped
     ? buildGroupedTaskAwareSessionMeta(session, linkedChat, titleMode)
     : [
         `session ${session.sessionName}`,
         session.agentId ? `agent ${session.agentId}` : null,
-        linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : null,
+        linkedChat
+          ? `chat ${shorten(linkedChat, 24)}`
+          : session.channel
+            ? `canal ${session.channel}`
+            : null,
       ]
         .filter(Boolean)
         .join(" · ");
   const taskMeta = grouped
     ? buildGroupedTaskAwareEyebrow(session, task, shortTaskId, titleMode)
-    : [`task ${shortTaskId}`, task.priority ? `priority ${task.priority}` : null].filter(Boolean).join(" · ");
+    : [
+        `task ${shortTaskId}`,
+        task.priority ? `priority ${task.priority}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
   const titleText = grouped
     ? buildGroupedTaskAwareTitle(session, task, options.parentTask, titleMode)
     : task.title || task.id;
@@ -4181,11 +5250,7 @@ function renderCockpitRows(items, currentSession, emptyText) {
     session,
     taskMatch: resolveTaskSessionMatch(session),
   }));
-  primeTaskSessionDetails(
-    rows
-      .map((row) => row.taskMatch)
-      .filter(Boolean),
-  );
+  primeTaskSessionDetails(rows.map((row) => row.taskMatch).filter(Boolean));
   const entries = buildCockpitNavigationEntries(rows);
 
   return `
@@ -4196,7 +5261,11 @@ function renderCockpitRows(items, currentSession, emptyText) {
             return renderCockpitTaskGroup(entry.node, currentSession);
           }
           if (entry.taskMatch) {
-            return renderTaskAwareCockpitRow(entry.session, currentSession, entry.taskMatch);
+            return renderTaskAwareCockpitRow(
+              entry.session,
+              currentSession,
+              entry.taskMatch,
+            );
           }
           return renderGenericCockpitRow(entry.session, currentSession);
         })
@@ -4236,7 +5305,10 @@ function buildCockpitNavigationEntries(rows) {
   });
 
   const groupedEntries = [...groupedRows.values()].flatMap((group) => {
-    const visibleNode = buildVisibleCockpitTaskNode(group.rootNode, group.rowsByTaskId);
+    const visibleNode = buildVisibleCockpitTaskNode(
+      group.rootNode,
+      group.rowsByTaskId,
+    );
     if (!visibleNode) return [];
     if (!shouldRenderCockpitTaskGroup(visibleNode)) {
       return visibleNode.rows.map((row) => ({
@@ -4246,13 +5318,22 @@ function buildCockpitNavigationEntries(rows) {
         taskMatch: row.taskMatch,
       }));
     }
-    return [{ kind: "task-group", order: visibleNode.order, node: visibleNode }];
+    return [
+      { kind: "task-group", order: visibleNode.order, node: visibleNode },
+    ];
   });
 
-  return [...entries, ...groupedEntries].sort((left, right) => left.order - right.order);
+  return [...entries, ...groupedEntries].sort(
+    (left, right) => left.order - right.order,
+  );
 }
 
-function renderCockpitTaskGroup(node, currentSession, parentTask = null, depth = 0) {
+function renderCockpitTaskGroup(
+  node,
+  currentSession,
+  parentTask = null,
+  depth = 0,
+) {
   if (!node?.task) return "";
 
   const ownRowsHtml = (Array.isArray(node.rows) ? node.rows : [])
@@ -4265,7 +5346,9 @@ function renderCockpitTaskGroup(node, currentSession, parentTask = null, depth =
     )
     .join("");
   const childHtml = (Array.isArray(node.children) ? node.children : [])
-    .map((child) => renderCockpitTaskGroup(child, currentSession, node.task, depth + 1))
+    .map((child) =>
+      renderCockpitTaskGroup(child, currentSession, node.task, depth + 1),
+    )
     .join("");
 
   if (depth === 0) {
@@ -4299,14 +5382,23 @@ function renderCockpitTaskGroupHeader(node) {
   const statusLabel = taskStatusLabel(task.status);
   const progress = clampTaskProgressValue(task?.progress ?? 0);
   const shortTaskId = formatTaskShortId(task.id);
-  const avatarLabel = shortTaskId.replace(/[^a-z0-9]/gi, "").slice(0, 4).toUpperCase() || "TASK";
+  const avatarLabel =
+    shortTaskId
+      .replace(/[^a-z0-9]/gi, "")
+      .slice(0, 4)
+      .toUpperCase() || "TASK";
   const sessionCount = countVisibleCockpitTaskRows(node);
   const subtaskCount = countVisibleCockpitTaskDescendants(node);
-  const summary = shorten(summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task), 132);
+  const summary = shorten(
+    summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task),
+    132,
+  );
   const eyebrow = [
     `task ${shortTaskId}`,
     `${sessionCount} ${sessionCount === 1 ? "sessao" : "sessoes"}`,
-    subtaskCount ? `${subtaskCount} ${subtaskCount === 1 ? "subtask" : "subtasks"}` : null,
+    subtaskCount
+      ? `${subtaskCount} ${subtaskCount === 1 ? "subtask" : "subtasks"}`
+      : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -4339,8 +5431,14 @@ function renderCockpitTaskGroupBranchHeader(node, parentTask) {
   const shortTaskId = formatTaskShortId(task.id);
   const visibleSessions = countVisibleCockpitTaskRows(node);
   const title = buildGroupedTaskAwareTitle(null, task, parentTask, "task");
-  const summary = shorten(summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task), 108);
-  const eyebrow = [`subtask ${shortTaskId}`, `${visibleSessions} ${visibleSessions === 1 ? "sessao" : "sessoes"}`]
+  const summary = shorten(
+    summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task),
+    108,
+  );
+  const eyebrow = [
+    `subtask ${shortTaskId}`,
+    `${visibleSessions} ${visibleSessions === 1 ? "sessao" : "sessoes"}`,
+  ]
     .filter(Boolean)
     .join(" · ");
 
@@ -4358,11 +5456,16 @@ function buildGroupedTaskAwareTitle(session, task, parentTask, titleMode) {
     return session?.sessionName || task?.title || task?.id || "task";
   }
   const taskTitle = task?.title || task?.id || session?.sessionName || "task";
-  return stripTaskTitlePrefix(taskTitle, parentTask?.title || null) || taskTitle;
+  return (
+    stripTaskTitlePrefix(taskTitle, parentTask?.title || null) || taskTitle
+  );
 }
 
 function buildGroupedTaskAwareEyebrow(session, task, shortTaskId, titleMode) {
-  const priority = task?.priority && task.priority !== "normal" ? `priority ${task.priority}` : null;
+  const priority =
+    task?.priority && task.priority !== "normal"
+      ? `priority ${task.priority}`
+      : null;
   if (titleMode === "session") {
     return [`task ${shortTaskId}`, priority].filter(Boolean).join(" · ");
   }
@@ -4370,21 +5473,35 @@ function buildGroupedTaskAwareEyebrow(session, task, shortTaskId, titleMode) {
 }
 
 function buildGroupedTaskAwareSessionMeta(session, linkedChat, titleMode) {
-  const location = linkedChat ? `chat ${shorten(linkedChat, 24)}` : session.channel ? `canal ${session.channel}` : "sem chat vinculado";
+  const location = linkedChat
+    ? `chat ${shorten(linkedChat, 24)}`
+    : session.channel
+      ? `canal ${session.channel}`
+      : "sem chat vinculado";
   if (titleMode === "session") {
-    return [session.agentId ? `agent ${session.agentId}` : null, location].filter(Boolean).join(" · ");
+    return [session.agentId ? `agent ${session.agentId}` : null, location]
+      .filter(Boolean)
+      .join(" · ");
   }
-  return [`session ${session.sessionName}`, session.agentId ? `agent ${session.agentId}` : null, location]
+  return [
+    `session ${session.sessionName}`,
+    session.agentId ? `agent ${session.agentId}` : null,
+    location,
+  ]
     .filter(Boolean)
     .join(" · ");
 }
 
 function stripTaskTitlePrefix(taskTitle, parentTaskTitle) {
   const child = typeof taskTitle === "string" ? taskTitle.trim() : "";
-  const parent = typeof parentTaskTitle === "string" ? parentTaskTitle.trim() : "";
+  const parent =
+    typeof parentTaskTitle === "string" ? parentTaskTitle.trim() : "";
   if (!child || !parent) return child;
 
-  const prefixPattern = new RegExp(`^${escapeRegexToken(parent)}(?:\\s*[:/|\\-–—>]+\\s*)?`, "i");
+  const prefixPattern = new RegExp(
+    `^${escapeRegexToken(parent)}(?:\\s*[:/|\\-–—>]+\\s*)?`,
+    "i",
+  );
   const stripped = child.replace(prefixPattern, "").trim();
   return stripped || child;
 }
@@ -4395,23 +5512,39 @@ function escapeRegexToken(value) {
 
 function countVisibleCockpitTaskRows(node) {
   if (!node) return 0;
-  return (Array.isArray(node.rows) ? node.rows.length : 0) + (Array.isArray(node.children) ? node.children.reduce((total, child) => total + countVisibleCockpitTaskRows(child), 0) : 0);
+  return (
+    (Array.isArray(node.rows) ? node.rows.length : 0) +
+    (Array.isArray(node.children)
+      ? node.children.reduce(
+          (total, child) => total + countVisibleCockpitTaskRows(child),
+          0,
+        )
+      : 0)
+  );
 }
 
 function countVisibleCockpitTaskDescendants(node) {
   return Array.isArray(node?.children)
-    ? node.children.reduce((total, child) => total + 1 + countVisibleCockpitTaskDescendants(child), 0)
+    ? node.children.reduce(
+        (total, child) => total + 1 + countVisibleCockpitTaskDescendants(child),
+        0,
+      )
     : 0;
 }
 
 function shouldRenderCockpitTaskGroup(node) {
-  return (Array.isArray(node?.children) ? node.children.length : 0) > 0 || (Array.isArray(node?.rows) ? node.rows.length : 0) > 1;
+  return (
+    (Array.isArray(node?.children) ? node.children.length : 0) > 0 ||
+    (Array.isArray(node?.rows) ? node.rows.length : 0) > 1
+  );
 }
 
 function buildVisibleCockpitTaskNode(node, rowsByTaskId) {
   if (!node?.task?.id) return null;
 
-  const ownRows = (rowsByTaskId.get(node.task.id) || []).slice().sort((left, right) => left.order - right.order);
+  const ownRows = (rowsByTaskId.get(node.task.id) || [])
+    .slice()
+    .sort((left, right) => left.order - right.order);
   const children = (Array.isArray(node.children) ? node.children : [])
     .map((child) => buildVisibleCockpitTaskNode(child, rowsByTaskId))
     .filter(Boolean)
@@ -4425,7 +5558,10 @@ function buildVisibleCockpitTaskNode(node, rowsByTaskId) {
     task: node.task,
     rows: ownRows,
     children,
-    order: Math.min(ownRows[0]?.order ?? Number.POSITIVE_INFINITY, children[0]?.order ?? Number.POSITIVE_INFINITY),
+    order: Math.min(
+      ownRows[0]?.order ?? Number.POSITIVE_INFINITY,
+      children[0]?.order ?? Number.POSITIVE_INFINITY,
+    ),
   };
 }
 
@@ -4487,7 +5623,9 @@ function formatTaskWorktree(worktree) {
   if (!worktree) return null;
   if (worktree.mode === "inherit") return "inherit";
   if (!worktree.path) return "path";
-  return worktree.branch ? `${worktree.path} (${worktree.branch})` : worktree.path;
+  return worktree.branch
+    ? `${worktree.path} (${worktree.branch})`
+    : worktree.path;
 }
 
 function getTaskWorktreeLabel(task) {
@@ -4506,8 +5644,13 @@ function toPositiveTaskTimestamp(value) {
 }
 
 function getTaskDurationStartTimestamp(task) {
-  const sharedStart = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationStartTimestamp?.(task);
-  if (typeof sharedStart === "number" && Number.isFinite(sharedStart) && sharedStart > 0) {
+  const sharedStart =
+    globalThis.RaviWaOverlayTaskDuration?.getTaskDurationStartTimestamp?.(task);
+  if (
+    typeof sharedStart === "number" &&
+    Number.isFinite(sharedStart) &&
+    sharedStart > 0
+  ) {
     return sharedStart;
   }
 
@@ -4519,8 +5662,13 @@ function getTaskDurationStartTimestamp(task) {
 }
 
 function getTaskDurationEndTimestamp(task) {
-  const sharedEnd = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationEndTimestamp?.(task);
-  if (typeof sharedEnd === "number" && Number.isFinite(sharedEnd) && sharedEnd > 0) {
+  const sharedEnd =
+    globalThis.RaviWaOverlayTaskDuration?.getTaskDurationEndTimestamp?.(task);
+  if (
+    typeof sharedEnd === "number" &&
+    Number.isFinite(sharedEnd) &&
+    sharedEnd > 0
+  ) {
     return sharedEnd;
   }
 
@@ -4530,7 +5678,10 @@ function getTaskDurationEndTimestamp(task) {
   }
 
   if (status === "done" || status === "failed") {
-    return toPositiveTaskTimestamp(task?.completedAt) ?? toPositiveTaskTimestamp(task?.updatedAt);
+    return (
+      toPositiveTaskTimestamp(task?.completedAt) ??
+      toPositiveTaskTimestamp(task?.updatedAt)
+    );
   }
 
   if (status === "blocked") {
@@ -4541,8 +5692,13 @@ function getTaskDurationEndTimestamp(task) {
 }
 
 function getTaskDurationMs(task) {
-  const sharedDuration = globalThis.RaviWaOverlayTaskDuration?.getTaskDurationMs?.(task);
-  if (typeof sharedDuration === "number" && Number.isFinite(sharedDuration) && sharedDuration >= 0) {
+  const sharedDuration =
+    globalThis.RaviWaOverlayTaskDuration?.getTaskDurationMs?.(task);
+  if (
+    typeof sharedDuration === "number" &&
+    Number.isFinite(sharedDuration) &&
+    sharedDuration >= 0
+  ) {
     return sharedDuration;
   }
 
@@ -4610,17 +5766,27 @@ function describeTaskProgressState(task) {
 
   switch (task?.status) {
     case "open":
-      return progress > 0 ? `progresso inicial marcado em ${progressLabel}.` : "sem progresso reportado ainda.";
+      return progress > 0
+        ? `progresso inicial marcado em ${progressLabel}.`
+        : "sem progresso reportado ainda.";
     case "dispatched":
-      return progress > 0 ? `na fila com ${progressLabel} ja sincronizados.` : "na fila, aguardando o primeiro report.";
+      return progress > 0
+        ? `na fila com ${progressLabel} ja sincronizados.`
+        : "na fila, aguardando o primeiro report.";
     case "in_progress":
-      return progress > 0 ? `progresso sincronizado em ${progressLabel}.` : "trabalho iniciado, aguardando o primeiro report.";
+      return progress > 0
+        ? `progresso sincronizado em ${progressLabel}.`
+        : "trabalho iniciado, aguardando o primeiro report.";
     case "blocked":
-      return progress > 0 ? `task bloqueada em ${progressLabel}.` : "task bloqueada antes do primeiro report.";
+      return progress > 0
+        ? `task bloqueada em ${progressLabel}.`
+        : "task bloqueada antes do primeiro report.";
     case "done":
       return `task concluida com ${progressLabel}.`;
     case "failed":
-      return progress > 0 ? `task falhou em ${progressLabel}.` : "task falhou antes do progresso andar.";
+      return progress > 0
+        ? `task falhou em ${progressLabel}.`
+        : "task falhou antes do progresso andar.";
     default:
       return `progresso atual ${progressLabel}.`;
   }
@@ -4656,11 +5822,16 @@ function describeTaskEventBody(event) {
     return { text: message, fallback: false };
   }
 
-  const progressLabel = typeof event?.progress === "number" ? formatTaskProgressLabel(event.progress) : null;
+  const progressLabel =
+    typeof event?.progress === "number"
+      ? formatTaskProgressLabel(event.progress)
+      : null;
   switch (event?.type) {
     case "task.created":
       return {
-        text: progressLabel ? `task criada com progresso inicial em ${progressLabel}.` : "task criada no runtime.",
+        text: progressLabel
+          ? `task criada com progresso inicial em ${progressLabel}.`
+          : "task criada no runtime.",
         fallback: true,
       };
     case "task.dispatched":
@@ -4684,17 +5855,23 @@ function describeTaskEventBody(event) {
       };
     case "task.blocked":
       return {
-        text: progressLabel ? `task marcada como bloqueada em ${progressLabel}.` : "task marcada como bloqueada no runtime.",
+        text: progressLabel
+          ? `task marcada como bloqueada em ${progressLabel}.`
+          : "task marcada como bloqueada no runtime.",
         fallback: true,
       };
     case "task.done":
       return {
-        text: progressLabel ? `task marcada como concluida em ${progressLabel}.` : "task marcada como concluida no runtime.",
+        text: progressLabel
+          ? `task marcada como concluida em ${progressLabel}.`
+          : "task marcada como concluida no runtime.",
         fallback: true,
       };
     case "task.failed":
       return {
-        text: progressLabel ? `task marcada como falha em ${progressLabel}.` : "task marcada como falha no runtime.",
+        text: progressLabel
+          ? `task marcada como falha em ${progressLabel}.`
+          : "task marcada como falha no runtime.",
         fallback: true,
       };
     case "task.child.blocked":
@@ -4739,6 +5916,74 @@ function buildTasksWorkspaceSubtitle(snapshot) {
   return `open ${stats.open ?? 0} · queued ${stats.dispatched ?? 0} · working ${stats.inProgress ?? 0} · blocked ${stats.blocked ?? 0} · done ${stats.done ?? 0} · failed ${stats.failed ?? 0}`;
 }
 
+function collectTaskDescendantStats(node) {
+  const counts = {
+    total: 0,
+    open: 0,
+    dispatched: 0,
+    inProgress: 0,
+    blocked: 0,
+    done: 0,
+    failed: 0,
+  };
+
+  const visit = (currentNode) => {
+    const childNodes = Array.isArray(currentNode?.children)
+      ? currentNode.children
+      : [];
+    childNodes.forEach((childNode) => {
+      const status = childNode?.task?.status || null;
+      counts.total += 1;
+      switch (status) {
+        case "open":
+          counts.open += 1;
+          break;
+        case "dispatched":
+          counts.dispatched += 1;
+          break;
+        case "in_progress":
+          counts.inProgress += 1;
+          break;
+        case "blocked":
+          counts.blocked += 1;
+          break;
+        case "done":
+          counts.done += 1;
+          break;
+        case "failed":
+          counts.failed += 1;
+          break;
+        default:
+          break;
+      }
+      visit(childNode);
+    });
+  };
+
+  visit(node);
+  return counts;
+}
+
+function describeTaskTreeState(node) {
+  const stats = collectTaskDescendantStats(node);
+  if (!stats.total) return null;
+
+  const riskCount = stats.blocked + stats.failed;
+  const liveCount =
+    stats.open + stats.dispatched + stats.inProgress + stats.blocked;
+  const parts = [`${stats.total} subtask${stats.total === 1 ? "" : "s"}`];
+
+  if (riskCount > 0) {
+    parts.push(`${riskCount} com risco`);
+  } else if (stats.done === stats.total) {
+    parts.push("todas encerradas");
+  } else if (liveCount > 0) {
+    parts.push(`${liveCount} ativas`);
+  }
+
+  return parts.join(" · ");
+}
+
 function parseLocalDateKey(value) {
   if (typeof value !== "string") return null;
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
@@ -4747,7 +5992,11 @@ function parseLocalDateKey(value) {
   const year = Number(match[1]);
   const monthIndex = Number(match[2]) - 1;
   const day = Number(match[3]);
-  if (!Number.isFinite(year) || !Number.isFinite(monthIndex) || !Number.isFinite(day)) {
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(monthIndex) ||
+    !Number.isFinite(day)
+  ) {
     return null;
   }
 
@@ -4765,7 +6014,12 @@ function formatTaskActivityShortDate(value) {
 }
 
 function formatTaskActivityLongDate(value) {
-  return formatTaskActivityDate(value, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  return formatTaskActivityDate(value, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function formatTaskActivityPeriodLabel(activity) {
@@ -4797,7 +6051,9 @@ function formatTaskActivityTooltip(bucket) {
   ];
 
   if (failedCount > 0) {
-    parts.push(`${failedCount} ${failedCount === 1 ? "falha terminal" : "falhas terminais"}`);
+    parts.push(
+      `${failedCount} ${failedCount === 1 ? "falha terminal" : "falhas terminais"}`,
+    );
   }
 
   return parts.join(" · ");
@@ -4844,7 +6100,10 @@ function renderTasksDailyActivityCard(activity) {
         <div class="ravi-wa-tasks-activity__grid" aria-label="${escapeAttribute(`Heatmap de tasks concluidas nos ultimos ${daysLabel} dias`)}}">
           ${buckets
             .map((bucket) => {
-              const intensity = resolveTaskActivityIntensity(bucket?.doneCount, maxDoneCount);
+              const intensity = resolveTaskActivityIntensity(
+                bucket?.doneCount,
+                maxDoneCount,
+              );
               return `
                 <span
                   class="ravi-wa-tasks-activity__cell ravi-wa-tasks-activity__cell--lv${intensity}"
@@ -4885,14 +6144,59 @@ function renderTasksDailyActivityCard(activity) {
   `;
 }
 
+function getTaskColumnStatValue(column, stats) {
+  if (!stats || !column) return 0;
+  switch (column.id) {
+    case "open":
+      return Number(stats.open) || 0;
+    case "queued":
+      return Number(stats.dispatched) || 0;
+    case "working":
+      return Number(stats.inProgress) || 0;
+    case "blocked":
+      return Number(stats.blocked) || 0;
+    case "done":
+      return Number(stats.done) || 0;
+    case "failed":
+      return Number(stats.failed) || 0;
+    default:
+      return 0;
+  }
+}
+
+function renderTaskOverviewStat({ label, value, note, tone = null }) {
+  return `
+    <article class="ravi-wa-tasks-toolbar__stat${tone ? ` ravi-wa-tasks-toolbar__stat--${tone}` : ""}">
+      <span class="ravi-wa-tasks-toolbar__stat-label">${escapeHtml(label)}</span>
+      <strong class="ravi-wa-tasks-toolbar__stat-value">${escapeHtml(String(value))}</strong>
+      <small class="ravi-wa-tasks-toolbar__stat-note">${escapeHtml(note)}</small>
+    </article>
+  `;
+}
+
+function renderTaskStatusCounter(column, stats) {
+  const count = getTaskColumnStatValue(column, stats);
+  const statusClass = taskStatusClass(
+    Array.isArray(column?.statuses) ? column.statuses[0] : null,
+  );
+  return `
+    <span class="ravi-wa-task-counter ravi-wa-task-counter--${statusClass}">
+      <span class="ravi-wa-task-counter__label">${escapeHtml(column?.label || "status")}</span>
+      <strong class="ravi-wa-task-counter__value">${escapeHtml(String(count))}</strong>
+    </span>
+  `;
+}
+
 function summarizeTaskCardCopy(task) {
-  const value = task?.summary || task?.blockerReason || task?.instructions || "";
+  const value =
+    task?.summary || task?.blockerReason || task?.instructions || "";
   return shorten(String(value).replace(/\s+/g, " ").trim(), 96);
 }
 
 function buildTaskAssigneeLabel(task, activeAssignment = null) {
   const agentId = activeAssignment?.agentId || task?.assigneeAgentId || null;
-  const sessionName = activeAssignment?.sessionName || task?.assigneeSessionName || null;
+  const sessionName =
+    activeAssignment?.sessionName || task?.assigneeSessionName || null;
   return agentId || sessionName || null;
 }
 
@@ -4901,9 +6205,13 @@ function describeTaskStatus(status, signal = null, assigneeLabel = null) {
     case "open":
       return "ready in runtime, awaiting dispatch";
     case "dispatched":
-      return assigneeLabel ? `queued for ${assigneeLabel}` : "dispatch recorded, waiting for work to start";
+      return assigneeLabel
+        ? `queued for ${assigneeLabel}`
+        : "dispatch recorded, waiting for work to start";
     case "in_progress":
-      return assigneeLabel ? `running with ${assigneeLabel}` : "work started in runtime";
+      return assigneeLabel
+        ? `running with ${assigneeLabel}`
+        : "work started in runtime";
     case "blocked":
       return signal || "blocked until a new report or unblock";
     case "done":
@@ -4916,7 +6224,11 @@ function describeTaskStatus(status, signal = null, assigneeLabel = null) {
 }
 
 function describeTaskRuntimeStatus(task, activeAssignment = null) {
-  return describeTaskStatus(task?.status, task?.blockerReason || task?.summary || null, buildTaskAssigneeLabel(task, activeAssignment));
+  return describeTaskStatus(
+    task?.status,
+    task?.blockerReason || task?.summary || null,
+    buildTaskAssigneeLabel(task, activeAssignment),
+  );
 }
 
 function describeTaskDocumentStatus(frontmatter) {
@@ -4925,10 +6237,18 @@ function describeTaskDocumentStatus(frontmatter) {
   }
 
   if (frontmatter.status) {
-    return describeTaskStatus(frontmatter.status, frontmatter.blockerReason || frontmatter.summary || null, null);
+    return describeTaskStatus(
+      frontmatter.status,
+      frontmatter.blockerReason || frontmatter.summary || null,
+      null,
+    );
   }
 
-  return frontmatter.blockerReason || frontmatter.summary || "TASK.md found without status fields in frontmatter";
+  return (
+    frontmatter.blockerReason ||
+    frontmatter.summary ||
+    "TASK.md found without status fields in frontmatter"
+  );
 }
 
 function renderTaskStatusPanel({ eyebrow, status, title, detail, meta }) {
@@ -4959,7 +6279,8 @@ function renderTaskStatusSyncBanner(task, frontmatter, progress) {
     `;
   }
 
-  const hasComparableFrontmatter = Boolean(frontmatter.status) || typeof frontmatter.progress === "number";
+  const hasComparableFrontmatter =
+    Boolean(frontmatter.status) || typeof frontmatter.progress === "number";
   if (!hasComparableFrontmatter) {
     return `
       <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--idle">
@@ -4971,9 +6292,14 @@ function renderTaskStatusSyncBanner(task, frontmatter, progress) {
 
   const issues = [];
   if (frontmatter.status && frontmatter.status !== task.status) {
-    issues.push(`runtime ${taskStatusLabel(task.status)} (${task.status}) vs TASK.md ${taskStatusLabel(frontmatter.status)} (${frontmatter.status})`);
+    issues.push(
+      `runtime ${taskStatusLabel(task.status)} (${task.status}) vs TASK.md ${taskStatusLabel(frontmatter.status)} (${frontmatter.status})`,
+    );
   }
-  if (typeof frontmatter.progress === "number" && frontmatter.progress !== progress) {
+  if (
+    typeof frontmatter.progress === "number" &&
+    frontmatter.progress !== progress
+  ) {
     issues.push(`runtime ${progress}% vs TASK.md ${frontmatter.progress}%`);
   }
 
@@ -4994,11 +6320,24 @@ function renderTaskStatusSyncBanner(task, frontmatter, progress) {
   `;
 }
 
+function getTaskPrimarySessionName(task, activeAssignment = null) {
+  return (
+    activeAssignment?.sessionName ||
+    task?.assigneeSessionName ||
+    task?.workSessionName ||
+    null
+  );
+}
+
 function formatTaskActorLabel(actor, agentId, sessionName) {
   const actorValue = typeof actor === "string" ? actor.trim() : "";
   const agentValue = typeof agentId === "string" ? agentId.trim() : "";
-  const sessionValue = typeof sessionName === "string" ? sessionName.trim() : "";
-  const ordered = actorValue && actorValue === sessionValue ? [agentValue, actorValue, sessionValue] : [actorValue, agentValue, sessionValue];
+  const sessionValue =
+    typeof sessionName === "string" ? sessionName.trim() : "";
+  const ordered =
+    actorValue && actorValue === sessionValue
+      ? [agentValue, actorValue, sessionValue]
+      : [actorValue, agentValue, sessionValue];
   const values = [];
   for (const value of ordered) {
     if (!value || values.includes(value)) continue;
@@ -5007,9 +6346,58 @@ function formatTaskActorLabel(actor, agentId, sessionName) {
   return values.join(" · ") || "-";
 }
 
+function formatTaskReportEventsLabel(events) {
+  const list = Array.isArray(events)
+    ? events
+        .map((event) =>
+          typeof event === "string" ? event.trim().toLowerCase() : "",
+        )
+        .filter(Boolean)
+    : [];
+  return list.length ? list.join(", ") : "done";
+}
+
+function renderTaskInlineMeta(items, options = {}) {
+  const list = Array.isArray(items)
+    ? items.filter(
+        (item) =>
+          item &&
+          item.value !== null &&
+          item.value !== undefined &&
+          String(item.value).trim(),
+      )
+    : [];
+  if (!list.length) return "";
+
+  const classNames = ["ravi-wa-task-inline-meta"];
+  if (options.compact) classNames.push("ravi-wa-task-inline-meta--compact");
+  if (options.className) classNames.push(options.className);
+
+  return `
+    <div class="${classNames.join(" ")}">
+      ${list
+        .map(
+          (item) => `
+            <span class="ravi-wa-task-inline-meta__item${item.monospace ? " ravi-wa-task-inline-meta__item--mono" : ""}">
+              <strong class="ravi-wa-task-inline-meta__label">${escapeHtml(item.label)}</strong>
+              <span class="ravi-wa-task-inline-meta__value">${escapeHtml(String(item.value))}</span>
+            </span>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
 function renderTaskFactGrid(items) {
   const rows = Array.isArray(items)
-    ? items.filter((item) => item && item.value !== null && item.value !== undefined && String(item.value).trim())
+    ? items.filter(
+        (item) =>
+          item &&
+          item.value !== null &&
+          item.value !== undefined &&
+          String(item.value).trim(),
+      )
     : [];
 
   if (!rows.length) {
@@ -5042,6 +6430,7 @@ function renderTaskRelationCard(task) {
   const statusClass = taskStatusClass(task.status);
   const summary = summarizeTaskCardCopy(task);
   const progress = Math.max(0, Math.min(100, Number(task?.progress ?? 0) || 0));
+  const primarySessionName = getTaskPrimarySessionName(task);
 
   return `
     <button
@@ -5056,11 +6445,15 @@ function renderTaskRelationCard(task) {
       </span>
       <strong class="ravi-wa-task-link__title">${escapeHtml(task.title || task.id)}</strong>
       ${summary ? `<p class="ravi-wa-task-link__summary">${escapeHtml(summary)}</p>` : ""}
-      <span class="ravi-wa-task-link__meta">
-        <span>${escapeHtml(task.assigneeAgentId || "-")}</span>
-        <span>${escapeHtml(String(progress))}%</span>
-        <span>${escapeHtml(formatTaskDurationLabel(task))}</span>
-      </span>
+      ${renderTaskInlineMeta(
+        [
+          { label: "session", value: primarySessionName || "-" },
+          { label: "agent", value: task.assigneeAgentId || "-" },
+          { label: "progress", value: `${progress}%` },
+          { label: "duration", value: formatTaskElapsed(task) },
+        ],
+        { compact: true, className: "ravi-wa-task-link__meta" },
+      )}
     </button>
   `;
 }
@@ -5068,8 +6461,10 @@ function renderTaskRelationCard(task) {
 function renderTaskAssignments(assignments, activeAssignment) {
   const list = Array.isArray(assignments)
     ? [...assignments].sort((left, right) => {
-        const leftTime = left?.acceptedAt || left?.completedAt || left?.assignedAt || 0;
-        const rightTime = right?.acceptedAt || right?.completedAt || right?.assignedAt || 0;
+        const leftTime =
+          left?.acceptedAt || left?.completedAt || left?.assignedAt || 0;
+        const rightTime =
+          right?.acceptedAt || right?.completedAt || right?.assignedAt || 0;
         return rightTime - leftTime;
       })
     : [];
@@ -5082,8 +6477,11 @@ function renderTaskAssignments(assignments, activeAssignment) {
     <div class="ravi-wa-task-assignment-list">
       ${list
         .map((assignment) => {
-          const worktreeLabel = formatTaskWorktree(assignment?.worktree || null);
-          const isActive = activeAssignment?.id && activeAssignment.id === assignment.id;
+          const worktreeLabel = formatTaskWorktree(
+            assignment?.worktree || null,
+          );
+          const isActive =
+            activeAssignment?.id && activeAssignment.id === assignment.id;
           return `
             <article class="ravi-wa-task-assignment${isActive ? " ravi-wa-task-assignment--active" : ""}">
               <div class="ravi-wa-task-assignment__head">
@@ -5098,6 +6496,8 @@ function renderTaskAssignments(assignments, activeAssignment) {
                 <div><dt>accepted</dt><dd>${escapeHtml(formatTimestamp(assignment.acceptedAt) || "-")}</dd></div>
                 <div><dt>completed</dt><dd>${escapeHtml(formatTimestamp(assignment.completedAt) || "-")}</dd></div>
                 <div><dt>by</dt><dd>${escapeHtml(assignment.assignedBy || "-")}</dd></div>
+                <div><dt>report to</dt><dd>${escapeHtml(assignment.reportToSessionName || "-")}</dd></div>
+                <div><dt>report on</dt><dd>${escapeHtml(formatTaskReportEventsLabel(assignment.reportEvents))}</dd></div>
                 ${worktreeLabel ? `<div><dt>worktree</dt><dd>${escapeHtml(worktreeLabel)}</dd></div>` : ""}
               </dl>
             </article>
@@ -5118,7 +6518,11 @@ function renderTaskComments(comments) {
     <div class="ravi-wa-task-activity-list">
       ${list
         .map((comment) => {
-          const authorLabel = formatTaskActorLabel(comment.author, comment.authorAgentId, comment.authorSessionName);
+          const authorLabel = formatTaskActorLabel(
+            comment.author,
+            comment.authorAgentId,
+            comment.authorSessionName,
+          );
           return `
             <article class="ravi-wa-task-activity">
               <div class="ravi-wa-task-activity__meta">
@@ -5135,32 +6539,78 @@ function renderTaskComments(comments) {
 }
 
 function renderTasksWorkspace(body) {
+  const previousDetailPaneTaskId = captureTaskDetailPaneScroll(body);
   const snapshot = latestTasksSnapshot;
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
   const taskRoots = buildTaskHierarchy(items);
   const stats = snapshot?.stats || null;
   const dailyActivity = snapshot?.dailyActivity || null;
-  const selectedTask = snapshot?.selectedTask || null;
-  const selectedTaskKey = selectedTask?.task?.id || snapshot?.query?.taskId || selectedTaskId || null;
+  const drawerState = resolveTaskDetailDrawerState({
+    selectedTaskId,
+    drawerOpen: taskDetailDrawerOpen,
+    snapshot,
+    cachedSelection: selectedTaskId ? getCachedTaskSelection(selectedTaskId) : null,
+  });
+  const selectedTask = drawerState.selectedTask || null;
+  const selectedTaskKey = drawerState.effectiveTaskId || null;
+  const rootCount = taskRoots.length;
+  const childCount = Math.max(0, items.length - rootCount);
+  const liveCount =
+    (stats?.open ?? 0) +
+    (stats?.dispatched ?? 0) +
+    (stats?.inProgress ?? 0) +
+    (stats?.blocked ?? 0);
+  const selectedTaskStatusClass = taskStatusClass(
+    selectedTask?.task?.status || null,
+  );
+  const detailDrawerVisible = drawerState.detailDrawerVisible;
+  const selectedTaskValue = selectedTask?.task
+    ? formatTaskShortId(selectedTask.task.id)
+    : "-";
+  const selectedTaskNote = selectedTask?.task
+    ? shorten(selectedTask.task.title || selectedTask.task.id, 52)
+    : "seleciona uma task para abrir o drawer lateral";
 
   body.innerHTML = `
     <div class="ravi-wa-tasks-page">
-      <section class="ravi-wa-tasks-hero">
-        <div class="ravi-wa-tasks-hero__copy">
-          <span class="ravi-wa-tasks-hero__eyebrow">runtime real</span>
-          <h2>Tasks</h2>
-          <p>kanban por status em cima do snapshot do runtime atual, sem backend paralelo.</p>
+      <section class="ravi-wa-tasks-toolbar">
+        <div class="ravi-wa-tasks-toolbar__copy">
+          <span class="ravi-wa-tasks-toolbar__eyebrow">runtime real</span>
+          <div class="ravi-wa-tasks-toolbar__titleline">
+            <h2>Tasks</h2>
+            <span>${escapeHtml(buildTasksWorkspaceSubtitle(snapshot))}</span>
+          </div>
+          <p>kanban compacto do runtime atual, com roots abertas, subtasks legiveis e drawer lateral sincronizado.</p>
         </div>
-        <div class="ravi-wa-chip-row">
-          <span class="ravi-wa-meta-chip">total ${escapeHtml(String(stats?.total ?? items.length))}</span>
-          <span class="ravi-wa-meta-chip">open ${escapeHtml(String(stats?.open ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">queued ${escapeHtml(String(stats?.dispatched ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">working ${escapeHtml(String(stats?.inProgress ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">blocked ${escapeHtml(String(stats?.blocked ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">done ${escapeHtml(String(stats?.done ?? 0))}</span>
-          <span class="ravi-wa-meta-chip">failed ${escapeHtml(String(stats?.failed ?? 0))}</span>
+        <div class="ravi-wa-tasks-toolbar__stats">
+          ${renderTaskOverviewStat({
+            label: "total",
+            value: stats?.total ?? items.length,
+            note: `${rootCount} roots · ${childCount} subtasks`,
+          })}
+          ${renderTaskOverviewStat({
+            label: "live",
+            value: liveCount,
+            note: `open ${stats?.open ?? 0} · queued ${stats?.dispatched ?? 0} · working ${stats?.inProgress ?? 0}`,
+            tone: "live",
+          })}
+          ${renderTaskOverviewStat({
+            label: "done",
+            value: stats?.done ?? 0,
+            note: `failed ${stats?.failed ?? 0} · blocked ${stats?.blocked ?? 0}`,
+            tone: "done",
+          })}
+          ${renderTaskOverviewStat({
+            label: "selected",
+            value: selectedTaskValue,
+            note: selectedTaskNote,
+            tone: selectedTask?.task ? selectedTaskStatusClass : "idle",
+          })}
         </div>
       </section>
+      <div class="ravi-wa-tasks-toolbar__statusline">
+        ${TASK_KANBAN_COLUMNS.map((column) => renderTaskStatusCounter(column, stats)).join("")}
+      </div>
       ${
         sidebarNotice
           ? `
@@ -5171,40 +6621,100 @@ function renderTasksWorkspace(body) {
           : ""
       }
       ${renderTasksDailyActivityCard(dailyActivity)}
-      <div class="ravi-wa-tasks-layout">
+      <div class="ravi-wa-tasks-layout${detailDrawerVisible ? " ravi-wa-tasks-layout--detail-open" : ""}">
         <div class="ravi-wa-task-board-wrap">
           <div class="ravi-wa-task-board">
             ${TASK_KANBAN_COLUMNS.map((column) =>
               renderTaskKanbanColumn(
                 column,
-                taskRoots.filter((node) => column.statuses.includes(node.task.status)),
-                selectedTaskKey,
+                taskRoots.filter((node) =>
+                  column.statuses.includes(node.task.status),
+                ),
+                detailDrawerVisible ? selectedTaskKey : null,
               ),
             ).join("")}
           </div>
         </div>
-        <aside class="ravi-wa-task-detail-pane">
-          ${renderTaskDetailCard(selectedTask)}
-        </aside>
       </div>
+      ${renderTaskDetailDrawer({
+        ...drawerState,
+        shouldAnimate: taskDetailDrawerShouldAnimate,
+      })}
     </div>
   `;
+
+  if (detailDrawerVisible && taskDetailDrawerShouldAnimate) {
+    taskDetailDrawerShouldAnimate = false;
+  }
 
   body.querySelectorAll("[data-ravi-focus-task]").forEach((button) => {
     button.addEventListener("click", async () => {
       const taskId = button.getAttribute("data-ravi-focus-task");
       if (!taskId) return;
-      selectedTaskId = taskId;
-      persistSelectedTaskId(taskId);
+      openTaskDetailDrawer(taskId);
       await refreshTasks(true);
     });
   });
+
+  body.querySelectorAll("[data-ravi-close-task-drawer]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeTaskDetailDrawer();
+    });
+  });
+
+  const dispatchAgentInput = body.querySelector("#ravi-wa-task-dispatch-agent");
+  dispatchAgentInput?.addEventListener("change", (event) => {
+    if (!selectedTaskKey) return;
+    updateTaskDispatchDraft(selectedTaskKey, {
+      agentId: event.target.value || "",
+    });
+  });
+
+  const dispatchSessionInput = body.querySelector(
+    "#ravi-wa-task-dispatch-session",
+  );
+  dispatchSessionInput?.addEventListener("input", (event) => {
+    if (!selectedTaskKey) return;
+    updateTaskDispatchDraft(selectedTaskKey, {
+      sessionName: event.target.value || "",
+    });
+  });
+
+  const dispatchReportInput = body.querySelector(
+    "#ravi-wa-task-dispatch-report-session",
+  );
+  dispatchReportInput?.addEventListener("change", (event) => {
+    if (!selectedTaskKey) return;
+    updateTaskDispatchDraft(selectedTaskKey, {
+      reportToSessionName: event.target.value || "",
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-dispatch-task]").forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const taskId = button.getAttribute("data-ravi-dispatch-task");
+      if (!taskId || taskDispatchInFlightTaskId) return;
+      await submitTaskDispatch(taskId);
+    });
+  });
+
+  if (detailDrawerVisible && selectedTaskKey) {
+    restoreTaskDetailPaneScroll(body, selectedTaskKey, {
+      reset: previousDetailPaneTaskId !== selectedTaskKey,
+    });
+  }
 }
 
 function getTaskHierarchyState(snapshot = latestTasksSnapshot) {
   if (!snapshot) {
     lastTaskHierarchySnapshot = snapshot;
-    lastTaskHierarchyState = { roots: [], nodes: new Map(), parentByTaskId: new Map() };
+    lastTaskHierarchyState = {
+      roots: [],
+      nodes: new Map(),
+      parentByTaskId: new Map(),
+    };
     return lastTaskHierarchyState;
   }
 
@@ -5218,7 +6728,9 @@ function getTaskHierarchyState(snapshot = latestTasksSnapshot) {
 }
 
 function createTaskHierarchyState(items) {
-  const list = Array.isArray(items) ? [...items].sort(compareTaskCreatedAtAsc) : [];
+  const list = Array.isArray(items)
+    ? [...items].sort(compareTaskCreatedAtAsc)
+    : [];
   const nodes = new Map(list.map((task) => [task.id, { task, children: [] }]));
   const roots = [];
   const parentByTaskId = new Map();
@@ -5261,7 +6773,10 @@ function getTaskLineage(taskId, hierarchyState = getTaskHierarchyState()) {
 
 function countTaskTreeNodes(nodes) {
   return (Array.isArray(nodes) ? nodes : []).reduce(
-    (total, node) => total + 1 + countTaskTreeNodes(Array.isArray(node?.children) ? node.children : []),
+    (total, node) =>
+      total +
+      1 +
+      countTaskTreeNodes(Array.isArray(node?.children) ? node.children : []),
     0,
   );
 }
@@ -5277,12 +6792,18 @@ function compareTaskCreatedAtAsc(left, right) {
 function renderTaskKanbanColumn(column, nodes, currentTaskId) {
   const list = Array.isArray(nodes) ? nodes : [];
   const visibleCount = countTaskTreeNodes(list);
+  const childCount = Math.max(0, visibleCount - list.length);
   return `
     <section class="ravi-wa-task-column">
       <div class="ravi-wa-task-column__head">
         <div class="ravi-wa-task-column__copy">
-          <strong>${escapeHtml(column.label)}</strong>
-          <span>${escapeHtml(String(visibleCount))} item${visibleCount === 1 ? "" : "s"} em ${escapeHtml(String(list.length))} grupo${list.length === 1 ? "" : "s"}</span>
+          <div class="ravi-wa-task-column__titleline">
+            <strong>${escapeHtml(column.label)}</strong>
+            <span class="ravi-wa-task-column__count">${escapeHtml(String(visibleCount))}</span>
+          </div>
+          <span class="ravi-wa-task-column__summary">
+            ${escapeHtml(`${list.length} root${list.length === 1 ? "" : "s"}${childCount ? ` · ${childCount} subtasks` : ""}`)}
+          </span>
         </div>
         <div class="ravi-wa-task-column__legend">
           ${column.statuses
@@ -5310,15 +6831,31 @@ function renderTaskCard(node, currentTaskId) {
   const childNodes = Array.isArray(node?.children) ? node.children : [];
   if (!task) return "";
   const statusClass = taskStatusClass(task.status);
-  const statusLabel = taskStatusLabel(task.status);
   const priorityClass = taskPriorityClass(task.priority);
-  const selected = currentTaskId && currentTaskId === task.id ? "true" : "false";
+  const selected =
+    currentTaskId && currentTaskId === task.id ? "true" : "false";
   const summary = summarizeTaskCardCopy(task);
   const progress = clampTaskProgressValue(task?.progress ?? 0);
   const progressInfo = describeTaskProgressText(task);
   const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
-  const showSummary = summary && summary.toLowerCase() !== statusCopy.toLowerCase();
-  const footerMeta = `${task.assigneeSessionName || "-"} | ${task.assigneeAgentId || "-"}`;
+  const cardCopy = summary || statusCopy;
+  const primarySessionName = getTaskPrimarySessionName(task);
+  const secondaryWorkSession =
+    task?.workSessionName && task.workSessionName !== primarySessionName
+      ? task.workSessionName
+      : null;
+  const treeLabel = describeTaskTreeState(node);
+  const cardMeta = renderTaskInlineMeta(
+    [
+      { label: "session", value: primarySessionName || "-" },
+      secondaryWorkSession
+        ? { label: "work", value: secondaryWorkSession }
+        : null,
+      { label: "agent", value: task.assigneeAgentId || "-" },
+      treeLabel ? { label: "tree", value: treeLabel } : null,
+    ],
+    { compact: true, className: "ravi-wa-task-card__meta" },
+  );
 
   return `
     <article class="ravi-wa-task-card ravi-wa-task-card--${statusClass}${selected === "true" ? " ravi-wa-task-card--selected" : ""}">
@@ -5329,31 +6866,29 @@ function renderTaskCard(node, currentTaskId) {
         aria-pressed="${selected}"
         title="${escapeAttribute(`${task.title} · ${task.id}`)}"
       >
-        <span class="ravi-wa-task-card__eyebrow">
-          <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+        <span class="ravi-wa-task-card__head">
+          <span class="ravi-wa-task-card__identity">
+            <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+          </span>
           <span class="ravi-wa-task-card__eyebrow-aside">
-            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(statusLabel)}</span>
+            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
             <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
           </span>
         </span>
         <strong class="ravi-wa-task-card__title">${escapeHtml(task.title || task.id)}</strong>
-        <div class="ravi-wa-task-card__status">
-          <span class="ravi-wa-task-card__status-label">runtime status</span>
-          <p>${escapeHtml(statusCopy)}</p>
-        </div>
-        ${showSummary ? `<p class="ravi-wa-task-card__summary">${escapeHtml(summary)}</p>` : ""}
+        ${cardCopy ? `<p class="ravi-wa-task-card__summary">${escapeHtml(cardCopy)}</p>` : ""}
+        ${cardMeta}
         <div class="ravi-wa-task-card__progress">
-          <div class="ravi-wa-task-card__progress-copy">
-            <span class="ravi-wa-task-card__progress-label">progress ${escapeHtml(String(progress))}%</span>
-            <p>${escapeHtml(shorten(progressInfo.text, 84))}</p>
-          </div>
-          <span class="ravi-wa-task-card__progress-time">${escapeHtml(formatTaskDurationLabel(task))}</span>
+          <span class="ravi-wa-task-card__progress-main">
+            <span class="ravi-wa-task-card__progress-value">${escapeHtml(String(progress))}%</span>
+            <span class="ravi-wa-task-card__progress-note${progressInfo.fallback ? " ravi-wa-task-card__progress-note--fallback" : ""}">${escapeHtml(
+              shorten(progressInfo.text, 78),
+            )}</span>
+          </span>
+          <span class="ravi-wa-task-card__progress-time">${escapeHtml(formatTaskElapsed(task))}</span>
         </div>
         <div class="ravi-wa-task-card__bar" aria-hidden="true">
           <span style="width: ${progress}%"></span>
-        </div>
-        <div class="ravi-wa-task-card__meta">
-          <span>${escapeHtml(footerMeta)}</span>
         </div>
       </button>
       ${
@@ -5372,10 +6907,28 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
   if (!task) return "";
 
   const childNodes = Array.isArray(node?.children) ? node.children : [];
-  const selected = currentTaskId && currentTaskId === task.id ? "true" : "false";
+  const selected =
+    currentTaskId && currentTaskId === task.id ? "true" : "false";
   const statusClass = taskStatusClass(task.status);
   const progress = clampTaskProgressValue(task?.progress ?? 0);
-  const summary = summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
+  const summary =
+    summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
+  const primarySessionName = getTaskPrimarySessionName(task);
+  const secondaryWorkSession =
+    task?.workSessionName && task.workSessionName !== primarySessionName
+      ? task.workSessionName
+      : null;
+  const childMeta = renderTaskInlineMeta(
+    [
+      { label: "session", value: primarySessionName || "-" },
+      secondaryWorkSession
+        ? { label: "work", value: secondaryWorkSession }
+        : null,
+      { label: "agent", value: task.assigneeAgentId || "-" },
+      { label: "priority", value: task.priority || "normal" },
+    ],
+    { compact: true, className: "ravi-wa-task-child__meta" },
+  );
 
   return `
     <div class="ravi-wa-task-child-wrap${depth > 1 ? " ravi-wa-task-child-wrap--nested" : ""}">
@@ -5388,18 +6941,24 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
       >
         <span class="ravi-wa-task-child__titleline">
           <strong>${escapeHtml(task.title || task.id)}</strong>
-          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+          <span class="ravi-wa-task-child__badges">
+            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+            <span class="ravi-wa-task-child__progress-pill">${escapeHtml(String(progress))}%</span>
+          </span>
         </span>
         <span class="ravi-wa-task-child__summary">${escapeHtml(shorten(summary, 96))}</span>
+        ${childMeta}
         <span class="ravi-wa-task-child__progress">
-          <span class="ravi-wa-task-child__progress-label">${escapeHtml(String(progress))}%</span>
           <span class="ravi-wa-task-child__progress-bar" aria-hidden="true"><span style="width: ${progress}%"></span></span>
+          <span class="ravi-wa-task-child__progress-time">${escapeHtml(formatTaskElapsed(task))}</span>
         </span>
       </button>
       ${
         childNodes.length
           ? `<div class="ravi-wa-task-child__children">${childNodes
-              .map((childNode) => renderTaskChildCard(childNode, currentTaskId, depth + 1))
+              .map((childNode) =>
+                renderTaskChildCard(childNode, currentTaskId, depth + 1),
+              )
               .join("")}</div>`
           : ""
       }
@@ -5433,10 +6992,20 @@ function renderTaskEvents(events) {
                     ? "in_progress"
                     : "dispatched",
           );
-          const label = typeof event.type === "string" ? event.type.replace("task.", "") : "event";
+          const label =
+            typeof event.type === "string"
+              ? event.type.replace("task.", "")
+              : "event";
           const detail = describeTaskEventBody(event);
-          const actorLabel = formatTaskActorLabel(event.actor, event.agentId, event.sessionName);
-          const progress = typeof event.progress === "number" ? formatTaskProgressLabel(event.progress) : null;
+          const actorLabel = formatTaskActorLabel(
+            event.actor,
+            event.agentId,
+            event.sessionName,
+          );
+          const progress =
+            typeof event.progress === "number"
+              ? formatTaskProgressLabel(event.progress)
+              : null;
           return `
             <article class="ravi-wa-task-activity ravi-wa-task-activity--${kind}">
               <div class="ravi-wa-task-activity__meta">
@@ -5454,21 +7023,243 @@ function renderTaskEvents(events) {
   `;
 }
 
+function renderTaskDispatchAgentOptions(items, selectedAgentId) {
+  const agents = Array.isArray(items) ? items : [];
+  if (!agents.length) {
+    return `<option value="">Nenhum agent</option>`;
+  }
+  return agents
+    .map((agent) => {
+      const agentId = normalizeTaskAgentId(agent?.id) || "";
+      const label = agent?.name
+        ? `${agentId} · ${agent.name}`
+        : agentId || "agent";
+      return `<option value="${escapeAttribute(agentId)}"${agentId === selectedAgentId ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    })
+    .join("");
+}
+
+function renderTaskDispatchSessionOptions(items, selectedSessionName) {
+  const sessions = Array.isArray(items) ? items : [];
+  const normalizedSelected =
+    normalizeTaskSessionName(selectedSessionName) || "";
+  const options = [
+    `<option value=""${normalizedSelected ? "" : " selected"}>Escolhe a sessão dos reports</option>`,
+  ];
+
+  sessions.forEach((session) => {
+    const sessionName = normalizeTaskSessionName(session?.sessionName) || "";
+    if (!sessionName) return;
+    const label = [
+      sessionName,
+      normalizeTaskAgentId(session?.agentId),
+      session?.activity ? chipActivityLabel(session.activity) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    options.push(
+      `<option value="${escapeAttribute(sessionName)}"${sessionName === normalizedSelected ? " selected" : ""}>${escapeHtml(label || sessionName)}</option>`,
+    );
+  });
+
+  return options.join("");
+}
+
+function renderTaskDetailHeaderDispatchAction(selectedTask) {
+  const task = selectedTask?.task || null;
+  if (!task) return "";
+
+  const form = resolveTaskDispatchFormState(selectedTask);
+  if (!form.dispatch?.allowed) return "";
+
+  const sessionName =
+    normalizeTaskSessionName(form.sessionName) || form.defaultSessionName || null;
+  const reportToSessionName =
+    normalizeTaskSessionName(form.reportToSessionName) || null;
+  const note = [
+    form.selectedAgentId || "escolhe agent",
+    sessionName ? `via ${sessionName}` : "usa session do profile",
+    reportToSessionName ? `reports ${reportToSessionName}` : "define reports",
+  ].join(" · ");
+
+  return `
+    <div class="ravi-wa-task-detail-drawer__dispatch">
+      <button
+        type="button"
+        class="ravi-wa-task-detail-drawer__dispatch-button"
+        data-ravi-dispatch-task="${escapeAttribute(task.id)}"
+        ${form.canSubmit && !form.isSubmitting ? "" : " disabled"}
+      >
+        ${escapeHtml(form.isSubmitting ? "despachando..." : "dispatch")}
+      </button>
+      <span class="ravi-wa-task-detail-drawer__dispatch-note">${escapeHtml(
+        shorten(note, 84),
+      )}</span>
+    </div>
+  `;
+}
+
+function renderTaskDispatchSection(selectedTask) {
+  const task = selectedTask?.task || null;
+  if (!task) return "";
+
+  const form = resolveTaskDispatchFormState(selectedTask);
+  if (!form.dispatch?.allowed) return "";
+  const currentActorSession = getCurrentTaskActorSession();
+
+  return `
+    <section class="ravi-wa-card ravi-wa-task-detail-section ravi-wa-task-dispatch">
+      <div class="ravi-wa-section-head">
+        <h3>dispatch config</h3>
+        <span>${escapeHtml(form.defaultSessionName || "runtime action")}</span>
+      </div>
+      <p class="ravi-wa-task-dispatch__copy">ajusta agent, sessão e reports aqui. o submit fica fixo no header do drawer para não competir com o clique principal do card.</p>
+      ${renderTaskInlineMeta(
+        [
+          form.defaultSessionName
+            ? { label: "default session", value: form.defaultSessionName }
+            : null,
+          form.defaultReportToSessionName
+            ? {
+                label: "default report",
+                value: form.defaultReportToSessionName,
+              }
+            : null,
+          currentActorSession
+            ? { label: "actor", value: currentActorSession }
+            : null,
+          { label: "profile", value: task.profileId || "-" },
+        ],
+        {
+          compact: true,
+          className: "ravi-wa-task-dispatch__meta",
+        },
+      )}
+      <div class="ravi-wa-route-form ravi-wa-task-dispatch__form">
+        <label class="ravi-wa-field">
+          <span>agent destino</span>
+          <select id="ravi-wa-task-dispatch-agent">
+            ${renderTaskDispatchAgentOptions(form.agents, form.selectedAgentId)}
+          </select>
+        </label>
+        <label class="ravi-wa-field">
+          <span>sessão</span>
+          <input
+            id="ravi-wa-task-dispatch-session"
+            type="text"
+            placeholder="${escapeAttribute(form.defaultSessionName || "deixa vazio pra usar o profile")}"
+            value="${escapeAttribute(form.sessionName)}"
+          />
+        </label>
+        <label class="ravi-wa-field ravi-wa-task-dispatch__field--full">
+          <span>reports para</span>
+          <select id="ravi-wa-task-dispatch-report-session">
+            ${renderTaskDispatchSessionOptions(
+              form.sessions,
+              form.reportToSessionName,
+            )}
+          </select>
+        </label>
+      </div>
+      ${
+        form.agents.length
+          ? ""
+          : `<p class="ravi-wa-empty">nenhum agent disponível no runtime para receber essa task.</p>`
+      }
+      ${
+        form.sessions.length
+          ? ""
+          : `<p class="ravi-wa-empty">nenhuma sessão disponível para receber os reports dessa task.</p>`
+      }
+    </section>
+  `;
+}
+
+function renderTaskDetailDrawer(drawerState) {
+  const selectedTask = drawerState?.selectedTask || null;
+  const task = selectedTask?.task || null;
+  if (!taskDetailDrawerOpen || !task) return "";
+
+  const statusClass = taskStatusClass(task.status);
+  const animateAttribute = drawerState?.shouldAnimate
+    ? ` data-animate-in="true"`
+    : "";
+  const syncingPill = drawerState?.isHydrating
+    ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--idle">syncing</span>`
+    : "";
+  const drawerSubtitle = [
+    formatTaskShortId(task.id),
+    taskStatusLabel(task.status),
+    formatTaskDurationLabel(task),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <div class="ravi-wa-task-detail-drawer-shell" data-ravi-task-detail-drawer="true">
+      <button
+        type="button"
+        class="ravi-wa-task-detail-drawer__backdrop"
+        data-ravi-close-task-drawer="true"
+        aria-label="Fechar detalhe da task"
+        ${animateAttribute}
+      ></button>
+      <aside
+        class="ravi-wa-task-detail-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ravi-wa-task-detail-drawer-title"
+        aria-busy="${drawerState?.isHydrating ? "true" : "false"}"
+        ${animateAttribute}
+      >
+        <header class="ravi-wa-task-detail-drawer__header">
+          <div class="ravi-wa-task-detail-drawer__copy">
+            <span class="ravi-wa-task-detail-drawer__eyebrow">task drawer</span>
+            <strong id="ravi-wa-task-detail-drawer-title">${escapeHtml(task.title || task.id)}</strong>
+            <span>${escapeHtml(drawerSubtitle || "runtime atual")}</span>
+          </div>
+          <div class="ravi-wa-task-detail-drawer__actions">
+            ${renderTaskDetailHeaderDispatchAction(selectedTask)}
+            ${syncingPill}
+            <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+            <button
+              type="button"
+              class="ravi-wa-task-detail-drawer__close"
+              data-ravi-close-task-drawer="true"
+            >
+              fechar
+            </button>
+          </div>
+        </header>
+        <div class="ravi-wa-task-detail-pane" data-ravi-task-id="${escapeAttribute(task.id)}">
+          ${renderTaskDetailCard(selectedTask)}
+        </div>
+      </aside>
+    </div>
+  `;
+}
+
 function renderTaskDetailCard(selectedTask) {
   const task = selectedTask?.task || null;
   if (!task) {
     return `
       <section class="ravi-wa-card ravi-wa-task-detail-pane__empty">
-        <p>seleciona uma task para ver detalhes e timeline sem sair do workspace.</p>
+        <p>seleciona uma task para abrir o drawer lateral com detalhes e timeline.</p>
       </section>
     `;
   }
 
   const activeAssignment = selectedTask?.activeAssignment || null;
-  const assignments = Array.isArray(selectedTask?.assignments) ? selectedTask.assignments : [];
+  const assignments = Array.isArray(selectedTask?.assignments)
+    ? selectedTask.assignments
+    : [];
   const parentTask = selectedTask?.parentTask || null;
-  const childTasks = Array.isArray(selectedTask?.childTasks) ? selectedTask.childTasks : [];
-  const comments = Array.isArray(selectedTask?.comments) ? selectedTask.comments : [];
+  const childTasks = Array.isArray(selectedTask?.childTasks)
+    ? selectedTask.childTasks
+    : [];
+  const comments = Array.isArray(selectedTask?.comments)
+    ? selectedTask.comments
+    : [];
   const lifecycleEvents = Array.isArray(selectedTask?.events)
     ? selectedTask.events.filter((event) => event?.type !== "task.comment")
     : [];
@@ -5479,24 +7270,48 @@ function renderTaskDetailCard(selectedTask) {
   const progress = clampTaskProgressValue(task?.progress ?? 0);
   const progressInfo = describeTaskProgressText(task, lifecycleEvents);
   const frontmatterStatus = frontmatter?.status || null;
-  const frontmatterProgress = typeof frontmatter?.progress === "number" ? frontmatter.progress : null;
-  const docPath = taskDocument?.path || (task.taskDir ? `${task.taskDir}/TASK.md` : null);
+  const frontmatterProgress =
+    typeof frontmatter?.progress === "number" ? frontmatter.progress : null;
+  const docPath =
+    taskDocument?.path || (task.taskDir ? `${task.taskDir}/TASK.md` : null);
   const taskDir = taskDocument?.taskDir || task.taskDir || null;
   const frontmatterChips = [
-    frontmatter?.priority ? `fm priority ${frontmatter.priority}` : null,
-    frontmatter?.summary ? `fm summary ${shorten(frontmatter.summary, 48)}` : null,
-    frontmatter?.blockerReason ? `fm blocker ${shorten(frontmatter.blockerReason, 48)}` : null,
+    frontmatter?.priority ? `priority ${frontmatter.priority}` : null,
+    frontmatter?.summary ? `summary ${shorten(frontmatter.summary, 48)}` : null,
+    frontmatter?.blockerReason
+      ? `blocker ${shorten(frontmatter.blockerReason, 48)}`
+      : null,
   ].filter(Boolean);
-  const heroSummary = task.summary || task.blockerReason || summarizeTaskCardCopy(task) || "sem resumo ainda";
+  const heroSummary =
+    task.summary ||
+    task.blockerReason ||
+    summarizeTaskCardCopy(task) ||
+    "sem resumo ainda";
   const taskSignal = task.blockerReason || task.summary || null;
   const taskSignalLabel = task.blockerReason ? "blocker" : "summary";
   const taskSignalClass = task.blockerReason ? "blocked" : "summary";
   const runtimeStatusTitle = describeTaskRuntimeStatus(task, activeAssignment);
   const documentStatusTitle = describeTaskDocumentStatus(frontmatter);
+  const primarySessionName = getTaskPrimarySessionName(task, activeAssignment);
+  const secondaryWorkSession =
+    task?.workSessionName && task.workSessionName !== primarySessionName
+      ? task.workSessionName
+      : null;
+  const hierarchyLabel = parentTask
+    ? `child de ${formatTaskShortId(parentTask.id)}`
+    : task.parentTaskId
+      ? `child de ${formatTaskShortId(task.parentTaskId)}`
+      : childTasks.length
+        ? `${childTasks.length} child${childTasks.length === 1 ? "" : "ren"}`
+        : "task raiz";
   const runtimeFacts = [
     {
       label: "created by",
-      value: formatTaskActorLabel(task.createdBy, task.createdByAgentId, task.createdBySessionName),
+      value: formatTaskActorLabel(
+        task.createdBy,
+        task.createdByAgentId,
+        task.createdBySessionName,
+      ),
     },
     {
       label: "active assignment",
@@ -5504,10 +7319,24 @@ function renderTaskDetailCard(selectedTask) {
         ? `${activeAssignment.status} · ${formatTaskActorLabel(null, activeAssignment.agentId, activeAssignment.sessionName)}`
         : "none",
     },
+    {
+      label: "report to",
+      value:
+        activeAssignment?.reportToSessionName || task.reportToSessionName || "-",
+    },
+    {
+      label: "report on",
+      value: formatTaskReportEventsLabel(
+        activeAssignment?.reportEvents || task.reportEvents,
+      ),
+    },
     { label: "duration", value: formatTaskElapsed(task) },
     { label: "updated at", value: formatTimestamp(task.updatedAt) || "-" },
     { label: "created at", value: formatTimestamp(task.createdAt) || "-" },
-    { label: "dispatched at", value: formatTimestamp(task.dispatchedAt) || "-" },
+    {
+      label: "dispatched at",
+      value: formatTimestamp(task.dispatchedAt) || "-",
+    },
     { label: "started at", value: formatTimestamp(task.startedAt) || "-" },
     { label: "completed at", value: formatTimestamp(task.completedAt) || "-" },
     { label: "worktree", value: worktreeLabel || "-" },
@@ -5517,7 +7346,13 @@ function renderTaskDetailCard(selectedTask) {
     <section class="ravi-wa-card ravi-wa-task-detail-hero-card">
       <div class="ravi-wa-task-detail-hero__eyebrow">
         <span class="ravi-wa-task-detail-hero__label">task detail</span>
-        <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+        <div class="ravi-wa-task-detail-hero__badges">
+          <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
+          <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+          <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${taskPriorityClass(task.priority)}">${escapeHtml(
+            task.priority || "normal",
+          )}</span>
+        </div>
       </div>
       <div class="ravi-wa-task-detail-hero__top">
         <div class="ravi-wa-task-detail-hero__copy">
@@ -5525,19 +7360,28 @@ function renderTaskDetailCard(selectedTask) {
           <p>${escapeHtml(heroSummary)}</p>
         </div>
         <div class="ravi-wa-task-detail-hero__status">
-          <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
           <span class="ravi-wa-task-detail-hero__progress">${escapeHtml(String(progress))}%</span>
+          <span>${escapeHtml(formatTaskDurationLabel(task))}</span>
         </div>
       </div>
-      <div class="ravi-wa-chip-row">
-        <span class="ravi-wa-meta-chip">id ${escapeHtml(task.id)}</span>
-        <span class="ravi-wa-meta-chip">priority ${escapeHtml(task.priority || "normal")}</span>
-        <span class="ravi-wa-meta-chip">progress ${escapeHtml(String(progress))}%</span>
-        <span class="ravi-wa-meta-chip">agent ${escapeHtml(task.assigneeAgentId || activeAssignment?.agentId || "-")}</span>
-        <span class="ravi-wa-meta-chip">session ${escapeHtml(activeAssignment?.sessionName || task.assigneeSessionName || "-")}</span>
-        <span class="ravi-wa-meta-chip">comments ${escapeHtml(String(comments.length))}</span>
-        <span class="ravi-wa-meta-chip">events ${escapeHtml(String(lifecycleEvents.length))}</span>
-      </div>
+      ${renderTaskInlineMeta(
+        [
+          { label: "id", value: task.id, monospace: true },
+          { label: "session", value: primarySessionName || "-" },
+          secondaryWorkSession
+            ? { label: "work", value: secondaryWorkSession }
+            : null,
+          {
+            label: "agent",
+            value: task.assigneeAgentId || activeAssignment?.agentId || "-",
+          },
+          { label: "tree", value: hierarchyLabel },
+          { label: "comments", value: comments.length },
+          { label: "events", value: lifecycleEvents.length },
+          worktreeLabel ? { label: "worktree", value: worktreeLabel } : null,
+        ],
+        { className: "ravi-wa-task-detail-hero__meta" },
+      )}
       <div class="ravi-wa-task-detail-progress">
         <div class="ravi-wa-task-detail-progress__head">
           <span>progress ${escapeHtml(String(progress))}%</span>
@@ -5551,6 +7395,8 @@ function renderTaskDetailCard(selectedTask) {
         </p>
       </div>
     </section>
+
+    ${renderTaskDispatchSection(selectedTask)}
 
     <section class="ravi-wa-card ravi-wa-task-detail-section">
       <div class="ravi-wa-section-head">
@@ -5576,7 +7422,9 @@ function renderTaskDetailCard(selectedTask) {
                 ? `TASK.md progress ${frontmatterProgress}% sem campo de status`
                 : "TASK.md presente, mas sem campo de status no frontmatter"
             : "TASK.md ainda nao chegou nesse snapshot",
-          meta: taskDocument ? "bridge document snapshot" : "runtime snapshot only",
+          meta: taskDocument
+            ? "bridge document snapshot"
+            : "runtime snapshot only",
         })}
       </div>
       ${renderTaskStatusSyncBanner(task, frontmatter, progress)}
@@ -5614,10 +7462,22 @@ function renderTaskDetailCard(selectedTask) {
       ${
         frontmatterChips.length || taskDir
           ? `
-        <div class="ravi-wa-chip-row ravi-wa-chip-row--compact">
-          ${taskDir ? `<span class="ravi-wa-meta-chip">task dir ${escapeHtml(shorten(taskDir, 52))}</span>` : ""}
-          ${frontmatterChips.map((chip) => `<span class="ravi-wa-meta-chip">${escapeHtml(chip)}</span>`).join("")}
-        </div>
+        ${renderTaskInlineMeta(
+          [
+            taskDir
+              ? {
+                  label: "task dir",
+                  value: shorten(taskDir, 52),
+                  monospace: true,
+                }
+              : null,
+            ...frontmatterChips.map((chip) => ({
+              label: "frontmatter",
+              value: chip,
+            })),
+          ],
+          { compact: true },
+        )}
       `
           : ""
       }
@@ -5711,7 +7571,9 @@ function filterCockpitSessions(items) {
   const taskHierarchyState = getTaskHierarchyState();
   return list.filter((session) => {
     const taskMatch = resolveTaskSessionMatch(session);
-    const lineage = taskMatch?.task?.id ? getTaskLineage(taskMatch.task.id, taskHierarchyState) : [];
+    const lineage = taskMatch?.task?.id
+      ? getTaskLineage(taskMatch.task.id, taskHierarchyState)
+      : [];
     return [
       session.displayName,
       session.subject,
@@ -5738,7 +7600,13 @@ function filterOmniInstances(items) {
   const needle = normalizeLookupToken(omniFilter);
   if (!needle) return list;
   return list.filter((instance) =>
-    [instance.name, instance.profileName, instance.phone, instance.ownerIdentifier, instance.channel]
+    [
+      instance.name,
+      instance.profileName,
+      instance.phone,
+      instance.ownerIdentifier,
+      instance.channel,
+    ]
       .map(normalizeLookupToken)
       .some((value) => value && value.includes(needle)),
   );
@@ -5780,7 +7648,13 @@ function filterOmniSessions(items) {
   if (!needle) return list.slice(0, 40);
   return list
     .filter((session) =>
-      [session.sessionName, session.agentId, session.chatId, session.displayName, session.subject]
+      [
+        session.sessionName,
+        session.agentId,
+        session.chatId,
+        session.displayName,
+        session.subject,
+      ]
         .map(normalizeLookupToken)
         .some((value) => value && value.includes(needle)),
     )
@@ -5828,27 +7702,52 @@ function denyOmniDecision(...relations) {
     allowed: false,
     matched: [],
     missing,
-    reason: missing.length ? `missing ${missing.join(" + ")}` : "missing permission",
+    reason: missing.length
+      ? `missing ${missing.join(" + ")}`
+      : "missing permission",
   };
 }
 
 function omniCapabilityAllows(capabilities, permission, objectType, objectId) {
   const list = Array.isArray(capabilities) ? capabilities : [];
-  if (list.some((cap) => cap?.permission === "admin" && cap?.objectType === "system" && cap?.objectId === "*")) {
+  if (
+    list.some(
+      (cap) =>
+        cap?.permission === "admin" &&
+        cap?.objectType === "system" &&
+        cap?.objectId === "*",
+    )
+  ) {
     return true;
   }
-  if (list.some((cap) => cap?.permission === permission && cap?.objectType === objectType && cap?.objectId === objectId)) {
+  if (
+    list.some(
+      (cap) =>
+        cap?.permission === permission &&
+        cap?.objectType === objectType &&
+        cap?.objectId === objectId,
+    )
+  ) {
     return true;
   }
   if (
     objectId !== "*" &&
-    list.some((cap) => cap?.permission === permission && cap?.objectType === objectType && cap?.objectId === "*")
+    list.some(
+      (cap) =>
+        cap?.permission === permission &&
+        cap?.objectType === objectType &&
+        cap?.objectId === "*",
+    )
   ) {
     return true;
   }
   if (objectId !== "*") {
     return list.some((cap) => {
-      if (cap?.permission !== permission || cap?.objectType !== objectType || typeof cap?.objectId !== "string") {
+      if (
+        cap?.permission !== permission ||
+        cap?.objectType !== objectType ||
+        typeof cap?.objectId !== "string"
+      ) {
         return false;
       }
       if (!cap.objectId.includes("*")) return false;
@@ -5872,7 +7771,12 @@ function checkOmniAction(permission, objectType, objectId) {
   const actor = getOmniPanelActor();
   const relation = `${permission} ${objectType}:${objectId}`;
   if (!actor?.agentId) return denyOmniDecision(relation);
-  return omniCapabilityAllows(actor.capabilities, permission, objectType, objectId)
+  return omniCapabilityAllows(
+    actor.capabilities,
+    permission,
+    objectType,
+    objectId,
+  )
     ? allowOmniDecision(relation)
     : denyOmniDecision(relation);
 }
@@ -5883,7 +7787,8 @@ function checkOmniSessionAccess(session) {
   const relation = target ? `access session:${target}` : null;
   if (!target) return denyOmniDecision();
   if (!actor?.agentId) return denyOmniDecision(relation);
-  if (actor.sessionName === target || actor.sessionKey === target) return allowOmniDecision(relation);
+  if (actor.sessionName === target || actor.sessionKey === target)
+    return allowOmniDecision(relation);
   return omniCapabilityAllows(actor.capabilities, "access", "session", target)
     ? allowOmniDecision(relation)
     : denyOmniDecision(relation);
@@ -5895,7 +7800,8 @@ function checkOmniSessionModify(session) {
   const relation = target ? `modify session:${target}` : null;
   if (!target) return denyOmniDecision();
   if (!actor?.agentId) return denyOmniDecision(relation);
-  if (actor.sessionName === target || actor.sessionKey === target) return allowOmniDecision(relation);
+  if (actor.sessionName === target || actor.sessionKey === target)
+    return allowOmniDecision(relation);
   return omniCapabilityAllows(actor.capabilities, "modify", "session", target)
     ? allowOmniDecision(relation)
     : denyOmniDecision(relation);
@@ -5962,10 +7868,21 @@ function getOmniActionState(kind, formState) {
 
   if (kind === "bind-existing") {
     if (!selectedSession) {
-      return { allowed: false, missing: ["choose session"], reason: "choose session" };
+      return {
+        allowed: false,
+        missing: ["choose session"],
+        reason: "choose session",
+      };
     }
-    if (currentLinkedSession && currentLinkedSession.sessionKey === selectedSession.sessionKey) {
-      return { allowed: false, missing: ["already linked"], reason: "already linked" };
+    if (
+      currentLinkedSession &&
+      currentLinkedSession.sessionKey === selectedSession.sessionKey
+    ) {
+      return {
+        allowed: false,
+        missing: ["already linked"],
+        reason: "already linked",
+      };
     }
     decisions.push(checkOmniSessionAccess(selectedSession));
     decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
@@ -5973,7 +7890,11 @@ function getOmniActionState(kind, formState) {
 
   if (kind === "create-session") {
     if (!selectedRouteAgentId) {
-      return { allowed: false, missing: ["choose agent"], reason: "choose agent" };
+      return {
+        allowed: false,
+        missing: ["choose agent"],
+        reason: "choose agent",
+      };
     }
     decisions.push(checkOmniGroupExecute("sessions"));
     decisions.push(checkOmniRouteModify(selectedChat?.routeObjectId || null));
@@ -5982,10 +7903,18 @@ function getOmniActionState(kind, formState) {
 
   if (kind === "migrate-session") {
     if (!currentLinkedSession) {
-      return { allowed: false, missing: ["no linked session"], reason: "no linked session" };
+      return {
+        allowed: false,
+        missing: ["no linked session"],
+        reason: "no linked session",
+      };
     }
     if (!selectedRouteAgentId) {
-      return { allowed: false, missing: ["choose agent"], reason: "choose agent" };
+      return {
+        allowed: false,
+        missing: ["choose agent"],
+        reason: "choose agent",
+      };
     }
     if (currentLinkedSession.agentId === selectedRouteAgentId) {
       return { allowed: false, missing: ["same agent"], reason: "same agent" };
@@ -5998,7 +7927,11 @@ function getOmniActionState(kind, formState) {
 
   if (kind === "create-agent-session") {
     if (!formState?.draftNewAgentId) {
-      return { allowed: false, missing: ["new agent id"], reason: "new agent id" };
+      return {
+        allowed: false,
+        missing: ["new agent id"],
+        reason: "new agent id",
+      };
     }
     decisions.push(checkOmniGroupExecute("agents"));
     decisions.push(checkOmniGroupExecute("sessions"));
@@ -6052,14 +7985,20 @@ function buildOmniBindButtonLabel(currentLinkedSession, selectedSession) {
 
 function buildOmniDraftSessionName(selectedChat, agentId) {
   const agentStem = slugifyOmniToken(agentId || "sessao");
-  const chatStem = slugifyOmniToken(selectedChat?.name || selectedChat?.externalId || "chat");
+  const chatStem = slugifyOmniToken(
+    selectedChat?.name || selectedChat?.externalId || "chat",
+  );
   if (!chatStem) return agentStem;
   return `${agentStem}-${chatStem}`.slice(0, 48);
 }
 
 function buildOmniRouteNotice(kind, result, selectedChat, session) {
   const chatLabel = selectedChat?.name || selectedChat?.externalId || "chat";
-  const sessionName = session?.sessionName || result?.snapshot?.session?.sessionName || result?.route?.session || "sessão";
+  const sessionName =
+    session?.sessionName ||
+    result?.snapshot?.session?.sessionName ||
+    result?.route?.session ||
+    "sessão";
 
   if (kind === "bind-existing") {
     return `migrei ${chatLabel} -> ${sessionName}`;
@@ -6093,7 +8032,12 @@ function formatElapsedFromIso(value) {
 }
 
 function getCockpitChatTitle(session) {
-  return session.displayName || session.subject || session.chatId || session.sessionName;
+  return (
+    session.displayName ||
+    session.subject ||
+    session.chatId ||
+    session.sessionName
+  );
 }
 
 function getLinkedChatLabel(session) {
@@ -6113,14 +8057,22 @@ function dedupeSessionsByKey(items) {
 
 async function openCockpitChat(session) {
   if (!session?.chatId && !session?.displayName && !session?.subject) {
-    setSidebarNotice("error", `a sessão ${session?.sessionName || "?"} não tem chat vinculado`);
+    setSidebarNotice(
+      "error",
+      `a sessão ${session?.sessionName || "?"} não tem chat vinculado`,
+    );
     return false;
   }
   return openGenericChatTarget({
     chatId: session.chatId,
     title: getCockpitChatTitle(session),
     label: getCockpitChatTitle(session),
-    queries: [session.displayName, session.subject, session.chatId, session.sessionName].filter(Boolean),
+    queries: [
+      session.displayName,
+      session.subject,
+      session.chatId,
+      session.sessionName,
+    ].filter(Boolean),
   });
 }
 
@@ -6160,7 +8112,11 @@ async function openGenericChatTarget(target) {
   }
 
   const originalValue = searchInput.value || "";
-  const queries = [...new Set((target.queries || [target.title, target.chatId]).filter(Boolean))];
+  const queries = [
+    ...new Set(
+      (target.queries || [target.title, target.chatId]).filter(Boolean),
+    ),
+  ];
   let lastFailure = visibleOpen.reason || null;
 
   for (const query of queries) {
@@ -6219,7 +8175,8 @@ function findMatchingChatRowByTarget(target) {
       const rowChatId = normalizeLookupToken(candidate.chatIdCandidate);
       const rowTitle = normalizeLookupToken(candidate.title);
       if (rowChatId && chatIdVariants.includes(rowChatId)) return true;
-      if (normalizedTitle && rowTitle && rowTitle === normalizedTitle) return true;
+      if (normalizedTitle && rowTitle && rowTitle === normalizedTitle)
+        return true;
       return false;
     }) || null
   );
@@ -6228,7 +8185,10 @@ function findMatchingChatRowByTarget(target) {
 function clickChatRow(row) {
   if (!row?.row) return false;
   row.row.scrollIntoView({ block: "center", behavior: "smooth" });
-  const clickable = row.row.querySelector("[aria-selected]") || row.row.firstElementChild || row.row;
+  const clickable =
+    row.row.querySelector("[aria-selected]") ||
+    row.row.firstElementChild ||
+    row.row;
   if (clickable instanceof HTMLElement) {
     clickable.click();
     return true;
@@ -6238,10 +8198,15 @@ function clickChatRow(row) {
 
 function isTargetOpenNow(target) {
   const currentChatId = normalizeLookupToken(
-    latestPageChat?.chatId || latestViewState?.chatIdCandidate || detectChatIdCandidate(),
+    latestPageChat?.chatId ||
+      latestViewState?.chatIdCandidate ||
+      detectChatIdCandidate(),
   );
   const currentTitle = normalizeLookupToken(
-    latestPageChat?.title || detectChatTitle() || latestViewState?.selectedChat || detectSelectedChatLabel(),
+    latestPageChat?.title ||
+      detectChatTitle() ||
+      latestViewState?.selectedChat ||
+      detectSelectedChatLabel(),
   );
   const chatIdVariants = buildChatIdVariants(target?.chatId);
   const normalizedTitle = normalizeLookupToken(target?.title);
@@ -6316,7 +8281,10 @@ function focusNativeSidebarSearchInput(input) {
 }
 
 function setNativeSidebarSearchValue(input, value) {
-  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
   if (setter) {
     setter.call(input, value);
   } else {
@@ -6452,7 +8420,14 @@ function persistV3PlaceholdersEnabled(value) {
 }
 
 function setActiveWorkspace(nextWorkspace) {
-  activeWorkspace = nextWorkspace === "omni" || nextWorkspace === "tasks" ? nextWorkspace : "ravi";
+  activeWorkspace =
+    nextWorkspace === "omni" || nextWorkspace === "tasks"
+      ? nextWorkspace
+      : "ravi";
+  if (activeWorkspace !== "tasks") {
+    taskDetailDrawerOpen = false;
+    taskDetailDrawerShouldAnimate = false;
+  }
   persistActiveWorkspace(activeWorkspace);
   syncWorkspaceLauncher();
   render();
@@ -6552,7 +8527,12 @@ function formatElapsedCompact(value) {
 }
 
 function formatDurationCompactMs(durationMs) {
-  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0) return "";
+  if (
+    typeof durationMs !== "number" ||
+    !Number.isFinite(durationMs) ||
+    durationMs < 0
+  )
+    return "";
   if (durationMs < 1_000) return `${Math.max(1, Math.round(durationMs))}ms`;
 
   const seconds = Math.floor(durationMs / 1000);
@@ -6561,7 +8541,9 @@ function formatDurationCompactMs(durationMs) {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) {
     const remainderSeconds = seconds % 60;
-    return remainderSeconds ? `${minutes}m ${remainderSeconds}s` : `${minutes}m`;
+    return remainderSeconds
+      ? `${minutes}m ${remainderSeconds}s`
+      : `${minutes}m`;
   }
 
   const hours = Math.floor(minutes / 60);
@@ -6596,7 +8578,10 @@ function ensureV3PlaceholderLayer() {
 }
 
 async function handleV3PlaceholderLayerClick(event) {
-  const target = event.target instanceof HTMLElement ? event.target.closest("[data-ravi-v3-component-id]") : null;
+  const target =
+    event.target instanceof HTMLElement
+      ? event.target.closest("[data-ravi-v3-component-id]")
+      : null;
   if (!(target instanceof HTMLElement)) return;
 
   const componentId = target.getAttribute("data-ravi-v3-component-id");
@@ -6616,7 +8601,10 @@ async function handleV3PlaceholderLayerClick(event) {
     }
     setV3CommandNotice("error", response?.error || "v3 command failed");
   } catch (error) {
-    setV3CommandNotice("error", error instanceof Error ? error.message : String(error));
+    setV3CommandNotice(
+      "error",
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
@@ -6628,10 +8616,13 @@ function setV3CommandNotice(kind, message) {
   if (v3CommandNoticeTimer) {
     clearTimeout(v3CommandNoticeTimer);
   }
-  v3CommandNoticeTimer = setTimeout(() => {
-    v3CommandNotice = null;
-    scheduleV3PlaceholderRender();
-  }, kind === "error" ? 3500 : 1800);
+  v3CommandNoticeTimer = setTimeout(
+    () => {
+      v3CommandNotice = null;
+      scheduleV3PlaceholderRender();
+    },
+    kind === "error" ? 3500 : 1800,
+  );
   scheduleV3PlaceholderRender();
 }
 
@@ -6651,7 +8642,9 @@ function syncV3PlaceholderLayer() {
 
   const groups = new Map();
   for (const placeholder of latestV3Placeholders.placeholders || []) {
-    const selector = placeholder.selector || resolvePlaceholderSelector(placeholder.componentId);
+    const selector =
+      placeholder.selector ||
+      resolvePlaceholderSelector(placeholder.componentId);
     const node = selector ? findVisibleElementBySelector(selector) : null;
     if (!(node instanceof HTMLElement)) continue;
     const current = groups.get(node) || [];
@@ -6709,7 +8702,9 @@ function syncV3PlaceholderLayer() {
 }
 
 function resolvePlaceholderSelector(componentId) {
-  const component = (latestViewState?.components || []).find((entry) => entry.id === componentId);
+  const component = (latestViewState?.components || []).find(
+    (entry) => entry.id === componentId,
+  );
   return component?.selector || null;
 }
 
@@ -6724,7 +8719,10 @@ function findVisibleElementBySelector(selector) {
 }
 
 function buildPlaceholderDetail(placeholder) {
-  const count = typeof placeholder.count === "number" && placeholder.count > 1 ? ` · ${placeholder.count}` : "";
+  const count =
+    typeof placeholder.count === "number" && placeholder.count > 1
+      ? ` · ${placeholder.count}`
+      : "";
   return `${placeholder.confidence}${count}`;
 }
 
@@ -6795,7 +8793,17 @@ async function pollDomCommands() {
       payload: { result },
     });
 
-    if (["click", "inject", "remove", "outline", "clear", "text", "attr"].includes(command.request.name)) {
+    if (
+      [
+        "click",
+        "inject",
+        "remove",
+        "outline",
+        "clear",
+        "text",
+        "attr",
+      ].includes(command.request.name)
+    ) {
       refreshAll();
     }
   } catch (error) {
@@ -6816,7 +8824,9 @@ function executeDomCommand(command) {
       case "query":
         return finishDomCommand(command.id, request.name, {
           targetCount: nodes.length,
-          nodes: nodes.slice(0, request.limit || 5).map((node) => serializeDomNode(node)),
+          nodes: nodes
+            .slice(0, request.limit || 5)
+            .map((node) => serializeDomNode(node)),
         });
       case "html":
         return finishDomCommand(command.id, request.name, {
@@ -6891,12 +8901,18 @@ function executeDomCommand(command) {
         return finishDomCommand(command.id, request.name, {
           targetCount: nodes.length,
           output: `outlined:${nodes.length}`,
-          nodes: nodes.slice(0, request.limit || 5).map((node) => serializeDomNode(node)),
+          nodes: nodes
+            .slice(0, request.limit || 5)
+            .map((node) => serializeDomNode(node)),
         });
       }
       case "clear": {
-        const injected = Array.from(document.querySelectorAll("[data-ravi-dom-injected='true']"));
-        const outlined = Array.from(document.querySelectorAll("[data-ravi-dom-outline='true']"));
+        const injected = Array.from(
+          document.querySelectorAll("[data-ravi-dom-injected='true']"),
+        );
+        const outlined = Array.from(
+          document.querySelectorAll("[data-ravi-dom-outline='true']"),
+        );
         for (const node of injected) node.remove();
         for (const node of outlined) {
           if (node instanceof HTMLElement) {
@@ -6962,8 +8978,14 @@ function serializeDomNode(node, options = {}) {
 
   return {
     tag: node.tagName.toLowerCase(),
-    text: typeof node.textContent === "string" ? node.textContent.trim().replace(/\s+/g, " ").slice(0, 200) : null,
-    html: options.includeHtml && node instanceof Element ? node.outerHTML.slice(0, 2000) : null,
+    text:
+      typeof node.textContent === "string"
+        ? node.textContent.trim().replace(/\s+/g, " ").slice(0, 200)
+        : null,
+    html:
+      options.includeHtml && node instanceof Element
+        ? node.outerHTML.slice(0, 2000)
+        : null,
     path: buildNodePath(node),
     attrs,
   };

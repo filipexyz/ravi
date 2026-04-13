@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
+import { getRaviStateDir } from "./utils/paths.js";
 
 // Re-export normalize functions for backwards compatibility
 export {
@@ -12,118 +12,155 @@ export {
 
 import { normalizePhone } from "./utils/phone.js";
 
-const DATA_DIR = join(homedir(), ".ravi");
-const DB_PATH = join(DATA_DIR, "chat.db");
+function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(getRaviStateDir(env), "chat.db");
+}
 
-mkdirSync(DATA_DIR, { recursive: true });
+let db: Database | null = null;
+let dbPath: string | null = null;
+let stmts: ReturnType<typeof createStatements> | null = null;
 
-const db = new Database(DB_PATH);
+function ensureDb(): Database {
+  const nextDbPath = resolveDbPath();
+  if (db !== null && dbPath === nextDbPath && stmts !== null) {
+    return db;
+  }
 
-// WAL mode for concurrent read/write access (CLI + daemon)
-db.exec("PRAGMA journal_mode = WAL");
-// Wait up to 5s for locks to clear instead of failing immediately
-db.exec("PRAGMA busy_timeout = 5000");
-// Enable foreign keys
-db.exec("PRAGMA foreign_keys = ON");
+  if (db !== null) {
+    db.close();
+  }
+
+  mkdirSync(getRaviStateDir(), { recursive: true });
+
+  const database = new Database(nextDbPath);
+
+  // WAL mode for concurrent read/write access (CLI + daemon)
+  database.exec("PRAGMA journal_mode = WAL");
+  // Wait up to 5s for locks to clear instead of failing immediately
+  database.exec("PRAGMA busy_timeout = 5000");
+  // Enable foreign keys
+  database.exec("PRAGMA foreign_keys = ON");
+
+  initializeSchema(database);
+  migrateFromV1(database);
+  ensureAllowedAgentsColumn(database);
+
+  db = database;
+  dbPath = nextDbPath;
+  stmts = createStatements(database);
+  return database;
+}
+
+function getStatements(): ReturnType<typeof createStatements> {
+  ensureDb();
+  return stmts!;
+}
 
 // ============================================================================
 // Schema v2: contacts_v2 + contact_identities
 // ============================================================================
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS contacts_v2 (
-    id TEXT PRIMARY KEY,
-    name TEXT,
-    email TEXT,
-    status TEXT DEFAULT 'allowed' CHECK(status IN ('allowed', 'pending', 'blocked', 'discovered')),
-    agent_id TEXT,
-    reply_mode TEXT DEFAULT 'auto',
-    tags TEXT,
-    notes TEXT,
-    opt_out INTEGER DEFAULT 0,
-    source TEXT,
-    last_inbound_at TEXT,
-    last_outbound_at TEXT,
-    interaction_count INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-`);
+function initializeSchema(database: Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS contacts_v2 (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      email TEXT,
+      status TEXT DEFAULT 'allowed' CHECK(status IN ('allowed', 'pending', 'blocked', 'discovered')),
+      agent_id TEXT,
+      reply_mode TEXT DEFAULT 'auto',
+      tags TEXT,
+      notes TEXT,
+      opt_out INTEGER DEFAULT 0,
+      source TEXT,
+      last_inbound_at TEXT,
+      last_outbound_at TEXT,
+      interaction_count INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+  `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS contact_identities (
-    contact_id TEXT NOT NULL,
-    platform TEXT NOT NULL,
-    identity_value TEXT NOT NULL,
-    is_primary INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (platform, identity_value),
-    FOREIGN KEY (contact_id) REFERENCES contacts_v2(id) ON DELETE CASCADE
-  );
-`);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS contact_identities (
+      contact_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      identity_value TEXT NOT NULL,
+      is_primary INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (platform, identity_value),
+      FOREIGN KEY (contact_id) REFERENCES contacts_v2(id) ON DELETE CASCADE
+    );
+  `);
 
-// Index for looking up all identities of a contact
-try {
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_identities_contact ON contact_identities(contact_id)`);
-} catch {
-  /* exists */
+  // Index for looking up all identities of a contact
+  try {
+    database.exec(`CREATE INDEX IF NOT EXISTS idx_identities_contact ON contact_identities(contact_id)`);
+  } catch {
+    /* exists */
+  }
+
+  // Per-account pending: tracks contacts that messaged an account without a matching route
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS account_pending (
+      account_id TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      name TEXT,
+      chat_id TEXT,
+      is_group INTEGER DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, phone)
+    );
+  `);
 }
-
-// Per-account pending: tracks contacts that messaged an account without a matching route
-db.exec(`
-  CREATE TABLE IF NOT EXISTS account_pending (
-    account_id TEXT NOT NULL,
-    phone TEXT NOT NULL,
-    name TEXT,
-    chat_id TEXT,
-    is_group INTEGER DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (account_id, phone)
-  );
-`);
 
 // ============================================================================
 // Migration from old contacts table
 // ============================================================================
 
-function migrateFromV1(): void {
+function migrateFromV1(database: Database): void {
+  const serializeLegacyField = (value: unknown): string | null => {
+    if (value === null || value === undefined) return null;
+    return typeof value === "string" ? value : JSON.stringify(value);
+  };
+
   // Check if old table exists
-  const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'").get() as
+  const oldTable = database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'").get() as
     | { name: string }
     | undefined;
 
   if (!oldTable) return;
 
   // Check if already migrated (contacts_legacy exists)
-  const legacyTable = db
+  const legacyTable = database
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts_legacy'")
     .get() as { name: string } | undefined;
 
   if (legacyTable) return;
 
   // Check if v2 already has data (skip migration)
-  const v2Count = (db.prepare("SELECT COUNT(*) as c FROM contacts_v2").get() as { c: number }).c;
+  const v2Count = (database.prepare("SELECT COUNT(*) as c FROM contacts_v2").get() as { c: number }).c;
   if (v2Count > 0) {
     // Already has v2 data, just rename old table
-    db.exec("ALTER TABLE contacts RENAME TO contacts_legacy");
+    database.exec("ALTER TABLE contacts RENAME TO contacts_legacy");
     return;
   }
 
   // Migrate each row
-  const rows = db.prepare("SELECT * FROM contacts").all() as Array<Record<string, unknown>>;
+  const rows = database.prepare("SELECT * FROM contacts").all() as Array<Record<string, unknown>>;
 
-  const insertContact = db.prepare(`
+  const insertContact = database.prepare(`
     INSERT INTO contacts_v2 (id, name, email, status, agent_id, reply_mode, tags, notes, opt_out, source, last_inbound_at, last_outbound_at, interaction_count, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const insertIdentity = db.prepare(`
+  const insertIdentity = database.prepare(`
     INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
     VALUES (?, ?, ?, 1)
   `);
 
-  const txn = db.transaction(() => {
+  const txn = database.transaction(() => {
     for (const row of rows) {
       const phone = row.phone as string;
       const id = generateId();
@@ -140,38 +177,37 @@ function migrateFromV1(): void {
 
       insertContact.run(
         id,
-        row.name ?? null,
-        row.email ?? null,
-        row.status ?? "allowed",
-        row.agent_id ?? null,
-        row.reply_mode ?? "auto",
-        row.tags ?? null,
-        row.notes ?? null,
-        row.opt_out ?? 0,
-        row.source ?? null,
-        row.last_inbound_at ?? null,
-        row.last_outbound_at ?? null,
-        row.interaction_count ?? 0,
-        row.created_at ?? null,
-        row.updated_at ?? null,
+        serializeLegacyField(row.name),
+        serializeLegacyField(row.email),
+        serializeLegacyField(row.status) ?? "allowed",
+        serializeLegacyField(row.agent_id),
+        serializeLegacyField(row.reply_mode) ?? "auto",
+        serializeLegacyField(row.tags),
+        serializeLegacyField(row.notes),
+        typeof row.opt_out === "number" ? row.opt_out : 0,
+        serializeLegacyField(row.source),
+        serializeLegacyField(row.last_inbound_at),
+        serializeLegacyField(row.last_outbound_at),
+        typeof row.interaction_count === "number" ? row.interaction_count : 0,
+        serializeLegacyField(row.created_at),
+        serializeLegacyField(row.updated_at),
       );
 
       insertIdentity.run(id, platform, phone);
     }
 
     // Rename old table as backup
-    db.exec("ALTER TABLE contacts RENAME TO contacts_legacy");
+    database.exec("ALTER TABLE contacts RENAME TO contacts_legacy");
   });
 
   txn();
 }
 
-migrateFromV1();
-
-// Migration: add allowed_agents column
-const contactCols = db.prepare("PRAGMA table_info(contacts_v2)").all() as Array<{ name: string }>;
-if (!contactCols.some((c) => c.name === "allowed_agents")) {
-  db.exec("ALTER TABLE contacts_v2 ADD COLUMN allowed_agents TEXT");
+function ensureAllowedAgentsColumn(database: Database): void {
+  const contactCols = database.prepare("PRAGMA table_info(contacts_v2)").all() as Array<{ name: string }>;
+  if (!contactCols.some((c) => c.name === "allowed_agents")) {
+    database.exec("ALTER TABLE contacts_v2 ADD COLUMN allowed_agents TEXT");
+  }
 }
 
 // ============================================================================
@@ -250,60 +286,66 @@ interface IdentityRow {
 // Prepared Statements
 // ============================================================================
 
-const stmts = {
-  getContactById: db.prepare("SELECT * FROM contacts_v2 WHERE id = ?"),
-  getContactByIdentity: db.prepare(`
-    SELECT c.* FROM contacts_v2 c
-    JOIN contact_identities ci ON ci.contact_id = c.id
-    WHERE ci.identity_value = ? COLLATE NOCASE
-    LIMIT 1
-  `),
-  getIdentities: db.prepare(
-    "SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at",
-  ),
-  getAllContacts: db.prepare("SELECT * FROM contacts_v2 ORDER BY status, name, id"),
-  getContactsByStatus: db.prepare("SELECT * FROM contacts_v2 WHERE status = ? ORDER BY name, id"),
-  deleteContact: db.prepare("DELETE FROM contacts_v2 WHERE id = ?"),
-  deleteIdentity: db.prepare("DELETE FROM contact_identities WHERE platform = ? AND identity_value = ? COLLATE NOCASE"),
-  insertContact: db.prepare(`
-    INSERT INTO contacts_v2 (id, name, email, status, source, updated_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-  `),
-  insertIdentity: db.prepare(`
-    INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
-    VALUES (?, ?, ?, ?)
-  `),
-  updateStatus: db.prepare("UPDATE contacts_v2 SET status = ?, updated_at = datetime('now') WHERE id = ?"),
-  updateReplyMode: db.prepare("UPDATE contacts_v2 SET reply_mode = ?, updated_at = datetime('now') WHERE id = ?"),
-  upsertPending: db.prepare(`
-    INSERT INTO contacts_v2 (id, name, status, source, updated_at)
-    VALUES (?, ?, 'pending', 'inbound', datetime('now'))
-  `),
-  recordInbound: db.prepare(
-    "UPDATE contacts_v2 SET last_inbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
-  ),
-  recordOutbound: db.prepare(
-    "UPDATE contacts_v2 SET last_outbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
-  ),
-  searchContacts: db.prepare(`
-    SELECT DISTINCT c.* FROM contacts_v2 c
-    LEFT JOIN contact_identities ci ON ci.contact_id = c.id
-    WHERE c.name LIKE ? OR c.email LIKE ? OR ci.identity_value LIKE ?
-    ORDER BY c.name, c.id
-  `),
-  findByTag: db.prepare(`
-    SELECT c.* FROM contacts_v2 c, json_each(c.tags) AS t WHERE t.value = ? ORDER BY c.name, c.id
-  `),
-  getIdentityByValue: db.prepare("SELECT * FROM contact_identities WHERE identity_value = ? COLLATE NOCASE"),
-  moveIdentities: db.prepare("UPDATE contact_identities SET contact_id = ? WHERE contact_id = ?"),
-};
+function createStatements(database: Database) {
+  return {
+    getContactById: database.prepare("SELECT * FROM contacts_v2 WHERE id = ?"),
+    getContactByIdentity: database.prepare(`
+      SELECT c.* FROM contacts_v2 c
+      JOIN contact_identities ci ON ci.contact_id = c.id
+      WHERE ci.identity_value = ? COLLATE NOCASE
+      LIMIT 1
+    `),
+    getIdentities: database.prepare(
+      "SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at",
+    ),
+    getAllContacts: database.prepare("SELECT * FROM contacts_v2 ORDER BY status, name, id"),
+    getContactsByStatus: database.prepare("SELECT * FROM contacts_v2 WHERE status = ? ORDER BY name, id"),
+    deleteContact: database.prepare("DELETE FROM contacts_v2 WHERE id = ?"),
+    deleteIdentity: database.prepare(
+      "DELETE FROM contact_identities WHERE platform = ? AND identity_value = ? COLLATE NOCASE",
+    ),
+    insertContact: database.prepare(`
+      INSERT INTO contacts_v2 (id, name, email, status, source, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `),
+    insertIdentity: database.prepare(`
+      INSERT INTO contact_identities (contact_id, platform, identity_value, is_primary)
+      VALUES (?, ?, ?, ?)
+    `),
+    updateStatus: database.prepare("UPDATE contacts_v2 SET status = ?, updated_at = datetime('now') WHERE id = ?"),
+    updateReplyMode: database.prepare(
+      "UPDATE contacts_v2 SET reply_mode = ?, updated_at = datetime('now') WHERE id = ?",
+    ),
+    upsertPending: database.prepare(`
+      INSERT INTO contacts_v2 (id, name, status, source, updated_at)
+      VALUES (?, ?, 'pending', 'inbound', datetime('now'))
+    `),
+    recordInbound: database.prepare(
+      "UPDATE contacts_v2 SET last_inbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
+    ),
+    recordOutbound: database.prepare(
+      "UPDATE contacts_v2 SET last_outbound_at = datetime('now'), interaction_count = interaction_count + 1, updated_at = datetime('now') WHERE id = ?",
+    ),
+    searchContacts: database.prepare(`
+      SELECT DISTINCT c.* FROM contacts_v2 c
+      LEFT JOIN contact_identities ci ON ci.contact_id = c.id
+      WHERE c.name LIKE ? OR c.email LIKE ? OR ci.identity_value LIKE ?
+      ORDER BY c.name, c.id
+    `),
+    findByTag: database.prepare(`
+      SELECT c.* FROM contacts_v2 c, json_each(c.tags) AS t WHERE t.value = ? ORDER BY c.name, c.id
+    `),
+    getIdentityByValue: database.prepare("SELECT * FROM contact_identities WHERE identity_value = ? COLLATE NOCASE"),
+    moveIdentities: database.prepare("UPDATE contact_identities SET contact_id = ? WHERE contact_id = ?"),
+  };
+}
 
 // ============================================================================
 // Internal Helpers
 // ============================================================================
 
 function getIdentitiesForContact(contactId: string): ContactIdentity[] {
-  const rows = stmts.getIdentities.all(contactId) as IdentityRow[];
+  const rows = getStatements().getIdentities.all(contactId) as IdentityRow[];
   return rows.map((r) => ({
     platform: r.platform,
     value: r.identity_value,
@@ -313,6 +355,7 @@ function getIdentitiesForContact(contactId: string): ContactIdentity[] {
 }
 
 function rowToContact(row: ContactV2Row): Contact {
+  ensureDb();
   const identities = getIdentitiesForContact(row.id);
   // Primary identity value for backward compat (phone field)
   const primary = identities.find((i) => i.isPrimary) ?? identities[0];
@@ -347,25 +390,26 @@ function detectPlatform(identity: string): string {
 
 /** Resolve any identity string to a Contact (or null) */
 function resolveContact(identity: string): Contact | null {
+  const statements = getStatements();
   const normalized = normalizePhone(identity);
 
   // Try by identity_value first
-  const row = stmts.getContactByIdentity.get(normalized) as ContactV2Row | undefined;
+  const row = statements.getContactByIdentity.get(normalized) as ContactV2Row | undefined;
   if (row) return rowToContact(row);
 
   // Try by contact ID directly (short UUID)
-  const byId = stmts.getContactById.get(normalized) as ContactV2Row | undefined;
+  const byId = statements.getContactById.get(normalized) as ContactV2Row | undefined;
   if (byId) return rowToContact(byId);
 
   // Also try the raw input as ID (in case it's already an ID)
   if (identity !== normalized) {
-    const byRawId = stmts.getContactById.get(identity) as ContactV2Row | undefined;
+    const byRawId = statements.getContactById.get(identity) as ContactV2Row | undefined;
     if (byRawId) return rowToContact(byRawId);
   }
 
   // If input is pure digits, also try as LID (common case: LID passed without prefix)
   if (/^\d+$/.test(normalized) && !normalized.startsWith("lid:")) {
-    const asLid = stmts.getContactByIdentity.get(`lid:${normalized}`) as ContactV2Row | undefined;
+    const asLid = statements.getContactByIdentity.get(`lid:${normalized}`) as ContactV2Row | undefined;
     if (asLid) return rowToContact(asLid);
   }
 
@@ -387,7 +431,7 @@ export function getContact(phone: string): Contact | null {
  * Get a contact by its v2 UUID
  */
 export function getContactById(id: string): Contact | null {
-  const row = stmts.getContactById.get(id) as ContactV2Row | undefined;
+  const row = getStatements().getContactById.get(id) as ContactV2Row | undefined;
   return row ? rowToContact(row) : null;
 }
 
@@ -404,14 +448,14 @@ export function isAllowed(phone: string): boolean {
  * Get all contacts
  */
 export function getAllContacts(): Contact[] {
-  return (stmts.getAllContacts.all() as ContactV2Row[]).map(rowToContact);
+  return (getStatements().getAllContacts.all() as ContactV2Row[]).map(rowToContact);
 }
 
 /**
  * Get contacts by status
  */
 export function getContactsByStatus(status: ContactStatus): Contact[] {
-  return (stmts.getContactsByStatus.all(status) as ContactV2Row[]).map(rowToContact);
+  return (getStatements().getContactsByStatus.all(status) as ContactV2Row[]).map(rowToContact);
 }
 
 /**
@@ -432,6 +476,8 @@ export function upsertContact(
   status: ContactStatus = "allowed",
   source?: ContactSource | null,
 ): void {
+  const database = ensureDb();
+  const statements = getStatements();
   const normalized = normalizePhone(phone);
   const existing = resolveContact(normalized);
 
@@ -451,13 +497,13 @@ export function upsertContact(
     }
     fields.push("updated_at = datetime('now')");
     values.push(existing.id);
-    db.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
   } else {
     // Create new
     const id = generateId();
     const platform = detectPlatform(normalized);
-    stmts.insertContact.run(id, name ?? null, null, status, source ?? null);
-    stmts.insertIdentity.run(id, platform, normalized, 1);
+    statements.insertContact.run(id, name ?? null, null, status, source ?? null);
+    statements.insertIdentity.run(id, platform, normalized, 1);
   }
 }
 
@@ -465,24 +511,25 @@ export function upsertContact(
  * Save a pending contact (updates name but doesn't change status if exists)
  */
 export function savePendingContact(phone: string, name?: string | null): boolean {
+  const database = ensureDb();
+  const statements = getStatements();
   const normalized = normalizePhone(phone);
   const existing = resolveContact(normalized);
 
   if (existing) {
     // Update name only, don't change status
     if (name) {
-      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?").run(
-        name,
-        existing.id,
-      );
+      database
+        .prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
+        .run(name, existing.id);
     }
     return false;
   } else {
     // Create new pending contact
     const id = generateId();
     const platform = detectPlatform(normalized);
-    stmts.upsertPending.run(id, name ?? null);
-    stmts.insertIdentity.run(id, platform, normalized, 1);
+    statements.upsertPending.run(id, name ?? null);
+    statements.insertIdentity.run(id, platform, normalized, 1);
     return true;
   }
 }
@@ -491,9 +538,10 @@ export function savePendingContact(phone: string, name?: string | null): boolean
  * Delete a contact (by any identity or ID)
  */
 export function deleteContact(phone: string): boolean {
+  const statements = getStatements();
   const contact = resolveContact(phone);
   if (!contact) return false;
-  stmts.deleteContact.run(contact.id);
+  statements.deleteContact.run(contact.id);
   return true;
 }
 
@@ -501,12 +549,13 @@ export function deleteContact(phone: string): boolean {
  * Set contact status and optionally agent
  */
 export function setContactStatus(phone: string, status: ContactStatus): void {
+  const statements = getStatements();
   const normalized = normalizePhone(phone);
   const contact = resolveContact(normalized);
   if (!contact) {
     upsertContact(normalized, null, status);
   } else {
-    stmts.updateStatus.run(status, contact.id);
+    statements.updateStatus.run(status, contact.id);
   }
 }
 
@@ -529,9 +578,10 @@ export function getContactReplyMode(phone: string): ReplyMode {
  * Set reply mode for a contact
  */
 export function setContactReplyMode(phone: string, mode: ReplyMode): void {
+  const statements = getStatements();
   const contact = resolveContact(phone);
   if (contact) {
-    stmts.updateReplyMode.run(mode, contact.id);
+    statements.updateReplyMode.run(mode, contact.id);
   }
 }
 
@@ -555,25 +605,28 @@ export function getContactName(phone: string): string | null {
  * Creates as 'discovered' if new, updates name if exists but has no name.
  */
 export function saveDiscoveredContact(phone: string, name?: string | null): void {
+  const database = ensureDb();
+  const statements = getStatements();
   const normalized = normalizePhone(phone);
   const existing = resolveContact(normalized);
 
   if (existing) {
     // Update name only if not set
     if (name) {
-      db.prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?").run(
-        name,
-        existing.id,
-      );
+      database
+        .prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
+        .run(name, existing.id);
     }
   } else {
     const id = generateId();
     const platform = detectPlatform(normalized);
-    db.prepare(`
+    database
+      .prepare(`
       INSERT INTO contacts_v2 (id, name, status, source, updated_at)
       VALUES (?, ?, 'discovered', 'discovered', datetime('now'))
-    `).run(id, name ?? null);
-    stmts.insertIdentity.run(id, platform, normalized, 1);
+    `)
+      .run(id, name ?? null);
+    statements.insertIdentity.run(id, platform, normalized, 1);
   }
 }
 
@@ -589,6 +642,8 @@ export function createContact(input: {
   tags?: string[];
   notes?: Record<string, unknown>;
 }): Contact {
+  const database = ensureDb();
+  const statements = getStatements();
   const normalized = normalizePhone(input.phone);
   const existing = resolveContact(normalized);
   if (existing) {
@@ -598,20 +653,22 @@ export function createContact(input: {
   const id = generateId();
   const platform = detectPlatform(normalized);
 
-  db.prepare(`
+  database
+    .prepare(`
     INSERT INTO contacts_v2 (id, name, email, status, source, tags, notes, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(
-    id,
-    input.name ?? null,
-    input.email ?? null,
-    input.status ?? "allowed",
-    input.source ?? null,
-    input.tags ? JSON.stringify(input.tags) : null,
-    input.notes ? JSON.stringify(input.notes) : null,
-  );
+  `)
+    .run(
+      id,
+      input.name ?? null,
+      input.email ?? null,
+      input.status ?? "allowed",
+      input.source ?? null,
+      input.tags ? JSON.stringify(input.tags) : null,
+      input.notes ? JSON.stringify(input.notes) : null,
+    );
 
-  stmts.insertIdentity.run(id, platform, normalized, 1);
+  statements.insertIdentity.run(id, platform, normalized, 1);
   return getContactById(id)!;
 }
 
@@ -632,6 +689,7 @@ export function updateContact(
     allowedAgents?: string[] | null;
   },
 ): Contact {
+  const database = ensureDb();
   const contact = resolveContact(phone);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
@@ -683,7 +741,7 @@ export function updateContact(
   fields.push("updated_at = datetime('now')");
   values.push(contact.id);
 
-  db.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
   return getContactById(contact.id)!;
 }
 
@@ -691,7 +749,7 @@ export function updateContact(
  * Find contacts by tag
  */
 export function findContactsByTag(tag: string): Contact[] {
-  const rows = stmts.findByTag.all(tag) as ContactV2Row[];
+  const rows = getStatements().findByTag.all(tag) as ContactV2Row[];
   return rows.map(rowToContact);
 }
 
@@ -700,7 +758,7 @@ export function findContactsByTag(tag: string): Contact[] {
  */
 export function searchContacts(query: string): Contact[] {
   const pattern = `%${query}%`;
-  const rows = stmts.searchContacts.all(pattern, pattern, pattern) as ContactV2Row[];
+  const rows = getStatements().searchContacts.all(pattern, pattern, pattern) as ContactV2Row[];
   return rows.map(rowToContact);
 }
 
@@ -708,22 +766,23 @@ export function searchContacts(query: string): Contact[] {
  * Merge notes into existing contact notes (shallow merge)
  */
 export function mergeContactNotes(phone: string, newNotes: Record<string, unknown>): void {
+  const database = ensureDb();
   const contact = resolveContact(phone);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
   }
 
   const merged = { ...contact.notes, ...newNotes };
-  db.prepare("UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?").run(
-    JSON.stringify(merged),
-    contact.id,
-  );
+  database
+    .prepare("UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(merged), contact.id);
 }
 
 /**
  * Add a tag to a contact
  */
 export function addContactTag(phone: string, tag: string): void {
+  const database = ensureDb();
   const contact = resolveContact(phone);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
@@ -731,10 +790,9 @@ export function addContactTag(phone: string, tag: string): void {
 
   if (!contact.tags.includes(tag)) {
     const tags = [...contact.tags, tag];
-    db.prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(
-      JSON.stringify(tags),
-      contact.id,
-    );
+    database
+      .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(JSON.stringify(tags), contact.id);
   }
 }
 
@@ -742,25 +800,26 @@ export function addContactTag(phone: string, tag: string): void {
  * Remove a tag from a contact
  */
 export function removeContactTag(phone: string, tag: string): void {
+  const database = ensureDb();
   const contact = resolveContact(phone);
   if (!contact) {
     throw new Error(`Contact not found: ${phone}`);
   }
 
   const tags = contact.tags.filter((t) => t !== tag);
-  db.prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?").run(
-    JSON.stringify(tags),
-    contact.id,
-  );
+  database
+    .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(JSON.stringify(tags), contact.id);
 }
 
 /**
  * Record an inbound message from a contact
  */
 export function recordInbound(phone: string): void {
+  const statements = getStatements();
   const contact = resolveContact(phone);
   if (contact) {
-    stmts.recordInbound.run(contact.id);
+    statements.recordInbound.run(contact.id);
   }
 }
 
@@ -768,9 +827,10 @@ export function recordInbound(phone: string): void {
  * Record an outbound message to a contact
  */
 export function recordOutbound(phone: string): void {
+  const statements = getStatements();
   const contact = resolveContact(phone);
   if (contact) {
-    stmts.recordOutbound.run(contact.id);
+    statements.recordOutbound.run(contact.id);
   }
 }
 
@@ -786,12 +846,12 @@ export function isOptedOut(phone: string): boolean {
  * Set opt-out status for a contact
  */
 export function setOptOut(phone: string, optOut: boolean): void {
+  const database = ensureDb();
   const contact = resolveContact(phone);
   if (contact) {
-    db.prepare("UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?").run(
-      optOut ? 1 : 0,
-      contact.id,
-    );
+    database
+      .prepare("UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(optOut ? 1 : 0, contact.id);
   }
 }
 
@@ -810,30 +870,34 @@ export function getContactIdentities(contactId: string): ContactIdentity[] {
  * Add an identity to an existing contact
  */
 export function addContactIdentity(contactId: string, platform: string, value: string, isPrimary = false): void {
+  const statements = getStatements();
   const normalized = normalizePhone(value);
 
   // Check if this identity already belongs to another contact
-  const existing = stmts.getIdentityByValue.get(normalized) as IdentityRow | undefined;
+  const existing = statements.getIdentityByValue.get(normalized) as IdentityRow | undefined;
   if (existing) {
     if (existing.contact_id === contactId) return; // already linked
     throw new Error(`Identity ${normalized} already belongs to contact ${existing.contact_id}`);
   }
 
-  stmts.insertIdentity.run(contactId, platform, normalized, isPrimary ? 1 : 0);
+  statements.insertIdentity.run(contactId, platform, normalized, isPrimary ? 1 : 0);
 }
 
 /**
  * Remove an identity from a contact
  */
 export function removeContactIdentity(platform: string, value: string): void {
+  const statements = getStatements();
   const normalized = normalizePhone(value);
-  stmts.deleteIdentity.run(platform, normalized);
+  statements.deleteIdentity.run(platform, normalized);
 }
 
 /**
  * Merge two contacts: move all identities from source to target, delete source
  */
 export function mergeContacts(targetId: string, sourceId: string): { merged: number } {
+  const database = ensureDb();
+  const statements = getStatements();
   const target = getContactById(targetId);
   const source = getContactById(sourceId);
   if (!target) throw new Error(`Target contact not found: ${targetId}`);
@@ -841,9 +905,9 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
 
   const sourceIdentities = getIdentitiesForContact(sourceId);
 
-  const txn = db.transaction(() => {
+  const txn = database.transaction(() => {
     // Move identities from source → target
-    stmts.moveIdentities.run(targetId, sourceId);
+    statements.moveIdentities.run(targetId, sourceId);
 
     // Merge best data: prefer target, fill blanks from source
     const updates: string[] = [];
@@ -872,11 +936,11 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')");
       vals.push(targetId);
-      db.prepare(`UPDATE contacts_v2 SET ${updates.join(", ")} WHERE id = ?`).run(...vals);
+      database.prepare(`UPDATE contacts_v2 SET ${updates.join(", ")} WHERE id = ?`).run(...vals);
     }
 
     // Delete source contact
-    stmts.deleteContact.run(sourceId);
+    statements.deleteContact.run(sourceId);
   });
 
   txn();
@@ -957,15 +1021,18 @@ export function setGroupTag(contactRef: string, groupRef: string, tag: string): 
  * Remove a contact's tag from a specific group.
  */
 export function removeGroupTag(contactRef: string, groupRef: string): void {
+  const database = ensureDb();
   const contact = resolveContact(contactRef);
   if (!contact) return;
 
   const groupKey = resolveGroupIdentity(groupRef);
   const groupTags = (contact.notes.groupTags as Record<string, string>) ?? {};
   delete groupTags[groupKey];
-  db.prepare(
-    "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?",
-  ).run(JSON.stringify(groupTags), contact.id);
+  database
+    .prepare(
+      "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?",
+    )
+    .run(JSON.stringify(groupTags), contact.id);
 }
 
 /**
@@ -1015,16 +1082,21 @@ export function saveAccountPending(
   phone: string,
   opts?: { name?: string | null; chatId?: string; isGroup?: boolean },
 ): boolean {
-  const exists = db.prepare("SELECT 1 FROM account_pending WHERE account_id = ? AND phone = ?").get(accountId, phone);
+  const database = ensureDb();
+  const exists = database
+    .prepare("SELECT 1 FROM account_pending WHERE account_id = ? AND phone = ?")
+    .get(accountId, phone);
   const now = Date.now();
-  db.prepare(`
+  database
+    .prepare(`
     INSERT INTO account_pending (account_id, phone, name, chat_id, is_group, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_id, phone) DO UPDATE SET
       name = COALESCE(excluded.name, account_pending.name),
       chat_id = COALESCE(excluded.chat_id, account_pending.chat_id),
       updated_at = excluded.updated_at
-  `).run(accountId, phone, opts?.name ?? null, opts?.chatId ?? null, opts?.isGroup ? 1 : 0, now, now);
+  `)
+    .run(accountId, phone, opts?.name ?? null, opts?.chatId ?? null, opts?.isGroup ? 1 : 0, now, now);
   return !exists;
 }
 
@@ -1032,9 +1104,10 @@ export function saveAccountPending(
  * List pending contacts for an account (or all accounts).
  */
 export function listAccountPending(accountId?: string): AccountPendingEntry[] {
+  const database = ensureDb();
   const rows = accountId
-    ? db.prepare("SELECT * FROM account_pending WHERE account_id = ? ORDER BY updated_at DESC").all(accountId)
-    : db.prepare("SELECT * FROM account_pending ORDER BY account_id, updated_at DESC").all();
+    ? database.prepare("SELECT * FROM account_pending WHERE account_id = ? ORDER BY updated_at DESC").all(accountId)
+    : database.prepare("SELECT * FROM account_pending ORDER BY account_id, updated_at DESC").all();
 
   return (
     rows as Array<{
@@ -1061,7 +1134,9 @@ export function listAccountPending(accountId?: string): AccountPendingEntry[] {
  * Remove a contact from account pending (e.g., after adding a route).
  */
 export function removeAccountPending(accountId: string, phone: string): boolean {
-  const result = db.prepare("DELETE FROM account_pending WHERE account_id = ? AND phone = ?").run(accountId, phone);
+  const result = ensureDb()
+    .prepare("DELETE FROM account_pending WHERE account_id = ? AND phone = ?")
+    .run(accountId, phone);
   return result.changes > 0;
 }
 
@@ -1069,10 +1144,15 @@ export function removeAccountPending(accountId: string, phone: string): boolean 
  * Clear all pending for an account.
  */
 export function clearAccountPending(accountId: string): number {
-  const result = db.prepare("DELETE FROM account_pending WHERE account_id = ?").run(accountId);
+  const result = ensureDb().prepare("DELETE FROM account_pending WHERE account_id = ?").run(accountId);
   return result.changes;
 }
 
 export function closeContacts(): void {
-  db.close();
+  if (db !== null) {
+    db.close();
+    db = null;
+    dbPath = null;
+    stmts = null;
+  }
 }

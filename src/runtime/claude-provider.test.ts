@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -190,3 +190,4 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 });
+afterAll(() => mock.restore());

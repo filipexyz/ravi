@@ -1,6 +1,6 @@
 ---
 title: Features
-description: Complete reference for Ravi's automation features — heartbeat, cron, triggers, outbound pipelines, TTS, image generation, video analysis, transcription, spec mode, ephemeral sessions, cross-session messaging, reactions, and media pipeline.
+description: Complete reference for Ravi's automation features — heartbeat, cron, triggers, TTS, image generation, video analysis, transcription, spec mode, ephemeral sessions, cross-session messaging, reactions, and media pipeline.
 ---
 
 ## Heartbeat
@@ -147,9 +147,9 @@ ravi triggers add "Deploy Alert" \
   --cooldown 1m
 
 # Basic trigger
-ravi triggers add "Lead Qualificado" \
-  --topic "ravi.*.cli.outbound.qualify" \
-  --message "Um lead foi qualificado. Notifica o grupo."
+ravi triggers add "Contato alterado" \
+  --topic "ravi.*.cli.contacts.*" \
+  --message "Um contato foi alterado. Notifica o grupo."
 
 # Manage
 ravi triggers list
@@ -159,67 +159,6 @@ ravi triggers disable <id>
 ravi triggers set <id> cooldown 30s
 ravi triggers test <id>           # Fire with synthetic event data
 ravi triggers rm <id>
-```
-
----
-
-## Outbound Queues
-
-Automated outreach campaigns with round-robin processing, multi-stage pipelines, follow-ups, and humanized delivery.
-
-**Processing priority (per cycle):**
-
-1. **Response entries** — Contacts who replied get processed first (event-driven path)
-2. **Follow-up entries** — Contacts who were contacted but didn't respond, based on per-stage delay configuration and max rounds
-3. **Initial outreach** — New pending entries at round 0 (timer path, advances `currentIndex`)
-
-**Pipeline stages:** Queues support configurable stages (e.g., `cold -> warm -> interested -> qualified -> rejected`). The agent advances entries through stages using `ravi outbound qualify`. Stage delays control how long to wait before follow-up for each stage.
-
-**Prompt structure:** The runner builds two separate parts:
-
-- **System context** (invisible to user): Queue instructions, available pipeline stages, available CLI actions, workflow guidelines, and entry metadata
-- **User prompt** (visible): Contact info for initial outreach, response text for follow-ups, or elapsed time + contact info for no-response follow-ups
-
-**Humanized delivery:** Outbound sends support simulated reading pauses and typing delays. Sentinel-mode agents automatically get humanized timing based on message length (3-5s pause + 2-8s typing).
-
-**Session isolation:** Each entry runs in its own session: `agent:{agentId}:outbound:{queueId}:{phone}`
-
-**Active hours:** Queues respect configurable active hours with timezone support.
-
-**Queue completion:** When all entries reach `done` or `skipped` status, the queue automatically transitions to `completed`.
-
-```bash
-# Create a queue with pipeline stages
-ravi outbound create "Prospecting" \
-  --instructions "Reach out to this lead..." \
-  --every 5m \
-  --agent main \
-  --follow-up '{"cold":120,"warm":30}' \
-  --max-rounds 3
-
-# Add entries
-ravi outbound add <queueId> <phone> --name "Joao Silva"
-ravi outbound add <queueId> <phone> --tag leads
-
-# Manage queues
-ravi outbound list
-ravi outbound show <id>
-ravi outbound start <id>
-ravi outbound pause <id>
-ravi outbound run <id>              # Manual trigger
-
-# Agent actions (used during outbound sessions)
-ravi outbound send <entryId> "Hello!" --typing-delay 3000
-ravi outbound qualify <entryId> warm
-ravi outbound context <entryId> '{"note":"Interested in product X"}'
-ravi outbound done <entryId>
-ravi outbound skip <entryId>
-
-# Reports
-ravi outbound entries <queueId>
-ravi outbound status <entryId>
-ravi outbound chat <entryId>
-ravi outbound report
 ```
 
 ---

@@ -21,6 +21,7 @@
       ],
       "js": [
         "task-duration.js",
+        "task-drawer-state.js",
         "content.js"
       ],
       "css": [

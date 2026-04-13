@@ -40,7 +40,7 @@ interface HookContext {
  */
 type HookCallback = (
   input: PreCompactHookInput,
-  toolUseId: string | null,
+  toolUseId: string | null | undefined,
   context: HookContext,
 ) => Promise<Record<string, unknown>>;
 
@@ -242,7 +242,7 @@ Preste atenção especial a:
         // - Transcript file: Read only
         // - MEMORY.md + memory/*.md: Read/Edit/Write
         // - Everything else under CWD: Read only
-        const fileAccessHook = async (toolInput: Record<string, unknown>, _toolUseId: string | null) => {
+        const fileAccessHook = async (toolInput: Record<string, unknown>, _toolUseId: string | null | undefined) => {
           const filePath = (toolInput.file_path as string) || "";
           const normalizedPath = resolve(agentCwd, filePath);
 
@@ -253,15 +253,15 @@ Preste atenção especial a:
 
           // MEMORY.md + memory/*.md: full access (read + write)
           if (isMemory || isMemoryDir) {
-            return { decision: "allow" as const };
+            return { decision: "approve" as const };
           }
 
           // Read-only: allow transcript and any file under agent CWD
-          // (e.g. CLAUDE.md, HEARTBEAT.md — useful context for memory extraction)
+          // (e.g. AGENTS.md, HEARTBEAT.md — useful context for memory extraction)
           if (isRead) {
             const isUnderCwd = normalizedPath.startsWith(agentCwd + "/") || normalizedPath === agentCwd;
             if (isTranscript || isUnderCwd) {
-              return { decision: "allow" as const };
+              return { decision: "approve" as const };
             }
           }
 
@@ -298,8 +298,9 @@ Preste atenção especial a:
               PreToolUse: [{ hooks: [fileAccessHook] }],
             },
             systemPrompt: {
-              type: "custom",
-              content: `Você é um gerenciador de memórias. Você tem acesso a:
+              type: "preset",
+              preset: "claude_code",
+              append: `Você é um gerenciador de memórias. Você tem acesso a:
 - ${transcriptTmpPath} — transcript da conversa (SOMENTE LEITURA)
 - ${memoryPath} — índice principal de memórias (leitura e escrita, MANTER CURTO <100 linhas)
 - ${memoryDir}/ — pasta com arquivos detalhados por data (leitura e escrita)

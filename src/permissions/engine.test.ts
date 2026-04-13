@@ -1,4 +1,8 @@
-import { describe, expect, it, beforeEach, mock } from "bun:test";
+import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../cli/context.js");
 
 // ============================================================================
 // Mock the relations module (DB-dependent)
@@ -57,6 +61,7 @@ mock.module("./relations.js", () => ({
 }));
 
 mock.module("../cli/context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => mockContext,
 }));
 

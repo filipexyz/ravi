@@ -559,7 +559,7 @@ async function postV3Command(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return response.json();
+  return (await response.json()) as V3CommandResponse;
 }
 
 async function resolveChatList(

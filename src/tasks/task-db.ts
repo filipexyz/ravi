@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb } from "../router/router-db.js";
+import { getDb, getRaviDbPath } from "../router/router-db.js";
 import {
   DEFAULT_TASK_CHECKPOINT_INTERVAL_MS,
   computeTaskCheckpointDueAt,
@@ -115,6 +115,7 @@ interface TaskCommentRow {
 }
 
 let schemaReady = false;
+let schemaDbPath: string | null = null;
 const DEFAULT_TASK_REPORT_EVENTS_JSON = JSON.stringify(["done"] satisfies TaskReportEvent[]);
 
 function normalizeTaskReportToSessionName(sessionName?: string | null): string | null {
@@ -286,7 +287,8 @@ function applyTaskWorktreeSchemaMigrations(): void {
 }
 
 function ensureTaskSchema(): void {
-  if (schemaReady) return;
+  const currentDbPath = getRaviDbPath();
+  if (schemaReady && schemaDbPath === currentDbPath) return;
   const db = getDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -390,6 +392,7 @@ function ensureTaskSchema(): void {
     "CREATE INDEX IF NOT EXISTS idx_task_assignments_checkpoint_due ON task_assignments(status, checkpoint_due_at)",
   );
   schemaReady = true;
+  schemaDbPath = currentDbPath;
 }
 
 function rowToWorktree(

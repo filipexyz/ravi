@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
 
 let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];

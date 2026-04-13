@@ -22,6 +22,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ravi:dispatch-task") {
+    postTaskDispatch(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "ravi:session-prompt") {
     postSessionPrompt(message.payload)
       .then(sendResponse)
@@ -133,11 +140,21 @@ async function fetchTasks(payload = {}) {
   if (payload.status) params.set("status", payload.status);
   if (payload.agentId) params.set("agentId", payload.agentId);
   if (payload.sessionName) params.set("sessionName", payload.sessionName);
+  if (payload.actorSession) params.set("actorSession", payload.actorSession);
   if (payload.eventsLimit) params.set("eventsLimit", String(payload.eventsLimit));
   if (payload.timeZone) params.set("timeZone", payload.timeZone);
   if (payload.todayKey) params.set("todayKey", payload.todayKey);
 
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
+  return response.json();
+}
+
+async function postTaskDispatch(payload = {}) {
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks/dispatch`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
   return response.json();
 }
 

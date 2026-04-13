@@ -7,7 +7,7 @@
 
 import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
-import { getDb, getDbChanges } from "./router-db.js";
+import { getDb, getDbChanges, getRaviDbPath } from "./router-db.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -135,9 +135,14 @@ interface SessionStatements {
 }
 
 let stmts: SessionStatements | null = null;
+let statementsDbPath: string | null = null;
 
 function getStatements(): SessionStatements {
-  if (stmts !== null) return stmts;
+  const currentDbPath = getRaviDbPath();
+  if (stmts !== null && statementsDbPath === currentDbPath) return stmts;
+  if (stmts !== null && statementsDbPath !== currentDbPath) {
+    stmts = null;
+  }
 
   const db = getDb();
 
@@ -225,6 +230,7 @@ function getStatements(): SessionStatements {
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
     updateThinkingLevel: db.prepare("UPDATE sessions SET thinking_level = ?, updated_at = ? WHERE session_key = ?"),
   };
+  statementsDbPath = currentDbPath;
 
   return stmts;
 }

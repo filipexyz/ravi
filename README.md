@@ -31,7 +31,7 @@ It keeps durable context per conversation, routes work into the right session or
 - Runs specialist agents with separate prompts, models, permissions, and working directories
 - Coordinates cross-session work when one agent needs another to inspect, answer, execute, or verify
 - Tracks work through tasks, assignments, comments, and `TASK.md` documents
-- Runs background automation for cron, triggers, heartbeat, and outbound workflows
+- Runs background automation for cron, triggers, and heartbeat workflows
 - Exposes operational state through the CLI, event stream, and WhatsApp overlay
 
 ## Mental Model
@@ -72,7 +72,7 @@ ravi daemon start
         ├── agent runtimes
         ├── task runtime
         ├── permissions + policies
-        ├── runners (cron, heartbeat, triggers, outbound)
+        ├── runners (cron, heartbeat, triggers)
         └── CLI + operator surfaces
 ```
 
@@ -106,7 +106,6 @@ WhatsApp is the primary operator surface today. Telegram and Discord can ride th
 - Cron jobs for scheduled prompts and one-shot work
 - Event triggers subscribed to NATS topics
 - Heartbeat runs for proactive check-ins
-- Outbound queues for automated follow-up workflows
 - Live event streaming for observing the system in motion
 
 ### Channels and Media
@@ -151,13 +150,12 @@ ravi whatsapp connect
 | `whatsapp` | WhatsApp account and group operations |
 | `cron` | Scheduled work |
 | `triggers` | Event-driven automation |
-| `outbound` | Automated follow-up workflows |
 | `heartbeat` | Proactive runs |
 | `permissions` | REBAC access control |
 | `events` | Live event monitoring |
 | `costs` | Usage tracking |
 
-More operational detail lives in [CLAUDE.md](CLAUDE.md).
+More operational detail lives in [AGENTS.md](AGENTS.md).
 
 ## Configuration
 
@@ -181,7 +179,6 @@ agent:main:dm:5511999999999
 agent:main:whatsapp:group:123456
 agent:main:cron:abc123
 agent:main:trigger:a1b2c3d4
-agent:main:outbound:queueId:phone
 ```
 
 Environment lives in `~/.ravi/.env`:

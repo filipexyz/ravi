@@ -93,6 +93,9 @@ export interface TaskProfileTemplates {
   resume: string;
   dispatchSummary: string;
   dispatchEventMessage: string;
+  reportDoneMessage: string;
+  reportBlockedMessage: string;
+  reportFailedMessage: string;
 }
 
 export interface TaskProfileArtifactDefinition {

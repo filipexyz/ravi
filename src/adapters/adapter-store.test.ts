@@ -126,6 +126,7 @@ describe("Session adapter store", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "from-adapter",
       topic: "ravi.test.adapter.events",
+      enabled: true,
       metadata: { event: "smoke.tick" },
     });
     saveSessionAdapterSubscription({
@@ -134,6 +135,7 @@ describe("Session adapter store", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "to-adapter",
       topic: "ravi.test.adapter.commands",
+      enabled: true,
       metadata: { command: "ping" },
     });
 

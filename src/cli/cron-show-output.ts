@@ -99,7 +99,7 @@ function buildCronRoutingLines(job: CronJob, routing: CronRoutingResolution): st
         `Routing source comes from that session's last saved source: ${formatCronRoutingSource(routing.source)}.`,
       );
     } else {
-      lines.push("That session has no saved channel/chat yet, so it does not pin an outbound target by itself.");
+      lines.push("That session has no saved channel/chat yet, so it does not pin a delivery target by itself.");
     }
   } else if (routing.kind === "derived-key") {
     lines.push(
@@ -110,7 +110,7 @@ function buildCronRoutingLines(job: CronJob, routing: CronRoutingResolution): st
         `Runner falls back to deriving routing from the session key: ${formatCronRoutingSource(routing.source)}.`,
       );
     } else {
-      lines.push("Runner cannot derive channel/chat from that value, so it does not pin an outbound target by itself.");
+      lines.push("Runner cannot derive channel/chat from that value, so it does not pin a delivery target by itself.");
     }
   } else {
     lines.push(
@@ -134,7 +134,7 @@ function buildCronRoutingLines(job: CronJob, routing: CronRoutingResolution): st
     (routing.kind === "derived-key" && !routing.source)
   ) {
     lines.push(
-      "If no source is available at execution time, the prompt still runs, but outbound delivery is not explicitly targeted.",
+      "If no source is available at execution time, the prompt still runs, but channel delivery is not explicitly targeted.",
     );
   }
 

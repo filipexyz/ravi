@@ -18,6 +18,14 @@ export function matchOmniChatFromRow<T extends OmniChatMatchCandidate>(
   row: OverlayChatRowMatchHints,
   chats: T[],
 ): T | null {
+  type RankedCandidate = {
+    chat: T;
+    score: number;
+    titleScore: number;
+    previewScore: number;
+    supportScore: number;
+  };
+
   const chatIdVariants = buildOmniChatIdVariants(row.chatIdCandidate);
   if (chatIdVariants.length > 0) {
     const byChatId = chats
@@ -59,7 +67,7 @@ export function matchOmniChatFromRow<T extends OmniChatMatchCandidate>(
         supportScore,
       };
     })
-    .filter(Boolean)
+    .filter((candidate): candidate is RankedCandidate => candidate !== null)
     .sort(
       (a, b) =>
         compareChatRecencyDesc(a.chat, b.chat) ||

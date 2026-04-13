@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualRouterIndexModule = await import("../../router/index.js");
+const actualRouterSessionsModule = await import("../../router/sessions.js");
+const actualRouterDbModule = await import("../../router/router-db.js");
 
 type RuntimeEventPayload = Record<string, unknown>;
 type ResponseEventPayload = { response?: string; error?: string };
@@ -57,6 +63,7 @@ mock.module("../../omni/session-stream.js", () => ({
 }));
 
 mock.module("../../router/sessions.js", () => ({
+  ...actualRouterSessionsModule,
   listSessions: () => [],
   getSessionsByAgent: () => [],
   deleteSession: () => {},
@@ -77,11 +84,13 @@ mock.module("../../router/session-key.js", () => ({
 }));
 
 mock.module("../../router/index.js", () => ({
+  ...actualRouterIndexModule,
   loadRouterConfig: () => routerConfig,
   expandHome: (path: string) => path,
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  ...actualRouterDbModule,
   dbListContexts: (options?: { sessionKey?: string }) =>
     listedContexts.filter((context) => {
       if (!options?.sessionKey) return true;

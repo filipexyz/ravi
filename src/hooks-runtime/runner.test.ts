@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { getRecentHistory } from "../db.js";
 
 const promptCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 const taskCommentCalls: Array<{ taskId: string; payload: Record<string, unknown> }> = [];
+const actualTasksIndexModule = await import("../tasks/index.js");
 
 mock.module("../omni/session-stream.js", () => ({
   publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
@@ -11,6 +12,7 @@ mock.module("../omni/session-stream.js", () => ({
 }));
 
 mock.module("../tasks/index.js", () => ({
+  ...actualTasksIndexModule,
   commentTask: mock(async (taskId: string, payload: Record<string, unknown>) => {
     taskCommentCalls.push({ taskId, payload });
     return {};
@@ -142,3 +144,4 @@ describe("hooks-runtime runner", () => {
     ]);
   });
 });
+afterAll(() => mock.restore());

@@ -19,7 +19,6 @@ import { dbGetSetting } from "./router/router-db.js";
 import { getMainSession } from "./router/sessions.js";
 import { startHeartbeatRunner, stopHeartbeatRunner } from "./heartbeat/index.js";
 import { startCronRunner, stopCronRunner } from "./cron/index.js";
-import { startOutboundRunner, stopOutboundRunner } from "./outbound/index.js";
 import { startTriggerRunner, stopTriggerRunner } from "./triggers/index.js";
 import { startEphemeralRunner, stopEphemeralRunner } from "./ephemeral/index.js";
 import { startHookRunner, stopHookRunner } from "./hooks-runtime/index.js";
@@ -118,7 +117,6 @@ async function shutdown(signal: string) {
     await stopEphemeralRunner();
     await stopHookRunner();
     await stopTriggerRunner();
-    await stopOutboundRunner();
     await stopHeartbeatRunner();
     await stopCronRunner();
     await stopTaskCheckpointRunner();
@@ -213,7 +211,7 @@ export async function startDaemon() {
     });
   } else {
     // No omni — create a stub gateway that handles internal routing only
-    log.warn("Creating gateway without omni — outbound messages will fail");
+    log.warn("Creating gateway without omni — channel delivery will fail");
     const stubSender = createStubSender();
     const stubConsumer = createStubConsumer();
     gateway = createGateway({
@@ -227,7 +225,7 @@ export async function startDaemon() {
   log.info("Gateway started");
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
-  // Outbound, trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
+  // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
   const isLeader = await tryAcquireLeadership("runners");
 
   if (isLeader) {
@@ -248,9 +246,6 @@ export async function startDaemon() {
       log.info("Heartbeat, cron, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
-
-  await startOutboundRunner();
-  log.info("Outbound runner started");
 
   await startTriggerRunner();
   log.info("Trigger runner started");

@@ -31,6 +31,9 @@ export function gradeEvalRun(
   after: EvalSnapshot,
   diff: EvalSnapshotDiff,
 ): EvalGrade {
+  const toUnsupportedCriterion = (criterion: LoadedEvalTaskSpec["spec"]["rubric"][number]) =>
+    criterion as { id: string; type: string };
+
   const criteria: EvalCriterionResult[] = task.spec.rubric.map((criterion) => {
     switch (criterion.type) {
       case "response.contains": {
@@ -100,11 +103,12 @@ export function gradeEvalRun(
       }
 
       default: {
+        const unsupported = toUnsupportedCriterion(criterion);
         return {
-          id: criterion.id,
-          type: criterion.type,
+          id: unsupported.id,
+          type: unsupported.type,
           pass: false,
-          details: `Unsupported criterion type: ${criterion.type}`,
+          details: `Unsupported criterion type: ${unsupported.type}`,
         };
       }
     }

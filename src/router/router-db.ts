@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
+import { getRaviStateDir } from "../utils/paths.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -22,8 +23,8 @@ const log = logger.child("router:db");
 // ============================================================================
 
 const RAVI_DIR = join(homedir(), "ravi");
-const RAVI_DOT_DIR = join(homedir(), ".ravi");
-const DB_PATH = join(RAVI_DOT_DIR, "ravi.db");
+const DEFAULT_RAVI_STATE_DIR = getRaviStateDir({});
+const DEFAULT_DB_PATH = join(DEFAULT_RAVI_STATE_DIR, "ravi.db");
 const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 
 // ============================================================================
@@ -268,32 +269,61 @@ export interface ListContextsOptions {
 // Lazy Database Initialization
 // ============================================================================
 
-let db: Database | null = null;
+type RouterDbState = {
+  db: Database | null;
+  dbPath: string | null;
+  stmts: PreparedStatements | null;
+};
+
+type RouterDbGlobal = typeof globalThis & {
+  __raviRouterDbState?: RouterDbState;
+};
+
+const routerDbGlobal = globalThis as RouterDbGlobal;
+const routerDbState =
+  routerDbGlobal.__raviRouterDbState ??
+  (routerDbGlobal.__raviRouterDbState = {
+    db: null,
+    dbPath: null,
+    stmts: null,
+  });
+
+function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(getRaviStateDir(env), "ravi.db");
+}
 
 /**
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
 function getDb(): Database {
-  if (db !== null) {
-    return db;
+  const nextDbPath = resolveDbPath();
+  if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
+    return routerDbState.db;
+  }
+  if (routerDbState.db !== null && routerDbState.dbPath !== nextDbPath) {
+    closeRouterDb();
   }
 
+  const stateDir = getRaviStateDir();
+
   // Create directory on first access
-  mkdirSync(RAVI_DOT_DIR, { recursive: true });
+  mkdirSync(stateDir, { recursive: true });
 
   // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
-  if (!existsSync(DB_PATH) && existsSync(LEGACY_DB_PATH)) {
+  if (nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
     log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
-    renameSync(LEGACY_DB_PATH, DB_PATH);
+    renameSync(LEGACY_DB_PATH, nextDbPath);
     // Also move WAL/SHM files if they exist
     for (const suffix of ["-wal", "-shm"]) {
       const legacy = LEGACY_DB_PATH + suffix;
-      if (existsSync(legacy)) renameSync(legacy, DB_PATH + suffix);
+      if (existsSync(legacy)) renameSync(legacy, nextDbPath + suffix);
     }
   }
 
-  db = new Database(DB_PATH);
+  const db = new Database(nextDbPath);
+  routerDbState.db = db;
+  routerDbState.dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon)
   db.exec("PRAGMA journal_mode = WAL");
@@ -760,53 +790,6 @@ function getDb(): Database {
   }
 
   db.exec(`
-    -- Outbound queues
-    CREATE TABLE IF NOT EXISTS outbound_queues (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT,
-      name TEXT NOT NULL,
-      description TEXT,
-      instructions TEXT NOT NULL,
-      status TEXT DEFAULT 'paused' CHECK(status IN ('active','paused','completed')),
-      interval_ms INTEGER NOT NULL,
-      active_start TEXT,
-      active_end TEXT,
-      timezone TEXT,
-      current_index INTEGER DEFAULT 0,
-      next_run_at INTEGER,
-      last_run_at INTEGER,
-      last_status TEXT,
-      last_error TEXT,
-      last_duration_ms INTEGER,
-      total_processed INTEGER DEFAULT 0,
-      total_sent INTEGER DEFAULT 0,
-      total_skipped INTEGER DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS outbound_entries (
-      id TEXT PRIMARY KEY,
-      queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
-      contact_phone TEXT NOT NULL,
-      contact_email TEXT,
-      position INTEGER NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
-      context TEXT DEFAULT '{}',
-      rounds_completed INTEGER DEFAULT 0,
-      last_processed_at INTEGER,
-      last_sent_at INTEGER,
-      last_response_at INTEGER,
-      last_response_text TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_outbound_queues_status ON outbound_queues(status);
-    CREATE INDEX IF NOT EXISTS idx_outbound_queues_next_run ON outbound_queues(next_run_at);
-    CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
-    CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
-
     -- Event triggers
     CREATE TABLE IF NOT EXISTS triggers (
       id TEXT PRIMARY KEY,
@@ -826,85 +809,6 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled);
     CREATE INDEX IF NOT EXISTS idx_triggers_topic ON triggers(topic);
   `);
-
-  // Migrations for outbound_entries
-  const entryColumns = db.prepare("PRAGMA table_info(outbound_entries)").all() as Array<{ name: string }>;
-  if (!entryColumns.some((c) => c.name === "pending_receipt")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN pending_receipt TEXT");
-    log.info("Added pending_receipt column to outbound_entries table");
-  }
-  if (!entryColumns.some((c) => c.name === "sender_id")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN sender_id TEXT");
-    log.info("Added sender_id column to outbound_entries table");
-  }
-  if (!entryColumns.some((c) => c.name === "qualification")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN qualification TEXT");
-    log.info("Added qualification column to outbound_entries table");
-  }
-
-  // Migrations for outbound_queues
-  const queueColumns = db.prepare("PRAGMA table_info(outbound_queues)").all() as Array<{ name: string }>;
-  if (!queueColumns.some((c) => c.name === "follow_up")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN follow_up TEXT");
-    log.info("Added follow_up column to outbound_queues table");
-  }
-  if (!queueColumns.some((c) => c.name === "max_rounds")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
-    log.info("Added max_rounds column to outbound_queues table");
-  }
-  if (!queueColumns.some((c) => c.name === "stages")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN stages TEXT");
-    log.info("Added stages column to outbound_queues table");
-  }
-
-  // Migration: add 'agent' to outbound_entries status CHECK constraint
-  // SQLite requires table recreation to modify CHECK constraints
-  const entrySql =
-    (
-      db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='outbound_entries'").get() as
-        | { sql: string }
-        | undefined
-    )?.sql ?? "";
-  if (entrySql && !entrySql.includes("'agent'")) {
-    db.exec("PRAGMA foreign_keys=OFF");
-    try {
-      db.exec(`
-        BEGIN;
-        CREATE TABLE outbound_entries_new (
-          id TEXT PRIMARY KEY,
-          queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
-          contact_phone TEXT NOT NULL,
-          contact_email TEXT,
-          position INTEGER NOT NULL,
-          status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
-          context TEXT DEFAULT '{}',
-          qualification TEXT,
-          rounds_completed INTEGER DEFAULT 0,
-          last_processed_at INTEGER,
-          last_sent_at INTEGER,
-          last_response_at INTEGER,
-          last_response_text TEXT,
-          pending_receipt TEXT,
-          sender_id TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        INSERT INTO outbound_entries_new SELECT
-          id, queue_id, contact_phone, contact_email, position, status, context, qualification,
-          rounds_completed, last_processed_at, last_sent_at, last_response_at, last_response_text,
-          pending_receipt, sender_id, created_at, updated_at
-        FROM outbound_entries;
-        DROP TABLE outbound_entries;
-        ALTER TABLE outbound_entries_new RENAME TO outbound_entries;
-        CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
-        CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
-        COMMIT;
-      `);
-      log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
-    } finally {
-      db.exec("PRAGMA foreign_keys=ON");
-    }
-  }
 
   // Migrations for triggers
   const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>;
@@ -1115,7 +1019,7 @@ function getDb(): Database {
     log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
   }
 
-  log.debug("Database initialized", { path: DB_PATH });
+  log.debug("Database initialized", { path: nextDbPath });
   return db;
 }
 
@@ -1183,25 +1087,24 @@ interface PreparedStatements {
   insertContext: Statement;
   getContextById: Statement;
   getContextByKey: Statement;
+  listContexts: Statement;
   touchContext: Statement;
   revokeContext: Statement;
   updateContextCapabilities: Statement;
   deleteContext: Statement;
 }
 
-let stmts: PreparedStatements | null = null;
-
 /**
  * Get prepared statements, creating them on first access.
  */
 function getStatements(): PreparedStatements {
-  if (stmts !== null) {
-    return stmts;
+  if (routerDbState.stmts !== null) {
+    return routerDbState.stmts;
   }
 
   const database = getDb();
 
-  stmts = {
+  routerDbState.stmts = {
     // Agents
     insertAgent: database.prepare(`
       INSERT INTO agents (id, name, cwd, model, provider, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
@@ -1388,7 +1291,7 @@ function getStatements(): PreparedStatements {
     deleteContext: database.prepare("DELETE FROM contexts WHERE context_id = ?"),
   };
 
-  return stmts;
+  return routerDbState.stmts!;
 }
 
 // ============================================================================
@@ -1568,7 +1471,7 @@ function rowToContext(row: ContextRow): ContextRecord {
 /**
  * Create a new agent
  */
-export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentConfig {
+export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentConfig {
   const validated = AgentInputSchema.parse(input);
   const now = Date.now();
   const s = getStatements();
@@ -1766,7 +1669,7 @@ export function dbSetAgentSpecMode(id: string, enabled: boolean): void {
 /**
  * Create a new route
  */
-export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteConfig {
+export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteConfig {
   const validated = RouteInputSchema.parse(input);
   const s = getStatements();
 
@@ -1971,7 +1874,7 @@ export function dbListSettings(): Record<string, string> {
 // Instance CRUD
 // ============================================================================
 
-export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): InstanceConfig {
+export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): InstanceConfig {
   const validated = InstanceInputSchema.parse(input);
   if (validated.agent && !dbGetAgent(validated.agent)) {
     throw new Error(`Agent not found: ${validated.agent}`);
@@ -2085,7 +1988,7 @@ export function dbListDeletedInstances(): InstanceConfig[] {
 // Context Registry
 // ============================================================================
 
-export function dbCreateContext(input: z.infer<typeof ContextInputSchema>): ContextRecord {
+export function dbCreateContext(input: z.input<typeof ContextInputSchema>): ContextRecord {
   const validated = ContextInputSchema.parse(input);
   if (validated.agentId && !dbGetAgent(validated.agentId)) {
     throw new Error(`Agent not found: ${validated.agentId}`);
@@ -2250,10 +2153,11 @@ export function getAnnounceCompaction(): boolean {
  * Close the database connection
  */
 export function closeRouterDb(): void {
-  if (db !== null) {
-    db.close();
-    db = null;
-    stmts = null;
+  if (routerDbState.db !== null) {
+    routerDbState.db.close();
+    routerDbState.db = null;
+    routerDbState.stmts = null;
+    routerDbState.dbPath = null;
   }
 }
 
@@ -2266,14 +2170,14 @@ export { getDb, getDbChanges };
  * Get the database path
  */
 export function getRaviDbPath(): string {
-  return DB_PATH;
+  return resolveDbPath();
 }
 
 /**
  * Get the ravi directory
  */
 export function getRaviDir(): string {
-  return RAVI_DIR;
+  return getRaviStateDir();
 }
 
 // ============================================================================

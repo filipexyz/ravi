@@ -1,9 +1,16 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeProviderId } from "./runtime/types.js";
+
+const actualDbModule = await import("./db.js");
+const actualRouterIndexModule = await import("./router/index.js");
+const actualCliContextModule = await import("./cli/context.js");
+const actualPermissionsEngineModule = await import("./permissions/engine.js");
+const actualRemoteSpawnNatsModule = await import("./remote-spawn-nats.js");
+const actualLoggerModule = await import("./utils/logger.js");
 
 const LIVE_TIMEOUT_MS = 180_000;
 
@@ -31,6 +38,11 @@ const sessions = new Map<string, SessionState>();
 let activeProvider: RuntimeProviderId = "claude";
 let activeModel = "haiku";
 let activeCwd = "/tmp/ravi-live-bot";
+let saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
+let agentCanImpl = (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) =>
+  actualPermissionsEngineModule.agentCan(...args);
+let canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+  actualPermissionsEngineModule.canWithCapabilities(...args);
 
 function getOrCreateSessionState(
   sessionKey: string,
@@ -103,7 +115,8 @@ mock.module("./nats.js", () => ({
 }));
 
 mock.module("./db.js", () => ({
-  saveMessage: mock(() => {}),
+  ...actualDbModule,
+  saveMessage: mock((...args: Parameters<typeof actualDbModule.saveMessage>) => saveMessageImpl(...args)),
   backfillProviderSessionId: mock(() => {}),
   close: mock(() => {}),
 }));
@@ -114,6 +127,7 @@ mock.module("./prompt-builder.js", () => ({
 }));
 
 mock.module("./router/index.js", () => ({
+  ...actualRouterIndexModule,
   getOrCreateSession: (key: string, agentId: string, agentCwd: string, defaults?: Partial<SessionState>) =>
     getOrCreateSessionState(key, agentId, agentCwd, defaults),
   getSession: (key: string) => sessions.get(key) ?? null,
@@ -180,6 +194,7 @@ mock.module("./config-store.js", () => ({
 }));
 
 mock.module("./cli/context.js", () => ({
+  ...actualCliContextModule,
   runWithContext: (_ctx: unknown, fn: () => unknown) => fn(),
 }));
 
@@ -210,16 +225,10 @@ mock.module("./hooks/sanitize-bash.js", () => ({
 }));
 
 mock.module("./permissions/engine.js", () => ({
-  agentCan: () => true,
-  canWithCapabilities: (
-    capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
-    permission: string,
-    objectType: string,
-    objectId: string,
-  ) =>
-    capabilities.some(
-      (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
-    ),
+  ...actualPermissionsEngineModule,
+  agentCan: (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) => agentCanImpl(...args),
+  canWithCapabilities: (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+    canWithCapabilitiesImpl(...args),
 }));
 
 mock.module("./constants.js", () => ({
@@ -243,6 +252,7 @@ mock.module("./remote-spawn.js", () => ({
 }));
 
 mock.module("./remote-spawn-nats.js", () => ({
+  ...actualRemoteSpawnNatsModule,
   createNatsRemoteSpawn: () => {
     throw new Error("Remote spawn should not be used in live bot tests");
   },
@@ -251,7 +261,10 @@ mock.module("./remote-spawn-nats.js", () => ({
 mock.module("./utils/logger.js", () => {
   const noop = () => loggerChild;
   const loggerChild = { info: noop, warn: noop, error: noop, debug: noop, child: noop };
-  return { logger: { child: () => loggerChild, setLevel: noop } };
+  return {
+    ...actualLoggerModule,
+    logger: { ...actualLoggerModule.logger, child: () => loggerChild, setLevel: noop },
+  };
 });
 
 const { RaviBot } = await import("./bot.js");
@@ -310,6 +323,11 @@ describe("RaviBot live provider integration", () => {
   afterEach(() => {
     emittedEvents.length = 0;
     sessions.clear();
+    saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
+    agentCanImpl = (...args: Parameters<typeof actualPermissionsEngineModule.agentCan>) =>
+      actualPermissionsEngineModule.agentCan(...args);
+    canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
+      actualPermissionsEngineModule.canWithCapabilities(...args);
   });
 
   const claudeIt = canRunProvider("claude") ? it : it.skip;
@@ -353,3 +371,4 @@ function hasCodexCliAuth(): boolean {
 
   return existsSync(join(homedir(), ".codex", "auth.json"));
 }
+afterAll(() => mock.restore());

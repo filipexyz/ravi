@@ -12,6 +12,7 @@ import {
   buildTaskDispatchEventMessageForProfile,
   buildTaskDispatchPromptForProfile,
   buildTaskDispatchSummaryForProfile,
+  buildTaskReportMessageForProfile,
   buildTaskResumePromptForProfile,
   getDefaultTaskSessionNameForProfile,
   getDefaultTaskSessionNameForTask,
@@ -420,6 +421,7 @@ export function buildTaskArtifactSummary(
   const profile = resolveTaskProfileForTask(task);
   const workspaceRoot = resolveTaskArtifactWorkspaceRoot(task, activeAssignment);
   const effectiveCwd = workspaceRoot ?? "/tmp";
+  const artifactWorkspaceRoot = workspaceRoot ?? effectiveCwd;
   const taskDocPath = taskProfileUsesTaskDocument(profile) ? getTaskDocPath(task) : null;
   const primaryArtifact = resolveTaskProfilePrimaryArtifact(task, {
     effectiveCwd,
@@ -452,7 +454,7 @@ export function buildTaskArtifactSummary(
           : "supporting",
       label: artifact.label,
       absolutePath,
-      workspaceRelativePath: resolveWorkspaceRelativePath(absolutePath, workspaceRoot),
+      workspaceRelativePath: resolveWorkspaceRelativePath(artifact.path, artifactWorkspaceRoot),
       exists: absolutePath ? existsSync(absolutePath) : null,
     });
   });
@@ -1005,32 +1007,14 @@ function toTaskReportEvent(type: TaskEvent["type"]): TaskReportEvent | null {
   }
 }
 
-function buildTaskReportAnswerMessage(
-  reportEvent: TaskReportEvent,
-  input: {
-    taskId: string;
-    title?: string | null;
-    message?: string | null;
-    assigneeAgentId?: string | null;
-    assigneeSessionName?: string | null;
-  },
-): string {
-  const headline =
-    reportEvent === "done" ? "Task concluída" : reportEvent === "blocked" ? "Task bloqueada" : "Task falhou";
-  const detailLabel = reportEvent === "done" ? "Resumo" : reportEvent === "blocked" ? "Blocker" : "Erro";
-  const parts = [`${headline}: ${input.taskId}`];
-  if (input.title?.trim()) {
-    parts.push(input.title.trim());
+function resolveTaskReportEffectiveCwd(task: TaskRecord): string {
+  const agentId = task.assigneeAgentId?.trim();
+  if (!agentId) {
+    return task.taskDir?.trim() || process.cwd();
   }
 
-  let message = parts.join(" · ");
-  if (input.message?.trim()) {
-    message += `\n${detailLabel}: ${input.message.trim()}`;
-  }
-  if (input.assigneeAgentId || input.assigneeSessionName) {
-    message += `\nResponsável: ${input.assigneeAgentId ?? "-"}${input.assigneeSessionName ? `/${input.assigneeSessionName}` : ""}`;
-  }
-  return message;
+  const agent = getAgent(agentId);
+  return agent?.cwd ? expandHome(agent.cwd) : task.taskDir?.trim() || process.cwd();
 }
 
 export function buildTaskSessionLink(task: TaskRecord): {
@@ -1068,14 +1052,30 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
     return null;
   }
 
+  const profile = resolveTaskProfileForTask(task);
   const sourceSessionName = task.assigneeSessionName?.trim() || event.sessionName?.trim() || task.id;
+  const effectiveCwd = resolveTaskReportEffectiveCwd(task);
+  const worktree = latestAssignment?.worktree ?? task.worktree;
+  const taskDocPath = resolveTaskDocumentPathForProfile(task, profile);
+  const primaryArtifact = resolveTaskProfilePrimaryArtifact(task, {
+    effectiveCwd,
+    ...(worktree ? { worktree } : {}),
+    ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+    taskProfile: profile,
+    ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
+    sessionName: sourceSessionName,
+  });
   await publishSessionPrompt(reportToSessionName, {
-    prompt: `[System] Answer: [from: ${sourceSessionName}] ${buildTaskReportAnswerMessage(reportEvent, {
-      taskId: task.id,
-      title: task.title,
+    prompt: `[System] Answer: [from: ${sourceSessionName}] ${buildTaskReportMessageForProfile(task, reportEvent, {
+      effectiveCwd,
+      sourceSessionName,
+      ...(worktree ? { worktree } : {}),
+      ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+      taskProfile: profile,
+      ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+      ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
+      sessionName: sourceSessionName,
       message: task.summary ?? task.blockerReason ?? event.message ?? null,
-      assigneeAgentId: task.assigneeAgentId ?? null,
-      assigneeSessionName: task.assigneeSessionName ?? null,
     })}`,
     deliveryBarrier: "after_response",
   });

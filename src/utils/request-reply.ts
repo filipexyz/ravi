@@ -37,7 +37,7 @@ export async function requestReply<T = Record<string, unknown>>(
     const cleanup = () => {
       if (!settled) {
         settled = true;
-        stream.return?.();
+        stream.return?.(undefined);
       }
     };
 

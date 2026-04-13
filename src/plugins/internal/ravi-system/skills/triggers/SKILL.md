@@ -85,13 +85,12 @@ Patterns usam wildcards (`*`):
 | `ravi.*.cli.{group}.{command}` | Execuções de CLI tools (ex: `ravi.*.cli.contacts.add`) |
 | `ravi.*.tool` | Execuções de SDK tools (Bash, Read, etc) |
 
-### Outbound
+### Delivery / Receipts
 
 | Pattern | Descrição |
 |---------|-----------|
 | `ravi.outbound.deliver` | Mensagens enviadas para canais |
 | `ravi.outbound.receipt` | Read receipts enviados |
-| `ravi.outbound.refresh` | Refresh de filas outbound |
 
 **Bloqueados (anti-loop):** Triggers em tópicos `ravi.session.*` são rejeitados para evitar loops internos.
 
@@ -136,9 +135,9 @@ CC parou em {{data.cwd}}. Última msg: "{{data.last_assistant_message}}". Inform
 
 ## Exemplos
 
-Criar trigger para notificar quando lead é qualificado:
+Criar trigger para notificar quando contatos forem modificados:
 ```bash
-ravi triggers add "Lead Qualificado" --topic "ravi.*.cli.outbound.qualify" --message "Analise a qualificação e notifique o grupo"
+ravi triggers add "Contato alterado" --topic "ravi.*.cli.contacts.*" --message "Analise a mudança e notifique o grupo"
 ```
 
 Criar trigger para monitorar erros:

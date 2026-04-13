@@ -185,6 +185,7 @@ describe("adapter smoke", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "to-adapter",
       topic: COMMAND_TOPIC,
+      enabled: true,
     });
     saveSessionAdapterSubscription({
       subscriptionId: "adapter-smoke-from-adapter",
@@ -192,6 +193,7 @@ describe("adapter smoke", () => {
       sessionKey: TEST_SESSION_KEY,
       direction: "from-adapter",
       topic: EVENT_TOPIC,
+      enabled: true,
     });
   });
 

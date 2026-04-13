@@ -149,6 +149,9 @@ export class TaskProfileCommands {
     console.log(`  resume:              ${profile.templates.resume.split("\n")[0]}`);
     console.log(`  dispatchSummary:     ${profile.templates.dispatchSummary}`);
     console.log(`  dispatchEventMessage ${profile.templates.dispatchEventMessage}`);
+    console.log(`  reportDoneMessage:   ${profile.templates.reportDoneMessage}`);
+    console.log(`  reportBlockedMessage: ${profile.templates.reportBlockedMessage}`);
+    console.log(`  reportFailedMessage: ${profile.templates.reportFailedMessage}`);
   }
 
   @Command({ name: "preview", description: "Render a profile preview with the resolved template context" })
@@ -210,6 +213,12 @@ export class TaskProfileCommands {
     console.log(preview.rendered.dispatchSummary);
     console.log("\nDispatch event message:\n");
     console.log(preview.rendered.dispatchEventMessage);
+    console.log("\nDone report message:\n");
+    console.log(preview.rendered.reportDoneMessage);
+    console.log("\nBlocked report message:\n");
+    console.log(preview.rendered.reportBlockedMessage);
+    console.log("\nFailed report message:\n");
+    console.log(preview.rendered.reportFailedMessage);
   }
 
   @Command({ name: "validate", description: "Validate one profile or the whole resolved catalog" })

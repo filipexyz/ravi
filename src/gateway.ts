@@ -8,7 +8,7 @@
  *   ravi.session.*.response    → send via omni HTTP
  *   ravi.session.*.claude      → typing heartbeat (Claude compatibility)
  *   ravi.session.*.runtime     → typing heartbeat (provider-neutral)
- *   ravi.outbound.deliver      → direct send (outbound module)
+ *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
  *   ravi.media.send            → media files
  *   ravi.config.changed        → reload router config + REBAC sync
@@ -18,7 +18,6 @@ import { nats } from "./nats.js";
 import type { ResponseMessage } from "./bot.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
-import { dbFindActiveEntryByPhone, dbUpdateEntry } from "./outbound/index.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { SessionTypingTracker } from "./gateway-typing.js";
@@ -248,7 +247,7 @@ export class Gateway {
   }
 
   /**
-   * Subscribe to direct send events from the outbound module.
+   * Subscribe to direct delivery events.
    * Queue group: only one gateway daemon processes each deliver event.
    */
   private subscribeToDirectSend(): void {
@@ -333,11 +332,6 @@ export class Gateway {
             nats
               .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
               .catch(() => {});
-          }
-
-          const entry = dbFindActiveEntryByPhone(to);
-          if (entry?.id) {
-            dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
           }
         } catch (err) {
           log.error("Failed to deliver direct send", { to, instanceId, error: err });

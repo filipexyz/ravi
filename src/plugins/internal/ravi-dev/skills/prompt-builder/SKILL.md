@@ -185,18 +185,3 @@ if (channelName === "MeuCanal") {
 ```
 
 2. O channelName vem do `channelType` do OmniConsumer (ex: `"whatsapp-baileys"`, `"discord"`, `"telegram"`).
-
-## Outbound System Context
-
-O sistema de outbound injeta contexto adicional via `prompt._outboundSystemContext`:
-```typescript
-if (prompt._outboundSystemContext) {
-  systemPromptAppend += "\n\n" + prompt._outboundSystemContext;
-}
-```
-
-Isso inclui:
-- Instrucoes da queue
-- Tools disponiveis (outbound_send, outbound_qualify, etc)
-- Workflow de qualificacao
-- Metadata da entry (ID, round, qualification)

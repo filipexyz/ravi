@@ -1,4 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualRuntimeContextRegistryModule = await import("../runtime/context-registry.js");
 
 let resolvedContext:
   | {
@@ -14,6 +18,7 @@ let resolvedContext:
   | undefined;
 
 mock.module("../runtime/context-registry.js", () => ({
+  ...actualRuntimeContextRegistryModule,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
   getRuntimeContextFromEnv: () => resolvedContext,
 }));

@@ -35,7 +35,7 @@ describe("file access hook security", () => {
   });
 
   test("blocks access to other files in same directory", () => {
-    const result = checkFileAccess(agentCwd, memoryPath, "CLAUDE.md");
+    const result = checkFileAccess(agentCwd, memoryPath, "AGENTS.md");
     expect(result.allowed).toBe(false);
   });
 
@@ -50,7 +50,7 @@ describe("file access hook security", () => {
       "../../../etc/passwd",
       "/Users/luis/ravi/main/../../../etc/passwd",
       "MEMORY.md/../../../etc/passwd",
-      "./MEMORY.md/../CLAUDE.md",
+      "./MEMORY.md/../AGENTS.md",
       "MEMORY.md/../../secret.txt",
     ];
 

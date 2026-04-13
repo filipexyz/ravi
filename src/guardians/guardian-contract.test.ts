@@ -2,12 +2,13 @@ import { describe, expect, it } from "bun:test";
 import {
   AGENT_CONTEXT_GUARDIANS_DEFAULTS_KEY,
   AgentContextGuardiansConfigSchema,
+  type AgentContextGuardiansConfig,
   readAgentContextGuardiansConfig,
   writeAgentContextGuardiansConfig,
 } from "./contract.js";
 
 describe("AgentContextGuardiansConfigSchema", () => {
-  const validConfig = {
+  const validConfig: AgentContextGuardiansConfig = {
     agentId: "dev",
     guardians: [
       {
