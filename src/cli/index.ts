@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
+import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { configureCliLogging } from "./logging.js";
 
@@ -34,6 +35,14 @@ program.name("ravi").description("Ravi Bot CLI - Claude-powered bot management")
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
 
 // Top-level commands (not via decorator groups)
+program
+  .command("doctor")
+  .description("Inspect critical Ravi runtime, substrate, and contract health")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { json?: boolean }) => {
+    runDoctor({ json: options.json });
+  });
+
 program
   .command("setup")
   .description("Wizard interativo de configuração")

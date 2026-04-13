@@ -40,7 +40,8 @@ export class DaemonCommands {
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices();
 
-    const bundlePath = this.findBundlePath();
+    const projectRoot = this.requireProjectRoot();
+    const bundlePath = this.findBundlePath(projectRoot);
     if (!bundlePath) {
       fail("Bundle not found. Run: bun run build");
     }
@@ -52,6 +53,8 @@ export class DaemonCommands {
       PM2_PROCESS_NAME,
       "--interpreter",
       "bun",
+      "--cwd",
+      projectRoot,
       "--",
       "daemon",
       "run",
@@ -88,6 +91,7 @@ export class DaemonCommands {
     @Option({ flags: "-f, --force", description: "Bypass safety checks (active tasks)" }) force?: boolean,
   ) {
     requirePm2();
+    const projectRoot = this.requireProjectRoot();
 
     // Safety check: block restart if tasks are actively running
     if (!force) {
@@ -139,7 +143,7 @@ export class DaemonCommands {
       const child = spawn("ravi", args, {
         detached: true,
         stdio: "ignore",
-        cwd: this.findProjectRoot() ?? undefined,
+        cwd: projectRoot,
         env: cleanEnv,
       });
       child.unref();
@@ -154,7 +158,7 @@ export class DaemonCommands {
       try {
         execSync("bun run build", {
           stdio: "inherit",
-          cwd: this.findProjectRoot() ?? undefined,
+          cwd: projectRoot,
         });
         console.log("Build completed");
       } catch {
@@ -169,7 +173,24 @@ export class DaemonCommands {
     }
 
     if (isRaviRunning()) {
-      const { status } = runPm2(["restart", PM2_PROCESS_NAME]);
+      const stop = runPm2(["delete", PM2_PROCESS_NAME]);
+      if (stop.status !== 0) {
+        fail("Failed to stop daemon before restart");
+      }
+
+      const { status } = runPm2([
+        "start",
+        this.requireBundlePath(projectRoot),
+        "--name",
+        PM2_PROCESS_NAME,
+        "--interpreter",
+        "bun",
+        "--cwd",
+        projectRoot,
+        "--",
+        "daemon",
+        "run",
+      ]);
       if (status === 0) {
         console.log("Daemon restarted");
       } else {
@@ -297,10 +318,7 @@ export class DaemonCommands {
 
   @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
   async dev() {
-    const projectRoot = this.findProjectRoot();
-    if (!projectRoot) {
-      fail("Could not find project root (package.json with ravi.bot)");
-    }
+    const projectRoot = this.requireProjectRoot();
 
     console.log(`Dev mode - watching ${projectRoot}/src`);
     console.log("Auto-rebuild on changes. Use 'ravi daemon restart' to apply.\n");
@@ -407,15 +425,31 @@ ANTHROPIC_API_KEY=
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
 
-  private findBundlePath(): string | null {
+  private findBundlePath(projectRoot: string): string | null {
     // Try known locations
-    const locations = [join(this.findProjectRoot() ?? "", "dist", "bundle", "index.js")];
+    const locations = [join(projectRoot, "dist", "bundle", "index.js")];
 
     for (const loc of locations) {
       if (existsSync(loc)) return loc;
     }
 
     return null;
+  }
+
+  private requireBundlePath(projectRoot: string): string {
+    const bundlePath = this.findBundlePath(projectRoot);
+    if (!bundlePath) {
+      fail("Bundle not found. Run: bun run build");
+    }
+    return bundlePath;
+  }
+
+  private requireProjectRoot(): string {
+    const projectRoot = this.findProjectRoot();
+    if (!projectRoot) {
+      fail("Could not find project root (package.json with ravi.bot)");
+    }
+    return projectRoot;
   }
 
   private findProjectRoot(): string | null {
