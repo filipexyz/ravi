@@ -72,6 +72,60 @@
     return safeLeft - safeRight;
   }
 
+  function toPositiveTaskTimestamp(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+  }
+
+  function getTaskRecencyTimestamp(task) {
+    return (
+      toPositiveTaskTimestamp(task?.updatedAt) ??
+      toPositiveTaskTimestamp(task?.createdAt) ??
+      0
+    );
+  }
+
+  function compareTasksByRecencyDesc(left, right) {
+    return (
+      getTaskRecencyTimestamp(right) - getTaskRecencyTimestamp(left) ||
+      (toPositiveTaskTimestamp(right?.createdAt) ?? 0) -
+        (toPositiveTaskTimestamp(left?.createdAt) ?? 0) ||
+      String(left?.id || "").localeCompare(String(right?.id || ""))
+    );
+  }
+
+  function sortTaskTreeByRecency(nodes) {
+    const list = Array.isArray(nodes) ? nodes : [];
+    const latestByNode = new WeakMap();
+
+    function getNodeRecency(node) {
+      if (!node || typeof node !== "object") return 0;
+      const cached = latestByNode.get(node);
+      if (typeof cached === "number") {
+        return cached;
+      }
+
+      let latest = getTaskRecencyTimestamp(node?.task);
+      getChildNodes(node).forEach((childNode) => {
+        latest = Math.max(latest, getNodeRecency(childNode));
+      });
+      latestByNode.set(node, latest);
+      return latest;
+    }
+
+    list.forEach((node) => {
+      sortTaskTreeByRecency(getChildNodes(node));
+    });
+
+    list.sort(
+      (left, right) =>
+        getNodeRecency(right) - getNodeRecency(left) ||
+        compareTasksByRecencyDesc(left?.task, right?.task),
+    );
+
+    return list;
+  }
+
   function pickTaskGroupPrimaryRow(node) {
     let bestRow = null;
 
@@ -96,5 +150,6 @@
     clampTaskProgressValue,
     getTaskVisualProgressState,
     pickTaskGroupPrimaryRow,
+    sortTaskTreeByRecency,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

@@ -35,6 +35,7 @@ const {
   dbDeleteTask,
   dbDispatchTask,
   dbGetTask,
+  dbMarkTaskAcceptedForSession,
   dbReportTaskProgress,
   dispatchTask,
   emitTaskEvent,
@@ -437,6 +438,41 @@ describe("task substrate contract", () => {
     });
     expect(snapshot.selectedTask?.task.artifacts.primary?.path.absolutePath).toContain(created.task.id);
     expect(snapshot.artifacts.status).toBe("planned");
+  });
+
+  it("treats accepted bootstrap work as in-progress in task stream read models", () => {
+    const created = createTask({
+      title: "Accepted bootstrap snapshot",
+      instructions: "Visual surfaces should leave queued once runtime bootstrap starts",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const sessionName = `${created.task.id}-work`;
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName,
+      assignedBy: "test",
+    });
+    dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+
+    const selected = buildTaskStreamSnapshot({
+      taskId: created.task.id,
+      eventsLimit: 10,
+    });
+    const list = buildTaskStreamSnapshot({ eventsLimit: 10 });
+    const workingOnly = buildTaskStreamSnapshot({ status: "in_progress", eventsLimit: 10 });
+    const queuedOnly = buildTaskStreamSnapshot({ status: "dispatched", eventsLimit: 10 });
+
+    expect(selected.selectedTask?.task.status).toBe("in_progress");
+    expect(selected.selectedTask?.activeAssignment?.status).toBe("accepted");
+    expect(list.items.find((task) => task.id === created.task.id)?.status).toBe("in_progress");
+    expect(list.stats.dispatched).toBe(0);
+    expect(list.stats.inProgress).toBeGreaterThanOrEqual(1);
+    expect(workingOnly.items.map((task) => task.id)).toContain(created.task.id);
+    expect(queuedOnly.items.map((task) => task.id)).not.toContain(created.task.id);
+    expect(getTaskDetails(created.task.id).task?.status).toBe("in_progress");
   });
 
   it("surfaces brainstorm draft/design artifacts with workspace-relative and absolute paths", () => {

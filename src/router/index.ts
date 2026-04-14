@@ -124,6 +124,7 @@ export {
   findSessionByAttributes,
   updateSdkSessionId,
   updateProviderSession,
+  updateRuntimeProviderState,
   updateProviderSessionId,
   clearProviderSession,
   updateTokens,

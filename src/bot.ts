@@ -16,6 +16,7 @@ import {
   getSessionByName,
   clearProviderSession,
   updateProviderSession,
+  updateRuntimeProviderState,
   updateTokens,
   updateSessionSource,
   updateSessionContext,
@@ -39,7 +40,7 @@ import { SANITIZED_ENV_VARS, createSanitizeBashHook } from "./hooks/sanitize-bas
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
 import { discoverPlugins } from "./plugins/index.js";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
 import { agentCan } from "./permissions/engine.js";
@@ -50,7 +51,12 @@ import {
   describeDeliveryBarrier,
   type DeliveryBarrier,
 } from "./delivery-barriers.js";
-import { dbHasActiveTaskForSession, dbResolveActiveTaskBindingForSession } from "./tasks/task-db.js";
+import {
+  dbHasActiveTaskForSession,
+  dbMarkTaskAcceptedForSession,
+  dbResolveActiveTaskBindingForSession,
+} from "./tasks/task-db.js";
+import { emitTaskEvent } from "./tasks/service.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeContext,
@@ -66,7 +72,7 @@ const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 60000; // keep payloads reasonable
-const MAX_CONCURRENT_SESSIONS = 8;
+const MAX_CONCURRENT_SESSIONS = 30;
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -156,6 +162,28 @@ function getRuntimeToolAccessMode(providerId: RuntimeProviderId, agentId: string
   return hasUnrestrictedToolExecution(agentId) ? "unrestricted" : "restricted";
 }
 
+function resolveCanonicalRaviCliPath(): string | null {
+  const explicit = process.env.RAVI_BIN?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const bundlePath = process.argv[1];
+  if (!bundlePath) {
+    return null;
+  }
+
+  return join(dirname(dirname(dirname(bundlePath))), "bin", "ravi");
+}
+
+function prependPathEntry(currentPath: string | undefined, entry: string): string {
+  const parts = (currentPath ?? "")
+    .split(delimiter)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && part !== entry);
+  return [entry, ...parts].join(delimiter);
+}
+
 function buildRuntimeEnv(
   baseEnv: Record<string, string>,
   raviEnv: Record<string, string>,
@@ -167,6 +195,11 @@ function buildRuntimeEnv(
     ...raviEnv,
     ...(providerEnv ?? {}),
   };
+  const canonicalRaviCliPath = resolveCanonicalRaviCliPath();
+  if (canonicalRaviCliPath) {
+    runtimeEnv.RAVI_BIN = canonicalRaviCliPath;
+    runtimeEnv.PATH = prependPathEntry(runtimeEnv.PATH, dirname(canonicalRaviCliPath));
+  }
 
   if (!capabilities.supportsToolHooks) {
     for (const key of SANITIZED_ENV_VARS) {
@@ -1599,6 +1632,37 @@ export class RaviBot {
       };
 
       const runtimeSession = runtimeProvider.startSession(runtimeRequest);
+      const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
+      updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
+        ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
+        ...(canResumeStoredSession && storedRuntimeSessionParams
+          ? { runtimeSessionParams: storedRuntimeSessionParams }
+          : {}),
+        ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
+          ? { runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId }
+          : {}),
+      });
+      session.runtimeProvider = runtimeProviderId;
+      if (persistedRuntimeProviderSessionId) {
+        session.runtimeSessionParams = storedRuntimeSessionParams;
+        session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+        session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+        session.sdkSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
+      }
+      if (prompt.taskBarrierTaskId) {
+        const acceptedTask = dbMarkTaskAcceptedForSession(sessionName, prompt.taskBarrierTaskId);
+        if (acceptedTask?.event) {
+          try {
+            await emitTaskEvent(acceptedTask.task, acceptedTask.event);
+          } catch (error) {
+            log.warn("Failed to emit task bootstrap event", {
+              taskId: acceptedTask.task.id,
+              sessionName,
+              error,
+            });
+          }
+        }
+      }
       streamingSession.queryHandle = runtimeSession;
       streamingSession.starting = false;
 

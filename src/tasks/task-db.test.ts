@@ -12,6 +12,7 @@ import {
   dbDispatchTask,
   dbGetActiveAssignment,
   dbGetTask,
+  dbMarkTaskAcceptedForSession,
   dbSetTaskDir,
   dbListChildTasks,
   dbListTasks,
@@ -68,7 +69,7 @@ describe("task-db", () => {
     expect(dispatched.assignment.agentId).toBe("dev");
     expect(dispatched.assignment.checkpointIntervalMs).toBe(300000);
     expect(dispatched.assignment.checkpointOverdueCount).toBe(0);
-    expect(dispatched.assignment.checkpointDueAt).toBeGreaterThan(dispatched.assignment.assignedAt);
+    expect(dispatched.assignment.checkpointDueAt).toBeUndefined();
     expect(dispatched.assignment.reportToSessionName).toBe("dev");
     expect(dispatched.assignment.reportEvents).toEqual(["done"]);
     expect(dbGetActiveAssignment(created.task.id)?.sessionName).toBe(`${created.task.id}-work`);
@@ -388,7 +389,7 @@ describe("task-db", () => {
 
     expect(dispatched.assignment.checkpointIntervalMs).toBe(600000);
     expect(dispatched.assignment.checkpointLastReportAt).toBeUndefined();
-    expect(dispatched.assignment.checkpointDueAt).toBeGreaterThan(dispatched.assignment.assignedAt);
+    expect(dispatched.assignment.checkpointDueAt).toBeUndefined();
   });
 
   it("snapshots explicit report configuration into the assignment on dispatch", () => {
@@ -422,12 +423,13 @@ describe("task-db", () => {
     });
     createdTaskIds.push(created.task.id);
 
-    const dispatched = dbDispatchTask(created.task.id, {
+    dbDispatchTask(created.task.id, {
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
       assignedBy: "test",
     });
-    const firstDueAt = dispatched.assignment.checkpointDueAt!;
+    const accepted = dbMarkTaskAcceptedForSession(`${created.task.id}-work`, created.task.id)!;
+    const firstDueAt = accepted.assignment.checkpointDueAt!;
 
     dbReportTaskProgress(created.task.id, {
       actor: "sync",
@@ -460,6 +462,43 @@ describe("task-db", () => {
     expect(assignment.checkpointOverdueCount).toBe(0);
   });
 
+  it("accepts a queued assignment on real bootstrap and pushes the checkpoint window forward", () => {
+    const created = dbCreateTask({
+      title: "Bootstrap acceptance",
+      instructions: "Queued work should become accepted when the worker actually starts",
+      createdBy: "test",
+      checkpointIntervalMs: 60_000,
+    });
+    createdTaskIds.push(created.task.id);
+
+    const sessionName = `${created.task.id}-work`;
+    const realNow = Date.now;
+    let dispatched: ReturnType<typeof dbDispatchTask> | null = null;
+    let accepted: ReturnType<typeof dbMarkTaskAcceptedForSession> | null = null;
+    try {
+      Date.now = () => 1_000_000;
+      dispatched = dbDispatchTask(created.task.id, {
+        agentId: "dev",
+        sessionName,
+        assignedBy: "test",
+      });
+
+      Date.now = () => 1_210_000;
+      accepted = dbMarkTaskAcceptedForSession(sessionName, created.task.id);
+    } finally {
+      Date.now = realNow;
+    }
+
+    expect(accepted?.assignment.status).toBe("accepted");
+    expect(accepted?.assignment.acceptedAt).toBe(1_210_000);
+    expect(accepted?.assignment.checkpointLastReportAt).toBeUndefined();
+    expect(accepted?.assignment.checkpointDueAt).toBe(1_270_000);
+    expect(dispatched?.assignment.checkpointDueAt).toBeUndefined();
+    expect(accepted?.event?.type).toBe("task.progress");
+    expect(accepted?.task.updatedAt).toBe(1_210_000);
+    expect(dbGetTask(created.task.id)?.status).toBe("in_progress");
+  });
+
   it("rolls the next due checkpoint forward and records overdue events", () => {
     const created = dbCreateTask({
       title: "Checkpoint overdue",
@@ -469,20 +508,21 @@ describe("task-db", () => {
     });
     createdTaskIds.push(created.task.id);
 
-    const dispatched = dbDispatchTask(created.task.id, {
+    dbDispatchTask(created.task.id, {
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
       assignedBy: "test",
     });
+    const accepted = dbMarkTaskAcceptedForSession(`${created.task.id}-work`, created.task.id)!;
 
     const missed = dbRegisterTaskCheckpointMiss(
       created.task.id,
-      dispatched.assignment.id,
-      dispatched.assignment.checkpointDueAt! + 2500,
+      accepted.assignment.id,
+      accepted.assignment.checkpointDueAt! + 2500,
     );
     expect(missed?.missedCount).toBe(3);
     expect(missed?.assignment.checkpointOverdueCount).toBe(3);
-    expect(missed?.assignment.checkpointDueAt).toBe(dispatched.assignment.checkpointDueAt! + 3000);
+    expect(missed?.assignment.checkpointDueAt).toBe(accepted.assignment.checkpointDueAt! + 3000);
     expect(missed?.event.type).toBe("task.checkpoint.missed");
   });
 

@@ -231,6 +231,21 @@ export interface TaskRecoveryResult {
   skipped: Array<{ taskId: string; reason: string }>;
 }
 
+export function deriveTaskReadStatus(
+  task: Pick<TaskRecord, "status">,
+  activeAssignment?: Pick<TaskAssignment, "status" | "acceptedAt"> | null,
+): TaskStatus {
+  if (
+    task.status === "dispatched" &&
+    activeAssignment &&
+    (activeAssignment.status === "accepted" || typeof activeAssignment.acceptedAt === "number")
+  ) {
+    return "in_progress";
+  }
+
+  return task.status;
+}
+
 export function isTaskRecoveryFresh(task: TaskRecord, assignment: TaskAssignment, now = Date.now()): boolean {
   const freshestActivity = Math.max(task.updatedAt ?? 0, assignment.acceptedAt ?? 0, assignment.assignedAt ?? 0);
   return now - freshestActivity <= TASK_RECOVERY_MAX_STALE_MS;
@@ -952,11 +967,12 @@ export function resolveTaskSessionContext(
 
 function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment | null): TaskStreamTaskEntity {
   const profile = resolveTaskProfileForTask(task);
+  const status = deriveTaskReadStatus(task, activeAssignment);
   return {
     id: task.id,
     title: task.title,
     instructions: task.instructions,
-    status: task.status,
+    status,
     priority: task.priority,
     progress: task.progress,
     profileId: profile.id,
@@ -1120,6 +1136,10 @@ function summarizeTasks(tasks: TaskRecord[]): TaskStreamStats {
   return stats;
 }
 
+function summarizeTaskEntities(tasks: TaskStreamTaskEntity[]): TaskStreamStats {
+  return summarizeTasks(tasks.map((task) => ({ status: task.status }) as TaskRecord));
+}
+
 function resolveTaskCommandActor(actor?: string, fallback = "ravi.stream"): string {
   return actor?.trim() || fallback;
 }
@@ -1209,7 +1229,7 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
         eventsLimit: parsed.eventsLimit,
       },
       items: [selectedTask],
-      stats: summarizeTasks([details.task]),
+      stats: summarizeTaskEntities([selectedTask]),
       artifacts: selectedTask.artifacts,
       selectedTask: {
         task: selectedTask,
@@ -1223,12 +1243,19 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
     };
   }
 
+  const rawStatusFilter = parsed.status === "dispatched" || parsed.status === "in_progress" ? undefined : parsed.status;
   const tasks = listTasks({
-    ...(parsed.status ? { status: parsed.status } : {}),
+    ...(rawStatusFilter ? { status: rawStatusFilter } : {}),
     ...(parsed.agentId ? { agentId: parsed.agentId } : {}),
     ...(parsed.sessionName ? { sessionName: parsed.sessionName } : {}),
     archiveMode,
   });
+  const items = tasks
+    .map((task) => {
+      const activeAssignment = dbGetActiveAssignment(task.id);
+      return toTaskStreamEntity(task, activeAssignment);
+    })
+    .filter((task) => (parsed.status ? task.status === parsed.status : true));
 
   return {
     query: {
@@ -1239,8 +1266,8 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
       archiveMode,
       eventsLimit: parsed.eventsLimit,
     },
-    items: tasks.map((task) => toTaskStreamEntity(task)),
-    stats: summarizeTasks(tasks),
+    items,
+    stats: summarizeTaskEntities(items),
     artifacts: createEmptyTaskArtifactSummary(),
     selectedTask: null,
   };

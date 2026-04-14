@@ -137,6 +137,11 @@ interface SessionStatements {
 let stmts: SessionStatements | null = null;
 let statementsDbPath: string | null = null;
 
+export function closeSessionStore(): void {
+  stmts = null;
+  statementsDbPath = null;
+}
+
 function getStatements(): SessionStatements {
   const currentDbPath = getRaviDbPath();
   if (stmts !== null && statementsDbPath === currentDbPath) return stmts;
@@ -371,6 +376,34 @@ export function updateProviderSession(
     sessionKey,
   );
   log.debug("Updated provider session state", {
+    sessionKey,
+    runtimeProvider,
+    providerSessionId,
+    runtimeSessionDisplayId,
+  });
+}
+
+export function updateRuntimeProviderState(
+  sessionKey: string,
+  runtimeProvider: SessionEntry["runtimeProvider"],
+  options: {
+    providerSessionId?: string;
+    runtimeSessionParams?: SessionEntry["runtimeSessionParams"];
+    runtimeSessionDisplayId?: string;
+  } = {},
+): void {
+  const s = getStatements();
+  const providerSessionId = options.providerSessionId?.trim() || null;
+  const runtimeSessionDisplayId = options.runtimeSessionDisplayId ?? providerSessionId;
+  s.updateProviderState.run(
+    providerSessionId,
+    runtimeProvider ?? null,
+    serializeRuntimeSessionParams(options.runtimeSessionParams),
+    runtimeSessionDisplayId,
+    Date.now(),
+    sessionKey,
+  );
+  log.debug("Updated runtime provider state", {
     sessionKey,
     runtimeProvider,
     providerSessionId,

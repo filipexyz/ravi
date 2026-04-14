@@ -397,6 +397,72 @@ describe("whatsapp overlay model", () => {
     });
   });
 
+  it("does not collapse repeated live replies that happen in different turns", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "response",
+            label: "response",
+            detail: "ok",
+            timestamp: Date.parse("2026-04-12T03:02:00Z"),
+          },
+          {
+            kind: "response",
+            label: "response",
+            detail: "ok",
+            timestamp: Date.parse("2026-04-12T03:12:00Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline.filter((item) => item.type === "message")).toHaveLength(2);
+    expect(timeline.map((item) => item.timestamp)).toEqual([
+      Date.parse("2026-04-12T03:02:00Z"),
+      Date.parse("2026-04-12T03:12:00Z"),
+    ]);
+  });
+
+  it("does not hide a new live reply just because an older history message has the same text", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [
+        {
+          id: "history-1",
+          role: "assistant",
+          content: "ok",
+          createdAt: Date.parse("2026-04-12T03:00:00Z"),
+        },
+      ],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "response",
+            label: "response",
+            detail: "ok",
+            timestamp: Date.parse("2026-04-12T03:10:00Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline.filter((item) => item.type === "message")).toHaveLength(2);
+    expect(timeline[0]).toMatchObject({
+      type: "message",
+      source: "history",
+      content: "ok",
+    });
+    expect(timeline[1]).toMatchObject({
+      type: "message",
+      source: "live",
+      content: "ok",
+      pending: true,
+    });
+  });
+
   it("preserves compact tool metadata in the timeline artifact", () => {
     const timeline = buildOverlaySessionWorkspaceTimeline({
       messages: [],
@@ -428,6 +494,169 @@ describe("whatsapp overlay model", () => {
       fullDetail: "status: ok\n\nresult:\nclean",
       status: "ok",
       timestamp: Date.parse("2026-04-12T03:10:00Z"),
+    });
+  });
+
+  it("suppresses kind:tool events when tool artifacts exist", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "tool",
+            label: "bash",
+            detail: "bun test",
+            timestamp: Date.parse("2026-04-12T03:01:00Z"),
+          },
+          {
+            kind: "tool",
+            label: "bash",
+            detail: "running",
+            timestamp: Date.parse("2026-04-12T03:01:01Z"),
+          },
+          {
+            kind: "tool",
+            label: "bash",
+            detail: "finished",
+            timestamp: Date.parse("2026-04-12T03:01:05Z"),
+          },
+        ],
+        artifacts: [
+          {
+            id: "tool-1",
+            kind: "tool",
+            label: "bash",
+            description: "cmd=bun test",
+            preview: "ok · 4s",
+            fullDetail: "stdout: all tests passed",
+            status: "ok",
+            detail: "ok · 4s",
+            createdAt: Date.parse("2026-04-12T03:01:00Z"),
+            updatedAt: Date.parse("2026-04-12T03:01:05Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      type: "artifact",
+      kind: "tool",
+      label: "bash",
+      description: "cmd=bun test",
+      preview: "ok · 4s",
+      status: "ok",
+    });
+  });
+
+  it("suppresses runtime tool-lifecycle events near tool artifacts", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "runtime",
+            label: "runtime",
+            detail: "running",
+            timestamp: Date.parse("2026-04-12T03:01:01Z"),
+          },
+          {
+            kind: "runtime",
+            label: "runtime",
+            detail: "finished",
+            timestamp: Date.parse("2026-04-12T03:01:06Z"),
+          },
+          {
+            kind: "approval",
+            label: "approval",
+            detail: "pending",
+            timestamp: Date.parse("2026-04-12T03:00:59Z"),
+          },
+        ],
+        artifacts: [
+          {
+            id: "tool-1",
+            kind: "tool",
+            label: "bash",
+            detail: "bun test",
+            createdAt: Date.parse("2026-04-12T03:01:00Z"),
+            updatedAt: Date.parse("2026-04-12T03:01:05Z"),
+          },
+        ],
+      },
+    });
+
+    const types = timeline.map((item) => item.type);
+    expect(types).toContain("artifact");
+    expect(types).toContain("event");
+    expect(timeline.filter((item) => item.type === "event")).toHaveLength(1);
+    expect(timeline.find((item) => item.type === "event")).toMatchObject({
+      kind: "approval",
+      detail: "pending",
+    });
+  });
+
+  it("keeps non-tool events even when tool artifacts exist", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "approval",
+            label: "approval",
+            detail: "pending",
+            timestamp: Date.parse("2026-04-12T03:00:30Z"),
+          },
+          {
+            kind: "runtime",
+            label: "runtime",
+            detail: "compacting",
+            timestamp: Date.parse("2026-04-12T03:03:00Z"),
+          },
+        ],
+        artifacts: [
+          {
+            id: "tool-1",
+            kind: "tool",
+            label: "bash",
+            detail: "git status",
+            createdAt: Date.parse("2026-04-12T03:01:00Z"),
+            updatedAt: Date.parse("2026-04-12T03:01:03Z"),
+          },
+        ],
+      },
+    });
+
+    const events = timeline.filter((item) => item.type === "event");
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ kind: "approval", detail: "pending" });
+    expect(events[1]).toMatchObject({ kind: "runtime", detail: "compacting" });
+  });
+
+  it("shows tool events as event items when no tool artifacts exist", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "runtime",
+            label: "runtime",
+            detail: "running",
+            timestamp: Date.parse("2026-04-12T03:01:00Z"),
+          },
+        ],
+      },
+    });
+
+    expect(timeline).toHaveLength(1);
+    expect(timeline[0]).toMatchObject({
+      type: "event",
+      kind: "runtime",
+      detail: "running",
     });
   });
 

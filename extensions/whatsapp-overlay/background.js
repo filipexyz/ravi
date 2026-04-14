@@ -22,6 +22,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "ravi:get-insights") {
+    fetchInsights(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message?.type === "ravi:dispatch-task") {
     postTaskDispatch(message.payload)
       .then(sendResponse)
@@ -146,6 +153,14 @@ async function fetchTasks(payload = {}) {
   if (payload.todayKey) params.set("todayKey", payload.todayKey);
 
   const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
+  return response.json();
+}
+
+async function fetchInsights(payload = {}) {
+  const params = new URLSearchParams();
+  if (payload.limit) params.set("limit", String(payload.limit));
+
+  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/insights?${params.toString()}`);
   return response.json();
 }
 

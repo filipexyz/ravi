@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { close as closeChatDb } from "../db.js";
 import { closeContacts } from "../contacts.js";
 import { closeRouterDb } from "../router/router-db.js";
+import { closeSessionStore } from "../router/sessions.js";
 
 const RAVI_STATE_LOCK_DIR = join(tmpdir(), "ravi-test-state.lock");
 const RAVI_STATE_LOCK_RETRY_MS = 10;
@@ -68,6 +69,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   await acquireRaviStateLock();
   closeChatDb();
   closeContacts();
+  closeSessionStore();
   closeRouterDb();
   const stateDir = mkdtempSync(join(tmpdir(), prefix));
   pendingStateDirs.add(stateDir);
@@ -79,6 +81,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
 export async function cleanupIsolatedRaviState(stateDir?: string | null): Promise<void> {
   closeChatDb();
   closeContacts();
+  closeSessionStore();
   closeRouterDb();
   delete process.env.RAVI_STATE_DIR;
   if (stateDir) pendingStateDirs.add(stateDir);

@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   closeInsightsDb,
   dbAddInsightComment,
@@ -11,19 +8,19 @@ import {
   dbSearchInsights,
   dbUpsertInsightLink,
 } from "./index.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
-let stateDir: string;
+let stateDir: string | null = null;
 
-beforeEach(() => {
-  stateDir = mkdtempSync(join(tmpdir(), "ravi-insights-"));
-  process.env.RAVI_STATE_DIR = stateDir;
+beforeEach(async () => {
+  stateDir = await createIsolatedRaviState("ravi-insights-");
   closeInsightsDb();
 });
 
-afterEach(() => {
+afterEach(async () => {
   closeInsightsDb();
-  delete process.env.RAVI_STATE_DIR;
-  rmSync(stateDir, { recursive: true, force: true });
+  await cleanupIsolatedRaviState(stateDir);
+  stateDir = null;
 });
 
 describe("insight-db", () => {

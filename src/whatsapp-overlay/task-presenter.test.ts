@@ -5,8 +5,11 @@ import vm from "node:vm";
 
 type TaskNode = {
   task?: {
+    id?: string;
     status?: string;
     progress?: number;
+    createdAt?: number;
+    updatedAt?: number;
   };
   rows?: Array<{
     order?: number;
@@ -40,10 +43,11 @@ function loadTaskPresenterApi() {
       order?: number;
       session?: { sessionKey?: string };
     } | null;
+    sortTaskTreeByRecency: (nodes: TaskNode[]) => TaskNode[];
   };
 }
 
-const { getTaskVisualProgressState, pickTaskGroupPrimaryRow } = loadTaskPresenterApi();
+const { getTaskVisualProgressState, pickTaskGroupPrimaryRow, sortTaskTreeByRecency } = loadTaskPresenterApi();
 
 describe("whatsapp overlay task presenter", () => {
   it("uses descendant aggregate when the parent has no own progress yet", () => {
@@ -97,5 +101,36 @@ describe("whatsapp overlay task presenter", () => {
     };
 
     expect(pickTaskGroupPrimaryRow(node)?.session?.sessionKey).toBe("child-early");
+  });
+
+  it("sorts grouped task cards by the freshest descendant update", () => {
+    const nodes: TaskNode[] = [
+      {
+        task: { id: "older-root", createdAt: 10, updatedAt: 10 },
+        children: [
+          { task: { id: "fresh-child", createdAt: 20, updatedAt: 90 } },
+          { task: { id: "older-child", createdAt: 15, updatedAt: 40 } },
+        ],
+      },
+      {
+        task: { id: "recent-root", createdAt: 30, updatedAt: 80 },
+      },
+    ];
+
+    const sorted = sortTaskTreeByRecency(nodes);
+
+    expect(sorted.map((node) => node.task?.id)).toEqual(["older-root", "recent-root"]);
+    expect(sorted[0]?.children?.map((node) => node.task?.id)).toEqual(["fresh-child", "older-child"]);
+  });
+
+  it("falls back to createdAt when updatedAt is missing", () => {
+    const nodes: TaskNode[] = [
+      { task: { id: "older-root", createdAt: 10, updatedAt: 10 } },
+      { task: { id: "created-only-root", createdAt: 75 } },
+    ];
+
+    const sorted = sortTaskTreeByRecency(nodes);
+
+    expect(sorted.map((node) => node.task?.id)).toEqual(["created-only-root", "older-root"]);
   });
 });

@@ -2,6 +2,7 @@ const SNAPSHOT_POLL_INTERVAL_MS = 700;
 const CHAT_LIST_RESOLVE_INTERVAL_MS = 1200;
 const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 1100;
 const VIEW_STATE_REPUBLISH_MS = 2500;
+const HUMAN_CHAT_NAV_INTENT_TTL_MS = 4000;
 const ROOT_ID = "ravi-wa-overlay-root";
 const DRAWER_ID = "ravi-wa-overlay-drawer";
 const SESSION_MAIN_HOST_ID = "ravi-wa-session-main-host";
@@ -34,12 +35,14 @@ const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
 const OMNI_POLL_INTERVAL_MS = 2600;
 const V3_PLACEHOLDER_POLL_INTERVAL_MS = 1800;
 const TASKS_POLL_INTERVAL_MS = 1800;
+const INSIGHTS_POLL_INTERVAL_MS = 3200;
 const TASKS_EVENTS_LIMIT = 20;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
 const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const TASK_SELECTED_ID_STORAGE = "ravi-wa-overlay-task";
 const WORKSPACE_NAV_ITEMS = [
   { id: "ravi", label: "Ravi", glyph: "R" },
+  { id: "insights", label: "Insights", glyph: "I" },
   { id: "omni", label: "Omni", glyph: "O" },
   { id: "tasks", label: "Tasks", glyph: "T" },
 ];
@@ -86,6 +89,7 @@ let latestChatListItems = [];
 let latestPageChat = null;
 let latestOmniPanel = null;
 let latestV3Placeholders = null;
+let latestInsightsSnapshot = null;
 let v3CommandNotice = null;
 const messageMetaCache = new Map();
 const taskSelectionCache = new Map();
@@ -102,6 +106,7 @@ let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
 let sidebarFilter = "";
+let insightsFilter = "";
 let omniFilter = "";
 let omniSessionFilter = "";
 let sidebarNotice = null;
@@ -128,18 +133,25 @@ let currentSessionMainHost = null;
 let sessionWorkspaceDraft = "";
 let sessionWorkspaceSubmitting = false;
 let sessionWorkspaceShouldScrollToEnd = false;
-let lastSessionWorkspaceRenderKey = null;
 let lastSessionWorkspaceRenderSessionKey = null;
+let pendingHumanChatListIntent = null;
 const intervalIds = [];
 const clientId = getOrCreateClientId();
 let omniPanelInFlight = false;
 let omniRouteActionInFlight = false;
 let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
+let insightsInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
 const taskDetailPaneScrollTopByTaskId = new Map();
+const TASK_WORKSPACE_DEFAULT_SECTION_STATE = Object.freeze({
+  instructions: true,
+  activity: true,
+  details: false,
+});
+const taskWorkspaceSectionStateByTaskId = new Map();
 let lastTaskSessionLookupSnapshot = null;
 let lastTaskSessionLookup = new Map();
 let lastTaskHierarchySnapshot = null;
@@ -154,6 +166,8 @@ boot();
 function boot() {
   ensurePageBridge();
   document.addEventListener(PAGE_CHAT_RESPONSE_EVENT, handlePageChatEvent);
+  document.addEventListener("pointerdown", handleHumanChatListPointerDown, true);
+  document.addEventListener("keydown", handleHumanChatListKeydown, true);
   ensureShell();
   syncLayoutChrome();
   syncWorkspaceLauncher();
@@ -175,6 +189,7 @@ function boot() {
     setInterval(refreshV3Placeholders, V3_PLACEHOLDER_POLL_INTERVAL_MS),
   );
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, 700));
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
@@ -205,6 +220,55 @@ function requestRender(
   render(snapshot, context);
 }
 
+function getWorkspaceScrollSelectors(workspace = activeWorkspace) {
+  switch (workspace) {
+    case "tasks":
+      return [".ravi-wa-task-board-wrap", ".ravi-wa-task-column__list"];
+    case "insights":
+      return [".ravi-wa-insights-page"];
+    case "omni":
+      return [".ravi-wa-nav-list--tall"];
+    case "ravi":
+    default:
+      return ["#ravi-wa-overlay-drawer"];
+  }
+}
+
+function captureWorkspaceScrollState(workspace = activeWorkspace) {
+  const captures = [];
+  getWorkspaceScrollSelectors(workspace).forEach((selector) => {
+    document.querySelectorAll(selector).forEach((element, index) => {
+      if (!(element instanceof HTMLElement)) return;
+      captures.push({
+        selector,
+        index,
+        top: element.scrollTop,
+        left: element.scrollLeft,
+      });
+    });
+  });
+  return captures;
+}
+
+function restoreWorkspaceScrollState(captures) {
+  if (!Array.isArray(captures) || !captures.length) return;
+
+  const apply = () => {
+    captures.forEach(({ selector, index, top, left }) => {
+      const element = document.querySelectorAll(selector).item(index);
+      if (!(element instanceof HTMLElement)) return;
+
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+      const maxScrollLeft = Math.max(0, element.scrollWidth - element.clientWidth);
+      element.scrollTop = Math.min(Math.max(top || 0, 0), maxScrollTop);
+      element.scrollLeft = Math.min(Math.max(left || 0, 0), maxScrollLeft);
+    });
+  };
+
+  apply();
+  requestAnimationFrame(apply);
+}
+
 async function refreshSnapshot() {
   if (pollingStopped) return;
   const context = detectChatContext();
@@ -215,7 +279,9 @@ async function refreshSnapshot() {
     });
     bridgeError = null;
     latestSnapshot = snapshot;
-    requestRender(snapshot, context);
+    if (activeWorkspace === "ravi") {
+      requestRender(snapshot, context);
+    }
   } catch (error) {
     handleRuntimeError(error);
   }
@@ -235,6 +301,14 @@ async function refreshSessionWorkspace(force = false) {
       },
     });
     if (requestedSessionKey !== selectedWorkspaceSessionKey) return;
+    if (!workspace?.ok) {
+      bridgeError = {
+        message:
+          workspace?.error || "não consegui atualizar a timeline da sessão",
+      };
+      requestRender();
+      return;
+    }
     bridgeError = null;
     latestSessionWorkspace = workspace;
     requestRender();
@@ -337,7 +411,7 @@ async function refreshTasks(force = false) {
       rememberTaskSelection(next?.selectedTask);
       syncTaskDetailDrawerSnapshot(next);
       bridgeError = null;
-      if (activeWorkspace !== "omni") {
+      if (activeWorkspace === "tasks" || activeWorkspace === "ravi") {
         requestRender();
       }
     }
@@ -345,6 +419,32 @@ async function refreshTasks(force = false) {
     handleRuntimeError(error);
   } finally {
     tasksInFlight = false;
+  }
+}
+
+async function refreshInsights(force = false) {
+  if (pollingStopped || insightsInFlight) return;
+  if (!force && activeWorkspace !== "insights") return;
+
+  insightsInFlight = true;
+  try {
+    const next = await chrome.runtime.sendMessage({
+      type: "ravi:get-insights",
+      payload: {
+        limit: 100,
+      },
+    });
+    if (next?.ok) {
+      latestInsightsSnapshot = next;
+      bridgeError = null;
+      if (activeWorkspace === "insights") {
+        requestRender();
+      }
+    }
+  } catch (error) {
+    handleRuntimeError(error);
+  } finally {
+    insightsInFlight = false;
   }
 }
 
@@ -360,6 +460,7 @@ function refreshAll() {
   refreshSnapshot();
   refreshSessionWorkspace(true);
   refreshTasks(true);
+  refreshInsights(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshOmniPanel();
@@ -370,6 +471,7 @@ function refreshViewState() {
   if (pollingStopped) return;
   requestPageChatInfo();
   const next = detectViewState();
+  reconcileHumanChatListIntent(next);
   if (!hasViewChanged(latestViewState, next)) {
     if (Date.now() - lastPublishedAt >= VIEW_STATE_REPUBLISH_MS) {
       publishViewState(next).catch(handleRuntimeError);
@@ -877,6 +979,96 @@ function detectVisibleChatRows() {
       };
     })
     .filter(Boolean);
+}
+
+function handleHumanChatListPointerDown(event) {
+  if (!event.isTrusted) return;
+  rememberHumanChatListIntent(event.target);
+}
+
+function handleHumanChatListKeydown(event) {
+  if (!event.isTrusted) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  rememberHumanChatListIntent(event.target);
+}
+
+function rememberHumanChatListIntent(target) {
+  if (!selectedWorkspaceSessionKey) return;
+  const element = resolveEventElement(target);
+  if (!(element instanceof Element)) return;
+
+  const row = element.closest(CHAT_ROW_SELECTOR);
+  const chatList = detectChatList();
+  if (!(row instanceof Element) || !(chatList instanceof Element)) return;
+  if (!chatList.contains(row)) return;
+
+  pendingHumanChatListIntent = {
+    startedAt: Date.now(),
+    from: readActiveChatNavigationState(latestViewState || detectViewState()),
+  };
+}
+
+function resolveEventElement(target) {
+  if (target instanceof Element) return target;
+  if (target instanceof Node) return target.parentElement;
+  return null;
+}
+
+function readActiveChatNavigationState(view = latestViewState) {
+  const selectedRow = Array.isArray(view?.chatRows)
+    ? view.chatRows.find((row) => row?.selected) || null
+    : null;
+  const chatId = normalizeLookupToken(
+    view?.chatIdCandidate || latestPageChat?.chatId || detectChatIdCandidate(),
+  );
+  const selectedRowKey = normalizeLookupToken(
+    selectedRow?.chatIdCandidate || selectedRow?.title,
+  );
+  const title = normalizeLookupToken(
+    latestPageChat?.title ||
+      view?.selectedChat ||
+      view?.title ||
+      detectSelectedChatLabel() ||
+      detectChatTitle(),
+  );
+  const key = chatId
+    ? `chat:${chatId}`
+    : selectedRowKey
+      ? `selected:${selectedRowKey}`
+      : title
+        ? `title:${title}`
+        : null;
+
+  return {
+    key,
+    chatId: chatId || null,
+    selectedRowKey: selectedRowKey || null,
+    title: title || null,
+    hasCanonicalSignal: Boolean(chatId || selectedRowKey),
+  };
+}
+
+function reconcileHumanChatListIntent(view = latestViewState) {
+  const pending = pendingHumanChatListIntent;
+  if (!pending) return;
+  if (!selectedWorkspaceSessionKey) {
+    pendingHumanChatListIntent = null;
+    return;
+  }
+  if (Date.now() - pending.startedAt > HUMAN_CHAT_NAV_INTENT_TTL_MS) {
+    pendingHumanChatListIntent = null;
+    return;
+  }
+
+  const current = readActiveChatNavigationState(view);
+  if (!current.hasCanonicalSignal) return;
+
+  const previousKey = pending.from?.key || null;
+  if (previousKey && previousKey === current.key) return;
+  if (!previousKey && !current.key) return;
+
+  pendingHumanChatListIntent = null;
+  clearSessionWorkspace();
 }
 
 function resolveChatRowChatIdCandidate(row, { selected }) {
@@ -2195,6 +2387,23 @@ async function copyTextToClipboard(text) {
   }
 }
 
+async function copyOverlayValue(value, label) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    setSidebarNotice("error", `sem ${label || "valor"} para copiar`);
+    return false;
+  }
+
+  const copied = await copyTextToClipboard(text);
+  if (copied) {
+    setSidebarNotice("success", `${label || "valor"} copiado`);
+    return true;
+  }
+
+  setSidebarNotice("error", `não consegui copiar ${label || "o valor"}`);
+  return false;
+}
+
 async function hydrateMessagePopoverMeta(message) {
   const session = latestSnapshot?.session;
   const sessionName = session?.sessionName || null;
@@ -2454,7 +2663,9 @@ function syncLayoutChrome() {
   root.setAttribute("data-workspace", activeWorkspace);
   host.setAttribute("data-ravi-workspace", activeWorkspace);
   const fullWorkspace =
-    activeWorkspace === "omni" || activeWorkspace === "tasks";
+    activeWorkspace === "omni" ||
+    activeWorkspace === "tasks" ||
+    activeWorkspace === "insights";
   mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
   sideBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
   mainBranch?.classList.toggle(LAYOUT_BRANCH_HIDDEN_CLASS, fullWorkspace);
@@ -2593,6 +2804,7 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   );
   const recentStack = document.getElementById(RECENT_STACK_ID);
   const v3Toggle = document.getElementById("ravi-wa-v3-toggle");
+  const preservedScrollState = captureWorkspaceScrollState("ravi");
   scheduleV3PlaceholderRender();
   if (!body || !panelTitle || !panelSubtitle || !recentStack) return;
   if (v3Toggle) {
@@ -2619,6 +2831,16 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       title ||
       "whatsapp";
     renderOmniWorkspace(body, context);
+    return;
+  }
+
+  if (activeWorkspace === "insights") {
+    hideSessionWorkspaceMain();
+    panelTitle.textContent = "Insights";
+    panelSubtitle.textContent = buildInsightsWorkspaceSubtitle(
+      latestInsightsSnapshot,
+    );
+    renderInsightsWorkspace(body);
     return;
   }
 
@@ -2940,9 +3162,11 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
   });
 
   syncSessionWorkspaceMain(snapshot);
+  restoreWorkspaceScrollState(preservedScrollState);
 }
 
 function renderOmniWorkspace(body, context) {
+  const preservedScrollState = captureWorkspaceScrollState("omni");
   const panel = latestOmniPanel;
   const actor = getOmniPanelActor(panel);
   const preferredInstance = panel?.preferredInstance || null;
@@ -3474,9 +3698,11 @@ function renderOmniWorkspace(body, context) {
           } catch (error) {
             handleRuntimeError(error);
           }
-        });
       });
     });
+  });
+
+  restoreWorkspaceScrollState(preservedScrollState);
 }
 
 function getOmniRoutingFormState(body, panel, chats, sessions, agents) {
@@ -3997,6 +4223,18 @@ function renderLiveEventsCard(session) {
   `;
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   SESSION WORKSPACE v2 — reconciliation-based renderer
+   ═══════════════════════════════════════════════════════════════════
+   Design:
+   - Host DOM created once, updated in place
+   - Timeline items keyed by item.id, reconciled (add/update/remove)
+   - Event delegation on host (no per-render listener binding)
+   - Scroll: auto-stick to bottom when near bottom; otherwise untouched
+   ═══════════════════════════════════════════════════════════════════ */
+
+// ── session lookup ──────────────────────────────────────────────
+
 function getSelectedWorkspaceSession(snapshot = latestSnapshot) {
   if (!selectedWorkspaceSessionKey) return null;
 
@@ -4017,68 +4255,13 @@ function getSelectedWorkspaceSession(snapshot = latestSnapshot) {
   );
 }
 
-function ensureSessionWorkspaceMainHost() {
-  const mainPane = document.getElementById("main");
-  if (!(mainPane instanceof HTMLElement)) return null;
-
-  if (
-    currentSessionMainHost &&
-    currentSessionMainHost.parentElement !== mainPane
-  ) {
-    currentSessionMainHost.remove();
-    currentSessionMainHost = null;
-  }
-
-  let host = mainPane.querySelector(`#${SESSION_MAIN_HOST_ID}`);
-  if (!(host instanceof HTMLElement)) {
-    host = document.createElement("section");
-    host.id = SESSION_MAIN_HOST_ID;
-    host.className = "ravi-hidden";
-    mainPane.appendChild(host);
-  }
-
-  currentSessionMainHost = host;
-  return host;
-}
-
-function hideSessionWorkspaceMain() {
-  const host =
-    currentSessionMainHost || document.getElementById(SESSION_MAIN_HOST_ID);
-  if (!(host instanceof HTMLElement)) return;
-  host.classList.add("ravi-hidden");
-  host.innerHTML = "";
-  lastSessionWorkspaceRenderKey = null;
-  lastSessionWorkspaceRenderSessionKey = null;
-}
-
-function shouldDeferSessionWorkspaceMainRender(host) {
-  if (!(host instanceof HTMLElement)) return false;
-  const active = document.activeElement;
-  if (!active || !host.contains(active)) return false;
-  if (
-    active.tagName === "TEXTAREA" ||
-    active.tagName === "INPUT" ||
-    active.tagName === "SELECT"
-  ) {
-    return true;
-  }
-  return active.getAttribute?.("contenteditable") === "true";
-}
+// ── timestamp normalization ─────────────────────────────────────
 
 function normalizeSessionWorkspaceTimestamp(value) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value !== "string") {
-    return 0;
-  }
-
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return 0;
   const trimmed = value.trim();
-  if (!trimmed) {
-    return 0;
-  }
-
+  if (!trimmed) return 0;
   const sqliteTimestamp = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)
     ? `${trimmed.replace(" ", "T")}Z`
     : trimmed;
@@ -4086,9 +4269,10 @@ function normalizeSessionWorkspaceTimestamp(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// ── timeline item normalization ─────────────────────────────────
+
 function normalizeSessionWorkspaceTimelineItem(item, index) {
   if (!item) return null;
-
   const type =
     item.type === "event" || item.type === "artifact" ? item.type : "message";
   const timestamp = normalizeSessionWorkspaceTimestamp(
@@ -4124,6 +4308,7 @@ function normalizeSessionWorkspaceTimelineItem(item, index) {
     fullDetail:
       typeof item.fullDetail === "string" ? item.fullDetail : null,
     status: typeof item.status === "string" ? item.status : null,
+    duration: typeof item.duration === "string" ? item.duration : null,
     timestamp,
     source: item.source || "live",
   };
@@ -4133,16 +4318,10 @@ function compareSessionWorkspaceTimelineItems(left, right) {
   if (left.timestamp !== right.timestamp) {
     return left.timestamp - right.timestamp;
   }
-
-  const leftPriority =
-    left.type === "message" ? 0 : left.type === "artifact" ? 1 : 2;
-  const rightPriority =
+  const leftP = left.type === "message" ? 0 : left.type === "artifact" ? 1 : 2;
+  const rightP =
     right.type === "message" ? 0 : right.type === "artifact" ? 1 : 2;
-
-  if (leftPriority !== rightPriority) {
-    return leftPriority - rightPriority;
-  }
-
+  if (leftP !== rightP) return leftP - rightP;
   return String(left.id || "").localeCompare(String(right.id || ""));
 }
 
@@ -4166,23 +4345,22 @@ function getSessionWorkspaceTimelineItems(workspace) {
     .sort(compareSessionWorkspaceTimelineItems);
 }
 
+// ── tone / speaker / labels ─────────────────────────────────────
+
 function sessionWorkspaceTimelineItemTone(item) {
   if (item?.type === "artifact") {
     if (item.kind === "tool") return "tool";
     if (item.kind === "interruption") return "interruption";
     return "runtime";
   }
-
   if (item?.type === "event") {
     if (item.kind === "approval") return "approval";
     if (item.kind === "runtime") return "runtime";
     return chipActivityClass(eventKindToActivity(item.kind));
   }
-
   if (item?.pending) {
     return item.role === "assistant" ? "streaming" : "thinking";
   }
-
   return "idle";
 }
 
@@ -4194,7 +4372,6 @@ function describeSessionWorkspaceTimelineSpeaker(item, session) {
     }
     return "sistema";
   }
-
   return item?.label || item?.kind || "evento";
 }
 
@@ -4226,196 +4403,7 @@ function formatSessionWorkspaceHistorySourceLabel(source) {
   }
 }
 
-function buildSessionWorkspaceToolCallMarkup(item) {
-  const timeLabel = formatTimestamp(item.timestamp) || "-";
-  const description = item.description || "sem descrição curta";
-  const preview = item.preview || item.detail || "sem preview";
-  const fullDetail =
-    typeof item.fullDetail === "string" ? item.fullDetail.trim() : "";
-  const expandable = Boolean(fullDetail && fullDetail !== preview);
-  const expanded = expandable && expandedSessionWorkspaceTools.has(item.id);
-  const statusLabel = formatSessionWorkspaceToolStatusLabel(item.status);
-  const statusMarkup = statusLabel
-    ? `<span class="ravi-wa-session-tool__status ravi-wa-session-tool__status--${escapeAttribute(item.status || "idle")}">${escapeHtml(statusLabel)}</span>`
-    : "";
-  const headerMarkup = `
-    <div class="ravi-wa-session-tool__meta">
-      <strong>${escapeHtml(item.label || item.kind || "tool")}</strong>
-      ${statusMarkup}
-      <span class="ravi-wa-session-tool__time">${escapeHtml(timeLabel)}</span>
-      ${
-        expandable
-          ? `<span class="ravi-wa-session-tool__chevron" aria-hidden="true">▾</span>`
-          : ""
-      }
-    </div>
-  `;
-  const bodyMarkup = `
-    <div class="ravi-wa-session-tool__body">
-      <span class="ravi-wa-session-tool__description">${escapeHtml(description)}</span>
-      <span class="ravi-wa-session-tool__preview">${escapeHtml(preview)}</span>
-    </div>
-  `;
-  const summaryMarkup = expandable
-    ? `
-      <button
-        type="button"
-        class="ravi-wa-session-tool ravi-wa-session-tool--toggle"
-        data-ravi-session-tool-toggle="${escapeAttribute(item.id)}"
-        aria-expanded="${expanded ? "true" : "false"}"
-      >
-        ${headerMarkup}
-        ${bodyMarkup}
-      </button>
-    `
-    : `<div class="ravi-wa-session-tool">${headerMarkup}${bodyMarkup}</div>`;
-
-  return `
-    <article
-      class="ravi-wa-session-bubble ravi-wa-session-bubble--system ravi-wa-session-bubble--discrete ravi-wa-session-bubble--toolcall${expanded ? " is-expanded" : ""}"
-      data-ravi-session-tool-root="${escapeAttribute(item.id)}"
-    >
-      ${summaryMarkup}
-      ${
-        expandable
-          ? `<pre class="ravi-wa-session-tool__expanded"${expanded ? "" : " hidden"}>${escapeHtml(fullDetail)}</pre>`
-          : ""
-      }
-    </article>
-  `;
-}
-
-function buildSessionWorkspaceTimelineMarkup(session, workspace) {
-  const items = getSessionWorkspaceTimelineItems(workspace);
-  if (!items.length) {
-    return `<div class="ravi-wa-session-main__empty">sem mensagens recentes dessa sessão ainda.</div>`;
-  }
-
-  return items
-    .map((item) => {
-      if (item.type === "artifact" && item.kind === "tool") {
-        return buildSessionWorkspaceToolCallMarkup(item);
-      }
-
-      const bubbleRole =
-        item.type === "message"
-          ? item.role === "user"
-            ? "user"
-            : item.role === "assistant"
-              ? "assistant"
-              : "system"
-          : "system";
-      const tone = sessionWorkspaceTimelineItemTone(item);
-      const discreteClass =
-        item.type === "message" ? "" : " ravi-wa-session-bubble--discrete";
-      const pendingClass = item.pending
-        ? " ravi-wa-session-bubble--pending"
-        : "";
-      const toneClass =
-        item.type === "message"
-          ? ""
-          : ` ravi-wa-session-bubble--tone-${escapeAttribute(tone)}`;
-      const liveBadge = item.pending
-        ? `<span class="ravi-wa-session-bubble__badge">ao vivo</span>`
-        : "";
-
-      return `
-        <article class="ravi-wa-session-bubble ravi-wa-session-bubble--${escapeAttribute(bubbleRole)}${discreteClass}${pendingClass}${toneClass}">
-          <div class="ravi-wa-session-bubble__meta">
-            <strong>${escapeHtml(describeSessionWorkspaceTimelineSpeaker(item, session))}</strong>
-            ${liveBadge}
-            <span class="ravi-wa-session-bubble__time">${escapeHtml(formatTimestamp(item.timestamp) || "-")}</span>
-          </div>
-          <pre class="ravi-wa-session-bubble__body">${escapeHtml(
-            item.type === "message"
-              ? item.content || ""
-              : item.detail || item.kind || item.type || "",
-          )}</pre>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function buildSessionWorkspaceMainMarkup(session, workspace) {
-  const timelineMarkup = buildSessionWorkspaceTimelineMarkup(session, workspace);
-  const activity = session?.live?.activity || "idle";
-  const stateClass = chipActivityClass(activity);
-  const stateLabel = chipActivityLabel(activity);
-  const summary = session?.live?.summary || "sem evento vivo";
-  const linkedChat = session ? getLinkedChatLabel(session) : null;
-  const elapsed = session
-    ? formatSessionElapsedCompact(session) || "agora"
-    : "-";
-  const historySource = formatSessionWorkspaceHistorySourceLabel(
-    workspace?.historySource || "recent-history",
-  );
-
-  return `
-    <div class="ravi-wa-session-main">
-      <header class="ravi-wa-session-main__header">
-        <div class="ravi-wa-session-main__titleblock">
-          <div>
-            <strong>${escapeHtml(session?.sessionName || "sessão desconhecida")}</strong>
-            <span>${escapeHtml(summary)}</span>
-          </div>
-          <span class="ravi-wa-state-pill ravi-wa-state-pill--${stateClass}">${escapeHtml(stateLabel)}</span>
-        </div>
-        <div class="ravi-wa-chip-row">
-          <span class="ravi-wa-meta-chip">agent ${escapeHtml(session?.agentId || "-")}</span>
-          <span class="ravi-wa-meta-chip">tempo ${escapeHtml(elapsed)}</span>
-          <span class="ravi-wa-meta-chip">histórico ${escapeHtml(historySource)}</span>
-          ${linkedChat ? `<span class="ravi-wa-meta-chip">chat ${escapeHtml(shorten(linkedChat, 32))}</span>` : ""}
-        </div>
-        <div class="ravi-wa-actions">
-          <button type="button" data-ravi-session-workspace-close="true">Voltar</button>
-          ${session?.chatId ? `<button type="button" data-ravi-open-chat="${escapeAttribute(session.sessionKey)}">Abrir chat</button>` : ""}
-        </div>
-      </header>
-      <div class="ravi-wa-session-main__thread" data-ravi-session-thread="true">
-        ${timelineMarkup}
-      </div>
-      <form class="ravi-wa-session-main__composer" data-ravi-session-compose="true">
-        <textarea
-          data-ravi-session-compose-input="true"
-          placeholder="mandar mensagem pra sessão..."
-          ${sessionWorkspaceSubmitting ? "disabled" : ""}
-        >${escapeHtml(sessionWorkspaceDraft)}</textarea>
-        <div class="ravi-wa-session-main__composer-actions">
-          <span>${escapeHtml(sessionWorkspaceSubmitting ? "enviando..." : "enter envia · shift+enter quebra")}</span>
-          <button type="submit" ${sessionWorkspaceSubmitting ? "disabled" : ""}>Enviar</button>
-        </div>
-      </form>
-    </div>
-  `;
-}
-
-function computeSessionWorkspaceRenderKey(session, workspace) {
-  const timelineItems = getSessionWorkspaceTimelineItems(workspace);
-  return JSON.stringify({
-    sessionKey: session?.sessionKey || null,
-    sessionName: session?.sessionName || null,
-    agentId: session?.agentId || null,
-    activity: session?.live?.activity || null,
-    summary: session?.live?.summary || null,
-    busySince: session?.live?.busySince || null,
-    historySource: workspace?.historySource || null,
-    timelineCount: timelineItems.length,
-    timeline: timelineItems.map((item) => [
-      item.id || null,
-      item.type || null,
-      item.timestamp || null,
-      item.type === "message" ? item.role || null : item.kind || null,
-      item.type === "message" ? item.content || "" : item.label || null,
-      item.type === "message" ? item.pending === true : item.detail || null,
-      item.type === "artifact" ? item.description || null : null,
-      item.type === "artifact" ? item.preview || null : null,
-      item.type === "artifact" ? item.fullDetail || null : null,
-      item.type === "artifact" ? item.status || null : null,
-    ]),
-    submitting: sessionWorkspaceSubmitting,
-  });
-}
+// ── scroll helper ───────────────────────────────────────────────
 
 function isNearScrollBottom(element, threshold = 56) {
   if (!(element instanceof HTMLElement)) return false;
@@ -4424,37 +4412,409 @@ function isNearScrollBottom(element, threshold = 56) {
   );
 }
 
-function syncSessionWorkspaceToolExpandedState(root, expanded) {
+// ── DOM host management ─────────────────────────────────────────
+
+function ensureSessionWorkspaceMainHost() {
+  const mainPane = document.getElementById("main");
+  if (!(mainPane instanceof HTMLElement)) return null;
+
+  if (
+    currentSessionMainHost &&
+    currentSessionMainHost.parentElement !== mainPane
+  ) {
+    currentSessionMainHost.remove();
+    currentSessionMainHost = null;
+  }
+
+  let host = mainPane.querySelector(`#${SESSION_MAIN_HOST_ID}`);
+  if (!(host instanceof HTMLElement)) {
+    host = document.createElement("section");
+    host.id = SESSION_MAIN_HOST_ID;
+    host.className = "ravi-hidden";
+    mainPane.appendChild(host);
+    swBindHostDelegation(host);
+  }
+
+  currentSessionMainHost = host;
+  return host;
+}
+
+function hideSessionWorkspaceMain() {
+  const host =
+    currentSessionMainHost || document.getElementById(SESSION_MAIN_HOST_ID);
+  if (!(host instanceof HTMLElement)) return;
+  host.classList.add("ravi-hidden");
+  host.innerHTML = "";
+  lastSessionWorkspaceRenderSessionKey = null;
+}
+
+// ── event delegation (bound once per host) ──────────────────────
+
+function swBindHostDelegation(host) {
+  // close button
+  host.addEventListener("click", (e) => {
+    const closeBtn = e.target.closest("[data-ravi-session-workspace-close]");
+    if (closeBtn) {
+      clearSessionWorkspace();
+      return;
+    }
+
+    // open chat button
+    const chatBtn = e.target.closest("[data-ravi-open-chat]");
+    if (chatBtn) {
+      const key = chatBtn.getAttribute("data-ravi-open-chat");
+      if (!key) return;
+      const session = getSelectedWorkspaceSession();
+      const workspace = latestSessionWorkspace;
+      const target = session || workspace?.session || null;
+      if (!target || target.sessionKey !== key) return;
+      openCockpitChat(target).then((opened) => {
+        if (opened) clearSessionWorkspace();
+      });
+      return;
+    }
+
+    // tool call toggle
+    const toolToggle = e.target.closest("[data-ravi-session-tool-toggle]");
+    if (toolToggle) {
+      const key = toolToggle.getAttribute("data-ravi-session-tool-toggle");
+      if (!key) return;
+      const root = toolToggle.closest("[data-ravi-session-tool-root]");
+      const nextExpanded = !expandedSessionWorkspaceTools.has(key);
+      if (nextExpanded) {
+        expandedSessionWorkspaceTools.add(key);
+      } else {
+        expandedSessionWorkspaceTools.delete(key);
+      }
+      swSyncToolExpandedState(root, nextExpanded);
+      return;
+    }
+  });
+
+  // composer submit
+  host.addEventListener("submit", (e) => {
+    const form = e.target.closest("[data-ravi-session-compose]");
+    if (form) {
+      e.preventDefault();
+      submitSessionWorkspacePrompt();
+    }
+  });
+
+  // composer input + auto-grow + enter key
+  host.addEventListener("input", (e) => {
+    if (e.target.matches("[data-ravi-session-compose-input]")) {
+      sessionWorkspaceDraft = e.target.value;
+      // auto-grow textarea
+      e.target.style.height = "auto";
+      e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+    }
+  });
+
+  host.addEventListener("keydown", (e) => {
+    if (
+      e.target.matches("[data-ravi-session-compose-input]") &&
+      e.key === "Enter" &&
+      !e.shiftKey
+    ) {
+      e.preventDefault();
+      const form = host.querySelector("[data-ravi-session-compose]");
+      if (form) {
+        form.dispatchEvent(
+          new Event("submit", { cancelable: true, bubbles: true }),
+        );
+      }
+    }
+  });
+}
+
+// ── tool expand/collapse (pure DOM) ─────────────────────────────
+
+function swSyncToolExpandedState(root, expanded) {
   if (!(root instanceof HTMLElement)) return;
   root.classList.toggle("is-expanded", expanded);
   const toggle = root.querySelector("[data-ravi-session-tool-toggle]");
   if (toggle instanceof HTMLElement) {
     toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
   }
-  const detail = root.querySelector(".ravi-wa-session-tool__expanded");
+  const detail = root.querySelector(".sw-tool__detail");
   if (detail instanceof HTMLElement) {
     detail.hidden = !expanded;
   }
 }
 
-function bindSessionWorkspaceToolToggles(host) {
-  host
-    .querySelectorAll("[data-ravi-session-tool-toggle]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        const key = button.getAttribute("data-ravi-session-tool-toggle");
-        if (!key) return;
-        const root = button.closest("[data-ravi-session-tool-root]");
-        const nextExpanded = !expandedSessionWorkspaceTools.has(key);
-        if (nextExpanded) {
-          expandedSessionWorkspaceTools.add(key);
-        } else {
-          expandedSessionWorkspaceTools.delete(key);
-        }
-        syncSessionWorkspaceToolExpandedState(root, nextExpanded);
-      });
-    });
+// ── element creation helpers ────────────────────────────────────
+
+function swCreateToolCallElement(item) {
+  const el = document.createElement("div");
+  el.setAttribute("data-ravi-sw-id", item.id);
+  el.setAttribute("data-ravi-session-tool-root", item.id);
+  swUpdateToolCallElement(el, item);
+  return el;
 }
+
+function swUpdateToolCallElement(article, item) {
+  const timeLabel = formatTimestamp(item.timestamp) || "";
+  const toolName = item.label || item.kind || "tool";
+  const description = item.description || "";
+  const preview = item.preview || item.detail || "";
+  const fullDetail =
+    typeof item.fullDetail === "string" ? item.fullDetail.trim() : "";
+  const expandable = Boolean(fullDetail && fullDetail !== preview);
+  const expanded = expandable && expandedSessionWorkspaceTools.has(item.id);
+  const statusLabel = formatSessionWorkspaceToolStatusLabel(item.status);
+
+  article.className = "sw-tool" + (expanded ? " is-expanded" : "");
+
+  const statusDot = item.status === "running"
+    ? `<span class="sw-tool__dot sw-tool__dot--running"></span>`
+    : item.status === "error"
+      ? `<span class="sw-tool__dot sw-tool__dot--error"></span>`
+      : item.status === "ok"
+        ? `<span class="sw-tool__dot sw-tool__dot--ok"></span>`
+        : "";
+
+  const summaryText = description || preview || "";
+
+  const inner = expandable
+    ? `<button type="button" class="sw-tool__row"
+        data-ravi-session-tool-toggle="${escapeAttribute(item.id)}"
+        aria-expanded="${expanded ? "true" : "false"}">
+        ${statusDot}
+        <span class="sw-tool__name">${escapeHtml(toolName)}</span>
+        ${summaryText ? `<span class="sw-tool__desc">${escapeHtml(shorten(summaryText, 60))}</span>` : ""}
+        ${timeLabel ? `<span class="sw-tool__time">${escapeHtml(timeLabel)}</span>` : ""}
+        <span class="sw-tool__chevron">›</span>
+      </button>`
+    : `<div class="sw-tool__row">
+        ${statusDot}
+        <span class="sw-tool__name">${escapeHtml(toolName)}</span>
+        ${summaryText ? `<span class="sw-tool__desc">${escapeHtml(shorten(summaryText, 60))}</span>` : ""}
+        ${timeLabel ? `<span class="sw-tool__time">${escapeHtml(timeLabel)}</span>` : ""}
+      </div>`;
+
+  const expandedMarkup = expandable
+    ? `<pre class="sw-tool__detail"${expanded ? "" : " hidden"}>${escapeHtml(fullDetail)}</pre>`
+    : "";
+
+  article.innerHTML = inner + expandedMarkup;
+}
+
+function swCreateBubbleElement(item, session) {
+  const el = document.createElement("div");
+  el.setAttribute("data-ravi-sw-id", item.id);
+  swUpdateBubbleElement(el, item, session);
+  return el;
+}
+
+function swUpdateBubbleElement(article, item, session) {
+  const isMessage = item.type === "message";
+  const isUser = isMessage && item.role === "user";
+  const isAssistant = isMessage && item.role === "assistant";
+  const isEvent = !isMessage;
+
+  if (isEvent) {
+    // system/event items render as centered pills
+    article.className = "sw-event";
+    const detail = item.detail || item.kind || item.type || "";
+    const timeLabel = formatTimestamp(item.timestamp) || "";
+    article.innerHTML =
+      `<span class="sw-event__text">${escapeHtml(detail)}</span>` +
+      (timeLabel ? `<span class="sw-event__time">${escapeHtml(timeLabel)}</span>` : "");
+    return;
+  }
+
+  // message bubble
+  const direction = isUser ? "out" : "in";
+  article.className = `sw-msg sw-msg--${direction}` +
+    (item.pending ? " sw-msg--pending" : "");
+
+  const bodyText = item.content || "";
+  const timeLabel = formatTimestamp(item.timestamp) || "";
+  const pendingIcon = item.pending ? `<span class="sw-msg__pending-icon"></span>` : "";
+
+  article.innerHTML =
+    `<div class="sw-msg__bubble">` +
+      `<pre class="sw-msg__text">${escapeHtml(bodyText)}</pre>` +
+      `<span class="sw-msg__footer">` +
+        `${timeLabel ? `<span class="sw-msg__time">${escapeHtml(timeLabel)}</span>` : ""}` +
+        pendingIcon +
+      `</span>` +
+    `</div>`;
+}
+
+// ── item fingerprint (for change detection) ─────────────────────
+
+function swItemFingerprint(item) {
+  if (item.type === "message") {
+    return `${item.role}|${item.pending}|${item.content}|${item.timestamp}`;
+  }
+  if (item.type === "artifact") {
+    return `${item.kind}|${item.status || ""}|${item.description || ""}|${item.preview || ""}|${item.fullDetail || ""}|${item.duration || ""}|${item.timestamp}`;
+  }
+  return `${item.kind}|${item.detail}|${item.timestamp}`;
+}
+
+// ── timeline reconciliation ─────────────────────────────────────
+
+const swNodeMap = new Map(); // item.id -> { element, fingerprint }
+
+function swReconcileTimeline(thread, items, session) {
+  if (!(thread instanceof HTMLElement)) return;
+
+  const newIds = new Set(items.map((i) => i.id));
+
+  // remove stale nodes
+  for (const [id, entry] of swNodeMap) {
+    if (!newIds.has(id)) {
+      entry.element.remove();
+      swNodeMap.delete(id);
+    }
+  }
+
+  // remove the empty-state placeholder if items exist
+  const emptyEl = thread.querySelector(".ravi-wa-session-main__empty");
+  if (emptyEl && items.length > 0) {
+    emptyEl.remove();
+  }
+
+  if (items.length === 0) {
+    if (!thread.querySelector(".ravi-wa-session-main__empty")) {
+      const empty = document.createElement("div");
+      empty.className = "ravi-wa-session-main__empty";
+      empty.textContent = "sem mensagens recentes dessa sessão ainda.";
+      thread.appendChild(empty);
+    }
+    return;
+  }
+
+  // reconcile each item
+  let prevNode = null;
+  for (const item of items) {
+    const fingerprint = swItemFingerprint(item);
+    const existing = swNodeMap.get(item.id);
+
+    if (existing) {
+      // update if changed
+      if (existing.fingerprint !== fingerprint) {
+        if (item.type === "artifact" && item.kind === "tool") {
+          swUpdateToolCallElement(existing.element, item);
+        } else {
+          swUpdateBubbleElement(existing.element, item, session);
+        }
+        existing.fingerprint = fingerprint;
+      }
+      // ensure correct order
+      const expectedAfter = prevNode
+        ? prevNode.nextElementSibling
+        : thread.firstElementChild;
+      if (existing.element !== expectedAfter) {
+        if (prevNode) {
+          prevNode.after(existing.element);
+        } else {
+          thread.prepend(existing.element);
+        }
+      }
+      prevNode = existing.element;
+    } else {
+      // create new node
+      let element;
+      if (item.type === "artifact" && item.kind === "tool") {
+        element = swCreateToolCallElement(item);
+      } else {
+        element = swCreateBubbleElement(item, session);
+      }
+      if (prevNode) {
+        prevNode.after(element);
+      } else {
+        thread.prepend(element);
+      }
+      swNodeMap.set(item.id, { element, fingerprint });
+      prevNode = element;
+    }
+  }
+}
+
+// ── header update (in-place) ────────────────────────────────────
+
+function swUpdateHeader(host, session, workspace) {
+  const activity = session?.live?.activity || "idle";
+  const stateClass = chipActivityClass(activity);
+  const stateLabel = chipActivityLabel(activity);
+  const sessionName = session?.sessionName || "sessão";
+  const agentId = session?.agentId || "";
+
+  const nameEl = host.querySelector(".sw-header__name");
+  if (nameEl) nameEl.textContent = sessionName;
+
+  const statusEl = host.querySelector(".sw-header__status");
+  if (statusEl) {
+    statusEl.textContent = agentId ? `${agentId} · ${stateLabel}` : stateLabel;
+    statusEl.setAttribute("data-sw-status-class", stateClass);
+  }
+
+  const avatarEl = host.querySelector(".sw-header__avatar");
+  if (avatarEl) {
+    avatarEl.textContent = (sessionName[0] || "S").toUpperCase();
+  }
+}
+
+// ── composer update (in-place) ──────────────────────────────────
+
+function swUpdateComposer(host) {
+  const textarea = host.querySelector("[data-ravi-session-compose-input]");
+  if (textarea instanceof HTMLTextAreaElement) {
+    textarea.disabled = sessionWorkspaceSubmitting;
+    if (document.activeElement !== textarea) {
+      textarea.value = sessionWorkspaceDraft;
+    }
+  }
+  const submitBtn = host.querySelector(".sw-composer__send");
+  if (submitBtn instanceof HTMLButtonElement) {
+    submitBtn.disabled = sessionWorkspaceSubmitting;
+  }
+}
+
+// ── initial scaffold (created once per session switch) ──────────
+
+function swCreateScaffold(session, workspace) {
+  const activity = session?.live?.activity || "idle";
+  const stateClass = chipActivityClass(activity);
+  const stateLabel = chipActivityLabel(activity);
+  const sessionName = session?.sessionName || "sessão";
+  const agentId = session?.agentId || "";
+  const initial = (sessionName[0] || "S").toUpperCase();
+
+  return `<div class="sw-chat">
+    <header class="sw-header">
+      <button type="button" class="sw-header__back" data-ravi-session-workspace-close="true" aria-label="Voltar">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M12 4l1.4 1.4L7.8 11H20v2H7.8l5.6 5.6L12 20 4 12z"/></svg>
+      </button>
+      <div class="sw-header__avatar">${escapeHtml(initial)}</div>
+      <div class="sw-header__info">
+        <strong class="sw-header__name">${escapeHtml(sessionName)}</strong>
+        <span class="sw-header__status" data-sw-status-class="${stateClass}">${escapeHtml(agentId ? `${agentId} · ${stateLabel}` : stateLabel)}</span>
+      </div>
+      ${session?.chatId ? `<button type="button" class="sw-header__action" data-ravi-open-chat="${escapeAttribute(session.sessionKey)}" title="Abrir chat vinculado">
+        <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"/></svg>
+      </button>` : ""}
+    </header>
+    <div class="sw-thread" data-ravi-session-thread="true"></div>
+    <form class="sw-composer" data-ravi-session-compose="true">
+      <textarea
+        class="sw-composer__input"
+        data-ravi-session-compose-input="true"
+        placeholder="Mensagem"
+        rows="1"
+        ${sessionWorkspaceSubmitting ? "disabled" : ""}
+      >${escapeHtml(sessionWorkspaceDraft)}</textarea>
+      <button type="submit" class="sw-composer__send" ${sessionWorkspaceSubmitting ? "disabled" : ""} aria-label="Enviar">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M1.1 21.8L23 12 1.1 2.2 1 10l15 2-15 2z"/></svg>
+      </button>
+    </form>
+  </div>`;
+}
+
+// ── main sync (the only public entry point for rendering) ───────
 
 function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
   const host = ensureSessionWorkspaceMainHost();
@@ -4465,112 +4825,76 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
     return;
   }
 
-  if (!options.force && shouldDeferSessionWorkspaceMainRender(host)) {
-    return;
-  }
-
   const session = getSelectedWorkspaceSession(snapshot);
   const workspace =
     latestSessionWorkspace?.session?.sessionKey === selectedWorkspaceSessionKey
       ? latestSessionWorkspace
       : null;
-  const previousThread = host.querySelector("[data-ravi-session-thread]");
-  const previousScrollTop =
-    previousThread instanceof HTMLElement ? previousThread.scrollTop : 0;
-  const previousWasNearBottom =
-    previousThread instanceof HTMLElement
-      ? isNearScrollBottom(previousThread)
-      : false;
-  const renderKey = computeSessionWorkspaceRenderKey(session, workspace);
   const sessionKey = session?.sessionKey || selectedWorkspaceSessionKey || null;
 
-  if (
-    !options.force &&
-    renderKey === lastSessionWorkspaceRenderKey &&
-    sessionKey === lastSessionWorkspaceRenderSessionKey
-  ) {
-    return;
+  // detect if we need a full scaffold (new session or empty host)
+  const needsScaffold =
+    sessionKey !== lastSessionWorkspaceRenderSessionKey ||
+    !host.querySelector(".sw-chat");
+
+  if (needsScaffold) {
+    host.innerHTML = swCreateScaffold(session, workspace);
+    swNodeMap.clear();
+    lastSessionWorkspaceRenderSessionKey = sessionKey;
   }
 
   host.classList.remove("ravi-hidden");
-  host.innerHTML = buildSessionWorkspaceMainMarkup(session, workspace);
-  lastSessionWorkspaceRenderKey = renderKey;
-  lastSessionWorkspaceRenderSessionKey = sessionKey;
 
-  host
-    .querySelectorAll("[data-ravi-session-workspace-close]")
-    .forEach((button) => {
-      button.addEventListener("click", () => {
-        clearSessionWorkspace();
-      });
-    });
+  // get thread and check scroll before update
+  const thread = host.querySelector("[data-ravi-session-thread]");
+  const wasNearBottom =
+    thread instanceof HTMLElement ? isNearScrollBottom(thread) : true;
 
-  host.querySelectorAll("[data-ravi-open-chat]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const sessionKey = button.getAttribute("data-ravi-open-chat");
-      if (!sessionKey) return;
-      const target = session || workspace?.session || null;
-      if (!target || target.sessionKey !== sessionKey) return;
-      const opened = await openCockpitChat(target);
-      if (opened) {
-        clearSessionWorkspace();
-      }
-    });
-  });
-
-  const textarea = host.querySelector("[data-ravi-session-compose-input]");
-  if (textarea instanceof HTMLTextAreaElement) {
-    textarea.addEventListener("input", () => {
-      sessionWorkspaceDraft = textarea.value;
-    });
-    textarea.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        host
-          .querySelector("[data-ravi-session-compose]")
-          ?.dispatchEvent(
-            new Event("submit", { cancelable: true, bubbles: true }),
-          );
-      }
-    });
+  // reconcile header
+  if (!needsScaffold) {
+    swUpdateHeader(host, session, workspace);
   }
 
-  host.querySelectorAll("[data-ravi-session-compose]").forEach((form) => {
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      await submitSessionWorkspacePrompt();
-    });
-  });
+  // reconcile timeline
+  const items = getSessionWorkspaceTimelineItems(workspace);
+  const toolItems = items.filter(i => i.type === "artifact" && i.kind === "tool");
+  if (toolItems.length > 0) {
+    console.log("[ravi-sw] tool call items in timeline:", toolItems.length, toolItems.map(t => ({ id: t.id, kind: t.kind, label: t.label, status: t.status })));
+  } else {
+    const allTypes = items.map(i => `${i.type}:${i.kind || i.role || "?"}`);
+    console.log("[ravi-sw] timeline items (no tools):", items.length, "types:", [...new Set(allTypes)]);
+  }
+  swReconcileTimeline(thread, items, session);
 
-  bindSessionWorkspaceToolToggles(host);
+  // reconcile composer
+  swUpdateComposer(host);
 
-  const thread = host.querySelector("[data-ravi-session-thread]");
+  // scroll management
   if (thread instanceof HTMLElement) {
-    const shouldStickToBottom = Boolean(
+    const shouldStick = Boolean(
       options.scrollToEnd ||
-      sessionWorkspaceShouldScrollToEnd ||
-      previousWasNearBottom,
+        sessionWorkspaceShouldScrollToEnd ||
+        wasNearBottom ||
+        needsScaffold,
     );
-    requestAnimationFrame(() => {
-      if (shouldStickToBottom) {
+    if (shouldStick) {
+      requestAnimationFrame(() => {
         thread.scrollTop = thread.scrollHeight;
-      } else {
-        const maxScrollTop = Math.max(
-          0,
-          thread.scrollHeight - thread.clientHeight,
-        );
-        thread.scrollTop = Math.min(previousScrollTop, maxScrollTop);
-      }
-    });
+      });
+    }
   }
   sessionWorkspaceShouldScrollToEnd = false;
 }
+
+// ── lifecycle ───────────────────────────────────────────────────
 
 function clearSessionWorkspace() {
   selectedWorkspaceSessionKey = null;
   persistWorkspaceSessionKey(null);
   latestSessionWorkspace = null;
+  pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
+  swNodeMap.clear();
   sessionWorkspaceDraft = "";
   sessionWorkspaceSubmitting = false;
   sessionWorkspaceShouldScrollToEnd = false;
@@ -4622,7 +4946,9 @@ function openSessionWorkspace(session) {
   selectedWorkspaceSessionKey = session.sessionKey;
   persistWorkspaceSessionKey(selectedWorkspaceSessionKey);
   latestSessionWorkspace = null;
+  pendingHumanChatListIntent = null;
   expandedSessionWorkspaceTools.clear();
+  swNodeMap.clear();
   sessionWorkspaceDraft = "";
   pinnedSessionKey = session.sessionKey;
   persistPinnedSessionKey(session.sessionKey);
@@ -4788,6 +5114,140 @@ function getTaskDispatchAgents(snapshot = latestTasksSnapshot) {
 
 function getTaskDispatchSessions(snapshot = latestTasksSnapshot) {
   return Array.isArray(snapshot?.sessions) ? snapshot.sessions : [];
+}
+
+function getTaskWorkspaceSectionState(taskId) {
+  const normalizedTaskId =
+    typeof taskId === "string" && taskId.trim() ? taskId.trim() : null;
+  if (!normalizedTaskId) {
+    return { ...TASK_WORKSPACE_DEFAULT_SECTION_STATE };
+  }
+  const existing = taskWorkspaceSectionStateByTaskId.get(normalizedTaskId);
+  if (existing) {
+    return existing;
+  }
+  const created = { ...TASK_WORKSPACE_DEFAULT_SECTION_STATE };
+  taskWorkspaceSectionStateByTaskId.set(normalizedTaskId, created);
+  return created;
+}
+
+function isTaskWorkspaceSectionOpen(taskId, sectionId) {
+  return getTaskWorkspaceSectionState(taskId)[sectionId] !== false;
+}
+
+function setTaskWorkspaceSectionOpen(taskId, sectionId, open) {
+  const normalizedTaskId =
+    typeof taskId === "string" && taskId.trim() ? taskId.trim() : null;
+  if (!normalizedTaskId || !sectionId) return;
+  taskWorkspaceSectionStateByTaskId.set(normalizedTaskId, {
+    ...getTaskWorkspaceSectionState(normalizedTaskId),
+    [sectionId]: Boolean(open),
+  });
+}
+
+function resolveTaskDispatchSessionByName(
+  sessionName,
+  snapshot = latestTasksSnapshot,
+) {
+  const normalizedSessionName = normalizeTaskSessionName(sessionName);
+  if (!normalizedSessionName) return null;
+  return (
+    getTaskDispatchSessions(snapshot).find(
+      (session) =>
+        normalizeTaskSessionName(session?.sessionName) ===
+        normalizedSessionName,
+    ) || null
+  );
+}
+
+function resolveTaskWorkspacePrimarySessionRecord(
+  selectedTask,
+  snapshot = latestTasksSnapshot,
+) {
+  const task = selectedTask?.task || null;
+  const activeAssignment = selectedTask?.activeAssignment || null;
+  const candidates = [
+    activeAssignment?.sessionName,
+    task?.assigneeSessionName,
+    task?.workSessionName,
+  ];
+  for (const candidate of candidates) {
+    const session = resolveTaskDispatchSessionByName(candidate, snapshot);
+    if (session) return session;
+  }
+  return null;
+}
+
+function resolveTaskWorkspaceReportSessionRecord(
+  selectedTask,
+  snapshot = latestTasksSnapshot,
+) {
+  const task = selectedTask?.task || null;
+  const activeAssignment = selectedTask?.activeAssignment || null;
+  const candidates = [
+    activeAssignment?.reportToSessionName,
+    task?.reportToSessionName,
+    task?.createdBySessionName,
+  ];
+  for (const candidate of candidates) {
+    const session = resolveTaskDispatchSessionByName(candidate, snapshot);
+    if (session) return session;
+  }
+  return null;
+}
+
+function formatTaskArtifactDisplayPath(artifact) {
+  const path = artifact?.path || null;
+  return (
+    path?.displayPath || path?.workspaceRelativePath || path?.absolutePath || null
+  );
+}
+
+function formatTaskArtifactCopyValue(artifact) {
+  const path = artifact?.path || null;
+  return (
+    path?.absolutePath ||
+    path?.displayPath ||
+    path?.workspaceRelativePath ||
+    null
+  );
+}
+
+function formatTaskArtifactAvailabilityLabel(artifact) {
+  if (artifact?.exists === true) return "ready";
+  if (artifact?.exists === false) return "missing";
+  return "planned";
+}
+
+function buildTaskWorkspaceContextCopy(selectedTask) {
+  const task = selectedTask?.task || null;
+  if (!task) return "";
+  const activeAssignment = selectedTask?.activeAssignment || null;
+  const primarySession =
+    resolveTaskWorkspacePrimarySessionRecord(selectedTask)?.sessionName ||
+    getTaskPrimarySessionName(task, activeAssignment) ||
+    "-";
+  const reportSession =
+    resolveTaskWorkspaceReportSessionRecord(selectedTask)?.sessionName ||
+    activeAssignment?.reportToSessionName ||
+    task.reportToSessionName ||
+    "-";
+  const primaryArtifactPath = formatTaskArtifactDisplayPath(task.artifacts?.primary);
+  const summary = task.blockerReason || task.summary || summarizeTaskCardCopy(task);
+  return [
+    `${task.title || task.id} (${task.id})`,
+    `status: ${task.status}`,
+    `progress: ${task.progress}%`,
+    `profile: ${task.profileId || "-"}`,
+    `session: ${primarySession}`,
+    `agent: ${task.assigneeAgentId || activeAssignment?.agentId || "-"}`,
+    `report to: ${reportSession}`,
+    `worktree: ${getTaskWorktreeLabel(task) || "-"}`,
+    primaryArtifactPath ? `artifact: ${primaryArtifactPath}` : null,
+    summary ? `summary: ${summary}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function pickSuggestedTaskDispatchAgentId(selectedTask, agents) {
@@ -6525,7 +6985,130 @@ function renderTaskFactGrid(items) {
           `,
         )
         .join("")}
-    </dl>
+      </dl>
+  `;
+}
+
+function renderTaskWorkspaceSection({
+  taskId,
+  sectionId = null,
+  title,
+  note = null,
+  content,
+  className = "",
+}) {
+  const expanded = sectionId ? isTaskWorkspaceSectionOpen(taskId, sectionId) : true;
+  const classes = ["ravi-wa-card", "ravi-wa-task-detail-section"];
+  if (className) classes.push(className);
+
+  return `
+    <section class="${classes.join(" ")}">
+      <div class="ravi-wa-section-head">
+        <h3>${escapeHtml(title)}</h3>
+        <div class="ravi-wa-task-section-head__aside">
+          ${note ? `<span>${escapeHtml(note)}</span>` : ""}
+          ${
+            sectionId
+              ? `
+            <button
+              type="button"
+              class="ravi-wa-task-section-toggle"
+              data-ravi-task-id="${escapeAttribute(taskId || "")}"
+              data-ravi-task-section-toggle="${escapeAttribute(sectionId)}"
+              aria-expanded="${expanded ? "true" : "false"}"
+            >
+              ${escapeHtml(expanded ? "ocultar" : "mostrar")}
+            </button>
+          `
+              : ""
+          }
+        </div>
+      </div>
+      ${expanded ? content : ""}
+    </section>
+  `;
+}
+
+function renderTaskLineageTrail(lineage, currentTaskId) {
+  const items = Array.isArray(lineage) ? lineage.filter(Boolean) : [];
+  if (!items.length) {
+    return `<p class="ravi-wa-empty">sem lineage clicavel nesse snapshot.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-task-lineage">
+      ${items
+        .map(
+          (item, index) => `
+            ${index ? `<span class="ravi-wa-task-lineage__divider" aria-hidden="true">/</span>` : ""}
+            <button
+              type="button"
+              class="ravi-wa-task-lineage__step${item.id === currentTaskId ? " ravi-wa-task-lineage__step--current" : ""}"
+              data-ravi-focus-task="${escapeAttribute(item.id)}"
+            >
+              <span>${escapeHtml(formatTaskShortId(item.id))}</span>
+              <strong>${escapeHtml(shorten(item.title || item.id, 42))}</strong>
+            </button>
+          `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderTaskArtifactCard(artifact, options = {}) {
+  if (!artifact) {
+    return `<p class="ravi-wa-empty">sem artifact surfaced nessa task.</p>`;
+  }
+
+  const displayPath = formatTaskArtifactDisplayPath(artifact);
+  const copyValue = formatTaskArtifactCopyValue(artifact);
+  const availability = formatTaskArtifactAvailabilityLabel(artifact);
+  const emphasis = options.emphasis === true;
+  const title = artifact.label || artifact.kind || "artifact";
+  return `
+    <article class="ravi-wa-task-artifact${emphasis ? " ravi-wa-task-artifact--primary" : ""}">
+      <div class="ravi-wa-task-artifact__head">
+        <div class="ravi-wa-task-artifact__copy">
+          <span class="ravi-wa-task-artifact__eyebrow">${escapeHtml(
+            emphasis ? "primary artifact" : artifact.role || "artifact",
+          )}</span>
+          <strong>${escapeHtml(title)}</strong>
+        </div>
+        <span class="ravi-wa-meta-chip">${escapeHtml(availability)}</span>
+      </div>
+      ${
+        displayPath
+          ? `<div class="ravi-wa-task-artifact__path">${escapeHtml(displayPath)}</div>`
+          : `<p class="ravi-wa-empty">sem path surfaced para esse artifact.</p>`
+      }
+      ${renderTaskInlineMeta(
+        [
+          { label: "kind", value: artifact.kind || "-" },
+          artifact.exists === false
+            ? { label: "exists", value: "no" }
+            : artifact.exists === true
+              ? { label: "exists", value: "yes" }
+              : { label: "exists", value: "unknown" },
+        ],
+        { compact: true },
+      )}
+      ${
+        copyValue
+          ? `
+        <div class="ravi-wa-task-artifact__actions">
+          <button
+            type="button"
+            data-ravi-task-copy-value="${escapeAttribute(copyValue)}"
+            data-ravi-task-copy-label="${escapeAttribute(title)}"
+          >
+            copiar path
+          </button>
+        </div>
+      `
+          : ""
+      }
+    </article>
   `;
 }
 
@@ -6645,8 +7228,795 @@ function renderTaskComments(comments) {
   `;
 }
 
+function buildInsightsWorkspaceSubtitle(snapshot) {
+  const total = Number(snapshot?.stats?.total) || 0;
+  const withLineage = Number(snapshot?.stats?.withLineage) || 0;
+  if (!total) return "feed real do runtime";
+  return `${total} insight${total === 1 ? "" : "s"} · ${withLineage} com lineage`;
+}
+
+function filterInsightsList(items, filter) {
+  const list = Array.isArray(items) ? items : [];
+  const needle = normalizeLookupToken(filter);
+  if (!needle) return list;
+  return list.filter((item) =>
+    buildInsightSearchCorpus(item).includes(needle),
+  );
+}
+
+function buildInsightSearchCorpus(item) {
+  const parts = [
+    item?.summary,
+    item?.detail,
+    item?.kind,
+    item?.importance,
+    item?.confidence,
+    item?.author?.name,
+    item?.author?.agentId,
+    item?.author?.sessionName,
+    item?.origin?.kind,
+    item?.origin?.taskId,
+    item?.origin?.agentId,
+    item?.origin?.sessionName,
+    ...(Array.isArray(item?.links)
+      ? item.links.flatMap((link) => [
+          link?.label,
+          link?.value,
+          link?.targetId,
+          link?.task?.id,
+          link?.task?.title,
+          link?.session?.sessionName,
+          link?.agent?.agentId,
+          link?.agent?.name,
+        ])
+      : []),
+  ];
+
+  return parts
+    .filter(Boolean)
+    .map((value) => normalizeLookupToken(String(value)))
+    .join(" ");
+}
+
+function formatTimestampLong(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+function buildInsightBadge(label, tone = null) {
+  return `<span class="ravi-wa-insight-badge${tone ? ` ravi-wa-insight-badge--${tone}` : ""}">${escapeHtml(label)}</span>`;
+}
+
+function buildInsightKindTone(kind) {
+  switch (kind) {
+    case "problem":
+      return "problem";
+    case "improvement":
+      return "improvement";
+    case "win":
+      return "win";
+    case "pattern":
+      return "pattern";
+    default:
+      return "observation";
+  }
+}
+
+function buildImportanceTone(importance) {
+  switch (importance) {
+    case "high":
+      return "high";
+    case "low":
+      return "low";
+    default:
+      return "normal";
+  }
+}
+
+function buildConfidenceTone(confidence) {
+  switch (confidence) {
+    case "high":
+      return "high";
+    case "low":
+      return "low";
+    default:
+      return "normal";
+  }
+}
+
+function renderInsightLineageButtons(links) {
+  const list = Array.isArray(links) ? links : [];
+  if (!list.length) {
+    return `<p class="ravi-wa-empty">sem lineage surfaced nesse insight.</p>`;
+  }
+
+  return `
+    <div class="ravi-wa-insight-lineage">
+      ${list
+        .map((link) => {
+          const value = shorten(String(link?.value || link?.targetId || "-"), 44);
+          const label = `${link?.label || link?.targetType || "link"} · ${value}`;
+          if (link?.action === "focus-task" && link?.task?.id) {
+            return `
+              <button
+                type="button"
+                class="ravi-wa-insight-link"
+                data-ravi-insight-open-task="${escapeAttribute(link.task.id)}"
+                title="${escapeAttribute(String(link.task?.title || link.task.id))}"
+              >${escapeHtml(label)}</button>
+            `;
+          }
+          if (link?.action === "open-session" && link?.session?.sessionKey) {
+            return `
+              <button
+                type="button"
+                class="ravi-wa-insight-link"
+                data-ravi-insight-open-session="${escapeAttribute(link.session.sessionKey)}"
+                title="${escapeAttribute(link.session.sessionName || link.session.sessionKey)}"
+              >${escapeHtml(label)}</button>
+            `;
+          }
+          if (link?.action === "open-agent-session" && link?.session?.sessionKey) {
+            return `
+              <button
+                type="button"
+                class="ravi-wa-insight-link"
+                data-ravi-insight-open-agent-session="${escapeAttribute(link.session.sessionKey)}"
+                title="${escapeAttribute(link.agent?.agentId || link.session.sessionName || "")}"
+              >${escapeHtml(label)}</button>
+            `;
+          }
+          if (link?.action === "open-url" && link?.href) {
+            return `
+              <a
+                class="ravi-wa-insight-link"
+                href="${escapeAttribute(link.href)}"
+                target="_blank"
+                rel="noreferrer"
+                title="${escapeAttribute(link.href)}"
+              >${escapeHtml(label)}</a>
+            `;
+          }
+          return `
+            <button
+              type="button"
+              class="ravi-wa-insight-link ravi-wa-insight-link--copy"
+              data-ravi-insight-copy-value="${escapeAttribute(link?.copyText || link?.targetId || "")}"
+              data-ravi-insight-copy-label="${escapeAttribute(link?.label || link?.targetType || "link")}"
+              title="${escapeAttribute(link?.copyText || link?.targetId || "")}"
+            >${escapeHtml(label)}</button>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
+}
+
+function renderInsightCard(item) {
+  const updatedAt = formatTimestampLong(item?.updatedAt);
+  const elapsed = formatElapsedCompact(item?.updatedAt) || "-";
+  const authorLabel = formatTaskActorLabel(
+    item?.author?.name,
+    item?.author?.agentId,
+    item?.author?.sessionName,
+  );
+  const meta = renderTaskInlineMeta(
+    [
+      { label: "origin", value: item?.origin?.kind || "-" },
+      { label: "author", value: authorLabel },
+      {
+        label: "updated",
+        value: updatedAt,
+      },
+      {
+        label: "comments",
+        value: String(Number(item?.commentCount) || 0),
+      },
+      {
+        label: "links",
+        value: String(Array.isArray(item?.links) ? item.links.length : 0),
+      },
+    ],
+    { compact: true, className: "ravi-wa-insight-card__meta" },
+  );
+  const latestComment =
+    typeof item?.latestComment === "string" && item.latestComment.trim()
+      ? shorten(item.latestComment.trim(), 180)
+      : null;
+
+  return `
+    <article class="ravi-wa-card ravi-wa-insight-card">
+      <div class="ravi-wa-insight-card__head">
+        <div class="ravi-wa-insight-card__copy">
+          <div class="ravi-wa-insight-card__badges">
+            ${buildInsightBadge(item?.kind || "observation", buildInsightKindTone(item?.kind))}
+            ${buildInsightBadge(`importance ${item?.importance || "normal"}`, buildImportanceTone(item?.importance))}
+            ${buildInsightBadge(`confidence ${item?.confidence || "medium"}`, buildConfidenceTone(item?.confidence))}
+          </div>
+          <h3>${escapeHtml(item?.summary || item?.id || "insight")}</h3>
+          ${
+            item?.detail
+              ? `<p class="ravi-wa-insight-card__detail">${escapeHtml(shorten(String(item.detail).replace(/\s+/g, " ").trim(), 260))}</p>`
+              : ""
+          }
+        </div>
+        <div class="ravi-wa-insight-card__aside">
+          <strong>${escapeHtml(elapsed)}</strong>
+          <span>${escapeHtml(updatedAt)}</span>
+        </div>
+      </div>
+      ${meta}
+      ${
+        latestComment
+          ? `<p class="ravi-wa-insight-card__comment">${escapeHtml(latestComment)}</p>`
+          : ""
+      }
+      <div class="ravi-wa-insight-card__lineage-block">
+        <span class="ravi-wa-insight-card__lineage-label">lineage</span>
+        ${renderInsightLineageButtons(item?.links)}
+      </div>
+    </article>
+  `;
+}
+
+async function copyInsightValue(value, label) {
+  await copyOverlayValue(value, label);
+}
+
+async function focusInsightTask(taskId) {
+  if (!taskId) return;
+  setSelectedTaskId(taskId);
+  setActiveWorkspace("tasks");
+  openTaskDetailDrawer(taskId);
+  await refreshTasks(true);
+}
+
+async function focusInsightSessionByKey(sessionKey) {
+  if (!sessionKey) return;
+  const target = findSessionByKey(sessionKey);
+  if (!target) {
+    setSidebarNotice("error", "sessão do insight não está disponível no snapshot");
+    return;
+  }
+  openSessionWorkspace(target);
+}
+
+function findSessionByKey(sessionKey) {
+  const pool = [
+    latestSnapshot?.session,
+    ...(latestSnapshot?.activeSessions || latestSnapshot?.hotSessions || []),
+    ...(latestSnapshot?.recentSessions || latestSnapshot?.recentChats || []),
+    ...(latestInsightsSnapshot?.items || []).flatMap((item) =>
+      (item?.links || []).flatMap((link) => {
+        const refs = [];
+        if (link?.session) refs.push(link.session);
+        if (link?.agent?.session) refs.push(link.agent.session);
+        return refs;
+      }),
+    ),
+  ].filter(Boolean);
+
+  return dedupeSessionsByKey(pool).find((item) => item.sessionKey === sessionKey) || null;
+}
+
+function renderInsightsWorkspace(body) {
+  const preservedScrollState = captureWorkspaceScrollState("insights");
+  const snapshot = latestInsightsSnapshot;
+  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const filteredItems = filterInsightsList(items, insightsFilter);
+  const stats = snapshot?.stats || {};
+  const byKind = stats?.byKind || {};
+
+  body.innerHTML = `
+    <div class="ravi-wa-insights-page">
+      <section class="ravi-wa-card ravi-wa-hero-card">
+        <div class="ravi-wa-hero-top">
+          <div class="ravi-wa-insights-hero__copy">
+            <span class="ravi-wa-insights-hero__eyebrow">runtime + lineage</span>
+            <div>
+              <h2>Insights</h2>
+              <p>feed compacto do que já foi aprendido, com volta rápida para task, sessão, agent e artifact quando o runtime consegue surfacear lineage.</p>
+            </div>
+          </div>
+          <span class="ravi-wa-state-pill ravi-wa-insights-hero__pill">${escapeHtml(`${stats?.total ?? 0} itens`)}</span>
+        </div>
+        <div class="ravi-wa-chip-row">
+          <span class="ravi-wa-meta-chip">${escapeHtml(`high importance ${stats?.highImportance ?? 0}`)}</span>
+          <span class="ravi-wa-meta-chip">${escapeHtml(`high confidence ${stats?.highConfidence ?? 0}`)}</span>
+          <span class="ravi-wa-meta-chip">${escapeHtml(`com lineage ${stats?.withLineage ?? 0}`)}</span>
+          <span class="ravi-wa-meta-chip">${escapeHtml(`problems ${byKind.problem ?? 0} · improvements ${byKind.improvement ?? 0}`)}</span>
+        </div>
+        <label class="ravi-wa-sidebar-search ravi-wa-insights-search" for="ravi-wa-insights-search">
+          <span>buscar por summary, task, sessão, agent ou artifact</span>
+          <input
+            id="ravi-wa-insights-search"
+            type="text"
+            placeholder="qc, task-77c6715d, stylelab, dev..."
+            value="${escapeAttribute(insightsFilter)}"
+          />
+        </label>
+      </section>
+      ${
+        sidebarNotice
+          ? `
+        <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--${escapeAttribute(sidebarNotice.kind || "info")}">
+          <p>${escapeHtml(sidebarNotice.message || "")}</p>
+        </section>
+      `
+          : ""
+      }
+      ${
+        !items.length
+          ? `
+        <section class="ravi-wa-card">
+          <h3>Nenhum insight ainda</h3>
+          <p>O DB de insights ainda não tem registros para esse runtime.</p>
+        </section>
+      `
+          : !filteredItems.length
+            ? `
+        <section class="ravi-wa-card">
+          <h3>Sem match no filtro</h3>
+          <p>O feed existe, mas nada bateu com <strong>${escapeHtml(insightsFilter)}</strong>.</p>
+        </section>
+      `
+            : `
+        <div class="ravi-wa-insights-list">
+          ${filteredItems.map((item) => renderInsightCard(item)).join("")}
+        </div>
+      `
+      }
+    </div>
+  `;
+
+  const searchInput = body.querySelector("#ravi-wa-insights-search");
+  searchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    insightsFilter = nextValue;
+    renderInsightsWorkspace(body);
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-insights-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-insight-open-task]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const taskId = button.getAttribute("data-ravi-insight-open-task");
+      await focusInsightTask(taskId);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-insight-open-session]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const sessionKey = button.getAttribute("data-ravi-insight-open-session");
+      await focusInsightSessionByKey(sessionKey);
+    });
+  });
+
+  body
+    .querySelectorAll("[data-ravi-insight-open-agent-session]")
+    .forEach((button) => {
+      button.addEventListener("click", async () => {
+        const sessionKey = button.getAttribute(
+          "data-ravi-insight-open-agent-session",
+        );
+        await focusInsightSessionByKey(sessionKey);
+      });
+    });
+
+  body.querySelectorAll("[data-ravi-insight-copy-value]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const value = button.getAttribute("data-ravi-insight-copy-value");
+      const label = button.getAttribute("data-ravi-insight-copy-label");
+      await copyInsightValue(value, label);
+    });
+  });
+
+  restoreWorkspaceScrollState(preservedScrollState);
+}
+
+function ensureTasksWorkspaceShell(body) {
+  let page = body.querySelector(".ravi-wa-tasks-page");
+  if (!(page instanceof HTMLElement)) {
+    body.innerHTML = `
+      <div class="ravi-wa-tasks-page">
+        <section class="ravi-wa-tasks-toolbar">
+          <div
+            class="ravi-wa-tasks-toolbar__copy"
+            data-ravi-tasks-toolbar-copy="true"
+          ></div>
+          <div
+            class="ravi-wa-tasks-toolbar__stats"
+            data-ravi-tasks-toolbar-stats="true"
+          ></div>
+        </section>
+        <div
+          class="ravi-wa-tasks-toolbar__statusline"
+          data-ravi-tasks-statusline="true"
+        ></div>
+        <div data-ravi-tasks-notice-slot="true"></div>
+        <div data-ravi-tasks-activity-slot="true"></div>
+        <div class="ravi-wa-tasks-layout" data-ravi-tasks-layout="true">
+          <div class="ravi-wa-task-board-wrap">
+            <div class="ravi-wa-task-board" data-ravi-task-board="true"></div>
+          </div>
+        </div>
+        <div data-ravi-task-detail-drawer-slot="true"></div>
+      </div>
+    `;
+    page = body.querySelector(".ravi-wa-tasks-page");
+  }
+
+  if (!(page instanceof HTMLElement)) return null;
+  bindTasksWorkspaceInteractions(page);
+
+  return {
+    page,
+    toolbarCopy: page.querySelector("[data-ravi-tasks-toolbar-copy='true']"),
+    toolbarStats: page.querySelector("[data-ravi-tasks-toolbar-stats='true']"),
+    statusLine: page.querySelector("[data-ravi-tasks-statusline='true']"),
+    noticeSlot: page.querySelector("[data-ravi-tasks-notice-slot='true']"),
+    activitySlot: page.querySelector("[data-ravi-tasks-activity-slot='true']"),
+    layout: page.querySelector("[data-ravi-tasks-layout='true']"),
+    board: page.querySelector("[data-ravi-task-board='true']"),
+    drawerSlot: page.querySelector("[data-ravi-task-detail-drawer-slot='true']"),
+  };
+}
+
+function bindTasksWorkspaceInteractions(page) {
+  if (!(page instanceof HTMLElement) || page.dataset.raviTasksBound === "true") {
+    return;
+  }
+
+  page.dataset.raviTasksBound = "true";
+  page.addEventListener("click", (event) => {
+    void handleTasksWorkspaceClick(event);
+  });
+  page.addEventListener("input", handleTasksWorkspaceInput);
+  page.addEventListener("change", handleTasksWorkspaceChange);
+}
+
+async function handleTasksWorkspaceClick(event) {
+  const target = event?.target;
+  if (!(target instanceof Element)) return;
+
+  const focusButton = target.closest("[data-ravi-focus-task]");
+  if (focusButton instanceof Element) {
+    const taskId = focusButton.getAttribute("data-ravi-focus-task");
+    if (!taskId) return;
+    openTaskDetailDrawer(taskId);
+    await refreshTasks(true);
+    return;
+  }
+
+  const closeButton = target.closest("[data-ravi-close-task-drawer]");
+  if (closeButton instanceof Element) {
+    event.preventDefault();
+    closeTaskDetailDrawer();
+    return;
+  }
+
+  const toggleButton = target.closest("[data-ravi-task-section-toggle]");
+  if (toggleButton instanceof Element) {
+    event.preventDefault();
+    const taskId =
+      toggleButton.getAttribute("data-ravi-task-id") || selectedTaskId;
+    const sectionId = toggleButton.getAttribute("data-ravi-task-section-toggle");
+    if (!taskId || !sectionId) return;
+    const expanded = toggleButton.getAttribute("aria-expanded") === "true";
+    setTaskWorkspaceSectionOpen(taskId, sectionId, !expanded);
+    requestRender();
+    return;
+  }
+
+  const openSessionButton = target.closest("[data-ravi-task-open-session]");
+  if (openSessionButton instanceof Element) {
+    event.preventDefault();
+    const sessionKey = openSessionButton.getAttribute("data-ravi-task-open-session");
+    if (!sessionKey) return;
+    const targetSession =
+      findSessionByKey(sessionKey) ||
+      getTaskDispatchSessions().find((session) => session?.sessionKey === sessionKey) ||
+      null;
+    if (!targetSession) {
+      setSidebarNotice("error", "sessão da task não está disponível no snapshot");
+      return;
+    }
+    openSessionWorkspace(targetSession);
+    return;
+  }
+
+  const openChatButton = target.closest("[data-ravi-open-chat]");
+  if (openChatButton instanceof Element) {
+    event.preventDefault();
+    const sessionKey = openChatButton.getAttribute("data-ravi-open-chat");
+    const targetSession = sessionKey ? findSessionByKey(sessionKey) : null;
+    if (!targetSession) {
+      setSidebarNotice("error", "chat da task não está disponível no snapshot");
+      return;
+    }
+    await openCockpitChat(targetSession);
+    return;
+  }
+
+  const copyValueButton = target.closest("[data-ravi-task-copy-value]");
+  if (copyValueButton instanceof Element) {
+    event.preventDefault();
+    const value = copyValueButton.getAttribute("data-ravi-task-copy-value");
+    const label = copyValueButton.getAttribute("data-ravi-task-copy-label");
+    await copyOverlayValue(value, label);
+    return;
+  }
+
+  const dispatchButton = target.closest("[data-ravi-dispatch-task]");
+  if (dispatchButton instanceof Element) {
+    event.preventDefault();
+    const taskId = dispatchButton.getAttribute("data-ravi-dispatch-task");
+    if (!taskId || taskDispatchInFlightTaskId) return;
+    await submitTaskDispatch(taskId);
+  }
+}
+
+function handleTasksWorkspaceInput(event) {
+  const target = event?.target;
+  if (!(target instanceof Element)) return;
+  const selectedTaskKey = selectedTaskId;
+  if (!selectedTaskKey) return;
+
+  if (target.matches("#ravi-wa-task-dispatch-session")) {
+    updateTaskDispatchDraft(selectedTaskKey, {
+      sessionName: target.value || "",
+    });
+  }
+}
+
+function handleTasksWorkspaceChange(event) {
+  const target = event?.target;
+  if (!(target instanceof Element)) return;
+  const selectedTaskKey = selectedTaskId;
+  if (!selectedTaskKey) return;
+
+  if (target.matches("#ravi-wa-task-dispatch-agent")) {
+    updateTaskDispatchDraft(selectedTaskKey, {
+      agentId: target.value || "",
+    });
+    return;
+  }
+
+  if (target.matches("#ravi-wa-task-dispatch-report-session")) {
+    updateTaskDispatchDraft(selectedTaskKey, {
+      reportToSessionName: target.value || "",
+    });
+  }
+}
+
+function syncElementHtml(element, html) {
+  if (!(element instanceof HTMLElement)) return;
+  if (element.innerHTML === html) return;
+  element.innerHTML = html;
+}
+
+function ensureTaskKanbanColumnShell(board, column, index) {
+  if (!(board instanceof HTMLElement)) return null;
+  let section = board.querySelector(
+    `[data-ravi-task-column="${escapeAttribute(column.id)}"]`,
+  );
+  if (!(section instanceof HTMLElement)) {
+    section = document.createElement("section");
+    section.className = "ravi-wa-task-column";
+    section.setAttribute("data-ravi-task-column", column.id);
+    section.innerHTML = `
+      <div class="ravi-wa-task-column__head">
+        <div class="ravi-wa-task-column__copy"></div>
+        <div class="ravi-wa-task-column__legend"></div>
+      </div>
+      <div class="ravi-wa-task-column__list"></div>
+    `;
+  }
+
+  const anchor = board.children.item(index) || null;
+  if (anchor !== section) {
+    board.insertBefore(section, anchor);
+  } else if (section.parentElement !== board) {
+    board.appendChild(section);
+  }
+
+  return {
+    section,
+    copy: section.querySelector(".ravi-wa-task-column__copy"),
+    legend: section.querySelector(".ravi-wa-task-column__legend"),
+    list: section.querySelector(".ravi-wa-task-column__list"),
+  };
+}
+
+function syncTaskKanbanBoard(board, taskRoots, currentTaskId) {
+  if (!(board instanceof HTMLElement)) return;
+
+  TASK_KANBAN_COLUMNS.forEach((column, index) => {
+    const shell = ensureTaskKanbanColumnShell(board, column, index);
+    if (!shell) return;
+
+    const nodes = taskRoots.filter((node) =>
+      column.statuses.includes(node.task.status),
+    );
+    const visibleCount = countTaskTreeNodes(nodes);
+    const childCount = Math.max(0, visibleCount - nodes.length);
+    const copyHtml = `
+      <div class="ravi-wa-task-column__titleline">
+        <strong>${escapeHtml(column.label)}</strong>
+        <span class="ravi-wa-task-column__count">${escapeHtml(String(visibleCount))}</span>
+      </div>
+      <span class="ravi-wa-task-column__summary">
+        ${escapeHtml(`${nodes.length} root${nodes.length === 1 ? "" : "s"}${childCount ? ` · ${childCount} subtasks` : ""}`)}
+      </span>
+    `;
+    const legendHtml = column.statuses
+      .map(
+        (status) => `
+          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskStatusClass(status)}">${escapeHtml(taskStatusLabel(status))}</span>
+        `,
+      )
+      .join("");
+    const listHtml = nodes.length
+      ? nodes.map((node) => renderTaskCard(node, currentTaskId)).join("")
+      : `<p class="ravi-wa-task-column__empty">nenhuma task nesse status agora.</p>`;
+
+    syncElementHtml(shell.copy, copyHtml);
+    syncElementHtml(shell.legend, legendHtml);
+    syncElementHtml(shell.list, listHtml);
+  });
+}
+
+function ensureTaskDetailDrawerShell(host) {
+  if (!(host instanceof HTMLElement)) return null;
+  let shell = host.querySelector(".ravi-wa-task-detail-drawer-shell");
+  if (!(shell instanceof HTMLElement)) {
+    host.innerHTML = `
+      <div
+        class="ravi-wa-task-detail-drawer-shell"
+        data-ravi-task-detail-drawer="true"
+      >
+        <button
+          type="button"
+          class="ravi-wa-task-detail-drawer__backdrop"
+          data-ravi-close-task-drawer="true"
+          aria-label="Fechar workspace da task"
+        ></button>
+        <aside
+          class="ravi-wa-task-detail-drawer"
+          role="complementary"
+          aria-labelledby="ravi-wa-task-detail-drawer-title"
+        >
+          <header class="ravi-wa-task-detail-drawer__header">
+            <div class="ravi-wa-task-detail-drawer__copy"></div>
+            <div class="ravi-wa-task-detail-drawer__actions"></div>
+          </header>
+          <div class="ravi-wa-task-detail-pane"></div>
+        </aside>
+      </div>
+    `;
+    shell = host.querySelector(".ravi-wa-task-detail-drawer-shell");
+  }
+
+  if (!(shell instanceof HTMLElement)) return null;
+  return {
+    shell,
+    backdrop: shell.querySelector(".ravi-wa-task-detail-drawer__backdrop"),
+    aside: shell.querySelector(".ravi-wa-task-detail-drawer"),
+    copy: shell.querySelector(".ravi-wa-task-detail-drawer__copy"),
+    actions: shell.querySelector(".ravi-wa-task-detail-drawer__actions"),
+    pane: shell.querySelector(".ravi-wa-task-detail-pane"),
+  };
+}
+
+function isTaskDetailDrawerInteractionActive(host, taskId) {
+  if (!(host instanceof HTMLElement)) return false;
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !host.contains(active)) return false;
+  const renderedTaskId = host.getAttribute("data-ravi-task-detail-task-id");
+  if (taskId && renderedTaskId && renderedTaskId !== taskId) return false;
+
+  const tagName = active.tagName;
+  if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") {
+    return true;
+  }
+
+  return active.getAttribute("contenteditable") === "true";
+}
+
+function syncTaskDetailDrawerHost(host, drawerState) {
+  if (!(host instanceof HTMLElement)) return;
+  const selectedTask = drawerState?.selectedTask || null;
+  const task = selectedTask?.task || null;
+  const previousTaskId = captureTaskDetailPaneScroll(host);
+
+  if (!taskDetailDrawerOpen || !task) {
+    host.innerHTML = "";
+    host.removeAttribute("data-ravi-task-detail-task-id");
+    return;
+  }
+
+  const preserveInteractiveState = isTaskDetailDrawerInteractionActive(
+    host,
+    task.id,
+  );
+  if (preserveInteractiveState) {
+    return;
+  }
+
+  const shell = ensureTaskDetailDrawerShell(host);
+  if (!shell) return;
+
+  host.setAttribute("data-ravi-task-detail-task-id", task.id);
+  const statusClass = taskStatusClass(task.status);
+  const syncingPill = drawerState?.isHydrating
+    ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--idle">syncing</span>`
+    : "";
+  const animate = Boolean(drawerState?.shouldAnimate);
+  const drawerSubtitle = [
+    formatTaskShortId(task.id),
+    taskStatusLabel(task.status),
+    formatTaskDurationLabel(task),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const copyHtml = `
+    <span class="ravi-wa-task-detail-drawer__eyebrow">task workspace</span>
+    <strong id="ravi-wa-task-detail-drawer-title">${escapeHtml(task.title || task.id)}</strong>
+    <span>${escapeHtml(drawerSubtitle || "runtime atual")}</span>
+  `;
+  const actionsHtml = `
+    ${renderTaskDetailHeaderDispatchAction(selectedTask)}
+    ${syncingPill}
+    <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+    <button
+      type="button"
+      class="ravi-wa-task-detail-drawer__close"
+      data-ravi-close-task-drawer="true"
+    >
+      fechar
+    </button>
+  `;
+
+  if (shell.backdrop instanceof HTMLElement) {
+    if (animate) {
+      shell.backdrop.setAttribute("data-animate-in", "true");
+    } else {
+      shell.backdrop.removeAttribute("data-animate-in");
+    }
+  }
+  if (shell.aside instanceof HTMLElement) {
+    shell.aside.setAttribute(
+      "aria-busy",
+      drawerState?.isHydrating ? "true" : "false",
+    );
+    if (animate) {
+      shell.aside.setAttribute("data-animate-in", "true");
+    } else {
+      shell.aside.removeAttribute("data-animate-in");
+    }
+  }
+
+  syncElementHtml(shell.copy, copyHtml);
+  syncElementHtml(shell.actions, actionsHtml);
+
+  if (shell.pane instanceof HTMLElement) {
+    shell.pane.setAttribute("data-ravi-task-id", task.id);
+    syncElementHtml(shell.pane, renderTaskDetailCard(selectedTask));
+  }
+
+  restoreTaskDetailPaneScroll(host, task.id, {
+    reset: previousTaskId !== task.id,
+  });
+}
+
 function renderTasksWorkspace(body) {
-  const previousDetailPaneTaskId = captureTaskDetailPaneScroll(body);
   const snapshot = latestTasksSnapshot;
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
   const taskRoots = buildTaskHierarchy(items);
@@ -6676,141 +8046,88 @@ function renderTasksWorkspace(body) {
     : "-";
   const selectedTaskNote = selectedTask?.task
     ? shorten(selectedTask.task.title || selectedTask.task.id, 52)
-    : "seleciona uma task para abrir o drawer lateral";
+    : "seleciona uma task para abrir o workspace lateral";
+  const shell = ensureTasksWorkspaceShell(body);
+  if (!shell) return;
 
-  body.innerHTML = `
-    <div class="ravi-wa-tasks-page">
-      <section class="ravi-wa-tasks-toolbar">
-        <div class="ravi-wa-tasks-toolbar__copy">
-          <span class="ravi-wa-tasks-toolbar__eyebrow">runtime real</span>
-          <div class="ravi-wa-tasks-toolbar__titleline">
-            <h2>Tasks</h2>
-            <span>${escapeHtml(buildTasksWorkspaceSubtitle(snapshot))}</span>
-          </div>
-          <p>kanban compacto do runtime atual, com roots abertas, subtasks legiveis e drawer lateral sincronizado.</p>
-        </div>
-        <div class="ravi-wa-tasks-toolbar__stats">
-          ${renderTaskOverviewStat({
-            label: "total",
-            value: stats?.total ?? items.length,
-            note: `${rootCount} roots · ${childCount} subtasks`,
-          })}
-          ${renderTaskOverviewStat({
-            label: "live",
-            value: liveCount,
-            note: `open ${stats?.open ?? 0} · queued ${stats?.dispatched ?? 0} · working ${stats?.inProgress ?? 0}`,
-            tone: "live",
-          })}
-          ${renderTaskOverviewStat({
-            label: "done",
-            value: stats?.done ?? 0,
-            note: `failed ${stats?.failed ?? 0} · blocked ${stats?.blocked ?? 0}`,
-            tone: "done",
-          })}
-          ${renderTaskOverviewStat({
-            label: "selected",
-            value: selectedTaskValue,
-            note: selectedTaskNote,
-            tone: selectedTask?.task ? selectedTaskStatusClass : "idle",
-          })}
-        </div>
-      </section>
-      <div class="ravi-wa-tasks-toolbar__statusline">
-        ${TASK_KANBAN_COLUMNS.map((column) => renderTaskStatusCounter(column, stats)).join("")}
+  syncElementHtml(
+    shell.toolbarCopy,
+    `
+      <span class="ravi-wa-tasks-toolbar__eyebrow">task workspace</span>
+      <div class="ravi-wa-tasks-toolbar__titleline">
+        <h2>Task Workspace</h2>
+        <span>${escapeHtml(buildTasksWorkspaceSubtitle(snapshot))}</span>
       </div>
-      ${
-        sidebarNotice
-          ? `
+      <p>kanban operacional do runtime atual, com workspace lateral, lineage clicavel, artifacts surfaced e ações reais acima da dobra.</p>
+    `,
+  );
+  syncElementHtml(
+    shell.toolbarStats,
+    `
+      ${renderTaskOverviewStat({
+        label: "total",
+        value: stats?.total ?? items.length,
+        note: `${rootCount} roots · ${childCount} subtasks`,
+      })}
+      ${renderTaskOverviewStat({
+        label: "live",
+        value: liveCount,
+        note: `open ${stats?.open ?? 0} · queued ${stats?.dispatched ?? 0} · working ${stats?.inProgress ?? 0}`,
+        tone: "live",
+      })}
+      ${renderTaskOverviewStat({
+        label: "done",
+        value: stats?.done ?? 0,
+        note: `failed ${stats?.failed ?? 0} · blocked ${stats?.blocked ?? 0}`,
+        tone: "done",
+      })}
+      ${renderTaskOverviewStat({
+        label: "workspace",
+        value: selectedTaskValue,
+        note: selectedTaskNote,
+        tone: selectedTask?.task ? selectedTaskStatusClass : "idle",
+      })}
+    `,
+  );
+  syncElementHtml(
+    shell.statusLine,
+    TASK_KANBAN_COLUMNS.map((column) =>
+      renderTaskStatusCounter(column, stats),
+    ).join(""),
+  );
+  syncElementHtml(
+    shell.noticeSlot,
+    sidebarNotice
+      ? `
         <section class="ravi-wa-card ravi-wa-notice ravi-wa-notice--${escapeAttribute(sidebarNotice.kind || "info")}">
           <p>${escapeHtml(sidebarNotice.message || "")}</p>
         </section>
       `
-          : ""
-      }
-      ${renderTasksDailyActivityCard(dailyActivity)}
-      <div class="ravi-wa-tasks-layout${detailDrawerVisible ? " ravi-wa-tasks-layout--detail-open" : ""}">
-        <div class="ravi-wa-task-board-wrap">
-          <div class="ravi-wa-task-board">
-            ${TASK_KANBAN_COLUMNS.map((column) =>
-              renderTaskKanbanColumn(
-                column,
-                taskRoots.filter((node) =>
-                  column.statuses.includes(node.task.status),
-                ),
-                detailDrawerVisible ? selectedTaskKey : null,
-              ),
-            ).join("")}
-          </div>
-        </div>
-      </div>
-      ${renderTaskDetailDrawer({
-        ...drawerState,
-        shouldAnimate: taskDetailDrawerShouldAnimate,
-      })}
-    </div>
-  `;
+      : "",
+  );
+  syncElementHtml(
+    shell.activitySlot,
+    renderTasksDailyActivityCard(dailyActivity),
+  );
+  if (shell.layout instanceof HTMLElement) {
+    shell.layout.classList.toggle(
+      "ravi-wa-tasks-layout--detail-open",
+      detailDrawerVisible,
+    );
+  }
+
+  syncTaskKanbanBoard(
+    shell.board,
+    taskRoots,
+    detailDrawerVisible ? selectedTaskKey : null,
+  );
+  syncTaskDetailDrawerHost(shell.drawerSlot, {
+    ...drawerState,
+    shouldAnimate: taskDetailDrawerShouldAnimate,
+  });
 
   if (detailDrawerVisible && taskDetailDrawerShouldAnimate) {
     taskDetailDrawerShouldAnimate = false;
-  }
-
-  body.querySelectorAll("[data-ravi-focus-task]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const taskId = button.getAttribute("data-ravi-focus-task");
-      if (!taskId) return;
-      openTaskDetailDrawer(taskId);
-      await refreshTasks(true);
-    });
-  });
-
-  body.querySelectorAll("[data-ravi-close-task-drawer]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      closeTaskDetailDrawer();
-    });
-  });
-
-  const dispatchAgentInput = body.querySelector("#ravi-wa-task-dispatch-agent");
-  dispatchAgentInput?.addEventListener("change", (event) => {
-    if (!selectedTaskKey) return;
-    updateTaskDispatchDraft(selectedTaskKey, {
-      agentId: event.target.value || "",
-    });
-  });
-
-  const dispatchSessionInput = body.querySelector(
-    "#ravi-wa-task-dispatch-session",
-  );
-  dispatchSessionInput?.addEventListener("input", (event) => {
-    if (!selectedTaskKey) return;
-    updateTaskDispatchDraft(selectedTaskKey, {
-      sessionName: event.target.value || "",
-    });
-  });
-
-  const dispatchReportInput = body.querySelector(
-    "#ravi-wa-task-dispatch-report-session",
-  );
-  dispatchReportInput?.addEventListener("change", (event) => {
-    if (!selectedTaskKey) return;
-    updateTaskDispatchDraft(selectedTaskKey, {
-      reportToSessionName: event.target.value || "",
-    });
-  });
-
-  body.querySelectorAll("[data-ravi-dispatch-task]").forEach((button) => {
-    button.addEventListener("click", async (event) => {
-      event.preventDefault();
-      const taskId = button.getAttribute("data-ravi-dispatch-task");
-      if (!taskId || taskDispatchInFlightTaskId) return;
-      await submitTaskDispatch(taskId);
-    });
-  });
-
-  if (detailDrawerVisible && selectedTaskKey) {
-    restoreTaskDetailPaneScroll(body, selectedTaskKey, {
-      reset: previousDetailPaneTaskId !== selectedTaskKey,
-    });
   }
 }
 
@@ -6835,9 +8152,7 @@ function getTaskHierarchyState(snapshot = latestTasksSnapshot) {
 }
 
 function createTaskHierarchyState(items) {
-  const list = Array.isArray(items)
-    ? [...items].sort(compareTaskCreatedAtAsc)
-    : [];
+  const list = Array.isArray(items) ? [...items] : [];
   const nodes = new Map(list.map((task) => [task.id, { task, children: [] }]));
   const roots = [];
   const parentByTaskId = new Map();
@@ -6855,6 +8170,8 @@ function createTaskHierarchyState(items) {
 
     roots.push(node);
   });
+
+  sortTaskTreeByRecency(roots);
 
   return { roots, nodes, parentByTaskId };
 }
@@ -6888,11 +8205,57 @@ function countTaskTreeNodes(nodes) {
   );
 }
 
-function compareTaskCreatedAtAsc(left, right) {
+function compareTasksByRecencyDesc(left, right) {
   return (
-    (Number(left?.createdAt) || 0) - (Number(right?.createdAt) || 0) ||
-    (Number(left?.updatedAt) || 0) - (Number(right?.updatedAt) || 0) ||
+    getTaskRecencyTimestamp(right) - getTaskRecencyTimestamp(left) ||
+    (toPositiveTaskTimestamp(right?.createdAt) ?? 0) -
+      (toPositiveTaskTimestamp(left?.createdAt) ?? 0) ||
     String(left?.id || "").localeCompare(String(right?.id || ""))
+  );
+}
+
+function getTaskRecencyTimestamp(task) {
+  return (
+    toPositiveTaskTimestamp(task?.updatedAt) ??
+    toPositiveTaskTimestamp(task?.createdAt) ??
+    0
+  );
+}
+
+function sortTaskTreeByRecency(nodes) {
+  const sharedSorter = globalThis.RaviWaOverlayTaskPresenter?.sortTaskTreeByRecency;
+  if (typeof sharedSorter === "function") {
+    return sharedSorter(nodes);
+  }
+
+  const list = Array.isArray(nodes) ? nodes : [];
+  const latestByNode = new WeakMap();
+
+  const getNodeRecency = (node) => {
+    if (!node || typeof node !== "object") return 0;
+    const cached = latestByNode.get(node);
+    if (typeof cached === "number") {
+      return cached;
+    }
+
+    let latest = getTaskRecencyTimestamp(node?.task);
+    (Array.isArray(node?.children) ? node.children : []).forEach((childNode) => {
+      latest = Math.max(latest, getNodeRecency(childNode));
+    });
+    latestByNode.set(node, latest);
+    return latest;
+  };
+
+  list.forEach((node) => {
+    sortTaskTreeByRecency(Array.isArray(node?.children) ? node.children : []);
+  });
+
+  return (
+    list.sort(
+      (left, right) =>
+        getNodeRecency(right) - getNodeRecency(left) ||
+        compareTasksByRecencyDesc(left?.task, right?.task),
+    )
   );
 }
 
@@ -7220,7 +8583,7 @@ function renderTaskDispatchSection(selectedTask) {
         <h3>dispatch config</h3>
         <span>${escapeHtml(form.defaultSessionName || "runtime action")}</span>
       </div>
-      <p class="ravi-wa-task-dispatch__copy">ajusta agent, sessão e reports aqui. o submit fica fixo no header do drawer para não competir com o clique principal do card.</p>
+      <p class="ravi-wa-task-dispatch__copy">ajusta agent, sessão e reports aqui. o submit fica preso no header do workspace para manter a ação principal sempre ao alcance.</p>
       ${renderTaskInlineMeta(
         [
           form.defaultSessionName
@@ -7308,20 +8671,19 @@ function renderTaskDetailDrawer(drawerState) {
         type="button"
         class="ravi-wa-task-detail-drawer__backdrop"
         data-ravi-close-task-drawer="true"
-        aria-label="Fechar detalhe da task"
+        aria-label="Fechar workspace da task"
         ${animateAttribute}
       ></button>
       <aside
         class="ravi-wa-task-detail-drawer"
-        role="dialog"
-        aria-modal="true"
+        role="complementary"
         aria-labelledby="ravi-wa-task-detail-drawer-title"
         aria-busy="${drawerState?.isHydrating ? "true" : "false"}"
         ${animateAttribute}
       >
         <header class="ravi-wa-task-detail-drawer__header">
           <div class="ravi-wa-task-detail-drawer__copy">
-            <span class="ravi-wa-task-detail-drawer__eyebrow">task drawer</span>
+            <span class="ravi-wa-task-detail-drawer__eyebrow">task workspace</span>
             <strong id="ravi-wa-task-detail-drawer-title">${escapeHtml(task.title || task.id)}</strong>
             <span>${escapeHtml(drawerSubtitle || "runtime atual")}</span>
           </div>
@@ -7351,7 +8713,7 @@ function renderTaskDetailCard(selectedTask) {
   if (!task) {
     return `
       <section class="ravi-wa-card ravi-wa-task-detail-pane__empty">
-        <p>seleciona uma task para abrir o drawer lateral com detalhes e timeline.</p>
+        <p>seleciona uma task para abrir o workspace lateral e trabalhar nela sem sair do overlay.</p>
       </section>
     `;
   }
@@ -7375,6 +8737,7 @@ function renderTaskDetailCard(selectedTask) {
   const worktreeLabel = getTaskWorktreeLabel(task);
   const statusClass = taskStatusClass(task.status);
   const taskNode = resolveTaskHierarchyNode(task?.id);
+  getTaskWorkspaceSectionState(task.id);
   const rawProgress = clampTaskProgressValue(task?.progress ?? 0);
   const progress = getTaskDisplayProgress(task, taskNode);
   const progressInfo = describeTaskProgressText(task, lifecycleEvents, {
@@ -7393,6 +8756,27 @@ function renderTaskDetailCard(selectedTask) {
       ? `blocker ${shorten(frontmatter.blockerReason, 48)}`
       : null,
   ].filter(Boolean);
+  const taskArtifacts = task?.artifacts || null;
+  const artifactItems = Array.isArray(taskArtifacts?.items)
+    ? taskArtifacts.items
+    : [];
+  const primaryArtifact = taskArtifacts?.primary || null;
+  const supportingArtifacts = artifactItems.filter(
+    (artifact) => artifact && artifact.role !== "primary",
+  );
+  const primaryArtifactDisplayPath = formatTaskArtifactDisplayPath(
+    primaryArtifact,
+  );
+  const primaryArtifactCopyValue = formatTaskArtifactCopyValue(primaryArtifact);
+  const workspaceSessionRecord =
+    resolveTaskWorkspacePrimarySessionRecord(selectedTask);
+  const workspaceSessionLive = workspaceSessionRecord?.sessionKey
+    ? findSessionByKey(workspaceSessionRecord.sessionKey)
+    : null;
+  const reportSessionRecord =
+    resolveTaskWorkspaceReportSessionRecord(selectedTask);
+  const lineage = getTaskLineage(task.id);
+  const dispatchForm = resolveTaskDispatchFormState(selectedTask);
   const heroSummary =
     task.summary ||
     task.blockerReason ||
@@ -7452,11 +8836,263 @@ function renderTaskDetailCard(selectedTask) {
     { label: "completed at", value: formatTimestamp(task.completedAt) || "-" },
     { label: "worktree", value: worktreeLabel || "-" },
   ];
+  const quickActionNote = [
+    workspaceSessionRecord?.sessionName
+      ? `sessão ${workspaceSessionRecord.sessionName}`
+      : primarySessionName
+        ? `sessão ${primarySessionName}`
+        : "sem sessão do runtime resolvida",
+    reportSessionRecord?.sessionName
+      ? `reports ${reportSessionRecord.sessionName}`
+      : activeAssignment?.reportToSessionName || task.reportToSessionName
+        ? `reports ${
+            activeAssignment?.reportToSessionName || task.reportToSessionName
+          }`
+        : "sem report target",
+    primaryArtifactDisplayPath
+      ? `artifact ${shorten(primaryArtifactDisplayPath, 44)}`
+      : "sem artifact primário surfaced",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const quickActions = [
+    workspaceSessionRecord
+      ? `
+        <button
+          type="button"
+          data-ravi-task-open-session="${escapeAttribute(
+            workspaceSessionRecord.sessionKey,
+          )}"
+        >
+          abrir sessão
+        </button>
+      `
+      : "",
+    workspaceSessionLive?.chatId
+      ? `
+        <button
+          type="button"
+          data-ravi-open-chat="${escapeAttribute(
+            workspaceSessionLive.sessionKey,
+          )}"
+        >
+          abrir chat
+        </button>
+      `
+      : "",
+    `
+      <button
+        type="button"
+        data-ravi-task-copy-value="${escapeAttribute(
+          buildTaskWorkspaceContextCopy(selectedTask),
+        )}"
+        data-ravi-task-copy-label="contexto da task"
+      >
+        copiar contexto
+      </button>
+    `,
+    primaryArtifactCopyValue
+      ? `
+        <button
+          type="button"
+          data-ravi-task-copy-value="${escapeAttribute(primaryArtifactCopyValue)}"
+          data-ravi-task-copy-label="artifact primário"
+        >
+          copiar artifact
+        </button>
+      `
+      : "",
+  ]
+    .filter(Boolean)
+    .join("");
+  const nextMoveContent = `
+    ${renderTaskInlineMeta(
+      [
+        { label: "profile", value: task.profileId || "-" },
+        { label: "session", value: primarySessionName || "-" },
+        reportSessionRecord?.sessionName || activeAssignment?.reportToSessionName
+          ? {
+              label: "report",
+              value:
+                reportSessionRecord?.sessionName ||
+                activeAssignment?.reportToSessionName ||
+                task.reportToSessionName,
+            }
+          : null,
+        worktreeLabel ? { label: "worktree", value: worktreeLabel } : null,
+        primaryArtifactDisplayPath
+          ? { label: "artifact", value: shorten(primaryArtifactDisplayPath, 46) }
+          : null,
+      ],
+      { compact: true },
+    )}
+    <div class="ravi-wa-task-status-grid">
+      ${renderTaskStatusPanel({
+        eyebrow: "runtime status",
+        status: task.status,
+        title: runtimeStatusTitle,
+        detail:
+          rawProgress !== progress
+            ? `raw ${task.status} · task ${rawProgress}% · agregado ${progress}%`
+            : `raw ${task.status} · progress ${progress}%`,
+        meta: formatTaskDurationLabel(task),
+      })}
+      ${renderTaskStatusPanel({
+        eyebrow: "TASK.md status",
+        status: frontmatterStatus,
+        title: documentStatusTitle,
+        detail: frontmatter
+          ? frontmatterStatus
+            ? `frontmatter ${frontmatterStatus}${frontmatterProgress !== null ? ` · ${frontmatterProgress}%` : ""}`
+            : frontmatterProgress !== null
+              ? `TASK.md progress ${frontmatterProgress}% sem campo de status`
+              : "TASK.md presente, mas sem campo de status no frontmatter"
+          : "TASK.md ainda nao chegou nesse snapshot",
+        meta: taskDocument ? "bridge document snapshot" : "runtime snapshot only",
+      })}
+    </div>
+    ${renderTaskStatusSyncBanner(task, frontmatter, rawProgress)}
+  `;
+  const lineageContent = `
+    ${renderTaskLineageTrail(lineage, task.id)}
+    <div class="ravi-wa-task-workspace-grid">
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>parent</h3>
+          <span>${escapeHtml(parentTask || task.parentTaskId ? "1 upstream" : "root task")}</span>
+        </div>
+        ${
+          parentTask
+            ? renderTaskRelationCard(parentTask)
+            : task.parentTaskId
+              ? `<p class="ravi-wa-task-relations__empty">parent ${escapeHtml(formatTaskShortId(task.parentTaskId))} fora do snapshot atual.</p>`
+              : `<p class="ravi-wa-empty">sem parent task.</p>`
+        }
+      </div>
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>children</h3>
+          <span>${escapeHtml(`${childTasks.length} downstream`)}</span>
+        </div>
+        ${
+          childTasks.length
+            ? `<div class="ravi-wa-task-relations__list">${childTasks
+                .map((childTask) => renderTaskRelationCard(childTask))
+                .join("")}</div>`
+            : `<p class="ravi-wa-empty">sem child tasks vinculadas.</p>`
+        }
+      </div>
+    </div>
+  `;
+  const artifactsContent = `
+    ${renderTaskInlineMeta(
+      [
+        taskArtifacts?.workspaceRoot
+          ? {
+              label: "workspace",
+              value: shorten(taskArtifacts.workspaceRoot, 40),
+              monospace: true,
+            }
+          : null,
+        { label: "surfaced", value: artifactItems.length || 0 },
+        primaryArtifact?.label
+          ? { label: "primary", value: primaryArtifact.label }
+          : null,
+      ],
+      { compact: true },
+    )}
+    <div class="ravi-wa-task-artifacts">
+      <div class="ravi-wa-task-artifacts__primary">
+        ${renderTaskArtifactCard(primaryArtifact, { emphasis: true })}
+      </div>
+      <div class="ravi-wa-task-artifacts__list">
+        ${
+          supportingArtifacts.length
+            ? supportingArtifacts
+                .map((artifact) => renderTaskArtifactCard(artifact))
+                .join("")
+            : `<p class="ravi-wa-empty">sem supporting artifacts adicionais no snapshot atual.</p>`
+        }
+      </div>
+    </div>
+  `;
+  const activityContent = `
+    <div class="ravi-wa-task-workspace-grid">
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>comments</h3>
+          <span>${escapeHtml(String(comments.length))}</span>
+        </div>
+        ${renderTaskComments(comments)}
+      </div>
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>lifecycle</h3>
+          <span>${escapeHtml(String(lifecycleEvents.length))}</span>
+        </div>
+        ${renderTaskEvents(selectedTask?.events)}
+      </div>
+    </div>
+  `;
+  const detailsContent = `
+    <div class="ravi-wa-task-workspace-grid">
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>runtime</h3>
+          <span>${escapeHtml(activeAssignment?.status || "no active assignment")}</span>
+        </div>
+        ${renderTaskFactGrid(runtimeFacts)}
+      </div>
+      <div class="ravi-wa-task-workspace-panel">
+        <div class="ravi-wa-section-head">
+          <h3>task document</h3>
+          <span>${escapeHtml(taskDocument ? "TASK.md synced" : "runtime path only")}</span>
+        </div>
+        ${
+          docPath
+            ? `<div class="ravi-wa-task-path">${escapeHtml(docPath)}</div>`
+            : `<p class="ravi-wa-empty">TASK.md ainda nao foi materializado no runtime.</p>`
+        }
+        ${
+          frontmatterChips.length || taskDir
+            ? `
+          ${renderTaskInlineMeta(
+            [
+              taskDir
+                ? {
+                    label: "task dir",
+                    value: shorten(taskDir, 52),
+                    monospace: true,
+                  }
+                : null,
+              ...frontmatterChips.map((chip) => ({
+                label: "frontmatter",
+                value: chip,
+              })),
+            ],
+            { compact: true },
+          )}
+        `
+            : ""
+        }
+        ${renderTaskFactGrid([
+          { label: "task dir", value: taskDir || "-", monospace: true },
+        ])}
+      </div>
+    </div>
+    <div class="ravi-wa-task-workspace-panel">
+      <div class="ravi-wa-section-head">
+        <h3>assignments</h3>
+        <span>${escapeHtml(String(assignments.length))}</span>
+      </div>
+      ${renderTaskAssignments(assignments, activeAssignment)}
+    </div>
+  `;
 
   return `
     <section class="ravi-wa-card ravi-wa-task-detail-hero-card">
       <div class="ravi-wa-task-detail-hero__eyebrow">
-        <span class="ravi-wa-task-detail-hero__label">task detail</span>
+        <span class="ravi-wa-task-detail-hero__label">task workspace</span>
         <div class="ravi-wa-task-detail-hero__badges">
           <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
@@ -7478,6 +9114,7 @@ function renderTaskDetailCard(selectedTask) {
       ${renderTaskInlineMeta(
         [
           { label: "id", value: task.id, monospace: true },
+          { label: "profile", value: task.profileId || "-" },
           { label: "session", value: primarySessionName || "-" },
           secondaryWorkSession
             ? { label: "work", value: secondaryWorkSession }
@@ -7486,13 +9123,29 @@ function renderTaskDetailCard(selectedTask) {
             label: "agent",
             value: task.assigneeAgentId || activeAssignment?.agentId || "-",
           },
+          reportSessionRecord?.sessionName || activeAssignment?.reportToSessionName
+            ? {
+                label: "report",
+                value:
+                  reportSessionRecord?.sessionName ||
+                  activeAssignment?.reportToSessionName ||
+                  task.reportToSessionName,
+              }
+            : null,
           { label: "tree", value: hierarchyLabel },
-          { label: "comments", value: comments.length },
-          { label: "events", value: lifecycleEvents.length },
+          primaryArtifactDisplayPath
+            ? { label: "artifact", value: shorten(primaryArtifactDisplayPath, 42) }
+            : null,
           worktreeLabel ? { label: "worktree", value: worktreeLabel } : null,
         ],
         { className: "ravi-wa-task-detail-hero__meta" },
       )}
+      <div class="ravi-wa-task-workspace-actions">
+        ${quickActions}
+      </div>
+      <p class="ravi-wa-task-workspace-actions__note">${escapeHtml(
+        quickActionNote,
+      )}</p>
       <div class="ravi-wa-task-detail-progress">
         <div class="ravi-wa-task-detail-progress__head">
           <span>progress ${escapeHtml(String(progress))}%</span>
@@ -7507,43 +9160,6 @@ function renderTaskDetailCard(selectedTask) {
       </div>
     </section>
 
-    ${renderTaskDispatchSection(selectedTask)}
-
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>status</h3>
-        <span>${escapeHtml(frontmatter ? "runtime x TASK.md" : "runtime only")}</span>
-      </div>
-      <div class="ravi-wa-task-status-grid">
-        ${renderTaskStatusPanel({
-          eyebrow: "runtime status",
-          status: task.status,
-          title: runtimeStatusTitle,
-          detail:
-            rawProgress !== progress
-              ? `raw ${task.status} · task ${rawProgress}% · agregado ${progress}%`
-              : `raw ${task.status} · progress ${progress}%`,
-          meta: formatTaskDurationLabel(task),
-        })}
-        ${renderTaskStatusPanel({
-          eyebrow: "TASK.md status",
-          status: frontmatterStatus,
-          title: documentStatusTitle,
-          detail: frontmatter
-            ? frontmatterStatus
-              ? `frontmatter ${frontmatterStatus}${frontmatterProgress !== null ? ` · ${frontmatterProgress}%` : ""}`
-              : frontmatterProgress !== null
-                ? `TASK.md progress ${frontmatterProgress}% sem campo de status`
-                : "TASK.md presente, mas sem campo de status no frontmatter"
-            : "TASK.md ainda nao chegou nesse snapshot",
-          meta: taskDocument
-            ? "bridge document snapshot"
-            : "runtime snapshot only",
-        })}
-      </div>
-      ${renderTaskStatusSyncBanner(task, frontmatter, rawProgress)}
-    </section>
-
     ${
       taskSignal
         ? `
@@ -7555,109 +9171,59 @@ function renderTaskDetailCard(selectedTask) {
         : ""
     }
 
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>runtime</h3>
-        <span>${escapeHtml(activeAssignment?.status || "no active assignment")}</span>
-      </div>
-      ${renderTaskFactGrid(runtimeFacts)}
-    </section>
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      title: "next move",
+      note: dispatchForm?.dispatch?.allowed
+        ? "ready to dispatch"
+        : activeAssignment?.status || taskStatusLabel(task.status),
+      content: nextMoveContent,
+      className: "ravi-wa-task-workspace-section--next",
+    })}
 
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>task document</h3>
-        <span>${escapeHtml(taskDocument ? "TASK.md synced" : "runtime path only")}</span>
-      </div>
-      ${
-        docPath
-          ? `<div class="ravi-wa-task-path">${escapeHtml(docPath)}</div>`
-          : `<p class="ravi-wa-empty">TASK.md ainda nao foi materializado no runtime.</p>`
-      }
-      ${
-        frontmatterChips.length || taskDir
-          ? `
-        ${renderTaskInlineMeta(
-          [
-            taskDir
-              ? {
-                  label: "task dir",
-                  value: shorten(taskDir, 52),
-                  monospace: true,
-                }
-              : null,
-            ...frontmatterChips.map((chip) => ({
-              label: "frontmatter",
-              value: chip,
-            })),
-          ],
-          { compact: true },
-        )}
-      `
-          : ""
-      }
-      ${renderTaskFactGrid([{ label: "task dir", value: taskDir || "-", monospace: true }])}
-    </section>
+    ${renderTaskDispatchSection(selectedTask)}
 
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>relationships</h3>
-        <span>${escapeHtml(`${parentTask || task.parentTaskId ? 1 : 0} up · ${childTasks.length} down`)}</span>
-      </div>
-      <div class="ravi-wa-task-relations">
-        <div class="ravi-wa-task-relations__group">
-          <span class="ravi-wa-task-relations__label">parent</span>
-          ${
-            parentTask
-              ? renderTaskRelationCard(parentTask)
-              : task.parentTaskId
-                ? `<p class="ravi-wa-task-relations__empty">parent ${escapeHtml(formatTaskShortId(task.parentTaskId))} fora do snapshot atual.</p>`
-                : `<p class="ravi-wa-empty">sem parent task.</p>`
-          }
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      title: "lineage",
+      note: `${lineage.length} steps · ${childTasks.length} children`,
+      content: lineageContent,
+    })}
+
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      title: "artifacts",
+      note: `${artifactItems.length} surfaced`,
+      content: artifactsContent,
+    })}
+
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "instructions",
+      title: "instructions",
+      note: task.instructions ? "runtime body" : "empty",
+      content: `
+        <div class="ravi-wa-task-copy ravi-wa-task-copy--flush">
+          <pre>${escapeHtml(task.instructions || "sem instructions no runtime.")}</pre>
         </div>
-        <div class="ravi-wa-task-relations__group">
-          <span class="ravi-wa-task-relations__label">children</span>
-          ${
-            childTasks.length
-              ? `<div class="ravi-wa-task-relations__list">${childTasks.map((childTask) => renderTaskRelationCard(childTask)).join("")}</div>`
-              : `<p class="ravi-wa-empty">sem child tasks vinculadas.</p>`
-          }
-        </div>
-      </div>
-    </section>
+      `,
+    })}
 
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>assignments</h3>
-        <span>${escapeHtml(String(assignments.length))}</span>
-      </div>
-      ${renderTaskAssignments(assignments, activeAssignment)}
-    </section>
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "activity",
+      title: "activity",
+      note: `${comments.length} comments · ${lifecycleEvents.length} events`,
+      content: activityContent,
+    })}
 
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>instructions</h3>
-        <span>${escapeHtml(task.instructions ? "runtime body" : "empty")}</span>
-      </div>
-      <div class="ravi-wa-task-copy ravi-wa-task-copy--flush">
-        <pre>${escapeHtml(task.instructions || "sem instructions no runtime.")}</pre>
-      </div>
-    </section>
-
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>comments</h3>
-        <span>${escapeHtml(String(comments.length))}</span>
-      </div>
-      ${renderTaskComments(comments)}
-    </section>
-
-    <section class="ravi-wa-card ravi-wa-task-detail-section">
-      <div class="ravi-wa-section-head">
-        <h3>lifecycle</h3>
-        <span>${escapeHtml(String(lifecycleEvents.length))}</span>
-      </div>
-      ${renderTaskEvents(selectedTask?.events)}
-    </section>
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "details",
+      title: "runtime details",
+      note: `${assignments.length} assignments · ${taskDocument ? "TASK.md" : "runtime only"}`,
+      content: detailsContent,
+    })}
   `;
 }
 
@@ -8439,7 +10005,11 @@ function loadPinnedSessionKey() {
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
-    return stored === "omni" || stored === "tasks" ? stored : "ravi";
+    return stored === "omni" ||
+      stored === "tasks" ||
+      stored === "insights"
+      ? stored
+      : "ravi";
   } catch {
     return "ravi";
   }
@@ -8535,7 +10105,9 @@ function persistV3PlaceholdersEnabled(value) {
 
 function setActiveWorkspace(nextWorkspace) {
   activeWorkspace =
-    nextWorkspace === "omni" || nextWorkspace === "tasks"
+    nextWorkspace === "omni" ||
+    nextWorkspace === "tasks" ||
+    nextWorkspace === "insights"
       ? nextWorkspace
       : "ravi";
   if (activeWorkspace !== "tasks") {
@@ -8547,6 +10119,8 @@ function setActiveWorkspace(nextWorkspace) {
   render();
   if (activeWorkspace === "omni") {
     refreshOmniPanel(true);
+  } else if (activeWorkspace === "insights") {
+    refreshInsights(true);
   } else if (activeWorkspace === "tasks") {
     refreshTasks(true);
   } else if (selectedWorkspaceSessionKey) {

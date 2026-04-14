@@ -42,6 +42,7 @@ export interface OverlayChatArtifact {
   preview?: string | null;
   fullDetail?: string | null;
   status?: OverlayToolCallStatus | null;
+  duration?: string | null;
   createdAt: number;
   updatedAt?: number;
   anchor?: OverlayChatArtifactAnchor;
@@ -162,6 +163,7 @@ export interface OverlayTaskSessionCandidate {
 
 const OVERLAY_RECENT_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const OVERLAY_RECENT_SESSIONS_LIMIT = 12;
+const WORKSPACE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
 
 export interface OverlaySnapshot {
   ok: true;
@@ -381,6 +383,8 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
   }
 
   const liveArtifacts = normalizeWorkspaceArtifacts(args.live?.artifacts);
+  const toolArtifactIntervals = buildToolArtifactIntervals(liveArtifacts);
+
   for (const artifact of liveArtifacts) {
     const timestamp = artifact.kind === "tool" ? artifact.createdAt : (artifact.updatedAt ?? artifact.createdAt);
     liveDiscreteItems.push({
@@ -399,7 +403,12 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
     });
   }
 
-  return [...historyMessages, ...liveMessageItems, ...liveDiscreteItems].sort(compareWorkspaceTimelineItems);
+  const filteredDiscreteItems =
+    toolArtifactIntervals.length > 0
+      ? liveDiscreteItems.filter((item) => !isRedundantToolLifecycleEvent(item, toolArtifactIntervals))
+      : liveDiscreteItems;
+
+  return [...historyMessages, ...liveMessageItems, ...filteredDiscreteItems].sort(compareWorkspaceTimelineItems);
 }
 
 export function resolveSessionForOverlay(
@@ -627,10 +636,7 @@ function upsertLiveWorkspaceMessage(
   const candidateText = normalizeWorkspaceText(candidate.content);
   if (!candidateText) return;
 
-  const index = items.findIndex(
-    (item) =>
-      item.role === candidate.role && workspaceTextsOverlap(normalizeWorkspaceText(item.content), candidateText),
-  );
+  const index = items.findIndex((item) => workspaceTimelineMessagesMatch(item, candidate));
   if (index === -1) {
     items.push(candidate);
     return;
@@ -653,10 +659,7 @@ function hasMatchingWorkspaceMessage(
   const candidateText = normalizeWorkspaceText(candidate.content);
   if (!candidateText) return true;
 
-  return messages.some(
-    (message) =>
-      message.role === candidate.role && workspaceTextsOverlap(normalizeWorkspaceText(message.content), candidateText),
-  );
+  return messages.some((message) => workspaceTimelineMessagesMatch(message, candidate));
 }
 
 function normalizeWorkspaceText(value: string | null | undefined): string {
@@ -697,6 +700,80 @@ function shouldReplaceWorkspaceMessage(
 function workspaceTextsOverlap(left: string, right: string): boolean {
   if (!left || !right) return false;
   return left === right || left.includes(right) || right.includes(left);
+}
+
+function workspaceTimelineMessagesMatch(
+  left: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>,
+  right: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>,
+): boolean {
+  const leftId = cleanNullable(left.id);
+  const rightId = cleanNullable(right.id);
+  if (leftId && rightId && leftId === rightId) {
+    return true;
+  }
+
+  if (left.role !== right.role) {
+    return false;
+  }
+
+  if (!workspaceMessagesAreTemporallyClose(left.timestamp, right.timestamp)) {
+    return false;
+  }
+
+  return workspaceTextsOverlap(normalizeWorkspaceText(left.content), normalizeWorkspaceText(right.content));
+}
+
+function workspaceMessagesAreTemporallyClose(left: number, right: number): boolean {
+  if (!left || !right) {
+    return false;
+  }
+
+  return Math.abs(left - right) <= WORKSPACE_MESSAGE_MATCH_WINDOW_MS;
+}
+
+interface ToolArtifactInterval {
+  label: string;
+  start: number;
+  end: number;
+}
+
+const TOOL_LIFECYCLE_WINDOW_MS = 5_000;
+
+const TOOL_LIFECYCLE_DETAILS = new Set([
+  "running",
+  "finished",
+  "started",
+  "completed",
+  "tool running",
+  "tool finished",
+  "tool started",
+  "tool completed",
+]);
+
+function buildToolArtifactIntervals(artifacts: OverlayChatArtifact[]): ToolArtifactInterval[] {
+  return artifacts
+    .filter((artifact) => artifact.kind === "tool")
+    .map((artifact) => ({
+      label: normalizeLookupToken(artifact.label) ?? "",
+      start: artifact.createdAt - TOOL_LIFECYCLE_WINDOW_MS,
+      end: (artifact.updatedAt ?? artifact.createdAt) + TOOL_LIFECYCLE_WINDOW_MS,
+    }));
+}
+
+function isRedundantToolLifecycleEvent(
+  item: Extract<OverlaySessionWorkspaceTimelineItem, { type: "event" | "artifact" }>,
+  intervals: ToolArtifactInterval[],
+): boolean {
+  if (item.type !== "event") return false;
+
+  const detail = normalizeLookupToken("detail" in item && typeof item.detail === "string" ? item.detail : null);
+  if (!detail) return false;
+
+  if (item.kind === "tool" || TOOL_LIFECYCLE_DETAILS.has(detail)) {
+    return intervals.some((interval) => item.timestamp >= interval.start && item.timestamp <= interval.end);
+  }
+
+  return false;
 }
 
 function compareWorkspaceTimelineItems(

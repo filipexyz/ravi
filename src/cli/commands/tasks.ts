@@ -15,6 +15,7 @@ import {
   createTaskWorktreeConfig,
   dispatchTask,
   emitTaskEvent,
+  deriveTaskReadStatus,
   formatTaskWorktree,
   getTaskDocPath,
   getTaskActor,
@@ -282,12 +283,12 @@ function describeTaskWorkspace(profile: ReturnType<typeof resolveTaskProfile>): 
   }
 }
 
-function printTaskSummary(task: TaskRecord): void {
+function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | null): void {
   const taskProfile = resolveTaskProfileForTask(task);
-  const artifacts = buildTaskArtifactSummary(task);
+  const artifacts = buildTaskArtifactSummary(task, activeAssignment);
   console.log(`\nTask:        ${task.id}`);
   console.log(`Title:       ${task.title}`);
-  console.log(`Status:      ${formatTaskStatus(task.status)}`);
+  console.log(`Status:      ${formatTaskStatus(deriveTaskReadStatus(task, activeAssignment))}`);
   console.log(`Priority:    ${task.priority}`);
   console.log(`Progress:    ${task.progress}%`);
   console.log(`Profile:     ${taskProfile.id}@${taskProfile.version}`);
@@ -773,8 +774,12 @@ export class TaskCommands {
       );
     }
     for (const task of tasks) {
+      const visualStatus =
+        task.status === "dispatched"
+          ? deriveTaskReadStatus(task, getTaskDetails(task.id).activeAssignment)
+          : task.status;
       const archiveLabel = task.archivedAt ? "yes" : "-";
-      const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(task.status).padEnd(10)}  ${`${task.progress}%`.padEnd(8)}  ${task.priority.padEnd(8)}`;
+      const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(visualStatus).padEnd(10)}  ${`${task.progress}%`.padEnd(8)}  ${task.priority.padEnd(8)}`;
       if (showArchiveColumn) {
         console.log(
           `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
@@ -832,7 +837,7 @@ export class TaskCommands {
       return;
     }
 
-    printTaskSummary(details.task);
+    printTaskSummary(details.task, details.activeAssignment);
 
     const taskSession = buildTaskSessionLink(details.task);
     if (taskSession) {

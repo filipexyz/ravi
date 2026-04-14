@@ -216,6 +216,22 @@ mock.module("./router/index.js", () => ({
     session.providerSessionId = providerSessionId;
     session.sdkSessionId = providerSessionId;
   }),
+  updateRuntimeProviderState: mock(
+    (
+      sessionKey: string,
+      provider: RuntimeProviderId,
+      options?: { providerSessionId?: string; runtimeSessionDisplayId?: string },
+    ) => {
+      const session = sessions.get(sessionKey);
+      if (!session) return;
+      session.runtimeProvider = provider;
+      const providerSessionId = options?.runtimeSessionDisplayId ?? options?.providerSessionId;
+      if (providerSessionId) {
+        session.providerSessionId = providerSessionId;
+        session.sdkSessionId = providerSessionId;
+      }
+    },
+  ),
   updateTokens: mock(() => {}),
   updateSessionSource: mock((sessionKey: string, source: { channel?: string; accountId?: string; chatId?: string }) => {
     const session = sessions.get(sessionKey);
@@ -461,6 +477,7 @@ describe("RaviBot runtime guards", () => {
     emittedEvents.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
+    delete process.env.RAVI_BIN;
     activeProvider = "claude";
     resetRuntimeDoubles();
     saveMessageImpl = () => {};
@@ -495,6 +512,58 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.resume).toBeUndefined();
     expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
+  });
+
+  it("marks task bootstrap as accepted and persists runtime provider state before the first turn completes", async () => {
+    activeProvider = "codex";
+    const sessionKey = "agent:main:task-bootstrap";
+    const dispatched = createDispatchedTaskForSession(sessionKey, { profileId: "task-doc-none" });
+    const originalRaviBin = process.env.RAVI_BIN;
+    process.env.RAVI_BIN = "/tmp/ravi-repo/bin/ravi";
+
+    let releaseTurn: (() => void) | undefined;
+    const turnGate = new Promise<void>((resolve) => {
+      releaseTurn = resolve;
+    });
+    runtimeStartImpl = (providerId) => ({
+      provider: providerId,
+      events: (async function* () {
+        await turnGate;
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt: async () => {},
+    });
+
+    try {
+      const bot = createBot();
+      await (bot as any).handlePromptImmediate(sessionKey, {
+        ...makePrompt("bootstrap"),
+        taskBarrierTaskId: dispatched.task.id,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const session = sessions.get(sessionKey);
+      const task = actualTaskDbModule.dbGetTask(dispatched.task.id);
+      const assignment = actualTaskDbModule.dbGetActiveAssignment(dispatched.task.id);
+      expect(session?.runtimeProvider).toBe("codex");
+      expect(session?.providerSessionId).toBeUndefined();
+      expect(task?.status).toBe("in_progress");
+      expect(assignment?.status).toBe("accepted");
+      expect(assignment?.checkpointDueAt).toBeGreaterThan(assignment?.assignedAt ?? 0);
+      expect(runtimeStartCalls[0]?.env?.RAVI_BIN).toBe("/tmp/ravi-repo/bin/ravi");
+      expect(runtimeStartCalls[0]?.env?.PATH?.startsWith("/tmp/ravi-repo/bin")).toBe(true);
+    } finally {
+      releaseTurn?.();
+      if (originalRaviBin === undefined) {
+        delete process.env.RAVI_BIN;
+      } else {
+        process.env.RAVI_BIN = originalRaviBin;
+      }
+    }
   });
 
   it("cleans up the in-memory streaming session when runtime startup throws", async () => {

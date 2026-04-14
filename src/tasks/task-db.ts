@@ -278,8 +278,8 @@ function applyTaskWorktreeSchemaMigrations(): void {
           ?
         ),
         checkpoint_due_at = CASE
-          WHEN status IN ('assigned', 'accepted') AND checkpoint_due_at IS NULL
-            THEN COALESCE(checkpoint_last_report_at, accepted_at, assigned_at) + COALESCE(checkpoint_interval_ms, ?)
+          WHEN status = 'accepted' AND checkpoint_due_at IS NULL
+            THEN COALESCE(checkpoint_last_report_at, accepted_at) + COALESCE(checkpoint_interval_ms, ?)
           ELSE checkpoint_due_at
         END,
         checkpoint_overdue_count = COALESCE(checkpoint_overdue_count, 0)
@@ -946,6 +946,74 @@ export function dbResolveActiveTaskBindingForSession(
   return bindings[0] ?? null;
 }
 
+export function dbMarkTaskAcceptedForSession(
+  sessionName: string,
+  taskId?: string,
+): { task: TaskRecord; assignment: TaskAssignment; event: TaskEvent | null; transitioned: boolean } | null {
+  ensureTaskSchema();
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskId);
+  if (!binding) {
+    return null;
+  }
+
+  const db = getDb();
+  const now = Date.now();
+  const transitionedAssignment = ["assigned", "blocked"].includes(binding.assignment.status);
+  const checkpointDueAt = transitionedAssignment
+    ? computeTaskCheckpointDueAt(now, binding.assignment.checkpointIntervalMs ?? binding.task.checkpointIntervalMs)
+    : (binding.assignment.checkpointDueAt ?? null);
+
+  db.prepare(`
+    UPDATE task_assignments
+    SET status = CASE WHEN status IN ('assigned', 'blocked') THEN 'accepted' ELSE status END,
+        accepted_at = COALESCE(accepted_at, ?),
+        checkpoint_due_at = CASE
+          WHEN status IN ('assigned', 'blocked') THEN ?
+          ELSE checkpoint_due_at
+        END,
+        checkpoint_overdue_count = CASE
+          WHEN status IN ('assigned', 'blocked') THEN 0
+          ELSE checkpoint_overdue_count
+        END
+    WHERE id = ? AND status IN ('assigned', 'accepted', 'blocked')
+  `).run(now, checkpointDueAt, binding.assignment.id);
+
+  const transitionedTask =
+    db
+      .prepare(`
+    UPDATE tasks
+    SET status = CASE
+          WHEN status = 'dispatched' THEN 'in_progress'
+          ELSE status
+        END,
+        started_at = CASE
+          WHEN status = 'dispatched' THEN COALESCE(started_at, ?)
+          ELSE started_at
+        END,
+        updated_at = ?
+    WHERE id = ? AND status IN ('dispatched', 'in_progress', 'blocked')
+  `)
+      .run(now, now, binding.task.id).changes > 0 && binding.task.status === "dispatched";
+
+  const nextTask = getTaskOrThrow(binding.task.id);
+  const nextAssignment = dbGetActiveAssignment(binding.task.id)!;
+  const event = transitionedTask
+    ? appendTaskEvent(binding.task.id, "task.progress", {
+        actor: sessionName,
+        sessionName,
+        message: "Worker bootstrap started; awaiting the first progress sync.",
+        progress: nextTask.progress,
+      })
+    : null;
+
+  return {
+    task: nextTask,
+    assignment: nextAssignment,
+    event,
+    transitioned: transitionedTask,
+  };
+}
+
 export function dbListTaskEvents(taskId: string, limit = 100): TaskEvent[] {
   ensureTaskSchema();
   const db = getDb();
@@ -1100,7 +1168,6 @@ export function dbDispatchTask(
   const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(input.checkpointIntervalMs ?? task.checkpointIntervalMs);
   const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? task.reportToSessionName);
   const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
-  const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
 
   db.prepare(`
     UPDATE task_assignments
@@ -1116,7 +1183,7 @@ export function dbDispatchTask(
       id, task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
       worktree_mode, worktree_path, worktree_branch, checkpoint_interval_ms, report_to_session_name, report_events,
       checkpoint_last_report_at, checkpoint_due_at, checkpoint_overdue_count, status, assigned_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, 'assigned', ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 'assigned', ?)
   `).run(
     assignmentId,
     taskId,
@@ -1131,7 +1198,6 @@ export function dbDispatchTask(
     checkpointIntervalMs,
     reportToSessionName,
     reportEvents,
-    checkpointDueAt,
     now,
   );
 

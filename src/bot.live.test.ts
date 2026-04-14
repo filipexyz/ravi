@@ -153,6 +153,22 @@ mock.module("./router/index.js", () => ({
     session.providerSessionId = providerSessionId;
     session.sdkSessionId = providerSessionId;
   }),
+  updateRuntimeProviderState: mock(
+    (
+      sessionKey: string,
+      provider: RuntimeProviderId,
+      options?: { providerSessionId?: string; runtimeSessionDisplayId?: string },
+    ) => {
+      const session = sessions.get(sessionKey);
+      if (!session) return;
+      session.runtimeProvider = provider;
+      const providerSessionId = options?.runtimeSessionDisplayId ?? options?.providerSessionId;
+      if (providerSessionId) {
+        session.providerSessionId = providerSessionId;
+        session.sdkSessionId = providerSessionId;
+      }
+    },
+  ),
   updateTokens: mock(() => {}),
   updateSessionSource: mock((sessionKey: string, source: { channel?: string; accountId?: string; chatId?: string }) => {
     const session = sessions.get(sessionKey);

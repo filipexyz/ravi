@@ -71,6 +71,7 @@ import {
   type TaskStreamTaskEntity,
 } from "../tasks/index.js";
 import { buildOverlayTaskDispatchState, type OverlayTaskDispatchState } from "./task-dispatch.js";
+import { buildOverlayInsightsPayload, type OverlayInsightsSnapshot } from "./insights.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "../..");
@@ -177,6 +178,10 @@ type OverlayTasksQuery = {
   todayKey: string | null;
 };
 
+type OverlayInsightsQuery = {
+  limit: number;
+};
+
 type OverlayTasksSnapshot = {
   ok: true;
   generatedAt: number;
@@ -196,6 +201,10 @@ type OverlayTasksSnapshot = {
   activeItems: TaskStreamTaskEntity[];
   dailyActivity: OverlayTasksDailyActivitySummary;
   selectedTask: OverlayTaskSelection | null;
+};
+
+type OverlayInsightsPayload = OverlayInsightsSnapshot & {
+  query: OverlayInsightsQuery;
 };
 
 type OverlayTaskDocumentSummary = {
@@ -468,6 +477,10 @@ const server = serve({
 
     if (url.pathname === "/api/whatsapp-overlay/tasks" && req.method === "GET") {
       return handleTasks(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/insights" && req.method === "GET") {
+      return handleInsights(url);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/tasks/dispatch" && req.method === "POST") {
@@ -1158,6 +1171,19 @@ function buildOverlayTasksPayload(query: OverlayTasksQuery): OverlayTasksSnapsho
   };
 }
 
+function buildOverlayInsightsReadModel(query: OverlayInsightsQuery): OverlayInsightsPayload {
+  const snapshot = buildOverlayInsightsPayload({
+    limit: query.limit,
+    sessions: getOverlaySessions(),
+    liveBySessionName,
+  });
+
+  return {
+    ...snapshot,
+    query,
+  };
+}
+
 function handleTasks(url: URL): Response {
   try {
     const payload = buildOverlayTasksPayload({
@@ -1181,6 +1207,27 @@ function handleTasks(url: URL): Response {
           error: message,
         },
         { status },
+      ),
+      url,
+    );
+  }
+}
+
+function handleInsights(url: URL): Response {
+  try {
+    const payload = buildOverlayInsightsReadModel({
+      limit: normalizeInsightsLimit(url.searchParams.get("limit")),
+    });
+    return withCors(Response.json(payload), url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: message,
+        },
+        { status: 500 },
       ),
       url,
     );
@@ -2673,6 +2720,12 @@ function normalizeTaskEventsLimit(value: string | null | undefined): number {
   return Math.max(1, Math.min(parsed, 50));
 }
 
+function normalizeInsightsLimit(value: string | null | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 80;
+  return Math.max(1, Math.min(parsed, 200));
+}
+
 function normalizeLookupToken(value: string | null | undefined): string {
   return cleanNullable(value)?.toLowerCase() ?? "";
 }
@@ -3115,14 +3168,7 @@ function upsertLiveWorkspaceMessage(sessionName: string, message: OverlaySession
   const current = liveBySessionName.get(sessionName);
   const previous = Array.isArray(current?.messages) ? current.messages : [];
   const next = previous.slice();
-  const index = next.findIndex((item) => {
-    const itemCreatedAt = parseOverlayTimestamp(item.createdAt);
-    if (item.role !== message.role) return false;
-    if (Math.abs(itemCreatedAt - createdAt) > SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS) {
-      return false;
-    }
-    return liveWorkspaceTextsOverlap(normalizeLiveWorkspaceText(item.content), content);
-  });
+  const index = next.findIndex((item) => liveWorkspaceMessagesMatch(item, message));
 
   if (index === -1) {
     next.push({
@@ -3164,6 +3210,33 @@ function normalizeLiveWorkspaceText(value: string | null | undefined): string {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+function liveWorkspaceMessagesMatch(
+  left: OverlaySessionWorkspaceMessage,
+  right: OverlaySessionWorkspaceMessage,
+): boolean {
+  const leftId = cleanNullable(left.id);
+  const rightId = cleanNullable(right.id);
+  if (leftId && rightId && leftId === rightId) {
+    return true;
+  }
+
+  if (left.role !== right.role) {
+    return false;
+  }
+
+  const leftCreatedAt = parseOverlayTimestamp(left.createdAt);
+  const rightCreatedAt = parseOverlayTimestamp(right.createdAt);
+  if (!leftCreatedAt || !rightCreatedAt) {
+    return false;
+  }
+
+  if (Math.abs(leftCreatedAt - rightCreatedAt) > SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS) {
+    return false;
+  }
+
+  return liveWorkspaceTextsOverlap(normalizeLiveWorkspaceText(left.content), normalizeLiveWorkspaceText(right.content));
 }
 
 function liveWorkspaceTextsOverlap(left: string, right: string): boolean {
@@ -3259,10 +3332,11 @@ function buildToolArtifact(
 ): OverlayChatArtifact {
   const artifactId = `${sessionName}:tool:${toolId}`;
   const existing = findLiveArtifact(sessionName, artifactId);
-  const description = summarizeToolInput(data.input) || existing?.description || null;
+  const description = summarizeToolInputCompact(toolName, data.input) || existing?.description || null;
   const preview = summarizeToolArtifactPreview(data, existing?.preview ?? null);
   const fullDetail = buildToolArtifactFullDetail(data, existing?.fullDetail ?? null);
   const status = resolveToolArtifactStatus(data, existing?.status ?? null);
+  const duration = resolveToolArtifactDuration(data, existing?.duration ?? null);
   return {
     id: artifactId,
     kind: "tool",
@@ -3272,6 +3346,7 @@ function buildToolArtifact(
     preview,
     fullDetail,
     status,
+    duration,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     anchor: existing?.anchor ?? resolveActiveArtifactAnchor(sessionName),
@@ -3311,12 +3386,72 @@ function findRecentPromptMessageIdInHistory(sessionName: string): string | null 
   return null;
 }
 
+function shortenFilePath(filePath: string, maxLen = 40): string {
+  if (filePath.length <= maxLen) return filePath;
+  const parts = filePath.split("/");
+  if (parts.length <= 2) return filePath.slice(-maxLen);
+  // Try progressively shorter: last 2, last 1
+  const last2 = "…/" + parts.slice(-2).join("/");
+  if (last2.length <= maxLen) return last2;
+  const last1 = "…/" + parts[parts.length - 1];
+  if (last1.length <= maxLen) return last1;
+  return last1.slice(-maxLen);
+}
+
+function summarizeToolInputCompact(toolName: string, input: unknown): string {
+  if (input == null) return "";
+  if (typeof input !== "object" || Array.isArray(input)) return summarizeToolValue(input, 80);
+  const obj = input as Record<string, unknown>;
+
+  switch (toolName) {
+    case "Read": {
+      const fp = typeof obj.file_path === "string" ? shortenFilePath(obj.file_path) : null;
+      if (!fp) return summarizeToolValue(input, 80);
+      const parts = [fp];
+      if (typeof obj.offset === "number") parts.push(`L${obj.offset}`);
+      if (typeof obj.limit === "number") parts.push(`+${obj.limit}`);
+      return parts.join(" ");
+    }
+    case "Write":
+    case "Edit": {
+      const fp = typeof obj.file_path === "string" ? shortenFilePath(obj.file_path) : null;
+      return fp || summarizeToolValue(input, 80);
+    }
+    case "Bash": {
+      const cmd = typeof obj.command === "string" ? obj.command : null;
+      return cmd ? formatLiveText(cmd, 80) : summarizeToolValue(input, 80);
+    }
+    case "Grep": {
+      const pattern = typeof obj.pattern === "string" ? obj.pattern : null;
+      const path = typeof obj.path === "string" ? shortenFilePath(obj.path, 30) : null;
+      const parts: string[] = [];
+      if (pattern) parts.push(`/${pattern}/`);
+      if (path) parts.push(`in ${path}`);
+      return parts.join(" ") || summarizeToolValue(input, 80);
+    }
+    case "Glob": {
+      const pattern = typeof obj.pattern === "string" ? obj.pattern : null;
+      const path = typeof obj.path === "string" ? shortenFilePath(obj.path, 30) : null;
+      const parts: string[] = [];
+      if (pattern) parts.push(pattern);
+      if (path) parts.push(`in ${path}`);
+      return parts.join(" ") || summarizeToolValue(input, 80);
+    }
+    case "Agent": {
+      const desc = typeof obj.description === "string" ? obj.description : null;
+      return desc ? formatLiveText(desc, 60) : summarizeToolValue(input, 80);
+    }
+    default:
+      return summarizeToolValue(input, 80);
+  }
+}
+
 function summarizeToolInput(value: unknown): string {
   return summarizeToolValue(value, 180);
 }
 
 function summarizeToolOutput(value: unknown): string {
-  return summarizeToolValue(value, 220);
+  return summarizeToolValue(value, 120);
 }
 
 function summarizeToolArtifactPreview(data: Record<string, unknown>, fallback: string | null): string {
@@ -3326,17 +3461,20 @@ function summarizeToolArtifactPreview(data: Record<string, unknown>, fallback: s
   }
 
   if (eventName === "end") {
-    const status = data.isError === true ? "erro" : "ok";
-    const duration =
-      typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
-        ? formatDurationCompact(data.durationMs)
-        : "";
     const outputSummary = summarizeToolOutput(resolveToolArtifactResultValue(data));
-    const parts = [status, duration, outputSummary].filter(Boolean);
-    return parts.join(" · ") || status;
+    if (outputSummary) return outputSummary;
+    return data.isError === true ? "erro" : fallback || "concluído";
   }
 
   return fallback || "";
+}
+
+function resolveToolArtifactDuration(data: Record<string, unknown>, fallback: string | null): string | null {
+  const eventName = typeof data.event === "string" ? data.event : undefined;
+  if (eventName === "end" && typeof data.durationMs === "number" && Number.isFinite(data.durationMs)) {
+    return formatDurationCompact(data.durationMs);
+  }
+  return fallback;
 }
 
 function resolveToolArtifactStatus(
@@ -3364,6 +3502,13 @@ function buildToolArtifactFullDetail(data: Record<string, unknown>, fallback: st
 
   if (typeof data.durationMs === "number" && Number.isFinite(data.durationMs)) {
     lines.push(`duration: ${formatDurationCompact(data.durationMs)}`);
+  }
+
+  const inputDetail = formatToolDetailValue(data.input);
+  if (inputDetail) {
+    lines.push("");
+    lines.push("input:");
+    lines.push(inputDetail);
   }
 
   const resultDetail = formatToolDetailValue(resolveToolArtifactResultValue(data));
