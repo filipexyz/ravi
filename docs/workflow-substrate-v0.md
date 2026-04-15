@@ -1,432 +1,383 @@
-# Workflow Substrate v0
+# Workflow Substrate
+
+> O nome do arquivo ficou legado. O conteúdo abaixo documenta o contrato real do workflow implementado hoje no Ravi.
 
 ## Objetivo
 
-Materializar `workflow` como camada explícita de coordenação no Ravi sem quebrar o task runtime atual.
+Descrever o substrate atual de `workflow` do Ravi sem puxar mais abstração para dentro dele.
 
-Separação que este corte preserva:
+Separação preservada neste corte:
 
 - `workflow` = coordenação
 - `task` = execução
-- `profile` = protocolo local da execução
+- `profile` = contrato local da task
+- `launch plan` = continua na task
+- `parentTaskId` = continua lineage/grouping/UI/callback
 - `project/goal/ravimem` = fora deste corte
 
-## Tese
+## O que existe hoje
 
-O Ravi já tem três primitives fortes para execução:
+O modelo real já não é mais o `v0` antigo de “membership de tasks com edges derivadas”.
 
-- `task`
-- `dependencies/readiness`
-- `launch plan`
+O substrate atual é:
 
-O que falta no `v0` não é um novo scheduler. É um objeto canônico de coordenação.
+- `workflow_spec`
+- `workflow_run`
+- `workflow_node_run`
+- `workflow_run_edge`
+- `workflow_node_run_tasks` como histórico de attempts por node run
 
-Por isso, o `workflow v0` nasce como:
+Em frase curta:
 
-- objeto próprio
-- membership explícita de tasks
-- leitura agregada de status/readiness
-- edges derivadas do grafo real de dependencies
+- `spec` descreve o processo
+- `run` coordena uma instância viva
+- `node_run` guarda o estado de coordenação por node
+- `task` continua sendo a execução concreta de um node `kind=task`
 
-E não como:
+## Entidades
 
-- `task umbrella`
-- overload de `parentTaskId`
-- novo lugar para guardar `profile`
-- novo scheduler paralelo
+### `workflow_specs`
 
-## Não Objetivos do v0
+Fonte de verdade do desenho do workflow.
 
-O `v0` não deve:
-
-- introduzir `project`
-- introduzir `goal`
-- puxar `ravimem` para dentro do substrate
-- mover `launch plan` para fora da task
-- duplicar `task_dependencies`
-- inventar `workflow profile`
-- instanciar tasks lazy a partir de templates
-- usar `parentTaskId` como fonte de scheduling
-
-## Modelo
-
-### Workflow
-
-Unidade de coordenação.
-
-Responsável por:
-
-- agrupar tasks relacionadas
-- expor grafo operacional do trabalho
-- calcular estado agregado
-- responder `o que está ready`, `o que está rodando`, `o que está travado`
-
-### Workflow Node
-
-No `v0`, node é só uma task membro do workflow.
-
-Ou seja:
-
-- `node.kind = task`
-- `node.task_id` aponta para uma task real já existente
-
-No futuro, o conceito pode abrir para:
-
-- `approval`
-- `gate`
-- `automation`
-
-Mas não agora.
-
-### Workflow Edge
-
-No `v0`, edge é derivada, não autoritativa.
-
-Uma edge existe quando:
-
-- `task_b` depende de `task_a`
-- e ambas pertencem ao mesmo workflow
-
-Então:
-
-- `task_a -> task_b`
-
-é uma edge do workflow.
-
-O substrate autoritativo continua sendo `task_dependencies`.
-
-## Entidades do v0
-
-### `workflows`
-
-Campos mínimos:
+Campos relevantes:
 
 - `id`
 - `title`
 - `summary`
-- `status`
-- `created_at`
-- `updated_at`
-- `archived_at`
+- `policy_json`
+- `nodes_json`
+- `edges_json`
 - `created_by`
 - `created_by_agent_id`
 - `created_by_session_name`
+- `archived_at`
+- `created_at`
+- `updated_at`
 
-`status` agregado sugerido:
+### `workflow_runs`
+
+Instância viva de um `workflow_spec`.
+
+Campos relevantes:
+
+- `id`
+- `workflow_spec_id`
+- `title`
+- `summary`
+- `policy_json`
+- `status`
+- `created_by`
+- `created_by_agent_id`
+- `created_by_session_name`
+- `archived_at`
+- `created_at`
+- `updated_at`
+- `started_at`
+- `completed_at`
+
+### `workflow_node_runs`
+
+Estado vivo de cada node dentro de um `workflow_run`.
+
+Campos relevantes:
+
+- `id`
+- `workflow_run_id`
+- `spec_node_key`
+- `label`
+- `node_kind`
+- `requirement`
+- `release_mode`
+- `status`
+- `waiting_on_node_keys_json`
+- `current_task_id`
+- `attempt_count`
+- `released_at`
+- `released_by`
+- `released_by_agent_id`
+- `released_by_session_name`
+- `ready_at`
+- `blocked_at`
+- `completed_at`
+- `skipped_at`
+- `cancelled_at`
+- `archived_at`
+- `last_task_transition_at`
+- `created_at`
+- `updated_at`
+
+### `workflow_run_edges`
+
+Edge materializada no `run`, já resolvida em ids de `node_run`.
+
+Campos:
+
+- `workflow_run_id`
+- `from_node_run_id`
+- `to_node_run_id`
+- `created_at`
+
+### `workflow_node_run_tasks`
+
+Histórico de attempts de task vinculadas a um `node_run`.
+
+Campos:
+
+- `workflow_node_run_id`
+- `task_id`
+- `attempt`
+- `created_at`
+
+## Nós
+
+Tipos de node suportados hoje:
+
+- `task`
+- `gate`
+- `approval`
+
+### `task`
+
+- pode receber task concreta
+- pode criar nova task via CLI
+- pode manter histórico de múltiplas attempts
+
+### `gate`
+
+- não vira task
+- exige `release_mode=manual`
+- normalmente representa checkpoint/gate operacional
+
+### `approval`
+
+- não vira task
+- exige `release_mode=manual`
+- normalmente representa aprovação humana explícita
+
+## Requirement e Release
+
+### `requirement`
+
+Valores atuais:
+
+- `required`
+- `optional`
+
+Impacto:
+
+- `required` pesa no agregado final do run
+- `optional` pode ser `skipped` ou `cancelled` sem impedir `done`
+
+### `release_mode`
+
+Valores atuais:
+
+- `auto`
+- `manual`
+
+Regras:
+
+- `task` defaulta para `auto`
+- `gate` e `approval` são sempre `manual`
+- `manual` só libera avanço com `release`
+
+## Status
+
+### `workflow_run.status`
+
+Valores atuais:
 
 - `draft`
+- `waiting`
 - `ready`
 - `running`
 - `blocked`
 - `done`
 - `failed`
+- `cancelled`
 - `archived`
 
-### `workflow_tasks`
+Leitura agregada:
 
-Membership explícita entre workflow e task.
+- `archived` se o run estiver arquivado
+- `draft` se não houver node ativo suficiente para coordenar
+- `failed` se algum node ativo falhar
+- `cancelled` se algum node `required` for cancelado
+- `running` se algum node estiver rodando
+- `blocked` se algum node estiver blocked e nenhum estiver running
+- `ready` se algum node estiver ready
+- `waiting` se o trabalho restante estiver em `pending` ou `awaiting_release`
+- `done` quando todos os nodes relevantes estiverem resolvidos
 
-Campos mínimos:
+### `workflow_node_run.status`
 
-- `workflow_id`
-- `task_id`
-- `node_key`
-- `label`
-- `created_at`
+Valores atuais:
 
-Restrições:
+- `pending`
+- `awaiting_release`
+- `ready`
+- `running`
+- `blocked`
+- `done`
+- `failed`
+- `skipped`
+- `cancelled`
+- `archived`
 
-- `UNIQUE(workflow_id, task_id)`
-- `UNIQUE(task_id)`
-- `UNIQUE(workflow_id, node_key)` quando `node_key` existir
+Semântica:
 
-Observação:
+- `pending` = aguardando predecessor satisfazer edge
+- `awaiting_release` = predecessor já liberou, mas falta release manual
+- `ready` = pode receber task ou avançar
+- `running` = task atual entrou em execução
+- `blocked` = task atual bloqueou
+- `done` = node resolvido com sucesso
+- `failed` = task atual falhou
+- `skipped` = optional omitido
+- `cancelled` = node cancelado
+- `archived` = saiu do agregado, mas continua no histórico
 
-- `node_key` é identidade estável de coordenação
-- `task_id` é identidade de execução
-- no `v0`, uma task pertence a no máximo um workflow
+## Cardinalidade
 
-Isso permite evoluir depois para `workflow node spec` sem reusar `parentTaskId`.
+### `task -> workflow_node_run`
 
-## Read Model
+Hoje a cardinalidade é:
 
-O `workflow show/watch` deve resolver:
+- uma `task` pertence a **no máximo um** `workflow_node_run`
 
-- membros
-- membros não-arquivados que entram no agregado
-- histórico de membros arquivados/removidos
-- edges derivadas
-- tasks ready/waiting
-- tasks running
-- tasks blocked/failed
-- tasks done
-- launch plans armados
-- blockers externos
+Isso é garantido por:
 
-### Blocker Externo
+- `UNIQUE(task_id)` em `workflow_node_run_tasks`
 
-Se uma task do workflow depende de task fora do workflow:
+### `workflow_node_run -> task attempts`
 
-- a dependency continua válida
-- o workflow não inventa edge interna
-- a surface marca isso como `external prerequisite`
+Hoje a cardinalidade é:
 
-Isso evita impedir membership e evita duplicação de substrate.
+- um `workflow_node_run` pode ter **várias tasks ao longo do tempo**
+- apenas uma delas é a `current_task_id`
+
+Ou seja:
+
+- `current_task_id` aponta para a attempt atual
+- `workflow_node_run_tasks` guarda o histórico de attempts
+- `attempt_count` é o contador acumulado do node
+
+Isto é importante:
+
+- o node run **não** fica colado em “uma task pra sempre”
+- retry/recreate/reassign cabem na modelagem atual
+
+## Scheduling
+
+### O que governa readiness
+
+O grafo de readiness do workflow hoje vem de:
+
+- `workflow_run_edges`
+- `waiting_on_node_keys_json`
+- `release_mode`
+- estado do `current_task_id` quando o node é `kind=task`
+
+### O que NÃO governa readiness
+
+Estas coisas não entram no scheduling do workflow:
+
+- `parentTaskId`
+- `project`
+- `goal`
+- `ravimem`
+- `profile`
+- `launch plan`
+
+### Relação com `launch plan`
+
+`launch plan` continua sendo da task.
+
+O workflow:
+
+- sabe qual task está no node agora
+- reage ao lifecycle dessa task
+- não move `launch plan` para dentro do próprio substrate
+
+## Sincronização com tasks
+
+O vínculo real hoje é:
+
+- `task` ligada a `workflow_node_run`
+- lifecycle da task sincroniza o `node_run`
+
+Mapeamento principal:
+
+- `task.open + readiness ready` -> `node_run.ready`
+- `task.open + readiness waiting` -> `node_run.pending`
+- `task.dispatched|in_progress` -> `node_run.running`
+- `task.blocked` -> `node_run.blocked`
+- `task.done` -> `node_run.done`
+- `task.failed` -> `node_run.failed`
+
+Para nodes não-task:
+
+- `release` pode levar `awaiting_release -> done`
+- ou `awaiting_release -> ready`, dependendo do tipo do node
 
 ## Invariantes
 
-### Separação de Camadas
+- `profile` continua local da task
+- `workflow` não carrega snapshot de `profile`
+- `parentTaskId` nunca vira scheduling
+- `launch plan` continua na task
+- `project/goal/ravimem` ficam fora deste corte
+- `task` não pode pertencer a dois node runs
+- `node_run` pode ter várias attempts ao longo do tempo
 
-- `workflow` coordena
-- `task` executa
-- `profile` continua pinado na task
-- `project`, `goal` e `ravimem` ficam fora do `v0`
+## CLI atual
 
-### Cardinalidade
-
-No `v0`, uma task pertence a no máximo um workflow.
-
-Isso evita:
-
-- coordenação duplicada
-- leitura agregada ambígua
-- múltiplos owners de scheduling para a mesma execução
-
-### `parentTaskId`
-
-`parentTaskId` continua servindo apenas para:
-
-- lineage
-- grouping
-- UI
-- callback de child terminal
-
-Nunca para:
-
-- readiness
-- edge
-- workflow scheduling
-
-### `profile`
-
-`workflow` não carrega `profile snapshot`.
-
-Cada task continua pinando:
-
-- `profile_id`
-- `profile_version`
-- `profile_snapshot_json`
-- `profile_state_json`
-- `profile_input_json`
-
-O workflow, no máximo, pode sugerir qual profile um node costuma usar em fases futuras.
-
-### `launch plan`
-
-`launch plan` continua sendo contrato da task.
-
-O workflow observa:
-
-- se o node tem launch plan
-- se o node ready auto-despachou
-
-Mas não move esse dado de lugar no `v0`.
-
-## Agregação de Status
-
-No `v0`, o agregado é calculado só sobre tasks membro **não-arquivadas**.
-
-Tasks arquivadas:
-
-- saem do agregado
-- continuam no histórico do workflow
-- não contam para `ready`, `blocked`, `running`, `done` ou `failed`
-
-Proposta simples e honesta:
-
-- `failed` se qualquer task membro não-arquivada falhar
-- `blocked` se nenhuma task membro não-arquivada estiver rodando e existir task membro não-arquivada blocked
-- `running` se existir task membro não-arquivada em `dispatched` ou `in_progress`
-- `ready` se existir task membro não-arquivada em `open` com `readiness=ready`
-- `done` se todas as tasks membro não-arquivadas estiverem `done`
-- `draft` se o workflow não tiver nenhum membro não-arquivado
-- `archived` se o workflow estiver arquivado
-
-Observação:
-
-- `waiting` continua sendo semântica da task, não status persistido do workflow
-
-## CLI Mínima
-
-### Criação e leitura
+### Specs
 
 ```bash
-ravi workflows create "..." [--summary "..."]
-ravi workflows list
-ravi workflows show <workflow-id>
-ravi workflows watch <workflow-id>
+ravi workflows.specs create <spec-id> --definition '<json>'
+ravi workflows.specs create <spec-id> --file <path>
+ravi workflows.specs list
+ravi workflows.specs show <spec-id>
 ```
 
-### Membership
+### Runs
 
 ```bash
-ravi workflows add-task <workflow-id> <task-id> [--key <node-key>] [--label "..."]
-ravi workflows rm-task <workflow-id> <task-id>
+ravi workflows.runs start <spec-id> [--run-id <id>]
+ravi workflows.runs list
+ravi workflows.runs show <run-id>
+ravi workflows.runs release <run-id> <node-key>
+ravi workflows.runs skip <run-id> <node-key>
+ravi workflows.runs cancel <run-id> <node-key>
+ravi workflows.runs archive-node <run-id> <node-key>
+ravi workflows.runs task-attach <run-id> <node-key> <task-id>
+ravi workflows.runs task-create <run-id> <node-key> --title "..." --instructions "..."
 ```
 
-Semântica explícita:
+## Não objetivos deste corte
 
-- `add-task` cria só membership
-- `rm-task` remove só membership
-- nenhum dos dois toca em:
-  - `task_dependencies`
-  - `launch plan`
-  - `parentTaskId`
+Este substrate atual não faz:
 
-Se uma edge interna sumir porque um membro foi removido, ela passa a aparecer como `external prerequisite` para os membros restantes.
+- `project`
+- `goal`
+- `ravimem`
+- scheduler genérico novo
+- template/context bucket fora de `spec`
+- profile orchestration
+- qualquer uso de `parentTaskId` para coordenação
 
-### Operação leve
+## Leitura certa do estado atual
 
-```bash
-ravi workflows archive <workflow-id>
-ravi workflows unarchive <workflow-id>
-```
+O workflow atual já é útil para:
 
-Nada de `dispatch` de workflow no `v0`.
+- fluxo técnico simples
+- fluxo com gate/approval
+- fluxo operacional enxuto
 
-Dispatch continua no nível da task.
+Mas a responsabilidade continua estreita:
 
-## Schema Inicial
-
-```sql
-CREATE TABLE workflows (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  summary TEXT,
-  status TEXT NOT NULL DEFAULT 'draft',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  archived_at INTEGER,
-  created_by TEXT,
-  created_by_agent_id TEXT,
-  created_by_session_name TEXT
-);
-
-CREATE TABLE workflow_tasks (
-  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
-  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  node_key TEXT,
-  label TEXT,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (workflow_id, task_id)
-);
-
-CREATE UNIQUE INDEX idx_workflow_tasks_task_unique
-  ON workflow_tasks(task_id);
-
-CREATE UNIQUE INDEX idx_workflow_tasks_node_key
-  ON workflow_tasks(workflow_id, node_key)
-  WHERE node_key IS NOT NULL;
-```
-
-Importante:
-
-- não criar `workflow_edges` no banco no `v0`
-- edges são projeção derivada de `task_dependencies`
-
-Isso mantém uma única fonte de verdade para gating.
-
-## Show Surface
-
-`ravi workflows show` deve responder:
-
-- dados do workflow
-- status agregado
-- summary
-- membros
-- por membro:
-  - `task.status`
-  - `task.readiness`
-  - `launch plan`
-  - upstreams internas
-  - upstreams externas
-  - downstreams internas
-
-Em frase curta:
-
-- `workflow` lê o grafo
-- `task` continua rodando o trabalho
-
-## Migração
-
-### Estado Atual
-
-Hoje temos:
-
-- tasks reais
-- dependencies v1 reais
-- readiness real
-- launch plan real
-- `parentTaskId` usado como lineage/grouping
-- `umbrella` usada informalmente como capa
-
-### Passo 1
-
-Introduzir `workflow` como substrate separado.
-
-Sem migrar nada automaticamente.
-
-### Passo 2
-
-Permitir importar tasks existentes:
-
-```bash
-ravi workflows add-task wf-1 task-a
-ravi workflows add-task wf-1 task-b
-```
-
-### Passo 3
-
-Surface nova passa a mostrar coordenação pelo workflow.
-
-Umbrella continua existindo só como legado de lineage.
-
-### Passo 4
-
-Novos fluxos deixam de criar umbrella quando a intenção é coordenação.
-
-## Primeiro Corte Implementável
-
-O corte implementável sem conflito é:
-
-1. adicionar `workflows` + `workflow_tasks`
-2. criar serviço de leitura agregada do workflow
-3. derivar edges internas a partir de `task_dependencies`
-4. criar CLI `workflows create|list|show|watch|add-task|rm-task`
-5. não mexer em:
-   - lifecycle da task
-   - profile
-   - dispatch
-   - launch plan
-   - dependencies v1
-   - parentTaskId
-
-Esse corte já entrega:
-
-- objeto canônico de coordenação
-- leitura honesta do trabalho
-- base limpa para `project` depois
-
-Sem abrir duas ontologias de scheduling.
-
-## Fase Seguinte
-
-Depois do `v0`, a evolução natural é:
-
-- `project` como alignment/contexto
-- workflow workspace no overlay
-- node specs/templating
-- instanciação lazy de tasks
-- launch rules mais ricas
-
-Mas só depois do workflow existir como camada explícita e estreita.
+- `spec` descreve processo
+- `run` coordena instância viva
+- `task` executa trabalho concreto

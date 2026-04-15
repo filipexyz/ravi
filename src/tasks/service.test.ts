@@ -1850,6 +1850,129 @@ describe("task substrate contract", () => {
     });
   });
 
+  it("syncs TASK.md when a task completes through the runtime", async () => {
+    const created = createTask({
+      title: "Complete sync",
+      instructions: "Write runtime state back into TASK.md on done",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const result = await completeTask(created.task.id, {
+      actor: "test",
+      message: "ship complete",
+    });
+
+    const docPath = join(result.task.taskDir!, "TASK.md");
+    expect(readTaskDocFrontmatter(result.task)).toMatchObject({
+      status: "done",
+      progress: 100,
+      summary: "ship complete",
+    });
+    const doc = readFileSync(docPath, "utf8");
+    expect(doc).toContain("### Task Done");
+    expect(doc).toContain("Resumo: ship complete");
+  });
+
+  it("syncs TASK.md when a task fails through the runtime", () => {
+    const created = createTask({
+      title: "Fail sync",
+      instructions: "Write runtime state back into TASK.md on fail",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const result = failTask(created.task.id, {
+      actor: "test",
+      message: "integration broke",
+    });
+
+    const docPath = join(result.task.taskDir!, "TASK.md");
+    expect(readTaskDocFrontmatter(result.task)).toMatchObject({
+      status: "failed",
+      summary: "integration broke",
+    });
+    const doc = readFileSync(docPath, "utf8");
+    expect(doc).toContain("### Task Failed");
+    expect(doc).toContain("Resumo: integration broke");
+  });
+
+  it("syncs TASK.md when a task is blocked through the runtime", () => {
+    const created = createTask({
+      title: "Block sync",
+      instructions: "Write runtime state back into TASK.md on block",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const result = blockTask(created.task.id, {
+      actor: "test",
+      message: "waiting on API key",
+    });
+
+    const docPath = join(result.task.taskDir!, "TASK.md");
+    expect(readTaskDocFrontmatter(result.task)).toMatchObject({
+      status: "blocked",
+      blockerReason: "waiting on API key",
+    });
+    const doc = readFileSync(docPath, "utf8");
+    expect(doc).toContain("### Task Blocked");
+    expect(doc).toContain("Blocker: waiting on API key");
+  });
+
+  it("syncs archive metadata into TASK.md without changing the task status", () => {
+    const created = createTask({
+      title: "Archive sync",
+      instructions: "Write archive state back into TASK.md",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const result = archiveTask(created.task.id, {
+      actor: "test",
+      reason: "hidden from default list",
+    });
+
+    const docPath = join(result.task.taskDir!, "TASK.md");
+    expect(readTaskDocFrontmatter(result.task)).toMatchObject({
+      status: "open",
+      archiveReason: "hidden from default list",
+    });
+    expect(typeof readTaskDocFrontmatter(result.task).archivedAt).toBe("number");
+    const doc = readFileSync(docPath, "utf8");
+    expect(doc).toContain("### Task Archived");
+    expect(doc).toContain("Motivo do archive: hidden from default list");
+  });
+
+  it("does not rewrite TASK.md on late terminal noop", async () => {
+    const created = createTask({
+      title: "Terminal noop sync",
+      instructions: "Late terminal commands must not rewrite TASK.md",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const done = await completeTask(created.task.id, {
+      actor: "test",
+      message: "first terminal write",
+    });
+    const docPath = join(done.task.taskDir!, "TASK.md");
+    const beforeLateNoop = readFileSync(docPath, "utf8");
+
+    const late = failTask(created.task.id, {
+      actor: "test",
+      message: "should be ignored",
+    });
+    const afterLateNoop = readFileSync(docPath, "utf8");
+
+    expect(late.wasNoop).toBeTrue();
+    expect(afterLateNoop).toBe(beforeLateNoop);
+    expect(readTaskDocFrontmatter(done.task)).toMatchObject({
+      status: "done",
+      summary: "first terminal write",
+    });
+  });
+
   it("records terminal child callbacks on the parent runtime and TASK.md", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-lineage-"));
     tempStateDirs.push(stateDir);

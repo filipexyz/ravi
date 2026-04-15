@@ -843,6 +843,76 @@ function buildChildStateDocSection(task: TaskRecord, callbackEvent: TaskEvent): 
   ]);
 }
 
+function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): TaskDocSection {
+  const title =
+    event.type === "task.done"
+      ? "Task Done"
+      : event.type === "task.failed"
+        ? "Task Failed"
+        : event.type === "task.blocked"
+          ? "Task Blocked"
+          : event.type === "task.archived"
+            ? "Task Archived"
+            : event.type === "task.unarchived"
+              ? "Task Restored"
+              : "Task Runtime Update";
+
+  const lines = [
+    `Evento: \`${event.type}\``,
+    `Status atual: \`${task.status}\``,
+    `Progresso atual: \`${task.progress}%\``,
+  ];
+
+  if (task.summary) {
+    lines.push(`Resumo: ${task.summary}`);
+  } else if (event.type === "task.failed" && event.message) {
+    lines.push(`Falha: ${event.message}`);
+  }
+
+  if (task.blockerReason) {
+    lines.push(`Blocker: ${task.blockerReason}`);
+  } else if (event.type === "task.blocked" && event.message) {
+    lines.push(`Blocker: ${event.message}`);
+  }
+
+  if (typeof task.archivedAt === "number") {
+    lines.push(`Arquivada em: \`${new Date(task.archivedAt).toISOString()}\``);
+  }
+  if (task.archiveReason) {
+    lines.push(`Motivo do archive: ${task.archiveReason}`);
+  } else if ((event.type === "task.archived" || event.type === "task.unarchived") && event.message) {
+    lines.push(`Mensagem: ${event.message}`);
+  }
+
+  if (
+    !task.summary &&
+    !task.blockerReason &&
+    !task.archiveReason &&
+    event.message &&
+    event.type !== "task.archived" &&
+    event.type !== "task.unarchived"
+  ) {
+    lines.push(`Mensagem: ${event.message}`);
+  }
+
+  return buildTaskDocSection(title, event.createdAt, lines);
+}
+
+function syncRequiredTaskDocumentAfterRuntimeEvent(
+  task: TaskRecord,
+  profile: ResolvedTaskProfile,
+  event: TaskEvent,
+): TaskRecord {
+  if (!taskProfileRequiresTaskDocument(profile)) {
+    return task;
+  }
+
+  return appendTaskDocumentSection(task, buildTaskRuntimeStateDocSection(task, event), {
+    profile,
+    initializeSection: buildTaskMaterializedDocSection(task),
+  });
+}
+
 function ensureResolvedTaskProfile(
   task: TaskRecord,
   options: {
@@ -2541,8 +2611,12 @@ export function archiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
-  return dbArchiveTask(taskId, input);
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const result = dbArchiveTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  return { ...result, task: documentedTask };
 }
 
 export function unarchiveTask(
@@ -2557,8 +2631,12 @@ export function unarchiveTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
-  return dbUnarchiveTask(taskId, input);
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const result = dbUnarchiveTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
+  return { ...result, task: documentedTask };
 }
 
 export async function commentTask(
@@ -2628,11 +2706,15 @@ export function blockTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbBlockTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
   syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
+    task: documentedTask,
     relatedEvents: result.wasNoop ? [] : buildChildStateRelatedEvents(result.task, result.event),
   };
 }
@@ -2650,11 +2732,15 @@ export function failTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbFailTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
   syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
+    task: documentedTask,
     relatedEvents: result.wasNoop ? [] : buildChildStateRelatedEvents(result.task, result.event),
   };
 }
@@ -2672,14 +2758,18 @@ export async function completeTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const { profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbCompleteTask(taskId, input);
+  const documentedTask = result.wasNoop
+    ? result.task
+    : syncRequiredTaskDocumentAfterRuntimeEvent(result.task, profile, result.event);
   syncWorkflowNodeRunForTask(taskId);
   const dependencyRelatedEvents = result.wasNoop
     ? []
     : await buildDependencySatisfiedRelatedEvents(result.task, result.event);
   return {
     ...result,
+    task: documentedTask,
     relatedEvents: result.wasNoop
       ? []
       : [...buildChildStateRelatedEvents(result.task, result.event), ...dependencyRelatedEvents],

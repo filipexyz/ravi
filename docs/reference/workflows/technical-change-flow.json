@@ -1,0 +1,40 @@
+{
+  "title": "Technical Change Flow",
+  "summary": "Implement one technical change, review it, and ship it without manual gates.",
+  "policy": {
+    "completionMode": "all_required"
+  },
+  "nodes": [
+    {
+      "key": "implement",
+      "label": "Implement",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    },
+    {
+      "key": "ship",
+      "label": "Ship",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    }
+  ],
+  "edges": [
+    {
+      "from": "implement",
+      "to": "review"
+    },
+    {
+      "from": "review",
+      "to": "ship"
+    }
+  ]
+}

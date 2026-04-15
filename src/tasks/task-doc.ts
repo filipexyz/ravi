@@ -22,6 +22,8 @@ export interface TaskDocFrontmatterState {
   progressNote?: string;
   summary?: string;
   blockerReason?: string;
+  archivedAt?: number;
+  archiveReason?: string;
 }
 
 const TASK_DOC_STATUS_VALUES = new Set<TaskStatus>(["open", "dispatched", "in_progress", "blocked", "done", "failed"]);
@@ -65,6 +67,8 @@ function buildTaskFrontmatter(task: TaskRecord, preservedFrontmatter?: TaskDocFr
     `progress_note: ${yamlScalar(preservedFrontmatter?.progressNote)}`,
     `summary: ${yamlScalar(task.summary)}`,
     `blocker_reason: ${yamlScalar(task.blockerReason)}`,
+    `archived_at: ${yamlScalar(task.archivedAt)}`,
+    `archive_reason: ${yamlScalar(task.archiveReason)}`,
     "---",
   ];
   return `${lines.join("\n")}\n`;
@@ -176,6 +180,14 @@ export function readTaskDocFrontmatter(task: Pick<TaskRecord, "id" | "taskDir">)
         break;
       case "blocker_reason":
         state.blockerReason = typeof parsed === "string" && parsed ? parsed : undefined;
+        break;
+      case "archived_at":
+        if (typeof parsed === "number" && Number.isFinite(parsed)) {
+          state.archivedAt = parsed;
+        }
+        break;
+      case "archive_reason":
+        state.archiveReason = typeof parsed === "string" && parsed ? parsed : undefined;
         break;
     }
   }

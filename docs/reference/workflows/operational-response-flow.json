@@ -1,0 +1,40 @@
+{
+  "title": "Operational Response Flow",
+  "summary": "Triage one operational issue, execute the response, and communicate or close out the work.",
+  "policy": {
+    "completionMode": "all_required"
+  },
+  "nodes": [
+    {
+      "key": "triage",
+      "label": "Triage",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    },
+    {
+      "key": "execute",
+      "label": "Execute",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    },
+    {
+      "key": "communicate",
+      "label": "Communicate",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    }
+  ],
+  "edges": [
+    {
+      "from": "triage",
+      "to": "execute"
+    },
+    {
+      "from": "execute",
+      "to": "communicate"
+    }
+  ]
+}

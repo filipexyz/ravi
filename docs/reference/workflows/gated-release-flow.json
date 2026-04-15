@@ -1,0 +1,51 @@
+{
+  "title": "Gated Release Flow",
+  "summary": "Build a release candidate, stop on a manual checkpoint, require explicit approval, then deploy.",
+  "policy": {
+    "completionMode": "all_required"
+  },
+  "nodes": [
+    {
+      "key": "build",
+      "label": "Build",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    },
+    {
+      "key": "checkpoint",
+      "label": "Checkpoint",
+      "kind": "gate",
+      "requirement": "required",
+      "releaseMode": "manual"
+    },
+    {
+      "key": "approval",
+      "label": "Approval",
+      "kind": "approval",
+      "requirement": "required",
+      "releaseMode": "manual"
+    },
+    {
+      "key": "deploy",
+      "label": "Deploy",
+      "kind": "task",
+      "requirement": "required",
+      "releaseMode": "auto"
+    }
+  ],
+  "edges": [
+    {
+      "from": "build",
+      "to": "checkpoint"
+    },
+    {
+      "from": "checkpoint",
+      "to": "approval"
+    },
+    {
+      "from": "approval",
+      "to": "deploy"
+    }
+  ]
+}
