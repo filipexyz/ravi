@@ -60,6 +60,7 @@ const {
   resolveTaskWorktreeContext,
   unarchiveTask,
 } = await import("./index.js");
+const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
 import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
 import { deleteSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
@@ -528,6 +529,64 @@ describe("task substrate contract", () => {
       dependencyCount: 2,
       satisfiedDependencyCount: 1,
       unsatisfiedDependencyCount: 1,
+    });
+  });
+
+  it("surfaces workflow linkage on task stream entities for workflow-backed tasks", () => {
+    const created = dbCreateTask({
+      title: "Workflow-backed task",
+      instructions: "This task should expose workflow lineage in the stream",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    createWorkflowSpec({
+      id: "wf-spec-task-stream",
+      title: "Task stream workflow",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    const run = startWorkflowRun("wf-spec-task-stream", {
+      runId: "wf-run-task-stream",
+      createdBy: "test",
+    });
+
+    attachTaskToWorkflowNodeRun(run.run.id, "ship", created.task.id);
+
+    const snapshot = buildTaskStreamSnapshot({
+      taskId: created.task.id,
+      eventsLimit: 10,
+    });
+
+    expect(snapshot.selectedTask?.task.workflow).toMatchObject({
+      workflowRunId: run.run.id,
+      workflowRunTitle: "Task stream workflow",
+      workflowRunStatus: "ready",
+      workflowSpecId: "wf-spec-task-stream",
+      workflowSpecTitle: "Task stream workflow",
+      nodeKey: "ship",
+      nodeLabel: "Ship",
+      nodeKind: "task",
+      nodeRequirement: "required",
+      nodeReleaseMode: "auto",
+      nodeStatus: "ready",
+      currentTaskId: created.task.id,
+      currentTaskAttempt: 1,
+      attemptCount: 1,
+      isCurrentTask: true,
+    });
+    expect(snapshot.items[0]?.workflow).toMatchObject({
+      workflowRunId: run.run.id,
+      nodeKey: "ship",
+      nodeStatus: "ready",
     });
   });
 

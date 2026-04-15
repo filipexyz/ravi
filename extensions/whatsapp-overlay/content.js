@@ -5224,6 +5224,7 @@ function buildTaskWorkspaceContextCopy(selectedTask) {
   const task = selectedTask?.task || null;
   if (!task) return "";
   const activeAssignment = selectedTask?.activeAssignment || null;
+  const workflow = getTaskWorkflowSummary(task);
   const primarySession =
     resolveTaskWorkspacePrimarySessionRecord(selectedTask)?.sessionName ||
     getTaskPrimarySessionName(task, activeAssignment) ||
@@ -5243,6 +5244,14 @@ function buildTaskWorkspaceContextCopy(selectedTask) {
     `session: ${primarySession}`,
     `agent: ${task.assigneeAgentId || activeAssignment?.agentId || "-"}`,
     `report to: ${reportSession}`,
+    workflow
+      ? `workflow: ${workflow.compactPath || workflow.runTitle || workflow.runId || "-"}`
+      : null,
+    workflow?.nodeStatus
+      ? `workflow node: ${humanizeTaskWorkflowStatus(workflow.nodeStatus)}${
+          workflow.attemptLabel ? ` · ${workflow.attemptLabel}` : ""
+        }`
+      : null,
     `worktree: ${getTaskWorktreeLabel(task) || "-"}`,
     primaryArtifactPath ? `artifact: ${primaryArtifactPath}` : null,
     summary ? `summary: ${summary}` : null,
@@ -6252,6 +6261,147 @@ function describeTaskDependencyWaiting(task) {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+function parseTaskWorkflowCount(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : null;
+}
+
+function getTaskWorkflowSummary(task) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.getTaskWorkflowSummary;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(task);
+  }
+
+  const workflow =
+    task?.workflow && typeof task.workflow === "object" ? task.workflow : null;
+  if (!workflow) {
+    return null;
+  }
+
+  const runTitle =
+    typeof workflow.workflowRunTitle === "string" &&
+    workflow.workflowRunTitle.trim()
+      ? workflow.workflowRunTitle.trim()
+      : typeof workflow.workflowSpecTitle === "string" &&
+          workflow.workflowSpecTitle.trim()
+        ? workflow.workflowSpecTitle.trim()
+        : typeof workflow.workflowRunId === "string" &&
+            workflow.workflowRunId.trim()
+          ? workflow.workflowRunId.trim()
+          : "workflow";
+  const nodeKey =
+    typeof workflow.nodeKey === "string" && workflow.nodeKey.trim()
+      ? workflow.nodeKey.trim()
+      : null;
+  const nodeLabel =
+    typeof workflow.nodeLabel === "string" && workflow.nodeLabel.trim()
+      ? workflow.nodeLabel.trim()
+      : nodeKey;
+  const waitingOnNodeKeys = Array.isArray(workflow.waitingOnNodeKeys)
+    ? workflow.waitingOnNodeKeys
+        .map((value) => (typeof value === "string" ? value.trim() : ""))
+        .filter(Boolean)
+    : [];
+  const currentTaskAttempt = parseTaskWorkflowCount(workflow.currentTaskAttempt);
+  const attemptCount = parseTaskWorkflowCount(workflow.attemptCount);
+  const attemptLabel =
+    currentTaskAttempt !== null
+      ? attemptCount !== null && attemptCount > currentTaskAttempt
+        ? `attempt ${currentTaskAttempt} of ${attemptCount}`
+        : `attempt ${currentTaskAttempt}`
+      : attemptCount !== null && attemptCount > 0
+        ? `${attemptCount} attempt${attemptCount === 1 ? "" : "s"}`
+        : null;
+
+  return {
+    runId:
+      typeof workflow.workflowRunId === "string" &&
+      workflow.workflowRunId.trim()
+        ? workflow.workflowRunId.trim()
+        : null,
+    runTitle,
+    runStatus:
+      typeof workflow.workflowRunStatus === "string" &&
+      workflow.workflowRunStatus.trim()
+        ? workflow.workflowRunStatus.trim()
+        : null,
+    specId:
+      typeof workflow.workflowSpecId === "string" &&
+      workflow.workflowSpecId.trim()
+        ? workflow.workflowSpecId.trim()
+        : null,
+    specTitle:
+      typeof workflow.workflowSpecTitle === "string" &&
+      workflow.workflowSpecTitle.trim()
+        ? workflow.workflowSpecTitle.trim()
+        : null,
+    nodeRunId:
+      typeof workflow.workflowNodeRunId === "string" &&
+      workflow.workflowNodeRunId.trim()
+        ? workflow.workflowNodeRunId.trim()
+        : null,
+    nodeKey,
+    nodeLabel,
+    nodeKind:
+      typeof workflow.nodeKind === "string" && workflow.nodeKind.trim()
+        ? workflow.nodeKind.trim()
+        : null,
+    nodeRequirement:
+      typeof workflow.nodeRequirement === "string" &&
+      workflow.nodeRequirement.trim()
+        ? workflow.nodeRequirement.trim()
+        : null,
+    nodeReleaseMode:
+      typeof workflow.nodeReleaseMode === "string" &&
+      workflow.nodeReleaseMode.trim()
+        ? workflow.nodeReleaseMode.trim()
+        : null,
+    nodeStatus:
+      typeof workflow.nodeStatus === "string" && workflow.nodeStatus.trim()
+        ? workflow.nodeStatus.trim()
+        : null,
+    currentTaskId:
+      typeof workflow.currentTaskId === "string" &&
+      workflow.currentTaskId.trim()
+        ? workflow.currentTaskId.trim()
+        : null,
+    currentTaskAttempt,
+    attemptCount,
+    attemptLabel,
+    waitingOnNodeKeys,
+    waitingOnLabel: waitingOnNodeKeys.length ? waitingOnNodeKeys.join(", ") : null,
+    compactPath: [runTitle, nodeKey].filter(Boolean).join(" / "),
+    isCurrentTask: workflow.isCurrentTask === true,
+  };
+}
+
+function humanizeTaskWorkflowStatus(status) {
+  if (typeof status !== "string" || !status.trim()) {
+    return "linked";
+  }
+  return status.replaceAll("_", " ");
+}
+
+function taskWorkflowStatusClass(status) {
+  switch (status) {
+    case "ready":
+      return "ready";
+    case "awaiting_release":
+      return "approval";
+    case "running":
+      return "thinking";
+    case "blocked":
+      return "blocked";
+    case "done":
+      return "done";
+    case "failed":
+      return "failed";
+    default:
+      return "idle";
+  }
 }
 
 function formatTaskElapsed(task) {
@@ -9407,6 +9557,7 @@ function renderTaskCard(node, currentTaskId) {
   const selected =
     currentTaskId && currentTaskId === task.id ? "true" : "false";
   const readiness = getTaskReadinessState(task);
+  const workflow = getTaskWorkflowSummary(task);
   const summary = summarizeTaskCardCopy(task);
   const progress = getTaskDisplayProgress(task, node);
   const progressInfo = describeTaskProgressText(task, null, { node });
@@ -9427,6 +9578,29 @@ function renderTaskCard(node, currentTaskId) {
         ? { label: "work", value: secondaryWorkSession }
         : null,
       { label: "agent", value: task.assigneeAgentId || "-" },
+      workflow
+        ? {
+            label: "wf",
+            value: shorten(
+              workflow.compactPath || workflow.runTitle || workflow.runId || "workflow",
+              34,
+            ),
+          }
+        : null,
+      workflow?.nodeStatus
+        ? {
+            label: "node",
+            value: shorten(
+              [
+                humanizeTaskWorkflowStatus(workflow.nodeStatus),
+                workflow.attemptLabel,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              28,
+            ),
+          }
+        : null,
       dependencyValue ? { label: "deps", value: dependencyValue } : null,
       readiness.hasLaunchPlan ? { label: "launch", value: "armed" } : null,
       treeLabel ? { label: "tree", value: treeLabel } : null,
@@ -9448,6 +9622,13 @@ function renderTaskCard(node, currentTaskId) {
             <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           </span>
           <span class="ravi-wa-task-card__eyebrow-aside">
+            ${
+              workflow
+                ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--${taskWorkflowStatusClass(workflow.nodeStatus)}">${escapeHtml(
+                    `wf ${humanizeTaskWorkflowStatus(workflow.nodeStatus)}`,
+                  )}</span>`
+                : ""
+            }
             <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskSurfaceLabel(surfaceStatus))}</span>
             <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
           </span>
@@ -9493,6 +9674,7 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
     surfaceStatus === "waiting"
       ? describeTaskRuntimeStatus(task)
       : summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
+  const workflow = getTaskWorkflowSummary(task);
   const primarySessionName = getTaskPrimarySessionName(task);
   const secondaryWorkSession =
     task?.workSessionName && task.workSessionName !== primarySessionName
@@ -9506,6 +9688,21 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
         ? { label: "work", value: secondaryWorkSession }
         : null,
       { label: "agent", value: task.assigneeAgentId || "-" },
+      workflow
+        ? {
+            label: "wf",
+            value: shorten(
+              workflow.compactPath || workflow.runTitle || workflow.runId || "workflow",
+              32,
+            ),
+          }
+        : null,
+      workflow?.nodeStatus
+        ? {
+            label: "node",
+            value: shorten(humanizeTaskWorkflowStatus(workflow.nodeStatus), 20),
+          }
+        : null,
       dependencyValue ? { label: "deps", value: dependencyValue } : null,
       { label: "priority", value: task.priority || "normal" },
     ],
@@ -9893,6 +10090,7 @@ function renderTaskDetailCard(selectedTask) {
     dispatchForm,
     activeAssignment,
   });
+  const workflowSummary = getTaskWorkflowSummary(task);
   const heroSummary =
     task.summary ||
     task.blockerReason ||
@@ -9966,6 +10164,15 @@ function renderTaskDetailCard(selectedTask) {
             activeAssignment?.reportToSessionName || task.reportToSessionName
           }`
         : "sem report target",
+    workflowSummary
+      ? `workflow ${shorten(
+          workflowSummary.compactPath ||
+            workflowSummary.runTitle ||
+            workflowSummary.runId ||
+            "linked",
+          44,
+        )}`
+      : "sem workflow ligado",
     primaryArtifactDisplayPath
       ? `artifact ${shorten(primaryArtifactDisplayPath, 44)}`
       : "sem artifact primário surfaced",
@@ -10036,6 +10243,29 @@ function renderTaskDetailCard(selectedTask) {
                 task.reportToSessionName,
             }
           : null,
+        workflowSummary
+          ? {
+              label: "workflow",
+              value: shorten(
+                workflowSummary.compactPath ||
+                  workflowSummary.runTitle ||
+                  workflowSummary.runId ||
+                  "linked",
+                46,
+              ),
+            }
+          : null,
+        workflowSummary?.nodeStatus
+          ? {
+              label: "node",
+              value: [
+                humanizeTaskWorkflowStatus(workflowSummary.nodeStatus),
+                workflowSummary.attemptLabel,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }
+          : null,
         worktreeLabel ? { label: "worktree", value: worktreeLabel } : null,
         primaryArtifactDisplayPath
           ? { label: "artifact", value: shorten(primaryArtifactDisplayPath, 46) }
@@ -10070,6 +10300,84 @@ function renderTaskDetailCard(selectedTask) {
     </div>
     ${renderTaskStatusSyncBanner(task, frontmatter, rawProgress)}
   `;
+  const workflowContent = workflowSummary
+    ? `
+      ${renderTaskInlineMeta(
+        [
+          {
+            label: "workflow",
+            value:
+              workflowSummary.runTitle ||
+              workflowSummary.specTitle ||
+              workflowSummary.runId ||
+              "-",
+          },
+          workflowSummary.nodeKey
+            ? { label: "node", value: workflowSummary.nodeKey }
+            : null,
+          workflowSummary.nodeStatus
+            ? {
+                label: "node status",
+                value: humanizeTaskWorkflowStatus(workflowSummary.nodeStatus),
+              }
+            : null,
+          workflowSummary.runStatus
+            ? {
+                label: "run status",
+                value: humanizeTaskWorkflowStatus(workflowSummary.runStatus),
+              }
+            : null,
+          workflowSummary.attemptLabel
+            ? { label: "attempt", value: workflowSummary.attemptLabel }
+            : null,
+        ],
+        { compact: true },
+      )}
+      ${renderTaskFactGrid([
+        {
+          label: "workflow run",
+          value: workflowSummary.runId || "-",
+          monospace: Boolean(workflowSummary.runId),
+        },
+        {
+          label: "workflow spec",
+          value: workflowSummary.specId || "-",
+          monospace: Boolean(workflowSummary.specId),
+        },
+        {
+          label: "node label",
+          value: workflowSummary.nodeLabel || workflowSummary.nodeKey || "-",
+        },
+        { label: "node kind", value: workflowSummary.nodeKind || "-" },
+        {
+          label: "requirement",
+          value: workflowSummary.nodeRequirement || "-",
+        },
+        {
+          label: "release mode",
+          value: workflowSummary.nodeReleaseMode || "-",
+        },
+        {
+          label: "current task",
+          value: workflowSummary.currentTaskId || "-",
+          monospace: Boolean(workflowSummary.currentTaskId),
+        },
+      ])}
+      <p class="ravi-wa-task-workspace-actions__note">
+        ${
+          workflowSummary.waitingOnLabel
+            ? escapeHtml(`waiting on ${workflowSummary.waitingOnLabel}`)
+            : workflowSummary.isCurrentTask
+              ? "essa task é a attempt atual desse workflow node."
+              : escapeHtml(
+                  `essa task é uma attempt histórica; current task ${
+                    workflowSummary.currentTaskId || "nao definida"
+                  }.`,
+                )
+        }
+      </p>
+    `
+    : `<p class="ravi-wa-empty">essa task ainda não pertence a nenhum workflow run.</p>`;
   const lineageContent = `
     ${renderTaskLineageTrail(lineage, task.id)}
     <div class="ravi-wa-task-workspace-grid">
@@ -10214,6 +10522,13 @@ function renderTaskDetailCard(selectedTask) {
           <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
           ${
+            workflowSummary
+              ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--${taskWorkflowStatusClass(workflowSummary.nodeStatus)}">${escapeHtml(
+                  `wf ${humanizeTaskWorkflowStatus(workflowSummary.nodeStatus)}`,
+                )}</span>`
+              : ""
+          }
+          ${
             readinessView.state === "waiting"
               ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--waiting">waiting</span>`
               : readinessView.totalDependencies > 0
@@ -10254,6 +10569,29 @@ function renderTaskDetailCard(selectedTask) {
                   reportSessionRecord?.sessionName ||
                   activeAssignment?.reportToSessionName ||
                   task.reportToSessionName,
+              }
+            : null,
+          workflowSummary
+            ? {
+                label: "workflow",
+                value: shorten(
+                  workflowSummary.compactPath ||
+                    workflowSummary.runTitle ||
+                    workflowSummary.runId ||
+                    "linked",
+                  44,
+                ),
+              }
+            : null,
+          workflowSummary?.nodeStatus
+            ? {
+                label: "node",
+                value: [
+                  humanizeTaskWorkflowStatus(workflowSummary.nodeStatus),
+                  workflowSummary.attemptLabel,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
               }
             : null,
           readinessView.state === "waiting" || readinessView.totalDependencies > 0
@@ -10317,6 +10655,22 @@ function renderTaskDetailCard(selectedTask) {
       title: "readiness",
       note: readinessView.note,
       content: renderTaskReadinessContent(readinessView),
+    })}
+
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "workflow",
+      title: "workflow",
+      note: workflowSummary
+        ? shorten(
+            workflowSummary.compactPath ||
+              workflowSummary.runTitle ||
+              workflowSummary.runId ||
+              "linked",
+            72,
+          )
+        : "sem workflow ligado",
+      content: workflowContent,
     })}
 
     ${renderTaskDispatchSection(selectedTask)}

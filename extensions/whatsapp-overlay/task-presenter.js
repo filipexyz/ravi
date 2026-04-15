@@ -102,6 +102,110 @@
     };
   }
 
+  function getTaskWorkflowSummary(task) {
+    const workflow =
+      task?.workflow && typeof task.workflow === "object" ? task.workflow : null;
+    if (!workflow) {
+      return null;
+    }
+
+    const runTitle =
+      typeof workflow.workflowRunTitle === "string" &&
+      workflow.workflowRunTitle.trim()
+        ? workflow.workflowRunTitle.trim()
+        : typeof workflow.workflowSpecTitle === "string" &&
+            workflow.workflowSpecTitle.trim()
+          ? workflow.workflowSpecTitle.trim()
+          : typeof workflow.workflowRunId === "string" &&
+              workflow.workflowRunId.trim()
+            ? workflow.workflowRunId.trim()
+            : "workflow";
+    const nodeKey =
+      typeof workflow.nodeKey === "string" && workflow.nodeKey.trim()
+        ? workflow.nodeKey.trim()
+        : null;
+    const nodeLabel =
+      typeof workflow.nodeLabel === "string" && workflow.nodeLabel.trim()
+        ? workflow.nodeLabel.trim()
+        : nodeKey;
+    const waitingOnNodeKeys = Array.isArray(workflow.waitingOnNodeKeys)
+      ? workflow.waitingOnNodeKeys
+          .map((value) => (typeof value === "string" ? value.trim() : ""))
+          .filter(Boolean)
+      : [];
+    const currentTaskAttempt = toFiniteCount(workflow.currentTaskAttempt);
+    const attemptCount = toFiniteCount(workflow.attemptCount);
+    const attemptLabel =
+      currentTaskAttempt !== null
+        ? attemptCount !== null && attemptCount > currentTaskAttempt
+          ? `attempt ${currentTaskAttempt} of ${attemptCount}`
+          : `attempt ${currentTaskAttempt}`
+        : attemptCount !== null && attemptCount > 0
+          ? `${attemptCount} attempt${attemptCount === 1 ? "" : "s"}`
+          : null;
+
+    return {
+      runId:
+        typeof workflow.workflowRunId === "string" &&
+        workflow.workflowRunId.trim()
+          ? workflow.workflowRunId.trim()
+          : null,
+      runTitle,
+      runStatus:
+        typeof workflow.workflowRunStatus === "string" &&
+        workflow.workflowRunStatus.trim()
+          ? workflow.workflowRunStatus.trim()
+          : null,
+      specId:
+        typeof workflow.workflowSpecId === "string" &&
+        workflow.workflowSpecId.trim()
+          ? workflow.workflowSpecId.trim()
+          : null,
+      specTitle:
+        typeof workflow.workflowSpecTitle === "string" &&
+        workflow.workflowSpecTitle.trim()
+          ? workflow.workflowSpecTitle.trim()
+          : null,
+      nodeRunId:
+        typeof workflow.workflowNodeRunId === "string" &&
+        workflow.workflowNodeRunId.trim()
+          ? workflow.workflowNodeRunId.trim()
+          : null,
+      nodeKey,
+      nodeLabel,
+      nodeKind:
+        typeof workflow.nodeKind === "string" && workflow.nodeKind.trim()
+          ? workflow.nodeKind.trim()
+          : null,
+      nodeRequirement:
+        typeof workflow.nodeRequirement === "string" &&
+        workflow.nodeRequirement.trim()
+          ? workflow.nodeRequirement.trim()
+          : null,
+      nodeReleaseMode:
+        typeof workflow.nodeReleaseMode === "string" &&
+        workflow.nodeReleaseMode.trim()
+          ? workflow.nodeReleaseMode.trim()
+          : null,
+      nodeStatus:
+        typeof workflow.nodeStatus === "string" && workflow.nodeStatus.trim()
+          ? workflow.nodeStatus.trim()
+          : null,
+      currentTaskId:
+        typeof workflow.currentTaskId === "string" &&
+        workflow.currentTaskId.trim()
+          ? workflow.currentTaskId.trim()
+          : null,
+      currentTaskAttempt,
+      attemptCount,
+      attemptLabel,
+      waitingOnNodeKeys,
+      waitingOnLabel: waitingOnNodeKeys.length ? waitingOnNodeKeys.join(", ") : null,
+      compactPath: [runTitle, nodeKey].filter(Boolean).join(" / "),
+      isCurrentTask: workflow.isCurrentTask === true,
+    };
+  }
+
   function getTaskKanbanSurfaceStatus(task) {
     const status = task?.visualStatus || task?.status || "open";
     if (status === "waiting") {
@@ -205,6 +309,7 @@
     clampTaskProgressValue,
     getTaskVisualProgressState,
     getTaskReadinessState,
+    getTaskWorkflowSummary,
     getTaskKanbanSurfaceStatus,
     pickTaskGroupPrimaryRow,
     sortTaskTreeByRecency,

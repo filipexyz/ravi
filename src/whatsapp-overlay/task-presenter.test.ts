@@ -21,6 +21,25 @@ type TaskNode = {
       unsatisfiedDependencyCount?: number;
       hasLaunchPlan?: boolean;
     };
+    workflow?: {
+      workflowRunId?: string;
+      workflowRunTitle?: string;
+      workflowRunStatus?: string;
+      workflowSpecId?: string;
+      workflowSpecTitle?: string;
+      workflowNodeRunId?: string;
+      nodeKey?: string;
+      nodeLabel?: string;
+      nodeKind?: string;
+      nodeRequirement?: string;
+      nodeReleaseMode?: string;
+      nodeStatus?: string;
+      waitingOnNodeKeys?: string[];
+      currentTaskId?: string | null;
+      currentTaskAttempt?: number | null;
+      attemptCount?: number;
+      isCurrentTask?: boolean;
+    } | null;
     launchPlan?: {
       agentId?: string;
     } | null;
@@ -61,6 +80,28 @@ function loadTaskPresenterApi() {
       hasLaunchPlan: boolean;
       label: string | null;
     };
+    getTaskWorkflowSummary: (task: TaskNode["task"]) => {
+      runId: string | null;
+      runTitle: string;
+      runStatus: string | null;
+      specId: string | null;
+      specTitle: string | null;
+      nodeRunId: string | null;
+      nodeKey: string | null;
+      nodeLabel: string | null;
+      nodeKind: string | null;
+      nodeRequirement: string | null;
+      nodeReleaseMode: string | null;
+      nodeStatus: string | null;
+      currentTaskId: string | null;
+      currentTaskAttempt: number | null;
+      attemptCount: number | null;
+      attemptLabel: string | null;
+      waitingOnNodeKeys: string[];
+      waitingOnLabel: string | null;
+      compactPath: string;
+      isCurrentTask: boolean;
+    } | null;
     getTaskKanbanSurfaceStatus: (task: TaskNode["task"]) => string;
     pickTaskGroupPrimaryRow: (node: TaskNode) => {
       order?: number;
@@ -73,6 +114,7 @@ function loadTaskPresenterApi() {
 const {
   getTaskVisualProgressState,
   getTaskReadinessState,
+  getTaskWorkflowSummary,
   getTaskKanbanSurfaceStatus,
   pickTaskGroupPrimaryRow,
   sortTaskTreeByRecency,
@@ -160,6 +202,53 @@ describe("whatsapp overlay task presenter", () => {
         },
       }),
     ).toBe("waiting");
+  });
+
+  it("summarizes workflow linkage for compact task surfaces", () => {
+    expect(
+      getTaskWorkflowSummary({
+        workflow: {
+          workflowRunId: "wf-run-1",
+          workflowRunTitle: "Ship smoke",
+          workflowRunStatus: "running",
+          workflowSpecId: "wf-spec-1",
+          workflowSpecTitle: "Ship smoke",
+          workflowNodeRunId: "node-run-1",
+          nodeKey: "ship",
+          nodeLabel: "Ship release",
+          nodeKind: "task",
+          nodeRequirement: "required",
+          nodeReleaseMode: "manual",
+          nodeStatus: "awaiting_release",
+          waitingOnNodeKeys: ["build"],
+          currentTaskId: "task-ship",
+          currentTaskAttempt: 1,
+          attemptCount: 1,
+          isCurrentTask: true,
+        },
+      }),
+    ).toEqual({
+      runId: "wf-run-1",
+      runTitle: "Ship smoke",
+      runStatus: "running",
+      specId: "wf-spec-1",
+      specTitle: "Ship smoke",
+      nodeRunId: "node-run-1",
+      nodeKey: "ship",
+      nodeLabel: "Ship release",
+      nodeKind: "task",
+      nodeRequirement: "required",
+      nodeReleaseMode: "manual",
+      nodeStatus: "awaiting_release",
+      currentTaskId: "task-ship",
+      currentTaskAttempt: 1,
+      attemptCount: 1,
+      attemptLabel: "attempt 1",
+      waitingOnNodeKeys: ["build"],
+      waitingOnLabel: "build",
+      compactPath: "Ship smoke / ship",
+      isCurrentTask: true,
+    });
   });
 
   it("picks the earliest visible row recursively for grouped task headers", () => {

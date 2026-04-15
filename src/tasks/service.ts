@@ -67,7 +67,7 @@ import {
   type TaskDocSection,
 } from "./task-doc.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
-import { syncWorkflowNodeRunForTask } from "../workflows/index.js";
+import { dbGetTaskWorkflowSurface, syncWorkflowNodeRunForTask, type TaskWorkflowSurface } from "../workflows/index.js";
 import type {
   ResolvedTaskProfile,
   TaskArchiveInput,
@@ -188,6 +188,7 @@ export interface TaskStreamTaskEntity {
   dependencyCount: number;
   satisfiedDependencyCount: number;
   unsatisfiedDependencyCount: number;
+  workflow: TaskWorkflowSurface | null;
   artifacts: TaskArtifactSummary;
 }
 
@@ -1197,6 +1198,7 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     dependencyCount: dependencySurface.readiness.dependencyCount,
     satisfiedDependencyCount: dependencySurface.readiness.satisfiedDependencyCount,
     unsatisfiedDependencyCount: dependencySurface.readiness.unsatisfiedDependencyCount,
+    workflow: dbGetTaskWorkflowSurface(task.id),
     artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }

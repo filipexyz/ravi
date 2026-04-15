@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import type {
   CreateWorkflowSpecInput,
+  TaskWorkflowSurface,
   StartWorkflowRunInput,
   WorkflowNodeRun,
   WorkflowNodeRunTaskAttempt,
@@ -81,6 +82,26 @@ interface WorkflowNodeRunTaskAttemptRow {
   task_id: string;
   attempt: number;
   created_at: number;
+}
+
+interface TaskWorkflowSurfaceRow {
+  task_id: string;
+  workflow_run_id: string;
+  workflow_run_title: string;
+  workflow_run_status: WorkflowRun["status"];
+  workflow_spec_id: string;
+  workflow_spec_title: string;
+  workflow_node_run_id: string;
+  spec_node_key: string;
+  label: string;
+  node_kind: WorkflowNodeRun["kind"];
+  requirement: WorkflowNodeRun["requirement"];
+  release_mode: WorkflowNodeRun["releaseMode"];
+  node_status: WorkflowNodeRun["status"];
+  waiting_on_node_keys_json: string;
+  current_task_id: string | null;
+  attempt_count: number;
+  current_task_attempt: number | null;
 }
 
 let schemaReady = false;
@@ -184,6 +205,28 @@ function rowToWorkflowNodeRunTaskAttempt(row: WorkflowNodeRunTaskAttemptRow): Wo
     taskId: row.task_id,
     attempt: row.attempt,
     createdAt: row.created_at,
+  };
+}
+
+function rowToTaskWorkflowSurface(row: TaskWorkflowSurfaceRow): TaskWorkflowSurface {
+  return {
+    workflowRunId: row.workflow_run_id,
+    workflowRunTitle: row.workflow_run_title,
+    workflowRunStatus: row.workflow_run_status,
+    workflowSpecId: row.workflow_spec_id,
+    workflowSpecTitle: row.workflow_spec_title,
+    workflowNodeRunId: row.workflow_node_run_id,
+    nodeKey: row.spec_node_key,
+    nodeLabel: row.label,
+    nodeKind: row.node_kind,
+    nodeRequirement: row.requirement,
+    nodeReleaseMode: row.release_mode,
+    nodeStatus: row.node_status,
+    waitingOnNodeKeys: parseJsonArray<string>(row.waiting_on_node_keys_json),
+    currentTaskId: row.current_task_id ?? null,
+    currentTaskAttempt: typeof row.current_task_attempt === "number" ? row.current_task_attempt : null,
+    attemptCount: row.attempt_count,
+    isCurrentTask: row.current_task_id === row.task_id,
   };
 }
 
@@ -485,6 +528,43 @@ export function dbGetWorkflowNodeRunByTaskId(taskId: string): WorkflowNodeRun | 
     )
     .get(taskId) as WorkflowNodeRunRow | undefined;
   return row ? rowToWorkflowNodeRun(row) : null;
+}
+
+export function dbGetTaskWorkflowSurface(taskId: string): TaskWorkflowSurface | null {
+  ensureWorkflowSchema();
+  const row = getDb()
+    .prepare(
+      `
+        SELECT
+          att.task_id,
+          nr.workflow_run_id,
+          wr.title AS workflow_run_title,
+          wr.status AS workflow_run_status,
+          wr.workflow_spec_id,
+          ws.title AS workflow_spec_title,
+          nr.id AS workflow_node_run_id,
+          nr.spec_node_key,
+          nr.label,
+          nr.node_kind,
+          nr.requirement,
+          nr.release_mode,
+          nr.status AS node_status,
+          nr.waiting_on_node_keys_json,
+          nr.current_task_id,
+          nr.attempt_count,
+          att.attempt AS current_task_attempt
+        FROM workflow_node_run_tasks AS att
+        JOIN workflow_node_runs AS nr
+          ON nr.id = att.workflow_node_run_id
+        JOIN workflow_runs AS wr
+          ON wr.id = nr.workflow_run_id
+        JOIN workflow_specs AS ws
+          ON ws.id = wr.workflow_spec_id
+        WHERE att.task_id = ?
+      `,
+    )
+    .get(taskId) as TaskWorkflowSurfaceRow | undefined;
+  return row ? rowToTaskWorkflowSurface(row) : null;
 }
 
 export function dbListWorkflowRunEdges(workflowRunId: string): WorkflowRunEdge[] {

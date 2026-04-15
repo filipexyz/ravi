@@ -162,6 +162,26 @@ export interface WorkflowRunTaskSurface {
   readiness: TaskReadiness;
 }
 
+export interface TaskWorkflowSurface {
+  workflowRunId: string;
+  workflowRunTitle: string;
+  workflowRunStatus: WorkflowRunStatus;
+  workflowSpecId: string;
+  workflowSpecTitle: string;
+  workflowNodeRunId: string;
+  nodeKey: string;
+  nodeLabel: string;
+  nodeKind: WorkflowNodeKind;
+  nodeRequirement: WorkflowNodeRequirement;
+  nodeReleaseMode: WorkflowNodeReleaseMode;
+  nodeStatus: WorkflowNodeRunStatus;
+  waitingOnNodeKeys: string[];
+  currentTaskId: string | null;
+  currentTaskAttempt: number | null;
+  attemptCount: number;
+  isCurrentTask: boolean;
+}
+
 export interface WorkflowNodeRunView extends WorkflowNodeRun {
   upstreamNodeKeys: string[];
   downstreamNodeKeys: string[];
