@@ -15,12 +15,47 @@ const doneCalls: Array<Record<string, unknown>> = [];
 const blockCalls: Array<Record<string, unknown>> = [];
 const failCalls: Array<Record<string, unknown>> = [];
 const listTasksCalls: Array<Record<string, unknown>> = [];
+const dependencyAddCalls: Array<Record<string, unknown>> = [];
+const dependencyRemoveCalls: Array<Record<string, unknown>> = [];
 const validatedAgentIds: string[] = [];
 const emittedEvents: Array<{ taskId: string; type: string }> = [];
 let subscribeImpl: (pattern?: string) => AsyncGenerator<{ data: Record<string, unknown> }> = async function* () {};
 let dispatchResultExtra: Record<string, unknown> = {};
 let blockResultExtra: Record<string, unknown> = {};
 let doneResultExtra: Record<string, unknown> = {};
+let queueDispatchMode: "dispatched" | "launch_planned" = "dispatched";
+const dependencySurfaceOverrides = new Map<string, Record<string, unknown>>();
+
+function buildMockReadiness(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    state: "ready",
+    label: "ready to start",
+    canStart: true,
+    dependencyCount: 0,
+    satisfiedDependencyCount: 0,
+    unsatisfiedDependencyCount: 0,
+    unsatisfiedDependencyIds: [],
+    hasLaunchPlan: false,
+    ...overrides,
+  };
+}
+
+function buildMockDependencySurface(
+  _taskId: string,
+  overrides: {
+    dependencies?: Array<Record<string, unknown>>;
+    dependents?: Array<Record<string, unknown>>;
+    launchPlan?: Record<string, unknown> | null;
+    readiness?: Record<string, unknown>;
+  } = {},
+): Record<string, unknown> {
+  return {
+    dependencies: overrides.dependencies ?? [],
+    dependents: overrides.dependents ?? [],
+    launchPlan: overrides.launchPlan ?? null,
+    readiness: overrides.readiness ?? buildMockReadiness(),
+  };
+}
 
 function buildMockResolvedProfile(profileId?: string | null): Record<string, unknown> {
   const normalizedId = profileId ?? "default";
@@ -339,6 +374,55 @@ mock.module("../../tasks/index.js", () => ({
       ...(input.branch ? { branch: input.branch } : {}),
     };
   },
+  deriveTaskVisualStatus: (
+    task: { id: string; status: string },
+    readiness?: { state?: string } | null,
+    activeAssignment?: { status?: string } | null,
+  ) => {
+    const effectiveReadiness =
+      readiness ??
+      (dependencySurfaceOverrides.get(task.id)?.readiness as { state?: string } | undefined) ??
+      buildMockReadiness();
+    const effectiveStatus =
+      activeAssignment?.status === "accepted" && task.status === "dispatched" ? "in_progress" : task.status;
+    if (effectiveStatus === "open" && effectiveReadiness.state === "waiting") {
+      return "waiting";
+    }
+    return effectiveStatus;
+  },
+  getTaskDependencySurface: (task: { id: string; status?: string }, activeAssignment?: { status?: string } | null) => {
+    const override = dependencySurfaceOverrides.get(task.id);
+    if (override) {
+      return override;
+    }
+
+    if (
+      task.status === "dispatched" ||
+      task.status === "in_progress" ||
+      task.status === "blocked" ||
+      activeAssignment
+    ) {
+      return buildMockDependencySurface(task.id, {
+        readiness: buildMockReadiness({
+          state: "active",
+          label: task.status === "blocked" ? "already started; currently blocked" : "already started",
+          canStart: false,
+        }),
+      });
+    }
+
+    if (task.status === "done" || task.status === "failed") {
+      return buildMockDependencySurface(task.id, {
+        readiness: buildMockReadiness({
+          state: "terminal",
+          label: `terminal (${task.status})`,
+          canStart: false,
+        }),
+      });
+    }
+
+    return buildMockDependencySurface(task.id);
+  },
   dispatchTask: async (taskId: string, input: Record<string, unknown>) => {
     dispatchCalls.push({ taskId, ...input });
     return {
@@ -373,6 +457,125 @@ mock.module("../../tasks/index.js", () => ({
         status: "assigned",
         assignedAt: 2,
       },
+      event: {
+        id: 2,
+        taskId,
+        type: "task.dispatched",
+        createdAt: 2,
+      },
+      sessionName: input.sessionName,
+      ...dispatchResultExtra,
+    };
+  },
+  queueOrDispatchTask: async (taskId: string, input: Record<string, unknown>) => {
+    dispatchCalls.push({ taskId, ...input });
+    if (queueDispatchMode === "launch_planned") {
+      const launchPlan = {
+        taskId,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        assignedBy: input.assignedBy,
+        assignedByAgentId: input.assignedByAgentId,
+        assignedBySessionName: input.assignedBySessionName,
+        checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
+        reportToSessionName: input.reportToSessionName ?? "dev-session",
+        reportEvents: input.reportEvents ?? ["done"],
+        createdAt: 2,
+        updatedAt: 2,
+      };
+      const readiness = buildMockReadiness({
+        state: "waiting",
+        label: "waiting on 1/1 dependencies",
+        canStart: false,
+        dependencyCount: 1,
+        satisfiedDependencyCount: 0,
+        unsatisfiedDependencyCount: 1,
+        unsatisfiedDependencyIds: ["task-upstream-1"],
+        hasLaunchPlan: true,
+      });
+      dependencySurfaceOverrides.set(
+        taskId,
+        buildMockDependencySurface(taskId, {
+          launchPlan,
+          readiness,
+        }),
+      );
+      return {
+        mode: "launch_planned",
+        task: {
+          id: taskId,
+          title: "task",
+          instructions: "instructions",
+          status: "open",
+          priority: "high",
+          progress: 0,
+          profileId: (taskDetailsMock.task as Record<string, unknown>).profileId ?? "default",
+          checkpointIntervalMs: 300000,
+          reportToSessionName: input.reportToSessionName ?? "dev-session",
+          reportEvents: input.reportEvents ?? ["done"],
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        launchPlan,
+        readiness,
+        event: {
+          id: 2,
+          taskId,
+          type: "task.launch-planned",
+          createdAt: 2,
+        },
+        ...dispatchResultExtra,
+      };
+    }
+
+    dependencySurfaceOverrides.set(
+      taskId,
+      buildMockDependencySurface(taskId, {
+        readiness: buildMockReadiness({
+          state: "active",
+          label: "already started",
+          canStart: false,
+        }),
+      }),
+    );
+    return {
+      mode: "dispatched",
+      task: {
+        id: taskId,
+        title: "task",
+        instructions: "instructions",
+        status: "dispatched",
+        priority: "high",
+        progress: 0,
+        profileId: (taskDetailsMock.task as Record<string, unknown>).profileId ?? "default",
+        checkpointIntervalMs: 300000,
+        reportToSessionName: input.reportToSessionName ?? "dev-session",
+        reportEvents: input.reportEvents ?? ["done"],
+        assigneeAgentId: input.agentId,
+        assigneeSessionName: input.sessionName,
+        worktree: input.worktree,
+        createdAt: 1,
+        updatedAt: 2,
+        dispatchedAt: 2,
+      },
+      assignment: {
+        id: "asg-cli-1",
+        taskId,
+        agentId: input.agentId,
+        sessionName: input.sessionName,
+        checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
+        reportToSessionName: input.reportToSessionName ?? "dev-session",
+        reportEvents: input.reportEvents ?? ["done"],
+        checkpointDueAt: 300002,
+        checkpointOverdueCount: 0,
+        status: "assigned",
+        assignedAt: 2,
+      },
+      readiness: buildMockReadiness({
+        state: "active",
+        label: "already started",
+        canStart: false,
+      }),
       event: {
         id: 2,
         taskId,
@@ -501,6 +704,92 @@ mock.module("../../tasks/index.js", () => ({
       event: { id: 9, taskId, type: "task.unarchived", createdAt: 9, message: "restored visibility" },
     };
   },
+  addTaskDependency: async (taskId: string, dependencyTaskId: string) => {
+    dependencyAddCalls.push({ taskId, dependencyTaskId });
+    const readiness = buildMockReadiness({
+      state: "waiting",
+      label: "waiting on 1/1 dependencies",
+      canStart: false,
+      dependencyCount: 1,
+      satisfiedDependencyCount: 0,
+      unsatisfiedDependencyCount: 1,
+      unsatisfiedDependencyIds: [dependencyTaskId],
+      hasLaunchPlan: false,
+    });
+    dependencySurfaceOverrides.set(
+      taskId,
+      buildMockDependencySurface(taskId, {
+        dependencies: [
+          {
+            direction: "dependency",
+            taskId,
+            relatedTaskId: dependencyTaskId,
+            relatedTaskTitle: "dependency task",
+            relatedTaskStatus: "open",
+            relatedTaskProgress: 0,
+            satisfied: false,
+            createdAt: 1,
+          },
+        ],
+        readiness,
+      }),
+    );
+    return {
+      task: {
+        ...(taskDetailsMock.task as Record<string, unknown>),
+        id: taskId,
+      },
+      dependency: {
+        taskId,
+        dependsOnTaskId: dependencyTaskId,
+        createdAt: 1,
+      },
+      readiness,
+      event: {
+        id: 10,
+        taskId,
+        type: "task.dependency.added",
+        createdAt: 10,
+      },
+      relatedEvents: [],
+    };
+  },
+  removeTaskDependency: async (taskId: string, dependencyTaskId: string) => {
+    dependencyRemoveCalls.push({ taskId, dependencyTaskId });
+    const readiness = buildMockReadiness();
+    dependencySurfaceOverrides.set(taskId, buildMockDependencySurface(taskId));
+    return {
+      task: {
+        ...(taskDetailsMock.task as Record<string, unknown>),
+        id: taskId,
+      },
+      dependency: {
+        taskId,
+        dependsOnTaskId: dependencyTaskId,
+        createdAt: 1,
+      },
+      readiness,
+      event: {
+        id: 11,
+        taskId,
+        type: "task.dependency.removed",
+        createdAt: 11,
+      },
+      relatedEvents: [
+        {
+          task: {
+            id: taskId,
+          },
+          event: {
+            id: 12,
+            taskId,
+            type: "task.ready",
+            createdAt: 12,
+          },
+        },
+      ],
+    };
+  },
   blockTask: (taskId: string, input: Record<string, unknown>) => {
     blockCalls.push({ taskId, ...input });
     return {
@@ -537,6 +826,7 @@ mock.module("../../tasks/index.js", () => ({
 }));
 
 const { TaskCommands } = await import("./tasks.js");
+const { TaskDependencyCommands } = await import("./tasks-deps.js");
 
 describe("TaskCommands create", () => {
   beforeEach(() => {
@@ -550,12 +840,16 @@ describe("TaskCommands create", () => {
     blockCalls.length = 0;
     failCalls.length = 0;
     listTasksCalls.length = 0;
+    dependencyAddCalls.length = 0;
+    dependencyRemoveCalls.length = 0;
     validatedAgentIds.length = 0;
     emittedEvents.length = 0;
     subscribeImpl = async function* () {};
     dispatchResultExtra = {};
     blockResultExtra = {};
     doneResultExtra = {};
+    queueDispatchMode = "dispatched";
+    dependencySurfaceOverrides.clear();
     taskDetailsMock = {
       task: {
         id: "task-cli-1",
@@ -633,6 +927,7 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       );
     } finally {
@@ -675,6 +970,7 @@ describe("TaskCommands create", () => {
           undefined,
           undefined,
           undefined,
+          undefined,
           true,
         ),
       ).rejects.toThrow("Agent not found in runtime config: ghost");
@@ -705,6 +1001,7 @@ describe("TaskCommands create", () => {
         undefined,
         "../feature-worktree",
         "feature/task-runtime",
+        undefined,
         undefined,
         "10m",
         "lead-session",
@@ -768,6 +1065,7 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       );
     } finally {
@@ -803,6 +1101,7 @@ describe("TaskCommands create", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         true,
       );
     } finally {
@@ -827,6 +1126,7 @@ describe("TaskCommands create", () => {
         "use pinned profile inputs",
         "normal",
         "brainstorm",
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -875,6 +1175,86 @@ describe("TaskCommands create", () => {
       reportToSessionName: "ops-session",
       reportEvents: ["blocked", "failed"],
     });
+  });
+
+  it("parses repeated dependency ids during create", async () => {
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.create(
+        "Blocked task",
+        "wait for upstream",
+        "normal",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        ["task-up-1", "task-up-2,task-up-1"],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      title: "Blocked task",
+      dependsOnTaskIds: ["task-up-1", "task-up-2"],
+    });
+  });
+
+  it("arms a launch plan instead of dispatching immediately when readiness is waiting", async () => {
+    queueDispatchMode = "launch_planned";
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.dispatch("task-cli-1", "dev", "task-cli-work");
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(dispatchCalls).toHaveLength(1);
+    expect(dispatchCalls[0]).toMatchObject({
+      taskId: "task-cli-1",
+      agentId: "dev",
+      sessionName: "task-cli-work",
+    });
+    expect(emittedEvents).toEqual([{ taskId: "task-cli-1", type: "task.launch-planned" }]);
+    expect(logs.join("\n")).toContain("Launch plan armed for task-cli-1");
+    expect(logs.join("\n")).toContain("Missing:    task-upstream-1");
+  });
+
+  it("fails dispatch before queueing when the target agent is missing", async () => {
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await expect(commands.dispatch("task-cli-1", "ghost", "task-cli-work")).rejects.toThrow(
+        "Agent not found in runtime config: ghost",
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(validatedAgentIds).toEqual(["ghost"]);
+    expect(dispatchCalls).toHaveLength(0);
+    expect(emittedEvents).toEqual([]);
   });
 
   it("prints the profile-owned primary artifact for brainstorm dispatches", async () => {
@@ -972,6 +1352,86 @@ describe("TaskCommands create", () => {
       archivedBy: "dev-session",
       archiveReason: "old backlog",
     });
+  });
+
+  it("surfaces readiness, launch plan, and visual status in list JSON output", async () => {
+    taskListMock = [
+      {
+        id: "task-cli-1",
+        title: "task",
+        status: "open",
+        priority: "high",
+        progress: 15,
+        updatedAt: 8,
+      },
+    ];
+    dependencySurfaceOverrides.set(
+      "task-cli-1",
+      buildMockDependencySurface("task-cli-1", {
+        launchPlan: {
+          taskId: "task-cli-1",
+          agentId: "dev",
+          sessionName: "task-cli-1-work",
+          createdAt: 8,
+          updatedAt: 8,
+        },
+        readiness: buildMockReadiness({
+          state: "waiting",
+          label: "waiting on 1/2 dependencies",
+          canStart: false,
+          dependencyCount: 2,
+          satisfiedDependencyCount: 1,
+          unsatisfiedDependencyCount: 1,
+          unsatisfiedDependencyIds: ["task-upstream-2"],
+          hasLaunchPlan: true,
+        }),
+      }),
+    );
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        false,
+        false,
+        false,
+        undefined,
+        true,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.tasks).toEqual([
+      expect.objectContaining({
+        id: "task-cli-1",
+        visualStatus: "waiting",
+        launchPlan: expect.objectContaining({
+          agentId: "dev",
+          sessionName: "task-cli-1-work",
+        }),
+        readiness: expect.objectContaining({
+          state: "waiting",
+          unsatisfiedDependencyIds: ["task-upstream-2"],
+        }),
+        dependencyCount: 2,
+        unsatisfiedDependencyCount: 1,
+      }),
+    ]);
   });
 
   it("rejects conflicting archive filters on list", async () => {
@@ -1476,6 +1936,90 @@ describe("TaskCommands create", () => {
     expect(payload.comments).toEqual([]);
   });
 
+  it("shows readiness, gating dependencies, dependents, and launch plan in JSON output", async () => {
+    dependencySurfaceOverrides.set(
+      "task-cli-1",
+      buildMockDependencySurface("task-cli-1", {
+        launchPlan: {
+          taskId: "task-cli-1",
+          agentId: "dev",
+          sessionName: "task-cli-1-work",
+          createdAt: 8,
+          updatedAt: 8,
+        },
+        dependencies: [
+          {
+            direction: "dependency",
+            taskId: "task-cli-1",
+            relatedTaskId: "task-upstream-1",
+            relatedTaskTitle: "upstream",
+            relatedTaskStatus: "open",
+            relatedTaskProgress: 20,
+            satisfied: false,
+            createdAt: 1,
+          },
+        ],
+        dependents: [
+          {
+            direction: "dependent",
+            taskId: "task-cli-1",
+            relatedTaskId: "task-downstream-1",
+            relatedTaskTitle: "downstream",
+            relatedTaskStatus: "open",
+            relatedTaskProgress: 0,
+            satisfied: false,
+            createdAt: 2,
+          },
+        ],
+        readiness: buildMockReadiness({
+          state: "waiting",
+          label: "waiting on 1/1 dependencies",
+          canStart: false,
+          dependencyCount: 1,
+          satisfiedDependencyCount: 0,
+          unsatisfiedDependencyCount: 1,
+          unsatisfiedDependencyIds: ["task-upstream-1"],
+          hasLaunchPlan: true,
+        }),
+      }),
+    );
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.show("task-cli-1", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.readiness).toMatchObject({
+      state: "waiting",
+      unsatisfiedDependencyIds: ["task-upstream-1"],
+      hasLaunchPlan: true,
+    });
+    expect(payload.launchPlan).toMatchObject({
+      agentId: "dev",
+      sessionName: "task-cli-1-work",
+    });
+    expect(payload.dependencies).toEqual([
+      expect.objectContaining({
+        direction: "dependency",
+        relatedTaskId: "task-upstream-1",
+      }),
+    ]);
+    expect(payload.dependents).toEqual([
+      expect.objectContaining({
+        direction: "dependent",
+        relatedTaskId: "task-downstream-1",
+      }),
+    ]);
+  });
+
   it("shows brainstorm artifact metadata in JSON output", async () => {
     taskDetailsMock = {
       ...taskDetailsMock,
@@ -1613,5 +2157,131 @@ describe("TaskCommands create", () => {
     const output = logs.join("\n");
     expect(output).toContain("profile brainstorm");
     expect(output).toContain("Brainstorm draft .genie/brainstorms/task/DRAFT.md");
+  });
+});
+
+describe("TaskDependencyCommands", () => {
+  beforeEach(() => {
+    dependencyAddCalls.length = 0;
+    dependencyRemoveCalls.length = 0;
+    emittedEvents.length = 0;
+    dependencySurfaceOverrides.clear();
+  });
+
+  it("adds a dependency and emits task.dependency.added", async () => {
+    const commands = new TaskDependencyCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.add("task-cli-1", "task-upstream-1", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(dependencyAddCalls).toEqual([{ taskId: "task-cli-1", dependencyTaskId: "task-upstream-1" }]);
+    expect(emittedEvents).toEqual([{ taskId: "task-cli-1", type: "task.dependency.added" }]);
+  });
+
+  it("removes a dependency and emits readiness follow-up events", async () => {
+    const commands = new TaskDependencyCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.rm("task-cli-1", "task-upstream-1", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(dependencyRemoveCalls).toEqual([{ taskId: "task-cli-1", dependencyTaskId: "task-upstream-1" }]);
+    expect(emittedEvents).toEqual([
+      { taskId: "task-cli-1", type: "task.dependency.removed" },
+      { taskId: "task-cli-1", type: "task.ready" },
+    ]);
+  });
+
+  it("lists dependencies and dependents with readiness and launch plan in JSON output", () => {
+    dependencySurfaceOverrides.set(
+      "task-cli-1",
+      buildMockDependencySurface("task-cli-1", {
+        launchPlan: {
+          taskId: "task-cli-1",
+          agentId: "dev",
+          sessionName: "task-cli-1-work",
+          createdAt: 8,
+          updatedAt: 8,
+        },
+        dependencies: [
+          {
+            direction: "dependency",
+            taskId: "task-cli-1",
+            relatedTaskId: "task-upstream-1",
+            relatedTaskTitle: "upstream",
+            relatedTaskStatus: "open",
+            relatedTaskProgress: 30,
+            satisfied: false,
+            createdAt: 1,
+          },
+        ],
+        dependents: [
+          {
+            direction: "dependent",
+            taskId: "task-cli-1",
+            relatedTaskId: "task-downstream-1",
+            relatedTaskTitle: "downstream",
+            relatedTaskStatus: "open",
+            relatedTaskProgress: 0,
+            satisfied: false,
+            createdAt: 2,
+          },
+        ],
+        readiness: buildMockReadiness({
+          state: "waiting",
+          label: "waiting on 1/1 dependencies",
+          canStart: false,
+          dependencyCount: 1,
+          satisfiedDependencyCount: 0,
+          unsatisfiedDependencyCount: 1,
+          unsatisfiedDependencyIds: ["task-upstream-1"],
+          hasLaunchPlan: true,
+        }),
+      }),
+    );
+    const commands = new TaskDependencyCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      commands.ls("task-cli-1", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload).toMatchObject({
+      taskId: "task-cli-1",
+      readiness: {
+        state: "waiting",
+        unsatisfiedDependencyIds: ["task-upstream-1"],
+      },
+      launchPlan: {
+        agentId: "dev",
+        sessionName: "task-cli-1-work",
+      },
+    });
+    expect(payload.dependencies).toEqual([
+      expect.objectContaining({
+        relatedTaskId: "task-upstream-1",
+      }),
+    ]);
+    expect(payload.dependents).toEqual([
+      expect.objectContaining({
+        relatedTaskId: "task-downstream-1",
+      }),
+    ]);
   });
 });

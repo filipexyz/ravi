@@ -4,6 +4,8 @@ export type TaskPriority = "low" | "normal" | "high" | "urgent";
 
 export type TaskWorktreeMode = "inherit" | "path";
 
+export type TaskReadinessState = "ready" | "waiting" | "active" | "terminal";
+
 export type TaskArchiveMode = "include" | "exclude" | "only";
 
 export type TaskProfileTaskDocumentMode = "required" | "optional";
@@ -27,6 +29,11 @@ export type TaskReportEvent = (typeof TASK_REPORT_EVENTS)[number];
 export type TaskEventType =
   | "task.created"
   | "task.dispatched"
+  | "task.launch-planned"
+  | "task.ready"
+  | "task.dependency.added"
+  | "task.dependency.removed"
+  | "task.dependency.satisfied"
   | "task.progress"
   | "task.checkpoint.missed"
   | "task.comment"
@@ -313,6 +320,55 @@ export interface TaskComment {
   createdAt: number;
 }
 
+export interface TaskDependencyRecord {
+  taskId: string;
+  dependsOnTaskId: string;
+  createdAt: number;
+  satisfiedAt?: number;
+  satisfiedByEventId?: number;
+}
+
+export interface TaskLaunchPlan {
+  taskId: string;
+  agentId: string;
+  sessionName: string;
+  assignedBy?: string;
+  assignedByAgentId?: string;
+  assignedBySessionName?: string;
+  worktree?: TaskWorktreeConfig;
+  checkpointIntervalMs?: number;
+  reportToSessionName?: string;
+  reportEvents?: TaskReportEvent[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TaskDependencyEdge {
+  direction: "dependency" | "dependent";
+  taskId: string;
+  relatedTaskId: string;
+  relatedTaskTitle: string;
+  relatedTaskStatus: TaskStatus;
+  relatedTaskProgress: number;
+  relatedTaskAssigneeAgentId?: string;
+  relatedTaskAssigneeSessionName?: string;
+  satisfied: boolean;
+  createdAt: number;
+  satisfiedAt?: number;
+  satisfiedByEventId?: number;
+}
+
+export interface TaskReadiness {
+  state: TaskReadinessState;
+  label: string;
+  canStart: boolean;
+  dependencyCount: number;
+  satisfiedDependencyCount: number;
+  unsatisfiedDependencyCount: number;
+  unsatisfiedDependencyIds: string[];
+  hasLaunchPlan: boolean;
+}
+
 export interface CreateTaskInput {
   title: string;
   instructions: string;
@@ -330,6 +386,7 @@ export interface CreateTaskInput {
   createdByAgentId?: string;
   createdBySessionName?: string;
   parentTaskId?: string;
+  dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;
 }
 
@@ -344,6 +401,8 @@ export interface DispatchTaskInput {
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
 }
+
+export interface QueueTaskLaunchInput extends DispatchTaskInput {}
 
 export interface TaskProgressInput {
   actor?: string;

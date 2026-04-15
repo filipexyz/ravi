@@ -400,6 +400,18 @@
   color: #94a3b8;
 }
 
+.ravi-wa-pill-state--ready,
+.ravi-wa-state-pill--ready {
+  background: rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+}
+
+.ravi-wa-pill-state--waiting,
+.ravi-wa-state-pill--waiting {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
 .ravi-wa-pill-state--thinking,
 .ravi-wa-state-pill--thinking {
   background: rgba(59, 130, 246, 0.14);
@@ -1200,6 +1212,16 @@ button.ravi-wa-nav-group__label:hover {
   color: #94a3b8;
 }
 
+.ravi-wa-nav-row__state--ready {
+  background: rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+}
+
+.ravi-wa-nav-row__state--waiting {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
 .ravi-wa-nav-row__state--thinking {
   background: rgba(59, 130, 246, 0.14);
   color: #93c5fd;
@@ -1849,6 +1871,14 @@ button.sw-tool__row:hover {
   border-color: rgba(37, 211, 102, 0.18);
 }
 
+.ravi-wa-tasks-toolbar__stat--ready {
+  border-color: rgba(14, 165, 233, 0.18);
+}
+
+.ravi-wa-tasks-toolbar__stat--waiting {
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
 .ravi-wa-tasks-toolbar__stat--done {
   border-color: rgba(134, 239, 172, 0.16);
 }
@@ -1899,6 +1929,14 @@ button.sw-tool__row:hover {
 .ravi-wa-task-counter--streaming,
 .ravi-wa-task-counter--done {
   border-color: rgba(74, 222, 128, 0.16);
+}
+
+.ravi-wa-task-counter--ready {
+  border-color: rgba(14, 165, 233, 0.18);
+}
+
+.ravi-wa-task-counter--waiting {
+  border-color: rgba(245, 158, 11, 0.22);
 }
 
 .ravi-wa-task-counter--blocked,
@@ -2188,10 +2226,10 @@ button.sw-tool__row:hover {
 
 .ravi-wa-task-board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(180px, 1fr));
+  grid-template-columns: repeat(7, minmax(168px, 1fr));
   grid-template-rows: minmax(0, 1fr);
-  gap: 8px;
-  min-width: 1128px;
+  gap: 7px;
+  min-width: 1248px;
   min-height: 0;
   height: 100%;
   padding: 12px 16px 22px;
@@ -2286,7 +2324,7 @@ button.sw-tool__row:hover {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 10px;
@@ -2310,10 +2348,10 @@ button.sw-tool__row:hover {
   width: 100%;
   max-width: 100%;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 7px;
+  padding: 9px;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 14px;
+  border-radius: 13px;
   background: rgba(11, 20, 26, 0.76);
   color: #dfe6ea;
   cursor: pointer;
@@ -2332,7 +2370,7 @@ button.sw-tool__row:hover {
   min-width: 0;
   max-width: 100%;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -2351,6 +2389,15 @@ button.sw-tool__row:hover {
 .ravi-wa-task-card--selected {
   border-color: rgba(0, 168, 132, 0.32);
   box-shadow: inset 0 0 0 1px rgba(0, 168, 132, 0.2);
+}
+
+.ravi-wa-task-card--ready {
+  border-color: rgba(14, 165, 233, 0.14);
+}
+
+.ravi-wa-task-card--waiting {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(36, 28, 14, 0.82);
 }
 
 .ravi-wa-task-card--blocked {
@@ -2505,12 +2552,16 @@ button.sw-tool__row:hover {
   background: linear-gradient(90deg, #00a884, #86efac);
 }
 
+.ravi-wa-task-card--waiting .ravi-wa-task-card__bar span {
+  background: linear-gradient(90deg, #b98912, #facc15);
+}
+
 .ravi-wa-task-card__children {
   display: flex;
   box-sizing: border-box;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -2520,7 +2571,7 @@ button.sw-tool__row:hover {
   box-sizing: border-box;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .ravi-wa-task-child-wrap--nested {
@@ -2532,7 +2583,7 @@ button.sw-tool__row:hover {
   box-sizing: border-box;
   min-width: 0;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   margin-left: 8px;
   padding-left: 7px;
   border-left: 1px solid rgba(255, 255, 255, 0.06);
@@ -2545,7 +2596,7 @@ button.sw-tool__row:hover {
   min-width: 0;
   max-width: 100%;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   padding: 8px 9px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
@@ -2567,6 +2618,15 @@ button.sw-tool__row:hover {
 .ravi-wa-task-child--selected {
   border-color: rgba(37, 211, 102, 0.24);
   box-shadow: inset 0 0 0 1px rgba(37, 211, 102, 0.16);
+}
+
+.ravi-wa-task-child--ready {
+  border-color: rgba(14, 165, 233, 0.16);
+}
+
+.ravi-wa-task-child--waiting {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(65, 50, 19, 0.18);
 }
 
 .ravi-wa-task-child--blocked,
@@ -2648,6 +2708,10 @@ button.sw-tool__row:hover {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, #00a884, #86efac);
+}
+
+.ravi-wa-task-child--waiting .ravi-wa-task-child__progress-bar span {
+  background: linear-gradient(90deg, #b98912, #facc15);
 }
 
 .ravi-wa-task-child__progress-time {
@@ -3274,6 +3338,16 @@ button.sw-tool__row:hover {
   border-color: rgba(96, 165, 250, 0.18);
 }
 
+.ravi-wa-task-status-panel--ready {
+  border-color: rgba(56, 189, 248, 0.18);
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.ravi-wa-task-status-panel--waiting {
+  border-color: rgba(245, 158, 11, 0.22);
+  background: rgba(245, 158, 11, 0.05);
+}
+
 .ravi-wa-task-status-panel--streaming {
   border-color: rgba(74, 222, 128, 0.2);
 }
@@ -3358,6 +3432,36 @@ button.sw-tool__row:hover {
   color: #c8d1d6;
   font-size: 11px;
   line-height: 1.4;
+}
+
+.ravi-wa-task-gate-banner {
+  margin-top: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.ravi-wa-task-gate-banner--waiting {
+  border-color: rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.ravi-wa-task-gate-banner strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ravi-wa-task-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ravi-wa-task-gate-banner p {
+  margin: 0;
+  color: #dfe6ea;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .ravi-wa-task-detail-section {
@@ -3448,6 +3552,147 @@ button.sw-tool__row:hover {
   color: var(--ravi-wa-task-subtle);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.ravi-wa-task-gate-panel {
+  gap: 12px;
+}
+
+.ravi-wa-task-gate-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-task-gate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ravi-wa-task-gate-card {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.022);
+  color: #dfe6ea;
+  text-align: left;
+}
+
+button.ravi-wa-task-gate-card {
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 140ms ease;
+}
+
+button.ravi-wa-task-gate-card:hover {
+  transform: translateY(-1px);
+}
+
+.ravi-wa-task-gate-card--waiting {
+  border-color: rgba(245, 158, 11, 0.18);
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.ravi-wa-task-gate-card--done {
+  border-color: rgba(74, 222, 128, 0.16);
+  background: rgba(74, 222, 128, 0.05);
+}
+
+.ravi-wa-task-gate-card--blocked,
+.ravi-wa-task-gate-card--failed {
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.ravi-wa-task-gate-card__head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ravi-wa-task-gate-card__badges {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ravi-wa-task-gate-card__title {
+  color: var(--ravi-wa-task-text);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ravi-wa-task-gate-card__summary {
+  margin: 0;
+  color: var(--ravi-wa-task-subtle);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ravi-wa-task-gate-card__meta {
+  margin-top: 2px;
+}
+
+.ravi-wa-task-launch-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background:
+    radial-gradient(
+      circle at top right,
+      rgba(14, 165, 233, 0.08),
+      transparent 34%
+    ),
+    rgba(11, 20, 26, 0.54);
+}
+
+.ravi-wa-task-launch-plan__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ravi-wa-task-launch-plan__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-task-launch-plan__copy strong {
+  color: var(--ravi-wa-task-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ravi-wa-task-launch-plan__detail {
+  margin: 0;
+  color: #dfe6ea;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ravi-wa-task-launch-plan__meta {
+  margin-top: 2px;
 }
 
 .ravi-wa-task-link {

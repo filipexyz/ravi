@@ -7,9 +7,23 @@ type TaskNode = {
   task?: {
     id?: string;
     status?: string;
+    visualStatus?: string;
     progress?: number;
     createdAt?: number;
     updatedAt?: number;
+    dependencies?: Array<{
+      satisfied?: boolean;
+    }>;
+    readiness?: {
+      state?: string;
+      dependencyCount?: number;
+      satisfiedDependencyCount?: number;
+      unsatisfiedDependencyCount?: number;
+      hasLaunchPlan?: boolean;
+    };
+    launchPlan?: {
+      agentId?: string;
+    } | null;
   };
   rows?: Array<{
     order?: number;
@@ -39,6 +53,15 @@ function loadTaskPresenterApi() {
       task: TaskNode["task"],
       node: TaskNode,
     ) => { progress: number; source: string; childCount: number };
+    getTaskReadinessState: (task: TaskNode["task"]) => {
+      status: string;
+      totalCount: number;
+      satisfiedCount: number;
+      pendingCount: number;
+      hasLaunchPlan: boolean;
+      label: string | null;
+    };
+    getTaskKanbanSurfaceStatus: (task: TaskNode["task"]) => string;
     pickTaskGroupPrimaryRow: (node: TaskNode) => {
       order?: number;
       session?: { sessionKey?: string };
@@ -47,7 +70,13 @@ function loadTaskPresenterApi() {
   };
 }
 
-const { getTaskVisualProgressState, pickTaskGroupPrimaryRow, sortTaskTreeByRecency } = loadTaskPresenterApi();
+const {
+  getTaskVisualProgressState,
+  getTaskReadinessState,
+  getTaskKanbanSurfaceStatus,
+  pickTaskGroupPrimaryRow,
+  sortTaskTreeByRecency,
+} = loadTaskPresenterApi();
 
 describe("whatsapp overlay task presenter", () => {
   it("uses descendant aggregate when the parent has no own progress yet", () => {
@@ -78,6 +107,59 @@ describe("whatsapp overlay task presenter", () => {
       source: "task",
       childCount: 2,
     });
+  });
+
+  it("derives waiting readiness from dependency counts and keeps launch-plan visibility", () => {
+    expect(
+      getTaskReadinessState({
+        status: "open",
+        dependencies: [{ satisfied: true }, { satisfied: false }],
+        readiness: {
+          state: "waiting",
+          dependencyCount: 2,
+          satisfiedDependencyCount: 1,
+          unsatisfiedDependencyCount: 1,
+          hasLaunchPlan: true,
+        },
+        launchPlan: {
+          agentId: "dev",
+        },
+      }),
+    ).toEqual({
+      status: "waiting",
+      totalCount: 2,
+      satisfiedCount: 1,
+      pendingCount: 1,
+      hasLaunchPlan: true,
+      label: null,
+    });
+  });
+
+  it("maps open tasks into ready or waiting kanban surface states", () => {
+    expect(
+      getTaskKanbanSurfaceStatus({
+        status: "open",
+        readiness: {
+          state: "ready",
+          dependencyCount: 0,
+          satisfiedDependencyCount: 0,
+          unsatisfiedDependencyCount: 0,
+        },
+      }),
+    ).toBe("ready");
+
+    expect(
+      getTaskKanbanSurfaceStatus({
+        status: "open",
+        visualStatus: "waiting",
+        readiness: {
+          state: "waiting",
+          dependencyCount: 2,
+          satisfiedDependencyCount: 1,
+          unsatisfiedDependencyCount: 1,
+        },
+      }),
+    ).toBe("waiting");
   });
 
   it("picks the earliest visible row recursively for grouped task headers", () => {

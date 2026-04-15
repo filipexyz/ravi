@@ -60,7 +60,7 @@ describe.skip("task completion notify", () => {
       assignedBySessionName: "dispatcher-session",
     });
 
-    const completed = completeTask(created.task.id, {
+    const completed = await completeTask(created.task.id, {
       actor: `${created.task.id}-work`,
       agentId: "dev",
       sessionName: `${created.task.id}-work`,

@@ -1,20 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
+  dbAddTaskDependency,
   dbAddTaskComment,
   dbArchiveTask,
   dbBlockTask,
+  dbClearTaskLaunchPlan,
   dbCompleteTask,
   dbCreateTask,
+  dbFailTask,
   dbHasActiveTaskForSession,
   dbResolveActiveTaskBindingForSession,
   dbDeleteTask,
   dbDispatchTask,
   dbGetActiveAssignment,
+  dbGetTaskLaunchPlan,
   dbGetTask,
   dbMarkTaskAcceptedForSession,
+  dbMarkTaskDependenciesSatisfiedByUpstream,
   dbSetTaskDir,
+  dbSetTaskLaunchPlan,
   dbListChildTasks,
+  dbListTaskDependencies,
+  dbListTaskDependents,
   dbListTasks,
   dbListTaskComments,
   dbListTaskEvents,
@@ -314,6 +322,172 @@ describe("task-db", () => {
         limit: 1,
       }).map((task) => task.id),
     ).toEqual([child.task.id]);
+  });
+
+  it("persists dependency edges, dependents, and satisfaction state", () => {
+    const completedUpstream = dbCreateTask({
+      title: "Completed upstream",
+      instructions: "Already done before the downstream is gated",
+      createdBy: "test",
+    });
+    const pendingUpstream = dbCreateTask({
+      title: "Pending upstream",
+      instructions: "Will satisfy the dependency later",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Downstream gated task",
+      instructions: "Must wait on both upstream tasks",
+      createdBy: "test",
+    });
+    createdTaskIds.push(completedUpstream.task.id, pendingUpstream.task.id, downstream.task.id);
+
+    const doneEvent = dbCompleteTask(completedUpstream.task.id, {
+      actor: "test",
+      message: "done",
+    }).event;
+
+    const satisfiedOnInsert = dbAddTaskDependency(downstream.task.id, completedUpstream.task.id);
+    const pendingOnInsert = dbAddTaskDependency(downstream.task.id, pendingUpstream.task.id);
+
+    expect(satisfiedOnInsert.dependency.satisfiedAt).toBe(doneEvent.createdAt);
+    expect(pendingOnInsert.dependency.satisfiedAt).toBeUndefined();
+    expect(dbListTaskDependencies(downstream.task.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          taskId: downstream.task.id,
+          dependsOnTaskId: completedUpstream.task.id,
+          satisfiedAt: doneEvent.createdAt,
+        }),
+        expect.objectContaining({
+          taskId: downstream.task.id,
+          dependsOnTaskId: pendingUpstream.task.id,
+        }),
+      ]),
+    );
+    expect(dbListTaskDependents(completedUpstream.task.id)).toEqual([
+      expect.objectContaining({
+        taskId: downstream.task.id,
+        dependsOnTaskId: completedUpstream.task.id,
+      }),
+    ]);
+
+    const pendingDoneEvent = dbCompleteTask(pendingUpstream.task.id, {
+      actor: "test",
+      message: "done",
+    }).event;
+    const satisfiedLater = dbMarkTaskDependenciesSatisfiedByUpstream(pendingUpstream.task.id, pendingDoneEvent);
+
+    expect(satisfiedLater).toEqual([
+      expect.objectContaining({
+        taskId: downstream.task.id,
+        dependsOnTaskId: pendingUpstream.task.id,
+        satisfiedAt: pendingDoneEvent.createdAt,
+        satisfiedByEventId: pendingDoneEvent.id,
+      }),
+    ]);
+    expect(dbListTaskDependencies(downstream.task.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dependsOnTaskId: pendingUpstream.task.id,
+          satisfiedAt: pendingDoneEvent.createdAt,
+          satisfiedByEventId: pendingDoneEvent.id,
+        }),
+      ]),
+    );
+  });
+
+  it("deduplicates duplicate dependency edges and repeated satisfaction callbacks", () => {
+    const upstream = dbCreateTask({
+      title: "Idempotent upstream",
+      instructions: "Should only satisfy the downstream once",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Idempotent downstream",
+      instructions: "Should not accumulate duplicate dependency edges",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    const firstAdd = dbAddTaskDependency(downstream.task.id, upstream.task.id);
+    const duplicateAdd = dbAddTaskDependency(downstream.task.id, upstream.task.id);
+
+    expect(firstAdd.wasNoop).toBeUndefined();
+    expect(duplicateAdd.wasNoop).toBe(true);
+    expect(dbListTaskDependencies(downstream.task.id)).toEqual([
+      expect.objectContaining({
+        taskId: downstream.task.id,
+        dependsOnTaskId: upstream.task.id,
+      }),
+    ]);
+
+    const doneEvent = dbCompleteTask(upstream.task.id, {
+      actor: "test",
+      message: "done",
+    }).event;
+    const firstSatisfied = dbMarkTaskDependenciesSatisfiedByUpstream(upstream.task.id, doneEvent);
+    const repeatedSatisfied = dbMarkTaskDependenciesSatisfiedByUpstream(upstream.task.id, doneEvent);
+
+    expect(firstSatisfied).toEqual([
+      expect.objectContaining({
+        taskId: downstream.task.id,
+        dependsOnTaskId: upstream.task.id,
+        satisfiedByEventId: doneEvent.id,
+      }),
+    ]);
+    expect(repeatedSatisfied).toEqual([]);
+  });
+
+  it("persists launch plans independently from lifecycle and clears them on dispatch", () => {
+    const created = dbCreateTask({
+      title: "Launch plan smoke",
+      instructions: "Arm first, dispatch later",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const launchPlan = dbSetTaskLaunchPlan(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "lead-session",
+      reportToSessionName: "ops-session",
+      reportEvents: ["blocked", "done"],
+      checkpointIntervalMs: 600000,
+    });
+
+    expect(dbGetTaskLaunchPlan(created.task.id)).toEqual(
+      expect.objectContaining({
+        taskId: created.task.id,
+        agentId: "dev",
+        sessionName: `${created.task.id}-work`,
+        assignedBy: "lead-session",
+        reportToSessionName: "ops-session",
+        reportEvents: ["blocked", "done"],
+        checkpointIntervalMs: 600000,
+      }),
+    );
+
+    const cleared = dbClearTaskLaunchPlan(created.task.id);
+    expect(cleared).toBe(true);
+    expect(dbGetTaskLaunchPlan(created.task.id)).toBeNull();
+
+    dbSetTaskLaunchPlan(created.task.id, {
+      agentId: launchPlan.agentId,
+      sessionName: launchPlan.sessionName,
+      assignedBy: launchPlan.assignedBy,
+      reportToSessionName: launchPlan.reportToSessionName,
+      reportEvents: launchPlan.reportEvents,
+      checkpointIntervalMs: launchPlan.checkpointIntervalMs,
+    });
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "lead-session",
+    });
+
+    expect(dbGetTaskLaunchPlan(created.task.id)).toBeNull();
   });
 
   it("rejects task_dir persistence for profiles that do not bootstrap a canonical task dir", () => {
@@ -753,6 +927,92 @@ describe("task-db", () => {
     expect(blocked.task.status).toBe("done");
     expect(blocked.task.summary).toBe(completed.task.summary);
     expect(blocked.event.id).toBe(completed.event.id);
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual([
+      "task.created",
+      "task.dispatched",
+      "task.done",
+    ]);
+  });
+
+  it("does not overwrite failed tasks when a late done arrives", () => {
+    const created = dbCreateTask({
+      title: "Failed stays terminal",
+      instructions: "Late done reports must not revive a failed task",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    const failed = dbFailTask(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "worker crashed",
+    });
+    const lateDone = dbCompleteTask(created.task.id, {
+      actor: "late-worker",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "actually done",
+    });
+    const lateBlocked = dbBlockTask(created.task.id, {
+      actor: "late-worker",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "need approval",
+      progress: 100,
+    });
+
+    expect(lateDone.wasNoop).toBe(true);
+    expect(lateDone.task.status).toBe("failed");
+    expect(lateDone.task.summary).toBe(failed.task.summary);
+    expect(lateDone.event.id).toBe(failed.event.id);
+    expect(lateBlocked.wasNoop).toBe(true);
+    expect(lateBlocked.task.status).toBe("failed");
+    expect(lateBlocked.event.id).toBe(failed.event.id);
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual([
+      "task.created",
+      "task.dispatched",
+      "task.failed",
+    ]);
+  });
+
+  it("does not overwrite done tasks when a late failure arrives", () => {
+    const created = dbCreateTask({
+      title: "Done stays terminal against failure",
+      instructions: "Late fail reports must not replace a completed task",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    const done = dbCompleteTask(created.task.id, {
+      actor: "test",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "ship it",
+    });
+    const lateFail = dbFailTask(created.task.id, {
+      actor: "late-worker",
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      message: "oops",
+    });
+
+    expect(lateFail.wasNoop).toBe(true);
+    expect(lateFail.task.status).toBe("done");
+    expect(lateFail.task.summary).toBe(done.task.summary);
+    expect(lateFail.event.id).toBe(done.event.id);
     expect(dbListTaskEvents(created.task.id).map((event) => event.type)).toEqual([
       "task.created",
       "task.dispatched",

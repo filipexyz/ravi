@@ -3,11 +3,24 @@ import type { TaskStreamSelection, TaskStreamTaskEntity } from "../tasks/index.j
 import { buildOverlayTaskDispatchState, resolveOverlayTaskDefaultSessionName } from "./task-dispatch.js";
 
 function makeTask(overrides: Partial<TaskStreamTaskEntity> = {}): TaskStreamTaskEntity {
+  const readiness =
+    overrides.readiness ??
+    ({
+      state: "ready",
+      label: "ready to start",
+      canStart: true,
+      dependencyCount: 0,
+      satisfiedDependencyCount: 0,
+      unsatisfiedDependencyCount: 0,
+      unsatisfiedDependencyIds: [],
+      hasLaunchPlan: false,
+    } as TaskStreamTaskEntity["readiness"]);
   return {
     id: overrides.id ?? "task-1",
     title: overrides.title ?? "Task",
     instructions: overrides.instructions ?? "Ship it",
     status: overrides.status ?? "open",
+    visualStatus: overrides.visualStatus ?? overrides.status ?? "open",
     priority: overrides.priority ?? "normal",
     progress: overrides.progress ?? 0,
     profileId: overrides.profileId ?? "default",
@@ -54,6 +67,11 @@ function makeTask(overrides: Partial<TaskStreamTaskEntity> = {}): TaskStreamTask
     dispatchedAt: overrides.dispatchedAt ?? null,
     startedAt: overrides.startedAt ?? null,
     completedAt: overrides.completedAt ?? null,
+    readiness,
+    launchPlan: overrides.launchPlan ?? null,
+    dependencyCount: overrides.dependencyCount ?? readiness.dependencyCount,
+    satisfiedDependencyCount: overrides.satisfiedDependencyCount ?? readiness.satisfiedDependencyCount,
+    unsatisfiedDependencyCount: overrides.unsatisfiedDependencyCount ?? readiness.unsatisfiedDependencyCount,
     artifacts: overrides.artifacts ?? {
       status: "planned",
       supportedKinds: [],
@@ -71,6 +89,21 @@ function makeSelection(
     task: makeTask(overrides.task),
     parentTask: null,
     childTasks: [],
+    dependencies: [],
+    dependents: [],
+    launchPlan: overrides.task?.launchPlan ?? null,
+    readiness:
+      overrides.task?.readiness ??
+      ({
+        state: "ready",
+        label: "ready to start",
+        canStart: true,
+        dependencyCount: 0,
+        satisfiedDependencyCount: 0,
+        unsatisfiedDependencyCount: 0,
+        unsatisfiedDependencyIds: [],
+        hasLaunchPlan: false,
+      } as TaskStreamSelection["readiness"]),
     activeAssignment: overrides.activeAssignment ?? null,
     assignments: [],
     events: [],

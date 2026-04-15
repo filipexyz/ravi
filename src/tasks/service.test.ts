@@ -21,6 +21,7 @@ mock.module("./service.js", () => actualTaskServiceModule);
 const { publishSessionPrompt } = await import("../omni/session-stream.js");
 
 const {
+  addTaskDependency,
   archiveTask,
   blockTask,
   buildTaskProfileSnapshot,
@@ -31,20 +32,26 @@ const {
   buildTaskStreamSnapshot,
   commentTask,
   completeTask,
+  dbAddTaskDependency,
   dbCreateTask,
   dbDeleteTask,
   dbDispatchTask,
   dbGetTask,
   dbMarkTaskAcceptedForSession,
   dbReportTaskProgress,
+  dbSetTaskLaunchPlan,
   dispatchTask,
   emitTaskEvent,
   failTask,
   getTaskDetails,
+  getTaskLaunchPlan,
   isTaskRecoveryFresh,
   isTaskStreamCommand,
+  queueOrDispatchTask,
+  recoverActiveTasksAfterRestart,
   requireTaskRuntimeAgent,
   readTaskDocFrontmatter,
+  removeTaskDependency,
   resolveBrainstormTaskSlug,
   resolveTaskCreateAssigneeAgent,
   resolveTaskProfile,
@@ -440,6 +447,314 @@ describe("task substrate contract", () => {
     expect(snapshot.artifacts.status).toBe("planned");
   });
 
+  it("surfaces dependency readiness and launch plans in task stream snapshots", async () => {
+    const satisfiedUpstream = dbCreateTask({
+      title: "Satisfied upstream",
+      instructions: "This dependency should already be satisfied",
+      createdBy: "test",
+    });
+    const pendingUpstream = dbCreateTask({
+      title: "Pending upstream",
+      instructions: "This dependency should keep the downstream waiting",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Downstream waiting task",
+      instructions: "Do not start before both upstream tasks finish",
+      createdBy: "test",
+    });
+    createdTaskIds.push(satisfiedUpstream.task.id, pendingUpstream.task.id, downstream.task.id);
+
+    await completeTask(satisfiedUpstream.task.id, {
+      actor: "test",
+      message: "done",
+    });
+    dbAddTaskDependency(downstream.task.id, satisfiedUpstream.task.id);
+    dbAddTaskDependency(downstream.task.id, pendingUpstream.task.id);
+    dbSetTaskLaunchPlan(downstream.task.id, {
+      agentId: "dev",
+      sessionName: `${downstream.task.id}-work`,
+      reportEvents: ["done", "blocked", "failed"],
+    });
+
+    const selected = buildTaskStreamSnapshot({
+      taskId: downstream.task.id,
+      eventsLimit: 10,
+    });
+    const listed = buildTaskStreamSnapshot({ eventsLimit: 10 });
+
+    expect(selected.selectedTask?.task).toMatchObject({
+      id: downstream.task.id,
+      status: "open",
+      visualStatus: "waiting",
+      dependencyCount: 2,
+      satisfiedDependencyCount: 1,
+      unsatisfiedDependencyCount: 1,
+      readiness: {
+        state: "waiting",
+        canStart: false,
+        dependencyCount: 2,
+        satisfiedDependencyCount: 1,
+        unsatisfiedDependencyCount: 1,
+        unsatisfiedDependencyIds: [pendingUpstream.task.id],
+        hasLaunchPlan: true,
+      },
+      launchPlan: {
+        agentId: "dev",
+        sessionName: `${downstream.task.id}-work`,
+      },
+    });
+    expect(selected.selectedTask?.dependencies).toHaveLength(2);
+    expect(selected.selectedTask?.dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          direction: "dependency",
+          relatedTaskId: satisfiedUpstream.task.id,
+          relatedTaskTitle: "Satisfied upstream",
+          relatedTaskStatus: "done",
+          satisfied: true,
+        }),
+        expect.objectContaining({
+          direction: "dependency",
+          relatedTaskId: pendingUpstream.task.id,
+          relatedTaskTitle: "Pending upstream",
+          relatedTaskStatus: "open",
+          satisfied: false,
+        }),
+      ]),
+    );
+    expect(listed.items.find((task) => task.id === downstream.task.id)).toMatchObject({
+      visualStatus: "waiting",
+      dependencyCount: 2,
+      satisfiedDependencyCount: 1,
+      unsatisfiedDependencyCount: 1,
+    });
+  });
+
+  it("queues launch plans while waiting and auto-dispatches when dependencies become ready", async () => {
+    createdAgentIds.push("dev");
+    dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
+
+    const upstream = dbCreateTask({
+      title: "Queued upstream",
+      instructions: "Must finish before downstream starts",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Queued downstream",
+      instructions: "Should auto-dispatch after the upstream finishes",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    const added = await addTaskDependency(downstream.task.id, upstream.task.id);
+    expect(added.readiness.state).toBe("waiting");
+
+    const queued = await queueOrDispatchTask(downstream.task.id, {
+      agentId: "dev",
+      sessionName: `${downstream.task.id}-work`,
+      assignedBy: "test",
+    });
+    expect(queued.mode).toBe("launch_planned");
+    expect(queued.readiness).toMatchObject({
+      state: "waiting",
+      unsatisfiedDependencyIds: [upstream.task.id],
+      hasLaunchPlan: true,
+    });
+
+    await completeTask(upstream.task.id, {
+      actor: "test",
+      message: "done",
+    });
+
+    const downstreamDetails = getTaskDetails(downstream.task.id);
+    expect(downstreamDetails.task).toMatchObject({
+      id: downstream.task.id,
+      status: "dispatched",
+      assigneeAgentId: "dev",
+      assigneeSessionName: `${downstream.task.id}-work`,
+    });
+    expect(downstreamDetails.activeAssignment).toMatchObject({
+      agentId: "dev",
+      sessionName: `${downstream.task.id}-work`,
+      status: "assigned",
+    });
+    expect(downstreamDetails.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "task.dependency.added",
+        "task.launch-planned",
+        "task.dependency.satisfied",
+        "task.ready",
+        "task.dispatched",
+      ]),
+    );
+  });
+
+  it("rejects invalid launch plans before persisting them", async () => {
+    const upstream = dbCreateTask({
+      title: "Invalid launch upstream",
+      instructions: "Keeps the downstream waiting",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Invalid launch downstream",
+      instructions: "Should fail before the launch plan is armed",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    await addTaskDependency(downstream.task.id, upstream.task.id);
+
+    await expect(
+      queueOrDispatchTask(downstream.task.id, {
+        agentId: "ghost",
+        sessionName: `${downstream.task.id}-work`,
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow("Agent not found in runtime config: ghost");
+
+    expect(getTaskLaunchPlan(downstream.task.id)).toBeNull();
+    expect(getTaskDetails(downstream.task.id).events.map((event) => event.type)).not.toContain("task.launch-planned");
+  });
+
+  it("does not auto-dispatch archived waiting tasks when upstreams finish or recovery runs", async () => {
+    createdAgentIds.push("dev");
+    dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
+
+    const upstream = dbCreateTask({
+      title: "Archived upstream",
+      instructions: "Will finish after the downstream is hidden",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Archived downstream",
+      instructions: "Should stay inert while archived",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    await addTaskDependency(downstream.task.id, upstream.task.id);
+    await queueOrDispatchTask(downstream.task.id, {
+      agentId: "dev",
+      sessionName: `${downstream.task.id}-work`,
+      assignedBy: "test",
+    });
+    archiveTask(downstream.task.id, {
+      actor: "test",
+      reason: "hide while upstream is still moving",
+    });
+
+    await completeTask(upstream.task.id, {
+      actor: "test",
+      message: "done",
+    });
+
+    let downstreamDetails = getTaskDetails(downstream.task.id);
+    expect(downstreamDetails.task).toMatchObject({
+      id: downstream.task.id,
+      status: "open",
+      archivedAt: expect.any(Number),
+    });
+    expect(downstreamDetails.activeAssignment).toBeNull();
+    expect(downstreamDetails.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["task.launch-planned", "task.archived", "task.dependency.satisfied"]),
+    );
+    expect(downstreamDetails.events.map((event) => event.type)).not.toEqual(
+      expect.arrayContaining(["task.ready", "task.dispatched"]),
+    );
+
+    const recovered = await recoverActiveTasksAfterRestart();
+    downstreamDetails = getTaskDetails(downstream.task.id);
+    expect(recovered.recoveredTaskIds).not.toContain(downstream.task.id);
+    expect(downstreamDetails.task?.status).toBe("open");
+    expect(downstreamDetails.activeAssignment).toBeNull();
+    expect(publishSessionPromptMock.mock.calls).toHaveLength(0);
+  });
+
+  it("re-dispatches ready open tasks with launch plans during restart recovery", async () => {
+    createdAgentIds.push("dev");
+    dbCreateAgent({ id: "dev", cwd: "/tmp/ravi-dev-agent" });
+
+    const upstream = dbCreateTask({
+      title: "Recovered upstream",
+      instructions: "Already done before recovery runs",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Recovered downstream",
+      instructions: "Should auto-dispatch when recovery sees a ready launch plan",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    await completeTask(upstream.task.id, {
+      actor: "test",
+      message: "done",
+    });
+    dbAddTaskDependency(downstream.task.id, upstream.task.id);
+    dbSetTaskLaunchPlan(downstream.task.id, {
+      agentId: "dev",
+      sessionName: `${downstream.task.id}-work`,
+      assignedBy: "test",
+      reportEvents: ["done", "blocked", "failed"],
+    });
+
+    const recovered = await recoverActiveTasksAfterRestart();
+    const downstreamDetails = getTaskDetails(downstream.task.id);
+
+    expect(recovered.recoveredTaskIds).toContain(downstream.task.id);
+    expect(recovered.skipped).toEqual([]);
+    expect(downstreamDetails.task).toMatchObject({
+      id: downstream.task.id,
+      status: "dispatched",
+      assigneeAgentId: "dev",
+      assigneeSessionName: `${downstream.task.id}-work`,
+    });
+    expect(downstreamDetails.events.map((event) => event.type)).toEqual(expect.arrayContaining(["task.dispatched"]));
+    expect(publishSessionPromptMock.mock.calls).toHaveLength(1);
+    expect(publishSessionPromptMock.mock.calls[0]?.[0]).toBe(`${downstream.task.id}-work`);
+  });
+
+  it("removing the last dependency makes the task ready again without dispatching it", async () => {
+    const upstream = dbCreateTask({
+      title: "Removable upstream",
+      instructions: "Gates a downstream until removed",
+      createdBy: "test",
+    });
+    const downstream = dbCreateTask({
+      title: "Dependency removal downstream",
+      instructions: "Should become ready after dependency removal",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id, downstream.task.id);
+
+    await addTaskDependency(downstream.task.id, upstream.task.id);
+
+    const removed = await removeTaskDependency(downstream.task.id, upstream.task.id);
+    expect(removed.readiness).toMatchObject({
+      state: "ready",
+      dependencyCount: 0,
+      unsatisfiedDependencyCount: 0,
+      hasLaunchPlan: false,
+    });
+    expect(removed.relatedEvents).toEqual([
+      expect.objectContaining({
+        task: expect.objectContaining({ id: downstream.task.id }),
+        event: expect.objectContaining({ type: "task.ready" }),
+      }),
+    ]);
+
+    const downstreamDetails = getTaskDetails(downstream.task.id);
+    expect(downstreamDetails.task).toMatchObject({
+      id: downstream.task.id,
+      status: "open",
+    });
+    expect(downstreamDetails.activeAssignment).toBeNull();
+    expect(downstreamDetails.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["task.dependency.added", "task.dependency.removed", "task.ready"]),
+    );
+  });
+
   it("treats accepted bootstrap work as in-progress in task stream read models", () => {
     const created = createTask({
       title: "Accepted bootstrap snapshot",
@@ -569,7 +884,7 @@ describe("task substrate contract", () => {
     expect(restored.task.archivedAt).toBeUndefined();
   });
 
-  it("preserves explicit report configuration in terminal event payloads", () => {
+  it("preserves explicit report configuration in terminal event payloads", async () => {
     const created = dbCreateTask({
       title: "Dispatcher notify smoke",
       instructions: "The report target should stay explicit after the task completes",
@@ -589,7 +904,7 @@ describe("task substrate contract", () => {
       assignedBySessionName: "dispatcher-session",
     });
 
-    const completed = completeTask(created.task.id, {
+    const completed = await completeTask(created.task.id, {
       actor: `${created.task.id}-work`,
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
@@ -632,7 +947,7 @@ describe("task substrate contract", () => {
       profileSnapshot,
     });
     createdTaskIds.push(doneCreated.task.id);
-    const doneResult = completeTask(doneCreated.task.id, {
+    const doneResult = await completeTask(doneCreated.task.id, {
       actor: "worker",
       sessionName: `${doneCreated.task.id}-work`,
       message: "entregue",
@@ -711,7 +1026,7 @@ describe("task substrate contract", () => {
     });
     createdTaskIds.push(created.task.id);
 
-    const result = completeTask(created.task.id, {
+    const result = await completeTask(created.task.id, {
       actor: "worker",
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
@@ -1476,7 +1791,7 @@ describe("task substrate contract", () => {
     });
   });
 
-  it("records terminal child callbacks on the parent runtime and TASK.md", () => {
+  it("records terminal child callbacks on the parent runtime and TASK.md", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-lineage-"));
     tempStateDirs.push(stateDir);
     process.env.RAVI_STATE_DIR = stateDir;
@@ -1500,7 +1815,7 @@ describe("task substrate contract", () => {
       assignedBy: "test",
     });
 
-    const completed = completeTask(child.task.id, {
+    const completed = await completeTask(child.task.id, {
       actor: "test",
       agentId: "dev",
       sessionName: `${child.task.id}-work`,

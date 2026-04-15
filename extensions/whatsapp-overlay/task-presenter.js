@@ -64,6 +64,61 @@
     };
   }
 
+  function toFiniteCount(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric >= 0 ? Math.floor(numeric) : null;
+  }
+
+  function getTaskDependencyEntries(task) {
+    return Array.isArray(task?.dependencies) ? task.dependencies : [];
+  }
+
+  function getTaskReadinessState(task) {
+    const dependencies = getTaskDependencyEntries(task);
+    const explicitReadiness =
+      task?.readiness && typeof task.readiness === "object" ? task.readiness : null;
+    const totalCount =
+      toFiniteCount(explicitReadiness?.dependencyCount) ??
+      dependencies.length;
+    const satisfiedCount =
+      toFiniteCount(explicitReadiness?.satisfiedDependencyCount) ??
+      dependencies.filter((dependency) => dependency?.satisfied === true).length;
+    const pendingCount =
+      toFiniteCount(explicitReadiness?.unsatisfiedDependencyCount) ??
+      Math.max(0, totalCount - satisfiedCount);
+    const explicitState = explicitReadiness?.state;
+    const status = explicitState === "waiting" || pendingCount > 0 ? "waiting" : "ready";
+
+    return {
+      status,
+      totalCount,
+      satisfiedCount,
+      pendingCount,
+      hasLaunchPlan: explicitReadiness?.hasLaunchPlan === true || Boolean(task?.launchPlan),
+      label:
+        typeof explicitReadiness?.label === "string" && explicitReadiness.label.trim()
+          ? explicitReadiness.label.trim()
+          : null,
+    };
+  }
+
+  function getTaskKanbanSurfaceStatus(task) {
+    const status = task?.visualStatus || task?.status || "open";
+    if (status === "waiting") {
+      return "waiting";
+    }
+    if (status === "open") {
+      return getTaskReadinessState(task).status === "waiting" ? "waiting" : "ready";
+    }
+    if (status === "dispatched") {
+      return "queued";
+    }
+    if (status === "in_progress") {
+      return "working";
+    }
+    return status;
+  }
+
   function compareRowOrder(left, right) {
     const leftOrder = Number(left?.order);
     const rightOrder = Number(right?.order);
@@ -149,6 +204,8 @@
   root.RaviWaOverlayTaskPresenter = {
     clampTaskProgressValue,
     getTaskVisualProgressState,
+    getTaskReadinessState,
+    getTaskKanbanSurfaceStatus,
     pickTaskGroupPrimaryRow,
     sortTaskTreeByRecency,
   };

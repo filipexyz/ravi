@@ -56,6 +56,7 @@ export function buildOverlayTaskDispatchState(
   const defaultAgentId =
     cleanDispatchValue(task.assigneeAgentId) ??
     cleanDispatchValue(selection?.activeAssignment?.agentId) ??
+    cleanDispatchValue(task.launchPlan?.agentId) ??
     cleanDispatchValue(matchingSession?.agentId) ??
     cleanDispatchValue(options.actorAgentId) ??
     cleanDispatchValue(task.createdByAgentId) ??
@@ -63,6 +64,7 @@ export function buildOverlayTaskDispatchState(
     null;
   const defaultReportToSessionName =
     cleanDispatchValue(selection?.activeAssignment?.reportToSessionName) ??
+    cleanDispatchValue(task.launchPlan?.reportToSessionName) ??
     cleanDispatchValue(task.reportToSessionName) ??
     cleanDispatchValue(options.actorSessionName) ??
     cleanDispatchValue(task.createdBySessionName) ??
@@ -87,7 +89,7 @@ export function buildOverlayTaskDispatchState(
       defaultReportToSessionName,
     };
   }
-  if (selection?.activeAssignment || task.assigneeAgentId || task.assigneeSessionName) {
+  if (selection?.activeAssignment || task.assigneeAgentId || task.assigneeSessionName || task.launchPlan) {
     return {
       allowed: false,
       reason: "assigned",

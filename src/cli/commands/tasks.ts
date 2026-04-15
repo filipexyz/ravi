@@ -13,16 +13,18 @@ import {
   commentTask,
   createTask,
   createTaskWorktreeConfig,
-  dispatchTask,
+  deriveTaskVisualStatus,
   emitTaskEvent,
   deriveTaskReadStatus,
   formatTaskWorktree,
+  getTaskDependencySurface,
   getTaskDocPath,
   getTaskActor,
   getTaskDetails,
   listTasks,
   normalizeTaskProgressMessage,
   getDefaultTaskSessionNameForTask,
+  queueOrDispatchTask,
   requireTaskRuntimeAgent,
   readTaskDocFrontmatter,
   resolveTaskProfile,
@@ -39,8 +41,10 @@ import type {
   TaskAssignment,
   TaskArchiveMode,
   TaskComment,
+  TaskDependencyEdge,
   TaskEvent,
   TaskPriority,
+  TaskReadiness,
   TaskRecord,
   TaskReportEvent,
   TaskStatus,
@@ -52,8 +56,10 @@ const TASK_WATCH_RECONNECT_DELAY_MS = 1000;
 const DEFAULT_TASK_LIST_LAST = 30;
 const DEFAULT_TASK_SHOW_LAST = 12;
 
-function formatTaskStatus(status: TaskStatus): string {
+function formatTaskStatus(status: TaskStatus | "waiting"): string {
   switch (status) {
+    case "waiting":
+      return "waiting";
     case "open":
       return "open";
     case "dispatched":
@@ -195,6 +201,43 @@ function parseProfileInputs(raw?: string[] | string): Record<string, string> | u
   return resolved;
 }
 
+function parseTaskIds(raw?: string[] | string): string[] | undefined {
+  const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  if (values.length === 0) {
+    return undefined;
+  }
+
+  const resolved = [
+    ...new Set(
+      values
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return resolved.length > 0 ? resolved : undefined;
+}
+
+function parseDependsOn(raw?: string[] | string): string[] | undefined {
+  return parseTaskIds(raw);
+}
+
+function normalizeLegacyCreateTail(
+  profileInputRaw?: string[] | string | boolean,
+  asJson?: boolean,
+): { profileInputRaw?: string[] | string; asJson?: boolean } {
+  if (typeof profileInputRaw === "boolean" && asJson === undefined) {
+    return {
+      asJson: profileInputRaw,
+    };
+  }
+
+  return {
+    profileInputRaw: profileInputRaw as string[] | string | undefined,
+    asJson,
+  };
+}
+
 function formatTaskReportEvents(events?: readonly TaskReportEvent[] | null): string {
   const normalized = Array.isArray(events) && events.length > 0 ? events : ["done"];
   return normalized.join(",");
@@ -283,12 +326,44 @@ function describeTaskWorkspace(profile: ReturnType<typeof resolveTaskProfile>): 
   }
 }
 
+function formatReadiness(readiness: TaskReadiness): string {
+  if (readiness.state === "waiting") {
+    return `${readiness.label}${readiness.hasLaunchPlan ? " :: launch plan armed" : ""}`;
+  }
+  return readiness.label;
+}
+
+function formatLaunchPlanSummary(
+  launchPlan:
+    | {
+        agentId: string;
+        sessionName: string;
+      }
+    | null
+    | undefined,
+): string {
+  if (!launchPlan) {
+    return "-";
+  }
+  return `${launchPlan.agentId}/${launchPlan.sessionName}`;
+}
+
+function formatDependencyEdge(edge: TaskDependencyEdge): string {
+  const status = formatTaskStatus(edge.relatedTaskStatus);
+  const satisfaction = edge.satisfied ? `done @ ${formatTime(edge.satisfiedAt)}` : "pending";
+  return `${edge.relatedTaskId} :: ${status} :: ${edge.relatedTaskProgress}% :: ${satisfaction} :: ${edge.relatedTaskTitle}`;
+}
+
 function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | null): void {
   const taskProfile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task, activeAssignment);
+  const dependencySurface = getTaskDependencySurface(task, activeAssignment);
+  const visualStatus = deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment);
   console.log(`\nTask:        ${task.id}`);
   console.log(`Title:       ${task.title}`);
-  console.log(`Status:      ${formatTaskStatus(deriveTaskReadStatus(task, activeAssignment))}`);
+  console.log(`Status:      ${formatTaskStatus(visualStatus)}`);
+  console.log(`Lifecycle:   ${formatTaskStatus(deriveTaskReadStatus(task, activeAssignment))}`);
+  console.log(`Readiness:   ${formatReadiness(dependencySurface.readiness)}`);
   console.log(`Priority:    ${task.priority}`);
   console.log(`Progress:    ${task.progress}%`);
   console.log(`Profile:     ${taskProfile.id}@${taskProfile.version}`);
@@ -305,6 +380,7 @@ function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | 
   console.log(`Checkpoint:  ${formatDurationMs(resolveTaskCheckpointIntervalMs(task.checkpointIntervalMs))}`);
   console.log(`Report to:   ${task.reportToSessionName ?? "-"}`);
   console.log(`Report on:   ${formatTaskReportEvents(task.reportEvents)}`);
+  console.log(`Launch plan: ${formatLaunchPlanSummary(dependencySurface.launchPlan)}`);
   if (task.parentTaskId) console.log(`Parent:      ${task.parentTaskId}`);
   console.log(`Agent:       ${task.assigneeAgentId ?? "-"}`);
   console.log(`Session:     ${task.assigneeSessionName ?? "-"}`);
@@ -383,10 +459,11 @@ function shouldPrintArtifactSection(
 function buildTaskLineageNode(task: TaskRecord) {
   const taskProfile = resolveTaskProfileForTask(task);
   const taskArtifacts = buildTaskArtifactSummary(task);
+  const dependencySurface = getTaskDependencySurface(task);
   return {
     id: task.id,
     title: task.title,
-    status: task.status,
+    status: deriveTaskVisualStatus(task, dependencySurface.readiness),
     progress: task.progress,
     profileId: taskProfile.id,
     assigneeAgentId: task.assigneeAgentId ?? null,
@@ -420,6 +497,7 @@ async function emitMutationEvents(result: {
 function printNextSteps(task: TaskRecord): void {
   const taskProfile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task);
+  const dependencySurface = getTaskDependencySurface(task);
   console.log("\nNext:");
   if (task.archivedAt) {
     console.log(`  ravi tasks unarchive ${task.id}`);
@@ -430,6 +508,25 @@ function printNextSteps(task: TaskRecord): void {
   }
 
   if (task.status === "open") {
+    if (dependencySurface.readiness.state === "waiting") {
+      console.log(`  ravi tasks show ${task.id}`);
+      if (dependencySurface.dependencies.length > 0) {
+        console.log(
+          `  upstreams pendentes: ${dependencySurface.dependencies
+            .filter((edge) => !edge.satisfied)
+            .map((edge) => edge.relatedTaskId)
+            .join(", ")}`,
+        );
+      }
+      if (dependencySurface.launchPlan) {
+        console.log(
+          `  waiting for upstreams; auto-dispatch armed to ${formatLaunchPlanSummary(dependencySurface.launchPlan)}.`,
+        );
+      } else {
+        console.log("  waiting for upstreams; remove deps or finish the upstream tasks before dispatching.");
+      }
+      return;
+    }
     const primaryArtifactPath = artifacts.primary ? formatArtifactDisplayPath(artifacts.primary) : null;
     if (primaryArtifactPath) {
       console.log(`  1. abrir ${primaryArtifactPath}`);
@@ -473,7 +570,12 @@ function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): st
     typeof event.actor === "string" ? event.actor : typeof event.agentId === "string" ? event.agentId : "cli";
   const message = typeof event.message === "string" ? event.message : "";
   const taskId = typeof payload.taskId === "string" ? payload.taskId : "task";
-  const status = typeof payload.status === "string" ? payload.status : "unknown";
+  const status =
+    typeof payload.visualStatus === "string"
+      ? payload.visualStatus
+      : typeof payload.status === "string"
+        ? payload.status
+        : "unknown";
   const profileId = typeof payload.profileId === "string" ? payload.profileId : null;
   const primaryArtifact = (
     (payload.artifacts as
@@ -501,12 +603,14 @@ function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): st
       | null
       | undefined) ?? null,
   );
+  const readiness = (payload.readiness as { label?: string | null } | null | undefined) ?? null;
   const profileSuffix = profileId && profileId !== "default" ? ` :: profile ${profileId}` : "";
   const artifactSuffix =
     primaryArtifact && primaryArtifact.kind && primaryArtifact.kind !== "task-doc"
       ? ` :: ${primaryArtifact.label ?? primaryArtifact.kind} ${formatArtifactDisplayPath(primaryArtifact)}`
       : "";
-  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}${profileSuffix}${artifactSuffix}${checkpoint !== "-" ? ` :: ${checkpoint}` : ""}`;
+  const readinessSuffix = readiness?.label ? ` :: readiness ${readiness.label}` : "";
+  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}${profileSuffix}${artifactSuffix}${readinessSuffix}${checkpoint !== "-" ? ` :: ${checkpoint}` : ""}`;
 }
 
 function deriveWatchStatus(event: TaskEvent, fallback?: TaskStatus): TaskStatus {
@@ -536,13 +640,18 @@ function buildWatchPayload(
 ): Record<string, unknown> {
   const taskProfile = task ? resolveTaskProfileForTask(task) : null;
   const artifacts = task ? buildTaskArtifactSummary(task, activeAssignment) : null;
+  const dependencySurface = task ? getTaskDependencySurface(task, activeAssignment) : null;
   return {
     taskId,
     status: deriveWatchStatus(event, task?.status),
+    visualStatus:
+      task && dependencySurface ? deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment) : null,
     progress: typeof event.progress === "number" ? event.progress : (task?.progress ?? 0),
     profileId: taskProfile?.id ?? resolveTaskProfile(undefined).id,
     taskProfile,
     artifacts,
+    readiness: dependencySurface?.readiness ?? null,
+    launchPlan: dependencySurface?.launchPlan ?? null,
     activeAssignment: activeAssignment ?? null,
     event,
   };
@@ -575,7 +684,10 @@ function sleep(ms: number): Promise<void> {
   scope: "open",
 })
 export class TaskCommands {
-  @Command({ name: "create", description: "Create a tracked task; --agent/--assignee auto-dispatches immediately" })
+  @Command({
+    name: "create",
+    description: "Create a tracked task; unresolved dependencies arm launch plans instead of dispatching early",
+  })
   async create(
     @Arg("title", { description: "Short task title" }) title: string,
     @Option({ flags: "--instructions <text>", description: "Detailed instructions for the task" })
@@ -598,6 +710,11 @@ export class TaskCommands {
     worktreeBranch?: string,
     @Option({ flags: "--parent <task-id>", description: "Create this task as a child of another task" })
     parentTaskId?: string,
+    @Option({
+      flags: "--depends-on <task-id...>",
+      description: "Gate this task on upstream tasks; repeat or pass multiple ids",
+    })
+    dependsOnRaw?: string[] | string,
     @Option({ flags: "--checkpoint <duration>", description: "Assignment checkpoint interval (e.g. 5m, 30s, 1h)" })
     checkpoint?: string,
     @Option({ flags: "--report-to <session>", description: "Session to receive explicit task reports" })
@@ -625,15 +742,21 @@ export class TaskCommands {
     }
 
     const worktree = requireTaskWorktree(worktreeMode, worktreePath, worktreeBranch);
+    const normalizedTail = normalizeLegacyCreateTail(
+      profileInputRaw as string[] | string | boolean | undefined,
+      asJson,
+    );
+    const dependsOnTaskIds = parseDependsOn(dependsOnRaw);
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
-    const profileInput = parseProfileInputs(profileInputRaw);
+    const profileInput = parseProfileInputs(normalizedTail.profileInputRaw);
     const actor = getTaskActor();
-    const created = createTask({
+    const created = await createTask({
       title: title.trim(),
       instructions: instructions.trim(),
       priority: requirePriority(priority),
       ...(profileId?.trim() ? { profileId: profileId.trim() } : {}),
+      ...(dependsOnTaskIds ? { dependsOnTaskIds } : {}),
       ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
       ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
       ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
@@ -647,9 +770,9 @@ export class TaskCommands {
     await emitMutationEvents(created);
 
     let task = created.task;
-    let dispatched: Awaited<ReturnType<typeof dispatchTask>> | null = null;
+    let launchResult: Awaited<ReturnType<typeof queueOrDispatchTask>> | null = null;
     if (assigneeAgentId) {
-      dispatched = await dispatchTask(created.task.id, {
+      launchResult = await queueOrDispatchTask(created.task.id, {
         agentId: assigneeAgentId,
         sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(created.task),
         assignedBy: actor.actor,
@@ -658,25 +781,39 @@ export class TaskCommands {
         ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
         ...(worktree ? { worktree } : {}),
       });
-      await emitMutationEvents(dispatched);
-      task = dispatched.task;
+      await emitMutationEvents(launchResult);
+      task = launchResult.task;
     }
 
-    if (asJson) {
+    if (normalizedTail.asJson) {
+      const dependencySurface = getTaskDependencySurface(task);
       console.log(
         JSON.stringify(
           {
             task,
             taskProfile: resolveTaskProfileForTask(task),
             event: created.event,
+            relatedEvents: created.relatedEvents,
             parentTaskId: task.parentTaskId ?? null,
-            ...(dispatched
+            readiness: dependencySurface.readiness,
+            dependencies: dependencySurface.dependencies,
+            dependents: dependencySurface.dependents,
+            launchPlan: dependencySurface.launchPlan,
+            ...(launchResult
               ? {
-                  dispatch: {
-                    assignment: dispatched.assignment,
-                    event: dispatched.event,
-                    sessionName: dispatched.sessionName,
-                  },
+                  action:
+                    launchResult.mode === "dispatched"
+                      ? {
+                          type: "dispatch",
+                          assignment: launchResult.assignment,
+                          event: launchResult.event,
+                          sessionName: launchResult.sessionName,
+                        }
+                      : {
+                          type: "launch_plan",
+                          launchPlan: launchResult.launchPlan,
+                          event: launchResult.event,
+                        },
                 }
               : {}),
           },
@@ -687,7 +824,12 @@ export class TaskCommands {
       return;
     }
 
-    console.log(`\n✓ ${dispatched ? "Created and dispatched" : "Created"} task ${task.id}`);
+    const headline = !launchResult
+      ? "Created"
+      : launchResult.mode === "dispatched"
+        ? "Created and dispatched"
+        : "Created with launch plan";
+    console.log(`\n✓ ${headline} task ${task.id}`);
     printTaskSummary(task);
     printNextSteps(task);
   }
@@ -734,6 +876,16 @@ export class TaskCommands {
       ...(typeof lastLimit === "number" ? { limit: lastLimit } : {}),
       archiveMode,
     });
+    const surfacedTasks = tasks.map((task) => {
+      const activeAssignment = task.status === "dispatched" ? getTaskDetails(task.id).activeAssignment : null;
+      const dependencySurface = getTaskDependencySurface(task, activeAssignment);
+      return {
+        task,
+        activeAssignment,
+        dependencySurface,
+        visualStatus: deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment),
+      };
+    });
 
     if (asJson) {
       console.log(
@@ -742,7 +894,14 @@ export class TaskCommands {
             total: tasks.length,
             archiveMode,
             limit: lastLimit ?? null,
-            tasks,
+            tasks: surfacedTasks.map((item) => ({
+              ...item.task,
+              visualStatus: item.visualStatus,
+              readiness: item.dependencySurface.readiness,
+              dependencyCount: item.dependencySurface.readiness.dependencyCount,
+              unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
+              launchPlan: item.dependencySurface.launchPlan,
+            })),
           },
           null,
           2,
@@ -763,23 +922,30 @@ export class TaskCommands {
     console.log(`\nTasks (${tasks.length}${limitSummary})\n`);
     const showArchiveColumn = archiveMode !== "exclude";
     if (showArchiveColumn) {
-      console.log("  ID              STATUS      PROGRESS  PRIORITY  ARCHIVE   AGENT        UPDATED      TITLE");
       console.log(
-        "  --------------  ----------  --------  --------  --------  -----------  ----------  ------------------------------",
+        "  ID              STATUS      READY        DEPS   PRIORITY  ARCHIVE   AGENT        UPDATED      TITLE",
+      );
+      console.log(
+        "  --------------  ----------  -----------  -----  --------  --------  -----------  ----------  ------------------------------",
       );
     } else {
-      console.log("  ID              STATUS      PROGRESS  PRIORITY  AGENT        UPDATED      TITLE");
+      console.log("  ID              STATUS      READY        DEPS   PRIORITY  AGENT        UPDATED      TITLE");
       console.log(
-        "  --------------  ----------  --------  --------  -----------  ----------  ------------------------------",
+        "  --------------  ----------  -----------  -----  --------  -----------  ----------  ------------------------------",
       );
     }
-    for (const task of tasks) {
-      const visualStatus =
-        task.status === "dispatched"
-          ? deriveTaskReadStatus(task, getTaskDetails(task.id).activeAssignment)
-          : task.status;
+    for (const item of surfacedTasks) {
+      const { task, dependencySurface, visualStatus } = item;
       const archiveLabel = task.archivedAt ? "yes" : "-";
-      const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(visualStatus).padEnd(10)}  ${`${task.progress}%`.padEnd(8)}  ${task.priority.padEnd(8)}`;
+      const readinessLabel =
+        dependencySurface.readiness.state === "waiting"
+          ? `${dependencySurface.readiness.unsatisfiedDependencyCount} pending`
+          : dependencySurface.readiness.state === "ready"
+            ? dependencySurface.launchPlan
+              ? "auto-dispatch"
+              : "ready"
+            : dependencySurface.readiness.state;
+      const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(visualStatus).padEnd(10)}  ${readinessLabel.padEnd(11)}  ${`${dependencySurface.readiness.satisfiedDependencyCount}/${dependencySurface.readiness.dependencyCount}`.padEnd(5)}  ${task.priority.padEnd(8)}`;
       if (showArchiveColumn) {
         console.log(
           `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
@@ -811,6 +977,7 @@ export class TaskCommands {
       fail(`Task not found: ${taskId}`);
     }
     const taskArtifacts = buildTaskArtifactSummary(details.task, details.activeAssignment);
+    const dependencySurface = getTaskDependencySurface(details.task, details.activeAssignment);
     const historyLimit = parseLastLimit(last, DEFAULT_TASK_SHOW_LAST);
     const recentEvents = sliceLastEntries(details.events, historyLimit);
     const recentComments = sliceLastEntries(details.comments, historyLimit);
@@ -829,6 +996,10 @@ export class TaskCommands {
             taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
             taskArtifacts,
             primaryArtifact: taskArtifacts.primary,
+            readiness: dependencySurface.readiness,
+            dependencies: dependencySurface.dependencies,
+            dependents: dependencySurface.dependents,
+            launchPlan: dependencySurface.launchPlan,
           },
           null,
           2,
@@ -938,16 +1109,38 @@ export class TaskCommands {
       console.log(`  Overdue:     ${details.activeAssignment.checkpointOverdueCount ?? 0}`);
     }
 
+    console.log("\nScheduling:");
+    console.log(`  Readiness:   ${formatReadiness(dependencySurface.readiness)}`);
+    console.log(`  Launch plan: ${formatLaunchPlanSummary(dependencySurface.launchPlan)}`);
+
+    if (dependencySurface.dependencies.length > 0) {
+      console.log("\nDependencies (gating):");
+      for (const dependency of dependencySurface.dependencies) {
+        console.log(`  - ${formatDependencyEdge(dependency)}`);
+      }
+    } else {
+      console.log("\nDependencies (gating):");
+      console.log("  - none");
+    }
+
+    if (dependencySurface.dependents.length > 0) {
+      console.log("\nDependents:");
+      for (const dependent of dependencySurface.dependents) {
+        console.log(`  - ${formatDependencyEdge(dependent)}`);
+      }
+    }
+
     if (details.parentTask) {
       const parentTask = buildTaskLineageNode(details.parentTask);
-      console.log("\nParent task:");
+      console.log("\nLineage:");
+      console.log("  Parent:");
       console.log(
         `  ${parentTask.id} :: ${formatTaskStatus(parentTask.status)} :: ${parentTask.assigneeAgentId ?? "-"} :: ${parentTask.assigneeSessionName ?? "-"} :: ${formatArtifactDisplayPath(parentTask.primaryArtifact)}`,
       );
     }
 
     if (details.childTasks.length > 0) {
-      console.log("\nChild tasks:");
+      console.log(details.parentTask ? "  Children:" : "\nLineage:");
       for (const childTask of details.childTasks.map(buildTaskLineageNode)) {
         console.log(
           `  - ${childTask.id} :: ${formatTaskStatus(childTask.status)} :: ${childTask.assigneeAgentId ?? "-"} :: ${childTask.assigneeSessionName ?? "-"} :: ${formatArtifactDisplayPath(childTask.primaryArtifact)}`,
@@ -1061,7 +1254,10 @@ export class TaskCommands {
     console.log(`✓ Task ${taskId} ${result.wasNoop ? "already visible" : "unarchived"}`);
   }
 
-  @Command({ name: "dispatch", description: "Dispatch a task to an agent session" })
+  @Command({
+    name: "dispatch",
+    description: "Dispatch a task now, or arm a launch plan if dependencies still gate start",
+  })
   async dispatch(
     @Arg("taskId", { description: "Task ID" }) taskId: string,
     @Option({ flags: "--agent <id>", description: "Agent ID to receive the task" }) agentId?: string,
@@ -1078,6 +1274,12 @@ export class TaskCommands {
     if (!agentId?.trim()) {
       fail("--agent is required");
     }
+    const normalizedAgentId = agentId.trim();
+    try {
+      requireTaskRuntimeAgent(normalizedAgentId);
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
 
     const details = getTaskDetails(taskId);
     if (!details.task) {
@@ -1087,8 +1289,8 @@ export class TaskCommands {
     const actor = getTaskActor();
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
-    const result = await dispatchTask(taskId, {
-      agentId: agentId.trim(),
+    const result = await queueOrDispatchTask(taskId, {
+      agentId: normalizedAgentId,
       sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task),
       assignedBy: actor.actor,
       ...(actor.agentId ? { assignedByAgentId: actor.agentId } : {}),
@@ -1101,6 +1303,16 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    if (result.mode === "launch_planned") {
+      console.log(`\n✓ Launch plan armed for ${taskId}`);
+      console.log(`  Agent:      ${result.launchPlan.agentId}`);
+      console.log(`  Session:    ${result.launchPlan.sessionName}`);
+      console.log(`  Readiness:  ${formatReadiness(result.readiness)}`);
+      console.log(`  Missing:    ${result.readiness.unsatisfiedDependencyIds.join(", ")}`);
+      console.log(`  Inspect:    ravi tasks show ${taskId}`);
       return;
     }
 
@@ -1197,7 +1409,7 @@ export class TaskCommands {
     }
 
     const actor = getTaskActor();
-    const result = completeTask(taskId, {
+    const result = await completeTask(taskId, {
       ...actor,
       message: finalSummary,
     });

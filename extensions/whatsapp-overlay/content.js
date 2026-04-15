@@ -47,12 +47,13 @@ const WORKSPACE_NAV_ITEMS = [
   { id: "tasks", label: "Tasks", glyph: "T" },
 ];
 const TASK_KANBAN_COLUMNS = [
-  { id: "open", label: "open", statuses: ["open"] },
-  { id: "queued", label: "queued", statuses: ["dispatched"] },
-  { id: "working", label: "working", statuses: ["in_progress"] },
-  { id: "blocked", label: "blocked", statuses: ["blocked"] },
-  { id: "done", label: "done", statuses: ["done"] },
-  { id: "failed", label: "failed", statuses: ["failed"] },
+  { id: "waiting", label: "waiting" },
+  { id: "ready", label: "ready" },
+  { id: "queued", label: "queued" },
+  { id: "working", label: "working" },
+  { id: "blocked", label: "blocked" },
+  { id: "done", label: "done" },
+  { id: "failed", label: "failed" },
 ];
 const NATIVE_SIDEBAR_SEARCH_SELECTOR =
   "input[role='textbox'][aria-label*='Pesquisar ou começar'], input[placeholder*='Pesquisar ou começar'], input[role='textbox'][aria-label*='Search'], input[placeholder*='Search']";
@@ -6107,6 +6108,10 @@ function getTaskRootTaskId(taskId, hierarchyState) {
 
 function taskStatusClass(status) {
   switch (status) {
+    case "ready":
+      return "ready";
+    case "waiting":
+      return "waiting";
     case "dispatched":
       return "thinking";
     case "in_progress":
@@ -6124,6 +6129,10 @@ function taskStatusClass(status) {
 
 function taskStatusLabel(status) {
   switch (status) {
+    case "ready":
+      return "ready";
+    case "waiting":
+      return "waiting";
     case "in_progress":
       return "working";
     case "dispatched":
@@ -6133,11 +6142,125 @@ function taskStatusLabel(status) {
   }
 }
 
+function getTaskReadinessState(task) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.getTaskReadinessState;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(task);
+  }
+
+  const readiness =
+    task?.readiness && typeof task.readiness === "object" ? task.readiness : null;
+  const dependencies = Array.isArray(task?.dependencies) ? task.dependencies : [];
+  const totalCount =
+    Number.isFinite(Number(readiness?.dependencyCount))
+      ? Math.max(0, Math.floor(Number(readiness.dependencyCount)))
+      : dependencies.length;
+  const satisfiedCount =
+    Number.isFinite(Number(readiness?.satisfiedDependencyCount))
+      ? Math.max(0, Math.floor(Number(readiness.satisfiedDependencyCount)))
+      : dependencies.filter((dependency) => dependency?.satisfied === true).length;
+  const pendingCount =
+    Number.isFinite(Number(readiness?.unsatisfiedDependencyCount))
+      ? Math.max(0, Math.floor(Number(readiness.unsatisfiedDependencyCount)))
+      : Math.max(0, totalCount - satisfiedCount);
+
+  return {
+    status: readiness?.state === "waiting" || pendingCount > 0 ? "waiting" : "ready",
+    totalCount,
+    satisfiedCount,
+    pendingCount,
+    hasLaunchPlan: readiness?.hasLaunchPlan === true || Boolean(task?.launchPlan),
+    label:
+      typeof readiness?.label === "string" && readiness.label.trim()
+        ? readiness.label.trim()
+        : null,
+  };
+}
+
+function getTaskKanbanSurfaceStatus(task) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.getTaskKanbanSurfaceStatus;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(task);
+  }
+
+  const visualStatus = task?.visualStatus || task?.status || "open";
+  if (visualStatus === "waiting") return "waiting";
+  if (visualStatus === "open") {
+    return getTaskReadinessState(task).status === "waiting" ? "waiting" : "ready";
+  }
+  if (visualStatus === "dispatched") return "queued";
+  if (visualStatus === "in_progress") return "working";
+  return visualStatus;
+}
+
+function taskSurfaceClass(status) {
+  switch (status) {
+    case "waiting":
+      return "waiting";
+    case "ready":
+      return "ready";
+    case "queued":
+      return "thinking";
+    case "working":
+      return "streaming";
+    case "blocked":
+      return "blocked";
+    case "done":
+      return "done";
+    case "failed":
+      return "failed";
+    default:
+      return "idle";
+  }
+}
+
+function taskSurfaceLabel(status) {
+  switch (status) {
+    case "waiting":
+      return "waiting";
+    case "ready":
+      return "ready";
+    default:
+      return status || "ready";
+  }
+}
+
+function formatTaskDependencyCompactValue(task) {
+  const readiness = getTaskReadinessState(task);
+  if (!readiness.totalCount) return null;
+  return `${readiness.satisfiedCount}/${readiness.totalCount}`;
+}
+
+function describeTaskDependencyWaiting(task) {
+  const readiness = getTaskReadinessState(task);
+  if (readiness.pendingCount <= 0) return null;
+
+  const pendingLabel =
+    readiness.pendingCount === 1
+      ? "1 dependency"
+      : `${readiness.pendingCount} dependencies`;
+  const satisfiedLabel = readiness.totalCount
+    ? `${readiness.satisfiedCount}/${readiness.totalCount} satisfied`
+    : null;
+
+  return [
+    `waiting on ${pendingLabel}`,
+    satisfiedLabel,
+    readiness.hasLaunchPlan ? "launch armed" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 function formatTaskElapsed(task) {
   const duration = formatTaskDurationValue(task);
   if (duration) return duration;
 
   switch (task?.status) {
+    case "waiting":
+      return "em espera";
     case "dispatched":
       return "na fila";
     case "open":
@@ -6319,8 +6442,22 @@ function describeTaskProgressState(task, node = null) {
   const progressState = getTaskVisualProgressState(task, node);
   const progress = progressState.progress;
   const progressLabel = `${progress}%`;
+  const readiness = getTaskReadinessState(task);
   if (progressState.source === "children" && progressState.childCount > 0) {
     return `agregado de ${progressState.childCount} ${progressState.childCount === 1 ? "subtask" : "subtasks"} em ${progressLabel}.`;
+  }
+
+  if (getTaskKanbanSurfaceStatus(task) === "waiting") {
+    return (
+      describeTaskDependencyWaiting(task) ||
+      "waiting on dependencies before the first work report."
+    );
+  }
+
+  if (task?.status === "open" && readiness.totalCount > 0) {
+    return readiness.hasLaunchPlan
+      ? "dependencies satisfied; launch plan is armed."
+      : "dependencies satisfied; ready to start.";
   }
 
   switch (task?.status) {
@@ -6362,6 +6499,15 @@ function describeTaskProgressText(task, events, options = {}) {
   if (progressState.source === "children" && progressState.childCount > 0) {
     return {
       text: `agregado de ${progressState.childCount} ${progressState.childCount === 1 ? "subtask" : "subtasks"} em ${formatTaskProgressLabel(progressState.progress)}.`,
+      fallback: true,
+    };
+  }
+
+  if (getTaskKanbanSurfaceStatus(task) === "waiting") {
+    return {
+      text:
+        describeTaskDependencyWaiting(task) ||
+        "waiting on dependencies before work can start.",
       fallback: true,
     };
   }
@@ -6711,24 +6857,25 @@ function renderTasksDailyActivityCard(activity) {
   `;
 }
 
+function buildTaskKanbanColumnStats(items) {
+  const counts = Object.fromEntries(
+    TASK_KANBAN_COLUMNS.map((column) => [column.id, 0]),
+  );
+
+  (Array.isArray(items) ? items : []).forEach((task) => {
+    const surfaceStatus = getTaskKanbanSurfaceStatus(task);
+    if (!Object.hasOwn(counts, surfaceStatus)) {
+      counts[surfaceStatus] = 0;
+    }
+    counts[surfaceStatus] += 1;
+  });
+
+  return counts;
+}
+
 function getTaskColumnStatValue(column, stats) {
-  if (!stats || !column) return 0;
-  switch (column.id) {
-    case "open":
-      return Number(stats.open) || 0;
-    case "queued":
-      return Number(stats.dispatched) || 0;
-    case "working":
-      return Number(stats.inProgress) || 0;
-    case "blocked":
-      return Number(stats.blocked) || 0;
-    case "done":
-      return Number(stats.done) || 0;
-    case "failed":
-      return Number(stats.failed) || 0;
-    default:
-      return 0;
-  }
+  if (!column) return 0;
+  return Number(stats?.[column.id]) || 0;
 }
 
 function renderTaskOverviewStat({ label, value, note, tone = null }) {
@@ -6743,9 +6890,7 @@ function renderTaskOverviewStat({ label, value, note, tone = null }) {
 
 function renderTaskStatusCounter(column, stats) {
   const count = getTaskColumnStatValue(column, stats);
-  const statusClass = taskStatusClass(
-    Array.isArray(column?.statuses) ? column.statuses[0] : null,
-  );
+  const statusClass = taskSurfaceClass(column?.id || null);
   return `
     <span class="ravi-wa-task-counter ravi-wa-task-counter--${statusClass}">
       <span class="ravi-wa-task-counter__label">${escapeHtml(column?.label || "status")}</span>
@@ -6769,6 +6914,10 @@ function buildTaskAssigneeLabel(task, activeAssignment = null) {
 
 function describeTaskStatus(status, signal = null, assigneeLabel = null) {
   switch (status) {
+    case "ready":
+      return "ready in runtime";
+    case "waiting":
+      return signal || "waiting on upstreams before launch";
     case "open":
       return "ready in runtime, awaiting dispatch";
     case "dispatched":
@@ -6791,6 +6940,18 @@ function describeTaskStatus(status, signal = null, assigneeLabel = null) {
 }
 
 function describeTaskRuntimeStatus(task, activeAssignment = null) {
+  const readiness = getTaskReadinessState(task);
+  if (getTaskKanbanSurfaceStatus(task) === "waiting") {
+    return readiness.label || describeTaskDependencyWaiting(task) || "waiting on dependencies";
+  }
+
+  if (task?.status === "open" && readiness.totalCount > 0) {
+    if (readiness.hasLaunchPlan) {
+      return readiness.label || "ready in runtime; launch plan armed";
+    }
+    return readiness.label || "ready in runtime; dependencies satisfied";
+  }
+
   return describeTaskStatus(
     task?.status,
     task?.blockerReason || task?.summary || null,
@@ -6883,6 +7044,954 @@ function renderTaskStatusSyncBanner(task, frontmatter, progress) {
     <div class="ravi-wa-task-status-sync ravi-wa-task-status-sync--blocked">
       <strong>status sync</strong>
       <p>${escapeHtml(issues.join(" · "))}</p>
+    </div>
+  `;
+}
+
+function isOverlayRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function pickFirstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const normalized = value.trim();
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function normalizeTaskSurfaceTimestamp(value) {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return numeric;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function collectTaskGatingDetailContainers(selectedTask) {
+  const task = selectedTask?.task || null;
+  return [
+    selectedTask?.dependencyState,
+    task?.dependencyState,
+    selectedTask?.gating,
+    task?.gating,
+    isOverlayRecord(selectedTask?.readiness) ? selectedTask.readiness : null,
+    isOverlayRecord(task?.readiness) ? task.readiness : null,
+  ].filter(isOverlayRecord);
+}
+
+function collectTaskGatingListContainers(selectedTask) {
+  const task = selectedTask?.task || null;
+  return [
+    ...collectTaskGatingDetailContainers(selectedTask),
+    isOverlayRecord(selectedTask) ? selectedTask : null,
+    isOverlayRecord(task) ? task : null,
+  ].filter(isOverlayRecord);
+}
+
+function readFirstTaskGatingValue(containers, fieldNames) {
+  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+  for (const container of containers) {
+    if (!isOverlayRecord(container)) continue;
+    for (const name of names) {
+      if (!name) continue;
+      const value = container[name];
+      if (value === undefined || value === null) continue;
+      if (typeof value === "string" && !value.trim()) continue;
+      return value;
+    }
+  }
+  return null;
+}
+
+function readFirstTaskGatingArray(containers, fieldNames) {
+  const names = Array.isArray(fieldNames) ? fieldNames : [fieldNames];
+  for (const container of containers) {
+    if (!isOverlayRecord(container)) continue;
+    for (const name of names) {
+      if (!name) continue;
+      const value = container[name];
+      if (Array.isArray(value)) return value;
+    }
+  }
+  return [];
+}
+
+function readFirstTaskGatingNumber(containers, fieldNames) {
+  const value = readFirstTaskGatingValue(containers, fieldNames);
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+}
+
+function normalizeTaskReadinessState(value) {
+  const token = normalizeLookupToken(typeof value === "string" ? value : "");
+  if (!token) return null;
+
+  if (
+    token.includes("waiting") ||
+    token.includes("notready") ||
+    token.includes("not_ready") ||
+    token.includes("gated") ||
+    token.includes("dependency")
+  ) {
+    return "waiting";
+  }
+  if (token.includes("ready") || token.includes("runnable")) {
+    return "ready";
+  }
+  if (
+    token.includes("launch") ||
+    token.includes("release") ||
+    token.includes("dispatch") ||
+    token.includes("start") ||
+    token.includes("running")
+  ) {
+    return "dispatched";
+  }
+  if (token.includes("progress")) {
+    return "in_progress";
+  }
+  if (token.includes("done") || token.includes("complete")) {
+    return "done";
+  }
+  if (token.includes("fail") || token.includes("error")) {
+    return "failed";
+  }
+  if (token.includes("block")) {
+    return "blocked";
+  }
+  if (token.includes("open")) {
+    return "ready";
+  }
+  return null;
+}
+
+function normalizeTaskDependencyState(
+  value,
+  runtimeStatus = null,
+  relationType = "dependency",
+) {
+  const token = normalizeLookupToken(typeof value === "string" ? value : "");
+  if (token) {
+    if (token.includes("fail") || token.includes("error")) return "failed";
+    if (token.includes("block")) return "blocked";
+    if (
+      token.includes("satisf") ||
+      token.includes("resolve") ||
+      token.includes("done") ||
+      token.includes("complete")
+    ) {
+      return relationType === "dependency" ? "satisfied" : "done";
+    }
+    if (token.includes("progress") || token.includes("running")) {
+      return "in_progress";
+    }
+    if (token.includes("dispatch") || token.includes("launch")) {
+      return "dispatched";
+    }
+    if (token.includes("ready") || token.includes("runnable")) {
+      return relationType === "dependency" ? "satisfied" : "ready";
+    }
+    if (
+      token.includes("wait") ||
+      token.includes("pending") ||
+      token.includes("queue") ||
+      token.includes("open")
+    ) {
+      return relationType === "dependency" ? "pending" : "waiting";
+    }
+  }
+
+  switch (runtimeStatus) {
+    case "done":
+      return relationType === "dependency" ? "satisfied" : "done";
+    case "failed":
+      return "failed";
+    case "blocked":
+      return "blocked";
+    case "in_progress":
+      return "in_progress";
+    case "dispatched":
+      return "dispatched";
+    case "waiting":
+      return relationType === "dependency" ? "pending" : "waiting";
+    case "open":
+    case "ready":
+      return relationType === "dependency" ? "pending" : "ready";
+    default:
+      return relationType === "dependency" ? "pending" : "ready";
+  }
+}
+
+function taskDependencyStateClass(state) {
+  switch (state) {
+    case "waiting":
+    case "pending":
+      return "waiting";
+    case "ready":
+      return "ready";
+    case "dispatched":
+      return "thinking";
+    case "in_progress":
+      return "streaming";
+    case "satisfied":
+    case "done":
+      return "done";
+    case "failed":
+      return "failed";
+    case "blocked":
+      return "blocked";
+    default:
+      return "idle";
+  }
+}
+
+function taskDependencyStateLabel(state) {
+  switch (state) {
+    case "pending":
+      return "pending";
+    case "satisfied":
+      return "satisfied";
+    case "ready":
+      return "ready";
+    case "dispatched":
+      return "launched";
+    case "in_progress":
+      return "working";
+    case "done":
+      return "done";
+    default:
+      return state || "unknown";
+  }
+}
+
+function getTaskDependencyTask(item) {
+  if (!isOverlayRecord(item)) return null;
+  const nested =
+    item.task ||
+    item.upstreamTask ||
+    item.downstreamTask ||
+    item.dependencyTask ||
+    item.dependentTask ||
+    null;
+  return isOverlayRecord(nested) ? nested : null;
+}
+
+function getTaskDependencyId(item) {
+  const nestedTask = getTaskDependencyTask(item);
+  return (
+    pickFirstNonEmptyString(
+      item?.taskId,
+      item?.dependencyTaskId,
+      item?.dependentTaskId,
+      item?.id,
+      nestedTask?.id,
+    ) || null
+  );
+}
+
+function getTaskDependencyTitle(item, relationType = "dependency") {
+  const nestedTask = getTaskDependencyTask(item);
+  return (
+    pickFirstNonEmptyString(
+      item?.title,
+      item?.label,
+      item?.taskTitle,
+      item?.dependencyTitle,
+      item?.dependentTitle,
+      nestedTask?.title,
+      getTaskDependencyId(item),
+    ) || (relationType === "dependency" ? "upstream" : "dependent")
+  );
+}
+
+function resolveTaskDependencyEntry(item, relationType = "dependency") {
+  if (!isOverlayRecord(item)) return null;
+
+  const nestedTask = getTaskDependencyTask(item);
+  const runtimeStatus =
+    pickFirstNonEmptyString(
+      item?.taskStatus,
+      nestedTask?.status,
+      !nestedTask ? item?.status : null,
+    ) || null;
+  const satisfiedAt =
+    normalizeTaskSurfaceTimestamp(item?.satisfiedAt) ??
+    normalizeTaskSurfaceTimestamp(item?.resolvedAt) ??
+    normalizeTaskSurfaceTimestamp(item?.completedAt) ??
+    normalizeTaskSurfaceTimestamp(nestedTask?.completedAt);
+  const rawState = pickFirstNonEmptyString(
+    item?.dependencyStatus,
+    item?.relationStatus,
+    item?.readiness,
+    item?.state,
+    item?.status,
+  );
+  const relationState = satisfiedAt
+    ? relationType === "dependency"
+      ? "satisfied"
+      : "done"
+    : normalizeTaskDependencyState(rawState, runtimeStatus, relationType);
+  const updatedAt =
+    normalizeTaskSurfaceTimestamp(item?.updatedAt) ??
+    normalizeTaskSurfaceTimestamp(nestedTask?.updatedAt) ??
+    normalizeTaskSurfaceTimestamp(item?.createdAt) ??
+    normalizeTaskSurfaceTimestamp(nestedTask?.createdAt);
+  const moment = satisfiedAt
+    ? { label: relationType === "dependency" ? "satisfied" : "released", value: formatTimestamp(satisfiedAt) || "-" }
+    : updatedAt
+      ? {
+          label:
+            relationState === "pending" || relationState === "waiting"
+              ? "updated"
+              : "seen",
+          value: formatTimestamp(updatedAt) || "-",
+        }
+      : null;
+  const summary =
+    pickFirstNonEmptyString(
+      item?.reason,
+      item?.detail,
+      item?.message,
+      item?.note,
+      item?.summary,
+      nestedTask?.summary,
+      nestedTask?.blockerReason,
+    ) || null;
+
+  return {
+    id: getTaskDependencyId(item),
+    title: getTaskDependencyTitle(item, relationType),
+    task: nestedTask,
+    relationState,
+    runtimeStatus,
+    summary,
+    moment,
+    eventId:
+      pickFirstNonEmptyString(item?.satisfiedByEventId, item?.eventId) || null,
+  };
+}
+
+function buildTaskDependencyEmptyCopy(count, label, fallback) {
+  if (!count) return fallback;
+  return `runtime indica ${count} ${label}, mas a lista ainda não chegou nesse snapshot.`;
+}
+
+function renderTaskDependencyCard(item, relationType = "dependency") {
+  const entry = resolveTaskDependencyEntry(item, relationType);
+  if (!entry) return "";
+
+  const relationClass = taskDependencyStateClass(entry.relationState);
+  const runtimeClass = entry.runtimeStatus
+    ? taskStatusClass(entry.runtimeStatus)
+    : null;
+  const meta = renderTaskInlineMeta(
+    [
+      entry.moment
+        ? { label: entry.moment.label, value: entry.moment.value }
+        : null,
+      entry.task?.assigneeAgentId
+        ? { label: "agent", value: entry.task.assigneeAgentId }
+        : null,
+      entry.task?.assigneeSessionName
+        ? { label: "session", value: entry.task.assigneeSessionName }
+        : null,
+      typeof entry.task?.progress === "number"
+        ? {
+            label: "progress",
+            value: `${clampTaskProgressValue(entry.task.progress)}%`,
+          }
+        : null,
+      entry.eventId ? { label: "event", value: entry.eventId } : null,
+    ],
+    {
+      compact: true,
+      className: "ravi-wa-task-gate-card__meta",
+    },
+  );
+  const body = `
+    <span class="ravi-wa-task-gate-card__head">
+      <span class="ravi-wa-task-card__id">${escapeHtml(
+        entry.id ? formatTaskShortId(entry.id) : relationType === "dependency" ? "upstream" : "dependent",
+      )}</span>
+      <span class="ravi-wa-task-gate-card__badges">
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${relationClass}">${escapeHtml(
+          taskDependencyStateLabel(entry.relationState),
+        )}</span>
+        ${
+          runtimeClass
+            ? `<span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${runtimeClass}">${escapeHtml(
+                taskStatusLabel(entry.runtimeStatus),
+              )}</span>`
+            : ""
+        }
+      </span>
+    </span>
+    <strong class="ravi-wa-task-gate-card__title">${escapeHtml(entry.title)}</strong>
+    ${
+      entry.summary
+        ? `<p class="ravi-wa-task-gate-card__summary">${escapeHtml(
+            shorten(entry.summary, 180),
+          )}</p>`
+        : ""
+    }
+    ${meta}
+  `;
+
+  if (entry.id) {
+    return `
+      <button
+        type="button"
+        class="ravi-wa-task-gate-card ravi-wa-task-gate-card--${relationClass}"
+        data-ravi-focus-task="${escapeAttribute(entry.id)}"
+        title="${escapeAttribute(entry.title)}"
+      >
+        ${body}
+      </button>
+    `;
+  }
+
+  return `
+    <article class="ravi-wa-task-gate-card ravi-wa-task-gate-card--${relationClass}">
+      ${body}
+    </article>
+  `;
+}
+
+function renderTaskDependencyGroup({
+  title,
+  note,
+  items,
+  relationType = "dependency",
+  emptyMessage,
+}) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  return `
+    <div class="ravi-wa-task-gate-group">
+      <div class="ravi-wa-section-head">
+        <h3>${escapeHtml(title)}</h3>
+        <span>${escapeHtml(note)}</span>
+      </div>
+      ${
+        list.length
+          ? `<div class="ravi-wa-task-gate-list">${list
+              .map((item) => renderTaskDependencyCard(item, relationType))
+              .join("")}</div>`
+          : `<p class="ravi-wa-task-relations__empty">${escapeHtml(
+              emptyMessage,
+            )}</p>`
+      }
+    </div>
+  `;
+}
+
+function resolveTaskLaunchPlanView(
+  selectedTask,
+  dispatchForm,
+  activeAssignment,
+  pendingCount,
+) {
+  const task = selectedTask?.task || null;
+  const containers = collectTaskGatingListContainers(selectedTask);
+  const planCandidate = readFirstTaskGatingValue(containers, [
+    "launchPlan",
+    "dispatchPlan",
+    "launch",
+  ]);
+  const plan = isOverlayRecord(planCandidate) ? planCandidate : null;
+  const rawAutoDispatch = readFirstTaskGatingValue(containers, [
+    "autoDispatch",
+    "autoDispatchEnabled",
+    "dispatchWhenReady",
+    "launchWhenReady",
+  ]);
+  const autoDispatch = plan
+    ? Boolean(
+        plan.autoDispatch ??
+          plan.enabled ??
+          plan.armed ??
+          (typeof plan.mode === "string" &&
+            normalizeLookupToken(plan.mode).includes("auto")),
+      )
+    : typeof rawAutoDispatch === "boolean"
+      ? rawAutoDispatch
+      : (() => {
+          const token = normalizeLookupToken(String(rawAutoDispatch || ""));
+          return (
+            token.includes("true") ||
+            token.includes("yes") ||
+            token.includes("armed") ||
+            token.includes("auto") ||
+            token === "1"
+          );
+        })();
+  const agentId =
+    normalizeTaskAgentId(
+      plan?.agentId ||
+        plan?.assigneeAgentId ||
+        plan?.targetAgentId ||
+        readFirstTaskGatingValue(containers, ["launchAgentId", "targetAgentId"]),
+    ) || "";
+  const sessionName =
+    normalizeTaskSessionName(
+      plan?.sessionName ||
+        plan?.assigneeSessionName ||
+        plan?.defaultSessionName ||
+        readFirstTaskGatingValue(containers, [
+          "launchSessionName",
+          "targetSessionName",
+        ]),
+    ) || "";
+  const reportToSessionName =
+    normalizeTaskSessionName(
+      plan?.reportToSessionName ||
+        plan?.defaultReportToSessionName ||
+        readFirstTaskGatingValue(containers, ["launchReportToSessionName"]),
+    ) || "";
+  const explicitPlanState = normalizeTaskReadinessState(
+    plan?.state || plan?.status || (typeof planCandidate === "string" ? planCandidate : null),
+  );
+  const sourceLabel =
+    pickFirstNonEmptyString(plan?.source, plan?.origin, plan?.kind) || null;
+
+  if (activeAssignment) {
+    return {
+      state: "dispatched",
+      note: "already launched",
+      title: "launch já aconteceu",
+      detail: `assignment ativo em ${activeAssignment.sessionName || "sessão"} com ${activeAssignment.agentId || "agent"}.`,
+      meta: [
+        activeAssignment.agentId
+          ? { label: "agent", value: activeAssignment.agentId }
+          : null,
+        activeAssignment.sessionName
+          ? { label: "session", value: activeAssignment.sessionName }
+          : null,
+        activeAssignment.reportToSessionName
+          ? { label: "report", value: activeAssignment.reportToSessionName }
+          : null,
+      ].filter(Boolean),
+    };
+  }
+
+  if (autoDispatch) {
+    return {
+      state: explicitPlanState || (pendingCount > 0 ? "waiting" : "ready"),
+      note: "auto-dispatch",
+      title: "auto-dispatch armado",
+      detail:
+        pendingCount > 0
+          ? "assim que a última upstream fechar, o runtime pode despachar sem passo manual."
+          : "nenhuma upstream pendente; o runtime já tem o plano para disparar sozinho.",
+      meta: [
+        agentId ? { label: "agent", value: agentId } : null,
+        sessionName ? { label: "session", value: sessionName } : null,
+        reportToSessionName
+          ? { label: "report", value: reportToSessionName }
+          : null,
+        sourceLabel ? { label: "source", value: sourceLabel } : null,
+      ].filter(Boolean),
+    };
+  }
+
+  if (dispatchForm?.dispatch?.allowed) {
+    const draftSession =
+      normalizeTaskSessionName(dispatchForm.sessionName) ||
+      dispatchForm.defaultSessionName ||
+      "";
+    return {
+      state: pendingCount > 0 ? "waiting" : "ready",
+      note: "manual",
+      title: "manual dispatch",
+      detail:
+        pendingCount > 0
+          ? "quando a task ficar ready, ela volta aberta para dispatch manual."
+          : "o start continua manual; o controle de dispatch fica logo abaixo.",
+      meta: [
+        dispatchForm.selectedAgentId
+          ? { label: "agent", value: dispatchForm.selectedAgentId }
+          : null,
+        draftSession ? { label: "session", value: draftSession } : null,
+        dispatchForm.reportToSessionName
+          ? { label: "report", value: dispatchForm.reportToSessionName }
+          : dispatchForm.defaultReportToSessionName
+            ? {
+                label: "report",
+                value: dispatchForm.defaultReportToSessionName,
+              }
+            : null,
+      ].filter(Boolean),
+    };
+  }
+
+  return {
+    state: pendingCount > 0 ? "waiting" : task?.status === "open" ? "ready" : "idle",
+    note: "not surfaced",
+    title: pendingCount > 0 ? "sem auto-dispatch armado" : "launch plan não surfaced",
+    detail:
+      pendingCount > 0
+        ? "a task continua esperando upstreams e, por enquanto, sem plano automático explícito."
+        : "o snapshot atual não trouxe metadados de launch plan para essa task.",
+    meta: [],
+  };
+}
+
+function resolveTaskReadinessView(selectedTask, options = {}) {
+  const task = selectedTask?.task || null;
+  const detailContainers = collectTaskGatingDetailContainers(selectedTask);
+  const listContainers = collectTaskGatingListContainers(selectedTask);
+  const dependencyItems = readFirstTaskGatingArray(listContainers, [
+    "dependencies",
+    "upstreams",
+    "dependencyItems",
+    "dependencyList",
+  ]);
+  const explicitPendingDependencies = readFirstTaskGatingArray(listContainers, [
+    "pendingDependencies",
+    "pendingUpstreams",
+    "waitingDependencies",
+  ]);
+  const explicitSatisfiedDependencies = readFirstTaskGatingArray(
+    listContainers,
+    [
+      "satisfiedDependencies",
+      "resolvedDependencies",
+      "closedDependencies",
+      "satisfiedUpstreams",
+    ],
+  );
+  const pendingDependencies = explicitPendingDependencies.length
+    ? explicitPendingDependencies
+    : dependencyItems.filter((item) => {
+        const entry = resolveTaskDependencyEntry(item, "dependency");
+        return entry && entry.relationState !== "satisfied";
+      });
+  const satisfiedDependencies = explicitSatisfiedDependencies.length
+    ? explicitSatisfiedDependencies
+    : dependencyItems.filter((item) => {
+        const entry = resolveTaskDependencyEntry(item, "dependency");
+        return entry && entry.relationState === "satisfied";
+      });
+  const dependents = readFirstTaskGatingArray(listContainers, [
+    "dependents",
+    "dependentTasks",
+    "downstreams",
+    "downstreamTasks",
+  ]);
+  const pendingCount =
+    readFirstTaskGatingNumber(detailContainers, [
+      "pendingDependencyCount",
+      "pendingCount",
+      "waitingDependencyCount",
+      "remainingDependencies",
+    ]) ?? pendingDependencies.length;
+  const satisfiedCount =
+    readFirstTaskGatingNumber(detailContainers, [
+      "satisfiedDependencyCount",
+      "resolvedDependencyCount",
+      "doneDependencyCount",
+    ]) ?? satisfiedDependencies.length;
+  const totalDependencies =
+    readFirstTaskGatingNumber(detailContainers, [
+      "dependencyCount",
+      "dependenciesCount",
+      "totalDependencies",
+    ]) ?? Math.max(dependencyItems.length, pendingCount + satisfiedCount);
+  const dependentsCount =
+    readFirstTaskGatingNumber(detailContainers, [
+      "dependentsCount",
+      "dependentCount",
+      "downstreamCount",
+    ]) ?? dependents.length;
+  const rawReadinessState =
+    normalizeTaskReadinessState(
+      typeof selectedTask?.readiness === "string"
+        ? selectedTask.readiness
+        : typeof task?.readiness === "string"
+          ? task.readiness
+          : null,
+    ) ||
+    normalizeTaskReadinessState(
+      readFirstTaskGatingValue(detailContainers, [
+        "readinessState",
+        "readinessStatus",
+        "status",
+        "state",
+      ]),
+    );
+  const readinessReason =
+    pickFirstNonEmptyString(
+      readFirstTaskGatingValue(detailContainers, [
+        "waitingReason",
+        "readinessReason",
+        "dependencyReason",
+        "blockedBy",
+        "message",
+        "detail",
+      ]),
+    ) || null;
+  const hasRuntimeData =
+    Boolean(rawReadinessState) ||
+    dependencyItems.length > 0 ||
+    explicitPendingDependencies.length > 0 ||
+    explicitSatisfiedDependencies.length > 0 ||
+    dependents.length > 0 ||
+    pendingCount > 0 ||
+    satisfiedCount > 0 ||
+    dependentsCount > 0 ||
+    Boolean(
+      readFirstTaskGatingValue(listContainers, [
+        "launchPlan",
+        "dispatchPlan",
+        "launch",
+        "autoDispatch",
+        "autoDispatchEnabled",
+        "dispatchWhenReady",
+      ]),
+    );
+  const readinessState =
+    rawReadinessState ||
+    (pendingCount > 0
+      ? "waiting"
+      : task?.status === "dispatched" || task?.status === "in_progress"
+        ? task.status
+        : task?.status === "done" || task?.status === "failed" || task?.status === "blocked"
+          ? task.status
+          : "ready");
+  const launchPlan = resolveTaskLaunchPlanView(
+    selectedTask,
+    options.dispatchForm || null,
+    options.activeAssignment || null,
+    pendingCount,
+  );
+  const headline =
+    readinessState === "waiting"
+      ? pendingCount > 0
+        ? pendingCount === 1
+          ? "waiting on 1 upstream"
+          : `waiting on ${pendingCount} upstreams`
+        : "waiting on upstreams"
+      : readinessState === "ready"
+        ? totalDependencies > 0
+          ? "all upstreams satisfied"
+          : "ready in runtime"
+        : readinessState === "dispatched"
+          ? "launch already released"
+          : readinessState === "in_progress"
+            ? "task already running"
+            : readinessState === "done"
+              ? "task already closed"
+              : readinessState === "failed"
+                ? "launch path ended in failure"
+                : readinessState === "blocked"
+                  ? "runtime blocked, independent of gating"
+                  : "readiness not surfaced";
+  const detail =
+    readinessState === "waiting"
+      ? readinessReason ||
+        (satisfiedCount > 0
+          ? `${satisfiedCount} upstreams já fecharam; falta liberar o start.`
+          : "a task ainda não pode começar porque o gate de start continua fechado.")
+      : readinessState === "ready"
+        ? totalDependencies > 0
+          ? launchPlan.note === "auto-dispatch"
+            ? "gate liberado; o runtime já pode disparar com o plano armado."
+            : "gate liberado; se o start continuar manual, o controle fica no bloco de dispatch."
+          : hasRuntimeData
+            ? "nenhuma dependency ativa segura o start nesse snapshot."
+            : "o runtime atual ainda não enviou o detalhe de gating; a task aparece pronta pelo fluxo existente."
+        : readinessState === "dispatched"
+          ? "o gate de start já foi liberado e a task entrou na fila do runtime."
+          : readinessState === "in_progress"
+            ? "o trabalho já começou; dependency/readiness viram histórico dessa task."
+            : readinessState === "done"
+              ? "a task já terminou; upstreams e launch plan servem como contexto do que aconteceu."
+              : readinessState === "failed"
+                ? "a task já falhou; o bloqueio agora é operacional, não de dependency."
+                : "o runtime marcou blocked; use readiness só para entender gating, não para confundir com o blocker operacional.";
+  const note =
+    readinessState === "waiting"
+      ? `${pendingCount} pending · ${satisfiedCount} satisfied`
+      : totalDependencies > 0
+        ? `${satisfiedCount}/${totalDependencies} upstreams closed`
+        : hasRuntimeData
+          ? launchPlan.note
+          : "runtime snapshot";
+
+  return {
+    state: readinessState,
+    title: headline,
+    detail,
+    note,
+    reason: readinessReason,
+    pendingCount,
+    satisfiedCount,
+    totalDependencies,
+    dependentsCount,
+    pendingDependencies,
+    satisfiedDependencies,
+    dependents,
+    hasRuntimeData,
+    launchPlan,
+  };
+}
+
+function renderTaskLaunchPlanCard(plan) {
+  return `
+    <article class="ravi-wa-task-launch-plan">
+      <div class="ravi-wa-task-launch-plan__head">
+        <div class="ravi-wa-task-launch-plan__copy">
+          <span class="ravi-wa-task-artifact__eyebrow">launch plan</span>
+          <strong>${escapeHtml(plan.title)}</strong>
+        </div>
+        <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskDependencyStateClass(
+          plan.state,
+        )}">${escapeHtml(plan.note)}</span>
+      </div>
+      <p class="ravi-wa-task-launch-plan__detail">${escapeHtml(plan.detail)}</p>
+      ${
+        Array.isArray(plan.meta) && plan.meta.length
+          ? renderTaskInlineMeta(plan.meta, {
+              compact: true,
+              className: "ravi-wa-task-launch-plan__meta",
+            })
+          : `<p class="ravi-wa-task-relations__empty">sem agent, sessão ou report surfaced nesse plano.</p>`
+      }
+    </article>
+  `;
+}
+
+function renderTaskReadinessContent(view) {
+  const pendingSummary =
+    view.pendingCount > 0
+      ? `${view.pendingCount} pending`
+      : "none pending";
+  const satisfiedSummary =
+    view.satisfiedCount > 0
+      ? `${view.satisfiedCount} satisfied`
+      : "none satisfied";
+  const dependentsSummary =
+    view.dependentsCount > 0
+      ? `${view.dependentsCount} downstream`
+      : "none downstream";
+
+  return `
+    ${renderTaskInlineMeta(
+      [
+        { label: "pending", value: view.pendingCount || 0 },
+        { label: "satisfied", value: view.satisfiedCount || 0 },
+        view.totalDependencies
+          ? { label: "total", value: view.totalDependencies }
+          : null,
+        { label: "dependents", value: view.dependentsCount || 0 },
+        { label: "launch", value: view.launchPlan.note },
+      ],
+      { compact: true },
+    )}
+    <div class="ravi-wa-task-status-grid">
+      ${renderTaskStatusPanel({
+        eyebrow: "start gate",
+        status: view.state,
+        title: view.title,
+        detail: view.detail,
+        meta: view.reason || null,
+      })}
+      ${renderTaskStatusPanel({
+        eyebrow: "upstreams",
+        status: view.pendingCount > 0 ? "waiting" : view.totalDependencies > 0 ? "done" : "idle",
+        title:
+          view.pendingCount > 0
+            ? `${view.pendingCount} upstreams ainda faltam`
+            : view.totalDependencies > 0
+              ? "nenhuma upstream pendente"
+              : "sem gating surfaced",
+        detail:
+          view.totalDependencies > 0
+            ? `${view.satisfiedCount} satisfizeram · ${view.pendingCount} ainda faltam`
+            : view.hasRuntimeData
+              ? "o snapshot não trouxe nenhuma dependency ativa nessa task."
+              : "runtime atual ainda não publicou dependencies/readiness aqui.",
+        meta: view.totalDependencies
+          ? `${view.totalDependencies} total`
+          : "waiting != blocked operacional",
+      })}
+      ${renderTaskStatusPanel({
+        eyebrow: "launch plan",
+        status: view.launchPlan.state,
+        title: view.launchPlan.title,
+        detail: view.launchPlan.detail,
+        meta: view.launchPlan.note,
+      })}
+    </div>
+    ${
+      view.state === "waiting" || view.reason
+        ? `
+      <div class="ravi-wa-task-gate-banner ravi-wa-task-gate-banner--${taskDependencyStateClass(
+        view.state,
+      )}">
+        <strong>start gate</strong>
+        <p>${escapeHtml(
+          view.reason ||
+            "essa task continua em espera por dependencies; lineage e blocker operacional seguem sendo outra conversa.",
+        )}</p>
+      </div>
+    `
+        : ""
+    }
+    <div class="ravi-wa-task-workspace-grid">
+      <div class="ravi-wa-task-workspace-panel ravi-wa-task-gate-panel">
+        ${renderTaskDependencyGroup({
+          title: "pending upstreams",
+          note: pendingSummary,
+          items: view.pendingDependencies,
+          relationType: "dependency",
+          emptyMessage: buildTaskDependencyEmptyCopy(
+            view.pendingCount,
+            "pending upstreams",
+            "nenhuma upstream pendente agora.",
+          ),
+        })}
+        ${renderTaskDependencyGroup({
+          title: "already satisfied",
+          note: satisfiedSummary,
+          items: view.satisfiedDependencies,
+          relationType: "dependency",
+          emptyMessage: buildTaskDependencyEmptyCopy(
+            view.satisfiedCount,
+            "satisfied upstreams",
+            "nenhuma upstream satisfeita ainda.",
+          ),
+        })}
+      </div>
+      <div class="ravi-wa-task-workspace-panel ravi-wa-task-gate-panel">
+        <div class="ravi-wa-section-head">
+          <h3>launch plan</h3>
+          <span>${escapeHtml(view.launchPlan.note)}</span>
+        </div>
+        ${renderTaskLaunchPlanCard(view.launchPlan)}
+      </div>
+    </div>
+    <div class="ravi-wa-task-workspace-panel ravi-wa-task-gate-panel">
+      ${renderTaskDependencyGroup({
+        title: "dependents",
+        note: dependentsSummary,
+        items: view.dependents,
+        relationType: "dependent",
+        emptyMessage: buildTaskDependencyEmptyCopy(
+          view.dependentsCount,
+          "dependents",
+          "nenhuma downstream surfaced para essa task.",
+        ),
+      })}
     </div>
   `;
 }
@@ -7843,7 +8952,7 @@ function syncTaskKanbanBoard(board, taskRoots, currentTaskId) {
     if (!shell) return;
 
     const nodes = taskRoots.filter((node) =>
-      column.statuses.includes(node.task.status),
+      getTaskKanbanSurfaceStatus(node?.task) === column.id,
     );
     const visibleCount = countTaskTreeNodes(nodes);
     const childCount = Math.max(0, visibleCount - nodes.length);
@@ -7856,13 +8965,9 @@ function syncTaskKanbanBoard(board, taskRoots, currentTaskId) {
         ${escapeHtml(`${nodes.length} root${nodes.length === 1 ? "" : "s"}${childCount ? ` · ${childCount} subtasks` : ""}`)}
       </span>
     `;
-    const legendHtml = column.statuses
-      .map(
-        (status) => `
-          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskStatusClass(status)}">${escapeHtml(taskStatusLabel(status))}</span>
-        `,
-      )
-      .join("");
+    const legendHtml = `
+      <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskSurfaceClass(column.id)}">${escapeHtml(taskSurfaceLabel(column.id))}</span>
+    `;
     const listHtml = nodes.length
       ? nodes.map((node) => renderTaskCard(node, currentTaskId)).join("")
       : `<p class="ravi-wa-task-column__empty">nenhuma task nesse status agora.</p>`;
@@ -8021,6 +9126,7 @@ function renderTasksWorkspace(body) {
   const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
   const taskRoots = buildTaskHierarchy(items);
   const stats = snapshot?.stats || null;
+  const columnStats = buildTaskKanbanColumnStats(items);
   const dailyActivity = snapshot?.dailyActivity || null;
   const drawerState = resolveTaskDetailDrawerState({
     selectedTaskId,
@@ -8033,12 +9139,13 @@ function renderTasksWorkspace(body) {
   const rootCount = taskRoots.length;
   const childCount = Math.max(0, items.length - rootCount);
   const liveCount =
-    (stats?.open ?? 0) +
-    (stats?.dispatched ?? 0) +
-    (stats?.inProgress ?? 0) +
-    (stats?.blocked ?? 0);
-  const selectedTaskStatusClass = taskStatusClass(
-    selectedTask?.task?.status || null,
+    (columnStats.waiting ?? 0) +
+    (columnStats.ready ?? 0) +
+    (columnStats.queued ?? 0) +
+    (columnStats.working ?? 0) +
+    (columnStats.blocked ?? 0);
+  const selectedTaskStatusClass = taskSurfaceClass(
+    getTaskKanbanSurfaceStatus(selectedTask?.task || null),
   );
   const detailDrawerVisible = drawerState.detailDrawerVisible;
   const selectedTaskValue = selectedTask?.task
@@ -8072,7 +9179,7 @@ function renderTasksWorkspace(body) {
       ${renderTaskOverviewStat({
         label: "live",
         value: liveCount,
-        note: `open ${stats?.open ?? 0} · queued ${stats?.dispatched ?? 0} · working ${stats?.inProgress ?? 0}`,
+        note: `waiting ${columnStats.waiting ?? 0} · ready ${columnStats.ready ?? 0} · queued ${columnStats.queued ?? 0} · working ${columnStats.working ?? 0}`,
         tone: "live",
       })}
       ${renderTaskOverviewStat({
@@ -8092,7 +9199,7 @@ function renderTasksWorkspace(body) {
   syncElementHtml(
     shell.statusLine,
     TASK_KANBAN_COLUMNS.map((column) =>
-      renderTaskStatusCounter(column, stats),
+      renderTaskStatusCounter(column, columnStats),
     ).join(""),
   );
   syncElementHtml(
@@ -8276,13 +9383,7 @@ function renderTaskKanbanColumn(column, nodes, currentTaskId) {
           </span>
         </div>
         <div class="ravi-wa-task-column__legend">
-          ${column.statuses
-            .map(
-              (status) => `
-                <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskStatusClass(status)}">${escapeHtml(taskStatusLabel(status))}</span>
-              `,
-            )
-            .join("")}
+          <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskSurfaceClass(column.id)}">${escapeHtml(taskSurfaceLabel(column.id))}</span>
         </div>
       </div>
       <div class="ravi-wa-task-column__list">
@@ -8300,15 +9401,19 @@ function renderTaskCard(node, currentTaskId) {
   const task = node?.task || null;
   const childNodes = Array.isArray(node?.children) ? node.children : [];
   if (!task) return "";
-  const statusClass = taskStatusClass(task.status);
+  const surfaceStatus = getTaskKanbanSurfaceStatus(task);
+  const statusClass = taskSurfaceClass(surfaceStatus);
   const priorityClass = taskPriorityClass(task.priority);
   const selected =
     currentTaskId && currentTaskId === task.id ? "true" : "false";
+  const readiness = getTaskReadinessState(task);
   const summary = summarizeTaskCardCopy(task);
   const progress = getTaskDisplayProgress(task, node);
   const progressInfo = describeTaskProgressText(task, null, { node });
   const statusCopy = shorten(describeTaskRuntimeStatus(task), 86);
-  const cardCopy = summary || statusCopy;
+  const dependencyValue = formatTaskDependencyCompactValue(task);
+  const cardCopy =
+    surfaceStatus === "waiting" ? statusCopy : summary || statusCopy;
   const primarySessionName = getTaskPrimarySessionName(task);
   const secondaryWorkSession =
     task?.workSessionName && task.workSessionName !== primarySessionName
@@ -8322,6 +9427,8 @@ function renderTaskCard(node, currentTaskId) {
         ? { label: "work", value: secondaryWorkSession }
         : null,
       { label: "agent", value: task.assigneeAgentId || "-" },
+      dependencyValue ? { label: "deps", value: dependencyValue } : null,
+      readiness.hasLaunchPlan ? { label: "launch", value: "armed" } : null,
       treeLabel ? { label: "tree", value: treeLabel } : null,
     ],
     { compact: true, className: "ravi-wa-task-card__meta" },
@@ -8341,7 +9448,7 @@ function renderTaskCard(node, currentTaskId) {
             <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           </span>
           <span class="ravi-wa-task-card__eyebrow-aside">
-            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskSurfaceLabel(surfaceStatus))}</span>
             <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${priorityClass}">${escapeHtml(task.priority || "normal")}</span>
           </span>
         </span>
@@ -8379,15 +9486,19 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
   const childNodes = Array.isArray(node?.children) ? node.children : [];
   const selected =
     currentTaskId && currentTaskId === task.id ? "true" : "false";
-  const statusClass = taskStatusClass(task.status);
+  const surfaceStatus = getTaskKanbanSurfaceStatus(task);
+  const statusClass = taskSurfaceClass(surfaceStatus);
   const progress = getTaskDisplayProgress(task, node);
   const summary =
-    summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
+    surfaceStatus === "waiting"
+      ? describeTaskRuntimeStatus(task)
+      : summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
   const primarySessionName = getTaskPrimarySessionName(task);
   const secondaryWorkSession =
     task?.workSessionName && task.workSessionName !== primarySessionName
       ? task.workSessionName
       : null;
+  const dependencyValue = formatTaskDependencyCompactValue(task);
   const childMeta = renderTaskInlineMeta(
     [
       { label: "session", value: primarySessionName || "-" },
@@ -8395,6 +9506,7 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
         ? { label: "work", value: secondaryWorkSession }
         : null,
       { label: "agent", value: task.assigneeAgentId || "-" },
+      dependencyValue ? { label: "deps", value: dependencyValue } : null,
       { label: "priority", value: task.priority || "normal" },
     ],
     { compact: true, className: "ravi-wa-task-child__meta" },
@@ -8412,7 +9524,7 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
         <span class="ravi-wa-task-child__titleline">
           <strong>${escapeHtml(task.title || task.id)}</strong>
           <span class="ravi-wa-task-child__badges">
-            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+            <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${statusClass}">${escapeHtml(taskSurfaceLabel(surfaceStatus))}</span>
             <span class="ravi-wa-task-child__progress-pill">${escapeHtml(String(progress))}%</span>
           </span>
         </span>
@@ -8777,9 +9889,14 @@ function renderTaskDetailCard(selectedTask) {
     resolveTaskWorkspaceReportSessionRecord(selectedTask);
   const lineage = getTaskLineage(task.id);
   const dispatchForm = resolveTaskDispatchFormState(selectedTask);
+  const readinessView = resolveTaskReadinessView(selectedTask, {
+    dispatchForm,
+    activeAssignment,
+  });
   const heroSummary =
     task.summary ||
     task.blockerReason ||
+    (readinessView.state === "waiting" ? readinessView.title : null) ||
     summarizeTaskCardCopy(task) ||
     "sem resumo ainda";
   const taskSignal = task.blockerReason || task.summary || null;
@@ -9096,6 +10213,13 @@ function renderTaskDetailCard(selectedTask) {
         <div class="ravi-wa-task-detail-hero__badges">
           <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           <span class="ravi-wa-state-pill ravi-wa-state-pill--${statusClass}">${escapeHtml(taskStatusLabel(task.status))}</span>
+          ${
+            readinessView.state === "waiting"
+              ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--waiting">waiting</span>`
+              : readinessView.totalDependencies > 0
+                ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--ready">gate clear</span>`
+                : ""
+          }
           <span class="ravi-wa-task-card__priority ravi-wa-task-card__priority--${taskPriorityClass(task.priority)}">${escapeHtml(
             task.priority || "normal",
           )}</span>
@@ -9131,6 +10255,9 @@ function renderTaskDetailCard(selectedTask) {
                   activeAssignment?.reportToSessionName ||
                   task.reportToSessionName,
               }
+            : null,
+          readinessView.state === "waiting" || readinessView.totalDependencies > 0
+            ? { label: "readiness", value: readinessView.note }
             : null,
           { label: "tree", value: hierarchyLabel },
           primaryArtifactDisplayPath
@@ -9174,11 +10301,22 @@ function renderTaskDetailCard(selectedTask) {
     ${renderTaskWorkspaceSection({
       taskId: task.id,
       title: "next move",
-      note: dispatchForm?.dispatch?.allowed
-        ? "ready to dispatch"
-        : activeAssignment?.status || taskStatusLabel(task.status),
+      note:
+        readinessView.state === "waiting"
+          ? readinessView.note
+          : dispatchForm?.dispatch?.allowed
+            ? "ready to dispatch"
+            : activeAssignment?.status || taskStatusLabel(task.status),
       content: nextMoveContent,
       className: "ravi-wa-task-workspace-section--next",
+    })}
+
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "readiness",
+      title: "readiness",
+      note: readinessView.note,
+      content: renderTaskReadinessContent(readinessView),
     })}
 
     ${renderTaskDispatchSection(selectedTask)}

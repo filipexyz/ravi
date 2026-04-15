@@ -64,7 +64,7 @@ describe("task automations", () => {
       priority: "high",
     });
 
-    const completed = completeTask(created.task.id, {
+    const completed = await completeTask(created.task.id, {
       actor: "dev-session",
       agentId: "dev",
       sessionName: "dev-session",
@@ -132,7 +132,7 @@ describe("task automations", () => {
       assignedBy: "test",
     });
 
-    const completed = completeTask(dispatched.task.id, {
+    const completed = await completeTask(dispatched.task.id, {
       actor: "qa-auto",
       agentId: "qa-auto",
       sessionName: `${created.task.id}-work`,

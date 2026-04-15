@@ -12,11 +12,24 @@ function atLocalDate(year: number, monthIndex: number, day: number, hour = 12): 
 }
 
 function makeTask(overrides: Partial<TaskStreamTaskEntity>): TaskStreamTaskEntity {
+  const readiness =
+    overrides.readiness ??
+    ({
+      state: "ready",
+      label: "ready to start",
+      canStart: true,
+      dependencyCount: 0,
+      satisfiedDependencyCount: 0,
+      unsatisfiedDependencyCount: 0,
+      unsatisfiedDependencyIds: [],
+      hasLaunchPlan: false,
+    } as TaskStreamTaskEntity["readiness"]);
   return {
     id: overrides.id ?? "task-1",
     title: overrides.title ?? "Task",
     instructions: overrides.instructions ?? "Do the work",
     status: overrides.status ?? "open",
+    visualStatus: overrides.visualStatus ?? overrides.status ?? "open",
     priority: overrides.priority ?? "normal",
     progress: overrides.progress ?? 0,
     profileId: overrides.profileId ?? "default",
@@ -59,6 +72,11 @@ function makeTask(overrides: Partial<TaskStreamTaskEntity>): TaskStreamTaskEntit
     dispatchedAt: overrides.dispatchedAt ?? null,
     startedAt: overrides.startedAt ?? null,
     completedAt: overrides.completedAt ?? null,
+    readiness,
+    launchPlan: overrides.launchPlan ?? null,
+    dependencyCount: overrides.dependencyCount ?? readiness.dependencyCount,
+    satisfiedDependencyCount: overrides.satisfiedDependencyCount ?? readiness.satisfiedDependencyCount,
+    unsatisfiedDependencyCount: overrides.unsatisfiedDependencyCount ?? readiness.unsatisfiedDependencyCount,
     artifacts: overrides.artifacts ?? {
       status: "planned",
       supportedKinds: [],

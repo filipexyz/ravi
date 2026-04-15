@@ -60,7 +60,7 @@ import { matchOmniChatFromRow } from "./chat-list-match.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import {
   buildTaskStreamSnapshot,
-  dispatchTask,
+  queueOrDispatchTask,
   emitTaskEvent,
   getTaskDocPath,
   readTaskDocFrontmatter,
@@ -1272,7 +1272,7 @@ async function handleTaskDispatch(req: Request, url: URL): Promise<Response> {
 
     const sessionName = cleanNullable(body.sessionName) ?? dispatch.defaultSessionName;
     const reportToSessionName = cleanNullable(body.reportToSessionName) ?? dispatch.defaultReportToSessionName;
-    const result = await dispatchTask(taskId, {
+    const result = await queueOrDispatchTask(taskId, {
       agentId,
       sessionName,
       assignedBy: actorSession?.name ?? actorSession?.sessionKey ?? "wa-overlay",
@@ -1298,10 +1298,15 @@ async function handleTaskDispatch(req: Request, url: URL): Promise<Response> {
       Response.json({
         ok: true,
         taskId,
-        sessionName: result.sessionName,
-        reportToSessionName: result.assignment.reportToSessionName ?? reportToSessionName ?? null,
-        assignment: result.assignment,
-        dispatchSummary: result.dispatchSummary,
+        mode: result.mode,
+        sessionName: result.mode === "dispatched" ? result.sessionName : result.launchPlan.sessionName,
+        reportToSessionName:
+          result.mode === "dispatched"
+            ? (result.assignment.reportToSessionName ?? reportToSessionName ?? null)
+            : (result.launchPlan.reportToSessionName ?? reportToSessionName ?? null),
+        assignment: result.mode === "dispatched" ? result.assignment : null,
+        launchPlan: result.mode === "launch_planned" ? result.launchPlan : null,
+        dispatchSummary: result.mode === "dispatched" ? result.dispatchSummary : null,
         snapshot,
       }),
       url,

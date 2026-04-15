@@ -31,6 +31,7 @@ import {
 import {
   dbArchiveTask,
   dbAddTaskComment,
+  dbAddTaskDependency,
   dbAppendTaskEvent,
   dbUnarchiveTask,
   dbCompleteTask,
@@ -41,13 +42,19 @@ import {
   dbBlockTask,
   dbGetTask,
   dbGetActiveAssignment,
+  dbGetTaskLaunchPlan,
   dbListAssignments,
   dbListTaskComments,
   dbListChildTasks,
+  dbListTaskDependencies,
+  dbListTaskDependents,
   dbListTaskEvents,
   dbListTasks,
+  dbMarkTaskDependenciesSatisfiedByUpstream,
+  dbRemoveTaskDependency,
   dbReportTaskProgress,
   dbSetTaskDir,
+  dbSetTaskLaunchPlan,
   dbSetTaskProfileResolution,
   dbSetTaskProfileState,
 } from "./task-db.js";
@@ -60,6 +67,7 @@ import {
   type TaskDocSection,
 } from "./task-doc.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
+import { syncWorkflowNodeRunForTask } from "../workflows/index.js";
 import type {
   ResolvedTaskProfile,
   TaskArchiveInput,
@@ -72,9 +80,13 @@ import type {
   TaskEvent,
   TaskComment,
   TaskCommentInput,
+  TaskDependencyEdge,
+  TaskDependencyRecord,
   TaskProfileArtifactKind,
   TaskProfileArtifactRef,
   TaskProgressInput,
+  TaskLaunchPlan,
+  TaskReadiness,
   TaskRecord,
   TaskReportEvent,
   TaskStatus,
@@ -132,11 +144,19 @@ export interface TaskArtifactSummary {
   primary: TaskSurfaceArtifact | null;
 }
 
+export interface TaskDependencySurface {
+  dependencies: TaskDependencyEdge[];
+  dependents: TaskDependencyEdge[];
+  readiness: TaskReadiness;
+  launchPlan: TaskLaunchPlan | null;
+}
+
 export interface TaskStreamTaskEntity {
   id: string;
   title: string;
   instructions: string;
   status: TaskStatus;
+  visualStatus: TaskStatus | "waiting";
   priority: TaskPriority;
   progress: number;
   profileId: string;
@@ -163,6 +183,11 @@ export interface TaskStreamTaskEntity {
   dispatchedAt: number | null;
   startedAt: number | null;
   completedAt: number | null;
+  readiness: TaskReadiness;
+  launchPlan: TaskLaunchPlan | null;
+  dependencyCount: number;
+  satisfiedDependencyCount: number;
+  unsatisfiedDependencyCount: number;
   artifacts: TaskArtifactSummary;
 }
 
@@ -180,6 +205,10 @@ export interface TaskStreamSelection {
   task: TaskStreamTaskEntity;
   parentTask: TaskStreamTaskEntity | null;
   childTasks: TaskStreamTaskEntity[];
+  dependencies: TaskDependencyEdge[];
+  dependents: TaskDependencyEdge[];
+  launchPlan: TaskLaunchPlan | null;
+  readiness: TaskReadiness;
   activeAssignment: TaskAssignment | null;
   assignments: TaskAssignment[];
   events: TaskEvent[];
@@ -205,6 +234,7 @@ export interface TaskStreamEventPayload {
   kind: "task.event";
   taskId: string;
   status: TaskStatus;
+  visualStatus: TaskStatus | "waiting";
   priority: TaskPriority;
   progress: number;
   profileId: string;
@@ -220,6 +250,8 @@ export interface TaskStreamEventPayload {
   reportEvents: TaskReportEvent[];
   assigneeAgentId: string | null;
   assigneeSessionName: string | null;
+  readiness: TaskReadiness;
+  launchPlan: TaskLaunchPlan | null;
   activeAssignment: TaskAssignment | null;
   task: TaskStreamTaskEntity;
   event: TaskEvent;
@@ -294,6 +326,7 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   instructions: z.string().trim().min(1),
   priority: z.enum(TASK_PRIORITIES).default("normal"),
   profileId: z.string().trim().min(1).optional(),
+  dependsOnTaskIds: z.array(z.string().trim().min(1)).optional(),
   checkpointIntervalMs: z.coerce.number().int().positive().optional(),
   reportToSessionName: z.string().trim().min(1).optional(),
   reportEvents: z.array(z.enum(TASK_REPORT_EVENTS)).min(1).optional(),
@@ -521,6 +554,93 @@ function resolveTaskArchiveMode(input?: {
     return "include";
   }
   return "exclude";
+}
+
+function buildTaskDependencyEdge(
+  dependency: TaskDependencyRecord,
+  direction: "dependency" | "dependent",
+): TaskDependencyEdge {
+  const relatedTaskId = direction === "dependency" ? dependency.dependsOnTaskId : dependency.taskId;
+  const relatedTask = dbGetTask(relatedTaskId);
+  const relatedActiveAssignment = relatedTask ? dbGetActiveAssignment(relatedTaskId) : null;
+  return {
+    direction,
+    taskId: dependency.taskId,
+    relatedTaskId,
+    relatedTaskTitle: relatedTask?.title ?? relatedTaskId,
+    relatedTaskStatus: relatedTask ? deriveTaskReadStatus(relatedTask, relatedActiveAssignment) : "open",
+    relatedTaskProgress: relatedTask?.progress ?? 0,
+    ...(relatedTask?.assigneeAgentId ? { relatedTaskAssigneeAgentId: relatedTask.assigneeAgentId } : {}),
+    ...(relatedTask?.assigneeSessionName ? { relatedTaskAssigneeSessionName: relatedTask.assigneeSessionName } : {}),
+    satisfied: typeof dependency.satisfiedAt === "number",
+    createdAt: dependency.createdAt,
+    ...(typeof dependency.satisfiedAt === "number" ? { satisfiedAt: dependency.satisfiedAt } : {}),
+    ...(typeof dependency.satisfiedByEventId === "number" ? { satisfiedByEventId: dependency.satisfiedByEventId } : {}),
+  };
+}
+
+export function getTaskDependencySurface(
+  task: Pick<TaskRecord, "id" | "status"> & Partial<TaskRecord>,
+  activeAssignment?: TaskAssignment | null,
+): TaskDependencySurface {
+  const dependencies = dbListTaskDependencies(task.id).map((dependency) =>
+    buildTaskDependencyEdge(dependency, "dependency"),
+  );
+  const dependents = dbListTaskDependents(task.id).map((dependency) =>
+    buildTaskDependencyEdge(dependency, "dependent"),
+  );
+  const launchPlan = dbGetTaskLaunchPlan(task.id);
+  const satisfiedDependencyCount = dependencies.filter((dependency) => dependency.satisfied).length;
+  const unsatisfiedDependencies = dependencies.filter((dependency) => !dependency.satisfied);
+  const activeStatus = deriveTaskReadStatus(task as Pick<TaskRecord, "status">, activeAssignment);
+
+  let state: TaskReadiness["state"];
+  let label: string;
+  let canStart = false;
+  if (activeStatus === "done" || activeStatus === "failed") {
+    state = "terminal";
+    label = `terminal (${activeStatus})`;
+  } else if (activeStatus === "dispatched" || activeStatus === "in_progress" || activeStatus === "blocked") {
+    state = "active";
+    label = activeStatus === "blocked" ? "already started; currently blocked" : "already started";
+  } else if (unsatisfiedDependencies.length > 0) {
+    state = "waiting";
+    label = `waiting on ${unsatisfiedDependencies.length}/${dependencies.length} dependencies`;
+  } else {
+    state = "ready";
+    label = launchPlan ? "ready; launch plan armed" : "ready to start";
+    canStart = true;
+  }
+
+  return {
+    dependencies,
+    dependents,
+    launchPlan,
+    readiness: {
+      state,
+      label,
+      canStart,
+      dependencyCount: dependencies.length,
+      satisfiedDependencyCount,
+      unsatisfiedDependencyCount: unsatisfiedDependencies.length,
+      unsatisfiedDependencyIds: unsatisfiedDependencies.map((dependency) => dependency.relatedTaskId),
+      hasLaunchPlan: Boolean(launchPlan),
+    },
+  };
+}
+
+export function deriveTaskVisualStatus(
+  task: Pick<TaskRecord, "id" | "status"> & Partial<TaskRecord>,
+  readiness?: TaskReadiness,
+  activeAssignment?: Pick<TaskAssignment, "status" | "acceptedAt"> | null,
+): TaskStatus | "waiting" {
+  const activeStatus = deriveTaskReadStatus(task as Pick<TaskRecord, "status">, activeAssignment);
+  const effectiveReadiness =
+    readiness ?? getTaskDependencySurface(task, activeAssignment as TaskAssignment | null).readiness;
+  if (activeStatus === "open" && effectiveReadiness.state === "waiting") {
+    return "waiting";
+  }
+  return activeStatus;
 }
 
 export function createTaskWorktreeConfig(input?: {
@@ -965,14 +1085,87 @@ export function resolveTaskSessionContext(
   };
 }
 
+function assertTaskStartAllowed(task: TaskRecord, action: "dispatch" | "arm a launch plan"): void {
+  if (task.archivedAt) {
+    throw new Error(`Task ${task.id} is archived. Unarchive it before you ${action}.`);
+  }
+}
+
+function prepareTaskDispatchContext(
+  task: TaskRecord,
+  input: DispatchTaskInput,
+  options: {
+    materializeSession: boolean;
+  },
+): {
+  task: TaskRecord;
+  profile: ResolvedTaskProfile;
+  agentId: string;
+  sessionName: string;
+  sessionCwd: string;
+  worktree?: TaskWorktreeConfig;
+  taskDocPath: string | null;
+  primaryArtifact: TaskProfileArtifactRef | null;
+} {
+  assertTaskStartAllowed(task, options.materializeSession ? "dispatch it" : "arm a launch plan");
+
+  const { task: profiledTask, profile } = ensureResolvedTaskProfile(task, { persistMissingProfileId: true });
+  const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
+  const resolvedAgent = requireTaskRuntimeAgent(input.agentId);
+  const sessionCwd = resolvedAgent.cwd;
+  const worktree = resolveTaskWorktreeContext(
+    sessionCwd,
+    bootstrappedTask,
+    profile,
+    input.worktree ?? bootstrappedTask.worktree,
+  );
+  const existingSession = resolveSession(input.sessionName);
+  if (existingSession && existingSession.agentId !== resolvedAgent.id) {
+    throw new Error(
+      `Session ${input.sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
+    );
+  }
+
+  const sessionName = options.materializeSession
+    ? (getOrCreateSession(existingSession?.sessionKey ?? input.sessionName, resolvedAgent.id, sessionCwd, {
+        name: existingSession?.name ?? input.sessionName,
+      }).name ??
+      existingSession?.name ??
+      input.sessionName)
+    : (existingSession?.name ?? input.sessionName);
+
+  const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(bootstrappedTask, profile, {
+    stage: "task.dispatch",
+    effectiveCwd: sessionCwd,
+    ...(worktree ? { worktree } : {}),
+    agentId: resolvedAgent.id,
+    sessionName,
+    validateDispatch: true,
+    validateResume: true,
+  });
+
+  return {
+    task: bootstrappedTask,
+    profile,
+    agentId: resolvedAgent.id,
+    sessionName,
+    sessionCwd,
+    ...(worktree ? { worktree } : {}),
+    taskDocPath,
+    primaryArtifact,
+  };
+}
+
 function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment | null): TaskStreamTaskEntity {
   const profile = resolveTaskProfileForTask(task);
   const status = deriveTaskReadStatus(task, activeAssignment);
+  const dependencySurface = getTaskDependencySurface(task, activeAssignment);
   return {
     id: task.id,
     title: task.title,
     instructions: task.instructions,
     status,
+    visualStatus: deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment),
     priority: task.priority,
     progress: task.progress,
     profileId: profile.id,
@@ -999,6 +1192,11 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     dispatchedAt: task.dispatchedAt ?? null,
     startedAt: task.startedAt ?? null,
     completedAt: task.completedAt ?? null,
+    readiness: dependencySurface.readiness,
+    launchPlan: dependencySurface.launchPlan,
+    dependencyCount: dependencySurface.readiness.dependencyCount,
+    satisfiedDependencyCount: dependencySurface.readiness.satisfiedDependencyCount,
+    unsatisfiedDependencyCount: dependencySurface.readiness.unsatisfiedDependencyCount,
     artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }
@@ -1183,10 +1381,12 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
   const reportEvents = resolveTaskReportEvents(latestAssignment?.reportEvents ?? task.reportEvents);
   const profile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task, latestAssignment);
+  const dependencySurface = getTaskDependencySurface(task, latestAssignment);
   return {
     kind: "task.event",
     taskId: task.id,
     status: task.status,
+    visualStatus: deriveTaskVisualStatus(task, dependencySurface.readiness, latestAssignment),
     priority: task.priority,
     progress: task.progress,
     profileId: profile.id,
@@ -1202,6 +1402,8 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     reportEvents,
     assigneeAgentId: task.assigneeAgentId ?? null,
     assigneeSessionName: task.assigneeSessionName ?? null,
+    readiness: dependencySurface.readiness,
+    launchPlan: dependencySurface.launchPlan,
     activeAssignment: dbGetActiveAssignment(task.id),
     task: toTaskStreamEntity(task, latestAssignment),
     event,
@@ -1218,6 +1420,7 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
       throw new Error(`Task not found: ${parsed.taskId}`);
     }
     const selectedTask = toTaskStreamEntity(details.task, details.activeAssignment);
+    const dependencySurface = getTaskDependencySurface(details.task, details.activeAssignment);
 
     return {
       query: {
@@ -1235,6 +1438,10 @@ export function buildTaskStreamSnapshot(args: Record<string, unknown> = {}): Tas
         task: selectedTask,
         parentTask: details.parentTask ? toTaskStreamEntity(details.parentTask) : null,
         childTasks: details.childTasks.map((childTask) => toTaskStreamEntity(childTask)),
+        dependencies: dependencySurface.dependencies,
+        dependents: dependencySurface.dependents,
+        launchPlan: dependencySurface.launchPlan,
+        readiness: dependencySurface.readiness,
         activeAssignment: details.activeAssignment,
         assignments: details.assignments,
         events: details.events.slice(-parsed.eventsLimit),
@@ -1282,11 +1489,12 @@ export async function executeTaskStreamCommand(
     case "task.create": {
       const args = TaskCreateCommandArgsSchema.parse(rawArgs);
       const assigneeAgentId = resolveTaskCreateAssigneeAgent(args.agentId, args.assigneeAgentId);
-      const created = createTask({
+      const created = await createTask({
         title: args.title,
         instructions: args.instructions,
         priority: args.priority,
         ...(args.profileId ? { profileId: args.profileId } : {}),
+        ...(args.dependsOnTaskIds ? { dependsOnTaskIds: args.dependsOnTaskIds } : {}),
         ...(typeof args.checkpointIntervalMs === "number" ? { checkpointIntervalMs: args.checkpointIntervalMs } : {}),
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
         ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
@@ -1297,9 +1505,12 @@ export async function executeTaskStreamCommand(
         ...(args.worktree ? { worktree: args.worktree } : {}),
       });
       await emitTaskEvent(created.task, created.event);
+      for (const relatedEvent of created.relatedEvents) {
+        await emitTaskEvent(relatedEvent.task, relatedEvent.event);
+      }
 
       if (assigneeAgentId) {
-        const dispatch = await dispatchTask(created.task.id, {
+        const dispatch = await queueOrDispatchTask(created.task.id, {
           agentId: assigneeAgentId,
           sessionName: args.sessionName ?? getDefaultTaskSessionNameForTask(created.task),
           assignedBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
@@ -1315,11 +1526,18 @@ export async function executeTaskStreamCommand(
           action: name,
           task: toTaskStreamEntity(dispatch.task),
           event: created.event,
-          dispatch: {
-            assignment: dispatch.assignment,
-            event: dispatch.event,
-            sessionName: dispatch.sessionName,
-          },
+          ...(dispatch.mode === "dispatched"
+            ? {
+                dispatch: {
+                  assignment: dispatch.assignment,
+                  event: dispatch.event,
+                  sessionName: dispatch.sessionName,
+                },
+              }
+            : {
+                launchPlan: dispatch.launchPlan,
+                readiness: dispatch.readiness,
+              }),
         };
       }
 
@@ -1327,13 +1545,14 @@ export async function executeTaskStreamCommand(
         action: name,
         task: toTaskStreamEntity(created.task),
         event: created.event,
+        relatedEvents: created.relatedEvents,
       };
     }
 
     case "task.dispatch": {
       const args = TaskDispatchCommandArgsSchema.parse(rawArgs);
       const task = dbGetTask(args.taskId);
-      const result = await dispatchTask(args.taskId, {
+      const result = await queueOrDispatchTask(args.taskId, {
         agentId: args.agentId,
         sessionName:
           args.sessionName ?? (task ? getDefaultTaskSessionNameForTask(task) : getDefaultTaskSessionName(args.taskId)),
@@ -1347,9 +1566,16 @@ export async function executeTaskStreamCommand(
       return {
         action: name,
         task: toTaskStreamEntity(result.task),
-        assignment: result.assignment,
         event: result.event,
-        sessionName: result.sessionName,
+        ...(result.mode === "dispatched"
+          ? {
+              assignment: result.assignment,
+              sessionName: result.sessionName,
+            }
+          : {
+              launchPlan: result.launchPlan,
+              readiness: result.readiness,
+            }),
       };
     }
 
@@ -1425,7 +1651,7 @@ export async function executeTaskStreamCommand(
 
     case "task.done": {
       const args = TaskDoneCommandArgsSchema.parse(rawArgs);
-      const completion = completeTask(args.taskId, {
+      const completion = await completeTask(args.taskId, {
         ...(args.actor ? { actor: args.actor } : options.actor ? { actor: options.actor } : {}),
         ...(args.agentId ? { agentId: args.agentId } : {}),
         ...(args.sessionName ? { sessionName: args.sessionName } : {}),
@@ -1574,11 +1800,22 @@ export function buildTaskResumePrompt(
   });
 }
 
-export function createTask(input: CreateTaskInput): { task: TaskRecord; event: TaskEvent } {
+export function createTask(input: CreateTaskInput): {
+  task: TaskRecord;
+  event: TaskEvent;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+} {
   if (input.parentTaskId) {
     const parentTask = dbGetTask(input.parentTaskId);
     if (!parentTask) {
       throw new Error(`Parent task not found: ${input.parentTaskId}`);
+    }
+  }
+
+  const dependencyIds = [...new Set((input.dependsOnTaskIds ?? []).map((taskId) => taskId.trim()).filter(Boolean))];
+  for (const dependencyId of dependencyIds) {
+    if (!dbGetTask(dependencyId)) {
+      throw new Error(`Dependency task not found: ${dependencyId}`);
     }
   }
 
@@ -1609,14 +1846,33 @@ export function createTask(input: CreateTaskInput): { task: TaskRecord; event: T
       persistMissingProfileState: true,
     });
     const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, resolvedProfile);
-    const task = taskProfileRequiresTaskDocument(resolvedProfile)
+    let task = taskProfileRequiresTaskDocument(resolvedProfile)
       ? ensureRequiredTaskDocument(bootstrappedTask, {
           profile: resolvedProfile,
           initializeSection: buildTaskCreatedDocSection(bootstrappedTask, created.event),
         })
       : bootstrappedTask;
     assertTaskDocumentInvariant(task, resolvedProfile, "task.create");
-    return { task, event: created.event };
+    const relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }> = [];
+    for (const dependencyId of dependencyIds) {
+      dbAddTaskDependency(task.id, dependencyId);
+      const eventResult = dbAppendTaskEvent(
+        task.id,
+        "task.dependency.added",
+        {
+          actor: input.createdBy,
+          agentId: input.createdByAgentId,
+          sessionName: input.createdBySessionName,
+          message: formatDependencyMutationMessage(task.id, dependencyId, "added"),
+          relatedTaskId: dependencyId,
+          progress: task.progress,
+        },
+        { touchTask: true },
+      );
+      task = eventResult.task;
+      relatedEvents.push({ task: eventResult.task, event: eventResult.event });
+    }
+    return { task, event: created.event, relatedEvents };
   } catch (error) {
     dbDeleteTask(created.task.id);
     rmSync(getCanonicalTaskDir(created.task.id), { recursive: true, force: true });
@@ -1658,6 +1914,314 @@ export function getTaskDetails(taskId: string): {
   };
 }
 
+function isTaskDependencyEditable(task: TaskRecord): boolean {
+  return task.status === "open";
+}
+
+function assertTaskDependencyEditable(task: TaskRecord, action: "add" | "remove"): void {
+  if (!isTaskDependencyEditable(task)) {
+    throw new Error(
+      `Cannot ${action} dependencies for task ${task.id} while status is ${task.status}. Dependencies gate start; edit them before dispatching work.`,
+    );
+  }
+}
+
+function taskDependsOn(taskId: string, targetTaskId: string, visited = new Set<string>()): boolean {
+  if (taskId === targetTaskId) {
+    return true;
+  }
+  if (visited.has(taskId)) {
+    return false;
+  }
+  visited.add(taskId);
+  return dbListTaskDependencies(taskId).some((dependency) =>
+    taskDependsOn(dependency.dependsOnTaskId, targetTaskId, visited),
+  );
+}
+
+function assertTaskDependencyEdge(taskId: string, dependsOnTaskId: string): void {
+  if (taskId === dependsOnTaskId) {
+    throw new Error("A task cannot depend on itself.");
+  }
+  if (taskDependsOn(dependsOnTaskId, taskId)) {
+    throw new Error(`Dependency cycle detected: ${taskId} cannot depend on ${dependsOnTaskId}.`);
+  }
+}
+
+function formatDependencyMutationMessage(taskId: string, dependsOnTaskId: string, verb: "added" | "removed"): string {
+  return verb === "added"
+    ? `Dependency added: ${taskId} now waits for ${dependsOnTaskId}.`
+    : `Dependency removed: ${taskId} no longer waits for ${dependsOnTaskId}.`;
+}
+
+function buildDependencySatisfiedMessage(taskId: string, dependsOnTaskId: string): string {
+  return `Dependency satisfied: ${taskId} no longer waits for ${dependsOnTaskId}.`;
+}
+
+function buildReadyMessage(_task: TaskRecord, launchPlan?: TaskLaunchPlan | null): string {
+  return launchPlan
+    ? `All dependencies satisfied; auto-dispatching via launch plan to ${launchPlan.agentId}/${launchPlan.sessionName}.`
+    : "All dependencies satisfied; task is ready to start.";
+}
+
+export function getTaskLaunchPlan(taskId: string): TaskLaunchPlan | null {
+  return dbGetTaskLaunchPlan(taskId);
+}
+
+async function reconcileTaskReadinessTransition(
+  taskId: string,
+  beforeUnsatisfiedCount: number,
+): Promise<Array<{ task: TaskRecord; event: TaskEvent }>> {
+  const task = dbGetTask(taskId);
+  if (!task) {
+    return [];
+  }
+
+  const dependencySurface = getTaskDependencySurface(task);
+  if (
+    task.archivedAt ||
+    task.status !== "open" ||
+    beforeUnsatisfiedCount <= 0 ||
+    dependencySurface.readiness.unsatisfiedDependencyCount > 0
+  ) {
+    return [];
+  }
+
+  const readyEvent = dbAppendTaskEvent(
+    taskId,
+    "task.ready",
+    {
+      actor: "task.dependencies",
+      message: buildReadyMessage(task, dependencySurface.launchPlan),
+      progress: task.progress,
+    },
+    { touchTask: true },
+  );
+  const relatedEvents = [readyEvent];
+  if (!dependencySurface.launchPlan) {
+    return relatedEvents;
+  }
+
+  const dispatched = await dispatchTask(taskId, {
+    agentId: dependencySurface.launchPlan.agentId,
+    sessionName: dependencySurface.launchPlan.sessionName,
+    assignedBy: dependencySurface.launchPlan.assignedBy ?? "task.launch-plan",
+    ...(dependencySurface.launchPlan.assignedByAgentId
+      ? { assignedByAgentId: dependencySurface.launchPlan.assignedByAgentId }
+      : {}),
+    ...(dependencySurface.launchPlan.assignedBySessionName
+      ? { assignedBySessionName: dependencySurface.launchPlan.assignedBySessionName }
+      : {}),
+    ...(dependencySurface.launchPlan.worktree ? { worktree: dependencySurface.launchPlan.worktree } : {}),
+    ...(typeof dependencySurface.launchPlan.checkpointIntervalMs === "number"
+      ? { checkpointIntervalMs: dependencySurface.launchPlan.checkpointIntervalMs }
+      : {}),
+    ...(dependencySurface.launchPlan.reportToSessionName
+      ? { reportToSessionName: dependencySurface.launchPlan.reportToSessionName }
+      : {}),
+    ...(dependencySurface.launchPlan.reportEvents ? { reportEvents: dependencySurface.launchPlan.reportEvents } : {}),
+  });
+  relatedEvents.push({ task: dispatched.task, event: dispatched.event });
+  return relatedEvents;
+}
+
+export async function queueTaskLaunch(
+  taskId: string,
+  input: DispatchTaskInput,
+): Promise<{
+  mode: "launch_planned";
+  task: TaskRecord;
+  launchPlan: TaskLaunchPlan;
+  readiness: TaskReadiness;
+  event: TaskEvent;
+}> {
+  const task = dbGetTask(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const dependencySurface = getTaskDependencySurface(task);
+  if (dependencySurface.readiness.unsatisfiedDependencyCount === 0) {
+    throw new Error(`Task ${taskId} is already ready; dispatch it instead of arming a launch plan.`);
+  }
+  const prepared = prepareTaskDispatchContext(task, input, { materializeSession: false });
+  const launchPlan = dbSetTaskLaunchPlan(taskId, {
+    ...input,
+    agentId: prepared.agentId,
+    sessionName: prepared.sessionName,
+    ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
+  });
+  const eventResult = dbAppendTaskEvent(
+    taskId,
+    "task.launch-planned",
+    {
+      actor: input.assignedBy,
+      agentId: launchPlan.agentId,
+      sessionName: launchPlan.sessionName,
+      message: `Launch plan armed for ${launchPlan.agentId}/${launchPlan.sessionName}.`,
+      progress: task.progress,
+    },
+    { touchTask: true },
+  );
+
+  return {
+    mode: "launch_planned",
+    task: eventResult.task,
+    launchPlan,
+    readiness: getTaskDependencySurface(eventResult.task).readiness,
+    event: eventResult.event,
+  };
+}
+
+export async function queueOrDispatchTask(
+  taskId: string,
+  input: DispatchTaskInput,
+): Promise<
+  | ({
+      mode: "launch_planned";
+      launchPlan: TaskLaunchPlan;
+      readiness: TaskReadiness;
+    } & Awaited<ReturnType<typeof queueTaskLaunch>>)
+  | ({
+      mode: "dispatched";
+      readiness: TaskReadiness;
+    } & Awaited<ReturnType<typeof dispatchTask>>)
+> {
+  const task = dbGetTask(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  const dependencySurface = getTaskDependencySurface(task);
+  if (task.status === "open" && dependencySurface.readiness.unsatisfiedDependencyCount > 0) {
+    const planned = await queueTaskLaunch(taskId, input);
+    return {
+      ...planned,
+      mode: "launch_planned",
+      readiness: planned.readiness,
+    };
+  }
+
+  const dispatched = await dispatchTask(taskId, input);
+  return {
+    ...dispatched,
+    mode: "dispatched",
+    readiness: getTaskDependencySurface(dispatched.task, dispatched.assignment).readiness,
+  };
+}
+
+export async function addTaskDependency(
+  taskId: string,
+  dependsOnTaskId: string,
+): Promise<{
+  task: TaskRecord;
+  dependency: TaskDependencyRecord;
+  event: TaskEvent;
+  readiness: TaskReadiness;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+  wasNoop?: boolean;
+}> {
+  const task = dbGetTask(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  assertTaskDependencyEditable(task, "add");
+  if (!dbGetTask(dependsOnTaskId)) {
+    throw new Error(`Dependency task not found: ${dependsOnTaskId}`);
+  }
+  assertTaskDependencyEdge(taskId, dependsOnTaskId);
+  const beforeUnsatisfiedCount = getTaskDependencySurface(task).readiness.unsatisfiedDependencyCount;
+  const added = dbAddTaskDependency(taskId, dependsOnTaskId);
+  if (added.wasNoop) {
+    return {
+      task,
+      dependency: added.dependency,
+      event: dbListTaskEvents(taskId, 1)[0] ?? {
+        id: 0,
+        taskId,
+        type: "task.created",
+        createdAt: task.createdAt,
+      },
+      readiness: getTaskDependencySurface(task).readiness,
+      relatedEvents: [],
+      wasNoop: true,
+    };
+  }
+  const eventResult = dbAppendTaskEvent(
+    taskId,
+    "task.dependency.added",
+    {
+      actor: "task.dependencies",
+      message: formatDependencyMutationMessage(taskId, dependsOnTaskId, "added"),
+      relatedTaskId: dependsOnTaskId,
+      progress: task.progress,
+    },
+    { touchTask: true },
+  );
+  const relatedEvents = await reconcileTaskReadinessTransition(taskId, beforeUnsatisfiedCount);
+  return {
+    task: eventResult.task,
+    dependency: added.dependency,
+    event: eventResult.event,
+    readiness: getTaskDependencySurface(eventResult.task).readiness,
+    relatedEvents,
+    ...(added.wasNoop ? { wasNoop: true } : {}),
+  };
+}
+
+export async function removeTaskDependency(
+  taskId: string,
+  dependsOnTaskId: string,
+): Promise<{
+  task: TaskRecord;
+  dependency: TaskDependencyRecord | null;
+  event: TaskEvent;
+  readiness: TaskReadiness;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+  wasNoop?: boolean;
+}> {
+  const task = dbGetTask(taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  assertTaskDependencyEditable(task, "remove");
+  const beforeUnsatisfiedCount = getTaskDependencySurface(task).readiness.unsatisfiedDependencyCount;
+  const removed = dbRemoveTaskDependency(taskId, dependsOnTaskId);
+  if (removed.wasNoop) {
+    return {
+      task,
+      dependency: removed.dependency,
+      event: dbListTaskEvents(taskId, 1)[0] ?? {
+        id: 0,
+        taskId,
+        type: "task.created",
+        createdAt: task.createdAt,
+      },
+      readiness: getTaskDependencySurface(task).readiness,
+      relatedEvents: [],
+      wasNoop: true,
+    };
+  }
+  const eventResult = dbAppendTaskEvent(
+    taskId,
+    "task.dependency.removed",
+    {
+      actor: "task.dependencies",
+      message: formatDependencyMutationMessage(taskId, dependsOnTaskId, "removed"),
+      relatedTaskId: dependsOnTaskId,
+      progress: task.progress,
+    },
+    { touchTask: true },
+  );
+  const relatedEvents = await reconcileTaskReadinessTransition(taskId, beforeUnsatisfiedCount);
+  return {
+    task: eventResult.task,
+    dependency: removed.dependency,
+    event: eventResult.event,
+    readiness: getTaskDependencySurface(eventResult.task).readiness,
+    relatedEvents,
+    ...(removed.wasNoop ? { wasNoop: true } : {}),
+  };
+}
+
 function buildChildStateRelatedEvents(
   task: TaskRecord,
   event: TaskEvent,
@@ -1692,6 +2256,50 @@ function buildChildStateRelatedEvents(
   return [{ task: documentedParent, event: callback.event }];
 }
 
+async function buildDependencySatisfiedRelatedEvents(
+  task: TaskRecord,
+  event: TaskEvent,
+): Promise<Array<{ task: TaskRecord; event: TaskEvent }>> {
+  if (task.status !== "done" || typeof event.id !== "number") {
+    return [];
+  }
+
+  const satisfiedDependencies = dbMarkTaskDependenciesSatisfiedByUpstream(task.id, event);
+  const relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }> = [];
+  const seen = new Set<string>();
+
+  for (const dependency of satisfiedDependencies) {
+    const dependentTask = dbGetTask(dependency.taskId);
+    if (!dependentTask) {
+      continue;
+    }
+    const beforeUnsatisfiedCount = getTaskDependencySurface(dependentTask).readiness.unsatisfiedDependencyCount + 1;
+    const satisfiedEvent = dbAppendTaskEvent(
+      dependentTask.id,
+      "task.dependency.satisfied",
+      {
+        actor: event.actor ?? "task.dependencies",
+        agentId: event.agentId,
+        sessionName: event.sessionName,
+        message: buildDependencySatisfiedMessage(dependentTask.id, task.id),
+        relatedTaskId: task.id,
+        progress: dependentTask.progress,
+      },
+      { touchTask: true },
+    );
+    relatedEvents.push(satisfiedEvent);
+
+    if (seen.has(dependentTask.id)) {
+      continue;
+    }
+    seen.add(dependentTask.id);
+    const readinessEvents = await reconcileTaskReadinessTransition(dependentTask.id, beforeUnsatisfiedCount);
+    relatedEvents.push(...readinessEvents);
+  }
+
+  return relatedEvents;
+}
+
 export async function dispatchTask(
   taskId: string,
   input: DispatchTaskInput,
@@ -1707,24 +2315,22 @@ export async function dispatchTask(
   if (!existingTask) {
     throw new Error(`Task not found: ${taskId}`);
   }
-  const { task: profiledTask, profile } = ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
-  const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
-  const { agentId, sessionName, sessionCwd, worktree } = resolveTaskSessionContext(
-    bootstrappedTask,
+  const dependencySurface = getTaskDependencySurface(existingTask);
+  if (existingTask.status === "open" && dependencySurface.readiness.unsatisfiedDependencyCount > 0) {
+    throw new Error(
+      `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
+    );
+  }
+  const {
+    task: bootstrappedTask,
     profile,
-    input.agentId,
-    input.sessionName,
-    input.worktree ?? bootstrappedTask.worktree,
-  );
-  const { taskDocPath, primaryArtifact } = validateTaskProfileRuntimeOrThrow(bootstrappedTask, profile, {
-    stage: "task.dispatch",
-    effectiveCwd: sessionCwd,
-    ...(worktree ? { worktree } : {}),
     agentId,
     sessionName,
-    validateDispatch: true,
-    validateResume: true,
-  });
+    sessionCwd,
+    worktree,
+    taskDocPath,
+    primaryArtifact,
+  } = prepareTaskDispatchContext(existingTask, input, { materializeSession: true });
 
   const { task, assignment, event } = dbDispatchTask(
     taskId,
@@ -1769,6 +2375,7 @@ export async function dispatchTask(
     taskProfile,
     primaryArtifact,
   });
+  syncWorkflowNodeRunForTask(documentedTask.id);
   await publishSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
@@ -1857,6 +2464,48 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
           reason: error instanceof Error ? error.message : String(error),
         });
       }
+    }
+  }
+
+  const openTasks = listTasks({ status: "open", archiveMode: "exclude" });
+  for (const task of openTasks) {
+    if (seen.has(task.id)) continue;
+    seen.add(task.id);
+
+    const dependencySurface = getTaskDependencySurface(task);
+    if (dependencySurface.readiness.state !== "ready" || !dependencySurface.launchPlan) {
+      continue;
+    }
+
+    try {
+      const dispatched = await dispatchTask(task.id, {
+        agentId: dependencySurface.launchPlan.agentId,
+        sessionName: dependencySurface.launchPlan.sessionName,
+        assignedBy: dependencySurface.launchPlan.assignedBy ?? "task.launch-plan",
+        ...(dependencySurface.launchPlan.assignedByAgentId
+          ? { assignedByAgentId: dependencySurface.launchPlan.assignedByAgentId }
+          : {}),
+        ...(dependencySurface.launchPlan.assignedBySessionName
+          ? { assignedBySessionName: dependencySurface.launchPlan.assignedBySessionName }
+          : {}),
+        ...(dependencySurface.launchPlan.worktree ? { worktree: dependencySurface.launchPlan.worktree } : {}),
+        ...(typeof dependencySurface.launchPlan.checkpointIntervalMs === "number"
+          ? { checkpointIntervalMs: dependencySurface.launchPlan.checkpointIntervalMs }
+          : {}),
+        ...(dependencySurface.launchPlan.reportToSessionName
+          ? { reportToSessionName: dependencySurface.launchPlan.reportToSessionName }
+          : {}),
+        ...(dependencySurface.launchPlan.reportEvents
+          ? { reportEvents: dependencySurface.launchPlan.reportEvents }
+          : {}),
+      });
+      await emitTaskEvent(dispatched.task, dispatched.event);
+      recoveredTaskIds.push(dispatched.task.id);
+    } catch (error) {
+      skipped.push({
+        taskId: task.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1979,6 +2628,7 @@ export function blockTask(
   }
   ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
   const result = dbBlockTask(taskId, input);
+  syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
     relatedEvents: result.wasNoop ? [] : buildChildStateRelatedEvents(result.task, result.event),
@@ -1992,26 +2642,6 @@ export function failTask(
   task: TaskRecord;
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
-} {
-  const existingTask = dbGetTask(taskId);
-  if (!existingTask) {
-    throw new Error(`Task not found: ${taskId}`);
-  }
-  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
-  const result = dbFailTask(taskId, input);
-  return {
-    ...result,
-    relatedEvents: buildChildStateRelatedEvents(result.task, result.event),
-  };
-}
-
-export function completeTask(
-  taskId: string,
-  input: TaskTerminalInput,
-): {
-  task: TaskRecord;
-  event: TaskEvent;
-  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
   wasNoop?: boolean;
 } {
   const existingTask = dbGetTask(taskId);
@@ -2019,9 +2649,37 @@ export function completeTask(
     throw new Error(`Task not found: ${taskId}`);
   }
   ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
-  const result = dbCompleteTask(taskId, input);
+  const result = dbFailTask(taskId, input);
+  syncWorkflowNodeRunForTask(taskId);
   return {
     ...result,
     relatedEvents: result.wasNoop ? [] : buildChildStateRelatedEvents(result.task, result.event),
+  };
+}
+
+export async function completeTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): Promise<{
+  task: TaskRecord;
+  event: TaskEvent;
+  relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
+  wasNoop?: boolean;
+}> {
+  const existingTask = dbGetTask(taskId);
+  if (!existingTask) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+  ensureResolvedTaskProfile(existingTask, { persistMissingProfileId: true });
+  const result = dbCompleteTask(taskId, input);
+  syncWorkflowNodeRunForTask(taskId);
+  const dependencyRelatedEvents = result.wasNoop
+    ? []
+    : await buildDependencySatisfiedRelatedEvents(result.task, result.event);
+  return {
+    ...result,
+    relatedEvents: result.wasNoop
+      ? []
+      : [...buildChildStateRelatedEvents(result.task, result.event), ...dependencyRelatedEvents],
   };
 }

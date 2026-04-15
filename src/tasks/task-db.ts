@@ -19,7 +19,9 @@ import {
   type TaskAssignment,
   type TaskComment,
   type TaskCommentInput,
+  type TaskDependencyRecord,
   type TaskEvent,
+  type TaskLaunchPlan,
   type TaskProfileInputValues,
   type TaskProgressInput,
   type TaskRecord,
@@ -112,6 +114,31 @@ interface TaskCommentRow {
   author_session_name: string | null;
   body: string;
   created_at: number;
+}
+
+interface TaskDependencyRow {
+  task_id: string;
+  depends_on_task_id: string;
+  created_at: number;
+  satisfied_at: number | null;
+  satisfied_by_event_id: number | null;
+}
+
+interface TaskLaunchPlanRow {
+  task_id: string;
+  agent_id: string;
+  session_name: string;
+  assigned_by: string | null;
+  assigned_by_agent_id: string | null;
+  assigned_by_session_name: string | null;
+  worktree_mode: string | null;
+  worktree_path: string | null;
+  worktree_branch: string | null;
+  checkpoint_interval_ms: number | null;
+  report_to_session_name: string | null;
+  report_events: string | null;
+  created_at: number;
+  updated_at: number;
 }
 
 let schemaReady = false;
@@ -257,6 +284,19 @@ function applyTaskWorktreeSchemaMigrations(): void {
     db.exec("ALTER TABLE task_events ADD COLUMN related_task_id TEXT");
   }
 
+  const launchPlanColumns = new Set(
+    (db.prepare("PRAGMA table_info(task_launch_plans)").all() as Array<{ name: string }>).map((column) => column.name),
+  );
+  if (!launchPlanColumns.has("assigned_by")) {
+    db.exec("ALTER TABLE task_launch_plans ADD COLUMN assigned_by TEXT");
+  }
+  if (!launchPlanColumns.has("assigned_by_agent_id")) {
+    db.exec("ALTER TABLE task_launch_plans ADD COLUMN assigned_by_agent_id TEXT");
+  }
+  if (!launchPlanColumns.has("assigned_by_session_name")) {
+    db.exec("ALTER TABLE task_launch_plans ADD COLUMN assigned_by_session_name TEXT");
+  }
+
   db.prepare(`
     UPDATE tasks
     SET checkpoint_interval_ms = COALESCE(checkpoint_interval_ms, ?),
@@ -378,12 +418,44 @@ function ensureTaskSchema(): void {
       FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id TEXT NOT NULL,
+      depends_on_task_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      satisfied_at INTEGER,
+      satisfied_by_event_id INTEGER,
+      PRIMARY KEY (task_id, depends_on_task_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (satisfied_by_event_id) REFERENCES task_events(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS task_launch_plans (
+      task_id TEXT PRIMARY KEY,
+      agent_id TEXT NOT NULL,
+      session_name TEXT NOT NULL,
+      assigned_by TEXT,
+      assigned_by_agent_id TEXT,
+      assigned_by_session_name TEXT,
+      worktree_mode TEXT,
+      worktree_path TEXT,
+      worktree_branch TEXT,
+      checkpoint_interval_ms INTEGER,
+      report_to_session_name TEXT,
+      report_events TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee_agent ON tasks(assignee_agent_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_assignee_session ON tasks(assignee_session_name);
     CREATE INDEX IF NOT EXISTS idx_task_assignments_task ON task_assignments(task_id, assigned_at DESC);
     CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_upstream ON task_dependencies(depends_on_task_id, task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id, satisfied_at, created_at);
   `);
   applyTaskWorktreeSchemaMigrations();
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, updated_at DESC)");
@@ -391,6 +463,7 @@ function ensureTaskSchema(): void {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_task_assignments_checkpoint_due ON task_assignments(status, checkpoint_due_at)",
   );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_task_launch_plans_session ON task_launch_plans(session_name)");
   schemaReady = true;
   schemaDbPath = currentDbPath;
 }
@@ -556,6 +629,35 @@ function rowToComment(row: TaskCommentRow): TaskComment {
   };
 }
 
+function rowToTaskDependency(row: TaskDependencyRow): TaskDependencyRecord {
+  return {
+    taskId: row.task_id,
+    dependsOnTaskId: row.depends_on_task_id,
+    createdAt: row.created_at,
+    ...(typeof row.satisfied_at === "number" ? { satisfiedAt: row.satisfied_at } : {}),
+    ...(typeof row.satisfied_by_event_id === "number" ? { satisfiedByEventId: row.satisfied_by_event_id } : {}),
+  };
+}
+
+function rowToTaskLaunchPlan(row: TaskLaunchPlanRow): TaskLaunchPlan {
+  return {
+    taskId: row.task_id,
+    agentId: row.agent_id,
+    sessionName: row.session_name,
+    ...(row.assigned_by ? { assignedBy: row.assigned_by } : {}),
+    ...(row.assigned_by_agent_id ? { assignedByAgentId: row.assigned_by_agent_id } : {}),
+    ...(row.assigned_by_session_name ? { assignedBySessionName: row.assigned_by_session_name } : {}),
+    ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
+      ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
+      : {}),
+    ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
+    ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
+    reportEvents: deserializeTaskReportEvents(row.report_events),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 function getAssignmentRowById(assignmentId: string): TaskAssignmentRow | undefined {
   ensureTaskSchema();
   const db = getDb();
@@ -591,6 +693,42 @@ function getLatestTaskEvent(taskId: string, type?: TaskEvent["type"]): TaskEvent
         `)
         .get(taskId) as TaskEventRow | undefined);
   return row ? rowToEvent(row) : undefined;
+}
+
+function getTerminalTaskNoopResult(
+  task: TaskRecord,
+  preferredType?: TaskEvent["type"],
+): { task: TaskRecord; event: TaskEvent; wasNoop: true } {
+  const fallbackType = task.status === "failed" ? "task.failed" : task.status === "done" ? "task.done" : undefined;
+  const event =
+    (preferredType ? getLatestTaskEvent(task.id, preferredType) : undefined) ??
+    (fallbackType ? getLatestTaskEvent(task.id, fallbackType) : undefined) ??
+    getLatestTaskEvent(task.id)!;
+  return {
+    task,
+    event,
+    wasNoop: true,
+  };
+}
+
+function resolveSatisfiedDependencySource(dependsOnTaskId: string): {
+  satisfiedAt?: number;
+  satisfiedByEventId?: number;
+} {
+  const upstreamTask = dbGetTask(dependsOnTaskId);
+  if (upstreamTask?.status !== "done") {
+    return {};
+  }
+
+  const doneEvent = getLatestTaskEvent(dependsOnTaskId, "task.done");
+  if (!doneEvent) {
+    return {};
+  }
+
+  return {
+    satisfiedAt: doneEvent.createdAt,
+    ...(typeof doneEvent.id === "number" ? { satisfiedByEventId: doneEvent.id } : {}),
+  };
 }
 
 function buildDispatchEventMessage(input: DispatchTaskInput): string {
@@ -782,6 +920,233 @@ export function dbGetTask(id: string): TaskRecord | null {
   const db = getDb();
   const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;
   return row ? rowToTask(row) : null;
+}
+
+export function dbListTaskDependencies(taskId: string): TaskDependencyRecord[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE task_id = ?
+        ORDER BY created_at ASC, depends_on_task_id ASC
+      `,
+    )
+    .all(taskId) as TaskDependencyRow[];
+  return rows.map(rowToTaskDependency);
+}
+
+export function dbListTaskDependents(dependsOnTaskId: string): TaskDependencyRecord[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE depends_on_task_id = ?
+        ORDER BY created_at ASC, task_id ASC
+      `,
+    )
+    .all(dependsOnTaskId) as TaskDependencyRow[];
+  return rows.map(rowToTaskDependency);
+}
+
+export function dbGetTaskLaunchPlan(taskId: string): TaskLaunchPlan | null {
+  ensureTaskSchema();
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM task_launch_plans WHERE task_id = ?").get(taskId) as
+    | TaskLaunchPlanRow
+    | undefined;
+  return row ? rowToTaskLaunchPlan(row) : null;
+}
+
+export function dbSetTaskLaunchPlan(taskId: string, input: DispatchTaskInput): TaskLaunchPlan {
+  ensureTaskSchema();
+  const db = getDb();
+  getTaskOrThrow(taskId);
+  const now = Date.now();
+  const [worktreeMode, worktreePath, worktreeBranch] = worktreeToColumns(input.worktree);
+  db.prepare(
+    `
+      INSERT INTO task_launch_plans (
+        task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
+        worktree_mode, worktree_path, worktree_branch, checkpoint_interval_ms, report_to_session_name,
+        report_events, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(task_id) DO UPDATE SET
+        agent_id = excluded.agent_id,
+        session_name = excluded.session_name,
+        assigned_by = excluded.assigned_by,
+        assigned_by_agent_id = excluded.assigned_by_agent_id,
+        assigned_by_session_name = excluded.assigned_by_session_name,
+        worktree_mode = excluded.worktree_mode,
+        worktree_path = excluded.worktree_path,
+        worktree_branch = excluded.worktree_branch,
+        checkpoint_interval_ms = excluded.checkpoint_interval_ms,
+        report_to_session_name = excluded.report_to_session_name,
+        report_events = excluded.report_events,
+        updated_at = excluded.updated_at
+    `,
+  ).run(
+    taskId,
+    input.agentId,
+    input.sessionName,
+    input.assignedBy ?? null,
+    input.assignedByAgentId ?? null,
+    input.assignedBySessionName ?? null,
+    worktreeMode,
+    worktreePath,
+    worktreeBranch,
+    input.checkpointIntervalMs ?? null,
+    normalizeTaskReportToSessionName(input.reportToSessionName),
+    serializeTaskReportEvents(input.reportEvents),
+    now,
+    now,
+  );
+
+  return dbGetTaskLaunchPlan(taskId)!;
+}
+
+export function dbClearTaskLaunchPlan(taskId: string): boolean {
+  ensureTaskSchema();
+  const db = getDb();
+  return db.prepare("DELETE FROM task_launch_plans WHERE task_id = ?").run(taskId).changes > 0;
+}
+
+export function dbAddTaskDependency(
+  taskId: string,
+  dependsOnTaskId: string,
+): { dependency: TaskDependencyRecord; wasNoop?: boolean } {
+  ensureTaskSchema();
+  const db = getDb();
+  getTaskOrThrow(taskId);
+  getTaskOrThrow(dependsOnTaskId);
+
+  const existing = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE task_id = ? AND depends_on_task_id = ?
+      `,
+    )
+    .get(taskId, dependsOnTaskId) as TaskDependencyRow | undefined;
+  if (existing) {
+    return {
+      dependency: rowToTaskDependency(existing),
+      wasNoop: true,
+    };
+  }
+
+  const now = Date.now();
+  const satisfied = resolveSatisfiedDependencySource(dependsOnTaskId);
+  db.prepare(
+    `
+      INSERT INTO task_dependencies (
+        task_id, depends_on_task_id, created_at, satisfied_at, satisfied_by_event_id
+      ) VALUES (?, ?, ?, ?, ?)
+    `,
+  ).run(taskId, dependsOnTaskId, now, satisfied.satisfiedAt ?? null, satisfied.satisfiedByEventId ?? null);
+
+  db.prepare(
+    `
+      UPDATE tasks
+      SET updated_at = ?
+      WHERE id = ?
+    `,
+  ).run(now, taskId);
+
+  const row = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE task_id = ? AND depends_on_task_id = ?
+      `,
+    )
+    .get(taskId, dependsOnTaskId) as TaskDependencyRow | undefined;
+  if (!row) {
+    throw new Error(`Failed to persist dependency ${taskId} -> ${dependsOnTaskId}`);
+  }
+  return { dependency: rowToTaskDependency(row) };
+}
+
+export function dbRemoveTaskDependency(
+  taskId: string,
+  dependsOnTaskId: string,
+): { dependency: TaskDependencyRecord | null; wasNoop?: boolean } {
+  ensureTaskSchema();
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE task_id = ? AND depends_on_task_id = ?
+      `,
+    )
+    .get(taskId, dependsOnTaskId) as TaskDependencyRow | undefined;
+  if (!existing) {
+    return { dependency: null, wasNoop: true };
+  }
+
+  db.prepare(
+    `
+      DELETE FROM task_dependencies
+      WHERE task_id = ? AND depends_on_task_id = ?
+    `,
+  ).run(taskId, dependsOnTaskId);
+
+  db.prepare(
+    `
+      UPDATE tasks
+      SET updated_at = ?
+      WHERE id = ?
+    `,
+  ).run(Date.now(), taskId);
+
+  return { dependency: rowToTaskDependency(existing) };
+}
+
+export function dbMarkTaskDependenciesSatisfiedByUpstream(
+  dependsOnTaskId: string,
+  event: Pick<TaskEvent, "id" | "createdAt">,
+): TaskDependencyRecord[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const pendingRows = db
+    .prepare(
+      `
+        SELECT *
+        FROM task_dependencies
+        WHERE depends_on_task_id = ?
+          AND satisfied_at IS NULL
+      `,
+    )
+    .all(dependsOnTaskId) as TaskDependencyRow[];
+  if (pendingRows.length === 0) {
+    return [];
+  }
+
+  db.prepare(
+    `
+      UPDATE task_dependencies
+      SET satisfied_at = ?,
+          satisfied_by_event_id = ?
+      WHERE depends_on_task_id = ?
+        AND satisfied_at IS NULL
+    `,
+  ).run(event.createdAt, typeof event.id === "number" ? event.id : null, dependsOnTaskId);
+  return pendingRows.map((row) =>
+    rowToTaskDependency({
+      ...row,
+      satisfied_at: event.createdAt,
+      satisfied_by_event_id: typeof event.id === "number" ? event.id : null,
+    }),
+  );
 }
 
 export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
@@ -1169,6 +1534,8 @@ export function dbDispatchTask(
   const reportToSessionName = normalizeTaskReportToSessionName(input.reportToSessionName ?? task.reportToSessionName);
   const reportEvents = serializeTaskReportEvents(input.reportEvents ?? task.reportEvents);
 
+  db.prepare("DELETE FROM task_launch_plans WHERE task_id = ?").run(taskId);
+
   db.prepare(`
     UPDATE task_assignments
     SET status = 'superseded',
@@ -1382,12 +1749,8 @@ export function dbBlockTask(
   ensureTaskSchema();
   const db = getDb();
   const task = getTaskOrThrow(taskId);
-  if (task.status === "done") {
-    return {
-      task,
-      event: getLatestTaskEvent(taskId, "task.done") ?? getLatestTaskEvent(taskId)!,
-      wasNoop: true,
-    };
+  if (task.status === "done" || task.status === "failed") {
+    return getTerminalTaskNoopResult(task);
   }
   const now = Date.now();
   const progress =
@@ -1423,8 +1786,16 @@ export function dbBlockTask(
   return { task: getTaskOrThrow(taskId), event };
 }
 
-export function dbFailTask(taskId: string, input: TaskTerminalInput): { task: TaskRecord; event: TaskEvent } {
+export function dbFailTask(
+  taskId: string,
+  input: TaskTerminalInput,
+): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
+  const task = getTaskOrThrow(taskId);
+  if (task.status === "done" || task.status === "failed") {
+    return getTerminalTaskNoopResult(task);
+  }
+
   const db = getDb();
   const now = Date.now();
 
@@ -1462,20 +1833,8 @@ export function dbCompleteTask(
 ): { task: TaskRecord; event: TaskEvent; wasNoop?: boolean } {
   ensureTaskSchema();
   const task = getTaskOrThrow(taskId);
-  if (task.status === "done") {
-    return {
-      task,
-      event:
-        getLatestTaskEvent(taskId, "task.done") ??
-        appendTaskEvent(taskId, "task.done", {
-          actor: input.actor,
-          agentId: input.agentId,
-          sessionName: input.sessionName,
-          message: task.summary ?? input.message,
-          progress: 100,
-        }),
-      wasNoop: true,
-    };
+  if (task.status === "done" || task.status === "failed") {
+    return getTerminalTaskNoopResult(task, "task.done");
   }
 
   const db = getDb();
