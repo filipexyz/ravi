@@ -89,6 +89,68 @@ function truncateOutput(output: unknown): unknown {
   return output;
 }
 
+const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
+const MAX_TURN_FAILURE_RESPONSE = 320;
+
+function truncateLogDetail(value: unknown, maxLength = MAX_TURN_FAILURE_LOG_DETAIL): string | undefined {
+  if (value === undefined || value === null) return undefined;
+
+  let text: string;
+  if (typeof value === "string") {
+    text = value;
+  } else {
+    try {
+      text = JSON.stringify(value);
+    } catch {
+      text = String(value);
+    }
+  }
+
+  return text.length > maxLength ? `${text.slice(0, maxLength - 15)}... [truncated]` : text;
+}
+
+function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!rawEvent) return undefined;
+
+  const summary: Record<string, unknown> = {};
+  for (const key of ["type", "subtype", "status", "error", "errors", "message", "result", "exitCode"]) {
+    if (rawEvent[key] !== undefined) {
+      summary[key] = truncateLogDetail(rawEvent[key]);
+    }
+  }
+
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
+function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<string, unknown> }): string | undefined {
+  const parts: string[] = [];
+  const rawEvent = event.rawEvent;
+
+  if (rawEvent?.type !== undefined) parts.push(`raw.type=${String(rawEvent.type)}`);
+  if (rawEvent?.subtype !== undefined) parts.push(`raw.subtype=${String(rawEvent.subtype)}`);
+  if (rawEvent?.status !== undefined) parts.push(`raw.status=${String(rawEvent.status)}`);
+
+  for (const key of ["error", "errors", "message", "result"]) {
+    const detail = truncateLogDetail(rawEvent?.[key]);
+    if (detail) parts.push(`raw.${key}=${detail}`);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+function formatUserFacingTurnFailure(error: string): string {
+  const firstLine = error
+    .split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  const detail = firstLine ?? (error.trim() || "unknown error");
+  const clipped =
+    detail.length > MAX_TURN_FAILURE_RESPONSE
+      ? `${detail.slice(0, MAX_TURN_FAILURE_RESPONSE - 15)}... [truncated]`
+      : detail;
+  return `Error: ${clipped}`;
+}
+
 /** Emit to NATS, truncating payload if it exceeds the size limit */
 async function safeEmit(topic: string, data: Record<string, unknown>): Promise<void> {
   let json = JSON.stringify(data);
@@ -1714,7 +1776,7 @@ export class RaviBot {
 
       if (resolvedSource && agent.mode !== "sentinel") {
         await nats.emit(`ravi.session.${sessionName}.response`, {
-          response: `Error: ${errorMessage}`,
+          response: formatUserFacingTurnFailure(errorMessage),
           target: resolvedSource,
           _emitId: Math.random().toString(36).slice(2, 8),
           _instanceId: this.instanceId,
@@ -2180,11 +2242,14 @@ export class RaviBot {
         }
 
         if (event.type === "turn.failed") {
+          const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
           log.warn("Turn failed", {
             runId,
             sessionName,
             recoverable: event.recoverable ?? true,
             error: event.error,
+            failureDetails: formatRuntimeFailureDetails(event),
+            rawEvent: rawEventSummary,
           });
 
           responseText = "";
@@ -2193,7 +2258,7 @@ export class RaviBot {
           streaming.turnActive = false;
 
           if (streaming.agentMode !== "sentinel") {
-            await emitResponse(`Error: ${event.error}`);
+            await emitResponse(formatUserFacingTurnFailure(event.error));
           }
 
           signalTurnComplete();

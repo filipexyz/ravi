@@ -591,6 +591,40 @@ describe("RaviBot runtime guards", () => {
     ).toBe(true);
   });
 
+  it("keeps runtime failure responses bounded while preserving runtime error detail", async () => {
+    const sessionKey = "agent:main:runtime-failure";
+    const longError = `TypeError: oD is not a function\n${"at minified.bundle.js:1:1\n".repeat(100)}`;
+    runtimeStartImpl = (providerId) => ({
+      provider: providerId,
+      events: (async function* () {
+        yield {
+          type: "turn.failed",
+          error: longError,
+          recoverable: true,
+          rawEvent: { type: "result", subtype: "error_during_execution", errors: [longError] },
+        };
+      })(),
+      interrupt: async () => {},
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const runtimeFailure = emittedEvents.find(
+      (entry) =>
+        entry.topic === `ravi.session.${sessionKey}.runtime` &&
+        entry.data?.type === "turn.failed" &&
+        entry.data?.error === longError,
+    );
+    expect(runtimeFailure).toBeDefined();
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data
+      ?.response;
+    expect(String(response).startsWith("Error: TypeError: oD is not a function")).toBe(true);
+    expect(String(response).length).toBeLessThanOrEqual(340);
+  });
+
   it("queues prompts that arrive while the runtime is still starting without interrupting startup", async () => {
     const sessionKey = "agent:main:startup-queue";
     let releasePrepare: (() => void) | undefined;

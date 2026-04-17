@@ -58,6 +58,16 @@ describe("logger terminal stream", () => {
     expect(String(stdoutSpy.mock.calls[0]?.[0] ?? "")).toContain("[ravi] stdout opt-in");
   });
 
+  it("includes Error stacks for warning-level logs", () => {
+    logger.warn("recoverable failure", { error: new Error("boom") });
+
+    const output = String(stderrSpy.mock.calls[0]?.[0] ?? "");
+    expect(output).toContain("[ravi] recoverable failure");
+    expect(output).toContain("error=boom");
+    expect(output).toContain("errorName=Error");
+    expect(output).toContain("stack=");
+  });
+
   it("keeps NATS lifecycle logs off stdout", async () => {
     connectMock.mockClear();
     fakeNatsConnection.drain.mockClear();

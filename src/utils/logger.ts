@@ -26,6 +26,9 @@ const COLORS = {
 // Log file path
 const LOG_DIR = join(homedir(), ".ravi", "logs");
 const LOG_FILE = join(LOG_DIR, "ravi.log");
+const ERROR_STACK_LINE_LIMIT = 8;
+const TERMINAL_DEFAULT_VALUE_LIMIT = 80;
+const TERMINAL_LONG_VALUE_LIMIT = 1200;
 
 /** Context that persists across log calls */
 interface LogContext {
@@ -76,6 +79,47 @@ class Logger {
     return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[Logger.globalLevel];
   }
 
+  private static errorStackLines(error: Error): string[] | undefined {
+    return error.stack
+      ?.split("\n")
+      .slice(1, ERROR_STACK_LINE_LIMIT + 1)
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  private normalizeLogData(data?: unknown): unknown {
+    if (data instanceof Error) {
+      return {
+        error: data.message,
+        errorName: data.name,
+        stack: Logger.errorStackLines(data),
+      };
+    }
+
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      return data;
+    }
+
+    const normalized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      if (value instanceof Error) {
+        if (key === "error") {
+          normalized.error = value.message;
+          normalized.errorName = value.name;
+          normalized.stack = Logger.errorStackLines(value);
+        } else {
+          normalized[key] = value.message;
+          normalized[`${key}Name`] = value.name;
+          normalized[`${key}Stack`] = Logger.errorStackLines(value);
+        }
+        continue;
+      }
+      normalized[key] = value;
+    }
+
+    return normalized;
+  }
+
   private formatForTerminal(level: LogLevel, message: string, data?: unknown): string {
     const now = new Date();
     const time = now.toTimeString().slice(0, 8); // HH:MM:SS
@@ -100,8 +144,11 @@ class Logger {
     for (const [k, v] of Object.entries(merged)) {
       if (v !== undefined && v !== null) {
         const val = typeof v === "string" ? v : JSON.stringify(v);
-        // Truncate long values
-        const truncated = val.length > 50 ? val.slice(0, 47) + "..." : val;
+        const maxLength =
+          k === "stack" || k.endsWith("Stack") || k === "failureDetails" || k === "rawEventErrors"
+            ? TERMINAL_LONG_VALUE_LIMIT
+            : TERMINAL_DEFAULT_VALUE_LIMIT;
+        const truncated = val.length > maxLength ? val.slice(0, maxLength - 3) + "..." : val;
         contextParts.push(`${k}=${truncated}`);
       }
     }
@@ -143,8 +190,9 @@ class Logger {
   private log(level: LogLevel, message: string, data?: unknown): void {
     if (!this.shouldLog(level)) return;
 
-    const terminalLine = this.formatForTerminal(level, message, data);
-    const fileLine = this.formatForFile(level, message, data);
+    const normalizedData = this.normalizeLogData(data);
+    const terminalLine = this.formatForTerminal(level, message, normalizedData);
+    const fileLine = this.formatForFile(level, message, normalizedData);
 
     this.writeToTerminal(terminalLine);
     this.writeToFile(fileLine);
@@ -163,30 +211,7 @@ class Logger {
   }
 
   error(message: string, data?: unknown): void {
-    // Extract stack trace from Error objects
-    let errorData = data;
-    if (data instanceof Error) {
-      errorData = {
-        error: data.message,
-        stack: data.stack
-          ?.split("\n")
-          .slice(1, 4)
-          .map((s) => s.trim()),
-      };
-    } else if (typeof data === "object" && data !== null) {
-      const d = data as Record<string, unknown>;
-      if (d.error instanceof Error) {
-        errorData = {
-          ...d,
-          error: d.error.message,
-          stack: d.error.stack
-            ?.split("\n")
-            .slice(1, 4)
-            .map((s) => s.trim()),
-        };
-      }
-    }
-    this.log("error", message, errorData);
+    this.log("error", message, data);
   }
 
   /**
