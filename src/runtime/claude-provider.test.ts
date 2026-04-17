@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 
 let nextMessages: any[] = [];
+let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
-  query: () => {
+  query: (input: { prompt: unknown; options: Record<string, unknown> }) => {
+    queryCalls.push(input);
     const messages = [...nextMessages];
     return {
       interrupt: async () => {},
@@ -20,15 +22,19 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
-const { createClaudeRuntimeProvider } = await import("./claude-provider.js");
+const { buildClaudeCodeEnvironment, createClaudeRuntimeProvider } = await import("./claude-provider.js");
 
-function makeStartRequest(messages: RuntimeStartRequest["prompt"]): RuntimeStartRequest {
+function makeStartRequest(
+  messages: RuntimeStartRequest["prompt"],
+  overrides: Partial<RuntimeStartRequest> = {},
+): RuntimeStartRequest {
   return {
     prompt: messages,
     model: "claude-sonnet",
     cwd: "/tmp/ravi-claude",
     abortController: new AbortController(),
     systemPromptAppend: "",
+    ...overrides,
   };
 }
 
@@ -52,6 +58,7 @@ describe("createClaudeRuntimeProvider", () => {
 
   afterEach(() => {
     nextMessages = [];
+    queryCalls = [];
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -188,6 +195,57 @@ describe("createClaudeRuntimeProvider", () => {
     expect(failures).toHaveLength(1);
     expect(failures[0]?.error).toContain("Tool execution failed");
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
+  });
+
+  it("passes an explicit native executable path when configured", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-3" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        {
+          env: {
+            RAVI_CLAUDE_CODE_EXECUTABLE: "/opt/ravi/bin/native-runtime",
+            PATH: "",
+          },
+        },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.prompt).toBe("hello");
+    expect(queryCalls[0]?.options.pathToClaudeCodeExecutable).toBe("/opt/ravi/bin/native-runtime");
+  });
+
+  it("backfills daemon auth env when the runtime env is partial", async () => {
+    const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-daemon-token";
+
+    try {
+      const env = buildClaudeCodeEnvironment({
+        RAVI_CLAUDE_CODE_EXECUTABLE: "/opt/ravi/bin/native-runtime",
+        PATH: "",
+      });
+
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBe("test-daemon-token");
+      expect(env.PATH).toBe("");
+    } finally {
+      if (originalToken === undefined) {
+        delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      } else {
+        process.env.CLAUDE_CODE_OAUTH_TOKEN = originalToken;
+      }
+    }
   });
 });
 afterAll(() => mock.restore());

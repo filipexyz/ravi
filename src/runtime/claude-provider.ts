@@ -6,7 +6,8 @@ import {
   type Query,
 } from "@anthropic-ai/claude-agent-sdk";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { delimiter, join } from "node:path";
 import type {
   RuntimeEvent,
   RuntimeExecutionMetadata,
@@ -18,6 +19,10 @@ import type {
   RuntimeStatus,
   SessionRuntimeProvider,
 } from "./types.js";
+
+const nodeRequire = createRequire(import.meta.url);
+const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
+const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
 
 export interface ClaudeRuntimeProvider extends SessionRuntimeProvider {
   startSession(input: RuntimeStartRequest): RuntimeSessionHandle;
@@ -48,60 +53,244 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
     },
     startSession(input) {
       const resumeSessionId = readRuntimeSessionId(input.resumeSession) ?? input.resume;
-      const options: Options = {
-        model: input.model,
-        cwd: input.cwd,
-        ...(resumeSessionId ? { resume: resumeSessionId } : {}),
-        ...(input.forkSession ? { forkSession: true } : {}),
-        abortController: input.abortController,
-        ...(input.permissionOptions as Partial<Options> | undefined),
-        ...(input.canUseTool
-          ? {
-              canUseTool: async (toolName: string, toolInput: Record<string, unknown>): Promise<PermissionResult> => {
-                const result = await input.canUseTool!(toolName, toolInput);
-                if (result.behavior === "deny") {
-                  return {
-                    behavior: "deny",
-                    message: result.reason ?? `Tool denied: ${toolName}`,
-                  };
-                }
-                return {
-                  behavior: "allow",
-                  updatedInput: result.updatedInput ?? toolInput,
-                };
-              },
-            }
-          : {}),
-        includePartialMessages: true,
-        env: input.env ?? process.env,
-        ...(input.mcpServers ? { mcpServers: input.mcpServers as Record<string, McpServerConfig> } : {}),
-        systemPrompt: {
-          type: "preset",
-          preset: "claude_code",
-          append: input.systemPromptAppend,
-        },
-        settingSources: input.settingSources ?? ["project"],
-        ...(input.hooks ? { hooks: input.hooks } : {}),
-        ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
-        ...(input.remoteSpawn
-          ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] }
-          : {}),
-      };
-
-      const queryResult = query({
-        prompt: input.prompt,
-        options,
-      });
+      const env = buildClaudeCodeEnvironment(input.env);
+      const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
+      let activeQuery: Query | null = null;
 
       return {
         provider: "claude",
-        events: normalizeClaudeEvents(queryResult),
+        events: runClaudeTurns(input, {
+          initialResumeSessionId: resumeSessionId,
+          env,
+          pathToClaudeCodeExecutable,
+          setActiveQuery: (queryResult) => {
+            activeQuery = queryResult;
+          },
+        }),
         interrupt: async () => {
-          await queryResult.interrupt();
+          await activeQuery?.interrupt();
         },
       };
     },
   };
+}
+
+async function* runClaudeTurns(
+  input: RuntimeStartRequest,
+  runtime: {
+    initialResumeSessionId?: string;
+    env: Record<string, string>;
+    pathToClaudeCodeExecutable?: string;
+    setActiveQuery(queryResult: Query | null): void;
+  },
+): AsyncGenerator<RuntimeEvent> {
+  let resumeSessionId = runtime.initialResumeSessionId;
+  let useForkSession = input.forkSession;
+
+  for await (const message of input.prompt) {
+    if (input.abortController.signal.aborted) {
+      break;
+    }
+
+    const prompt = stringifyUserPrompt(message.message.content);
+    if (!prompt.trim()) {
+      continue;
+    }
+
+    const queryResult = query({
+      prompt,
+      options: buildClaudeQueryOptions(input, runtime.env, {
+        resumeSessionId,
+        forkSession: useForkSession,
+        pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
+      }),
+    });
+    runtime.setActiveQuery(queryResult);
+
+    try {
+      for await (const event of normalizeClaudeEvents(queryResult)) {
+        if (event.type === "turn.complete") {
+          resumeSessionId = event.providerSessionId ?? readRuntimeSessionId(event.session) ?? resumeSessionId;
+          useForkSession = false;
+        }
+        yield event;
+      }
+    } catch (error) {
+      yield {
+        type: "turn.failed",
+        error: error instanceof Error ? error.message : String(error),
+        recoverable: true,
+      };
+    } finally {
+      runtime.setActiveQuery(null);
+    }
+  }
+}
+
+function buildClaudeQueryOptions(
+  input: RuntimeStartRequest,
+  env: Record<string, string>,
+  runtime: {
+    resumeSessionId?: string;
+    forkSession?: boolean;
+    pathToClaudeCodeExecutable?: string;
+  },
+): Options {
+  return {
+    model: input.model,
+    cwd: input.cwd,
+    ...(runtime.resumeSessionId ? { resume: runtime.resumeSessionId } : {}),
+    ...(runtime.forkSession ? { forkSession: true } : {}),
+    abortController: input.abortController,
+    ...(input.permissionOptions as Partial<Options> | undefined),
+    ...(input.canUseTool
+      ? {
+          canUseTool: async (toolName: string, toolInput: Record<string, unknown>): Promise<PermissionResult> => {
+            const result = await input.canUseTool!(toolName, toolInput);
+            if (result.behavior === "deny") {
+              return {
+                behavior: "deny",
+                message: result.reason ?? `Tool denied: ${toolName}`,
+              };
+            }
+            return {
+              behavior: "allow",
+              updatedInput: result.updatedInput ?? toolInput,
+            };
+          },
+        }
+      : {}),
+    includePartialMessages: true,
+    env,
+    ...(runtime.pathToClaudeCodeExecutable ? { pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable } : {}),
+    ...(input.mcpServers ? { mcpServers: input.mcpServers as Record<string, McpServerConfig> } : {}),
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: input.systemPromptAppend,
+    },
+    settingSources: input.settingSources ?? ["project"],
+    ...(input.hooks ? { hooks: input.hooks } : {}),
+    ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
+    ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
+  };
+}
+
+function stringifyUserPrompt(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === "string") return block;
+        if (block && typeof block === "object" && "text" in block && typeof block.text === "string") {
+          return block.text;
+        }
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+export function buildClaudeCodeEnvironment(inputEnv?: Record<string, string>): Record<string, string> {
+  const env = inputEnv
+    ? { ...inputEnv }
+    : Object.fromEntries(
+        Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      );
+
+  for (const key of CLAUDE_CODE_AUTH_ENV_KEYS) {
+    const processValue = process.env[key]?.trim();
+    if (processValue && !env[key]?.trim()) {
+      env[key] = processValue;
+    }
+  }
+
+  return env;
+}
+
+export function resolveClaudeCodeExecutable(env: Record<string, string | undefined> = process.env): string | undefined {
+  for (const key of CLAUDE_CODE_EXECUTABLE_ENV_KEYS) {
+    const value = env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  const nativeExecutable = resolveNativeClaudeCodeExecutable();
+  if (nativeExecutable) {
+    return nativeExecutable;
+  }
+
+  return resolveExecutableFromPath("claude", env);
+}
+
+function resolveNativeClaudeCodeExecutable(): string | undefined {
+  const executableName = process.platform === "win32" ? "claude.exe" : "claude";
+
+  for (const packageName of getNativePackagePreference()) {
+    try {
+      return nodeRequire.resolve(`${packageName}/${executableName}`);
+    } catch {
+      // Optional native packages are platform/package-manager dependent.
+    }
+  }
+
+  return undefined;
+}
+
+function getNativePackagePreference(): string[] {
+  const arch = process.arch;
+
+  if (process.platform === "linux") {
+    const linuxPackages = [
+      `@anthropic-ai/claude-agent-sdk-linux-${arch}`,
+      `@anthropic-ai/claude-agent-sdk-linux-${arch}-musl`,
+    ];
+    return isMuslRuntime() ? linuxPackages.reverse() : linuxPackages;
+  }
+
+  return [`@anthropic-ai/claude-agent-sdk-${process.platform}-${arch}`];
+}
+
+function isMuslRuntime(): boolean {
+  if (process.platform !== "linux") {
+    return false;
+  }
+
+  try {
+    const report = process.report?.getReport?.() as { header?: { glibcVersionRuntime?: string } } | undefined;
+    return !report?.header?.glibcVersionRuntime;
+  } catch {
+    return false;
+  }
+}
+
+function resolveExecutableFromPath(command: string, env: Record<string, string | undefined>): string | undefined {
+  const path = env.PATH;
+  if (!path) {
+    return undefined;
+  }
+
+  const executableNames = process.platform === "win32" ? [`${command}.exe`, command] : [command];
+
+  for (const directory of path.split(delimiter)) {
+    if (!directory) {
+      continue;
+    }
+
+    for (const executableName of executableNames) {
+      const candidate = join(directory, executableName);
+      if (existsSync(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 async function* normalizeClaudeEvents(queryResult: Query): AsyncGenerator<RuntimeEvent> {
