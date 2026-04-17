@@ -8,7 +8,9 @@ import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
-import { getDefaultTimezone, getAccountForAgent } from "../../router/router-db.js";
+import { deriveSourceFromSessionKey } from "../../router/session-key.js";
+import { resolveSession } from "../../router/sessions.js";
+import { getDefaultTimezone, getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import {
   dbCreateCronJob,
   dbGetCronJob,
@@ -21,8 +23,51 @@ import {
   parseDurationMs,
   isValidCronExpression,
   type CronJobInput,
+  type CronJob,
   type CronSchedule,
 } from "../../cron/index.js";
+import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
+
+function resolveCronRouting(job: CronJob): CronRoutingResolution {
+  if (!job.replySession) {
+    return { kind: "none" };
+  }
+
+  const resolved = resolveSession(job.replySession);
+  if (resolved?.name) {
+    let source: CronRoutingSource | undefined;
+    if (resolved.lastChannel && resolved.lastTo) {
+      source = {
+        channel: resolved.lastChannel,
+        accountId: job.accountId ?? resolved.lastAccountId ?? "",
+        chatId: resolved.lastTo,
+      };
+    }
+
+    return {
+      kind: "resolved-session",
+      replySession: job.replySession,
+      sessionName: resolved.name,
+      source,
+    };
+  }
+
+  const derived = deriveSourceFromSessionKey(job.replySession);
+  const source = derived
+    ? {
+        channel: derived.channel,
+        accountId: job.accountId ?? derived.accountId ?? "",
+        chatId: derived.chatId,
+        ...(derived.threadId ? { threadId: derived.threadId } : {}),
+      }
+    : undefined;
+
+  return {
+    kind: "derived-key",
+    replySession: job.replySession,
+    source,
+  };
+}
 
 @Group({
   name: "cron",
@@ -80,42 +125,12 @@ export class CronCommands {
       fail(`Job not found: ${id}`);
     }
 
-    console.log(`\nCron Job: ${job.name}\n`);
-    console.log(`  ID:              ${job.id}`);
-    console.log(`  Agent:           ${job.agentId ?? "(default)"}`);
-    console.log(`  Account:         ${job.accountId ?? "(auto)"}`);
-    console.log(`  Enabled:         ${job.enabled ? "yes" : "no"}`);
-    console.log(`  Schedule:        ${describeSchedule(job.schedule)}`);
-    console.log(`  Session:         ${job.sessionTarget}`);
-    if (job.replySession) {
-      console.log(`  Reply session:   ${job.replySession}`);
-    }
+    const agentId = job.agentId ?? getDefaultAgentId();
+    const routing = resolveCronRouting(job);
 
-    if (job.description) {
-      console.log(`  Description:     ${job.description}`);
+    for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
+      console.log(line);
     }
-
-    console.log(`  Delete after:    ${job.deleteAfterRun ? "yes" : "no"}`);
-    console.log("");
-    console.log(`  Message:`);
-    console.log(`    ${job.message.split("\n").join("\n    ")}`);
-    console.log("");
-
-    if (job.nextRunAt) {
-      console.log(`  Next run:        ${new Date(job.nextRunAt).toLocaleString()}`);
-    }
-    if (job.lastRunAt) {
-      console.log(`  Last run:        ${new Date(job.lastRunAt).toLocaleString()}`);
-      console.log(`  Last status:     ${job.lastStatus ?? "-"}`);
-      if (job.lastDurationMs) {
-        console.log(`  Last duration:   ${job.lastDurationMs}ms`);
-      }
-      if (job.lastError) {
-        console.log(`  Last error:      ${job.lastError}`);
-      }
-    }
-
-    console.log(`  Created:         ${new Date(job.createdAt).toLocaleString()}`);
   }
 
   @Command({ name: "add", description: "Add a new scheduled job" })
@@ -129,7 +144,7 @@ export class CronCommands {
     @Option({ flags: "--isolated", description: "Run in isolated session" }) isolated?: boolean,
     @Option({ flags: "--delete-after", description: "Delete job after first run" }) deleteAfter?: boolean,
     @Option({ flags: "--agent <id>", description: "Agent ID (default: default agent)" }) agent?: string,
-    @Option({ flags: "--account <name>", description: "Account for outbound routing (auto-detected from agent)" })
+    @Option({ flags: "--account <name>", description: "Account for channel delivery (auto-detected from agent)" })
     account?: string,
     @Option({ flags: "--description <text>", description: "Job description" }) description?: string,
   ) {

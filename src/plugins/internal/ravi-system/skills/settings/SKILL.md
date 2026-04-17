@@ -17,6 +17,7 @@ Configurações globais do sistema Ravi.
 ### Listar todas
 ```bash
 ravi settings list
+ravi settings list --legacy
 ```
 
 ### Ver valor
@@ -54,6 +55,7 @@ As settings `account.*` foram migradas para a tabela `instances`. **Não use mai
 | `account.<name>.groupPolicy` | `ravi instances set <name> groupPolicy <policy>` |
 
 A migração acontece automaticamente na primeira inicialização do daemon.
+Por default, `ravi settings list` esconde essas keys; use `--legacy` só para inspecionar ou limpar restos antigos.
 
 ## Exemplos
 

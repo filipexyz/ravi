@@ -3,6 +3,16 @@ title: CLI Reference
 description: Complete command reference for the ravi CLI — all groups, subcommands, arguments, and options extracted from source.
 ---
 
+## Output Contract
+
+`stdout` is reserved for the command payload only.
+
+- Human-readable command results and `--json` payloads are written to `stdout`.
+- User-facing CLI commands suppress infrastructure `INFO/WARN/DEBUG` logs by default.
+- When explicitly enabled for diagnosis, infrastructure logs and internal diagnostics go to `stderr`.
+- Set `RAVI_CLI_LOG_LEVEL=info` to opt into verbose CLI diagnostics temporarily.
+- Machine-readable modes like `ravi stream` also reserve `stdout` for protocol frames only.
+
 ## Setup
 
 ```bash
@@ -75,9 +85,22 @@ ravi instances disconnect <name>              # Disconnect from omni
 ravi instances status <name>                  # Show connection status
 ```
 
+## Routes
+
+Read route config and live routing without drilling into the `instances` subtree.
+
+```bash
+ravi routes list [name]                       # List routes across all instances or for one instance
+ravi routes show <name> <pattern>             # Show route details
+ravi routes explain <name> <pattern>          # Explain config vs live route winner
+  --channel <channel>                         #   Optional channel hint for live route inspection
+```
+
+Use `ravi instances routes ...` when you need to mutate route config.
+
 ### Instance Routes
 
-Per-instance routing rules that map patterns to agents.
+Per-instance routing rules that map patterns to agents. Use this subtree for mutations; use `ravi routes ...` for discovery/read paths.
 
 ```bash
 ravi instances routes list <name>             # List routes for instance
@@ -174,13 +197,14 @@ ravi sessions inform <target> <message>           # Send informational message t
 Global configuration stored in SQLite.
 
 ```bash
-ravi settings list                            # List all settings with descriptions
+ravi settings list                            # List live settings; legacy account.* is hidden by default
+ravi settings list --legacy                   # Inspect legacy account.* rows shadowed by instances
 ravi settings get <key>                       # Get a setting value
 ravi settings set <key> <value>               # Set a setting value
 ravi settings delete <key>                    # Delete a setting
 ```
 
-**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Also supports per-account patterns like `account.<name>.dmPolicy`.
+**Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Legacy `account.*` rows are shadowed by `instances` and should not be used as live config.
 
 ## Permissions
 
@@ -204,7 +228,7 @@ ravi permissions clear [--all]                         # Clear manual relations 
 
 **Relations:** `admin`, `use`, `execute`, `access`, `modify`, `write_contacts`, `read_own_contacts`, `read_tagged_contacts`, `read_contact`, `view`.
 
-**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `outbound`, `team`, `tool`, `executable`, `toolgroup`.
+**Entity types:** `agent`, `system`, `group`, `session`, `contact`, `cron`, `trigger`, `team`, `tool`, `executable`, `toolgroup`.
 
 ## Cron
 
@@ -220,7 +244,7 @@ ravi cron add <name>                          # Add a new job
   --tz <timezone>                             #   Timezone (for --cron)
   --message <text>                            #   Prompt message (required)
   --agent <id>                                #   Target agent
-  --account <name>                            #   Account for outbound routing
+  --account <name>                            #   Account for channel delivery
   --isolated                                  #   Run in isolated session
   --delete-after                              #   Delete job after first run
   --description <text>                        #   Job description
@@ -255,7 +279,7 @@ ravi triggers add <name>                      # Add a new trigger
   --topic <pattern>                           #   NATS topic pattern (required)
   --message <text>                            #   Prompt message (required)
   --agent <id>                                #   Target agent
-  --account <name>                            #   Account for outbound routing
+  --account <name>                            #   Account for channel delivery
   --cooldown <duration>                       #   Cooldown between fires (default: 5s)
   --session <main|isolated>                   #   Session type (default: isolated)
   --filter <expression>                       #   Filter expression
@@ -264,56 +288,6 @@ ravi triggers disable <id>                    # Disable trigger
 ravi triggers set <id> <key> <value>          # Set property (name, message, topic, agent, account, session, cooldown, filter)
 ravi triggers test <id>                       # Test with fake event data
 ravi triggers rm <id>                         # Delete trigger
-```
-
-## Outbound
-
-Automated outreach queues with pipeline stages and follow-ups.
-
-```bash
-ravi outbound list                            # List all queues
-ravi outbound show <id>                       # Show queue details
-ravi outbound create <name>                   # Create queue
-  --instructions <text>                       #   Agent instructions (required)
-  --every <interval>                          #   Interval between entries (required)
-  --stages <json>                             #   Pipeline stages JSON (required)
-  --agent <id>                                #   Target agent
-  --description <text>                        #   Queue description
-  --active-start <time>                       #   Active hours start (e.g. 09:00)
-  --active-end <time>                         #   Active hours end (e.g. 22:00)
-  --tz <timezone>                             #   Timezone
-  --max-rounds <n>                            #   Maximum rounds per entry
-ravi outbound start <id>                      # Activate queue
-ravi outbound pause <id>                      # Pause queue
-ravi outbound set <id> <key> <value>          # Set property (name, instructions, every, agent, description, active-start, active-end, tz, stages, max-rounds)
-ravi outbound run <id>                        # Manually trigger queue
-ravi outbound rm <id>                         # Delete queue
-ravi outbound report [queueId]               # Full report (all queues or specific)
-```
-
-### Outbound Entries
-
-```bash
-ravi outbound add <queueId> <phone>           # Add entry to queue
-  --name <name>                               #   Contact name
-  --email <email>                             #   Contact email
-  --tag <tag>                                 #   Add all contacts with this tag
-  --context <json>                            #   Extra context JSON
-ravi outbound entries <queueId>               # List entries in queue
-ravi outbound status <entryId>                # Show entry details
-ravi outbound qualify <entryId> <stage>       # Set pipeline stage
-ravi outbound context <entryId> <json>        # Update entry context (merge)
-ravi outbound done <entryId>                  # Mark entry as done
-ravi outbound complete <entryId>              # Complete entry (alias for done)
-ravi outbound skip <entryId>                  # Skip entry
-ravi outbound reset <entryId> [--full]        # Reset entry to pending (--full clears context)
-ravi outbound chat <entryId>                  # Show chat history
-  --limit <n>                                 #   Number of messages
-  --offset <n>                                #   Skip first N messages
-ravi outbound send <entryId> <message>        # Send message to entry's contact
-  --account <id>                              #   WhatsApp account
-  --typing-delay <ms>                         #   Typing indicator delay
-  --pause <ms>                                #   Pause before typing
 ```
 
 ## WhatsApp Groups

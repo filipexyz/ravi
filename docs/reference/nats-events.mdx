@@ -18,7 +18,7 @@ Events scoped to a session name (e.g., `agent-main-abc123`).
 
 | Topic | Payload |
 |-------|---------|
-| `ravi.session.{name}.prompt` | `{ prompt, source?, context?, _agentId?, _outbound?, _queueId?, _entryId? }` |
+| `ravi.session.{name}.prompt` | `{ prompt, source?, context?, _agentId? }` |
 | `ravi.session.{name}.response` | `{ response, target?, _emitId, _instanceId, _pid, _v: 2 }` |
 | `ravi.session.{name}.claude` | Raw Claude SDK event: `{ type: "system"/"assistant"/"result"/"silent"/... }` |
 | `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` |
@@ -38,15 +38,13 @@ The prompt topic goes via JetStream WorkQueue stream (`SESSION_PROMPTS`). All ot
 
 Channel messages arrive via omni JetStream on `message.received.{channelType}.{instanceId}`, not via ravi pub/sub. The OmniConsumer translates these into session prompts.
 
-## Outbound Events (Bot to Gateway)
+## Delivery Events (Bot to Gateway)
 
 | Topic | Payload |
 |-------|---------|
 | `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
 | `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
 | `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` |
-| `ravi.outbound.refresh` | `{}` — outbound queue refresh signal |
-| `ravi.outbound.trigger` | `{ queueId }` — manual queue trigger |
 
 ## Media Events
 

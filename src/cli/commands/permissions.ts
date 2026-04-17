@@ -251,7 +251,6 @@ const VALID_ENTITY_TYPES = new Set([
   "contact",
   "cron",
   "trigger",
-  "outbound",
   "team",
   "tool",
   "executable",

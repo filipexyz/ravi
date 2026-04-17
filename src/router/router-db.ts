@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
+import { getRaviStateDir } from "../utils/paths.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -22,8 +23,8 @@ const log = logger.child("router:db");
 // ============================================================================
 
 const RAVI_DIR = join(homedir(), "ravi");
-const RAVI_DOT_DIR = join(homedir(), ".ravi");
-const DB_PATH = join(RAVI_DOT_DIR, "ravi.db");
+const DEFAULT_RAVI_STATE_DIR = getRaviStateDir({});
+const DEFAULT_DB_PATH = join(DEFAULT_RAVI_STATE_DIR, "ravi.db");
 const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 
 // ============================================================================
@@ -33,17 +34,22 @@ const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 export const DmScopeSchema = z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]);
 
 export const AgentModeSchema = z.enum(["active", "sentinel"]);
+export const RuntimeProviderSchema = z.enum(["claude", "codex"]);
 
 export const AgentInputSchema = z.object({
   id: z.string().min(1),
   name: z.string().optional(),
   cwd: z.string().min(1),
   model: z.string().optional(),
+  provider: RuntimeProviderSchema.optional(),
+  remote: z.string().optional(),
+  remoteUser: z.string().optional(),
   dmScope: DmScopeSchema.optional(),
   systemPromptAppend: z.string().optional(),
   debounceMs: z.number().int().min(0).optional(),
   groupDebounceMs: z.number().int().min(0).optional(),
   matrixAccount: z.string().optional(),
+  settingSources: z.array(z.enum(["user", "project"])).optional(),
   mode: AgentModeSchema.optional(),
 });
 
@@ -60,6 +66,33 @@ export const RouteInputSchema = z.object({
 
 export const GroupPolicySchema = z.enum(["open", "allowlist", "closed"]);
 export const DmPolicySchema = z.enum(["open", "pairing", "closed"]);
+export const ContextSourceSchema = z.object({
+  channel: z.string().min(1),
+  accountId: z.string().min(1),
+  chatId: z.string().min(1),
+  threadId: z.string().min(1).optional(),
+});
+export const ContextCapabilitySchema = z.object({
+  permission: z.string().min(1),
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  source: z.string().optional(),
+});
+export const ContextInputSchema = z.object({
+  contextId: z.string().min(1),
+  contextKey: z.string().min(1),
+  kind: z.string().min(1).default("runtime"),
+  agentId: z.string().min(1).optional(),
+  sessionKey: z.string().min(1).optional(),
+  sessionName: z.string().min(1).optional(),
+  source: ContextSourceSchema.optional(),
+  capabilities: z.array(ContextCapabilitySchema).default([]),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+  createdAt: z.number().int().optional(),
+  expiresAt: z.number().int().optional(),
+  lastUsedAt: z.number().int().optional(),
+  revokedAt: z.number().int().optional(),
+});
 
 export const InstanceInputSchema = z.object({
   name: z.string().min(1),
@@ -69,6 +102,7 @@ export const InstanceInputSchema = z.object({
   dmPolicy: DmPolicySchema.default("open"),
   groupPolicy: GroupPolicySchema.default("open"),
   dmScope: DmScopeSchema.optional(),
+  enabled: z.boolean().default(true),
 });
 
 // ============================================================================
@@ -80,6 +114,9 @@ interface AgentRow {
   name: string | null;
   cwd: string;
   model: string | null;
+  provider: string | null;
+  remote: string | null;
+  remote_user: string | null;
   dm_scope: string | null;
   system_prompt_append: string | null;
   debounce_ms: number | null;
@@ -129,9 +166,26 @@ interface InstanceRow {
   dm_policy: string;
   group_policy: string;
   dm_scope: string | null;
+  enabled: number | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
+}
+
+interface ContextRow {
+  context_id: string;
+  context_key: string;
+  kind: string;
+  agent_id: string | null;
+  session_key: string | null;
+  session_name: string | null;
+  source_json: string | null;
+  capabilities_json: string;
+  metadata_json: string | null;
+  created_at: number;
+  expires_at: number | null;
+  last_used_at: number | null;
+  revoked_at: number | null;
 }
 
 export interface InstanceConfig {
@@ -142,6 +196,7 @@ export interface InstanceConfig {
   dmPolicy: "open" | "pairing" | "closed";
   groupPolicy: "open" | "allowlist" | "closed";
   dmScope?: DmScope;
+  enabled?: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -173,36 +228,102 @@ export interface MatrixAccount {
   lastUsedAt?: number;
 }
 
+export interface ContextSource {
+  channel: string;
+  accountId: string;
+  chatId: string;
+  threadId?: string;
+}
+
+export interface ContextCapability {
+  permission: string;
+  objectType: string;
+  objectId: string;
+  source?: string;
+}
+
+export interface ContextRecord {
+  contextId: string;
+  contextKey: string;
+  kind: string;
+  agentId?: string;
+  sessionKey?: string;
+  sessionName?: string;
+  source?: ContextSource;
+  capabilities: ContextCapability[];
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  expiresAt?: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+}
+
+export interface ListContextsOptions {
+  agentId?: string;
+  sessionKey?: string;
+  kind?: string;
+  includeInactive?: boolean;
+}
+
 // ============================================================================
 // Lazy Database Initialization
 // ============================================================================
 
-let db: Database | null = null;
+type RouterDbState = {
+  db: Database | null;
+  dbPath: string | null;
+  stmts: PreparedStatements | null;
+};
+
+type RouterDbGlobal = typeof globalThis & {
+  __raviRouterDbState?: RouterDbState;
+};
+
+const routerDbGlobal = globalThis as RouterDbGlobal;
+const routerDbState =
+  routerDbGlobal.__raviRouterDbState ??
+  (routerDbGlobal.__raviRouterDbState = {
+    db: null,
+    dbPath: null,
+    stmts: null,
+  });
+
+function resolveDbPath(env: NodeJS.ProcessEnv = process.env): string {
+  return join(getRaviStateDir(env), "ravi.db");
+}
 
 /**
  * Get database connection with lazy initialization.
  * Creates database and schema on first access.
  */
 function getDb(): Database {
-  if (db !== null) {
-    return db;
+  const nextDbPath = resolveDbPath();
+  if (routerDbState.db !== null && routerDbState.dbPath === nextDbPath) {
+    return routerDbState.db;
+  }
+  if (routerDbState.db !== null && routerDbState.dbPath !== nextDbPath) {
+    closeRouterDb();
   }
 
+  const stateDir = getRaviStateDir();
+
   // Create directory on first access
-  mkdirSync(RAVI_DOT_DIR, { recursive: true });
+  mkdirSync(stateDir, { recursive: true });
 
   // Auto-migrate from legacy path (~/ravi/ravi.db → ~/.ravi/ravi.db)
-  if (!existsSync(DB_PATH) && existsSync(LEGACY_DB_PATH)) {
+  if (nextDbPath === DEFAULT_DB_PATH && !existsSync(nextDbPath) && existsSync(LEGACY_DB_PATH)) {
     log.info("Migrating database from ~/ravi/ravi.db to ~/.ravi/ravi.db");
-    renameSync(LEGACY_DB_PATH, DB_PATH);
+    renameSync(LEGACY_DB_PATH, nextDbPath);
     // Also move WAL/SHM files if they exist
     for (const suffix of ["-wal", "-shm"]) {
       const legacy = LEGACY_DB_PATH + suffix;
-      if (existsSync(legacy)) renameSync(legacy, DB_PATH + suffix);
+      if (existsSync(legacy)) renameSync(legacy, nextDbPath + suffix);
     }
   }
 
-  db = new Database(DB_PATH);
+  const db = new Database(nextDbPath);
+  routerDbState.db = db;
+  routerDbState.dbPath = nextDbPath;
 
   // WAL mode for concurrent read/write access (CLI + daemon)
   db.exec("PRAGMA journal_mode = WAL");
@@ -219,6 +340,9 @@ function getDb(): Database {
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
+      provider TEXT CHECK(provider IS NULL OR provider IN ('claude','codex')),
+      remote TEXT,
+      remote_user TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       system_prompt_append TEXT,
       debounce_ms INTEGER,
@@ -246,7 +370,11 @@ function getDb(): Database {
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
+      name TEXT,
       sdk_session_id TEXT,
+      runtime_provider TEXT CHECK(runtime_provider IS NULL OR runtime_provider IN ('claude','codex')),
+      runtime_session_json TEXT,
+      runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
       agent_cwd TEXT NOT NULL,
       chat_type TEXT,
@@ -279,6 +407,7 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_sdk ON sessions(sdk_session_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_name ON sessions(name) WHERE name IS NOT NULL;
 
     -- REBAC: Relationship-based access control
     CREATE TABLE IF NOT EXISTS relations (
@@ -339,8 +468,25 @@ function getDb(): Database {
       dm_policy    TEXT NOT NULL DEFAULT 'open' CHECK(dm_policy IN ('open','pairing','closed')),
       group_policy TEXT NOT NULL DEFAULT 'open' CHECK(group_policy IN ('open','allowlist','closed')),
       dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
+      enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS contexts (
+      context_id TEXT PRIMARY KEY,
+      context_key TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL DEFAULT 'runtime',
+      agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+      session_key TEXT REFERENCES sessions(session_key) ON DELETE SET NULL,
+      session_name TEXT,
+      source_json TEXT,
+      capabilities_json TEXT NOT NULL DEFAULT '[]',
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER,
+      last_used_at INTEGER,
+      revoked_at INTEGER
     );
 
     -- Matrix accounts (all users - both regular users and agents)
@@ -389,6 +535,22 @@ function getDb(): Database {
   if (!agentColumns.some((c) => c.name === "setting_sources")) {
     db.exec("ALTER TABLE agents ADD COLUMN setting_sources TEXT");
     log.info("Added setting_sources column to agents table");
+  }
+
+  // Migration: add provider column to agents if not exists
+  if (!agentColumns.some((c) => c.name === "provider")) {
+    db.exec("ALTER TABLE agents ADD COLUMN provider TEXT");
+    log.info("Added provider column to agents table");
+  }
+
+  if (!agentColumns.some((c) => c.name === "remote")) {
+    db.exec("ALTER TABLE agents ADD COLUMN remote TEXT");
+    log.info("Added remote column to agents table");
+  }
+
+  if (!agentColumns.some((c) => c.name === "remote_user")) {
+    db.exec("ALTER TABLE agents ADD COLUMN remote_user TEXT");
+    log.info("Added remote_user column to agents table");
   }
 
   // Migration: drop legacy permission columns (replaced by REBAC)
@@ -450,6 +612,29 @@ function getDb(): Database {
     log.info("Added last_context column to sessions table");
   }
 
+  // Migration: add runtime_provider column to sessions if not exists
+  if (!sessionColumns.some((c) => c.name === "runtime_provider")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_provider TEXT");
+    log.info("Added runtime_provider column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "runtime_session_json")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_json TEXT");
+    log.info("Added runtime_session_json column to sessions table");
+  }
+  if (!sessionColumns.some((c) => c.name === "runtime_session_display_id")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN runtime_session_display_id TEXT");
+    log.info("Added runtime_session_display_id column to sessions table");
+  }
+  db.exec(
+    "UPDATE sessions SET runtime_provider = 'claude' WHERE runtime_provider IS NULL AND sdk_session_id IS NOT NULL",
+  );
+  db.exec(`
+    UPDATE sessions
+    SET runtime_session_display_id = sdk_session_id
+    WHERE runtime_session_display_id IS NULL AND sdk_session_id IS NOT NULL
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
+
   // Migration: add policy column to routes if not exists
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{ name: string }>;
   if (!routeColumns.some((c) => c.name === "policy")) {
@@ -480,8 +665,8 @@ function getDb(): Database {
     }
 
     const insertInstance = db.prepare(`
-      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     const now = Date.now();
     for (const inst of Object.values(instanceData)) {
@@ -493,6 +678,7 @@ function getDb(): Database {
         inst.agent ?? null,
         inst.dmPolicy ?? "open",
         inst.groupPolicy ?? "open",
+        inst.enabled === false ? 0 : 1,
         now,
         now,
       );
@@ -604,53 +790,6 @@ function getDb(): Database {
   }
 
   db.exec(`
-    -- Outbound queues
-    CREATE TABLE IF NOT EXISTS outbound_queues (
-      id TEXT PRIMARY KEY,
-      agent_id TEXT,
-      name TEXT NOT NULL,
-      description TEXT,
-      instructions TEXT NOT NULL,
-      status TEXT DEFAULT 'paused' CHECK(status IN ('active','paused','completed')),
-      interval_ms INTEGER NOT NULL,
-      active_start TEXT,
-      active_end TEXT,
-      timezone TEXT,
-      current_index INTEGER DEFAULT 0,
-      next_run_at INTEGER,
-      last_run_at INTEGER,
-      last_status TEXT,
-      last_error TEXT,
-      last_duration_ms INTEGER,
-      total_processed INTEGER DEFAULT 0,
-      total_sent INTEGER DEFAULT 0,
-      total_skipped INTEGER DEFAULT 0,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS outbound_entries (
-      id TEXT PRIMARY KEY,
-      queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
-      contact_phone TEXT NOT NULL,
-      contact_email TEXT,
-      position INTEGER NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
-      context TEXT DEFAULT '{}',
-      rounds_completed INTEGER DEFAULT 0,
-      last_processed_at INTEGER,
-      last_sent_at INTEGER,
-      last_response_at INTEGER,
-      last_response_text TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_outbound_queues_status ON outbound_queues(status);
-    CREATE INDEX IF NOT EXISTS idx_outbound_queues_next_run ON outbound_queues(next_run_at);
-    CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
-    CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
-
     -- Event triggers
     CREATE TABLE IF NOT EXISTS triggers (
       id TEXT PRIMARY KEY,
@@ -670,85 +809,6 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_triggers_enabled ON triggers(enabled);
     CREATE INDEX IF NOT EXISTS idx_triggers_topic ON triggers(topic);
   `);
-
-  // Migrations for outbound_entries
-  const entryColumns = db.prepare("PRAGMA table_info(outbound_entries)").all() as Array<{ name: string }>;
-  if (!entryColumns.some((c) => c.name === "pending_receipt")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN pending_receipt TEXT");
-    log.info("Added pending_receipt column to outbound_entries table");
-  }
-  if (!entryColumns.some((c) => c.name === "sender_id")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN sender_id TEXT");
-    log.info("Added sender_id column to outbound_entries table");
-  }
-  if (!entryColumns.some((c) => c.name === "qualification")) {
-    db.exec("ALTER TABLE outbound_entries ADD COLUMN qualification TEXT");
-    log.info("Added qualification column to outbound_entries table");
-  }
-
-  // Migrations for outbound_queues
-  const queueColumns = db.prepare("PRAGMA table_info(outbound_queues)").all() as Array<{ name: string }>;
-  if (!queueColumns.some((c) => c.name === "follow_up")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN follow_up TEXT");
-    log.info("Added follow_up column to outbound_queues table");
-  }
-  if (!queueColumns.some((c) => c.name === "max_rounds")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN max_rounds INTEGER");
-    log.info("Added max_rounds column to outbound_queues table");
-  }
-  if (!queueColumns.some((c) => c.name === "stages")) {
-    db.exec("ALTER TABLE outbound_queues ADD COLUMN stages TEXT");
-    log.info("Added stages column to outbound_queues table");
-  }
-
-  // Migration: add 'agent' to outbound_entries status CHECK constraint
-  // SQLite requires table recreation to modify CHECK constraints
-  const entrySql =
-    (
-      db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='outbound_entries'").get() as
-        | { sql: string }
-        | undefined
-    )?.sql ?? "";
-  if (entrySql && !entrySql.includes("'agent'")) {
-    db.exec("PRAGMA foreign_keys=OFF");
-    try {
-      db.exec(`
-        BEGIN;
-        CREATE TABLE outbound_entries_new (
-          id TEXT PRIMARY KEY,
-          queue_id TEXT NOT NULL REFERENCES outbound_queues(id) ON DELETE CASCADE,
-          contact_phone TEXT NOT NULL,
-          contact_email TEXT,
-          position INTEGER NOT NULL,
-          status TEXT DEFAULT 'pending' CHECK(status IN ('pending','active','done','skipped','error','agent')),
-          context TEXT DEFAULT '{}',
-          qualification TEXT,
-          rounds_completed INTEGER DEFAULT 0,
-          last_processed_at INTEGER,
-          last_sent_at INTEGER,
-          last_response_at INTEGER,
-          last_response_text TEXT,
-          pending_receipt TEXT,
-          sender_id TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        INSERT INTO outbound_entries_new SELECT
-          id, queue_id, contact_phone, contact_email, position, status, context, qualification,
-          rounds_completed, last_processed_at, last_sent_at, last_response_at, last_response_text,
-          pending_receipt, sender_id, created_at, updated_at
-        FROM outbound_entries;
-        DROP TABLE outbound_entries;
-        ALTER TABLE outbound_entries_new RENAME TO outbound_entries;
-        CREATE INDEX IF NOT EXISTS idx_outbound_entries_queue ON outbound_entries(queue_id);
-        CREATE INDEX IF NOT EXISTS idx_outbound_entries_phone ON outbound_entries(contact_phone);
-        COMMIT;
-      `);
-      log.info("Migrated outbound_entries CHECK constraint to include 'agent' status");
-    } finally {
-      db.exec("PRAGMA foreign_keys=ON");
-    }
-  }
 
   // Migrations for triggers
   const triggerColumns = db.prepare("PRAGMA table_info(triggers)").all() as Array<{ name: string }>;
@@ -841,6 +901,87 @@ function getDb(): Database {
     db.exec("ALTER TABLE instances ADD COLUMN deleted_at INTEGER");
     log.info("Added deleted_at column to instances table");
   }
+  if (!instanceColumnsNow.some((c) => c.name === "enabled")) {
+    db.exec("ALTER TABLE instances ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
+    log.info("Added enabled column to instances table");
+  }
+
+  const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
+  if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
+    db.exec("PRAGMA foreign_keys=OFF");
+    try {
+      db.exec(`
+        BEGIN;
+        CREATE TABLE contexts_new (
+          context_id TEXT PRIMARY KEY,
+          context_key TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL DEFAULT 'runtime',
+          agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+          session_key TEXT REFERENCES sessions(session_key) ON DELETE SET NULL,
+          session_name TEXT,
+          source_json TEXT,
+          capabilities_json TEXT NOT NULL DEFAULT '[]',
+          metadata_json TEXT,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER,
+          last_used_at INTEGER,
+          revoked_at INTEGER
+        );
+        INSERT INTO contexts_new (
+          context_id, context_key, kind, agent_id, session_key, session_name,
+          source_json, capabilities_json, metadata_json, created_at, expires_at, last_used_at, revoked_at
+        )
+        SELECT
+          'ctx_legacy_' || lower(hex(randomblob(12))),
+          context_key,
+          'legacy',
+          agent_id,
+          session_key,
+          session_name,
+          CASE
+            WHEN source_channel IS NOT NULL AND source_account_id IS NOT NULL AND source_chat_id IS NOT NULL
+              THEN json_object('channel', source_channel, 'accountId', source_account_id, 'chatId', source_chat_id)
+            ELSE NULL
+          END,
+          '[]',
+          NULL,
+          created_at,
+          NULL,
+          updated_at,
+          NULL
+        FROM contexts;
+        DROP TABLE contexts;
+        ALTER TABLE contexts_new RENAME TO contexts;
+        COMMIT;
+      `);
+      log.info("Migrated contexts table to central registry schema");
+    } finally {
+      db.exec("PRAGMA foreign_keys=ON");
+    }
+  }
+  const contextColumnsNow = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
+  if (!contextColumnsNow.some((c) => c.name === "kind")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN kind TEXT NOT NULL DEFAULT 'runtime'");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "capabilities_json")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN capabilities_json TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "metadata_json")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN metadata_json TEXT");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "expires_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN expires_at INTEGER");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "last_used_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN last_used_at INTEGER");
+  }
+  if (!contextColumnsNow.some((c) => c.name === "revoked_at")) {
+    db.exec("ALTER TABLE contexts ADD COLUMN revoked_at INTEGER");
+  }
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_contexts_key ON contexts(context_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_agent ON contexts(agent_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_session ON contexts(session_key)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_contexts_expires ON contexts(expires_at)");
   db.exec(`
     CREATE TABLE IF NOT EXISTS audit_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -878,7 +1019,7 @@ function getDb(): Database {
     log.info("Cleaned up expired ephemeral sessions at startup", { count: expiredCount });
   }
 
-  log.debug("Database initialized", { path: DB_PATH });
+  log.debug("Database initialized", { path: nextDbPath });
   return db;
 }
 
@@ -942,37 +1083,47 @@ interface PreparedStatements {
   listInstances: Statement;
   deleteInstance: Statement;
   updateInstance: Statement;
+  // Contexts
+  insertContext: Statement;
+  getContextById: Statement;
+  getContextByKey: Statement;
+  listContexts: Statement;
+  touchContext: Statement;
+  revokeContext: Statement;
+  updateContextCapabilities: Statement;
+  deleteContext: Statement;
 }
-
-let stmts: PreparedStatements | null = null;
 
 /**
  * Get prepared statements, creating them on first access.
  */
 function getStatements(): PreparedStatements {
-  if (stmts !== null) {
-    return stmts;
+  if (routerDbState.stmts !== null) {
+    return routerDbState.stmts;
   }
 
   const database = getDb();
 
-  stmts = {
+  routerDbState.stmts = {
     // Agents
     insertAgent: database.prepare(`
-      INSERT INTO agents (id, name, cwd, model, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
+      INSERT INTO agents (id, name, cwd, model, provider, remote, remote_user, dm_scope, system_prompt_append, debounce_ms, group_debounce_ms, matrix_account, setting_sources,
         heartbeat_enabled, heartbeat_interval_ms, heartbeat_model, heartbeat_active_start, heartbeat_active_end, heartbeat_account_id,
         spec_mode,
         contact_scope, allowed_sessions,
         agent_mode,
         defaults,
         created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `),
     updateAgent: database.prepare(`
       UPDATE agents SET
         name = ?,
         cwd = ?,
         model = ?,
+        provider = ?,
+        remote = ?,
+        remote_user = ?,
         dm_scope = ?,
         system_prompt_append = ?,
         debounce_ms = ?,
@@ -1090,8 +1241,8 @@ function getStatements(): PreparedStatements {
     `),
     // Instances
     upsertInstance: database.prepare(`
-      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         instance_id  = excluded.instance_id,
         channel      = excluded.channel,
@@ -1099,6 +1250,7 @@ function getStatements(): PreparedStatements {
         dm_policy    = excluded.dm_policy,
         group_policy = excluded.group_policy,
         dm_scope     = excluded.dm_scope,
+        enabled      = excluded.enabled,
         updated_at   = excluded.updated_at
     `),
     getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
@@ -1113,12 +1265,33 @@ function getStatements(): PreparedStatements {
         dm_policy    = ?,
         group_policy = ?,
         dm_scope     = ?,
+        enabled      = ?,
         updated_at   = ?
       WHERE name = ?
     `),
+    // Contexts
+    insertContext: database.prepare(`
+      INSERT INTO contexts (
+        context_id, context_key, kind, agent_id, session_key, session_name,
+        source_json, capabilities_json, metadata_json, created_at, expires_at, last_used_at, revoked_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `),
+    getContextById: database.prepare("SELECT * FROM contexts WHERE context_id = ?"),
+    getContextByKey: database.prepare("SELECT * FROM contexts WHERE context_key = ?"),
+    listContexts: database.prepare("SELECT * FROM contexts ORDER BY created_at DESC"),
+    touchContext: database.prepare("UPDATE contexts SET last_used_at = ? WHERE context_id = ?"),
+    revokeContext: database.prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = ?"),
+    updateContextCapabilities: database.prepare(`
+      UPDATE contexts SET
+        capabilities_json = ?,
+        last_used_at = ?
+      WHERE context_id = ?
+    `),
+    deleteContext: database.prepare("DELETE FROM contexts WHERE context_id = ?"),
   };
 
-  return stmts;
+  return routerDbState.stmts!;
 }
 
 // ============================================================================
@@ -1133,6 +1306,9 @@ function rowToAgent(row: AgentRow): AgentConfig {
 
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
+  if (row.provider === "claude" || row.provider === "codex") result.provider = row.provider;
+  if (row.remote !== null) result.remote = row.remote;
+  if (row.remote_user !== null) result.remoteUser = row.remote_user;
   if (row.dm_scope !== null) {
     // Validate before casting
     const parsed = DmScopeSchema.safeParse(row.dm_scope);
@@ -1230,6 +1406,7 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
     channel: row.channel,
     dmPolicy: (row.dm_policy ?? "open") as InstanceConfig["dmPolicy"],
     groupPolicy: (row.group_policy ?? "open") as InstanceConfig["groupPolicy"],
+    enabled: row.enabled !== 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1243,6 +1420,50 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
   return result;
 }
 
+function rowToContext(row: ContextRow): ContextRecord {
+  const result: ContextRecord = {
+    contextId: row.context_id,
+    contextKey: row.context_key,
+    kind: row.kind,
+    capabilities: [],
+    createdAt: row.created_at,
+  };
+
+  if (row.agent_id) result.agentId = row.agent_id;
+  if (row.session_key) result.sessionKey = row.session_key;
+  if (row.session_name) result.sessionName = row.session_name;
+  if (row.expires_at) result.expiresAt = row.expires_at;
+  if (row.last_used_at) result.lastUsedAt = row.last_used_at;
+  if (row.revoked_at) result.revokedAt = row.revoked_at;
+
+  if (row.source_json) {
+    try {
+      const parsed = ContextSourceSchema.safeParse(JSON.parse(row.source_json));
+      if (parsed.success) result.source = parsed.data;
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
+  try {
+    const parsed = z.array(ContextCapabilitySchema).safeParse(JSON.parse(row.capabilities_json));
+    if (parsed.success) result.capabilities = parsed.data;
+  } catch {
+    // Ignore invalid JSON
+  }
+
+  if (row.metadata_json) {
+    try {
+      const parsed = z.record(z.string(), z.unknown()).safeParse(JSON.parse(row.metadata_json));
+      if (parsed.success) result.metadata = parsed.data;
+    } catch {
+      // Ignore invalid JSON
+    }
+  }
+
+  return result;
+}
+
 // ============================================================================
 // Agent CRUD
 // ============================================================================
@@ -1250,7 +1471,7 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
 /**
  * Create a new agent
  */
-export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentConfig {
+export function dbCreateAgent(input: z.input<typeof AgentInputSchema>): AgentConfig {
   const validated = AgentInputSchema.parse(input);
   const now = Date.now();
   const s = getStatements();
@@ -1269,6 +1490,9 @@ export function dbCreateAgent(input: z.infer<typeof AgentInputSchema>): AgentCon
       validated.name ?? null,
       validated.cwd,
       validated.model ?? null,
+      validated.provider ?? null,
+      validated.remote ?? null,
+      validated.remoteUser ?? null,
       validated.dmScope ?? null,
       validated.systemPromptAppend ?? null,
       validated.debounceMs ?? null,
@@ -1349,6 +1573,9 @@ export function dbUpdateAgent(id: string, updates: Partial<AgentConfig>): AgentC
     updates.name !== undefined ? (updates.name ?? null) : row.name,
     updates.cwd ?? row.cwd,
     updates.model !== undefined ? (updates.model ?? null) : row.model,
+    updates.provider !== undefined ? (updates.provider ?? null) : row.provider,
+    updates.remote !== undefined ? (updates.remote ?? null) : row.remote,
+    updates.remoteUser !== undefined ? (updates.remoteUser ?? null) : row.remote_user,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     updates.systemPromptAppend !== undefined ? (updates.systemPromptAppend ?? null) : row.system_prompt_append,
     updates.debounceMs !== undefined ? (updates.debounceMs ?? null) : row.debounce_ms,
@@ -1442,7 +1669,7 @@ export function dbSetAgentSpecMode(id: string, enabled: boolean): void {
 /**
  * Create a new route
  */
-export function dbCreateRoute(input: z.infer<typeof RouteInputSchema>): RouteConfig {
+export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteConfig {
   const validated = RouteInputSchema.parse(input);
   const s = getStatements();
 
@@ -1647,7 +1874,7 @@ export function dbListSettings(): Record<string, string> {
 // Instance CRUD
 // ============================================================================
 
-export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): InstanceConfig {
+export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): InstanceConfig {
   const validated = InstanceInputSchema.parse(input);
   if (validated.agent && !dbGetAgent(validated.agent)) {
     throw new Error(`Agent not found: ${validated.agent}`);
@@ -1662,6 +1889,7 @@ export function dbUpsertInstance(input: z.infer<typeof InstanceInputSchema>): In
     validated.dmPolicy,
     validated.groupPolicy,
     validated.dmScope ?? null,
+    validated.enabled ? 1 : 0,
     now,
     now,
   );
@@ -1708,6 +1936,7 @@ export function dbUpdateInstance(
     updates.dmPolicy ?? row.dm_policy,
     updates.groupPolicy ?? row.group_policy,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
+    updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
     now,
     name,
   );
@@ -1756,6 +1985,109 @@ export function dbListDeletedInstances(): InstanceConfig[] {
 }
 
 // ============================================================================
+// Context Registry
+// ============================================================================
+
+export function dbCreateContext(input: z.input<typeof ContextInputSchema>): ContextRecord {
+  const validated = ContextInputSchema.parse(input);
+  if (validated.agentId && !dbGetAgent(validated.agentId)) {
+    throw new Error(`Agent not found: ${validated.agentId}`);
+  }
+
+  const s = getStatements();
+  const createdAt = validated.createdAt ?? Date.now();
+
+  try {
+    s.insertContext.run(
+      validated.contextId,
+      validated.contextKey,
+      validated.kind,
+      validated.agentId ?? null,
+      validated.sessionKey ?? null,
+      validated.sessionName ?? null,
+      validated.source ? JSON.stringify(validated.source) : null,
+      JSON.stringify(validated.capabilities),
+      validated.metadata ? JSON.stringify(validated.metadata) : null,
+      createdAt,
+      validated.expiresAt ?? null,
+      validated.lastUsedAt ?? null,
+      validated.revokedAt ?? null,
+    );
+  } catch (err) {
+    if ((err as Error).message.includes("UNIQUE constraint failed")) {
+      throw new Error(`Context already exists: ${validated.contextId}`);
+    }
+    throw err;
+  }
+
+  return dbGetContext(validated.contextId)!;
+}
+
+export function dbGetContext(contextId: string): ContextRecord | null {
+  const s = getStatements();
+  const row = s.getContextById.get(contextId) as ContextRow | undefined;
+  return row ? rowToContext(row) : null;
+}
+
+export function dbGetContextByKey(contextKey: string): ContextRecord | null {
+  const s = getStatements();
+  const row = s.getContextByKey.get(contextKey) as ContextRow | undefined;
+  return row ? rowToContext(row) : null;
+}
+
+export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {
+  const s = getStatements();
+  const now = Date.now();
+  const rows = s.listContexts.all() as ContextRow[];
+
+  return rows
+    .map((row) => rowToContext(row))
+    .filter((context) => {
+      if (options.agentId && context.agentId !== options.agentId) return false;
+      if (options.sessionKey && context.sessionKey !== options.sessionKey) return false;
+      if (options.kind && context.kind !== options.kind) return false;
+
+      if (!options.includeInactive) {
+        if (context.revokedAt && context.revokedAt <= now) return false;
+        if (context.expiresAt && context.expiresAt <= now) return false;
+      }
+
+      return true;
+    });
+}
+
+export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
+  const s = getStatements();
+  s.touchContext.run(lastUsedAt, contextId);
+}
+
+export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
+  const s = getStatements();
+  const existing = dbGetContext(contextId);
+  if (!existing) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  s.revokeContext.run(revokedAt, contextId);
+  return dbGetContext(contextId)!;
+}
+
+export function dbUpdateContextCapabilities(contextId: string, capabilities: ContextCapability[]): ContextRecord {
+  const s = getStatements();
+  if (!dbGetContext(contextId)) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  const validated = z.array(ContextCapabilitySchema).parse(capabilities);
+  s.updateContextCapabilities.run(JSON.stringify(validated), Date.now(), contextId);
+  return dbGetContext(contextId)!;
+}
+
+export function dbDeleteContext(contextId: string): boolean {
+  const s = getStatements();
+  s.deleteContext.run(contextId);
+  return getDbChanges() > 0;
+}
+
+// ============================================================================
 // Convenience Getters
 // ============================================================================
 
@@ -1790,7 +2122,7 @@ export function getDefaultTimezone(): string | undefined {
  */
 export function getFirstAccountName(): string | undefined {
   const instances = dbListInstances();
-  return instances[0]?.name;
+  return instances.find((instance) => instance.enabled !== false)?.name;
 }
 
 /**
@@ -1799,7 +2131,10 @@ export function getFirstAccountName(): string | undefined {
  */
 export function getAccountForAgent(agentId: string): string | undefined {
   const instances = dbListInstances();
-  return instances.find((i) => i.agent === agentId)?.name ?? instances[0]?.name;
+  return (
+    instances.find((instance) => instance.enabled !== false && instance.agent === agentId)?.name ??
+    instances.find((instance) => instance.enabled !== false)?.name
+  );
 }
 
 /**
@@ -1818,10 +2153,11 @@ export function getAnnounceCompaction(): boolean {
  * Close the database connection
  */
 export function closeRouterDb(): void {
-  if (db !== null) {
-    db.close();
-    db = null;
-    stmts = null;
+  if (routerDbState.db !== null) {
+    routerDbState.db.close();
+    routerDbState.db = null;
+    routerDbState.stmts = null;
+    routerDbState.dbPath = null;
   }
 }
 
@@ -1834,14 +2170,14 @@ export { getDb, getDbChanges };
  * Get the database path
  */
 export function getRaviDbPath(): string {
-  return DB_PATH;
+  return resolveDbPath();
 }
 
 /**
  * Get the ravi directory
  */
 export function getRaviDir(): string {
-  return RAVI_DIR;
+  return getRaviStateDir();
 }
 
 // ============================================================================

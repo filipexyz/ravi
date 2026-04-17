@@ -42,6 +42,11 @@ import {
 import { dbListRoutes } from "../../router/router-db.js";
 import { findSessionByChatId } from "../../router/sessions.js";
 import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permissions/scope.js";
+import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
+
+const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
+const ROUTE_RESOLVER_META = { source: "resolver", freshness: "derived-now", via: "route-lookup" } as const;
+const SESSION_LOOKUP_META = { source: "session-db", freshness: "derived-now", via: "identity-lookup" } as const;
 
 function statusIcon(status: ContactStatus): string {
   switch (status) {
@@ -395,28 +400,49 @@ export class ContactsCommands {
     }
 
     console.log(`\nContact: ${contact.id}`);
-    console.log(`  Name:    ${contact.name || "-"}`);
-    console.log(`  Email:   ${contact.email || "-"}`);
-    console.log(`  Status:  ${statusText(contact.status)}`);
-    console.log(`  Allowed: ${contact.allowedAgents?.length ? contact.allowedAgents.join(", ") : "(all)"}`);
-    console.log(`  Agent:   ${getRouteAgent(contact) || "-"} (via route)`);
-    console.log(`  Session: ${getSessionName(contact) || "-"}`);
-    console.log(`  Mode:    ${contact.reply_mode || "auto"}`);
-    console.log(`  Tags:    ${contact.tags.length > 0 ? contact.tags.join(", ") : "-"}`);
-    console.log(`  Notes:   ${Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-"}`);
-    console.log(`  Opt-out: ${contact.opt_out ? "yes" : "no"}`);
-    console.log(`  Source:  ${contact.source || "-"}`);
-    console.log(`  Interactions: ${contact.interaction_count}`);
-    if (contact.last_inbound_at) console.log(`  Last inbound:  ${contact.last_inbound_at}`);
-    if (contact.last_outbound_at) console.log(`  Last outbound: ${contact.last_outbound_at}`);
-    console.log(`  Created: ${contact.created_at}`);
-    console.log(`  Updated: ${contact.updated_at}`);
-
-    console.log(`\n  Identities (${contact.identities.length}):`);
-    for (const id of contact.identities) {
-      const primary = id.isPrimary ? " ★" : "";
-      console.log(`    ${platformIcon(id.platform)} ${id.platform.padEnd(16)} ${formatPhone(id.value)}${primary}`);
+    printInspectionField("Name", contact.name || "-", CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Email", contact.email || "-", CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Status", statusText(contact.status), CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField(
+      "Allowed",
+      contact.allowedAgents?.length ? contact.allowedAgents.join(", ") : "(all)",
+      CONTACT_DB_META,
+      { labelWidth: 15 },
+    );
+    printInspectionField("Agent", getRouteAgent(contact) || "-", ROUTE_RESOLVER_META, { labelWidth: 15 });
+    printInspectionField("Session", getSessionName(contact) || "-", SESSION_LOOKUP_META, { labelWidth: 15 });
+    printInspectionField("Mode", contact.reply_mode || "auto", CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Tags", contact.tags.length > 0 ? contact.tags.join(", ") : "-", CONTACT_DB_META, {
+      labelWidth: 15,
+    });
+    printInspectionField(
+      "Notes",
+      Object.keys(contact.notes).length > 0 ? JSON.stringify(contact.notes) : "-",
+      CONTACT_DB_META,
+      { labelWidth: 15 },
+    );
+    printInspectionField("Opt-out", contact.opt_out ? "yes" : "no", CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Source", contact.source || "-", CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Interactions", contact.interaction_count, CONTACT_DB_META, { labelWidth: 15 });
+    if (contact.last_inbound_at) {
+      printInspectionField("Last inbound", contact.last_inbound_at, CONTACT_DB_META, { labelWidth: 15 });
     }
+    if (contact.last_outbound_at) {
+      printInspectionField("Last outbound", contact.last_outbound_at, CONTACT_DB_META, { labelWidth: 15 });
+    }
+    printInspectionField("Created", contact.created_at, CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionField("Updated", contact.updated_at, CONTACT_DB_META, { labelWidth: 15 });
+    printInspectionBlock(
+      `Identities (${contact.identities.length})`,
+      CONTACT_DB_META,
+      contact.identities.length > 0
+        ? contact.identities.map((id) => {
+            const primary = id.isPrimary ? " ★" : "";
+            return `${platformIcon(id.platform)} ${id.platform.padEnd(16)} ${formatPhone(id.value)}${primary}`;
+          })
+        : "(none)",
+      { labelWidth: 15 },
+    );
   }
 
   @Scope("open")

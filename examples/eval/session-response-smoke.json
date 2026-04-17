@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "id": "session-response-smoke",
+  "title": "Smoke: resposta simples da sessao",
+  "prompt": "Responda exatamente com EVAL_OK",
+  "session": {
+    "name": "eval-smoke",
+    "agentId": "dev"
+  },
+  "artifacts": {
+    "files": [],
+    "transcript": true
+  },
+  "rubric": [
+    {
+      "id": "response_contains_eval_ok",
+      "type": "response.contains",
+      "needle": "EVAL_OK"
+    },
+    {
+      "id": "transcript_contains_eval_ok",
+      "type": "transcript.contains",
+      "needle": "EVAL_OK"
+    }
+  ],
+  "runner": {
+    "timeoutMs": 120000
+  }
+}

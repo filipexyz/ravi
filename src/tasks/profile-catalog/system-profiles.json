@@ -1,0 +1,606 @@
+[
+  {
+    "id": "default",
+    "version": "1",
+    "label": "Default",
+    "description": "Canonical doc-first profile with TASK.md as the primary artifact.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": true
+    },
+    "sync": {
+      "artifactFirst": true,
+      "taskDocument": {
+        "mode": "required"
+      }
+    },
+    "rendererHints": {
+      "label": "TASK.md first",
+      "showTaskDoc": true,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.default", "task.doc.required", "task.sync.task-doc-first"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true,
+      "notes": "Use frontmatter.progress_note ou --message."
+    },
+    "artifacts": [
+      {
+        "kind": "task-doc",
+        "label": "TASK.md",
+        "pathTemplate": "{{task.taskDocPath}}",
+        "primary": true
+      }
+    ],
+    "state": [],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- task pai: {{task.parentTaskId}}\n- profile efetivo: {{profile.id}}\n- artifact primário: {{task.taskDocPath}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- carregue a skill `ravi-system-tasks` antes de editar a task\n- trate {{task.taskDocPath}} como o artifact primário desta task\n- faça toda escrita primeiro no TASK.md\n- para progresso, mantenha `frontmatter.progress` e `frontmatter.progress_note` coerentes\n- depois de editar o frontmatter/corpo, use `ravi tasks ...` para o runtime reconhecer as mudanças\n\nFlow obrigatório:\n1. Abra o TASK.md e atualize o frontmatter/corpo seguindo a skill.\n2. Ao iniciar ou avançar de verdade, sincronize:\n   ravi tasks report {{task.id}}\n3. Se travar, registre no TASK.md e sincronize:\n   ravi tasks block {{task.id}}\n4. Se der erro terminal, registre no TASK.md e sincronize:\n   ravi tasks fail {{task.id}}\n5. Quando concluir, registre no TASK.md e sincronize:\n   ravi tasks done {{task.id}}\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task\n- o corpo rico da task vive no TASK.md; DB/NATS continuam sendo a fonte autoritativa do estado",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | artifact: {{task.taskDocPath}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}",
+      "dispatchSummary": "The target session was instructed to edit TASK.md first, then sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Dispatch summary surfaced here: load ravi-system-tasks and edit {{task.taskDocPath}} first, then sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "brainstorm",
+    "version": "1",
+    "label": "Brainstorm",
+    "description": "Routes dispatch/resume through the brainstorm skill and its DRAFT.md artifact.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Brainstorm draft",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.brainstorm", "task.skill.brainstorm", "task.artifact.brainstorm-draft"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true,
+      "notes": "Sincronize progresso via runtime e mantenha o draft atualizado."
+    },
+    "artifacts": [
+      {
+        "kind": "brainstorm-draft",
+        "label": "Brainstorm draft",
+        "pathTemplate": "{{session.cwd}}/.genie/brainstorms/{{profileState.brainstorm.slug}}/DRAFT.md",
+        "primary": true
+      },
+      {
+        "kind": "brainstorm-design",
+        "label": "Brainstorm design",
+        "pathTemplate": "{{session.cwd}}/.genie/brainstorms/{{profileState.brainstorm.slug}}/DESIGN.md",
+        "primaryWhenStatuses": ["done"]
+      },
+      {
+        "kind": "brainstorm-jar",
+        "label": "Brainstorm jar",
+        "pathTemplate": "{{session.cwd}}/.genie/brainstorm.md"
+      }
+    ],
+    "state": [
+      {
+        "path": "brainstorm.slug",
+        "valueTemplate": "{{task.title}}",
+        "transform": "slug"
+      }
+    ],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- task pai: {{task.parentTaskId}}\n- profile efetivo: {{profile.id}}\n- brainstorm slug: {{profileState.brainstorm.slug}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- carregue a skill `brainstorm` antes de começar\n- trabalhe a partir de {{artifacts.primary.path}}\n- trate esse draft como o artefato primário desta task\n- inicialize cedo o arquivo `.genie/brainstorms/{{profileState.brainstorm.slug}}/DRAFT.md` no worktree compartilhado se ele ainda não existir\n- use o contexto injetado do dispatch como seed e siga a semântica do skill de brainstorm\n- persista o draft cedo e frequentemente enquanto refina a ideia\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | slug: {{profileState.brainstorm.slug}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}",
+      "dispatchSummary": "The target session was instructed to load brainstorm, use the draft artifact as primary state, then sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Dispatch summary surfaced here: load brainstorm, persist in {{artifacts.primary.path}}, then sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "content",
+    "version": "1",
+    "label": "Content",
+    "description": "Bootstraps a raw content workspace in task_dir while keeping lifecycle, comments, and assignments in the task substrate.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "task_dir",
+      "ensureTaskDir": true
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Content workspace",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.content", "task.doc.none", "task.artifact.content-draft", "task.workspace.task-dir"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true,
+      "notes": "Sincronize progresso via runtime; o workspace de content nao usa TASK.md."
+    },
+    "artifacts": [
+      {
+        "kind": "content-draft",
+        "label": "Content draft",
+        "pathTemplate": "{{task.taskDir}}/draft.md",
+        "primary": true
+      },
+      {
+        "kind": "content-notes",
+        "label": "Content notes",
+        "pathTemplate": "{{task.taskDir}}/notes.md"
+      },
+      {
+        "kind": "content-sources",
+        "label": "Sources",
+        "pathTemplate": "{{task.taskDir}}/sources"
+      },
+      {
+        "kind": "content-assets",
+        "label": "Assets",
+        "pathTemplate": "{{task.taskDir}}/assets"
+      },
+      {
+        "kind": "content-exports",
+        "label": "Exports",
+        "pathTemplate": "{{task.taskDir}}/exports"
+      }
+    ],
+    "state": [],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- task pai: {{task.parentTaskId}}\n- profile efetivo: {{profile.id}}\n- workspace root: {{task.taskDir}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- trate {{task.taskDir}} como o workspace canônico deste item de content\n- o shape inicial é cru: sem TASK.md, sem manifesto obrigatório e sem runtime paralelo\n- comece por {{artifacts.primary.path}} e só materialize `notes.md`, `sources/`, `assets/` e `exports/` se o trabalho realmente precisar\n- comments, status e assignments continuam vindo do substrate atual; mantenha o estado canônico via `ravi tasks comment|report|done|block|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | workspace: {{task.taskDir}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}",
+      "dispatchSummary": "The target session received a content workspace rooted at task_dir. Work from the primary artifact and sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Content workspace rooted at {{task.taskDir}} with primary artifact {{artifacts.primary.path}}; keep lifecycle in the task substrate and sync via ravi tasks comment|report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "video-rapha",
+    "version": "1",
+    "label": "Video Rapha",
+    "description": "Specialized content profile for the video pipeline rooted in the videomaker workspace. v0 requires a brief and uses the canonical `video` CLI surface under out/<video_id>.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "path",
+      "path": "~/ravi/videomaker",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Video Rapha project",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": [
+      "task.profile.video-rapha",
+      "task.doc.none",
+      "task.workspace.videomaker",
+      "task.artifact.video-runner-state"
+    ],
+    "inputs": [
+      {
+        "key": "video_id",
+        "label": "Video ID",
+        "description": "Canonical project id used under out/<video_id>.",
+        "required": true
+      },
+      {
+        "key": "titulo",
+        "label": "Título",
+        "description": "Working title surfaced to the videomaker workflow.",
+        "required": true
+      },
+      {
+        "key": "brief",
+        "label": "Brief",
+        "description": "v0 requires a brief block; future versions may support fonte ou brief.",
+        "required": true
+      },
+      {
+        "key": "tese",
+        "label": "Tese",
+        "required": true
+      },
+      {
+        "key": "publico",
+        "label": "Público",
+        "required": true
+      },
+      {
+        "key": "acao",
+        "label": "Ação",
+        "required": true
+      },
+      {
+        "key": "fonte",
+        "label": "Fonte"
+      },
+      {
+        "key": "wa_group",
+        "label": "Grupo WhatsApp"
+      },
+      {
+        "key": "voice_profile",
+        "label": "Voice profile"
+      },
+      {
+        "key": "style_profile",
+        "label": "Style profile"
+      },
+      {
+        "key": "deadline",
+        "label": "Deadline"
+      },
+      {
+        "key": "brand_context",
+        "label": "Brand context"
+      }
+    ],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true,
+      "notes": "Use a CLI `video` como surface canônica; `wf eb` fica só como alias legado. Checkpoints F2/F4/F5 continuam in_progress ate haver impedimento real."
+    },
+    "artifacts": [
+      {
+        "kind": "video-runner-state",
+        "label": "Runner state",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/.wf-eb-state.json",
+        "primary": true
+      },
+      {
+        "kind": "video-meta",
+        "label": "Project meta",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/00-meta.md"
+      },
+      {
+        "kind": "video-project-spec",
+        "label": "Project spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/project.json"
+      },
+      {
+        "kind": "video-story-spec",
+        "label": "Story spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/story.json"
+      },
+      {
+        "kind": "video-scene-specs",
+        "label": "Scene specs",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scenes"
+      },
+      {
+        "kind": "video-runner-log",
+        "label": "Runner log",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/.wf-eb-log.jsonl"
+      },
+      {
+        "kind": "video-failure-log",
+        "label": "Failure log",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/.failure-log.jsonl",
+        "showWhenStatuses": ["failed"]
+      },
+      {
+        "kind": "video-scene-review-log",
+        "label": "Scene review log",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/.wf-eb-scenes.jsonl"
+      },
+      {
+        "kind": "video-f0-frame",
+        "label": "F0 enquadramento",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F0-enquadramento.md"
+      },
+      {
+        "kind": "video-f1-script-md",
+        "label": "F1 roteiro",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F1-roteiro.md"
+      },
+      {
+        "kind": "video-script-json",
+        "label": "Script JSON",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/script.json"
+      },
+      {
+        "kind": "video-f2-design",
+        "label": "F2 design",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F2-design.md"
+      },
+      {
+        "kind": "video-scene-props-dir",
+        "label": "Scene props",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/props"
+      },
+      {
+        "kind": "video-props-final",
+        "label": "Final props",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/props.json"
+      },
+      {
+        "kind": "video-f4-cross-scene-review",
+        "label": "F4 cross-scene review",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F4-cross-scene-review.md"
+      },
+      {
+        "kind": "video-f4-checklist",
+        "label": "F4 checklist",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F4-checklist.md"
+      },
+      {
+        "kind": "video-render-spec",
+        "label": "Render spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/render-props.json"
+      },
+      {
+        "kind": "video-qc",
+        "label": "QC report",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/qc.json"
+      },
+      {
+        "kind": "video-render",
+        "label": "Rendered video",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/render/video.mp4",
+        "primaryWhenStatuses": ["done"],
+        "showWhenStatuses": ["done"]
+      }
+    ],
+    "state": [
+      {
+        "path": "video.videoId",
+        "valueTemplate": "{{input.video_id}}"
+      },
+      {
+        "path": "video.projectDir",
+        "valueTemplate": "out/{{input.video_id}}"
+      },
+      {
+        "path": "video.title",
+        "valueTemplate": "{{input.titulo}}"
+      },
+      {
+        "path": "video.phase",
+        "valueTemplate": "F0"
+      },
+      {
+        "path": "video.step",
+        "valueTemplate": "F0-setup"
+      },
+      {
+        "path": "video.runnerStatus",
+        "valueTemplate": "pending-init"
+      }
+    ],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- CLI canônica: `video`\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInputs do projeto:\n- video_id: {{input.video_id}}\n- titulo: {{input.titulo}}\n- publico: {{input.publico}}\n- tese: {{input.tese}}\n- acao: {{input.acao}}\n\nBrief:\n{{input.brief}}\n\nInstruções de execução:\n- use o worktree contextual como base operacional do videomaker\n- trate {{worktree.path}}/out/{{input.video_id}} como o projeto canônico deste vídeo\n- use a surface `video` como protocolo principal (`video status`, `video advance`, `video scenes`, `video sync`, `video compile`, `video qc`); `wf eb` ficou só como alias legado\n- trate {{artifacts.primary.path}} como a fonte primária do runner enquanto a task estiver ativa\n- trate `project.json`, `story.json`, `scenes/`, `render-props.json` e `qc.json` como specs do projeto; `00-meta.md`, `script.json`, `F2-design.md`, `props/`, `props.json`, `F4-checklist.md` e `render/video.mp4` continuam como artifacts do processo\n- se consultar uma skill do task runtime, use `ravi-system-tasks`; não use o legado `ravi-system-tasks-manager`\n- checkpoints F2/F4/F5 não significam `blocked`; mantenha a task `in_progress` até haver impedimento real\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | phase: {{profileState.video.phase}} | step: {{profileState.video.step}} | runner: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- CLI canônica: `video`",
+      "dispatchSummary": "The target session was instructed to operate inside the videomaker worktree, use the `video` CLI surface, and keep the project rooted at {{worktree.path}}/out/{{input.video_id}}.",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Video Rapha project rooted at {{worktree.path}}/out/{{input.video_id}} with runner state {{artifacts.primary.path}}; keep checkpoints F2/F4/F5 in-progress and sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "video-rapha-scene",
+    "version": "1",
+    "label": "Video Rapha Scene",
+    "description": "Scene-local execution contract for the Rapha video pipeline. Own exactly one scene after the parent locks F0/F1/F2 + TTS and report back through the task runtime.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "path",
+      "path": "~/ravi/videomaker",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Video Rapha scene",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": [
+      "task.profile.video-rapha-scene",
+      "task.doc.none",
+      "task.workspace.videomaker",
+      "task.artifact.video-scene-props"
+    ],
+    "inputs": [
+      {
+        "key": "video_id",
+        "label": "Video ID",
+        "required": true
+      },
+      {
+        "key": "scene_id",
+        "label": "Scene ID",
+        "required": true
+      },
+      {
+        "key": "scene_text",
+        "label": "Scene text",
+        "required": true
+      },
+      {
+        "key": "beat_type",
+        "label": "Beat type"
+      }
+    ],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo da cena"
+    },
+    "progress": {
+      "requireMessage": true,
+      "notes": "Cada scene task deve trabalhar fora do .wf-eb-state.json global e sincronizar progresso pelo runtime."
+    },
+    "artifacts": [
+      {
+        "kind": "video-scene-props",
+        "label": "Scene props",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/props/scene{{input.scene_id}}-props.json",
+        "primary": true
+      },
+      {
+        "kind": "video-scene-assets",
+        "label": "Scene asset manifest",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/assets/scene{{input.scene_id}}-manifest.json"
+      },
+      {
+        "kind": "video-scene-still",
+        "label": "Scene still",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/stills/scene{{input.scene_id}}.png",
+        "primaryWhenStatuses": ["done"]
+      },
+      {
+        "kind": "video-scene-audio",
+        "label": "Scene audio",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scene{{input.scene_id}}.mp3"
+      },
+      {
+        "kind": "video-scene-spec",
+        "label": "Scene spec",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scenes/scene{{input.scene_id}}.json"
+      },
+      {
+        "kind": "video-scene-words",
+        "label": "Scene word timings",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/scene{{input.scene_id}}-words.json"
+      },
+      {
+        "kind": "video-scene-review-log",
+        "label": "Scene review log",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/.wf-eb-scenes.jsonl"
+      },
+      {
+        "kind": "video-scene-design",
+        "label": "F2 design",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/F2-design.md"
+      },
+      {
+        "kind": "video-script-json",
+        "label": "Script JSON",
+        "pathTemplate": "{{worktree.path}}/out/{{input.video_id}}/script.json"
+      }
+    ],
+    "state": [
+      {
+        "path": "video.videoId",
+        "valueTemplate": "{{input.video_id}}"
+      },
+      {
+        "path": "video.sceneId",
+        "valueTemplate": "{{input.scene_id}}"
+      },
+      {
+        "path": "video.projectDir",
+        "valueTemplate": "out/{{input.video_id}}"
+      }
+    ],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}\n- profile efetivo: {{profile.id}}\n- video_id: {{input.video_id}}\n- scene_id: {{input.scene_id}}\n- beat_type: {{input.beat_type}}\n- artifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nTexto da cena:\n{{input.scene_text}}\n\nInstruções de execução:\n- você é dono apenas da cena {{input.scene_id}} dentro de {{worktree.path}}/out/{{input.video_id}}\n- leia `scenes/scene{{input.scene_id}}.json` como contrato canônico da cena; use `F2-design.md` como contexto visual complementar\n- use `scene{{input.scene_id}}.mp3` e `scene{{input.scene_id}}-words.json` já gerados pelo parent e trabalhe só nos artifacts locais da cena\n- produza e valide `assets/scene{{input.scene_id}}-manifest.json`, `props/scene{{input.scene_id}}-props.json`, `stills/scene{{input.scene_id}}.png` e a entrada append-only correspondente em `.wf-eb-scenes.jsonl`\n- não avance o runner linear, não rode `video advance {{input.video_id}}` e não toque em `.wf-eb-state.json`\n- não mexa em outras cenas, em `props.json` final, em `F4-*` ou em `render/video.mp4`\n- se faltar asset, timing ou decisão de design, bloqueie a scene task com contexto suficiente para o parent reorquestrar\n- sincronize progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | scene: {{input.scene_id}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- project root: {{worktree.path}}/out/{{input.video_id}}",
+      "dispatchSummary": "The target session now owns exactly one scene under {{worktree.path}}/out/{{input.video_id}}. Build the scene-local artifacts and sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Scene {{input.scene_id}} for {{input.video_id}} now lives in the task runtime; keep work local to that scene and sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "task-doc-optional",
+    "version": "1",
+    "label": "Task Doc Optional",
+    "description": "Keeps a canonical task directory but does not materialize TASK.md automatically.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": true
+    },
+    "sync": {
+      "artifactFirst": false,
+      "taskDocument": {
+        "mode": "optional"
+      }
+    },
+    "rendererHints": {
+      "label": "TASK.md optional",
+      "showTaskDoc": true,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.task-doc-optional", "task.doc.optional"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true
+    },
+    "artifacts": [
+      {
+        "kind": "task-doc",
+        "label": "TASK.md",
+        "pathTemplate": "{{task.taskDocPath}}",
+        "primary": true
+      }
+    ],
+    "state": [],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- task pai: {{task.parentTaskId}}\n- profile efetivo: {{profile.id}}\n- workspace root: {{task.taskDir}}\n- TASK.md opcional: {{task.taskDocPath}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- o workspace canônico continua sendo o substrate de tasks; o TASK.md é opcional neste profile\n- se você editar {{task.taskDocPath}}, sincronize pelo CLI depois da edição\n- reporte progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}` conforme necessário\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | TASK.md opcional: {{task.taskDocPath}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}",
+      "dispatchSummary": "The target session received the task with TASK.md optional. If it edits the document, sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Dispatch summary surfaced here: TASK.md is optional for this profile ({{task.taskDocPath}}); if the worker edits it, sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  },
+  {
+    "id": "task-doc-none",
+    "version": "1",
+    "label": "Runtime Only",
+    "description": "Operates directly on the runtime substrate without TASK.md materialization.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": false
+    },
+    "sync": {
+      "artifactFirst": false
+    },
+    "rendererHints": {
+      "label": "Runtime only",
+      "showTaskDoc": false,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.task-doc-none", "task.doc.none"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Resumo"
+    },
+    "progress": {
+      "requireMessage": true
+    },
+    "artifacts": [],
+    "state": [],
+    "templates": {
+      "dispatch": "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nPrioridade: {{task.priority}}\nSessão de trabalho: {{session.name}}\nAgent responsável: {{session.agentId}}\n\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}\n- task pai: {{task.parentTaskId}}\n- profile efetivo: {{profile.id}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- opere direto no substrate/runtime da task\n- reporte progresso e estados terminais via `ravi tasks report|block|done|fail {{task.id}}`\n\nRegras:\n- trabalhe nesta sessão até concluir ou bloquear\n- não responda descrevendo o protocolo\n- use o CLI de tasks para atualizar o estado real da task",
+      "resume": "[System] Daemon reiniciou. Continue a task {{task.id}} (\"{{task.title}}\") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}",
+      "dispatchSummary": "The target session received the task without a task-document protocol. Sync through:",
+      "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Dispatch summary surfaced here: operate directly in the runtime substrate and sync via ravi tasks report|done|block|fail {{task.id}}."
+    }
+  }
+]

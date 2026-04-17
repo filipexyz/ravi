@@ -1,12 +1,12 @@
 /**
  * Omni Sender
  *
- * HTTP client for the omni REST API. Wraps @omni/sdk to send messages,
+ * HTTP client for the omni REST API. Sends messages,
  * typing indicators, reactions, and media via omni-managed channel instances.
  */
 
-import { createOmniClient, type OmniClient } from "@omni/sdk";
 import { readFileSync } from "node:fs";
+import { createOmniClient, type OmniClient } from "./client.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("omni:sender");

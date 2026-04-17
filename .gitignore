@@ -30,3 +30,6 @@ coverage/
 
 # Genie workspace
 .genie/
+
+# Local scratch
+.tmp/

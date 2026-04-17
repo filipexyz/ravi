@@ -153,7 +153,7 @@ export function hasRelation(
 export function listRelations(filter?: RelationFilter): Relation[] {
   const db = getDb();
   const conditions: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
 
   if (filter?.subjectType) {
     conditions.push("subject_type = ?");
@@ -191,7 +191,7 @@ export function listRelations(filter?: RelationFilter): Relation[] {
 export function clearRelations(opts?: { subjectType?: string; subjectId?: string; source?: string }): number {
   const db = getDb();
   const conditions: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
 
   if (opts?.subjectType) {
     conditions.push("subject_type = ?");

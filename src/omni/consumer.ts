@@ -11,16 +11,18 @@ import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetSt
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
 import { handleSlashCommand } from "../slash/index.js";
+import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
+const CONSUMER_RETRY_DELAY_MS = 2_000;
 const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
 const unregisteredCooldowns = new Map<string, number>();
 import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
+import { dbSaveMessageMeta } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../bot.js";
-import { dbFindActiveEntryByPhone, dbRecordEntryResponse, dbSetEntrySenderId } from "../outbound/index.js";
 import type { OmniSender } from "./sender.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
@@ -108,6 +110,19 @@ function stripJid(jid: string): string {
   return atIdx !== -1 ? jid.slice(0, atIdx) : jid;
 }
 
+function isUrgentInboundText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.startsWith("!!") ||
+    normalized.startsWith("urgent") ||
+    normalized.startsWith("urgent:") ||
+    normalized.startsWith("urgente") ||
+    normalized.startsWith("urgente:") ||
+    normalized.startsWith("p0:")
+  );
+}
+
 /**
  * Parse the NATS subject to get channelType and instanceId.
  * Subject format: {eventType}.{channelType}.{instanceId}
@@ -188,15 +203,24 @@ export class OmniConsumer {
     name: string,
     filterSubject: string,
     timeoutMs = CONSUMER_READY_TIMEOUT,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
 
-    while (Date.now() < deadline) {
+    while (this.running && Date.now() < deadline) {
+      try {
+        await jsm.streams.info(stream);
+      } catch (err) {
+        if (!this.running) return false;
+        log.debug("JetStream stream not ready yet, retrying in 2s", { stream, name, error: err });
+        await this.delay(CONSUMER_RETRY_DELAY_MS);
+        continue;
+      }
+
       // Check if consumer already exists
       try {
         await jsm.consumers.info(stream, name);
         log.debug("Consumer already exists", { stream, name });
-        return;
+        return true;
       } catch {
         // Not found — try to create
       }
@@ -210,16 +234,21 @@ export class OmniConsumer {
           deliver_policy: DeliverPolicy.New,
         });
         log.info("Created JetStream consumer", { stream, name, filter: filterSubject });
-        return;
+        return true;
       } catch (err) {
         // Stream may not exist yet (omni still initializing — retry)
-        if (!this.running) return;
-        log.debug("Stream not ready yet, retrying in 2s", { stream, name, error: err });
-        await new Promise((r) => setTimeout(r, 2000));
+        if (!this.running) return false;
+        log.debug("JetStream consumer not ready yet, retrying in 2s", { stream, name, error: err });
+        await this.delay(CONSUMER_RETRY_DELAY_MS);
       }
     }
 
     log.error("Timed out waiting for JetStream stream to appear", { stream, name });
+    return false;
+  }
+
+  private async delay(ms: number): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms));
   }
 
   /**
@@ -260,7 +289,11 @@ export class OmniConsumer {
           try {
             // Ensure consumer exists (retries until stream is available)
             if (this.jsm) {
-              await this.ensureConsumer(this.jsm, stream, consumerName, filterSubject);
+              const ready = await this.ensureConsumer(this.jsm, stream, consumerName, filterSubject);
+              if (!ready) {
+                if (!this.running) break;
+                continue;
+              }
             }
             if (!this.running) break;
 
@@ -291,8 +324,16 @@ export class OmniConsumer {
             }
           } catch (err) {
             if (!this.running) break;
-            log.error("Consume loop error, restarting in 2s", { stream, consumerName, error: err });
-            await new Promise((r) => setTimeout(r, 2000));
+            if (this.isJetStreamBootstrapError(err)) {
+              log.warn("Consume loop waiting for JetStream bootstrap, retrying in 2s", {
+                stream,
+                consumerName,
+                error: err,
+              });
+            } else {
+              log.error("Consume loop error, restarting in 2s", { stream, consumerName, error: err });
+            }
+            await this.delay(CONSUMER_RETRY_DELAY_MS);
           }
         }
 
@@ -300,6 +341,11 @@ export class OmniConsumer {
         markReady(); // Unblock start() even on clean exit without connecting
       })();
     });
+  }
+
+  private isJetStreamBootstrapError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message.toLowerCase() : String(err).toLowerCase();
+    return message.includes("stream not found") || message.includes("consumer not found");
   }
 
   /**
@@ -356,8 +402,14 @@ export class OmniConsumer {
     const isNonDmChannel = rawIsDm === false && (channelType === "slack" || channelType === "discord");
     const peerKind = isNonDmChannel ? ("channel" as const) : undefined;
     // Resolve instanceId (UUID) → account name (e.g., "main") for route matching
-    const effectiveAccountId = configStore.resolveAccountName(instanceId);
+    const routerConfig = configStore.getConfig();
+    const effectiveAccountId = routerConfig.instanceToAccount[instanceId];
     if (!effectiveAccountId) {
+      if (isIgnoredOmniInstanceId(routerConfig.ignoredOmniInstanceIds, instanceId)) {
+        log.debug("Ignoring unknown omni instanceId configured in ravi", { instanceId, channelType });
+        return;
+      }
+
       log.warn("Unknown instanceId — not registered in ravi, skipping", { instanceId, channelType });
       const now = Date.now();
       const lastEmit = unregisteredCooldowns.get(instanceId) ?? 0;
@@ -374,6 +426,15 @@ export class OmniConsumer {
           timestamp: event.timestamp,
         }).catch(() => {});
       }
+      return;
+    }
+    const instanceConfig = routerConfig.instances?.[effectiveAccountId];
+    if (instanceConfig?.enabled === false) {
+      log.info("Instance disabled in ravi, ignoring inbound", {
+        instanceId,
+        accountId: effectiveAccountId,
+        channelType,
+      });
       return;
     }
 
@@ -400,24 +461,6 @@ export class OmniConsumer {
       ...(threadId ? { threadId } : {}),
     });
 
-    // Check for active outbound entry — if so, record response and suppress prompt
-    if (!isGroup) {
-      const activeEntry = dbFindActiveEntryByPhone(senderPhone);
-      if (activeEntry && activeEntry.id && activeEntry.status !== "agent") {
-        log.info("Inbound from outbound contact, recording response (suppressing prompt)", {
-          senderPhone,
-          entryId: activeEntry.id,
-        });
-        const content = this.formatContent(payload);
-        dbRecordEntryResponse(activeEntry.id, content);
-        if (!activeEntry.senderId) {
-          dbSetEntrySenderId(activeEntry.id, senderPhone);
-        }
-        nats.emit("ravi.outbound.refresh", {}).catch(() => {});
-        return;
-      }
-    }
-
     // Normalize for stable session keys:
     // - Strip channel implementation suffix (whatsapp-baileys → whatsapp)
     // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
@@ -425,7 +468,6 @@ export class OmniConsumer {
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
 
     // Resolve route to get session key
-    const routerConfig = configStore.getConfig();
     const resolved = resolveRoute(routerConfig, {
       phone: routePhone,
       channel: sessionChannel,
@@ -582,6 +624,14 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
 
+    if (payload.externalId && chatJid && (mediaResult?.transcript || mediaResult?.localPath)) {
+      dbSaveMessageMeta(payload.externalId, chatJid, {
+        transcription: mediaResult?.transcript,
+        mediaPath: mediaResult?.localPath,
+        mediaType: payload.content.type,
+      });
+    }
+
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
 
@@ -613,6 +663,8 @@ export class OmniConsumer {
       replyContext,
       replyMediaPath,
     );
+    const rawText = payload.content.text ?? "";
+    const humanUrgent = isUrgentInboundText(rawText);
 
     if (agentMode === "sentinel") {
       // Sentinel: observe silently, no typing indicator, no source
@@ -620,6 +672,7 @@ export class OmniConsumer {
         const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
           prompt: sentinelEnvelope,
+          _humanUrgent: humanUrgent,
           context: this.buildContext(
             channelType,
             effectiveAccountId,
@@ -638,7 +691,6 @@ export class OmniConsumer {
     }
 
     // Check for slash commands before emitting to agent
-    const rawText = payload.content.text ?? "";
     if (rawText.startsWith("/")) {
       const handled = await handleSlashCommand({
         text: rawText,
@@ -686,6 +738,7 @@ export class OmniConsumer {
       await publishSessionPrompt(sessionName, {
         prompt: envelope,
         source,
+        _humanUrgent: humanUrgent,
         context: this.buildContext(
           channelType,
           effectiveAccountId,

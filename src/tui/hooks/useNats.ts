@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { subscribe, publish } from "../../nats.js";
+import { subscribe } from "../../nats.js";
 import { getRecentSessionHistory } from "../../db.js";
+import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { applyTerminalUsage, isTerminalRuntimeEvent, type RuntimeFeedUsage } from "./runtime-feed.js";
 
 export interface ChatMessage {
   id: string;
@@ -35,6 +37,11 @@ export interface TokenUsage {
   contextTokens: number;
 }
 
+export interface RuntimeDisplayInfo {
+  provider: "claude" | "codex" | null;
+  executionModel: string | null;
+}
+
 export interface UseNatsResult {
   messages: TimelineEntry[];
   sendMessage: (text: string) => void;
@@ -46,6 +53,7 @@ export interface UseNatsResult {
   isWorking: boolean;
   stopWorking: () => void;
   totalTokens: TokenUsage;
+  runtimeInfo: RuntimeDisplayInfo;
 }
 
 const MAX_MESSAGES = 500;
@@ -59,7 +67,8 @@ const STREAMING_ID = "streaming-assistant";
  *  - ravi.session.{name}.response (complete assistant messages)
  *  - ravi.session.{name}.stream   (text delta chunks for live streaming)
  *  - ravi.session.{name}.tool     (tool start/end events)
- *  - ravi.session.{name}.claude   (SDK events: typing, compacting)
+ *  - ravi.session.{name}.runtime  (provider events: typing, compacting)
+ *  - ravi.session.{name}.claude   (legacy Claude compatibility events)
  *
  * Streaming: `.stream` chunks are accumulated into a single in-progress
  * message. A final `.response` event replaces it with the complete text.
@@ -77,20 +86,27 @@ export function useNats(sessionName: string): UseNatsResult {
     cacheCreation: 0,
     contextTokens: 0,
   });
+  const [runtimeInfo, setRuntimeInfo] = useState<RuntimeDisplayInfo>({
+    provider: null,
+    executionModel: null,
+  });
   const abortRef = useRef(false);
   // Accumulate streaming text in a ref to avoid stale closures
   const streamBuf = useRef("");
   const streamDone = useRef(false);
+  const terminalUsageCounted = useRef(false);
 
   useEffect(() => {
     abortRef.current = false;
     streamBuf.current = "";
     streamDone.current = false;
+    terminalUsageCounted.current = false;
     setIsConnected(false);
     setIsTyping(false);
     setIsCompacting(false);
     setIsWorking(false);
     setTotalTokens({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, contextTokens: 0 });
+    setRuntimeInfo({ provider: null, executionModel: null });
 
     // Load recent chat history from SQLite
     try {
@@ -111,13 +127,21 @@ export function useNats(sessionName: string): UseNatsResult {
     const responseTopic = `ravi.session.${sessionName}.response`;
     const streamTopic = `ravi.session.${sessionName}.stream`;
     const toolTopic = `ravi.session.${sessionName}.tool`;
+    const runtimeTopic = `ravi.session.${sessionName}.runtime`;
     const claudeTopic = `ravi.session.${sessionName}.claude`;
 
     const run = async () => {
       try {
         setIsConnected(true);
 
-        for await (const event of subscribe(promptTopic, responseTopic, streamTopic, toolTopic, claudeTopic)) {
+        for await (const event of subscribe(
+          promptTopic,
+          responseTopic,
+          streamTopic,
+          toolTopic,
+          runtimeTopic,
+          claudeTopic,
+        )) {
           if (abortRef.current) break;
 
           const { topic, data } = event;
@@ -128,6 +152,7 @@ export function useNats(sessionName: string): UseNatsResult {
             // New turn — allow streaming again
             streamDone.current = false;
             streamBuf.current = "";
+            terminalUsageCounted.current = false;
             setIsWorking(true);
             const msg: ChatMessage = {
               id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -232,44 +257,53 @@ export function useNats(sessionName: string): UseNatsResult {
                 }),
               );
             }
-          } else if (topic === claudeTopic) {
-            const claudeData = data as {
+          } else if (topic === runtimeTopic || topic === claudeTopic) {
+            const runtimeData = data as {
               type?: string;
               subtype?: string;
               status?: string;
-              usage?: {
-                input_tokens?: number;
-                output_tokens?: number;
-                cache_read_input_tokens?: number;
-                cache_creation_input_tokens?: number;
+              usage?: RuntimeFeedUsage;
+              provider?: string;
+              execution?: {
+                provider?: string | null;
+                model?: string | null;
               };
             };
 
-            if (claudeData.type === "assistant") {
+            const runtimeProvider = normalizeRuntimeProvider(runtimeData.provider);
+            if (runtimeProvider) {
+              setRuntimeInfo((prev) => ({
+                ...prev,
+                provider: runtimeProvider,
+              }));
+            }
+
+            if (runtimeData.type === "assistant" || runtimeData.type === "assistant.message") {
               streamDone.current = false;
               setIsTyping(true);
-            } else if (claudeData.type === "result") {
+            } else if (isTerminalRuntimeEvent(runtimeData.type)) {
+              streamBuf.current = "";
+              streamDone.current = true;
               setIsTyping(false);
               setIsCompacting(false);
-
-              // Extract token usage from SDK result
-              if (claudeData.usage) {
-                const inp = claudeData.usage.input_tokens ?? 0;
-                const out = claudeData.usage.output_tokens ?? 0;
-                const cr = claudeData.usage.cache_read_input_tokens ?? 0;
-                const cc = claudeData.usage.cache_creation_input_tokens ?? 0;
-                setTotalTokens((prev) => ({
-                  input: prev.input + inp,
-                  output: prev.output + out,
-                  cacheRead: prev.cacheRead + cr,
-                  cacheCreation: prev.cacheCreation + cc,
-                  contextTokens: inp + cr + cc,
-                }));
-              }
-            } else if (claudeData.type === "system" && claudeData.subtype === "status") {
-              if (claudeData.status === "compacting") {
+              setIsWorking(false);
+              setMessages((prev) => prev.filter((m) => m.id !== STREAMING_ID));
+              setRuntimeInfo((prev) => ({
+                provider: runtimeProvider ?? prev.provider,
+                executionModel: normalizeExecutionModel(runtimeData.execution?.model),
+              }));
+              setTotalTokens((prev) => {
+                const next = applyTerminalUsage(prev, runtimeData.usage, terminalUsageCounted.current);
+                terminalUsageCounted.current = next.counted;
+                return next.total;
+              });
+            } else if (
+              (runtimeData.type === "system" && runtimeData.subtype === "status") ||
+              runtimeData.type === "status"
+            ) {
+              if (runtimeData.status === "compacting") {
                 setIsCompacting(true);
-              } else if (claudeData.status === "idle") {
+              } else if (runtimeData.status === "idle") {
                 setIsCompacting(false);
               }
             }
@@ -294,8 +328,10 @@ export function useNats(sessionName: string): UseNatsResult {
 
   const sendMessage = useCallback(
     (text: string) => {
-      const topic = `ravi.session.${sessionName}.prompt`;
-      publish(topic, { prompt: text, source: { channel: "tui", accountId: "", chatId: "" } }).catch(() => {
+      publishSessionPrompt(sessionName, {
+        prompt: text,
+        source: { channel: "tui", accountId: "", chatId: "" },
+      }).catch(() => {
         // publish failed silently
       });
     },
@@ -331,5 +367,19 @@ export function useNats(sessionName: string): UseNatsResult {
     isWorking,
     stopWorking,
     totalTokens,
+    runtimeInfo,
   };
+}
+
+function normalizeRuntimeProvider(value?: string): "claude" | "codex" | null {
+  return value === "claude" || value === "codex" ? value : null;
+}
+
+function normalizeExecutionModel(value?: string | null): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

@@ -46,7 +46,7 @@ ravi triggers add "<name>" \
 - `--cooldown` — Minimum time between fires (default: `5s`). Supports: `5s`, `30s`, `1m`, `5m`, `1h`
 - `--session` — `main` (shared session) or `isolated` (dedicated session per trigger, default)
 - `--filter` — Expression that must match for the trigger to fire
-- `--account` — Account for outbound routing (auto-detected from agent if not set)
+- `--account` — Account for channel delivery (auto-detected from agent if not set)
 
 ## Available Topics
 
@@ -75,13 +75,12 @@ ravi triggers add "<name>" \
 | `ravi.*.cli.{group}.{command}` | CLI tool executions (e.g., `ravi.*.cli.contacts.add`) |
 | `ravi.*.tool` | SDK tool executions (Bash, Read, etc.) |
 
-### Outbound
+### Delivery / Receipts
 
 | Pattern | Description |
 |---------|-------------|
 | `ravi.outbound.deliver` | Messages sent to channels |
 | `ravi.outbound.receipt` | Read receipts sent |
-| `ravi.outbound.refresh` | Outbound queue refresh |
 
 ### Audit
 
@@ -204,15 +203,15 @@ ravi triggers add "Copilot Watcher" \
 When a trigger fires, the agent receives a prompt with this structure:
 
 ```
-[Trigger: Lead Qualificado]
-Topic: ravi.agent:main:main.cli.outbound.qualify
+[Trigger: Contato alterado]
+Topic: ravi.agent:main:main.cli.contacts.add
 Data: {
   "event": "end",
-  "tool": "outbound_qualify",
-  "output": "Qualification set: abc123 -> warm"
+  "tool": "contacts_add",
+  "output": "Contact added: abc123"
 }
 
-Analyze the qualification and notify the group.
+Analyze the contact change and notify the group.
 ```
 
 The `Data` section contains the full event payload as JSON, giving the agent context about what happened.
@@ -350,18 +349,6 @@ ravi triggers add "Contact Audit" \
   --session isolated
 ```
 
-### Track Outbound Qualification
-
-React when an outbound lead is qualified:
-
-```bash
-ravi triggers add "Lead Qualificado" \
-  --topic "ravi.*.cli.outbound.qualify" \
-  --message "A lead was qualified. Update the CRM and notify the sales channel." \
-  --agent main \
-  --cooldown 30s
-```
-
 ### Permission Denied Monitor
 
 Alert when an agent gets a permission denied error:
@@ -456,7 +443,7 @@ The filter must match the regex pattern `data.<path> <operator> "<value>"`. Doub
 ```bash
 # Valid
 data.cwd == "/Users/luis/ravi"
-data.tool startsWith "outbound"
+data.tool startsWith "contacts"
 data.output includes 'error'
 
 # Invalid (will fail open with a warning)

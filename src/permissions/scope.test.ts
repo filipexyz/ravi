@@ -1,4 +1,8 @@
-import { describe, expect, it, beforeEach, mock } from "bun:test";
+import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
+
+afterAll(() => mock.restore());
+
+const actualCliContextModule = await import("../cli/context.js");
 
 // ============================================================================
 // Mock dependencies
@@ -42,9 +46,19 @@ mock.module("./relations.js", () => ({
 }));
 
 // Mock CLI context
-let mockContext: { agentId?: string; sessionKey?: string; sessionName?: string } | undefined;
+let mockContext:
+  | {
+      agentId?: string;
+      sessionKey?: string;
+      sessionName?: string;
+      context?: {
+        capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+      };
+    }
+  | undefined;
 
 mock.module("../cli/context.js", () => ({
+  ...actualCliContextModule,
   getContext: () => mockContext,
 }));
 
@@ -58,7 +72,8 @@ const {
   canAccessContact,
   canWriteContacts,
   canAccessResource,
-} = await import("./scope");
+  enforceScopeCheck,
+} = await import("./scope.js");
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
@@ -112,6 +127,26 @@ describe("Scope Isolation", () => {
     it("enforced for non-admin agent", () => {
       grant("agent", "dev", "use", "tool", "Bash");
       expect(isScopeEnforced({ agentId: "dev" })).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // enforceScopeCheck
+  // --------------------------------------------------------------------------
+
+  describe("enforceScopeCheck", () => {
+    it("allows CLI groups for live superadmin with stale runtime capabilities", () => {
+      mockContext = {
+        agentId: "dev",
+        context: {
+          capabilities: [{ permission: "execute", objectType: "group", objectId: "context" }],
+        },
+      };
+
+      grant("agent", "dev", "admin", "system", "*");
+
+      expect(enforceScopeCheck("admin", "daemon", "restart").allowed).toBe(true);
+      expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);
     });
   });
 

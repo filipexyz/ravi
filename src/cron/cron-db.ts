@@ -179,12 +179,13 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
   type SQLValue = string | number | null;
   const fields: string[] = [];
   const values: SQLValue[] = [];
+  const hasOwn = <K extends keyof CronJob>(key: K): boolean => Object.prototype.hasOwnProperty.call(updates, key);
 
-  if (updates.agentId !== undefined) {
+  if (hasOwn("agentId")) {
     fields.push("agent_id = ?");
     values.push(updates.agentId ?? null);
   }
-  if (updates.accountId !== undefined) {
+  if (hasOwn("accountId")) {
     fields.push("account_id = ?");
     values.push(updates.accountId ?? null);
   }
@@ -192,7 +193,7 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
     fields.push("name = ?");
     values.push(updates.name);
   }
-  if (updates.description !== undefined) {
+  if (hasOwn("description")) {
     fields.push("description = ?");
     values.push(updates.description ?? null);
   }
@@ -228,7 +229,7 @@ export function dbUpdateCronJob(id: string, updates: Partial<CronJob>): CronJob 
     fields.push("session_target = ?");
     values.push(updates.sessionTarget);
   }
-  if (updates.replySession !== undefined) {
+  if (hasOwn("replySession")) {
     fields.push("reply_session = ?");
     values.push(updates.replySession ?? null);
   }

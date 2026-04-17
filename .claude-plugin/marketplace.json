@@ -10,7 +10,7 @@
     {
       "name": "ravi-system",
       "source": "./src/plugins/internal/ravi-system",
-      "description": "Ravi system management — agents, contacts, triggers, routes, cron, outbound, heartbeat, sessions, permissions, and channels"
+      "description": "Ravi system management — agents, contacts, triggers, routes, cron, heartbeat, sessions, permissions, and channels"
     },
     {
       "name": "ravi-dev",

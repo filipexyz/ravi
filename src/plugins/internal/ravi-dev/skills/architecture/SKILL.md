@@ -13,7 +13,7 @@ description: |
 
 Ravi é um sistema multi-agent construído sobre o Claude Agent SDK que orquestra conversas em múltiplas plataformas via omni (WhatsApp, Discord, Telegram).
 
-**Repositório:** `/Users/luis/dev/filipelabs/ravi.bot`
+**Repositório:** `<ravi.bot repo>`
 **Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS JetStream | **AI:** Claude SDK
 
 ## Fluxo Principal de Mensagens
@@ -41,7 +41,7 @@ Orquestra startup de todos os subsistemas:
 3. Inicia omni API server (`local/omni.ts`)
 4. Inicia RaviBot (Claude SDK)
 5. Inicia OmniConsumer + Gateway
-6. Inicia HeartbeatRunner, CronRunner, OutboundRunner, TriggerRunner
+6. Inicia HeartbeatRunner, CronRunner, TriggerRunner
 
 Shutdown tem timeout global de 15s (force-exit se travar).
 
@@ -67,8 +67,8 @@ Comportamento:
 - Auto-reconnect em erro de consumo (loop com retry 2s)
 - Config subscription com auto-reconnect para `ravi.config.changed`
 
-### omni/sender.ts - Outbound
-HTTP client para omni REST API (`@omni/sdk`). Métodos:
+### omni/sender.ts - Delivery
+HTTP client para omni REST API. Métodos:
 - `send(instanceId, to, text)` — texto
 - `sendTyping(instanceId, to, active)` — indicador de digitação
 - `sendReaction(instanceId, to, messageId, emoji)` — reação
@@ -121,7 +121,6 @@ agent:main:main                          # Todas DMs (scope=main)
 agent:main:dm:5511999                    # Por contato
 agent:main:whatsapp:group:123456         # Grupo
 agent:main:whatsapp:main:group:123456:thread:abc  # Thread
-agent:main:outbound:queueId:phone        # Outbound
 ```
 
 **Instâncias (tabela `instances`):**
@@ -146,20 +145,6 @@ interface InstanceConfig {
 - `router/router-db.ts` - Camada de banco (CRUD agents, routes, instances, settings)
 
 ## Subsistemas de Automação
-
-### Outbound (`outbound/`)
-Campanhas de mensagens proativas com processamento round-robin.
-
-**Fluxo:**
-1. Runner pega próxima queue do DB
-2. Arma timer para `nextRunAt`
-3. Processa entries por prioridade:
-   - Response entries (contato respondeu)
-   - Follow-up entries (sem resposta, precisa follow-up)
-   - Initial outreach (entries pendentes)
-4. Manda prompt para agent com contexto da campanha
-
-**Qualificação:** cold → warm → interested → qualified/rejected
 
 ### Triggers (`triggers/`)
 Automação event-driven disparada por eventos do sistema.
@@ -240,7 +225,7 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 ~/.ravi/omni-api-key    - API key para omni (auto-gerada)
 ~/.ravi/jetstream/      - JetStream storage (nats-server)
 ~/.ravi/logs/           - Logs do daemon
-~/ravi/{agent-id}/      - Diretórios dos agents (CLAUDE.md, MEMORY.md)
+~/ravi/{agent-id}/      - Diretórios dos agents (AGENTS.md, MEMORY.md, optional CLAUDE.md bridge)
 ~/.cache/ravi/plugins/  - Plugins internos extraídos
 ~/.claude/sessions/     - SDK session files (JSONL)
 ```
@@ -250,7 +235,7 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 ```bash
 OMNI_DIR=/path/to/omni-v2      # obrigatório para canal WhatsApp/Discord/Telegram
 OMNI_API_PORT=8882              # default
-DATABASE_URL=postgresql://...   # banco do omni
+DATABASE_URL=<postgres-url>      # banco do omni
 NATS_PORT=4222                  # default
 ```
 
@@ -261,6 +246,5 @@ NATS_PORT=4222                  # default
 3. **Ghost detection** - `_emitId` + `_instanceId` previne duplicatas
 4. **Abort control** - AbortController por sessão, cleanup no stop
 5. **Debouncing** - Agrupa msgs rápidas por window configurável
-6. **Outbound suppression** - Msgs de contatos outbound não geram prompt duplicado
-7. **Silent token** - `@@SILENT@@` suprime emissão pro canal
-8. **Session resumption** - SDK sessions persistem entre mensagens
+6. **Silent token** - `@@SILENT@@` suprime emissão pro canal
+7. **Session resumption** - SDK sessions persistem entre mensagens

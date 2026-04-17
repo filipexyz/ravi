@@ -9,6 +9,7 @@ interface InputBarProps {
   onSend: (text: string) => void;
   onSlashCommand: (cmd: string) => void;
   onAbort: () => void;
+  placeholder?: string;
   /** Whether the agent is currently working */
   isWorking?: boolean;
   /** When true, aggressively keeps focus on the input */
@@ -37,6 +38,7 @@ export function InputBar({
   onSend,
   onSlashCommand,
   onAbort,
+  placeholder = "Type a message... (\\ for newline)",
   isWorking = false,
   active = true,
   extraOffset = 0,
@@ -219,7 +221,7 @@ export function InputBar({
         ref={textareaRef}
         focused
         flexGrow={1}
-        placeholder="Type a message... (\ for newline)"
+        placeholder={placeholder}
         keyBindings={textareaKeyBindings}
         textColor="white"
       />

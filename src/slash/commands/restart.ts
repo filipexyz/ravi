@@ -25,9 +25,34 @@ export const restartCommand: SlashCommand = {
       return "⚠️ Em grupo, use /restart @agent (mencione o bot)";
     }
 
-    const reason = ctx.args.length > 0 ? ctx.args.join(" ") : "server restarted";
+    const rawArgs = ctx.args.join(" ");
+    const force = rawArgs.includes("--force") || rawArgs.includes("-f");
+    const reason = ctx.args.filter((a) => a !== "--force" && a !== "-f").join(" ") || "server restarted";
 
-    log.info("/restart called", { reason, by: ctx.senderId, isGroup: ctx.isGroup });
+    log.info("/restart called", { reason, by: ctx.senderId, isGroup: ctx.isGroup, force });
+
+    // Safety check: block restart if tasks are actively running
+    if (!force) {
+      try {
+        const { dbGetActiveTasksBlocking } = await import("../../tasks/task-db.js");
+        const activeTasks = dbGetActiveTasksBlocking();
+        if (activeTasks.length > 0) {
+          const summary = activeTasks
+            .slice(0, 5)
+            .map((t: { id: string; title: string; status: string }) => `• ${t.id} "${t.title}" (${t.status})`)
+            .join("\n");
+          const extra = activeTasks.length > 5 ? `\n... e mais ${activeTasks.length - 5} tasks` : "";
+          return (
+            `⛔ Restart bloqueado: ${activeTasks.length} task(s) em andamento.\n\n` +
+            `${summary}${extra}\n\n` +
+            `O restart mata todas as sessões e interrompe trabalho ativo.\n` +
+            `Use /restart --force para ignorar.`
+          );
+        }
+      } catch (err) {
+        log.warn("Failed to check active tasks", { error: String(err) });
+      }
+    }
 
     // Strip RAVI_* env vars so the child doesn't think it's inside daemon
     const cleanEnv = { ...process.env };
@@ -35,7 +60,10 @@ export const restartCommand: SlashCommand = {
       if (key.startsWith("RAVI_")) delete cleanEnv[key];
     }
 
-    const child = spawn("ravi", ["daemon", "restart", "-m", reason], {
+    const args = ["daemon", "restart", "-m", reason];
+    if (force) args.push("--force");
+
+    const child = spawn("ravi", args, {
       detached: true,
       stdio: "ignore",
       env: cleanEnv,

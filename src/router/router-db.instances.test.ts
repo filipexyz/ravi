@@ -1,11 +1,11 @@
 /**
  * Tests for instances table CRUD in router-db.ts
  *
- * Uses the real SQLite DB (same path as production: ~/.ravi/ravi.db).
- * Each test cleans up its own data in beforeEach/afterEach to avoid pollution.
+ * Each test uses an isolated Ravi state directory and cleans up its own data.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 // ============================================================================
 // Helpers for cleanup
@@ -18,7 +18,9 @@ const TEST_NAMES = [
   "test-inst-delete",
   "test-inst-byid",
   "test-inst-defaults",
+  "test-inst-disabled",
 ];
+let stateDir: string | null = null;
 
 function cleanupInstances() {
   try {
@@ -51,7 +53,8 @@ import {
 const TEST_AGENT_ID = "test-inst-agent";
 
 describe("Instances CRUD", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-router-instances-test-");
     cleanupInstances();
     // Ensure the test agent exists
     try {
@@ -61,8 +64,10 @@ describe("Instances CRUD", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupInstances();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   // ============================================================================
@@ -97,9 +102,17 @@ describe("Instances CRUD", () => {
     expect(inst.dmPolicy).toBe("open");
     expect(inst.groupPolicy).toBe("open");
     expect(inst.channel).toBe("whatsapp");
+    expect(inst.enabled).toBe(true);
     expect(inst.agent).toBeUndefined();
     expect(inst.instanceId).toBeUndefined();
     expect(inst.dmScope).toBeUndefined();
+  });
+
+  it("can create a disabled instance that still stays registered", () => {
+    const inst = dbUpsertInstance({ name: "test-inst-disabled", instanceId: "disabled-uuid", enabled: false });
+
+    expect(inst.instanceId).toBe("disabled-uuid");
+    expect(inst.enabled).toBe(false);
   });
 
   it("upserts (overwrites) existing instance on name conflict", () => {
@@ -244,6 +257,14 @@ describe("Instances CRUD", () => {
     dbUpsertInstance({ name: "test-inst-update" });
     const updated = dbUpdateInstance("test-inst-update", { agent: TEST_AGENT_ID });
     expect(updated.agent).toBe(TEST_AGENT_ID);
+  });
+
+  it("update can disable an instance in ravi without deleting it", () => {
+    dbUpsertInstance({ name: "test-inst-update", instanceId: "still-registered" });
+    const updated = dbUpdateInstance("test-inst-update", { enabled: false });
+
+    expect(updated.instanceId).toBe("still-registered");
+    expect(updated.enabled).toBe(false);
   });
 
   it("update throws when instance does not exist", () => {

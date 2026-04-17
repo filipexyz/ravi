@@ -114,7 +114,6 @@ Estes funcionam pra qualquer agent sem grant:
 - `whatsapp.dm` (open)
 - `cron` (resource) — checa ownership do recurso
 - `triggers` (resource) — checa ownership do recurso
-- `outbound` (resource) — checa ownership do recurso
 
 ## ERROS COMUNS
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { parseBashCommand, checkDangerousPatterns, UNCONDITIONAL_BLOCKS } from "./parser";
+import { parseBashCommand, checkDangerousPatterns, UNCONDITIONAL_BLOCKS } from "./parser.js";
 
 // ============================================================================
 // checkDangerousPatterns

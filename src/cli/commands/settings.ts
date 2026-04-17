@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
 
@@ -23,6 +23,7 @@ import {
 
 const GROUP_POLICIES = ["open", "allowlist", "closed"] as const;
 const DM_POLICIES = ["open", "pairing", "closed"] as const;
+const INSTANCE_SETTING_FIELDS = new Set(["agent", "instanceId", "dmPolicy", "groupPolicy", "dmScope", "channel"]);
 
 // Validate timezone by trying to use it with Intl
 function isValidTimezone(tz: string): boolean {
@@ -78,33 +79,23 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
   },
 };
 
-// Pattern-based validators for dynamic settings (per-account, per-channel)
-type PatternValidator = { pattern: RegExp; description: string; validate: (value: string) => void };
-const PATTERN_VALIDATORS: PatternValidator[] = [
-  {
-    // account.<name>.groupPolicy  OR  account.<name>.<channel>.groupPolicy
-    pattern: /^account\.[^.]+(\.[^.]+)?\.groupPolicy$/,
-    description: `Per-account group policy (${GROUP_POLICIES.join(", ")})`,
-    validate: (value: string) => {
-      if (!GROUP_POLICIES.includes(value as (typeof GROUP_POLICIES)[number])) {
-        throw new Error(`Invalid value. Must be one of: ${GROUP_POLICIES.join(", ")}`);
-      }
-    },
-  },
-  {
-    // account.<name>.dmPolicy  OR  account.<name>.<channel>.dmPolicy
-    pattern: /^account\.[^.]+(\.[^.]+)?\.dmPolicy$/,
-    description: `Per-account DM policy (${DM_POLICIES.join(", ")})`,
-    validate: (value: string) => {
-      if (!DM_POLICIES.includes(value as (typeof DM_POLICIES)[number])) {
-        throw new Error(`Invalid value. Must be one of: ${DM_POLICIES.join(", ")}`);
-      }
-    },
-  },
-];
+function isLegacyAccountSetting(key: string): boolean {
+  return key.startsWith("account.");
+}
 
-function findPatternValidator(key: string): PatternValidator | undefined {
-  return PATTERN_VALIDATORS.find((p) => p.pattern.test(key));
+function legacyAccountSettingHint(key: string): string {
+  const parts = key.split(".");
+  if (parts.length < 3) {
+    return "Use `ravi instances` instead.";
+  }
+
+  const instanceName = parts[1];
+  const field = parts.at(-1);
+  if (!instanceName || !field || !INSTANCE_SETTING_FIELDS.has(field)) {
+    return "Use `ravi instances` instead.";
+  }
+
+  return `Use \`ravi instances set ${instanceName} ${field} <value>\` instead.`;
 }
 
 @Group({
@@ -113,8 +104,11 @@ function findPatternValidator(key: string): PatternValidator | undefined {
   scope: "admin",
 })
 export class SettingsCommands {
-  @Command({ name: "list", description: "List all settings" })
-  list() {
+  @Command({ name: "list", description: "List live settings (legacy account.* hidden by default)" })
+  list(
+    @Option({ flags: "--legacy", description: "Show legacy account.* settings shadowed by instances" })
+    showLegacy = false,
+  ) {
     const settings = dbListSettings();
 
     console.log("\nSettings:\n");
@@ -126,17 +120,21 @@ export class SettingsCommands {
       console.log(`    ${meta.description}\n`);
     }
 
-    // Show any additional custom settings (split: pattern-known vs truly custom)
+    // Hide legacy account.* keys by default so they do not compete with instances.
     const customKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS[k]);
-    const knownPatternKeys = customKeys.filter((k) => findPatternValidator(k));
-    const unknownKeys = customKeys.filter((k) => !findPatternValidator(k));
+    const legacyKeys = customKeys.filter((k) => isLegacyAccountSetting(k));
+    const unknownKeys = customKeys.filter((k) => !isLegacyAccountSetting(k));
 
-    if (knownPatternKeys.length > 0) {
-      console.log("  Per-account policies:");
-      for (const key of knownPatternKeys) {
+    if (showLegacy && legacyKeys.length > 0) {
+      console.log("  Legacy settings shadowed by instances:");
+      for (const key of legacyKeys) {
         console.log(`    ${key}: ${settings[key]}`);
       }
       console.log();
+    } else if (legacyKeys.length > 0) {
+      console.log(
+        `  Legacy account.* settings hidden by default: ${legacyKeys.length} key(s) shadowed by instances. Use --legacy to inspect them.\n`,
+      );
     }
 
     if (unknownKeys.length > 0) {
@@ -151,8 +149,15 @@ export class SettingsCommands {
   @Command({ name: "get", description: "Get a setting value" })
   get(@Arg("key", { description: "Setting key" }) key: string) {
     const value = dbGetSetting(key);
+    const legacy = isLegacyAccountSetting(key);
 
     if (value === null) {
+      if (legacy) {
+        console.log(`Legacy setting not set: ${key}`);
+        console.log(`  ${legacyAccountSettingHint(key)}`);
+        return;
+      }
+
       console.log(`Setting not set: ${key}`);
 
       // Show default if known
@@ -164,6 +169,12 @@ export class SettingsCommands {
       return;
     }
 
+    if (legacy) {
+      console.log(`Legacy setting shadowed by instances: ${key}: ${value}`);
+      console.log(`  ${legacyAccountSettingHint(key)}`);
+      return;
+    }
+
     console.log(`${key}: ${value}`);
   }
 
@@ -172,10 +183,13 @@ export class SettingsCommands {
     @Arg("key", { description: "Setting key" }) key: string,
     @Arg("value", { description: "Setting value" }) value: string,
   ) {
+    if (isLegacyAccountSetting(key)) {
+      fail(`Legacy setting shadowed by instances: ${key}. ${legacyAccountSettingHint(key)}`);
+    }
+
     // Validate known settings (exact match first, then pattern-based)
     const meta = KNOWN_SETTINGS[key];
-    const patternMeta = meta ? undefined : findPatternValidator(key);
-    const validator = meta?.validate ?? patternMeta?.validate;
+    const validator = meta?.validate;
     if (validator) {
       try {
         validator(value);
@@ -203,12 +217,15 @@ export class SettingsCommands {
 
   @Command({ name: "delete", description: "Delete a setting" })
   delete(@Arg("key", { description: "Setting key" }) key: string) {
+    const legacy = isLegacyAccountSetting(key);
     const deleted = dbDeleteSetting(key);
     if (deleted) {
-      console.log(`\u2713 Setting deleted: ${key}`);
+      console.log(
+        legacy ? `\u2713 Deleted legacy setting shadowed by instances: ${key}` : `\u2713 Setting deleted: ${key}`,
+      );
       emitConfigChanged();
     } else {
-      console.log(`Setting not found: ${key}`);
+      console.log(legacy ? `Legacy setting not found: ${key}` : `Setting not found: ${key}`);
     }
   }
 }

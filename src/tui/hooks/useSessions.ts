@@ -8,11 +8,18 @@ export interface SessionItem {
   agentId: string;
   model: string | null;
   updatedAt: number;
+  queueMode?: "steer" | "followup" | "collect" | "queue" | "interrupt";
+  abortedLastRun?: boolean;
+  ephemeral?: boolean;
 }
 
 export interface UseSessionsResult {
   sessions: SessionItem[];
   refresh: () => void;
+}
+
+export interface UseSessionsOptions {
+  agentId?: string | null;
 }
 
 /**
@@ -21,12 +28,12 @@ export interface UseSessionsResult {
  * Loads once on mount. Call `refresh()` to reload.
  * Each session is mapped to { name, sessionKey, agentId, model, updatedAt }.
  */
-export function useSessions(): UseSessionsResult {
+export function useSessions(options: UseSessionsOptions = {}): UseSessionsResult {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
 
   const refresh = useCallback(() => {
     try {
-      const entries = listSessions();
+      const entries = listSessions().filter((entry) => !options.agentId || entry.agentId === options.agentId);
       const items: SessionItem[] = entries.map((entry) => {
         const agent = dbGetAgent(entry.agentId);
         const model = entry.modelOverride ?? agent?.model ?? null;
@@ -36,6 +43,9 @@ export function useSessions(): UseSessionsResult {
           agentId: entry.agentId,
           model,
           updatedAt: entry.updatedAt,
+          queueMode: entry.queueMode,
+          abortedLastRun: entry.abortedLastRun,
+          ephemeral: entry.ephemeral,
         };
       });
       setSessions(items);
@@ -43,7 +53,7 @@ export function useSessions(): UseSessionsResult {
       // DB not available or error — keep empty list
       setSessions([]);
     }
-  }, []);
+  }, [options.agentId]);
 
   useEffect(() => {
     refresh();

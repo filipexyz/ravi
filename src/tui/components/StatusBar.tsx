@@ -1,12 +1,13 @@
 /** @jsxImportSource @opentui/react */
 
 import type { TokenUsage } from "../hooks/useNats.js";
+import type { RuntimeDisplayLabel } from "../hooks/runtime-display.js";
 
 export interface StatusBarProps {
   sessionName: string;
   agentId: string;
   isConnected: boolean;
-  model: string | null;
+  runtimeLabel: RuntimeDisplayLabel;
   isTyping: boolean;
   isCompacting: boolean;
   totalTokens: TokenUsage;
@@ -29,13 +30,12 @@ export function StatusBar({
   sessionName,
   agentId,
   isConnected,
-  model,
+  runtimeLabel,
   isTyping: _isTyping,
   isCompacting,
   totalTokens,
 }: StatusBarProps) {
   const statusDot = isConnected ? "\u25CF" : "\u25CB";
-  const modelLabel = model ?? "unknown";
 
   const ctx = totalTokens.contextTokens;
 
@@ -44,7 +44,7 @@ export function StatusBar({
       <box flexDirection="row">
         <text content={` ${sessionName}`} fg="cyan" bold />
         <text content={` (${agentId})`} fg="white" />
-        <text content={`  ${modelLabel}`} fg="yellow" />
+        <text content={`  ${runtimeLabel.provider}/${runtimeLabel.model}`} fg="yellow" />
       </box>
       <box flexDirection="row">
         {isCompacting && <text content="compacting  " fg="magenta" bold />}

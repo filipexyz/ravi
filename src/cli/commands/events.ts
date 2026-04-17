@@ -27,6 +27,7 @@ function topicColor(topic: string): string {
   if (topic.includes(".response")) return c.green;
   if (topic.includes(".tool")) return c.yellow;
   if (topic.includes(".claude")) return c.blue;
+  if (topic.includes(".runtime")) return c.blue;
   if (topic.includes("audit")) return c.red;
   if (topic.includes("contacts")) return c.magenta;
   if (topic.includes(".cli.")) return c.white;
@@ -45,6 +46,7 @@ function topicIcon(topic: string): string {
   if (topic.includes(".response")) return "←";
   if (topic.includes(".tool")) return "⚙";
   if (topic.includes(".claude")) return "◆";
+  if (topic.includes(".runtime")) return "◆";
   if (topic.includes("audit")) return "⛔";
   if (topic.includes("contacts")) return "👤";
   if (topic.includes("inbound")) return "↓";
@@ -70,7 +72,7 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + "…";
 }
 
-function formatData(data: Record<string, unknown>, topic: string): string {
+export function formatData(data: Record<string, unknown>, topic: string): string {
   // For prompt/response, pull out the text and show it prominently
   if (topic.includes(".prompt") && typeof data.prompt === "string") {
     const prompt = truncate(data.prompt as string, 120);
@@ -121,6 +123,32 @@ function formatData(data: Record<string, unknown>, topic: string): string {
     }
     if (type === "system" && (data as any).subtype === "init" && (data as any).model) {
       return `${c.dim}system${c.reset} ${c.dim}${(data as any).model}${c.reset}`;
+    }
+    return `${c.dim}${type}${c.reset}`;
+  }
+
+  // For provider runtime events, show normalized type
+  if (topic.includes(".runtime") && data.type) {
+    const type = data.type as string;
+    if (type === "turn.complete") {
+      const usage = (data as Record<string, unknown>).usage as Record<string, number> | undefined;
+      const tokens = usage ? ` ${c.dim}in=${usage.inputTokens} out=${usage.outputTokens}${c.reset}` : "";
+      return `${c.bold}turn.complete${c.reset}${tokens}`;
+    }
+    if (type === "turn.failed" || type === "turn.interrupted") {
+      const error =
+        typeof data.error === "string"
+          ? data.error
+          : data.error &&
+              typeof data.error === "object" &&
+              typeof (data.error as { message?: unknown }).message === "string"
+            ? ((data.error as { message?: string }).message ?? "")
+            : "";
+      const detail = error ? ` ${c.red}${truncate(error, 120)}${c.reset}` : "";
+      return `${c.bold}${type}${c.reset}${detail}`;
+    }
+    if (type === "silent") {
+      return `${c.magenta}${c.bold}SILENT${c.reset}`;
     }
     return `${c.dim}${type}${c.reset}`;
   }
@@ -191,7 +219,7 @@ export class EventsCommands {
     @Option({ flags: "--no-claude", description: "Hide raw claude SDK events (type=text, type=thinking, etc.)" })
     noClaude?: boolean,
     @Option({ flags: "--no-heartbeat", description: "Hide heartbeat events" }) noHeartbeat?: boolean,
-    @Option({ flags: "--only <type>", description: "Only show: prompt, response, tool, claude, cli, audit" })
+    @Option({ flags: "--only <type>", description: "Only show: prompt, response, tool, claude, runtime, cli, audit" })
     only?: string,
   ) {
     const topicPattern = ">"; // NATS wildcard for all topics
@@ -220,6 +248,7 @@ export class EventsCommands {
         if (t === "response" && !topic.includes(".response")) continue;
         if (t === "tool" && !topic.includes(".tool")) continue;
         if (t === "claude" && !topic.includes(".claude")) continue;
+        if (t === "runtime" && !topic.includes(".runtime")) continue;
         if (t === "cli" && !topic.includes(".cli.")) continue;
         if (t === "audit" && !topic.includes("audit")) continue;
       }

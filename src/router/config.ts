@@ -9,6 +9,8 @@ import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
 import type { RouterConfig, AgentConfig } from "./types.js";
 import { logger } from "../utils/logger.js";
+import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
+import { IGNORED_OMNI_INSTANCE_IDS_SETTING, parseIgnoredOmniInstanceIds } from "./omni-ignore.js";
 import {
   dbListAgents,
   dbListRoutes,
@@ -22,6 +24,7 @@ import {
   getDefaultDmScope,
   getRaviDir,
   dbListInstances,
+  dbGetSetting,
   type InstanceConfig,
 } from "./router-db.js";
 
@@ -52,6 +55,7 @@ export function loadRouterConfig(): RouterConfig {
   const agents = dbListAgents();
   const routes = dbListRoutes();
   const instanceList = dbListInstances();
+  const ignoredOmniInstanceIds = parseIgnoredOmniInstanceIds(dbGetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING));
 
   // Build agents record
   const agentsRecord: Record<string, AgentConfig> = {};
@@ -89,11 +93,13 @@ export function loadRouterConfig(): RouterConfig {
     accountAgents,
     instanceToAccount,
     instances: instancesRecord,
+    ignoredOmniInstanceIds,
   };
 
   log.debug("Loaded router config", {
     agents: Object.keys(config.agents),
     routes: config.routes.length,
+    ignoredOmniInstanceIds: ignoredOmniInstanceIds.length,
   });
 
   return config;
@@ -137,5 +143,6 @@ export function ensureAgentDirs(config: RouterConfig): void {
   for (const agent of Object.values(config.agents)) {
     const cwd = agent.cwd.replace("~", homedir());
     mkdirSync(cwd, { recursive: true });
+    ensureAgentInstructionFiles(cwd);
   }
 }

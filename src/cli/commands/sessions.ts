@@ -7,6 +7,13 @@ import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
+import {
+  getSessionAdapterDebugSnapshot,
+  listSessionAdapters,
+  type SessionAdapterDebugSnapshot,
+  type SessionAdapterRecord,
+} from "../../adapters/index.js";
 import {
   listSessions,
   getSessionsByAgent,
@@ -25,7 +32,9 @@ import {
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
+import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
+import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -33,8 +42,22 @@ import {
   canModifySession,
   filterAccessibleSessions,
 } from "../../permissions/scope.js";
+import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
+const CONFIG_DB_META = { source: "config-db", freshness: "persisted", via: "router-config" } as const;
+const SESSION_DB_META = { source: "session-db", freshness: "persisted" } as const;
+const RUNTIME_SNAPSHOT_META = { source: "runtime-snapshot", freshness: "persisted" } as const;
+const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as const;
+const ADAPTER_DB_META = { source: "adapter-db", freshness: "persisted" } as const;
+const SESSION_KEY_META = { source: "resolver", freshness: "derived-now", via: "session-key" } as const;
+const NEXT_COMMANDS_META = { source: "derived", freshness: "derived-now", via: "session-inspect" } as const;
+
+type StreamTerminalState =
+  | { kind: "complete" }
+  | { kind: "failed"; error: string }
+  | { kind: "interrupted"; error: string }
+  | { kind: "timeout" };
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -76,6 +99,266 @@ function timeAgo(ts: number): string {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
+}
+
+function extractRuntimeTerminalError(data: Record<string, unknown>): string | undefined {
+  const error = data.error;
+  if (typeof error === "string" && error.trim()) return error;
+  if (error && typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return undefined;
+}
+
+function formatWaitTimeoutError(sessionName: string): string {
+  const seconds = Math.round(SEND_TIMEOUT_MS / 1000);
+  return `Timed out waiting for response from ${sessionName} after ${seconds}s`;
+}
+
+function resolveDeliveryBarrierOptionWithDefault(
+  value: string | undefined,
+  fallback: DeliveryBarrier,
+): DeliveryBarrier {
+  const barrier = normalizeDeliveryBarrier(value);
+  if (!value) {
+    return fallback;
+  }
+  if (!barrier) {
+    throw new Error(`Unknown delivery barrier: ${value}. Use p0, p1, p2, p3 or the named aliases.`);
+  }
+  return barrier;
+}
+
+function trimDebugText(value: string, max = 160): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= max ? normalized : `${normalized.slice(0, max - 3)}...`;
+}
+
+function formatDebugPayload(topic: string, data: Record<string, unknown>): string {
+  if (topic.endsWith(".prompt")) {
+    return trimDebugText(typeof data.prompt === "string" ? data.prompt : "");
+  }
+
+  if (topic.endsWith(".response")) {
+    return trimDebugText(typeof data.response === "string" ? data.response : "");
+  }
+
+  if (topic.endsWith(".stream")) {
+    return trimDebugText(typeof data.chunk === "string" ? data.chunk : "");
+  }
+
+  if (topic.endsWith(".tool")) {
+    const event = typeof data.event === "string" ? data.event : "event";
+    const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
+    const duration =
+      typeof data.durationMs === "number" && Number.isFinite(data.durationMs)
+        ? ` ${Math.round(data.durationMs)}ms`
+        : "";
+    const suffix = data.isError === true ? " error" : "";
+    return `${toolName} ${event}${duration}${suffix}`.trim();
+  }
+
+  if (topic.endsWith(".runtime") || topic.endsWith(".claude")) {
+    const type = typeof data.type === "string" ? data.type : "";
+    const subtype = typeof data.subtype === "string" ? `.${data.subtype}` : "";
+    const status = typeof data.status === "string" ? ` status=${data.status}` : "";
+    const error = extractRuntimeTerminalError(data);
+    return `${type}${subtype}${status}${error ? ` error=${trimDebugText(error, 80)}` : ""}`.trim();
+  }
+
+  if (topic.endsWith(".delivery")) {
+    const messageId = typeof data.messageId === "string" ? data.messageId : "";
+    const emitId = typeof data.emitId === "string" ? data.emitId : "";
+    return [messageId && `messageId=${messageId}`, emitId && `emitId=${emitId}`].filter(Boolean).join(" ");
+  }
+
+  if (topic === "ravi.approval.request" || topic === "ravi.approval.response") {
+    const type = typeof data.type === "string" ? data.type : "approval";
+    const approved = typeof data.approved === "boolean" ? ` approved=${data.approved}` : "";
+    return `${type}${approved}`;
+  }
+
+  return trimDebugText(JSON.stringify(data));
+}
+
+function formatDebugLine(topic: string, data: Record<string, unknown>, asJson?: boolean): string {
+  const time = new Date().toLocaleTimeString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  if (asJson) {
+    return JSON.stringify({ time, topic, data });
+  }
+
+  const label = topic.replace(/^ravi\./, "");
+  const summary = formatDebugPayload(topic, data);
+  return summary ? `[${time}] ${label} :: ${summary}` : `[${time}] ${label}`;
+}
+
+type AdapterInspectionState = "live" | "dead" | "unbound" | "protocol-invalid" | "stopped" | "configured";
+
+function stringifyInspectionValue(value: unknown, max = 160): string {
+  if (value === null || value === undefined) {
+    return "(none)";
+  }
+
+  const rendered =
+    typeof value === "string"
+      ? value
+      : (() => {
+          try {
+            return JSON.stringify(value);
+          } catch {
+            return String(value);
+          }
+        })();
+
+  return rendered.length <= max ? rendered : `${rendered.slice(0, max - 3)}...`;
+}
+
+function formatContextStatus(context: ContextRecord): "active" | "expired" | "revoked" {
+  if (context.revokedAt && context.revokedAt <= Date.now()) return "revoked";
+  if (context.expiresAt && context.expiresAt <= Date.now()) return "expired";
+  return "active";
+}
+
+function formatContextSource(context: ContextRecord): string | undefined {
+  if (!context.source) return undefined;
+  const thread = context.source.threadId ? `#${context.source.threadId}` : "";
+  return `${context.source.channel}/${context.source.accountId}/${context.source.chatId}${thread}`;
+}
+
+function readContextMetadata(context: ContextRecord, key: string): string | undefined {
+  const value = context.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function formatContextInspectionLine(context: ContextRecord): string {
+  const parts = [formatContextStatus(context), context.contextId, context.kind, `caps=${context.capabilities.length}`];
+
+  const source = formatContextSource(context);
+  if (source) parts.push(`source=${source}`);
+
+  const runtimeProvider = readContextMetadata(context, "runtimeProvider");
+  if (runtimeProvider) parts.push(`provider=${runtimeProvider}`);
+
+  const parentContextId = readContextMetadata(context, "parentContextId");
+  if (parentContextId) parts.push(`parent=${parentContextId}`);
+
+  const issuedFor = readContextMetadata(context, "issuedFor");
+  if (issuedFor) parts.push(`issuedFor=${issuedFor}`);
+
+  const issuanceMode = readContextMetadata(context, "issuanceMode");
+  if (issuanceMode) parts.push(`mode=${issuanceMode}`);
+
+  if (context.lastUsedAt) {
+    parts.push(`lastUsed=${formatDate(context.lastUsedAt)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function resolveAdapterInspectionState(
+  adapter: SessionAdapterRecord,
+  snapshot: SessionAdapterDebugSnapshot | null,
+): AdapterInspectionState {
+  if (!snapshot) {
+    if (adapter.status === "broken") return "dead";
+    if (adapter.status === "stopped") return "stopped";
+    if (adapter.status === "configured") return "configured";
+    return "unbound";
+  }
+
+  if (snapshot.lastProtocolError) {
+    return "protocol-invalid";
+  }
+
+  const bound = Boolean(snapshot.bind.contextId);
+  if (!bound) {
+    return "unbound";
+  }
+
+  if (snapshot.health.state === "running" && adapter.status === "running") {
+    return "live";
+  }
+
+  if (snapshot.health.state === "broken" || adapter.status === "broken") {
+    return "dead";
+  }
+
+  if (snapshot.health.state === "stopped") {
+    return "stopped";
+  }
+
+  return "configured";
+}
+
+function formatAdapterInspectionLine(
+  adapter: SessionAdapterRecord,
+  snapshot: SessionAdapterDebugSnapshot | null,
+): string {
+  const state = resolveAdapterInspectionState(adapter, snapshot);
+  const parts = [adapter.name, state, `transport=${adapter.transport}`];
+
+  parts.push(`status=${adapter.status}`);
+  if (snapshot?.health.state) {
+    parts.push(`health=${snapshot.health.state}`);
+  }
+
+  const contextId = snapshot?.bind.contextId;
+  if (contextId) {
+    parts.push(`ctx=${contextId}`);
+  }
+
+  const cliName = snapshot?.bind.cliName ?? adapter.definition.bindings.context.cliName;
+  if (cliName) {
+    parts.push(`cli=${cliName}`);
+  }
+
+  if (typeof snapshot?.health.pendingCommands === "number") {
+    parts.push(`pending=${snapshot.health.pendingCommands}`);
+  }
+
+  const lastError =
+    snapshot?.lastProtocolError?.reason ??
+    snapshot?.lastProtocolError?.message ??
+    snapshot?.health.lastError ??
+    adapter.lastError;
+  if (typeof lastError === "string" && lastError.trim()) {
+    parts.push(`error=${trimDebugText(lastError, 60)}`);
+  }
+
+  return parts.join(" ");
+}
+
+function buildSuggestedDebugCommands(
+  session: SessionEntry,
+  contexts: ContextRecord[],
+  adapters: SessionAdapterRecord[],
+): string[] {
+  const target = session.name ?? session.sessionKey;
+  const commands = [
+    `ravi sessions debug ${target}`,
+    `ravi sessions read ${target}`,
+    `ravi agents session ${session.agentId}`,
+    `ravi agents debug ${session.agentId} ${target}`,
+    `ravi context list --session ${session.sessionKey}`,
+    `ravi adapters list --session ${session.sessionKey}`,
+  ];
+
+  if (contexts.length > 0) {
+    commands.push(`ravi context info ${contexts[0]!.contextId}`);
+  }
+
+  for (const adapter of adapters.slice(0, 3)) {
+    commands.push(`ravi adapters show ${adapter.adapterId}`);
+  }
+
+  return commands;
 }
 
 @Group({
@@ -145,9 +428,17 @@ export class SessionCommands {
     return { sessions, total: sessions.length };
   }
 
-  @Command({ name: "info", description: "Show session details" })
+  @Command({
+    name: "info",
+    description: "Show unified session inspection details",
+    aliases: ["inspect"],
+  })
   info(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
-    const s = resolveSession(nameOrKey);
+    let s = resolveSession(nameOrKey);
+    if (!s) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) s = match;
+    }
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
       return;
@@ -160,38 +451,110 @@ export class SessionCommands {
       return;
     }
 
-    console.log(`\nSession:     ${s.name ?? s.sessionKey}`);
-    console.log(`Key:         ${s.sessionKey}`);
-    console.log(`Display:     ${s.displayName ?? "(none)"}`);
-    console.log(`Agent:       ${s.agentId}`);
-    console.log(`Model:       ${s.modelOverride ?? "(agent default)"}`);
-    console.log(`Thinking:    ${s.thinkingLevel ?? "(default)"}`);
-    console.log(`SDK ID:      ${s.sdkSessionId ?? "(none)"}`);
-    console.log(
-      `Tokens:      input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+    const config = loadRouterConfig();
+    const agentConfig = config.agents[s.agentId];
+    const derivedSource = deriveSourceFromSessionKey(s.sessionKey);
+    const relatedContexts = dbListContexts({ sessionKey: s.sessionKey, includeInactive: true });
+    const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
+    const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
+
+    console.log(`\nSession: ${s.name ?? s.sessionKey}`);
+    printInspectionField("Key", s.sessionKey, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Display", s.displayName ?? "(none)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Agent", s.agentId, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
+    printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
+    printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Thinking", s.thinkingLevel ?? "(default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Runtime", s.runtimeProvider ?? "(unknown)", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Runtime ID", s.providerSessionId ?? s.sdkSessionId ?? "(none)", RUNTIME_SNAPSHOT_META, {
+      labelWidth: 14,
+    });
+    if (s.runtimeSessionParams) {
+      printInspectionField("Runtime ctx", stringifyInspectionValue(s.runtimeSessionParams), RUNTIME_SNAPSHOT_META, {
+        labelWidth: 14,
+      });
+    }
+    printInspectionField(
+      "Tokens",
+      `input=${formatTokens(s.inputTokens ?? 0)} output=${formatTokens(s.outputTokens ?? 0)} total=${formatTokens(s.totalTokens ?? 0)} context=${formatTokens(s.contextTokens ?? 0)}`,
+      RUNTIME_SNAPSHOT_META,
+      { labelWidth: 14 },
     );
 
     if (s.lastChannel || s.lastTo) {
       const routing = [s.lastChannel, s.lastTo].filter(Boolean).join(" -> ");
       const account = s.lastAccountId ? ` (account: ${s.lastAccountId})` : "";
-      console.log(`Channel:     ${routing}${account}`);
+      printInspectionField("Channel", `${routing}${account}`, SESSION_DB_META, { labelWidth: 14 });
+    }
+
+    if (derivedSource) {
+      printInspectionBlock(
+        "Derived route",
+        SESSION_KEY_META,
+        [
+          `channel=${derivedSource.channel}`,
+          `account=${derivedSource.accountId || "(none)"}`,
+          `chatId=${derivedSource.chatId}`,
+          ...(derivedSource.threadId ? [`thread=${derivedSource.threadId}`] : []),
+        ],
+        { labelWidth: 14 },
+      );
     }
 
     if (s.ephemeral) {
       const expiresStr = s.expiresAt ? formatDate(s.expiresAt) : "unknown";
       const remaining = s.expiresAt ? Math.max(0, Math.round((s.expiresAt - Date.now()) / 60_000)) : 0;
-      console.log(`Ephemeral:   ⏳ yes — expires ${expiresStr} (${remaining}min left)`);
+      printInspectionField("Ephemeral", `yes — expires ${expiresStr} (${remaining}min left)`, SESSION_DB_META, {
+        labelWidth: 14,
+      });
     }
 
-    console.log(
-      `Queue:       ${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`,
+    printInspectionField(
+      "Queue",
+      `${s.queueMode ?? "(default)"}${s.queueDebounceMs ? ` debounce=${s.queueDebounceMs}ms` : ""}${s.queueCap ? ` cap=${s.queueCap}` : ""}`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
     );
-    console.log(`Compactions: ${s.compactionCount ?? 0}`);
-    console.log(`Created:     ${formatDate(s.createdAt)}`);
-    console.log(`Updated:     ${formatDate(s.updatedAt)}`);
+    printInspectionField("Compactions", s.compactionCount ?? 0, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Created", formatDate(s.createdAt), SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Updated", formatDate(s.updatedAt), SESSION_DB_META, { labelWidth: 14 });
+
+    console.log();
+    console.log(formatInspectionSection(`Related contexts (${relatedContexts.length}):`, CONTEXT_DB_META));
+    if (relatedContexts.length === 0) {
+      console.log("  (none)");
+    } else {
+      for (const context of relatedContexts) {
+        console.log(`  ${formatContextInspectionLine(context)}`);
+      }
+    }
+
+    console.log();
+    console.log(formatInspectionSection(`Adapters (${relatedAdapters.length}):`, ADAPTER_DB_META));
+    if (relatedAdapters.length === 0) {
+      console.log("  (none)");
+    } else {
+      for (const adapter of relatedAdapters) {
+        const snapshot = getSessionAdapterDebugSnapshot(adapter.adapterId);
+        console.log(`  ${formatAdapterInspectionLine(adapter, snapshot)}`);
+      }
+    }
+
+    console.log();
+    console.log(formatInspectionSection("Next debug commands:", NEXT_COMMANDS_META));
+    for (const command of suggestedCommands) {
+      console.log(`  ${command}`);
+    }
     console.log();
 
-    return s;
+    return {
+      session: s,
+      contexts: relatedContexts,
+      adapters: relatedAdapters,
+      commands: suggestedCommands,
+    };
   }
 
   @Command({ name: "rename", description: "Set session display name" })
@@ -450,6 +813,7 @@ export class SessionCommands {
     @Option({ flags: "-a, --agent <id>", description: "Agent to use when creating a new session" }) agentId?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(nameOrKey, agentId);
     if (!session) return;
@@ -463,6 +827,8 @@ export class SessionCommands {
       return;
     }
 
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_tool");
+
     if (interactive || !prompt) {
       return this.interactiveMode(sessionName, session, channel, to);
     }
@@ -474,11 +840,11 @@ export class SessionCommands {
       console.log(`\n📤 Sending to ${sessionName}\n`);
       console.log(`Prompt: ${prompt}\n`);
       console.log("─".repeat(50));
-      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to);
+      const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
       console.log("\n" + "─".repeat(50));
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
-      await this.emitToSession(sessionName, fullPrompt, session, channel, to);
+      await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
       console.log(`📤 Sent to ${sessionName}`);
     }
   }
@@ -490,6 +856,7 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who originally asked (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -498,7 +865,14 @@ export class SessionCommands {
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time. Only forward messages related to this question — ignore unrelated conversation.)`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
+    );
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
 
@@ -509,6 +883,7 @@ export class SessionCommands {
     @Arg("sender", { required: false, description: "Who is answering (for attribution)" }) sender?: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -517,7 +892,14 @@ export class SessionCommands {
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt"),
+    );
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
 
@@ -527,13 +909,21 @@ export class SessionCommands {
     @Arg("message", { description: "Task to execute" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Execute: ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_task"),
+    );
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
 
@@ -543,13 +933,21 @@ export class SessionCommands {
     @Arg("message", { description: "Information to send" }) message: string,
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
+    @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Inform: ${message}`;
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to);
+    await this.emitToSession(
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
+    );
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
 
@@ -562,72 +960,31 @@ export class SessionCommands {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
 
-    if (!session.sdkSessionId) {
-      console.log("⚠️  No SDK session — no history available");
+    const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
+    if (!providerSessionId) {
+      console.log("⚠️  No runtime session — no history available");
       return;
     }
 
-    const { homedir } = require("node:os");
-    const { existsSync, readFileSync } = require("node:fs");
+    const { readFileSync } = require("node:fs");
+    const agent = loadRouterConfig().agents[session.agentId];
+    const transcript = locateRuntimeTranscript({
+      runtimeProvider: session.runtimeProvider,
+      providerSessionId,
+      agentCwd: session.agentCwd,
+      remote: agent?.remote,
+    });
 
-    const escapedCwd = (session.agentCwd ?? "").replace(/\//g, "-");
-    const jsonlPath = `${homedir()}/.claude/projects/${escapedCwd}/${session.sdkSessionId}.jsonl`;
-
-    if (!existsSync(jsonlPath)) {
-      console.log("⚠️  Transcript not found");
+    if (!transcript.path) {
+      console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
     }
 
     const maxMessages = parseInt(countStr ?? "20", 10);
-    const raw = readFileSync(jsonlPath, "utf-8") as string;
-    const lines = raw.trim().split("\n").filter(Boolean);
+    const raw = readFileSync(transcript.path, "utf-8") as string;
+    const _lines = raw.trim().split("\n").filter(Boolean);
 
-    interface Message {
-      role: string;
-      text: string;
-      time: string;
-    }
-
-    const messages: Message[] = [];
-
-    for (const line of lines) {
-      try {
-        const entry = JSON.parse(line);
-
-        if (entry.type === "user" && entry.message?.content) {
-          const content =
-            typeof entry.message.content === "string"
-              ? entry.message.content
-              : Array.isArray(entry.message.content)
-                ? entry.message.content
-                    .filter((p: { type: string }) => p.type === "text")
-                    .map((p: { text?: string }) => p.text ?? "")
-                    .join(" ")
-                : "";
-          if (!content.trim()) continue;
-          messages.push({
-            role: "user",
-            text: content.trim(),
-            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
-          });
-        } else if (entry.type === "assistant" && entry.message?.content) {
-          const parts = entry.message.content as Array<{ type: string; text?: string }>;
-          const text = parts
-            .filter((p) => p.type === "text")
-            .map((p) => p.text ?? "")
-            .join(" ")
-            .trim();
-          if (!text || text === "@@SILENT@@") continue;
-          messages.push({
-            role: "assistant",
-            text,
-            time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
-          });
-        }
-      } catch {
-        // skip malformed
-      }
-    }
+    const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
 
     const recent = messages.slice(-maxMessages);
     console.log(`\n💬 ${session.name ?? nameOrKey} — last ${recent.length} of ${messages.length} messages\n`);
@@ -636,6 +993,105 @@ export class SessionCommands {
       const who = msg.role === "user" ? "👤" : "🤖";
       const timeStr = msg.time ? ` [${msg.time}]` : "";
       console.log(`${who}${timeStr} ${msg.text}\n`);
+    }
+  }
+
+  @Command({
+    name: "debug",
+    description: "Tail live runtime events for a session (defaults to current session when available)",
+  })
+  async debug(
+    @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,
+    @Option({ flags: "-t, --timeout <seconds>", description: "Stop after N seconds (default: 60)" })
+    timeoutStr?: string,
+    @Option({ flags: "--json", description: "Print raw events as JSONL" }) asJson?: boolean,
+  ) {
+    const fallbackTarget = getContext()?.sessionName ?? getContext()?.sessionKey;
+    const target = nameOrKey?.trim() || fallbackTarget?.trim();
+    if (!target) {
+      fail("No session specified. Use ravi sessions debug <name> or run from inside a session.");
+      return;
+    }
+
+    const session = this.resolveTarget(target);
+    if (!session) return;
+
+    const sessionName = session.name ?? target;
+    const timeoutSeconds = Number.parseInt(timeoutStr ?? "60", 10);
+    const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 60_000;
+
+    console.log(`\n🔎 Session debug: ${sessionName}`);
+    console.log(`Agent: ${session.agentId}`);
+    console.log(
+      `Runtime: ${session.runtimeProvider ?? "(unknown)"} :: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`,
+    );
+    console.log(`Channel: ${session.lastChannel ?? "-"} -> ${session.lastTo ?? "-"}`);
+    console.log(`Window: ${Math.round(timeoutMs / 1000)}s\n`);
+
+    let resolveCompletion: (() => void) | undefined;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    let closed = false;
+
+    const subscriptions = [
+      nats.subscribe(`ravi.session.${sessionName}.prompt`),
+      nats.subscribe(`ravi.session.${sessionName}.response`),
+      nats.subscribe(`ravi.session.${sessionName}.stream`),
+      nats.subscribe(`ravi.session.${sessionName}.tool`),
+      nats.subscribe(`ravi.session.${sessionName}.runtime`),
+      nats.subscribe(`ravi.session.${sessionName}.claude`),
+      nats.subscribe(`ravi.session.${sessionName}.delivery`),
+      nats.subscribe("ravi.approval.request"),
+      nats.subscribe("ravi.approval.response"),
+    ];
+
+    const cleanup = () => {
+      if (closed) return;
+      closed = true;
+      for (const sub of subscriptions) sub.return(undefined);
+      resolveCompletion?.();
+    };
+
+    const timer = setTimeout(() => {
+      console.log(`\n⏱️  Debug window ended after ${Math.round(timeoutMs / 1000)}s`);
+      cleanup();
+    }, timeoutMs);
+
+    const pump = async (sub: AsyncGenerator<{ topic: string; data: Record<string, unknown> }>) => {
+      try {
+        for await (const event of sub) {
+          if (closed) break;
+
+          if (
+            (event.topic === "ravi.approval.request" || event.topic === "ravi.approval.response") &&
+            event.data.sessionName !== sessionName
+          ) {
+            continue;
+          }
+
+          console.log(formatDebugLine(event.topic, event.data, asJson));
+        }
+      } catch {
+        // ignore subscription shutdown
+      }
+    };
+
+    const tasks = subscriptions.map((sub) => pump(sub));
+
+    const sigintHandler = () => {
+      console.log("\n🛑 Debug interrupted");
+      cleanup();
+    };
+    process.once("SIGINT", sigintHandler);
+
+    try {
+      await completion;
+      await nats.close();
+      await Promise.allSettled(tasks);
+    } finally {
+      clearTimeout(timer);
+      process.removeListener("SIGINT", sigintHandler);
     }
   }
 
@@ -762,13 +1218,17 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string,
+    deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
   ): Promise<void> {
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
 
     // Resolve caller's source for approval delegation (cascading approvals)
     const _approvalSource = this.resolveCallerApprovalSource();
 
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
+      string,
+      unknown
+    >);
   }
 
   /**
@@ -780,9 +1240,13 @@ export class SessionCommands {
     session: SessionEntry,
     channelOverride?: string,
     toOverride?: string,
+    deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
   ): Promise<number> {
     let responseLength = 0;
+    let settled = false;
+    let settleCompletion: ((state: StreamTerminalState) => void) | undefined;
 
+    const runtimeStream = nats.subscribe(`ravi.session.${sessionName}.runtime`);
     const claudeStream = nats.subscribe(`ravi.session.${sessionName}.claude`);
     const responseStream = nats.subscribe(`ravi.session.${sessionName}.response`);
 
@@ -790,21 +1254,58 @@ export class SessionCommands {
 
     const cleanup = () => {
       if (timeoutId) clearTimeout(timeoutId);
+      runtimeStream.return(undefined);
       claudeStream.return(undefined);
       responseStream.return(undefined);
     };
 
-    const completion = new Promise<void>((resolve) => {
+    const completion = new Promise<StreamTerminalState>((resolve) => {
+      const settle = (state: StreamTerminalState) => {
+        if (settled) return;
+        settled = true;
+        resolve(state);
+      };
+      settleCompletion = settle;
+
       timeoutId = setTimeout(() => {
         console.log("\n⏱️  Timeout");
-        resolve();
+        settle({ kind: "timeout" });
       }, SEND_TIMEOUT_MS);
+
+      (async () => {
+        try {
+          for await (const event of runtimeStream) {
+            const data = event.data as Record<string, unknown>;
+            const type = data.type;
+            if (type === "turn.complete") {
+              settle({ kind: "complete" });
+              break;
+            }
+            if (type === "turn.failed") {
+              settle({
+                kind: "failed",
+                error: extractRuntimeTerminalError(data) ?? "Session failed",
+              });
+              break;
+            }
+            if (type === "turn.interrupted") {
+              settle({
+                kind: "interrupted",
+                error: extractRuntimeTerminalError(data) ?? "Session turn was interrupted",
+              });
+              break;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
 
       (async () => {
         try {
           for await (const event of claudeStream) {
             if ((event.data as Record<string, unknown>).type === "result") {
-              resolve();
+              settle({ kind: "complete" });
               break;
             }
           }
@@ -819,7 +1320,7 @@ export class SessionCommands {
         for await (const event of responseStream) {
           const data = event.data as ResponseMessage;
           if (data.error) {
-            console.log(`\n❌ ${data.error}`);
+            settleCompletion?.({ kind: "failed", error: data.error });
             break;
           }
           if (data.response) {
@@ -834,12 +1335,22 @@ export class SessionCommands {
 
     const { source, context } = this.resolveSource(session, channelOverride, toOverride);
     const _approvalSource = this.resolveCallerApprovalSource();
-    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource } as Record<string, unknown>);
+    await publishSessionPrompt(sessionName, { prompt, source, context, _approvalSource, deliveryBarrier } as Record<
+      string,
+      unknown
+    >);
 
-    await completion;
+    const completionState = await completion;
     cleanup();
 
     await Promise.race([streaming, new Promise((r) => setTimeout(r, 100))]);
+
+    if (completionState.kind === "failed" || completionState.kind === "interrupted") {
+      throw new Error(completionState.error);
+    }
+    if (completionState.kind === "timeout") {
+      throw new Error(formatWaitTimeoutError(sessionName));
+    }
 
     return responseLength;
   }
@@ -894,7 +1405,7 @@ export class SessionCommands {
           const s = resolveSession(sessionName);
           if (s) {
             console.log(`Session: ${s.name ?? s.sessionKey}`);
-            console.log(`SDK Session: ${s.sdkSessionId || "(none)"}`);
+            console.log(`Runtime Session: ${s.providerSessionId ?? s.sdkSessionId ?? "(none)"}`);
             console.log(`Tokens: ${(s.inputTokens || 0) + (s.outputTokens || 0)}\n`);
           } else {
             console.log("No active session.\n");
@@ -904,12 +1415,125 @@ export class SessionCommands {
         }
 
         console.log();
-        await this.streamToSession(sessionName, trimmed, session, channelOverride, toOverride);
-        console.log("\n");
+        try {
+          await this.streamToSession(sessionName, trimmed, session, channelOverride, toOverride);
+          console.log("\n");
+        } catch (err) {
+          console.log(`\nError: ${err instanceof Error ? err.message : String(err)}\n`);
+        }
         ask();
       });
     };
 
     ask();
   }
+}
+
+export interface NormalizedTranscriptMessage {
+  role: "user" | "assistant";
+  text: string;
+  time: string;
+}
+
+export function extractNormalizedTranscriptMessages(
+  raw: string,
+  runtimeProvider?: "claude" | "codex",
+): NormalizedTranscriptMessage[] {
+  if (runtimeProvider === "codex") {
+    const messages = extractCodexTranscriptMessages(raw);
+    if (messages.length > 0) {
+      return messages;
+    }
+  }
+
+  return extractClaudeTranscriptMessages(raw);
+}
+
+function extractClaudeTranscriptMessages(raw: string): NormalizedTranscriptMessage[] {
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const messages: NormalizedTranscriptMessage[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+
+      if (entry.type === "user" && entry.message?.content) {
+        const content =
+          typeof entry.message.content === "string"
+            ? entry.message.content
+            : Array.isArray(entry.message.content)
+              ? entry.message.content
+                  .filter((p: { type: string }) => p.type === "text")
+                  .map((p: { text?: string }) => p.text ?? "")
+                  .join(" ")
+              : "";
+        if (!content.trim()) continue;
+        messages.push({
+          role: "user",
+          text: content.trim(),
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      } else if (entry.type === "assistant" && entry.message?.content) {
+        const parts = entry.message.content as Array<{ type: string; text?: string }>;
+        const text = parts
+          .filter((p) => p.type === "text")
+          .map((p) => p.text ?? "")
+          .join(" ")
+          .trim();
+        if (!text || text === "@@SILENT@@") continue;
+        messages.push({
+          role: "assistant",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
+  return messages;
+}
+
+function extractCodexTranscriptMessages(raw: string): NormalizedTranscriptMessage[] {
+  const lines = raw.trim().split("\n").filter(Boolean);
+  const messages: NormalizedTranscriptMessage[] = [];
+
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line) as {
+        timestamp?: string;
+        type?: string;
+        payload?: { type?: string; message?: string };
+      };
+
+      if (entry.type !== "event_msg") {
+        continue;
+      }
+
+      const payloadType = entry.payload?.type;
+      const text = entry.payload?.message?.trim();
+      if (!text || text === "@@SILENT@@") {
+        continue;
+      }
+
+      if (payloadType === "user_message") {
+        messages.push({
+          role: "user",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      } else if (payloadType === "agent_message") {
+        messages.push({
+          role: "assistant",
+          text,
+          time: entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "",
+        });
+      }
+    } catch {
+      // skip malformed
+    }
+  }
+
+  return messages;
 }

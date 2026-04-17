@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
+type TerminalStream = "stdout" | "stderr";
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
   debug: 0,
@@ -36,6 +37,8 @@ interface LogContext {
 class Logger {
   private static globalLevel: LogLevel = "info";
   private static fileLogging = false;
+  // stdout is reserved for user-facing CLI payloads and machine-readable protocols.
+  private static terminalStream: TerminalStream = "stderr";
   private prefix: string;
   private context: LogContext;
 
@@ -46,6 +49,14 @@ class Logger {
 
   static setGlobalLevel(level: LogLevel): void {
     Logger.globalLevel = level;
+  }
+
+  static setTerminalStream(stream: TerminalStream): void {
+    Logger.terminalStream = stream;
+  }
+
+  setTerminalStream(stream: TerminalStream): void {
+    Logger.terminalStream = stream;
   }
 
   static enableFileLogging(): void {
@@ -124,27 +135,18 @@ class Logger {
     }
   }
 
+  private writeToTerminal(line: string): void {
+    const stream = Logger.terminalStream === "stdout" ? process.stdout : process.stderr;
+    stream.write(`${line}\n`);
+  }
+
   private log(level: LogLevel, message: string, data?: unknown): void {
     if (!this.shouldLog(level)) return;
 
     const terminalLine = this.formatForTerminal(level, message, data);
     const fileLine = this.formatForFile(level, message, data);
 
-    switch (level) {
-      case "debug":
-        console.debug(terminalLine);
-        break;
-      case "info":
-        console.info(terminalLine);
-        break;
-      case "warn":
-        console.warn(terminalLine);
-        break;
-      case "error":
-        console.error(terminalLine);
-        break;
-    }
-
+    this.writeToTerminal(terminalLine);
     this.writeToFile(fileLine);
   }
 
@@ -204,4 +206,4 @@ class Logger {
 }
 
 export const logger = new Logger();
-export type { LogLevel, LogContext, Logger };
+export type { LogLevel, LogContext, Logger, TerminalStream };

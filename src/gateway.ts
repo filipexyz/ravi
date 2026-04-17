@@ -6,20 +6,21 @@
  *
  * Subscriptions maintained here:
  *   ravi.session.*.response    → send via omni HTTP
- *   ravi.session.*.claude      → typing heartbeat
- *   ravi.outbound.deliver      → direct send (outbound module)
+ *   ravi.session.*.claude      → typing heartbeat (Claude compatibility)
+ *   ravi.session.*.runtime     → typing heartbeat (provider-neutral)
+ *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
  *   ravi.media.send            → media files
  *   ravi.config.changed        → reload router config + REBAC sync
  */
 
 import { nats } from "./nats.js";
-import { pendingReplyCallbacks, type ResponseMessage } from "./bot.js";
+import type { ResponseMessage } from "./bot.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
-import { dbFindActiveEntryByPhone, dbUpdateEntry } from "./outbound/index.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
+import { SessionTypingTracker } from "./gateway-typing.js";
 
 const log = logger.child("gateway");
 
@@ -53,6 +54,7 @@ export class Gateway {
   private omniSender: OmniSender;
   private omniConsumer: OmniConsumer;
   private activeSubscriptions = new Set<string>();
+  private typingTracker = new SessionTypingTracker();
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -67,7 +69,7 @@ export class Gateway {
     this.running = true;
 
     this.subscribeToResponses();
-    this.subscribeToClaudeEvents();
+    this.subscribeToRuntimeEvents();
     this.subscribeToDirectSend();
     this.subscribeToReactions();
     this.subscribeToMediaSend();
@@ -79,7 +81,20 @@ export class Gateway {
   async stop(): Promise<void> {
     log.info("Stopping gateway...");
     this.running = false;
+    this.typingTracker = new SessionTypingTracker();
     log.info("Gateway stopped");
+  }
+
+  private async sendTypingIfChanged(
+    sessionName: string,
+    target: { channel: string; accountId: string; chatId: string },
+    active: boolean,
+  ): Promise<void> {
+    if (!this.typingTracker.shouldEmit(sessionName, active)) return;
+    const iid = configStore.resolveInstanceId(target.accountId);
+    if (iid) {
+      await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+    }
   }
 
   /**
@@ -169,7 +184,15 @@ export class Gateway {
           });
 
           try {
-            await this.omniSender.send(instanceId, chatId, text, target.threadId);
+            const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
+            if (delivered.messageId) {
+              await nats.emit(`ravi.session.${sessionName}.delivery`, {
+                emitId: response._emitId,
+                messageId: delivered.messageId,
+                target,
+                deliveredAt: Date.now(),
+              });
+            }
             log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
           } catch (err) {
             log.error("Failed to send response", { instanceId, chatId, error: err });
@@ -181,36 +204,50 @@ export class Gateway {
   }
 
   /**
-   * Subscribe to Claude SDK events for typing heartbeat.
+   * Subscribe to provider runtime events for typing heartbeat.
+   * Keeps the legacy Claude topic for compatibility while new providers emit `.runtime`.
    */
-  private subscribeToClaudeEvents(): void {
-    this.subscribe("claude", ["ravi.session.*.claude"], async (event) => {
+  private subscribeToRuntimeEvents(): void {
+    this.subscribe("runtime", ["ravi.session.*.claude", "ravi.session.*.runtime"], async (event) => {
       const sessionName = event.topic.split(".")[2];
-      const data = event.data as { type?: string; _source?: { channel: string; accountId: string; chatId: string } };
+      const data = event.data as {
+        type?: string;
+        status?: string;
+        _source?: { channel: string; accountId: string; chatId: string };
+      };
 
-      if (data.type === "result" || data.type === "silent") {
+      if (
+        data.type === "result" ||
+        data.type === "silent" ||
+        data.type === "turn.complete" ||
+        data.type === "turn.failed" ||
+        data.type === "turn.interrupted"
+      ) {
         // Prefer _source from event (works cross-daemon), fallback to local activeTargets
         const target = data._source ?? this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          const iid = configStore.resolveInstanceId(target.accountId);
-          if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), false);
-          this.omniConsumer.clearActiveTarget(sessionName);
+          await this.sendTypingIfChanged(sessionName, target, false);
         }
+        this.omniConsumer.clearActiveTarget(sessionName);
         return;
       }
 
-      if (data.type === "system" || data.type === "assistant") {
+      if (
+        data.type === "system" ||
+        data.type === "assistant" ||
+        data.type === "assistant.message" ||
+        (data.type === "status" && data.status !== "idle")
+      ) {
         const target = this.omniConsumer.getActiveTarget(sessionName);
         if (target) {
-          const iid = configStore.resolveInstanceId(target.accountId);
-          if (iid) await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), true);
+          await this.sendTypingIfChanged(sessionName, target, true);
         }
       }
     });
   }
 
   /**
-   * Subscribe to direct send events from the outbound module.
+   * Subscribe to direct delivery events.
    * Queue group: only one gateway daemon processes each deliver event.
    */
   private subscribeToDirectSend(): void {
@@ -232,9 +269,7 @@ export class Gateway {
         const instanceId = configStore.resolveInstanceId(data.accountId);
         if (!instanceId) {
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId: undefined });
-            else nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
+            nats.emit(data.replyTopic, { success: false, error: "No instance for account" }).catch(() => {});
           }
           return;
         }
@@ -294,24 +329,14 @@ export class Gateway {
           log.info("Direct send delivered", { to, instanceId, messageId });
 
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId });
-            else
-              nats
-                .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
-                .catch(() => {});
-          }
-
-          const entry = dbFindActiveEntryByPhone(to);
-          if (entry?.id) {
-            dbUpdateEntry(entry.id, { lastSentAt: Date.now() });
+            nats
+              .emit(data.replyTopic, { success: true, messageId } as unknown as Record<string, unknown>)
+              .catch(() => {});
           }
         } catch (err) {
           log.error("Failed to deliver direct send", { to, instanceId, error: err });
           if (data.replyTopic) {
-            const cb = pendingReplyCallbacks.get(data.replyTopic);
-            if (cb) cb({ messageId: undefined });
-            else nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
+            nats.emit(data.replyTopic, { success: false, error: String(err) }).catch(() => {});
           }
         }
       },

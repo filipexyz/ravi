@@ -45,9 +45,21 @@ class ConfigStore {
       log.warn("Cannot resolve instance: accountId is empty (session has no account context)");
       return undefined;
     }
-    if (UUID_RE.test(accountName)) return accountName;
-
     const cfg = this.getConfig();
+    if (UUID_RE.test(accountName)) {
+      const mappedAccount = cfg.instanceToAccount[accountName];
+      if (mappedAccount && cfg.instances[mappedAccount]?.enabled === false) {
+        log.warn(`Cannot resolve instance for account "${mappedAccount}" — instance is disabled in ravi`);
+        return undefined;
+      }
+      return accountName;
+    }
+
+    if (cfg.instances[accountName]?.enabled === false) {
+      log.warn(`Cannot resolve instance for account "${accountName}" — instance is disabled in ravi`);
+      return undefined;
+    }
+
     // Reverse of instanceToAccount: iterate to find name → UUID
     for (const [uuid, name] of Object.entries(cfg.instanceToAccount)) {
       if (name === accountName) return uuid;

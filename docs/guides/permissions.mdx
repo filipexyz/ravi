@@ -58,7 +58,6 @@ Objects are the resources being accessed:
 | `agent` | `agent:main` | `view` |
 | `cron` | `cron:<id>` | Resource ownership |
 | `trigger` | `trigger:<id>` | Resource ownership |
-| `outbound` | `outbound:<id>` | Resource ownership |
 | `team` | `team:<id>` | Team membership |
 
 ## Permission Resolution
@@ -122,7 +121,7 @@ These groups work for any agent without explicit permissions:
 
 - `sessions` (open) — but modification commands check session scope inline
 - `media`, `react`, `tools`, `transcribe`, `video`, `whatsapp.dm` (open)
-- `cron`, `triggers`, `outbound` (resource) — check resource ownership
+- `cron`, `triggers` (resource) — check resource ownership
 
 ## SDK Tools
 
@@ -379,7 +378,7 @@ ravi permissions grant agent:observer execute group:contacts
 
 ### Sales Agent with Limited Scope
 
-An agent that manages outbound campaigns for tagged contacts:
+An agent that manages tagged contacts with limited operational scope:
 
 ```bash
 ravi permissions init agent:vendas tool-groups

@@ -6,9 +6,14 @@
  * ravi instances create <name> [--channel whatsapp] [--agent main]
  * ravi instances set <name> <key> <value>
  * ravi instances get <name> <key>
+ * ravi instances enable <name-or-instanceId>
+ * ravi instances disable <name-or-instanceId>
  * ravi instances connect <name> [--channel whatsapp]
  * ravi instances disconnect <name>
  * ravi instances status <name>
+ * ravi routes list [name]
+ * ravi routes show <name> <pattern>
+ * ravi routes explain <name> <pattern> [--channel whatsapp]
  * ravi instances routes list <name>
  * ravi instances routes add <name> <pattern> <agent> [--policy open|closed|...] [--priority N] [--session s] [--dm-scope s]
  * ravi instances routes remove <name> <pattern>
@@ -26,9 +31,10 @@ import qrcode from "qrcode-terminal";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
-import { createOmniClient } from "@omni/sdk";
+import { createOmniClient } from "../../omni/client.js";
 import {
   dbGetInstance,
+  dbGetInstanceByInstanceId,
   dbListInstances,
   dbUpsertInstance,
   dbUpdateInstance,
@@ -48,7 +54,15 @@ import {
   DmScopeSchema,
   DmPolicySchema,
   GroupPolicySchema,
+  dbGetSetting,
+  dbSetSetting,
 } from "../../router/router-db.js";
+import { loadRouterConfig, matchRoute } from "../../router/index.js";
+import {
+  IGNORED_OMNI_INSTANCE_IDS_SETTING,
+  parseIgnoredOmniInstanceIds,
+  serializeIgnoredOmniInstanceIds,
+} from "../../router/omni-ignore.js";
 import { resolveOmniConnection } from "../../omni-config.js";
 import {
   getContact,
@@ -58,9 +72,257 @@ import {
   type AccountPendingEntry,
 } from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
+import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
+import { formatInspectionSection, printInspectionField } from "../inspection-output.js";
+
+const CONFIG_DB_META = { source: "config-db", freshness: "persisted" } as const;
+const LIVE_OMNI_META = { source: "live-omni", freshness: "live" } as const;
+type ListedRoute = ReturnType<typeof dbListRoutes>[number];
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function parseEnabledValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (["true", "1", "on", "open", "enabled"].includes(normalized)) return true;
+  if (["false", "0", "off", "closed", "disabled"].includes(normalized)) return false;
+  fail(`Invalid enabled value: ${value}. Valid: true, false`);
+}
+
+function getIgnoredOmniInstanceIds(): string[] {
+  return parseIgnoredOmniInstanceIds(dbGetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING));
+}
+
+function saveIgnoredOmniInstanceIds(instanceIds: Iterable<string>): void {
+  dbSetSetting(IGNORED_OMNI_INSTANCE_IDS_SETTING, serializeIgnoredOmniInstanceIds(instanceIds));
+  emitConfigChanged();
+}
+
+function resolveInstanceByNameOrId(value: string) {
+  return dbGetInstance(value) ?? dbGetInstanceByInstanceId(value);
+}
+
+function requireInstance(name: string) {
+  const instance = dbGetInstance(name);
+  if (!instance) fail(`Instance not found: ${name}`);
+  return instance;
+}
+
+function printInstanceMutationTarget(name: string): void {
+  const summary = inspectCliRuntimeTarget(name);
+  for (const line of formatCliRuntimeTarget(summary)) {
+    console.log(line);
+  }
+}
+
+function assertInstanceMutationRuntime(name: string, allowRuntimeMismatch?: boolean): void {
+  const summary = inspectCliRuntimeTarget(name);
+  const mismatch = getCliRuntimeMismatchMessage(summary);
+  if (mismatch && !allowRuntimeMismatch) {
+    fail(
+      `${mismatch}\nTarget instance: ${name}\nRe-run with the repo CLI/runtime or pass --allow-runtime-mismatch if you really mean it.`,
+    );
+  }
+}
+
+function inspectRouteLiveWinner(
+  name: string,
+  pattern: string,
+  channel?: string,
+): { winningPattern: string; winningAgent: string } | null {
+  const config = loadRouterConfig();
+
+  if (pattern.startsWith("group:")) {
+    const groupId = pattern.slice("group:".length);
+    const resolved = matchRoute(config, {
+      phone: groupId,
+      groupId,
+      isGroup: true,
+      accountId: name,
+      ...(channel ? { channel } : {}),
+    });
+
+    if (!resolved) {
+      return null;
+    }
+
+    return {
+      winningPattern: resolved.route?.pattern ?? "(instance default)",
+      winningAgent: resolved.agentId,
+    };
+  }
+
+  if (!pattern.includes("*") && /^\d+$/.test(pattern)) {
+    const resolved = matchRoute(config, {
+      phone: pattern,
+      accountId: name,
+      ...(channel ? { channel } : {}),
+    });
+
+    if (!resolved) {
+      return null;
+    }
+
+    return {
+      winningPattern: resolved.route?.pattern ?? "(instance default)",
+      winningAgent: resolved.agentId,
+    };
+  }
+
+  return null;
+}
+
+function printRouteLiveEffect(name: string, pattern: string, expectedAgent: string, channel?: string): void {
+  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  if (!winner) {
+    if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
+      console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+      return;
+    }
+    console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
+    return;
+  }
+
+  const verified = winner.winningPattern === pattern && winner.winningAgent === expectedAgent;
+  console.log(`  Live effect:   ${verified ? "verified" : "different winner"}`);
+  console.log(`  Winning route: ${winner.winningPattern}`);
+  console.log(`  Winning agent: ${winner.winningAgent}`);
+}
+
+function getRouteStatusIcon(pattern: string): string {
+  const contact = getContact(pattern);
+  if (!contact) return "\x1b[33m?\x1b[0m";
+  if (contact.status === "allowed") return "\x1b[32m✓\x1b[0m";
+  if (contact.status === "blocked") return "\x1b[31m✗\x1b[0m";
+  return "\x1b[36m○\x1b[0m";
+}
+
+function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean): void {
+  if (includeInstanceColumn) {
+    console.log(
+      "  INSTANCE         ST  PATTERN                              AGENT           POLICY       PRI  SESSION",
+    );
+    console.log(
+      "  ---------------- --  -----------------------------------  --------------  -----------  ---  -------",
+    );
+  } else {
+    console.log("  ST  PATTERN                              AGENT           POLICY       PRI  SESSION");
+    console.log("  --  -----------------------------------  --------------  -----------  ---  -------");
+  }
+
+  for (const route of routes) {
+    const statusIcon = getRouteStatusIcon(route.pattern);
+    const policy = route.policy ?? "-";
+    const session = route.session ?? "-";
+    const channelLabel = route.channel ? ` [${route.channel}]` : "";
+    if (includeInstanceColumn) {
+      console.log(
+        `  ${route.accountId.padEnd(16)} ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`,
+      );
+      continue;
+    }
+
+    console.log(
+      `  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`,
+    );
+  }
+}
+
+function printRouteList(name?: string): void {
+  if (name) {
+    requireInstance(name);
+    const routes = dbListRoutes(name);
+
+    if (routes.length === 0) {
+      console.log(`No routes for instance "${name}".`);
+      console.log(`\nAdd a route: ravi instances routes add ${name} <pattern> <agent>`);
+      return;
+    }
+
+    console.log(`\nRoutes for: ${name}\n`);
+    printRouteTable(routes, false);
+    console.log(`\n  Total: ${routes.length}`);
+    console.log(`  Show one: ravi routes show ${name} "<pattern>"`);
+    console.log(`  Explain:  ravi routes explain ${name} "<pattern>"`);
+    console.log(`  Mutate:   ravi instances routes set ${name} "<pattern>" <key> <value>`);
+    return;
+  }
+
+  const routes = dbListRoutes();
+  if (routes.length === 0) {
+    console.log("No routes configured.");
+    console.log(`\nAdd one: ravi instances routes add <instance> <pattern> <agent>`);
+    return;
+  }
+
+  console.log("\nRoutes across all instances:\n");
+  printRouteTable(routes, true);
+  console.log(`\n  Total: ${routes.length}`);
+  console.log(`  Show one: ravi routes show <instance> "<pattern>"`);
+  console.log(`  Explain:  ravi routes explain <instance> "<pattern>"`);
+  console.log(`  Mutate:   ravi instances routes add <instance> <pattern> <agent>`);
+}
+
+function printRouteDetails(name: string, pattern: string): void {
+  requireInstance(name);
+  const route = dbGetRoute(pattern, name);
+  if (!route) fail(`Route not found: ${pattern} (instance: ${name})`);
+
+  console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
+  console.log(`  Agent:     ${route.agent}`);
+  console.log(`  Priority:  ${route.priority ?? 0}`);
+  console.log(`  Policy:    ${route.policy ?? "(inherits from instance)"}`);
+  console.log(`  DM Scope:  ${route.dmScope ?? "(inherits)"}`);
+  console.log(`  Session:   ${route.session ?? "(auto)"}`);
+  console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
+  console.log(`\n  Explain live routing: ravi routes explain ${name} "${pattern}"`);
+  console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
+}
+
+function printRouteExplanation(name: string, pattern?: string, channel?: string): void {
+  const summary = inspectCliRuntimeTarget(name);
+  for (const line of formatCliRuntimeTarget(summary)) {
+    console.log(line);
+  }
+
+  if (!summary.instance?.exists) {
+    fail(`Instance not found: ${name}`);
+  }
+
+  if (!pattern) {
+    console.log(`\n  Discover routes: ravi routes list ${name}`);
+    console.log(`  Explain one:     ravi routes explain ${name} "<pattern>"`);
+    return;
+  }
+
+  const configuredRoute = dbGetRoute(pattern, name);
+  if (configuredRoute) {
+    console.log(`  Config route:  ${configuredRoute.pattern} → ${configuredRoute.agent}`);
+    printRouteLiveEffect(name, pattern, configuredRoute.agent, channel ?? configuredRoute.channel ?? undefined);
+    console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
+    console.log(`  Mutate config: ravi instances routes set ${name} "${pattern}" <key> <value>`);
+    return;
+  }
+
+  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  if (!winner) {
+    if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
+      console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+    } else {
+      console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
+    }
+    console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
+    console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
+    return;
+  }
+
+  console.log("  Config route:  (none)");
+  console.log("  Live effect:   different winner");
+  console.log(`  Winning route: ${winner.winningPattern}`);
+  console.log(`  Winning agent: ${winner.winningAgent}`);
+  console.log(`\n  Route details: ravi routes show ${name} "${pattern}"`);
+  console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
 }
 
 function deleteConflictingSessions(pattern: string, targetAgent: string): number {
@@ -100,7 +362,7 @@ function getOmniClient() {
   return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
 }
 
-const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel"] as const;
+const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel", "enabled"] as const;
 type SettableKey = (typeof SETTABLE_KEYS)[number];
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
@@ -121,6 +383,7 @@ export class InstancesCommands {
   @Command({ name: "list", description: "List all instances" })
   async list() {
     const instances = dbListInstances();
+    const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
     // Try to enrich with omni status
     const omniStatus: Record<string, { isConnected?: boolean; profileName?: string }> = {};
@@ -135,14 +398,21 @@ export class InstancesCommands {
     }
 
     if (instances.length === 0) {
-      console.log("No instances configured.");
-      console.log("\nCreate one: ravi instances create <name> --channel whatsapp");
+      console.log("No registered instances configured.");
+      if (ignoredOmniInstanceIds.length > 0) {
+        console.log("\nIgnored unknown omni instanceIds:\n");
+        for (const instanceId of ignoredOmniInstanceIds) {
+          console.log(`  ${instanceId}`);
+        }
+      } else {
+        console.log("\nCreate one: ravi instances create <name> --channel whatsapp");
+      }
       return;
     }
 
     console.log("\nInstances:\n");
-    console.log("  NAME                 CHANNEL       AGENT           DM           GROUP        STATUS");
-    console.log("  -------------------- ------------- --------------- ------------ ------------ ----------");
+    console.log("  NAME                 CHANNEL       AGENT           RAVI      DM           GROUP        STATUS");
+    console.log("  -------------------- ------------- --------------- --------- ------------ ------------ ----------");
 
     for (const inst of instances) {
       const status = inst.instanceId
@@ -153,10 +423,17 @@ export class InstancesCommands {
       const profile = inst.instanceId ? (omniStatus[inst.instanceId]?.profileName ?? "") : "";
       const label = profile ? `${status} (${profile})` : status;
       console.log(
-        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
+        `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
       );
     }
     console.log(`\n  Total: ${instances.length}`);
+
+    if (ignoredOmniInstanceIds.length > 0) {
+      console.log("\nIgnored unknown omni instanceIds:\n");
+      for (const instanceId of ignoredOmniInstanceIds) {
+        console.log(`  ${instanceId}`);
+      }
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -164,8 +441,7 @@ export class InstancesCommands {
   // --------------------------------------------------------------------------
   @Command({ name: "show", description: "Show instance details" })
   async show(@Arg("name", { description: "Instance name" }) name: string) {
-    const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}`);
+    const inst = requireInstance(name);
 
     const routes = dbListRoutes(name);
 
@@ -180,17 +456,18 @@ export class InstancesCommands {
     }
 
     console.log(`\nInstance: ${inst.name}\n`);
-    console.log(`  Channel:      ${inst.channel}`);
-    console.log(`  Instance ID:  ${inst.instanceId ?? "(not set)"}`);
-    console.log(`  Agent:        ${inst.agent ?? "(default)"}`);
-    console.log(`  DM Policy:    ${inst.dmPolicy}`);
-    console.log(`  Group Policy: ${inst.groupPolicy}`);
-    if (inst.dmScope) console.log(`  DM Scope:     ${inst.dmScope}`);
+    printInspectionField("Channel", inst.channel, CONFIG_DB_META);
+    printInspectionField("Instance ID", inst.instanceId ?? "(not set)", CONFIG_DB_META);
+    printInspectionField("Ravi", inst.enabled === false ? "disabled" : "enabled", CONFIG_DB_META);
+    printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META);
+    printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META);
+    printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META);
+    if (inst.dmScope) printInspectionField("DM Scope", inst.dmScope, CONFIG_DB_META);
     if (inst.instanceId) {
-      console.log(`  Connected:    ${omniInfo.isConnected ?? "unknown"}`);
-      if (omniInfo.profileName) console.log(`  Profile:      ${omniInfo.profileName}`);
+      printInspectionField("Connected", omniInfo.isConnected ?? "unknown", LIVE_OMNI_META);
+      if (omniInfo.profileName) printInspectionField("Profile", omniInfo.profileName, LIVE_OMNI_META);
     }
-    console.log(`\n  Routes (${routes.length}):`);
+    console.log(`\n${formatInspectionSection(`  Routes (${routes.length}):`, CONFIG_DB_META)}`);
     if (routes.length === 0) {
       console.log(`    (none — all messages go to agent "${inst.agent ?? "default"}")`);
     } else {
@@ -255,7 +532,7 @@ export class InstancesCommands {
   ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
-    const val = (inst as Record<string, unknown>)[key];
+    const val = (inst as unknown as Record<string, unknown>)[key];
     if (val === undefined) fail(`Unknown key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
     console.log(`${name}.${key}: ${val ?? "(not set)"}`);
   }
@@ -298,9 +575,59 @@ export class InstancesCommands {
       dbUpdateInstance(name, { instanceId: clear ? undefined : value });
     } else if (key === "channel") {
       dbUpdateInstance(name, { channel: value });
+    } else if (key === "enabled") {
+      if (clear) fail("enabled cannot be cleared");
+      dbUpdateInstance(name, { enabled: parseEnabledValue(value) });
     }
 
     console.log(`✓ ${name}.${key} = ${clear ? "(cleared)" : value}`);
+    emitConfigChanged();
+  }
+
+  // --------------------------------------------------------------------------
+  // enable
+  // --------------------------------------------------------------------------
+  @Command({ name: "enable", description: "Enable an instance in Ravi without changing omni" })
+  enable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+    const inst = resolveInstanceByNameOrId(target);
+    if (!inst) {
+      const ignored = getIgnoredOmniInstanceIds();
+      if (!ignored.includes(target)) fail(`Instance not found: ${target}`);
+      saveIgnoredOmniInstanceIds(ignored.filter((instanceId) => instanceId !== target));
+      console.log(`✓ Removed ignored unknown omni instanceId from ravi: ${target}`);
+      return;
+    }
+    if (inst.enabled !== false) {
+      console.log(`Instance already enabled in ravi: ${inst.name}`);
+      return;
+    }
+    dbUpdateInstance(inst.name, { enabled: true });
+    console.log(`✓ Instance enabled in ravi: ${inst.name}`);
+    emitConfigChanged();
+  }
+
+  // --------------------------------------------------------------------------
+  // disable
+  // --------------------------------------------------------------------------
+  @Command({ name: "disable", description: "Disable an instance in Ravi without changing omni" })
+  disable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+    const inst = resolveInstanceByNameOrId(target);
+    if (!inst) {
+      const ignored = getIgnoredOmniInstanceIds();
+      if (ignored.includes(target)) {
+        console.log(`Unknown omni instanceId already ignored in ravi: ${target}`);
+        return;
+      }
+      saveIgnoredOmniInstanceIds([...ignored, target]);
+      console.log(`✓ Ignoring unknown omni instanceId in ravi: ${target}`);
+      return;
+    }
+    if (inst.enabled === false) {
+      console.log(`Instance already disabled in ravi: ${inst.name}`);
+      return;
+    }
+    dbUpdateInstance(inst.name, { enabled: false });
+    console.log(`✓ Instance disabled in ravi: ${inst.name}`);
     emitConfigChanged();
   }
 
@@ -395,7 +722,7 @@ export class InstancesCommands {
 
     // Upsert local instance record
     const agentId = agent ?? inst?.agent ?? (dbGetAgent(name) ? name : undefined);
-    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined });
+    dbUpsertInstance({ name, instanceId, channel, agent: agentId ?? undefined, enabled: inst?.enabled !== false });
     if (agentId && !dbGetAgent(agentId)) {
       const cwd = `${homedir()}/ravi/${agentId}`;
       mkdirSync(cwd, { recursive: true });
@@ -504,17 +831,74 @@ export class InstancesCommands {
         state?: string;
       };
       console.log(`\nInstance: ${name}\n`);
-      console.log(`  Instance ID: ${inst.instanceId}`);
-      console.log(`  Channel:     ${inst.channel}`);
-      console.log(`  State:       ${s.state ?? "unknown"}`);
-      console.log(`  Connected:   ${s.isConnected ?? false}`);
-      if (s.profileName) console.log(`  Profile:     ${s.profileName}`);
-      console.log(`  Agent:       ${inst.agent ?? "(default)"}`);
-      console.log(`  DM Policy:   ${inst.dmPolicy}`);
-      console.log(`  Group Policy:${inst.groupPolicy}`);
+      printInspectionField("Instance ID", inst.instanceId, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Channel", inst.channel, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Ravi", inst.enabled === false ? "disabled" : "enabled", CONFIG_DB_META, {
+        labelWidth: 15,
+      });
+      printInspectionField("State", s.state ?? "unknown", LIVE_OMNI_META, { labelWidth: 15 });
+      printInspectionField("Connected", s.isConnected ?? false, LIVE_OMNI_META, { labelWidth: 15 });
+      if (s.profileName) printInspectionField("Profile", s.profileName, LIVE_OMNI_META, { labelWidth: 15 });
+      printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META, { labelWidth: 15 });
+      printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META, { labelWidth: 15 });
     } catch (err) {
       fail(`Error fetching status: ${err instanceof Error ? err.message : String(err)}`);
     }
+  }
+
+  @Command({ name: "target", description: "Explain which runtime, DB, and live instance this CLI would affect" })
+  target(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({
+      flags: "--pattern <pattern>",
+      description: "Optional exact pattern to inspect against the live resolver (e.g. group:123456)",
+    })
+    pattern?: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Optional channel hint for live route inspection",
+    })
+    channel?: string,
+  ) {
+    printRouteExplanation(name, pattern, channel);
+  }
+}
+
+// ============================================================================
+// routes top-level read-only group
+// ============================================================================
+
+@Group({
+  name: "routes",
+  description: "Inspect route config and live routing without drilling into instances",
+  scope: "admin",
+})
+export class RoutesCommands {
+  @Command({ name: "list", description: "List routes across all instances or for one instance" })
+  list(@Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string) {
+    printRouteList(name);
+  }
+
+  @Command({ name: "show", description: "Show route details" })
+  show(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
+  ) {
+    printRouteDetails(name, pattern);
+  }
+
+  @Command({ name: "explain", description: "Explain how a pattern resolves in config and the live router" })
+  explain(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({
+      flags: "--channel <channel>",
+      description: "Optional channel hint for live route inspection",
+    })
+    channel?: string,
+  ) {
+    printRouteExplanation(name, pattern, channel);
   }
 }
 
@@ -530,37 +914,7 @@ export class InstancesCommands {
 export class InstancesRoutesCommands {
   @Command({ name: "list", description: "List routes for an instance" })
   list(@Arg("name", { description: "Instance name" }) name: string) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
-    const routes = dbListRoutes(name);
-
-    if (routes.length === 0) {
-      console.log(`No routes for instance "${name}".`);
-      console.log(`\nAdd a route: ravi instances routes add ${name} <pattern> <agent>`);
-      return;
-    }
-
-    console.log(`\nRoutes for: ${name}\n`);
-    console.log("  ST  PATTERN                              AGENT           POLICY       PRI  SESSION");
-    console.log("  --  -----------------------------------  --------------  -----------  ---  -------");
-
-    for (const route of routes) {
-      const contact = getContact(route.pattern);
-      const statusIcon = !contact
-        ? "\x1b[33m?\x1b[0m"
-        : contact.status === "allowed"
-          ? "\x1b[32m✓\x1b[0m"
-          : contact.status === "blocked"
-            ? "\x1b[31m✗\x1b[0m"
-            : "\x1b[36m○\x1b[0m";
-      const policy = route.policy ?? "-";
-      const session = route.session ?? "-";
-      const channelLabel = route.channel ? ` [${route.channel}]` : "";
-      console.log(
-        `  ${statusIcon}   ${route.pattern.padEnd(35)} ${route.agent.padEnd(14)}  ${policy.padEnd(11)}  ${String(route.priority ?? 0).padEnd(3)}  ${session}${channelLabel}`,
-      );
-    }
-
-    console.log(`\n  Total: ${routes.length}`);
+    printRouteList(name);
   }
 
   @Command({ name: "show", description: "Show route details" })
@@ -568,17 +922,7 @@ export class InstancesRoutesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
-    const route = dbGetRoute(pattern, name);
-    if (!route) fail(`Route not found: ${pattern} (instance: ${name})`);
-
-    console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
-    console.log(`  Agent:     ${route.agent}`);
-    console.log(`  Priority:  ${route.priority ?? 0}`);
-    console.log(`  Policy:    ${route.policy ?? "(inherits from instance)"}`);
-    console.log(`  DM Scope:  ${route.dmScope ?? "(inherits)"}`);
-    console.log(`  Session:   ${route.session ?? "(auto)"}`);
-    console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
+    printRouteDetails(name, pattern);
   }
 
   @Command({ name: "add", description: "Add a route to an instance" })
@@ -596,6 +940,11 @@ export class InstancesRoutesCommands {
       description: "Limit route to a specific channel (e.g. whatsapp, telegram). Omit for all channels.",
     })
     channel?: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
     if (!dbGetAgent(agent))
@@ -610,6 +959,7 @@ export class InstancesRoutesCommands {
     }
     const pri = priority !== undefined ? parseInt(priority, 10) : 0;
     if (Number.isNaN(pri)) fail(`Invalid priority: ${priority}`);
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
       dbCreateRoute({
@@ -619,12 +969,14 @@ export class InstancesRoutesCommands {
         priority: pri,
         policy: policy ?? undefined,
         session: session ?? undefined,
-        dmScope: dmScope as typeof DmScopeSchema._type | undefined,
+        dmScope: dmScope ? DmScopeSchema.parse(dmScope) : undefined,
         channel: channel ?? undefined,
       });
+      printInstanceMutationTarget(name);
       const policyLabel = policy ? ` [policy:${policy}]` : "";
       const channelLabel = channel ? ` [channel:${channel}]` : "";
       console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
+      printRouteLiveEffect(name, pattern, agent, channel);
       emitConfigChanged();
 
       // Remove from pending if applicable
@@ -654,10 +1006,17 @@ export class InstancesRoutesCommands {
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
+      printInstanceMutationTarget(name);
       console.log(
         `✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`,
       );
@@ -671,9 +1030,16 @@ export class InstancesRoutesCommands {
   restore(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
     const ok = dbRestoreRoute(pattern, name);
     if (ok) {
+      printInstanceMutationTarget(name);
       console.log(`✓ Route restored: ${pattern} (instance: ${name})`);
       emitConfigChanged();
     } else {
@@ -701,6 +1067,11 @@ export class InstancesRoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: `Property key (${ROUTE_SETTABLE_KEYS.join(", ")})` }) key: string,
     @Arg("value", { description: "Property value (use '-' to clear)" }) value: string,
+    @Option({
+      flags: "--allow-runtime-mismatch",
+      description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+    })
+    allowRuntimeMismatch?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     if (!dbGetRoute(pattern, name)) fail(`Route not found: ${pattern} (instance: ${name})`);
@@ -731,10 +1102,15 @@ export class InstancesRoutesCommands {
     } else if (key === "channel") {
       updates.channel = clear ? null : value;
     }
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
       dbUpdateRoute(pattern, updates, name);
+      printInstanceMutationTarget(name);
       console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
+      if (key === "agent" && !clear) {
+        printRouteLiveEffect(name, pattern, value, undefined);
+      }
       emitConfigChanged();
 
       if (key === "agent") {

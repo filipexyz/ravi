@@ -5,7 +5,7 @@ description: System architecture — daemon, Gateway, NATS JetStream, omni integ
 
 ## Overview
 
-Ravi is the daemon that gives Claude a life. The daemon connects to external NATS and omni services, manages agent sessions via the Claude Agent SDK, and coordinates background runners for cron jobs, heartbeat, outbound campaigns, and event triggers.
+Ravi is the daemon that gives Claude a life. The daemon connects to external NATS and omni services, manages agent sessions via the Claude Agent SDK, and coordinates background runners for cron jobs, heartbeat, and event triggers.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -20,7 +20,6 @@ Ravi is the daemon that gives Claude a life. The daemon connects to external NAT
 │  │  └── Runners                                          │  │
 │  │       ├── HeartbeatRunner  (leader-elected)           │  │
 │  │       ├── CronRunner       (leader-elected)           │  │
-│  │       ├── OutboundRunner   (per-daemon)               │  │
 │  │       ├── TriggerRunner    (per-daemon)               │  │
 │  │       ├── EphemeralRunner  (per-daemon)               │  │
 │  │       └── InboxWatcher     (per-daemon)               │  │
@@ -51,7 +50,7 @@ The daemon is the main long-running process, managed by PM2. It does **not** spa
 5. **Sync REBAC permissions** — Loads relation-based access control rules from agent configs into memory.
 6. **Start RaviBot** — Initializes the Claude Agent SDK, subscribes to the session prompts consumer, and starts processing messages.
 7. **Start OmniConsumer + Gateway** — Consumer pulls from omni JetStream streams; Gateway subscribes to internal NATS events for response delivery.
-8. **Start runners** — Leader election determines which daemon runs heartbeat and cron; outbound, trigger, ephemeral, and inbox runners are per-daemon.
+8. **Start runners** — Leader election determines which daemon runs heartbeat and cron; trigger, ephemeral, and inbox runners are per-daemon.
 
 **Shutdown** is graceful with a 15-second timeout. The bot is stopped first (aborting SDK subprocesses), then runners release leadership, then Gateway and consumer stop, and finally the NATS connection is drained.
 
@@ -69,12 +68,12 @@ The Gateway (`src/gateway.ts`) is the bridge between the bot's internal NATS eve
 |---|---|---|
 | `ravi.session.*.response` | Deliver bot responses to channels via omni HTTP | `ravi-gateway` |
 | `ravi.session.*.claude` | Typing indicator heartbeat (start/stop) | — |
-| `ravi.outbound.deliver` | Direct send from outbound module (with humanized delays) | `ravi-gateway` |
+| `ravi.outbound.deliver` | Direct channel delivery (with optional humanized delays) | `ravi-gateway` |
 | `ravi.outbound.reaction` | Emoji reactions from agents | `ravi-gateway` |
 | `ravi.media.send` | Media file delivery (images, videos, audio, documents) | `ravi-gateway` |
 | `ravi.config.changed` | Reload router config cache and sync REBAC relations | — |
 
-**Queue groups** ensure that in multi-daemon deployments, only one daemon processes each outbound message. Subscriptions without a queue group are fan-out — all daemons receive the event (e.g., config changes must be applied everywhere).
+**Queue groups** ensure that in multi-daemon deployments, only one daemon processes each delivery event. Subscriptions without a queue group are fan-out — all daemons receive the event (e.g., config changes must be applied everywhere).
 
 **Key behaviors:**
 
@@ -129,7 +128,6 @@ Beyond JetStream, ravi uses plain NATS pub/sub for internal coordination:
 | `ravi.session.*.claude` | Claude SDK lifecycle events (typing) |
 | `ravi.outbound.deliver` | Direct message send requests |
 | `ravi.outbound.reaction` | Emoji reaction send requests |
-| `ravi.outbound.refresh` | Outbound runner reload signal |
 | `ravi.media.send` | Media file send requests |
 | `ravi.config.changed` | Config cache invalidation (fan-out) |
 | `ravi.contacts.pending` | New pending contact notification |
@@ -156,14 +154,13 @@ When a `message.received` event arrives:
 1. **Filter** — Skip history-sync messages (via `ingestMode` flag or timestamp), skip reaction-type messages.
 2. **Parse subject** — Extract `channelType` and `instanceId` from the NATS subject (`message.received.{channelType}.{instanceId}`).
 3. **Resolve account** — Map omni `instanceId` (UUID) to a ravi account name via ConfigStore.
-4. **Outbound check** — If the sender has an active outbound entry, record the response and suppress the prompt.
-5. **Route resolution** — ConfigStore resolves the message to a session key and agent based on routing rules (account-agent mapping, route patterns, default agent).
-6. **Policy enforcement** — Apply group policy (`open`/`allowlist`/`closed`) and DM policy (`open`/`pairing`/`closed`). Unallowed contacts are saved as pending.
-7. **Contact scoping** — Per-agent contact visibility check (`own`/`tagged`/`all`).
-8. **Slash commands** — Check for `/` prefixed commands before agent processing.
-9. **Media processing** — Download media from omni HTTP API, save to agent attachments directory, transcribe audio via OpenAI Whisper.
-10. **Format envelope** — Build the message envelope with sender info, timestamps, media, and thread context.
-11. **Publish prompt** — Publish to `SESSION_PROMPTS` JetStream stream for exactly-once delivery to a daemon.
+4. **Route resolution** — ConfigStore resolves the message to a session key and agent based on routing rules (account-agent mapping, route patterns, default agent).
+5. **Policy enforcement** — Apply group policy (`open`/`allowlist`/`closed`) and DM policy (`open`/`pairing`/`closed`). Unallowed contacts are saved as pending.
+6. **Contact scoping** — Per-agent contact visibility check (`own`/`tagged`/`all`).
+7. **Slash commands** — Check for `/` prefixed commands before agent processing.
+8. **Media processing** — Download media from omni HTTP API, save to agent attachments directory, transcribe audio via OpenAI Whisper.
+9. **Format envelope** — Build the message envelope with sender info, timestamps, media, and thread context.
+10. **Publish prompt** — Publish to `SESSION_PROMPTS` JetStream stream for exactly-once delivery to a daemon.
 
 **Active mode** messages include a `source` (channel routing info) and trigger a typing indicator. **Sentinel mode** messages are observed silently with no typing and no source.
 
@@ -227,7 +224,7 @@ Distributed leader election (`src/leader/index.ts`) uses a NATS JetStream KV sto
 5. On graceful shutdown, the leader explicitly deletes the key so takeover is immediate.
 
 **Leader-elected runners:** HeartbeatRunner, CronRunner.
-**Per-daemon runners** (no election needed): OutboundRunner, TriggerRunner, EphemeralRunner, InboxWatcher.
+**Per-daemon runners** (no election needed): TriggerRunner, EphemeralRunner, InboxWatcher.
 
 ## Session Keys
 
@@ -259,7 +256,6 @@ Threads append `:thread:{threadId}` to the session key.
 |---|---|---|
 | Cron job | `agent:{agentId}:cron:{jobId}` | `agent:main:cron:abc123` |
 | Event trigger | `agent:{agentId}:trigger:{triggerId}` | `agent:main:trigger:a1b2c3d4` |
-| Outbound | `agent:{agentId}:outbound:{queueId}:{phone}` | `agent:main:outbound:q1:5511999` |
 
 ## Message Flow
 
@@ -308,7 +304,7 @@ omni API ──publish──▶ NATS JetStream (MESSAGE stream)
     omni REST API ──▶ Channel
 ```
 
-### Outbound (Agent to Channel)
+### Delivery (Agent to Channel)
 
 Agents send messages by emitting to internal NATS topics. The Gateway picks up the event and delivers via OmniSender:
 
@@ -323,7 +319,8 @@ Agents send messages by emitting to internal NATS topics. The Gateway picks up t
 ~/ravi/
 ├── ravi.db              # Router config, sessions, contacts (SQLite)
 └── {agentId}/           # Agent working directory
-    ├── CLAUDE.md        # Agent system instructions
+    ├── AGENTS.md        # Canonical agent system instructions
+    ├── CLAUDE.md        # Claude compatibility bridge (when needed)
     ├── HEARTBEAT.md     # Pending tasks for heartbeat (optional)
     └── attachments/     # Downloaded media files
 

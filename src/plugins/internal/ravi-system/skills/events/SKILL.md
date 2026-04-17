@@ -24,7 +24,7 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 
 | Tópico | Payload |
 |--------|---------|
-| `ravi.session.{name}.prompt` | `{ prompt, source?: { channel, accountId, chatId }, context?, _agentId?, _outbound?, _queueId?, _entryId? }` |
+| `ravi.session.{name}.prompt` | `{ prompt, source?: { channel, accountId, chatId }, context?, _agentId? }` |
 | `ravi.session.{name}.response` | `{ response, target?: { channel, accountId, chatId }, _emitId, _instanceId, _pid, _v: 2 }` |
 | `ravi.session.{name}.claude` | Evento bruto do SDK Claude: `{ type: "system"\|"assistant"\|"result"\|"silent"\|..., _source? }` |
 | `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` / End: `{ event: "end", toolId, toolName, output, isError, durationMs, timestamp, sessionName, agentId }` |
@@ -43,15 +43,13 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 
 > As mensagens inbound dos canais chegam via **omni JetStream** nos subjects `message.received.{channelType}.{instanceId}`, não via pub/sub ravi. O `OmniConsumer` consome esses streams e traduz para prompts de sessão.
 
-### Outbound (bot → gateway → omni)
+### Delivery (bot → gateway → omni)
 
 | Tópico | Payload |
 |--------|---------|
 | `ravi.outbound.deliver` | `{ channel, accountId, to, text?, poll?, typingDelayMs?, pauseMs?, replyTopic? }` |
 | `ravi.outbound.reaction` | `{ channel, accountId, chatId, messageId, emoji }` |
 | `ravi.outbound.receipt` | `{ channel, accountId, chatId, senderId, messageIds[] }` — sem subscriber no ravi, consumido pelo omni |
-| `ravi.outbound.refresh` | `{}` — sinal de refresh de filas outbound |
-| `ravi.outbound.trigger` | `{ queueId }` — trigger manual de fila outbound |
 
 ### Mídia
 
