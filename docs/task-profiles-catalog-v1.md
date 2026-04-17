@@ -171,6 +171,8 @@ Leitura correta:
 
 ## Profiles Atuais
 
+O catálogo `system` deve expor apenas o contrato universal:
+
 ### `default`
 
 Uso:
@@ -185,80 +187,7 @@ Contrato:
 - artifact primário = `TASK.md`
 - protocolo = editar `TASK.md` primeiro
 
-### `brainstorm`
-
-Uso:
-
-```bash
-ravi tasks create "portal de conteúdo" --instructions "..." --profile brainstorm
-```
-
-Contrato:
-
-- workspace = `.genie/brainstorms/<slug>`
-- artifact primário = `DRAFT.md`
-- supporting artifacts = `DESIGN.md`, `JAR`
-- protocolo = skill `brainstorm`
-
-### `research`
-
-Uso:
-
-```bash
-ravi tasks create "investigar lacunas do content" \
-  --instructions "..." \
-  --profile research \
-  --input question="o que falta?" \
-  --input sources=repo+runtime
-```
-
-Contrato:
-
-- workspace = task workspace cru
-- artifact primário = `RESEARCH.md`
-- supporting artifact = `SOURCES.md`
-- sem `TASK.md`
-
-### `content`
-
-Uso:
-
-```bash
-ravi tasks create "post sobre X" --instructions "..." --profile content
-```
-
-Contrato:
-
-- workspace = `task_dir` cru
-- artifact primário inicial = `draft.md`
-- supporting refs = `notes.md`, `sources/`, `assets/`, `exports/`
-- sem `TASK.md`
-- sem runtime paralelo
-
-### `video-rapha`
-
-Uso:
-
-```bash
-ravi tasks create "video rapha smoke" \
-  --instructions "..." \
-  --profile video-rapha \
-  --input video_id=silveira-nuclear \
-  --input titulo="Silveira Nuclear" \
-  --input brief="..." \
-  --input tese="..." \
-  --input publico="..." \
-  --input acao="..."
-```
-
-Contrato:
-
-- workspace contextual = `~/ravi/videomaker`
-- projeto canônico = `out/<video_id>/`
-- runner = `wf eb <video_id>`
-- artifact primário ativo = `.wf-eb-state.json`
-- artifact terminal = `render/video.mp4`
-- checkpoints F2/F4/F5 continuam `in_progress`
+Profiles de domínio como brainstorm, research, content, vídeo e runtime-only não pertencem ao catálogo built-in. Eles devem ser instalados como `plugin`, `workspace` ou `user`, ou gerados por `ravi tasks profiles init` quando fizer sentido.
 
 ## Simplificação Arquitetural
 

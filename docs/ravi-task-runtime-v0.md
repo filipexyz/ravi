@@ -131,33 +131,7 @@ Sem side effects.
 - artifact = `TASK.md`
 - loop = editar doc, depois sincronizar runtime
 
-### Caso 2: `brainstorm`
-
-- workspace = `.genie/brainstorms/<slug>`
-- artifact = `DRAFT.md`
-- supporting = `DESIGN.md`, `JAR`
-- loop = brainstorm -> draft -> runtime sync
-
-### Caso 3: `content`
-
-- workspace = `task_dir` cru
-- artifact inicial = `draft.md`
-- supporting = `notes.md`, `sources/`, `assets/`, `exports/`
-- loop = editar item de conteúdo diretamente
-
-### Caso 4: `research`
-
-- workspace = task workspace cru
-- artifacts = `RESEARCH.md`, `SOURCES.md`
-- loop = pesquisar -> sintetizar -> sincronizar runtime
-
-### Caso 5: `video-rapha`
-
-- agent cwd = `videomaker`
-- worktree contextual = `~/ravi/videomaker`
-- project root = `out/<video_id>/`
-- runner = `wf eb <video_id>`
-- artifacts = `.wf-eb-state.json`, `00-meta.md`, `script.json`, `F2-design.md`, `props.json`, `render/video.mp4`
+Outros casos (`brainstorm`, `content`, `research`, vídeo, runtime-only) continuam possíveis como profiles declarativos, mas não são built-ins do sistema. Eles entram por `plugin`, `workspace` ou `user`.
 
 ## Invariantes
 
@@ -183,7 +157,7 @@ A arquitetura correta escolhe só uma:
 Daí em diante:
 
 - `TASK.md` vira só um artifact do `default`
-- `brainstorm`, `content`, `research` e `video-rapha` param de ser exceção
+- `brainstorm`, `content`, `research` e vídeo param de ser exceção e também param de ser system built-ins
 - o runtime para de “proteger profile non-doc do TASK.md”
 - e passa simplesmente a não expor `TASK.md` fora do contrato que realmente o usa
 

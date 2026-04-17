@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
 
@@ -237,7 +237,8 @@ describe("task profile catalog", () => {
     expect(defaultProfile.label).toBe("Workspace Default");
 
     const profiles = listTaskProfiles();
-    expect(profiles.some((profile) => profile.id === "brainstorm")).toBeTrue();
+    expect(profiles.some((profile) => profile.id === "default")).toBeTrue();
+    expect(profiles.some((profile) => profile.id === "brainstorm")).toBeFalse();
     expect(profiles.find((profile) => profile.id === "cascade-profile")?.sourceKind).toBe("user");
   });
 
@@ -257,24 +258,6 @@ describe("task profile catalog", () => {
         expect(sync).toEqual({
           artifactFirst: true,
           taskDocument: { mode: "required" },
-        });
-      }
-
-      if (manifest.id === "task-doc-optional") {
-        expect(sync).toEqual({
-          artifactFirst: false,
-          taskDocument: { mode: "optional" },
-        });
-      }
-
-      if (
-        manifest.id === "brainstorm" ||
-        manifest.id === "content" ||
-        manifest.id === "video-rapha" ||
-        manifest.id === "task-doc-none"
-      ) {
-        expect(sync).toEqual({
-          artifactFirst: false,
         });
       }
     }
@@ -525,26 +508,18 @@ describe("task profile catalog", () => {
     expect(validation[0]?.valid).toBeTrue();
   });
 
-  it("previews the built-in video-rapha profile against the videomaker workspace", () => {
-    const preview = previewTaskProfile("video-rapha", {
-      title: "Video Rapha preview",
-      input: {
-        video_id: "silveira-nuclear",
-        titulo: "Silveira Nuclear",
-        brief: "Explicar a tese central, mostrar contraste e fechar com CTA.",
-        tese: "nuclear e a virada silenciosa da matriz",
-        publico: "fundadores e operadores curiosos sobre energia",
-        acao: "me chama no whatsapp",
-      },
+  it("keeps the system catalog limited to the default profile", () => {
+    const profiles = listTaskProfiles().filter((profile) => profile.sourceKind === "system");
+
+    expect(profiles.map((profile) => profile.id)).toEqual(["default"]);
+
+    const preview = previewTaskProfile("default", {
+      title: "Default profile preview",
     });
 
-    const videoWorkspace = join(homedir(), "ravi", "videomaker");
-    expect(preview.profile.workspaceBootstrap.mode).toBe("path");
-    expect(preview.primaryArtifact?.kind).toBe("video-runner-state");
-    expect(preview.primaryArtifact?.path).toBe(`${videoWorkspace}/out/silveira-nuclear/.wf-eb-state.json`);
-    expect(preview.rendered.dispatch).toContain(`project root: ${videoWorkspace}/out/silveira-nuclear`);
-    expect(preview.rendered.dispatch).toContain("CLI canônica: `video`");
-    expect(preview.rendered.dispatchSummary).toContain("videomaker worktree");
+    expect(preview.profile.workspaceBootstrap.mode).toBe("inherit");
+    expect(preview.primaryArtifact?.kind).toBe("task-doc");
+    expect(preview.primaryArtifact?.path).toContain("TASK.md");
   });
 });
 afterAll(() => mock.restore());

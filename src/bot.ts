@@ -138,6 +138,32 @@ function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<s
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+function isRecoverableAbortFailure(event: {
+  error?: string;
+  recoverable?: boolean;
+  rawEvent?: Record<string, unknown>;
+}): boolean {
+  if (event.recoverable === false) return false;
+
+  const details = [
+    event.error,
+    event.rawEvent?.error,
+    event.rawEvent?.errors,
+    event.rawEvent?.message,
+    event.rawEvent?.result,
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .map((value) => (typeof value === "string" ? value : JSON.stringify(value)))
+    .join("\n")
+    .toLowerCase();
+
+  return (
+    details.includes("request was aborted") ||
+    details.includes("operation was aborted") ||
+    details.includes("aborterror")
+  );
+}
+
 function formatUserFacingTurnFailure(error: string): string {
   const firstLine = error
     .split("\n")
@@ -2256,6 +2282,16 @@ export class RaviBot {
           clearActiveToolState();
           streaming.pendingAbort = false;
           streaming.turnActive = false;
+
+          if (streaming.interrupted && isRecoverableAbortFailure(event)) {
+            log.info("Suppressing recoverable interrupted turn failure", {
+              runId,
+              sessionName,
+              error: event.error,
+            });
+            signalTurnComplete();
+            continue;
+          }
 
           if (streaming.agentMode !== "sentinel") {
             await emitResponse(formatUserFacingTurnFailure(event.error));

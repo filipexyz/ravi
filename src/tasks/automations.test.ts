@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 afterAll(() => mock.restore());
@@ -34,6 +36,94 @@ mock.module("../omni/session-stream.js", () => ({
 const { createTaskAutomation, listTaskAutomationRuns } = await import("./automations.js");
 const { completeTask, createTask, dispatchTask, emitTaskEvent, listTasks } = await import("./service.js");
 const { dbCreateAgent, dbDeleteAgent } = await import("../router/router-db.js");
+
+function writeVideoProfileFixture(stateRoot: string): void {
+  const profileDir = join(stateRoot, "task-profiles", "video-rapha");
+  mkdirSync(profileDir, { recursive: true });
+  writeFileSync(
+    join(profileDir, "profile.json"),
+    JSON.stringify(
+      {
+        id: "video-rapha",
+        version: "1",
+        label: "Video Rapha",
+        description: "Video profile fixture for automation template coverage.",
+        sessionNameTemplate: "<task-id>-work",
+        workspaceBootstrap: {
+          mode: "path",
+          path: "~/ravi/videomaker",
+          ensureTaskDir: false,
+        },
+        sync: {
+          artifactFirst: false,
+        },
+        rendererHints: {
+          label: "Video project",
+          showTaskDoc: false,
+          showWorkspace: true,
+        },
+        defaultTags: ["task.profile.video-rapha"],
+        inputs: [
+          { key: "video_id", required: true },
+          { key: "titulo", required: true },
+          { key: "brief", required: true },
+          { key: "tese", required: true },
+          { key: "publico", required: true },
+          { key: "acao", required: true },
+        ],
+        completion: {
+          summaryRequired: true,
+          summaryLabel: "Resumo",
+        },
+        progress: {
+          requireMessage: true,
+        },
+        artifacts: [
+          {
+            kind: "video-runner-state",
+            label: "Runner state",
+            pathTemplate: "{{worktree.path}}/out/{{input.video_id}}/.wf-eb-state.json",
+            primary: true,
+          },
+          {
+            kind: "video-qc",
+            label: "QC report",
+            pathTemplate: "{{worktree.path}}/out/{{input.video_id}}/qc.json",
+          },
+          {
+            kind: "video-render",
+            label: "Rendered video",
+            pathTemplate: "{{worktree.path}}/out/{{input.video_id}}/render/video.mp4",
+            primaryWhenStatuses: ["done"],
+            showWhenStatuses: ["done"],
+          },
+        ],
+        state: [
+          {
+            path: "video.videoId",
+            valueTemplate: "{{input.video_id}}",
+          },
+          {
+            path: "video.projectDir",
+            valueTemplate: "out/{{input.video_id}}",
+          },
+        ],
+        templates: {
+          dispatch: "dispatch {{task.id}}",
+          resume: "resume {{task.id}}",
+          dispatchSummary: "summary {{task.id}}",
+          dispatchEventMessage: "event {{task.id}}",
+          reportDoneMessage: "{{report.text}}",
+          reportBlockedMessage: "{{report.text}}",
+          reportFailedMessage: "{{report.text}}",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+}
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-automations-test-");
@@ -100,6 +190,8 @@ describe("task automations", () => {
   });
 
   it("renders source project, artifacts and task session data for video review templates", async () => {
+    writeVideoProfileFixture(stateDir!);
+
     createTaskAutomation({
       name: "Video review follow-up",
       eventTypes: ["task.done"],

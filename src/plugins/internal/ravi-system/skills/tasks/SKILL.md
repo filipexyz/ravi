@@ -74,30 +74,8 @@ Resumo:
 - `default`
   - workspace = task workspace
   - artifact primário = `TASK.md`
-- `brainstorm`
-  - workspace = `.genie/brainstorms/<slug>`
-  - artifact primário = `DRAFT.md`
-  - supporting = `DESIGN.md`, `JAR`
-- `content`
-  - workspace = `task_dir` cru
-  - artifact primário inicial = `draft.md`
-- `video-rapha`
-  - worktree contextual = `~/ravi/videomaker`
-  - projeto = `out/<video_id>/`
-  - CLI canônica = `video`
-  - specs = `project.json`, `story.json`, `scenes/`, `render-props.json`, `qc.json`
-  - artifact primário ativo = `.wf-eb-state.json`
-  - artifact terminal = `render/video.mp4`
-- `video-rapha-scene`
-  - worktree contextual = `~/ravi/videomaker`
-  - projeto = `out/<video_id>/`
-  - escopo = uma cena só
-  - artifacts = `sceneN-manifest`, `sceneN-props`, `sceneN.png`
-  - não toca no `.wf-eb-state.json`
-- `task-doc-optional`
-  - `TASK.md` opcional
-- `task-doc-none`
-  - runtime-only, sem `TASK.md`
+
+Profiles de domínio (`brainstorm`, `content`, vídeo, runtime-only etc.) não são built-ins do sistema. Eles devem entrar como `plugin`, `workspace` ou `user`.
 
 ## Wrapper Canônico
 
@@ -149,34 +127,7 @@ ravi tasks create --profile <id>
 - manter frontmatter/corpo coerentes
 - sincronizar via `report|block|done|fail`
 
-### `brainstorm`
-
-- trabalhar em `DRAFT.md`
-- tratar `DESIGN.md` e `JAR` como artifacts do processo
-
-### `content`
-
-- tratar `task_dir` como workspace canônico
-- começar pelo artifact primário inicial
-- materializar `notes.md`, `sources/`, `assets/`, `exports/` só quando precisar
-
-### `video-rapha`
-
-- usar o worktree contextual do `videomaker`
-- tratar `out/<video_id>/` como projeto canônico
-- usar a surface `video` (`video status|advance|scenes|sync|compile|qc`)
-- tratar `project.json`, `story.json`, `scenes/`, `render-props.json` e `qc.json` como specs do projeto
-- ler `.wf-eb-state.json` como artifact primário ativo
-- tratar checkpoints F2/F4/F5 como `in_progress`, não `blocked`
-
-### `video-rapha-scene`
-
-- tratar `out/<video_id>/` como projeto compartilhado
-- trabalhar só na cena atribuída
-- usar `scenes/sceneN.json` como contrato canônico da cena
-- produzir `assets/sceneN-manifest.json`, `props/sceneN-props.json`, `stills/sceneN.png`
-- não rodar `video advance <video_id>`
-- não tocar em `.wf-eb-state.json`
+Para profiles customizados, siga o contrato pinado no snapshot da task. Não assuma que um preset de scaffold é built-in disponível no catálogo system.
 
 ## Skill Certa
 

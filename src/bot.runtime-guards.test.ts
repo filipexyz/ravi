@@ -898,6 +898,84 @@ describe("RaviBot runtime guards", () => {
     expect(interrupt).toHaveBeenCalledTimes(1);
   });
 
+  it("suppresses recoverable abort failures from internally interrupted turns", async () => {
+    const sessionKey = "agent:main:interrupted-abort-no-outbound";
+    let releaseAfterTool: (() => void) | undefined;
+    const afterTool = new Promise<void>((resolve) => {
+      releaseAfterTool = resolve;
+    });
+    let releaseInterrupted: (() => void) | undefined;
+    const interrupted = new Promise<void>((resolve) => {
+      releaseInterrupted = resolve;
+    });
+    let releaseRetriedPrompt: (() => void) | undefined;
+    const retriedPromptSeen = new Promise<void>((resolve) => {
+      releaseRetriedPrompt = resolve;
+    });
+    const interrupt = mock(async () => {
+      releaseInterrupted?.();
+    });
+
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        expect(first.value?.message.content).toBe("first");
+        yield {
+          type: "tool.started",
+          toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/a" } },
+        };
+        yield {
+          type: "tool.completed",
+          toolUseId: "tool-read",
+          content: "ok",
+          isError: false,
+        };
+        releaseAfterTool?.();
+        await interrupted;
+        yield {
+          type: "turn.failed",
+          error: "[ede_diagnostic] stop_reason=tool_use; Error: Request was aborted.",
+          recoverable: true,
+          rawEvent: {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["[ede_diagnostic] stop_reason=tool_use", "Error: Request was aborted."],
+          },
+        };
+
+        const retry = await request.prompt.next();
+        expect(retry.value?.message.content).toBe("first\n\nsecond");
+        releaseRetriedPrompt?.();
+        yield {
+          type: "assistant.message",
+          text: "handled second",
+        };
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt,
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    await afterTool;
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
+    await retriedPromptSeen;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    const responses = emittedEvents
+      .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
+      .map((entry) => String(entry.data?.response ?? ""));
+    expect(responses).toContain("handled second");
+    expect(responses.some((response) => response.includes("Request was aborted"))).toBe(false);
+    expect(responses.some((response) => response.startsWith("Error: [ede_diagnostic]"))).toBe(false);
+  });
+
   it("queues p2/after_response prompts until the current turn completes", async () => {
     const sessionKey = "agent:main:p2-after-response";
     const interrupt = mock(async () => {});

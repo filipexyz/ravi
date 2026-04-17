@@ -178,8 +178,14 @@ function buildTestProfile(
           ]
         : [],
     templates: {
-      dispatch: "dispatch {{task.id}}",
-      resume: "resume {{task.id}}",
+      dispatch:
+        normalizedId === "brainstorm"
+          ? "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nprofile efetivo: {{profile.id}}\nbrainstorm slug: {{profileState.brainstorm.slug}}\nartifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- carregue a skill `brainstorm` antes de começar\n- trabalhe a partir de {{artifacts.primary.path}}"
+          : "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nprofile efetivo: {{profile.id}}\ncwd efetivo da sessão: {{session.cwd}}\nworktree contextual: {{worktree.label}}\n\nObjetivo:\n{{task.instructions}}",
+      resume:
+        normalizedId === "brainstorm"
+          ? '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | slug: {{profileState.brainstorm.slug}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}'
+          : '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}',
       dispatchSummary: "summary {{task.id}}",
       dispatchEventMessage: "event {{task.id}}",
       reportDoneMessage: "{{report.text}}",
@@ -191,6 +197,27 @@ function buildTestProfile(
     manifestPath: null,
     ...overrides,
   };
+}
+
+function writeTestProfileFixture(stateRoot: string, profileId: string): void {
+  const profile = buildTestProfile(profileId);
+  const profileDir = join(stateRoot, "task-profiles", profileId);
+  mkdirSync(profileDir, { recursive: true });
+  const {
+    requestedId: _requestedId,
+    resolvedFromFallback: _resolvedFromFallback,
+    sourceKind: _sourceKind,
+    source: _source,
+    manifestPath: _manifestPath,
+    ...manifest
+  } = profile;
+  writeFileSync(join(profileDir, "profile.json"), JSON.stringify(manifest, null, 2), "utf8");
+}
+
+function writeLegacyProfileFixtures(stateRoot: string): void {
+  for (const profileId of ["brainstorm", "task-doc-optional", "task-doc-none"]) {
+    writeTestProfileFixture(stateRoot, profileId);
+  }
 }
 
 function writeRuntimeOnlyTaskDirProfile(workspaceDir: string, profileId: string): void {
@@ -259,6 +286,7 @@ function writeRuntimeOnlyTaskDirProfile(workspaceDir: string, profileId: string)
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-service-test-");
+  writeLegacyProfileFixtures(stateDir);
   publishSessionPromptMock.mockClear();
 });
 
@@ -1250,6 +1278,7 @@ describe("task substrate contract", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-brainstorm-"));
     tempStateDirs.push(stateDir);
     process.env.RAVI_STATE_DIR = stateDir;
+    writeLegacyProfileFixtures(stateDir);
 
     const created = createTask({
       title: "Brainstorm Núcleo API / v2",
@@ -1493,6 +1522,7 @@ describe("task substrate contract", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-doc-optional-"));
     tempStateDirs.push(stateDir);
     process.env.RAVI_STATE_DIR = stateDir;
+    writeLegacyProfileFixtures(stateDir);
 
     const created = createTask({
       title: "Optional doc profile",
@@ -1517,6 +1547,7 @@ describe("task substrate contract", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-doc-none-"));
     tempStateDirs.push(stateDir);
     process.env.RAVI_STATE_DIR = stateDir;
+    writeLegacyProfileFixtures(stateDir);
 
     const created = createTask({
       title: "Runtime only profile",
