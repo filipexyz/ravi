@@ -9,6 +9,8 @@ import type {
   RuntimeBillingType,
   RuntimeExecutionMetadata,
   RuntimeEvent,
+  RuntimeEventMetadata,
+  RuntimeItemMetadata,
   RuntimePlugin,
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
@@ -17,6 +19,8 @@ import type {
   RuntimeSessionHandle,
   RuntimeStartRequest,
   RuntimeStatus,
+  RuntimeThreadMetadata,
+  RuntimeTurnMetadata,
   RuntimeToolUse,
   RuntimeUsage,
   SessionRuntimeProvider,
@@ -200,18 +204,24 @@ async function* normalizeCodexEvents(
 
       let turnEnded = false;
       let turnSessionId = previousSessionId;
+      let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
+      const startedToolUseIds = new Set<string>();
 
       try {
         for await (const event of turn.events) {
           const rawEvent = event as Record<string, unknown>;
+          const metadata = buildCodexEventMetadata(rawEvent, {
+            threadId: turnSessionId,
+            turnId: activeTurnId,
+          });
           if (event.type !== "agent_message.delta") {
-            yield { type: "provider.raw", rawEvent };
+            yield { type: "provider.raw", rawEvent, metadata };
           }
 
           const status = mapStatusFromCliEvent(event.type);
           if (status) {
-            yield { type: "status", status, rawEvent };
+            yield { type: "status", status, rawEvent, metadata };
           }
 
           if (event.type === "agent_message.delta") {
@@ -220,47 +230,98 @@ async function* normalizeCodexEvents(
               yield {
                 type: "text.delta",
                 text: delta,
+                metadata,
               };
             }
             continue;
           }
 
           if (event.type === "thread.started") {
-            const threadId = firstString(event.thread_id);
+            const thread = metadata.thread ?? extractRuntimeThreadMetadata(rawEvent);
+            const threadId = thread?.id;
             if (threadId) {
               turnSessionId = threadId;
+            }
+            if (thread) {
+              yield {
+                type: "thread.started",
+                thread,
+                rawEvent,
+                metadata,
+              };
+            }
+            continue;
+          }
+
+          if (event.type === "turn.started") {
+            const turnMetadata = metadata.turn ?? extractRuntimeTurnMetadata(rawEvent);
+            if (turnMetadata?.id) {
+              activeTurnId = turnMetadata.id;
+            }
+            if (turnMetadata) {
+              yield {
+                type: "turn.started",
+                turn: turnMetadata,
+                rawEvent,
+                metadata,
+              };
             }
             continue;
           }
 
           if (event.type === "item.started") {
+            const itemMetadata = metadata.item ?? extractRuntimeItemMetadata(event.item);
+            if (itemMetadata) {
+              yield {
+                type: "item.started",
+                item: itemMetadata,
+                rawEvent,
+                metadata,
+              };
+            }
+
             const toolStart = extractCliToolStarted(event.item);
             if (toolStart) {
+              startedToolUseIds.add(toolStart.id);
               yield {
                 type: "tool.started",
                 toolUse: toolStart,
                 rawEvent,
+                metadata,
               };
             }
             continue;
           }
 
           if (event.type === "item.completed") {
+            const itemMetadata = metadata.item ?? extractRuntimeItemMetadata(event.item);
+            if (itemMetadata) {
+              yield {
+                type: "item.completed",
+                item: itemMetadata,
+                rawEvent,
+                metadata,
+              };
+            }
+
             const assistantText = extractAssistantText(event.item);
             if (assistantText) {
               yield {
                 type: "assistant.message",
                 text: assistantText,
                 rawEvent,
+                metadata,
               };
             }
 
             const toolCompleted = extractCliToolCompleted(event.item);
-            if (toolCompleted?.syntheticStart) {
+            const toolUseId = toolCompleted?.toolUseId ?? toolCompleted?.syntheticStart?.id;
+            if (toolCompleted?.syntheticStart && !(toolUseId && startedToolUseIds.has(toolUseId))) {
               yield {
                 type: "tool.started",
                 toolUse: toolCompleted.syntheticStart,
                 rawEvent,
+                metadata,
               };
             }
             if (toolCompleted) {
@@ -271,6 +332,7 @@ async function* normalizeCodexEvents(
                 content: toolCompleted.content,
                 isError: toolCompleted.isError,
                 rawEvent,
+                metadata,
               };
             }
             continue;
@@ -282,7 +344,7 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.interrupted") {
-            yield { type: "turn.interrupted", rawEvent };
+            yield { type: "turn.interrupted", rawEvent, metadata };
             turnEnded = true;
             break;
           }
@@ -293,17 +355,18 @@ async function* normalizeCodexEvents(
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
               recoverable: true,
               rawEvent,
+              metadata,
             };
             turnEnded = true;
             break;
           }
 
           if (event.type === "turn.completed") {
-            previousSessionId = turnSessionId;
+            previousSessionId = metadata.thread?.id ?? turnSessionId;
             yield {
               type: "turn.complete",
-              providerSessionId: turnSessionId,
-              session: buildCodexSessionState(turnSessionId, input.cwd),
+              providerSessionId: previousSessionId,
+              session: buildCodexSessionState(previousSessionId, input.cwd),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -312,6 +375,7 @@ async function* normalizeCodexEvents(
               ),
               usage: mapCliUsage(event.usage),
               rawEvent,
+              metadata,
             };
             turnEnded = true;
             break;
@@ -330,18 +394,27 @@ async function* normalizeCodexEvents(
 
         if (state.interrupted || result.signal === "SIGINT" || result.signal === "SIGTERM") {
           state.interrupted = false;
-          yield { type: "status", status: "idle" };
-          yield { type: "turn.interrupted" };
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          yield { type: "status", status: "idle", metadata };
+          yield { type: "turn.interrupted", metadata };
           continue;
         }
 
         const stderrMessage = result.stderr.trim();
+        const metadata = buildCodexEventMetadata(
+          { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
+          { threadId: turnSessionId, turnId: activeTurnId },
+        );
         yield {
           type: "turn.failed",
           error:
             lastErrorMessage ??
             (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
           recoverable: true,
+          metadata,
         };
       } catch (error) {
         if (outerAbortSignal.aborted && !state.interrupted) {
@@ -350,8 +423,12 @@ async function* normalizeCodexEvents(
 
         if (state.interrupted || isAbortLikeError(error)) {
           state.interrupted = false;
-          yield { type: "status", status: "idle" };
-          yield { type: "turn.interrupted" };
+          const metadata = buildCodexEventMetadata(
+            { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
+            { threadId: turnSessionId, turnId: activeTurnId },
+          );
+          yield { type: "status", status: "idle", metadata };
+          yield { type: "turn.interrupted", metadata };
           continue;
         }
 
@@ -656,12 +733,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         break;
       }
       case "thread/started": {
-        const threadId = firstString(asRecord(params.thread)?.id);
+        const thread = normalizeAppServerThread(params.thread);
+        const threadId = thread?.id;
         if (threadId) {
           currentThreadId = threadId;
           if (turn) {
             turn.threadId = threadId;
-            turn.queue.push({ type: "thread.started", thread_id: threadId });
+            turn.queue.push({
+              type: "thread.started",
+              source: "codex.app-server",
+              thread_id: threadId,
+              thread,
+            });
             if (turn.interruptRequested && turn.turnId) {
               void requestTurnInterrupt(turn);
             }
@@ -671,10 +754,16 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "turn/started": {
         if (turn) {
-          const startedTurn = asRecord(params.turn);
+          const startedTurn = normalizeAppServerTurn(params.turn);
           turn.threadId = firstString(params.threadId, turn.threadId, currentThreadId);
           turn.turnId = firstString(startedTurn?.id, turn.turnId);
-          turn.queue.push({ type: "turn.started" });
+          turn.queue.push({
+            type: "turn.started",
+            source: "codex.app-server",
+            thread_id: turn.threadId,
+            turn_id: turn.turnId,
+            turn: startedTurn,
+          });
           if (turn.interruptRequested) {
             void requestTurnInterrupt(turn);
           }
@@ -685,7 +774,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         if (turn) {
           const item = normalizeAppServerItem(params.item);
           if (item) {
-            turn.queue.push({ type: "item.started", item });
+            turn.queue.push({
+              type: "item.started",
+              source: "codex.app-server",
+              thread_id: turn.threadId ?? currentThreadId,
+              turn_id: turn.turnId,
+              item,
+            });
           }
         }
         break;
@@ -694,7 +789,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         if (turn) {
           const item = normalizeAppServerItem(params.item);
           if (item) {
-            turn.queue.push({ type: "item.completed", item });
+            turn.queue.push({
+              type: "item.completed",
+              source: "codex.app-server",
+              thread_id: turn.threadId ?? currentThreadId,
+              turn_id: turn.turnId,
+              item,
+            });
           }
         }
         break;
@@ -705,6 +806,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           if (delta) {
             turn.queue.push({
               type: "agent_message.delta",
+              source: "codex.app-server",
+              thread_id: turn.threadId ?? currentThreadId,
+              turn_id: turn.turnId,
               delta,
               item_id: firstString(params.itemId),
             });
@@ -728,15 +832,29 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         if (status === "completed") {
           turn.queue.push({
             type: "turn.completed",
+            source: "codex.app-server",
+            thread_id: turn.threadId ?? currentThreadId,
+            turn_id: turn.turnId,
+            turn: normalizeAppServerTurn(completedTurn),
             usage: turn.lastUsage ?? {},
             model: resolvedModel,
             model_provider: resolvedModelProvider,
           });
         } else if (status === "interrupted") {
-          turn.queue.push({ type: "turn.interrupted" });
+          turn.queue.push({
+            type: "turn.interrupted",
+            source: "codex.app-server",
+            thread_id: turn.threadId ?? currentThreadId,
+            turn_id: turn.turnId,
+            turn: normalizeAppServerTurn(completedTurn),
+          });
         } else {
           turn.queue.push({
             type: "turn.failed",
+            source: "codex.app-server",
+            thread_id: turn.threadId ?? currentThreadId,
+            turn_id: turn.turnId,
+            turn: normalizeAppServerTurn(completedTurn),
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
           });
         }
@@ -1274,6 +1392,104 @@ function mapStatusFromCliEvent(type: string): RuntimeStatus | null {
   return null;
 }
 
+function buildCodexEventMetadata(
+  event: Record<string, unknown>,
+  fallback: { threadId?: string; turnId?: string } = {},
+): RuntimeEventMetadata {
+  const thread =
+    extractRuntimeThreadMetadata(event) ??
+    (fallback.threadId
+      ? {
+          id: fallback.threadId,
+        }
+      : undefined);
+  const turn =
+    extractRuntimeTurnMetadata(event) ??
+    (fallback.turnId
+      ? {
+          id: fallback.turnId,
+        }
+      : undefined);
+  const item = extractRuntimeItemMetadata(event.item) ?? extractRuntimeItemMetadata(event);
+
+  return {
+    provider: "codex",
+    source: firstString(event.source) ?? "codex",
+    nativeEvent: typeof event.type === "string" ? event.type : undefined,
+    ...(thread ? { thread } : {}),
+    ...(turn ? { turn } : {}),
+    ...(item ? { item } : {}),
+  };
+}
+
+function extractRuntimeThreadMetadata(event: Record<string, unknown> | null): RuntimeThreadMetadata | undefined {
+  if (!event) {
+    return undefined;
+  }
+
+  const thread = asRecord(event.thread);
+  const id = firstString(event.thread_id, event.threadId, thread?.id);
+  const title = firstString(thread?.title, event.thread_title, event.threadTitle);
+  if (!id && !title) {
+    return undefined;
+  }
+
+  return {
+    ...(id ? { id } : {}),
+    ...(title ? { title } : {}),
+  };
+}
+
+function extractRuntimeTurnMetadata(event: Record<string, unknown> | null): RuntimeTurnMetadata | undefined {
+  if (!event) {
+    return undefined;
+  }
+
+  const turn = asRecord(event.turn);
+  const id = firstString(event.turn_id, event.turnId, turn?.id);
+  const status = firstString(event.turn_status, event.turnStatus, turn?.status);
+  if (!id && !status) {
+    return undefined;
+  }
+
+  return {
+    ...(id ? { id } : {}),
+    ...(status ? { status } : {}),
+  };
+}
+
+function extractRuntimeItemMetadata(item: unknown): RuntimeItemMetadata | undefined {
+  const record = asRecord(item);
+  if (!record) {
+    return undefined;
+  }
+
+  const nested = asRecord(record.item);
+  const source = nested ?? record;
+  const id = firstString(record.item_id, record.itemId, source.id);
+  const type = nested || (!record.item_id && !record.itemId) ? firstString(source.type) : undefined;
+  const status = firstString(source.status);
+  const parentId = firstString(
+    source.parent_id,
+    source.parentId,
+    source.parent_item_id,
+    source.parentItemId,
+    record.parent_item_id,
+    record.parentItemId,
+  );
+
+  if (!id && !type && !status && !parentId) {
+    return undefined;
+  }
+
+  return {
+    ...(id ? { id } : {}),
+    ...(type ? { type } : {}),
+    ...(status ? { status } : {}),
+    ...(parentId ? { parentId } : {}),
+  };
+}
+
 function extractAssistantText(item: unknown): string {
   const record = asRecord(item);
   if (!record || record.type !== "agent_message") {
@@ -1386,46 +1602,98 @@ function extractCliErrorMessage(event: Record<string, unknown>): string | undefi
   return undefined;
 }
 
+function normalizeAppServerThread(value: unknown): RuntimeThreadMetadata | undefined {
+  const thread = asRecord(value);
+  if (!thread) {
+    return undefined;
+  }
+
+  const id = firstString(thread.id);
+  const title = firstString(thread.title);
+  if (!id && !title) {
+    return undefined;
+  }
+
+  return {
+    ...(id ? { id } : {}),
+    ...(title ? { title } : {}),
+  };
+}
+
+function normalizeAppServerTurn(value: unknown): RuntimeTurnMetadata | undefined {
+  const turn = asRecord(value);
+  if (!turn) {
+    return undefined;
+  }
+
+  const id = firstString(turn.id);
+  const status = normalizeAppServerStatus(turn.status);
+  if (!id && !status) {
+    return undefined;
+  }
+
+  return {
+    ...(id ? { id } : {}),
+    ...(status ? { status } : {}),
+  };
+}
+
 function normalizeAppServerItem(value: unknown): Record<string, unknown> | null {
   const item = asRecord(value);
   if (!item || typeof item.type !== "string") {
     return null;
   }
 
+  const base = {
+    id: item.id,
+    status: normalizeAppServerStatus(item.status),
+    parent_id: firstString(item.parentItemId, item.parentId, item.parent_item_id),
+    title: item.title,
+    phase: item.phase,
+  };
+
   switch (item.type) {
     case "agentMessage":
       return {
+        ...base,
         type: "agent_message",
-        id: item.id,
         text: item.text,
-        status: normalizeAppServerStatus(item.status),
-        phase: item.phase,
       };
     case "commandExecution":
       return {
+        ...base,
         type: "command_execution",
-        id: item.id,
         command: item.command,
         aggregated_output: item.aggregatedOutput,
         exit_code: item.exitCode,
-        status: normalizeAppServerStatus(item.status),
         process_id: item.processId,
+        cwd: item.cwd,
+      };
+    case "fileChange":
+      return {
+        ...base,
+        type: "file_change",
+        changes: item.changes,
+        diff: item.diff,
+        path: item.path,
       };
     case "reasoning":
       return {
+        ...base,
         type: "reasoning",
-        id: item.id,
-        status: normalizeAppServerStatus(item.status),
+        text: item.text,
+        summary: item.summary,
       };
     case "userMessage":
       return {
+        ...base,
         type: "user_message",
-        id: item.id,
         content: item.content,
       };
     default:
       return {
         ...item,
+        ...base,
         type: item.type,
         status: normalizeAppServerStatus(item.status),
       };

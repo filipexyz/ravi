@@ -83,6 +83,36 @@ export interface RuntimeExecutionMetadata {
   billingType?: RuntimeBillingType | null;
 }
 
+export interface RuntimeThreadMetadata {
+  id?: string;
+  title?: string;
+}
+
+export interface RuntimeTurnMetadata {
+  id?: string;
+  status?: string;
+}
+
+export interface RuntimeItemMetadata {
+  id?: string;
+  type?: string;
+  status?: string;
+  parentId?: string;
+}
+
+export interface RuntimeEventMetadata {
+  provider?: RuntimeProviderId;
+  source?: string;
+  nativeEvent?: string;
+  thread?: RuntimeThreadMetadata;
+  turn?: RuntimeTurnMetadata;
+  item?: RuntimeItemMetadata;
+}
+
+interface RuntimeEventBase {
+  metadata?: RuntimeEventMetadata;
+}
+
 export interface RuntimeStartRequest {
   prompt: AsyncGenerator<RuntimePromptMessage>;
   model: string;
@@ -105,55 +135,75 @@ export interface RuntimeStartRequest {
 }
 
 export type RuntimeEvent =
-  | {
+  | ({
       type: "provider.raw";
       rawEvent: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
+      type: "thread.started";
+      thread: RuntimeThreadMetadata;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
+      type: "turn.started";
+      turn: RuntimeTurnMetadata;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
+      type: "item.started";
+      item: RuntimeItemMetadata;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
+      type: "item.completed";
+      item: RuntimeItemMetadata;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
       type: "text.delta";
       text: string;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "status";
       status: RuntimeStatus;
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "assistant.message";
       text: string;
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "tool.started";
       toolUse: RuntimeToolUse;
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "tool.completed";
       toolUseId?: string;
       toolName?: string;
       content?: unknown;
       isError?: boolean;
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "turn.interrupted";
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "turn.failed";
       error: string;
       recoverable?: boolean;
       rawEvent?: Record<string, unknown>;
-    }
-  | {
+    } & RuntimeEventBase)
+  | ({
       type: "turn.complete";
       providerSessionId?: string;
       session?: RuntimeSessionState;
       execution?: RuntimeExecutionMetadata;
       usage: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
-    };
+    } & RuntimeEventBase);
 
 export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;

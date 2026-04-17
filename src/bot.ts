@@ -2214,7 +2214,7 @@ export class RaviBot {
 
         await emitRuntimeEvent(
           event.type === "provider.raw"
-            ? { type: "provider.raw", provider: runtimeSession.provider }
+            ? { type: "provider.raw", provider: runtimeSession.provider, metadata: event.metadata }
             : { ...event, provider: runtimeSession.provider },
         );
 

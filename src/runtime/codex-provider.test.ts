@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
@@ -472,6 +472,246 @@ describe("createCodexRuntimeProvider", () => {
     expect(toolCompleted[1]?.toolUseId).toBe("fc_1");
     expect(toolCompleted[1]?.toolName).toBe("file_change");
     expect(toolCompleted[1]?.content).toEqual([{ path: "/tmp/ravi-codex/hi.txt", kind: "add" }]);
+  });
+
+  it("emits native thread, turn, and item graph events with compatibility events", async () => {
+    const { transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_graph", thread: { id: "thread_graph", title: "Graph" } };
+          yield {
+            type: "turn.started",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            turn: { id: "turn_graph", status: "in_progress" },
+          };
+          yield {
+            type: "item.started",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            item: {
+              id: "cmd_graph",
+              type: "command_execution",
+              command: "pwd",
+              status: "in_progress",
+              parent_id: "turn_graph",
+            },
+          };
+          yield {
+            type: "item.completed",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            item: {
+              id: "cmd_graph",
+              type: "command_execution",
+              command: "pwd",
+              aggregated_output: "/tmp/ravi-codex\n",
+              status: "completed",
+              parent_id: "turn_graph",
+            },
+          };
+          yield {
+            type: "agent_message.delta",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            item_id: "msg_graph",
+            delta: "done",
+          };
+          yield {
+            type: "item.completed",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            item: {
+              id: "msg_graph",
+              type: "agent_message",
+              text: "done",
+              status: "completed",
+              parent_id: "turn_graph",
+            },
+          };
+          yield {
+            type: "turn.completed",
+            thread_id: "thread_graph",
+            turn_id: "turn_graph",
+            usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+          };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["graph"]));
+
+    const events = await collectEvents(session.events);
+    const threadStarted = findEventsByType(events, "thread.started");
+    const turnStarted = findEventsByType(events, "turn.started");
+    const itemStarted = findEventsByType(events, "item.started");
+    const itemCompleted = findEventsByType(events, "item.completed");
+    const deltas = findEventsByType(events, "text.delta");
+    const toolStarts = findEventsByType(events, "tool.started");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+    const assistantMessages = findEventsByType(events, "assistant.message");
+    const completions = findEventsByType(events, "turn.complete");
+
+    expect(threadStarted[0]?.thread).toEqual({ id: "thread_graph", title: "Graph" });
+    expect(threadStarted[0]?.metadata?.thread?.id).toBe("thread_graph");
+    expect(turnStarted[0]?.turn).toEqual({ id: "turn_graph", status: "in_progress" });
+    expect(turnStarted[0]?.metadata?.thread?.id).toBe("thread_graph");
+    expect(itemStarted[0]?.item).toEqual({
+      id: "cmd_graph",
+      type: "command_execution",
+      status: "in_progress",
+      parentId: "turn_graph",
+    });
+    expect(itemCompleted.map((event) => event.item.id)).toEqual(["cmd_graph", "msg_graph"]);
+    expect(deltas[0]?.text).toBe("done");
+    expect(deltas[0]?.metadata?.item?.id).toBe("msg_graph");
+    expect(toolStarts).toHaveLength(1);
+    expect(toolCompleted).toHaveLength(1);
+    expect(assistantMessages[0]?.text).toBe("done");
+    expect(completions[0]?.providerSessionId).toBe("thread_graph");
+    expect(completions[0]?.metadata?.turn?.id).toBe("turn_graph");
+  });
+
+  it("maps app-server notifications into the runtime event graph", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-app-server-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: {
+        thread: { id: "thread_app", title: "App thread" },
+        model: "gpt-5.4",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_app", title: "App thread" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_app", turn: { id: "turn_app", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/started",
+      params: {
+        item: {
+          id: "cmd_app",
+          type: "commandExecution",
+          command: "pwd",
+          status: "inProgress",
+          parentItemId: "turn_app",
+          processId: 123,
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        item: {
+          id: "cmd_app",
+          type: "commandExecution",
+          command: "pwd",
+          status: "completed",
+          aggregatedOutput: "/tmp/ravi-codex\\n",
+          exitCode: 0,
+          parentItemId: "turn_app",
+          processId: 123,
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/agentMessage/delta",
+      params: { delta: "done", itemId: "msg_app" },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        item: {
+          id: "msg_app",
+          type: "agentMessage",
+          text: "done",
+          status: "completed",
+          parentItemId: "turn_app",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/tokenUsage/updated",
+      params: { tokenUsage: { last: { inputTokens: 2, cachedInputTokens: 1, outputTokens: 3 } } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_app", turn: { id: "turn_app", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["app-server"], { cwd }));
+
+    const events = await collectEvents(session.events);
+    const threadStarted = findEventsByType(events, "thread.started");
+    const turnStarted = findEventsByType(events, "turn.started");
+    const itemStarted = findEventsByType(events, "item.started");
+    const toolStarted = findEventsByType(events, "tool.started");
+    const assistantMessages = findEventsByType(events, "assistant.message");
+    const completions = findEventsByType(events, "turn.complete");
+
+    expect(threadStarted[0]?.thread).toEqual({ id: "thread_app", title: "App thread" });
+    expect(turnStarted[0]?.turn).toEqual({ id: "turn_app", status: "in_progress" });
+    expect(itemStarted[0]?.item).toEqual({
+      id: "cmd_app",
+      type: "command_execution",
+      status: "in_progress",
+      parentId: "turn_app",
+    });
+    expect(itemStarted[0]?.metadata?.source).toBe("codex.app-server");
+    expect(toolStarted[0]?.toolUse).toEqual({
+      id: "cmd_app",
+      name: "shell",
+      input: { command: "pwd" },
+    });
+    expect(assistantMessages[0]?.text).toBe("done");
+    expect(completions[0]?.usage).toEqual({
+      inputTokens: 2,
+      outputTokens: 3,
+      cacheReadTokens: 1,
+      cacheCreationTokens: 0,
+    });
+    expect(completions[0]?.metadata?.thread?.id).toBe("thread_app");
+    expect(completions[0]?.metadata?.turn?.id).toBe("turn_app");
   });
 
   it("emits turn.interrupted and continues with the next turn", async () => {

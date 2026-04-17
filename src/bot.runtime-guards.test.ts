@@ -1023,6 +1023,7 @@ describe("RaviBot runtime guards", () => {
         yield {
           type: "provider.raw",
           rawEvent: { type: "thread.started", thread_id: "thread-codex" },
+          metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
         };
         yield {
           type: "assistant.message",
@@ -1045,6 +1046,14 @@ describe("RaviBot runtime guards", () => {
     expect(
       emittedEvents.some(
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "provider.raw",
+      ),
+    ).toBe(true);
+    expect(
+      emittedEvents.some(
+        (entry) =>
+          entry.topic === `ravi.session.${sessionKey}.runtime` &&
+          entry.data?.type === "provider.raw" &&
+          (entry.data.metadata as any)?.thread?.id === "thread-codex",
       ),
     ).toBe(true);
   });
