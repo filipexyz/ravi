@@ -46,7 +46,16 @@ mock.module("../permissions/relations.js", () => ({
 }));
 
 // Mock CLI context
-let mockContext: { agentId?: string; sessionKey?: string; sessionName?: string } | undefined;
+let mockContext:
+  | {
+      agentId?: string;
+      sessionKey?: string;
+      sessionName?: string;
+      context?: {
+        capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+      };
+    }
+  | undefined;
 
 mock.module("../cli/context.js", () => ({
   ...actualCliContextModule,
@@ -68,7 +77,7 @@ mock.module("../utils/logger.js", () => ({
 }));
 
 // Import AFTER mocks
-const { createBashPermissionHook, createToolPermissionHook } = await import("./hook.js");
+const { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } = await import("./hook.js");
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
@@ -201,6 +210,24 @@ describe("createBashPermissionHook", () => {
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("command substitution");
     });
+
+    it("allows pwd and rg for live superadmin with stale runtime capabilities", () => {
+      const decision = evaluateBashPermission("pwd && rg foo", {
+        agentId: "dev",
+        capabilities: [],
+      });
+
+      expect(decision.allowed).toBe(false);
+
+      grant("agent", "dev", "admin", "system", "*");
+
+      const superadminDecision = evaluateBashPermission("pwd && rg foo", {
+        agentId: "dev",
+        capabilities: [],
+      });
+
+      expect(superadminDecision.allowed).toBe(true);
+    });
   });
 
   // --------------------------------------------------------------------------
@@ -237,6 +264,26 @@ describe("createBashPermissionHook", () => {
       const result = await callBashHook("ravi contacts list", "test");
       expect(isDenied(result)).toBe(false);
     });
+
+    it("allows session access for live superadmin with stale runtime capabilities", () => {
+      const decision = evaluateBashPermission("ravi sessions send main 'hello'", {
+        agentId: "dev",
+        sessionName: "dev-own",
+        capabilities: [],
+      });
+
+      expect(decision.allowed).toBe(false);
+
+      grant("agent", "dev", "admin", "system", "*");
+
+      const superadminDecision = evaluateBashPermission("ravi sessions send main 'hello'", {
+        agentId: "dev",
+        sessionName: "dev-own",
+        capabilities: [],
+      });
+
+      expect(superadminDecision.allowed).toBe(true);
+    });
   });
 });
 
@@ -247,6 +294,7 @@ describe("createBashPermissionHook", () => {
 describe("createToolPermissionHook", () => {
   beforeEach(() => {
     relations = [];
+    mockContext = undefined;
   });
 
   it("has no matcher (fires for all tools)", () => {
@@ -296,5 +344,22 @@ describe("createToolPermissionHook", () => {
     expect(isDenied(await callToolHook("Bash", "main"))).toBe(false);
     expect(isDenied(await callToolHook("Read", "main"))).toBe(false);
     expect(isDenied(await callToolHook("Write", "main"))).toBe(false);
+  });
+
+  it("allows all SDK tools for live superadmin even with stale scoped capabilities", async () => {
+    mockContext = {
+      agentId: "dev",
+      context: {
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      },
+    };
+
+    expect(isDenied(await callToolHook("Bash", "dev"))).toBe(true);
+
+    grant("agent", "dev", "admin", "system", "*");
+
+    expect(isDenied(await callToolHook("Bash", "dev"))).toBe(false);
+    expect(isDenied(await callToolHook("Read", "dev"))).toBe(false);
+    expect(isDenied(await callToolHook("Write", "dev"))).toBe(false);
   });
 });

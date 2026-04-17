@@ -155,4 +155,29 @@ describe("runtime context registry", () => {
       }),
     ).toThrow("Capability not granted by parent context");
   });
+
+  it("allows existing parent contexts to issue new capabilities after live superadmin grant", () => {
+    const parent = createRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      capabilities: [],
+    });
+
+    expect(() =>
+      issueRuntimeContext({
+        parent,
+        cliName: "sync-cli",
+        capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      }),
+    ).toThrow("Capability not granted by parent context");
+
+    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "sync-cli",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+    });
+
+    expect(child.capabilities).toEqual([{ permission: "execute", objectType: "group", objectId: "daemon" }]);
+  });
 });

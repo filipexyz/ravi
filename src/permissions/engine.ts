@@ -38,7 +38,7 @@ export function can(
   objectId: string,
 ): boolean {
   // 1. Superadmin check: (subject, admin, system, *)
-  if (hasRelation(subjectType, subjectId, "admin", "system", "*")) {
+  if (isSuperadmin(subjectType, subjectId)) {
     return true;
   }
 
@@ -140,6 +140,27 @@ export function canWithCapabilities(
   return false;
 }
 
+/**
+ * Check a runtime capability snapshot, but let a live superadmin grant win.
+ *
+ * Runtime contexts are intentionally snapshot-based for least privilege, but
+ * `admin system:*` is the break-glass grant. If it is added after a context was
+ * issued, stale snapshots must not keep denying tools, executables, sessions or
+ * CLI groups.
+ */
+export function canWithCapabilityContext(
+  context: { agentId?: string | null; capabilities: ContextCapability[] },
+  permission: string,
+  objectType: string,
+  objectId: string,
+): boolean {
+  if (context.agentId && isAgentSuperadmin(context.agentId)) {
+    return true;
+  }
+
+  return canWithCapabilities(context.capabilities, permission, objectType, objectId);
+}
+
 // ============================================================================
 // Scope Integration
 // ============================================================================
@@ -158,6 +179,9 @@ export function agentCan(
 ): boolean {
   // No agent context → always allowed (CLI direct)
   if (!agentId) return true;
+
+  // Live superadmin always wins, even when a running context has stale caps.
+  if (isAgentSuperadmin(agentId)) return true;
 
   const scopedCapabilities = getScopedCapabilities(agentId);
   if (scopedCapabilities) {
@@ -184,6 +208,14 @@ function matchPattern(pattern: string, value: string): boolean {
   }
 
   return false;
+}
+
+export function isSuperadmin(subjectType: string, subjectId: string): boolean {
+  return hasRelation(subjectType, subjectId, "admin", "system", "*");
+}
+
+export function isAgentSuperadmin(agentId: string | undefined): boolean {
+  return Boolean(agentId && isSuperadmin("agent", agentId));
 }
 
 function getScopedCapabilities(agentId: string): ContextCapability[] | undefined {

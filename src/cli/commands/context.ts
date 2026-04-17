@@ -9,7 +9,7 @@ import {
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
 import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
-import { canWithCapabilities } from "../../permissions/engine.js";
+import { canWithCapabilityContext } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
@@ -173,7 +173,7 @@ export class ContextCommands {
       permission,
       objectType,
       objectId,
-      allowed: canWithCapabilities(context.capabilities, permission, objectType, objectId),
+      allowed: canWithCapabilityContext(context, permission, objectType, objectId),
       capabilitiesCount: context.capabilities.length,
     };
 

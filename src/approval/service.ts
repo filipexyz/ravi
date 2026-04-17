@@ -1,5 +1,5 @@
 import { nats } from "../nats.js";
-import { canWithCapabilities } from "../permissions/engine.js";
+import { canWithCapabilityContext } from "../permissions/engine.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import { requestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
@@ -162,7 +162,7 @@ export async function requestCascadingApproval(
 export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions): Promise<ContextAuthorizationResult> {
   const { context, permission, objectType, objectId } = opts;
 
-  if (canWithCapabilities(context.capabilities, permission, objectType, objectId)) {
+  if (canWithCapabilityContext(context, permission, objectType, objectId)) {
     return { allowed: true, approved: false, inherited: true, context };
   }
 

@@ -17,7 +17,7 @@ import { publish } from "../nats.js";
 import { checkDangerousPatterns, parseBashCommand, UNCONDITIONAL_BLOCKS } from "./parser.js";
 import { logger } from "../utils/logger.js";
 import { getScopeContext, canAccessSession } from "../permissions/scope.js";
-import { agentCan, canWithCapabilities } from "../permissions/engine.js";
+import { agentCan, canWithCapabilityContext } from "../permissions/engine.js";
 import { SDK_TOOLS } from "../cli/tool-registry.js";
 import type { ContextCapability } from "../router/router-db.js";
 
@@ -201,7 +201,7 @@ function canWithBashContext(
   objectId: string,
 ): boolean {
   if (hasContextCapabilities(ctx)) {
-    return canWithCapabilities(ctx.capabilities, permission, objectType, objectId);
+    return canWithCapabilityContext(ctx, permission, objectType, objectId);
   }
   return agentCan(ctx.agentId, permission, objectType, objectId);
 }
@@ -271,7 +271,7 @@ function canAccessSessionWithBashContext(ctx: BashPermissionContext, targetNameO
     );
   }
 
-  return canWithCapabilities(ctx.capabilities, "access", "session", targetNameOrKey);
+  return canWithCapabilityContext(ctx, "access", "session", targetNameOrKey);
 }
 
 function checkScopePermissionForContext(

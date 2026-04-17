@@ -8,7 +8,7 @@ import {
   type ContextRecord,
   type ContextSource,
 } from "../router/router-db.js";
-import { canWithCapabilities } from "../permissions/engine.js";
+import { canWithCapabilityContext } from "../permissions/engine.js";
 import { listRelations } from "../permissions/relations.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
@@ -115,9 +115,7 @@ export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRec
   ]);
 
   for (const capability of requestedCapabilities) {
-    if (
-      !canWithCapabilities(input.parent.capabilities, capability.permission, capability.objectType, capability.objectId)
-    ) {
+    if (!canWithCapabilityContext(input.parent, capability.permission, capability.objectType, capability.objectId)) {
       throw new Error(
         `Capability not granted by parent context: ${capability.permission}:${capability.objectType}:${capability.objectId}`,
       );

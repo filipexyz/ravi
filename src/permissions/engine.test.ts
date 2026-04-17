@@ -66,7 +66,7 @@ mock.module("../cli/context.js", () => ({
 }));
 
 // Import AFTER mock setup
-const { can, agentCan } = await import("./engine.js");
+const { can, agentCan, canWithCapabilityContext } = await import("./engine.js");
 
 // Helper to add a relation
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
@@ -116,6 +116,42 @@ describe("REBAC Engine", () => {
 
       expect(agentCan("dev", "use", "tool", "Read")).toBe(true);
       expect(agentCan("dev", "use", "tool", "Bash")).toBe(false);
+    });
+
+    it("lets live superadmin bypass stale scoped capabilities", () => {
+      mockContext = {
+        agentId: "dev",
+        context: {
+          capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+        },
+      };
+
+      expect(agentCan("dev", "use", "tool", "Bash")).toBe(false);
+
+      grant("agent", "dev", "admin", "system", "*");
+
+      expect(agentCan("dev", "use", "tool", "Bash")).toBe(true);
+      expect(agentCan("dev", "execute", "executable", "pwd")).toBe(true);
+      expect(agentCan("dev", "execute", "executable", "rg")).toBe(true);
+      expect(agentCan("dev", "execute", "group", "anything")).toBe(true);
+      expect(agentCan("dev", "access", "session", "any-session")).toBe(true);
+      expect(agentCan("dev", "modify", "session", "any-session")).toBe(true);
+    });
+
+    it("lets live superadmin bypass stale explicit capability contexts", () => {
+      const context = {
+        agentId: "dev",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "Read" }],
+      };
+
+      expect(canWithCapabilityContext(context, "execute", "group", "daemon")).toBe(false);
+
+      grant("agent", "dev", "admin", "system", "*");
+
+      expect(canWithCapabilityContext(context, "execute", "group", "daemon")).toBe(true);
+      expect(canWithCapabilityContext(context, "execute", "executable", "rg")).toBe(true);
+      expect(canWithCapabilityContext(context, "access", "session", "main")).toBe(true);
+      expect(canWithCapabilityContext(context, "modify", "session", "main")).toBe(true);
     });
 
     it("ignores scoped capabilities from another agent", () => {
