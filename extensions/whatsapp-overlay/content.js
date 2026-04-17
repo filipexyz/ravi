@@ -37,6 +37,7 @@ const V3_PLACEHOLDER_POLL_INTERVAL_MS = 1800;
 const TASKS_POLL_INTERVAL_MS = 1800;
 const INSIGHTS_POLL_INTERVAL_MS = 3200;
 const TASKS_EVENTS_LIMIT = 20;
+const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
 const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const TASK_SELECTED_ID_STORAGE = "ravi-wa-overlay-task";
@@ -5438,13 +5439,73 @@ async function submitTaskDispatch(taskId) {
   }
 }
 
-function isLiveTaskStatus(status) {
+function isLiveTaskStatus(status, task = null) {
+  if (task?.archivedAt) return false;
   return status !== "done" && status !== "failed";
 }
 
+function isDedicatedTaskSession(sessionName, task, session = null) {
+  if (session && taskSessionCreationMatchesTask(session, task)) {
+    return true;
+  }
+
+  const normalizedSessionName = normalizeTaskSessionName(sessionName);
+  if (!normalizedSessionName) return false;
+
+  const taskId = normalizeTaskSessionName(task?.id);
+  if (
+    taskId &&
+    (normalizedSessionName === taskId ||
+      normalizedSessionName.startsWith(`${taskId}-`))
+  ) {
+    return true;
+  }
+
+  const sessionNameTemplate = normalizeTaskSessionName(
+    task?.taskProfile?.sessionNameTemplate,
+  );
+  if (taskId && sessionNameTemplate?.includes("<task-id>")) {
+    const rendered = sessionNameTemplate.replaceAll("<task-id>", taskId);
+    if (normalizedSessionName === rendered) return true;
+  }
+
+  return !taskId && normalizedSessionName.startsWith("task-");
+}
+
+function taskSessionCreationMatchesTask(session, task) {
+  const sessionCreatedAt = normalizeTaskTimestamp(session?.createdAt);
+  if (!sessionCreatedAt) return false;
+
+  return getTaskSessionReferenceTimes(task).some(
+    (timestamp) =>
+      Math.abs(sessionCreatedAt - timestamp) <= TASK_SESSION_CREATION_WINDOW_MS,
+  );
+}
+
+function getTaskSessionReferenceTimes(task) {
+  return [
+    normalizeTaskTimestamp(task?.createdAt),
+    normalizeTaskTimestamp(task?.dispatchedAt),
+    normalizeTaskTimestamp(task?.startedAt),
+  ]
+    .filter(Boolean)
+    .filter((timestamp, index, list) => list.indexOf(timestamp) === index);
+}
+
+function normalizeTaskTimestamp(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function shouldExposeTaskSessionMatch(task, session) {
+  if (isLiveTaskStatus(task?.status, task)) return true;
+  return isDedicatedTaskSession(session?.sessionName, task, session);
+}
+
 function shouldReplaceTaskSessionMatch(currentTask, nextTask) {
-  const currentIsLive = isLiveTaskStatus(currentTask?.status);
-  const nextIsLive = isLiveTaskStatus(nextTask?.status);
+  const currentIsLive = isLiveTaskStatus(currentTask?.status, currentTask);
+  const nextIsLive = isLiveTaskStatus(nextTask?.status, nextTask);
   if (currentIsLive !== nextIsLive) {
     return nextIsLive;
   }
@@ -5532,6 +5593,7 @@ function resolveTaskSessionMatch(session) {
 
   const task = getTaskSessionLookup().get(sessionName) || null;
   if (!task) return null;
+  if (!shouldExposeTaskSessionMatch(task, session)) return null;
 
   const selection = getCachedTaskSelection(task.id);
   return {
@@ -6376,6 +6438,97 @@ function getTaskWorkflowSummary(task) {
     compactPath: [runTitle, nodeKey].filter(Boolean).join(" / "),
     isCurrentTask: workflow.isCurrentTask === true,
   };
+}
+
+function getTaskProjectSummary(task) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.getTaskProjectSummary;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(task);
+  }
+
+  const project =
+    task?.project && typeof task.project === "object" ? task.project : null;
+  if (!project) {
+    return null;
+  }
+
+  const clean = (value) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  const slug = clean(project.projectSlug);
+  const hottestNodeKey = clean(project.hottestNodeKey);
+  const hottestTaskId = clean(project.hottestTaskId);
+
+  return {
+    id: clean(project.projectId),
+    slug,
+    title: clean(project.projectTitle) || slug || clean(project.projectId) || "unlinked project",
+    status: clean(project.projectStatus),
+    summary: clean(project.projectSummary),
+    nextStep: clean(project.projectNextStep),
+    lastSignalAt: parseTaskWorkflowCount(project.projectLastSignalAt),
+    workflowCount: parseTaskWorkflowCount(project.workflowCount) ?? 0,
+    workflowRunId: clean(project.workflowRunId),
+    workflowRunTitle: clean(project.workflowRunTitle) || clean(project.workflowRunId),
+    workflowRunStatus: clean(project.workflowRunStatus),
+    runtimeStatus: clean(project.workflowAggregateStatus) || clean(project.hottestWorkflowStatus),
+    hottestWorkflowRunId: clean(project.hottestWorkflowRunId),
+    hottestWorkflowTitle: clean(project.hottestWorkflowTitle) || clean(project.hottestWorkflowRunId),
+    hottestWorkflowStatus: clean(project.hottestWorkflowStatus),
+    hottestNodeRunId: clean(project.hottestNodeRunId),
+    hottestNodeKey,
+    hottestNodeLabel: clean(project.hottestNodeLabel) || hottestNodeKey,
+    hottestNodeStatus: clean(project.hottestNodeStatus),
+    hottestTaskId,
+    hottestTaskTitle: clean(project.hottestTaskTitle) || hottestTaskId,
+    hottestTaskStatus: clean(project.hottestTaskStatus),
+    hottestTaskProgress: parseTaskWorkflowCount(project.hottestTaskProgress),
+    hottestTaskPriority: clean(project.hottestTaskPriority),
+  };
+}
+
+function groupTaskNodesByProject(nodes) {
+  const sharedResolver =
+    globalThis.RaviWaOverlayTaskPresenter?.groupTaskNodesByProject;
+  if (typeof sharedResolver === "function") {
+    return sharedResolver(nodes);
+  }
+
+  const list = Array.isArray(nodes) ? nodes : [];
+  const groups = new Map();
+
+  list.forEach((node) => {
+    const project = getTaskProjectSummary(node?.task);
+    const key = project?.slug || project?.id || "__unlinked__";
+    const current = groups.get(key) || {
+      key,
+      project,
+      nodes: [],
+      childCount: 0,
+      lastSignalAt: project?.lastSignalAt ?? 0,
+      latestTaskAt: 0,
+    };
+
+    current.nodes.push(node);
+    current.childCount += countTaskTreeNodes(
+      Array.isArray(node?.children) ? node.children : [],
+    );
+    current.lastSignalAt = Math.max(current.lastSignalAt, project?.lastSignalAt ?? 0);
+    current.latestTaskAt = Math.max(current.latestTaskAt, getTaskRecencyTimestamp(node?.task));
+    if (!current.project && project) {
+      current.project = project;
+    }
+    groups.set(key, current);
+  });
+
+  return [...groups.values()].sort(
+    (left, right) =>
+      (right.lastSignalAt ?? 0) - (left.lastSignalAt ?? 0) ||
+      (right.latestTaskAt ?? 0) - (left.latestTaskAt ?? 0) ||
+      String(left.project?.slug || left.project?.title || left.key).localeCompare(
+        String(right.project?.slug || right.project?.title || right.key),
+      ),
+  );
 }
 
 function humanizeTaskWorkflowStatus(status) {
@@ -9094,6 +9247,92 @@ function ensureTaskKanbanColumnShell(board, column, index) {
   };
 }
 
+function humanizeProjectStatus(status) {
+  if (typeof status !== "string" || !status.trim()) {
+    return "unlinked";
+  }
+  return status.replaceAll("_", " ");
+}
+
+function projectStatePillClass(project) {
+  const runtimeStatus = project?.runtimeStatus;
+  if (runtimeStatus === "failed") return "failed";
+  if (runtimeStatus === "blocked") return "blocked";
+  if (runtimeStatus === "running") return "thinking";
+  if (runtimeStatus === "ready") return "ready";
+  if (runtimeStatus === "waiting" || project?.status === "paused") return "waiting";
+  if (project?.status === "done") return "done";
+  if (project?.status === "blocked") return "blocked";
+  return "idle";
+}
+
+function buildTaskProjectLead(project) {
+  if (!project) return "sem project ligado";
+  if (project.hottestTaskTitle || project.hottestTaskId) {
+    const progress =
+      typeof project.hottestTaskProgress === "number"
+        ? ` · ${project.hottestTaskProgress}%`
+        : "";
+    return `task ${project.hottestTaskTitle || project.hottestTaskId} · ${project.hottestTaskStatus || "open"}${progress}`;
+  }
+  if (project.hottestNodeLabel || project.hottestNodeKey) {
+    return `node ${project.hottestNodeLabel || project.hottestNodeKey} · ${project.hottestNodeStatus || "pending"}`;
+  }
+  if (project.hottestWorkflowTitle || project.hottestWorkflowRunId) {
+    return `workflow ${project.hottestWorkflowTitle || project.hottestWorkflowRunId} · ${project.hottestWorkflowStatus || "linked"}`;
+  }
+  if (project.nextStep) {
+    return `next ${project.nextStep}`;
+  }
+  return "sem lead operacional";
+}
+
+function renderTaskProjectCluster(group, currentTaskId) {
+  const nodes = Array.isArray(group?.nodes) ? group.nodes : [];
+  const project = group?.project || null;
+  const title = project?.title || "Unlinked tasks";
+  const slug = project?.slug || "unlinked";
+  const stateClass = projectStatePillClass(project);
+  const note = [
+    `${nodes.length} root${nodes.length === 1 ? "" : "s"}${group?.childCount ? ` · ${group.childCount} subtasks` : ""}`,
+    project?.nextStep ? `next ${shorten(project.nextStep, 56)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const meta = renderTaskInlineMeta(
+    [
+      project?.runtimeStatus
+        ? { label: "runtime", value: humanizeTaskWorkflowStatus(project.runtimeStatus) }
+        : null,
+      project?.status ? { label: "project", value: humanizeProjectStatus(project.status) } : null,
+      project?.workflowCount ? { label: "wf", value: project.workflowCount } : null,
+      project?.lastSignalAt
+        ? { label: "signal", value: formatTimestamp(project.lastSignalAt) || "-" }
+        : null,
+      { label: "lead", value: shorten(buildTaskProjectLead(project), 64) },
+    ],
+    { compact: true, className: "ravi-wa-task-project-cluster__meta" },
+  );
+
+  return `
+    <section class="ravi-wa-task-project-cluster ravi-wa-task-project-cluster--${stateClass}">
+      <div class="ravi-wa-task-project-cluster__head">
+        <div class="ravi-wa-task-project-cluster__copy">
+          <div class="ravi-wa-task-project-cluster__titleline">
+            <strong>${escapeHtml(title)}</strong>
+            <span class="ravi-wa-state-pill ravi-wa-state-pill--${stateClass}">${escapeHtml(`proj ${slug}`)}</span>
+          </div>
+          <span class="ravi-wa-task-project-cluster__note">${escapeHtml(note || "surface agrupada por project")}</span>
+        </div>
+      </div>
+      ${meta}
+      <div class="ravi-wa-task-project-cluster__list">
+        ${nodes.map((node) => renderTaskCard(node, currentTaskId)).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function syncTaskKanbanBoard(board, taskRoots, currentTaskId) {
   if (!(board instanceof HTMLElement)) return;
 
@@ -9118,8 +9357,11 @@ function syncTaskKanbanBoard(board, taskRoots, currentTaskId) {
     const legendHtml = `
       <span class="ravi-wa-nav-row__state ravi-wa-nav-row__state--${taskSurfaceClass(column.id)}">${escapeHtml(taskSurfaceLabel(column.id))}</span>
     `;
+    const groupedNodes = groupTaskNodesByProject(nodes);
     const listHtml = nodes.length
-      ? nodes.map((node) => renderTaskCard(node, currentTaskId)).join("")
+      ? groupedNodes
+          .map((group) => renderTaskProjectCluster(group, currentTaskId))
+          .join("")
       : `<p class="ravi-wa-task-column__empty">nenhuma task nesse status agora.</p>`;
 
     syncElementHtml(shell.copy, copyHtml);
@@ -9558,6 +9800,7 @@ function renderTaskCard(node, currentTaskId) {
     currentTaskId && currentTaskId === task.id ? "true" : "false";
   const readiness = getTaskReadinessState(task);
   const workflow = getTaskWorkflowSummary(task);
+  const project = getTaskProjectSummary(task);
   const summary = summarizeTaskCardCopy(task);
   const progress = getTaskDisplayProgress(task, node);
   const progressInfo = describeTaskProgressText(task, null, { node });
@@ -9583,6 +9826,20 @@ function renderTaskCard(node, currentTaskId) {
             label: "wf",
             value: shorten(
               workflow.compactPath || workflow.runTitle || workflow.runId || "workflow",
+              34,
+            ),
+          }
+        : null,
+      project
+        ? {
+            label: "proj",
+            value: shorten(
+              [
+                project.slug || project.title,
+                project.runtimeStatus ? humanizeTaskWorkflowStatus(project.runtimeStatus) : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
               34,
             ),
           }
@@ -9622,6 +9879,13 @@ function renderTaskCard(node, currentTaskId) {
             <span class="ravi-wa-task-card__id">${escapeHtml(formatTaskShortId(task.id))}</span>
           </span>
           <span class="ravi-wa-task-card__eyebrow-aside">
+            ${
+              project
+                ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--${projectStatePillClass(project)}">${escapeHtml(
+                    `proj ${project.slug || "linked"}`,
+                  )}</span>`
+                : ""
+            }
             ${
               workflow
                 ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--${taskWorkflowStatusClass(workflow.nodeStatus)}">${escapeHtml(
@@ -9675,6 +9939,7 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
       ? describeTaskRuntimeStatus(task)
       : summarizeTaskCardCopy(task) || describeTaskRuntimeStatus(task);
   const workflow = getTaskWorkflowSummary(task);
+  const project = getTaskProjectSummary(task);
   const primarySessionName = getTaskPrimarySessionName(task);
   const secondaryWorkSession =
     task?.workSessionName && task.workSessionName !== primarySessionName
@@ -9695,6 +9960,12 @@ function renderTaskChildCard(node, currentTaskId, depth = 1) {
               workflow.compactPath || workflow.runTitle || workflow.runId || "workflow",
               32,
             ),
+          }
+        : null,
+      project
+        ? {
+            label: "proj",
+            value: shorten(project.slug || project.title || "linked", 24),
           }
         : null,
       workflow?.nodeStatus
@@ -10091,6 +10362,7 @@ function renderTaskDetailCard(selectedTask) {
     activeAssignment,
   });
   const workflowSummary = getTaskWorkflowSummary(task);
+  const projectSummary = getTaskProjectSummary(task);
   const heroSummary =
     task.summary ||
     task.blockerReason ||
@@ -10173,6 +10445,9 @@ function renderTaskDetailCard(selectedTask) {
           44,
         )}`
       : "sem workflow ligado",
+    projectSummary
+      ? `project ${projectSummary.slug || projectSummary.title}`
+      : "sem project ligado",
     primaryArtifactDisplayPath
       ? `artifact ${shorten(primaryArtifactDisplayPath, 44)}`
       : "sem artifact primário surfaced",
@@ -10264,6 +10539,24 @@ function renderTaskDetailCard(selectedTask) {
               ]
                 .filter(Boolean)
                 .join(" · "),
+            }
+          : null,
+        projectSummary
+          ? {
+              label: "project",
+              value: shorten(
+                [
+                  projectSummary.slug || projectSummary.title,
+                  projectSummary.runtimeStatus
+                    ? humanizeTaskWorkflowStatus(projectSummary.runtimeStatus)
+                    : projectSummary.status
+                      ? humanizeProjectStatus(projectSummary.status)
+                      : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                46,
+              ),
             }
           : null,
         worktreeLabel ? { label: "worktree", value: worktreeLabel } : null,
@@ -10378,6 +10671,99 @@ function renderTaskDetailCard(selectedTask) {
       </p>
     `
     : `<p class="ravi-wa-empty">essa task ainda não pertence a nenhum workflow run.</p>`;
+  const projectContent = projectSummary
+    ? `
+      ${renderTaskInlineMeta(
+        [
+          {
+            label: "project",
+            value: projectSummary.title,
+          },
+          projectSummary.runtimeStatus
+            ? {
+                label: "runtime",
+                value: humanizeTaskWorkflowStatus(projectSummary.runtimeStatus),
+              }
+            : null,
+          projectSummary.status
+            ? {
+                label: "status",
+                value: humanizeProjectStatus(projectSummary.status),
+              }
+            : null,
+          projectSummary.workflowCount
+            ? { label: "workflows", value: projectSummary.workflowCount }
+            : null,
+          projectSummary.lastSignalAt
+            ? {
+                label: "signal",
+                value: formatTimestamp(projectSummary.lastSignalAt) || "-",
+              }
+            : null,
+        ],
+        { compact: true },
+      )}
+      <div class="ravi-wa-task-workspace-grid">
+        <div class="ravi-wa-task-workspace-panel">
+          <div class="ravi-wa-section-head">
+            <h3>project context</h3>
+            <span>${escapeHtml(projectSummary.slug || "linked project")}</span>
+          </div>
+          ${renderTaskFactGrid([
+            {
+              label: "summary",
+              value: projectSummary.summary || "-",
+            },
+            {
+              label: "next step",
+              value: projectSummary.nextStep || "-",
+            },
+            {
+              label: "workflow lead",
+              value:
+                projectSummary.hottestWorkflowTitle ||
+                projectSummary.workflowRunTitle ||
+                "-",
+            },
+            {
+              label: "task lead",
+              value:
+                projectSummary.hottestTaskTitle ||
+                projectSummary.hottestTaskId ||
+                "-",
+              monospace: Boolean(projectSummary.hottestTaskId),
+            },
+          ])}
+        </div>
+        <div class="ravi-wa-task-workspace-panel">
+          <div class="ravi-wa-section-head">
+            <h3>hot path</h3>
+            <span>${escapeHtml(projectSummary.runtimeStatus ? humanizeTaskWorkflowStatus(projectSummary.runtimeStatus) : "no runtime")}</span>
+          </div>
+          ${renderTaskFactGrid([
+            {
+              label: "workflow",
+              value:
+                projectSummary.hottestWorkflowTitle ||
+                projectSummary.hottestWorkflowRunId ||
+                "-",
+            },
+            {
+              label: "node",
+              value:
+                projectSummary.hottestNodeLabel ||
+                projectSummary.hottestNodeKey ||
+                "-",
+            },
+            {
+              label: "task",
+              value: buildTaskProjectLead(projectSummary),
+            },
+          ])}
+        </div>
+      </div>
+    `
+    : `<p class="ravi-wa-empty">essa task ainda não pertence a nenhum project.</p>`;
   const lineageContent = `
     ${renderTaskLineageTrail(lineage, task.id)}
     <div class="ravi-wa-task-workspace-grid">
@@ -10529,6 +10915,13 @@ function renderTaskDetailCard(selectedTask) {
               : ""
           }
           ${
+            projectSummary
+              ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--${projectStatePillClass(projectSummary)}">${escapeHtml(
+                  `proj ${projectSummary.slug || "linked"}`,
+                )}</span>`
+              : ""
+          }
+          ${
             readinessView.state === "waiting"
               ? `<span class="ravi-wa-state-pill ravi-wa-state-pill--waiting">waiting</span>`
               : readinessView.totalDependencies > 0
@@ -10592,6 +10985,24 @@ function renderTaskDetailCard(selectedTask) {
                 ]
                   .filter(Boolean)
                   .join(" · "),
+              }
+            : null,
+          projectSummary
+            ? {
+                label: "project",
+                value: shorten(
+                  [
+                    projectSummary.slug || projectSummary.title,
+                    projectSummary.runtimeStatus
+                      ? humanizeTaskWorkflowStatus(projectSummary.runtimeStatus)
+                      : projectSummary.status
+                        ? humanizeProjectStatus(projectSummary.status)
+                        : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · "),
+                  42,
+                ),
               }
             : null,
           readinessView.state === "waiting" || readinessView.totalDependencies > 0
@@ -10671,6 +11082,24 @@ function renderTaskDetailCard(selectedTask) {
           )
         : "sem workflow ligado",
       content: workflowContent,
+    })}
+
+    ${renderTaskWorkspaceSection({
+      taskId: task.id,
+      sectionId: "project",
+      title: "project",
+      note: projectSummary
+        ? shorten(
+            [
+              projectSummary.slug || projectSummary.title,
+              buildTaskProjectLead(projectSummary),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            72,
+          )
+        : "sem project ligado",
+      content: projectContent,
     })}
 
     ${renderTaskDispatchSection(selectedTask)}

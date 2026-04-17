@@ -78,6 +78,7 @@ function makeTask(overrides: Partial<TaskStreamTaskEntity>): TaskStreamTaskEntit
     satisfiedDependencyCount: overrides.satisfiedDependencyCount ?? readiness.satisfiedDependencyCount,
     unsatisfiedDependencyCount: overrides.unsatisfiedDependencyCount ?? readiness.unsatisfiedDependencyCount,
     workflow: overrides.workflow ?? null,
+    project: overrides.project ?? null,
     artifacts: overrides.artifacts ?? {
       status: "planned",
       supportedKinds: [],

@@ -2342,6 +2342,71 @@ button.sw-tool__row:hover {
   line-height: 1.45;
 }
 
+.ravi-wa-task-project-cluster {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  background: rgba(6, 12, 16, 0.38);
+}
+
+.ravi-wa-task-project-cluster--ready {
+  border-color: rgba(14, 165, 233, 0.16);
+}
+
+.ravi-wa-task-project-cluster--waiting {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.ravi-wa-task-project-cluster--blocked,
+.ravi-wa-task-project-cluster--failed {
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.ravi-wa-task-project-cluster--done {
+  border-color: rgba(74, 222, 128, 0.16);
+}
+
+.ravi-wa-task-project-cluster__head,
+.ravi-wa-task-project-cluster__copy,
+.ravi-wa-task-project-cluster__list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.ravi-wa-task-project-cluster__titleline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ravi-wa-task-project-cluster__titleline strong {
+  color: var(--ravi-wa-task-text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ravi-wa-task-project-cluster__note {
+  color: var(--ravi-wa-task-subtle);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ravi-wa-task-project-cluster__meta {
+  margin-top: -2px;
+}
+
+.ravi-wa-task-project-cluster__list {
+  gap: 8px;
+}
+
 .ravi-wa-task-card {
   display: flex;
   box-sizing: border-box;

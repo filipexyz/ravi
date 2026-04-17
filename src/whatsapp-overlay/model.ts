@@ -154,15 +154,21 @@ export interface OverlaySessionSnapshot {
 }
 
 export interface OverlayTaskSessionCandidate {
+  id?: string | null;
   status: "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
   archivedAt?: number | null;
+  createdAt?: number | null;
   updatedAt: number;
+  dispatchedAt?: number | null;
+  startedAt?: number | null;
+  taskProfile?: { sessionNameTemplate?: string | null } | null;
   workSessionName?: string | null;
   assigneeSessionName?: string | null;
 }
 
 const OVERLAY_RECENT_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const OVERLAY_RECENT_SESSIONS_LIMIT = 12;
+const OVERLAY_TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
 
 export interface OverlaySnapshot {
@@ -214,7 +220,7 @@ export function buildOverlaySnapshot(args: {
   const resolved = resolveSessionForOverlay(args.query, args.sessions);
   const live = resolved.session?.name ? args.liveBySessionName?.get(resolved.session.name) : undefined;
   const activeSessions = buildActiveSessions(args.sessions, args.liveBySessionName);
-  const hiddenActiveSessionNames = buildHiddenActiveSessionNames(args.taskSessions ?? []);
+  const hiddenActiveSessionNames = buildHiddenActiveSessionNames(args.taskSessions ?? [], args.sessions);
   const visibleActiveSessions = activeSessions.filter((session) => !hiddenActiveSessionNames.has(session.sessionName));
   const visibleActiveSessionKeys = new Set(visibleActiveSessions.map((session) => session.sessionKey));
   const recentSessions = buildRecentSessions(args.sessions, args.liveBySessionName).filter(
@@ -866,19 +872,30 @@ function buildRecentSessions(
 ): OverlaySessionSnapshot[] {
   const cutoff = Date.now() - OVERLAY_RECENT_SESSION_WINDOW_MS;
   return sessions
-    .filter((session) => session.createdAt >= cutoff && isRelevantOverlaySession(session))
-    .sort(sortByCreatedAtDesc)
+    .map((session) => ({
+      session,
+      live: session.name ? liveBySessionName?.get(session.name) : undefined,
+    }))
+    .filter(
+      ({ session, live }) => getOverlaySessionActivityAt(session, live) >= cutoff && isRelevantOverlaySession(session),
+    )
+    .sort(sortByActivityAtDesc)
     .slice(0, OVERLAY_RECENT_SESSIONS_LIMIT)
-    .map((session) =>
-      toOverlaySessionSnapshot(session, session.name ? liveBySessionName?.get(session.name) : undefined),
-    );
+    .map(({ session, live }) => toOverlaySessionSnapshot(session, live));
 }
 
-function buildHiddenActiveSessionNames(taskSessions: OverlayTaskSessionCandidate[]): Set<string> {
+function buildHiddenActiveSessionNames(
+  taskSessions: OverlayTaskSessionCandidate[],
+  sessions: SessionEntry[],
+): Set<string> {
   const resolvedTaskBySessionName = new Map<string, OverlayTaskSessionCandidate>();
+  const sessionByName = buildSessionLookupByName(sessions);
 
   for (const task of taskSessions) {
     for (const sessionName of getTaskSessionNames(task)) {
+      if (!isDedicatedTaskSession(sessionName, task, sessionByName.get(sessionName) ?? null)) {
+        continue;
+      }
       const current = resolvedTaskBySessionName.get(sessionName);
       if (!current || shouldReplaceTaskSessionCandidate(current, task)) {
         resolvedTaskBySessionName.set(sessionName, task);
@@ -893,6 +910,17 @@ function buildHiddenActiveSessionNames(taskSessions: OverlayTaskSessionCandidate
   );
 }
 
+function buildSessionLookupByName(sessions: SessionEntry[]): Map<string, SessionEntry> {
+  const lookup = new Map<string, SessionEntry>();
+  for (const session of sessions) {
+    const names = [cleanNullable(session.name), cleanNullable(session.sessionKey)].filter(Boolean) as string[];
+    for (const name of names) {
+      lookup.set(name, session);
+    }
+  }
+  return lookup;
+}
+
 function getTaskSessionNames(task: OverlayTaskSessionCandidate): string[] {
   return [
     ...new Set([cleanNullable(task.workSessionName), cleanNullable(task.assigneeSessionName)].filter(Boolean)),
@@ -901,6 +929,50 @@ function getTaskSessionNames(task: OverlayTaskSessionCandidate): string[] {
 
 function shouldHideTaskSessionFromActiveSessions(task: OverlayTaskSessionCandidate): boolean {
   return task.status === "done" || task.status === "failed" || Boolean(task.archivedAt);
+}
+
+function isDedicatedTaskSession(
+  sessionName: string,
+  task?: OverlayTaskSessionCandidate | null,
+  session?: SessionEntry | null,
+): boolean {
+  if (session && taskSessionCreationMatchesTask(session, task)) {
+    return true;
+  }
+
+  const normalizedSessionName = cleanNullable(sessionName);
+  if (!normalizedSessionName) return false;
+
+  const taskId = cleanNullable(task?.id ?? null);
+  if (taskId && (normalizedSessionName === taskId || normalizedSessionName.startsWith(`${taskId}-`))) {
+    return true;
+  }
+
+  const sessionNameTemplate = cleanNullable(task?.taskProfile?.sessionNameTemplate ?? null);
+  if (taskId && sessionNameTemplate?.includes("<task-id>")) {
+    const rendered = sessionNameTemplate.replaceAll("<task-id>", taskId);
+    if (normalizedSessionName === rendered) return true;
+  }
+
+  return !taskId && normalizedSessionName.startsWith("task-");
+}
+
+function taskSessionCreationMatchesTask(session: SessionEntry, task?: OverlayTaskSessionCandidate | null): boolean {
+  const sessionCreatedAt = normalizeTimestamp(session.createdAt);
+  if (!sessionCreatedAt) return false;
+
+  return getTaskSessionReferenceTimes(task).some(
+    (timestamp) => Math.abs(sessionCreatedAt - timestamp) <= OVERLAY_TASK_SESSION_CREATION_WINDOW_MS,
+  );
+}
+
+function getTaskSessionReferenceTimes(task?: OverlayTaskSessionCandidate | null): number[] {
+  const timestamps = [task?.createdAt, task?.dispatchedAt, task?.startedAt].map(normalizeTimestamp).filter(Boolean);
+  return [...new Set(timestamps)] as number[];
+}
+
+function normalizeTimestamp(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 function shouldReplaceTaskSessionCandidate(
@@ -1034,6 +1106,19 @@ function cleanNullable(value: string | null | undefined): string | null {
 
 function sortByUpdatedAtDesc(a: SessionEntry, b: SessionEntry): number {
   return b.updatedAt - a.updatedAt;
+}
+
+function getOverlaySessionActivityAt(session: SessionEntry, live?: OverlayLiveState): number {
+  return Math.max(session.updatedAt, live?.updatedAt ?? 0);
+}
+
+function sortByActivityAtDesc(
+  a: { session: SessionEntry; live?: OverlayLiveState },
+  b: { session: SessionEntry; live?: OverlayLiveState },
+): number {
+  const activityDiff = getOverlaySessionActivityAt(b.session, b.live) - getOverlaySessionActivityAt(a.session, a.live);
+  if (activityDiff !== 0) return activityDiff;
+  return sortByCreatedAtDesc(a.session, b.session);
 }
 
 function sortByCreatedAtAsc(a: SessionEntry, b: SessionEntry): number {

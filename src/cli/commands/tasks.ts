@@ -22,6 +22,7 @@ import {
   getTaskActor,
   getTaskDetails,
   listTasks,
+  getTaskProjectSurface,
   normalizeTaskProgressMessage,
   getDefaultTaskSessionNameForTask,
   queueOrDispatchTask,
@@ -358,6 +359,7 @@ function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | 
   const taskProfile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task, activeAssignment);
   const dependencySurface = getTaskDependencySurface(task, activeAssignment);
+  const projectSurface = getTaskProjectSurface(task.id);
   const visualStatus = deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment);
   console.log(`\nTask:        ${task.id}`);
   console.log(`Title:       ${task.title}`);
@@ -370,6 +372,10 @@ function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | 
   console.log(`Profile src: ${taskProfile.sourceKind} :: ${taskProfile.source}`);
   console.log(`Surface:     ${taskProfile.rendererHints.label}`);
   console.log(`Workspace:   ${describeTaskWorkspace(taskProfile)}`);
+  if (projectSurface) {
+    console.log(`Project:     ${projectSurface.projectSlug} :: ${projectSurface.projectStatus}`);
+    console.log(`Proj next:   ${projectSurface.projectNextStep}`);
+  }
   if (task.profileInput && Object.keys(task.profileInput).length > 0) {
     console.log(
       `Profile in: ${Object.entries(task.profileInput)
@@ -604,13 +610,19 @@ function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): st
       | undefined) ?? null,
   );
   const readiness = (payload.readiness as { label?: string | null } | null | undefined) ?? null;
+  const project =
+    (payload.project as { projectSlug?: string | null } | null | undefined) ??
+    (payload.task as { project?: { projectSlug?: string | null } | null } | null | undefined)?.project ??
+    null ??
+    null;
   const profileSuffix = profileId && profileId !== "default" ? ` :: profile ${profileId}` : "";
   const artifactSuffix =
     primaryArtifact && primaryArtifact.kind && primaryArtifact.kind !== "task-doc"
       ? ` :: ${primaryArtifact.label ?? primaryArtifact.kind} ${formatArtifactDisplayPath(primaryArtifact)}`
       : "";
   const readinessSuffix = readiness?.label ? ` :: readiness ${readiness.label}` : "";
-  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}${profileSuffix}${artifactSuffix}${readinessSuffix}${checkpoint !== "-" ? ` :: ${checkpoint}` : ""}`;
+  const projectSuffix = project?.projectSlug ? ` :: project ${project.projectSlug}` : "";
+  return `[${time}] ${taskId} :: ${type} :: ${status} :: ${progress} :: ${actor}${message ? ` :: ${message}` : ""}${profileSuffix}${projectSuffix}${artifactSuffix}${readinessSuffix}${checkpoint !== "-" ? ` :: ${checkpoint}` : ""}`;
 }
 
 function deriveWatchStatus(event: TaskEvent, fallback?: TaskStatus): TaskStatus {
@@ -641,6 +653,7 @@ function buildWatchPayload(
   const taskProfile = task ? resolveTaskProfileForTask(task) : null;
   const artifacts = task ? buildTaskArtifactSummary(task, activeAssignment) : null;
   const dependencySurface = task ? getTaskDependencySurface(task, activeAssignment) : null;
+  const project = task ? getTaskProjectSurface(task.id) : null;
   return {
     taskId,
     status: deriveWatchStatus(event, task?.status),
@@ -650,6 +663,7 @@ function buildWatchPayload(
     profileId: taskProfile?.id ?? resolveTaskProfile(undefined).id,
     taskProfile,
     artifacts,
+    project,
     readiness: dependencySurface?.readiness ?? null,
     launchPlan: dependencySurface?.launchPlan ?? null,
     activeAssignment: activeAssignment ?? null,
@@ -882,6 +896,7 @@ export class TaskCommands {
       return {
         task,
         activeAssignment,
+        project: getTaskProjectSurface(task.id),
         dependencySurface,
         visualStatus: deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment),
       };
@@ -896,6 +911,7 @@ export class TaskCommands {
             limit: lastLimit ?? null,
             tasks: surfacedTasks.map((item) => ({
               ...item.task,
+              project: item.project,
               visualStatus: item.visualStatus,
               readiness: item.dependencySurface.readiness,
               dependencyCount: item.dependencySurface.readiness.dependencyCount,
@@ -923,20 +939,23 @@ export class TaskCommands {
     const showArchiveColumn = archiveMode !== "exclude";
     if (showArchiveColumn) {
       console.log(
-        "  ID              STATUS      READY        DEPS   PRIORITY  ARCHIVE   AGENT        UPDATED      TITLE",
+        "  ID              STATUS      READY        DEPS   PRIORITY  ARCHIVE   AGENT        PROJECT          UPDATED      TITLE",
       );
       console.log(
-        "  --------------  ----------  -----------  -----  --------  --------  -----------  ----------  ------------------------------",
+        "  --------------  ----------  -----------  -----  --------  --------  -----------  ---------------  ----------  ------------------------------",
       );
     } else {
-      console.log("  ID              STATUS      READY        DEPS   PRIORITY  AGENT        UPDATED      TITLE");
       console.log(
-        "  --------------  ----------  -----------  -----  --------  -----------  ----------  ------------------------------",
+        "  ID              STATUS      READY        DEPS   PRIORITY  AGENT        PROJECT          UPDATED      TITLE",
+      );
+      console.log(
+        "  --------------  ----------  -----------  -----  --------  -----------  ---------------  ----------  ------------------------------",
       );
     }
     for (const item of surfacedTasks) {
-      const { task, dependencySurface, visualStatus } = item;
+      const { task, project, dependencySurface, visualStatus } = item;
       const archiveLabel = task.archivedAt ? "yes" : "-";
+      const projectLabel = (project?.projectSlug ?? "-").slice(0, 15);
       const readinessLabel =
         dependencySurface.readiness.state === "waiting"
           ? `${dependencySurface.readiness.unsatisfiedDependencyCount} pending`
@@ -948,11 +967,11 @@ export class TaskCommands {
       const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(visualStatus).padEnd(10)}  ${readinessLabel.padEnd(11)}  ${`${dependencySurface.readiness.satisfiedDependencyCount}/${dependencySurface.readiness.dependencyCount}`.padEnd(5)}  ${task.priority.padEnd(8)}`;
       if (showArchiveColumn) {
         console.log(
-          `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
+          `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
         );
       } else {
         console.log(
-          `${row}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
+          `${row}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
         );
       }
     }
@@ -987,6 +1006,7 @@ export class TaskCommands {
         JSON.stringify(
           {
             ...details,
+            project: details.project,
             events: recentEvents,
             comments: recentComments,
             historyLimit: historyLimit ?? null,
@@ -1107,6 +1127,28 @@ export class TaskCommands {
         console.log("  Next due:    paused");
       }
       console.log(`  Overdue:     ${details.activeAssignment.checkpointOverdueCount ?? 0}`);
+    }
+
+    if (details.project) {
+      console.log("\nProject:");
+      console.log(`  Slug:       ${details.project.projectSlug}`);
+      console.log(`  Title:      ${details.project.projectTitle}`);
+      console.log(`  Status:     ${details.project.projectStatus}`);
+      console.log(`  Summary:    ${details.project.projectSummary}`);
+      console.log(`  Next step:  ${details.project.projectNextStep}`);
+      console.log(`  Workflow:   ${details.project.workflowRunId}`);
+      if (details.project.workflowRunTitle) {
+        console.log(`  WF title:   ${details.project.workflowRunTitle}`);
+      }
+      if (details.project.workflowRunStatus) {
+        console.log(`  WF status:  ${details.project.workflowRunStatus}`);
+      }
+      if (details.project.workflowLinkRole) {
+        console.log(`  WF role:    ${details.project.workflowLinkRole}`);
+      }
+      console.log(
+        `  Rollup:     ${details.project.workflowAggregateStatus ?? "-"} (${details.project.workflowCount} workflow${details.project.workflowCount === 1 ? "" : "s"})`,
+      );
     }
 
     console.log("\nScheduling:");

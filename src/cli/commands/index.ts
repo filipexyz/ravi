@@ -24,6 +24,7 @@ export * from "./insights.js";
 export * from "./instances.js";
 export * from "./media.js";
 export * from "./permissions.js";
+export * from "./projects.js";
 export * from "./react.js";
 export * from "./service.js";
 export * from "./sessions.js";

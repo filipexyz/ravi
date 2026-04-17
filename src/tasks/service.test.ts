@@ -61,6 +61,7 @@ const {
   unarchiveTask,
 } = await import("./index.js");
 const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
+const { createProject, linkProject } = await import("../projects/index.js");
 import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
 import { deleteSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
@@ -558,8 +559,23 @@ describe("task substrate contract", () => {
       runId: "wf-run-task-stream",
       createdBy: "test",
     });
+    const project = createProject({
+      title: "Ops Cadence",
+      summary: "Organize workflow-backed execution",
+      hypothesis: "Workflow is the project attachment",
+      nextStep: "Review workflow release state",
+      createdBy: "test",
+    });
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: run.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
 
     attachTaskToWorkflowNodeRun(run.run.id, "ship", created.task.id);
+    const payload = buildTaskEventPayload(created.task, created.event);
 
     const snapshot = buildTaskStreamSnapshot({
       taskId: created.task.id,
@@ -587,6 +603,23 @@ describe("task substrate contract", () => {
       workflowRunId: run.run.id,
       nodeKey: "ship",
       nodeStatus: "ready",
+    });
+    expect(snapshot.selectedTask?.task.project).toMatchObject({
+      projectId: project.id,
+      projectSlug: "ops-cadence",
+      projectTitle: "Ops Cadence",
+      workflowRunId: run.run.id,
+      workflowLinkRole: "primary",
+      workflowAggregateStatus: "ready",
+    });
+    expect(snapshot.items[0]?.project).toMatchObject({
+      projectSlug: "ops-cadence",
+      workflowRunStatus: "ready",
+    });
+    expect(payload.project).toMatchObject({
+      projectSlug: "ops-cadence",
+      workflowRunId: run.run.id,
+      workflowAggregateStatus: "ready",
     });
   });
 

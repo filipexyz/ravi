@@ -702,7 +702,7 @@ describe("whatsapp overlay model", () => {
     expect(entries[2]?.resolved).toBe(false);
   });
 
-  it("builds recent sessions by creation time with the newest recent entry first", () => {
+  it("builds recent sessions by last activity with the newest recent entry first", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
@@ -759,9 +759,9 @@ describe("whatsapp overlay model", () => {
     expect(snapshot.recentSessions).toHaveLength(3);
     expect(snapshot.recentChats).toEqual(snapshot.recentSessions);
     expect(snapshot.recentSessions[0]).toMatchObject({
-      sessionName: "sales-b",
-      agentId: "ops",
-      chatId: "5511999999999@s.whatsapp.net",
+      sessionName: "dev-main",
+      agentId: "main",
+      chatId: "120363424772797713@g.us",
     });
     expect(snapshot.recentSessions[1]).toMatchObject({
       sessionName: "sales-a",
@@ -770,10 +770,79 @@ describe("whatsapp overlay model", () => {
       channel: null,
     });
     expect(snapshot.recentSessions[2]).toMatchObject({
-      sessionName: "dev-main",
-      agentId: "main",
-      chatId: "120363424772797713@g.us",
+      sessionName: "sales-b",
+      agentId: "ops",
+      chatId: "5511999999999@s.whatsapp.net",
     });
+  });
+
+  it("keeps old persistent sessions recent when they were active recently", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "dev",
+        agentId: "main",
+        displayName: "Ravi - Dev",
+        lastChannel: "whatsapp",
+        lastTo: "120363424772797713@g.us",
+        updatedAt: now - 500,
+        createdAt: now - 14 * 24 * 60 * 60 * 1000,
+      }),
+      makeSession({
+        name: "task-brand-new",
+        agentId: "worker",
+        displayName: "Task worker",
+        updatedAt: now - 5_000,
+        createdAt: now - 100,
+      }),
+      makeSession({
+        name: "stale-but-newer-than-dev",
+        agentId: "ops",
+        displayName: "Stale session",
+        lastChannel: "whatsapp",
+        lastTo: "5511999999999@s.whatsapp.net",
+        updatedAt: now - 2 * 24 * 60 * 60 * 1000,
+        createdAt: now - 50,
+      }),
+    ];
+
+    const snapshot = buildOverlaySnapshot({
+      query: { title: "Ravi - Dev" },
+      sessions,
+    });
+
+    expect(snapshot.recentSessions.map((session) => session.sessionName)).toEqual(["dev", "task-brand-new"]);
+    expect(snapshot.recentSessions.some((session) => session.sessionName === "stale-but-newer-than-dev")).toBe(false);
+  });
+
+  it("uses live activity timestamps when ranking recent idle sessions", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "persisted-old",
+        agentId: "main",
+        displayName: "Persisted old",
+        updatedAt: now - 3 * 24 * 60 * 60 * 1000,
+        createdAt: now - 30 * 24 * 60 * 60 * 1000,
+      }),
+      makeSession({
+        name: "normal-recent",
+        agentId: "ops",
+        displayName: "Normal recent",
+        updatedAt: now - 1_000,
+        createdAt: now - 1_000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([["persisted-old", { activity: "idle", updatedAt: now }]]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "persisted-old" },
+      sessions,
+      liveBySessionName: live,
+    });
+
+    expect(snapshot.recentSessions.map((session) => session.sessionName)).toEqual(["persisted-old", "normal-recent"]);
+    expect(snapshot.recentSessions[0]?.live.updatedAt).toBe(now);
   });
 
   it("builds active sessions only from explicit live activity", () => {
@@ -916,21 +985,21 @@ describe("whatsapp overlay model", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
-        name: "task-done-session",
+        name: "task-done-work",
         displayName: "Done task",
         updatedAt: now - 2_000,
         createdAt: now - 20_000,
       }),
       makeSession({
-        name: "task-active-session",
+        name: "task-active-work",
         displayName: "Active task",
         updatedAt: now - 1_000,
         createdAt: now - 10_000,
       }),
     ];
     const live = new Map<string, OverlayLiveState>([
-      ["task-done-session", { activity: "thinking", updatedAt: now }],
-      ["task-active-session", { activity: "thinking", updatedAt: now - 250 }],
+      ["task-done-work", { activity: "thinking", updatedAt: now }],
+      ["task-active-work", { activity: "thinking", updatedAt: now - 250 }],
     ]);
 
     const snapshot = buildOverlaySnapshot({
@@ -939,22 +1008,93 @@ describe("whatsapp overlay model", () => {
       liveBySessionName: live,
       taskSessions: [
         {
+          id: "task-done",
           status: "done",
           updatedAt: now,
-          workSessionName: "task-done-session",
+          workSessionName: "task-done-work",
           assigneeSessionName: null,
+          taskProfile: { sessionNameTemplate: "<task-id>-work" },
         },
         {
+          id: "task-active",
           status: "in_progress",
           updatedAt: now - 100,
           workSessionName: null,
-          assigneeSessionName: "task-active-session",
+          assigneeSessionName: "task-active-work",
+          taskProfile: { sessionNameTemplate: "<task-id>-work" },
         },
       ],
     });
 
     expect(snapshot.activeSessions).toHaveLength(1);
-    expect(snapshot.activeSessions[0]?.sessionName).toBe("task-active-session");
+    expect(snapshot.activeSessions[0]?.sessionName).toBe("task-active-work");
+  });
+
+  it("keeps normal sessions active after a task assigned to them reaches terminal state", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "dev",
+        displayName: "Ravi - Dev",
+        updatedAt: now - 500,
+        createdAt: now - 30 * 24 * 60 * 60 * 1000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([["dev", { activity: "thinking", updatedAt: now }]]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "dev" },
+      sessions,
+      liveBySessionName: live,
+      taskSessions: [
+        {
+          id: "task-normal-session",
+          status: "done",
+          archivedAt: null,
+          updatedAt: now - 100,
+          workSessionName: null,
+          assigneeSessionName: "dev",
+          taskProfile: { sessionNameTemplate: "<task-id>-work" },
+        },
+      ],
+    });
+
+    expect(snapshot.activeSessions).toHaveLength(1);
+    expect(snapshot.activeSessions[0]?.sessionName).toBe("dev");
+  });
+
+  it("treats close-created custom sessions as genuine task sessions without relying on names", () => {
+    const now = Date.now();
+    const sessions = [
+      makeSession({
+        name: "custom-worker-room",
+        displayName: "Custom worker room",
+        updatedAt: now - 500,
+        createdAt: now - 20_000,
+      }),
+    ];
+    const live = new Map<string, OverlayLiveState>([["custom-worker-room", { activity: "thinking", updatedAt: now }]]);
+
+    const snapshot = buildOverlaySnapshot({
+      query: { session: "custom-worker-room" },
+      sessions,
+      liveBySessionName: live,
+      taskSessions: [
+        {
+          id: "task-custom",
+          status: "done",
+          archivedAt: null,
+          createdAt: now - 22_000,
+          updatedAt: now - 100,
+          workSessionName: "custom-worker-room",
+          assigneeSessionName: null,
+          taskProfile: { sessionNameTemplate: "<task-id>-work" },
+        },
+      ],
+    });
+
+    expect(snapshot.activeSessions).toEqual([]);
+    expect(snapshot.hotSessions).toEqual([]);
   });
 
   it("keeps an active session visible when a newer live task supersedes an older terminal task on the same session", () => {
@@ -1001,27 +1141,27 @@ describe("whatsapp overlay model", () => {
     const now = Date.now();
     const sessions = [
       makeSession({
-        name: "archived-task-session",
+        name: "task-archived-work",
         displayName: "Archived task",
         updatedAt: now - 500,
         createdAt: now - 10_000,
       }),
     ];
-    const live = new Map<string, OverlayLiveState>([
-      ["archived-task-session", { activity: "thinking", updatedAt: now }],
-    ]);
+    const live = new Map<string, OverlayLiveState>([["task-archived-work", { activity: "thinking", updatedAt: now }]]);
 
     const snapshot = buildOverlaySnapshot({
-      query: { session: "archived-task-session" },
+      query: { session: "task-archived-work" },
       sessions,
       liveBySessionName: live,
       taskSessions: [
         {
+          id: "task-archived",
           status: "done",
           archivedAt: now - 50,
           updatedAt: now - 50,
-          workSessionName: "archived-task-session",
+          workSessionName: "task-archived-work",
           assigneeSessionName: null,
+          taskProfile: { sessionNameTemplate: "<task-id>-work" },
         },
       ],
     });

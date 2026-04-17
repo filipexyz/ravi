@@ -206,6 +206,105 @@
     };
   }
 
+  function cleanTaskProjectText(value) {
+    return typeof value === "string" && value.trim() ? value.trim() : null;
+  }
+
+  function getTaskProjectSummary(task) {
+    const project =
+      task?.project && typeof task.project === "object" ? task.project : null;
+    if (!project) {
+      return null;
+    }
+
+    const slug = cleanTaskProjectText(project.projectSlug);
+    const title =
+      cleanTaskProjectText(project.projectTitle) ||
+      slug ||
+      cleanTaskProjectText(project.projectId) ||
+      "unlinked project";
+    const hottestNodeKey = cleanTaskProjectText(project.hottestNodeKey);
+    const hottestNodeLabel =
+      cleanTaskProjectText(project.hottestNodeLabel) || hottestNodeKey;
+    const hottestTaskId = cleanTaskProjectText(project.hottestTaskId);
+    const hottestTaskTitle =
+      cleanTaskProjectText(project.hottestTaskTitle) || hottestTaskId;
+
+    return {
+      id: cleanTaskProjectText(project.projectId),
+      slug,
+      title,
+      status: cleanTaskProjectText(project.projectStatus),
+      summary: cleanTaskProjectText(project.projectSummary),
+      nextStep: cleanTaskProjectText(project.projectNextStep),
+      lastSignalAt: toFiniteCount(project.projectLastSignalAt),
+      workflowCount: toFiniteCount(project.workflowCount) ?? 0,
+      workflowRunId: cleanTaskProjectText(project.workflowRunId),
+      workflowRunTitle:
+        cleanTaskProjectText(project.workflowRunTitle) ||
+        cleanTaskProjectText(project.workflowRunId),
+      workflowRunStatus: cleanTaskProjectText(project.workflowRunStatus),
+      runtimeStatus:
+        cleanTaskProjectText(project.workflowAggregateStatus) ||
+        cleanTaskProjectText(project.hottestWorkflowStatus),
+      hottestWorkflowRunId: cleanTaskProjectText(project.hottestWorkflowRunId),
+      hottestWorkflowTitle:
+        cleanTaskProjectText(project.hottestWorkflowTitle) ||
+        cleanTaskProjectText(project.hottestWorkflowRunId),
+      hottestWorkflowStatus: cleanTaskProjectText(project.hottestWorkflowStatus),
+      hottestNodeRunId: cleanTaskProjectText(project.hottestNodeRunId),
+      hottestNodeKey,
+      hottestNodeLabel,
+      hottestNodeStatus: cleanTaskProjectText(project.hottestNodeStatus),
+      hottestTaskId,
+      hottestTaskTitle,
+      hottestTaskStatus: cleanTaskProjectText(project.hottestTaskStatus),
+      hottestTaskProgress: toFiniteCount(project.hottestTaskProgress),
+      hottestTaskPriority: cleanTaskProjectText(project.hottestTaskPriority),
+    };
+  }
+
+  function groupTaskNodesByProject(nodes) {
+    const list = Array.isArray(nodes) ? nodes : [];
+    const groups = new Map();
+
+    list.forEach((node) => {
+      const project = getTaskProjectSummary(node?.task);
+      const key = project?.slug || project?.id || "__unlinked__";
+      const current = groups.get(key) || {
+        key,
+        project,
+        nodes: [],
+        childCount: 0,
+        lastSignalAt: project?.lastSignalAt ?? 0,
+        latestTaskAt: 0,
+      };
+
+      current.nodes.push(node);
+      current.childCount += countTaskDescendants(node);
+      current.lastSignalAt = Math.max(current.lastSignalAt, project?.lastSignalAt ?? 0);
+      current.latestTaskAt = Math.max(current.latestTaskAt, getNodeLatestTaskTimestamp(node));
+      if (!current.project && project) {
+        current.project = project;
+      }
+      groups.set(key, current);
+    });
+
+    const grouped = [...groups.values()];
+    grouped.forEach((group) => {
+      sortTaskTreeByRecency(group.nodes);
+    });
+    grouped.sort(
+      (left, right) =>
+        (right.lastSignalAt ?? 0) - (left.lastSignalAt ?? 0) ||
+        (right.latestTaskAt ?? 0) - (left.latestTaskAt ?? 0) ||
+        String(left.project?.slug || left.project?.title || left.key).localeCompare(
+          String(right.project?.slug || right.project?.title || right.key),
+        ),
+    );
+    return grouped;
+  }
+
   function getTaskKanbanSurfaceStatus(task) {
     const status = task?.visualStatus || task?.status || "open";
     if (status === "waiting") {
@@ -242,6 +341,14 @@
       toPositiveTaskTimestamp(task?.createdAt) ??
       0
     );
+  }
+
+  function getNodeLatestTaskTimestamp(node) {
+    let latest = getTaskRecencyTimestamp(node?.task);
+    getChildNodes(node).forEach((childNode) => {
+      latest = Math.max(latest, getNodeLatestTaskTimestamp(childNode));
+    });
+    return latest;
   }
 
   function compareTasksByRecencyDesc(left, right) {
@@ -310,7 +417,9 @@
     getTaskVisualProgressState,
     getTaskReadinessState,
     getTaskWorkflowSummary,
+    getTaskProjectSummary,
     getTaskKanbanSurfaceStatus,
+    groupTaskNodesByProject,
     pickTaskGroupPrimaryRow,
     sortTaskTreeByRecency,
   };

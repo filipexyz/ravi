@@ -40,6 +40,32 @@ type TaskNode = {
       attemptCount?: number;
       isCurrentTask?: boolean;
     } | null;
+    project?: {
+      projectId?: string;
+      projectSlug?: string;
+      projectTitle?: string;
+      projectStatus?: string;
+      projectSummary?: string;
+      projectNextStep?: string;
+      projectLastSignalAt?: number;
+      workflowCount?: number;
+      workflowRunId?: string;
+      workflowRunTitle?: string;
+      workflowRunStatus?: string;
+      workflowAggregateStatus?: string;
+      hottestWorkflowRunId?: string;
+      hottestWorkflowTitle?: string;
+      hottestWorkflowStatus?: string;
+      hottestNodeRunId?: string;
+      hottestNodeKey?: string;
+      hottestNodeLabel?: string;
+      hottestNodeStatus?: string;
+      hottestTaskId?: string;
+      hottestTaskTitle?: string;
+      hottestTaskStatus?: string;
+      hottestTaskProgress?: number;
+      hottestTaskPriority?: string;
+    } | null;
     launchPlan?: {
       agentId?: string;
     } | null;
@@ -102,7 +128,44 @@ function loadTaskPresenterApi() {
       compactPath: string;
       isCurrentTask: boolean;
     } | null;
+    getTaskProjectSummary: (task: TaskNode["task"]) => {
+      id: string | null;
+      slug: string | null;
+      title: string;
+      status: string | null;
+      summary: string | null;
+      nextStep: string | null;
+      lastSignalAt: number | null;
+      workflowCount: number;
+      workflowRunId: string | null;
+      workflowRunTitle: string | null;
+      workflowRunStatus: string | null;
+      runtimeStatus: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowTitle: string | null;
+      hottestWorkflowStatus: string | null;
+      hottestNodeRunId: string | null;
+      hottestNodeKey: string | null;
+      hottestNodeLabel: string | null;
+      hottestNodeStatus: string | null;
+      hottestTaskId: string | null;
+      hottestTaskTitle: string | null;
+      hottestTaskStatus: string | null;
+      hottestTaskProgress: number | null;
+      hottestTaskPriority: string | null;
+    } | null;
     getTaskKanbanSurfaceStatus: (task: TaskNode["task"]) => string;
+    groupTaskNodesByProject: (nodes: TaskNode[]) => Array<{
+      key: string;
+      project: {
+        slug: string | null;
+        title: string;
+        runtimeStatus: string | null;
+        nextStep: string | null;
+      } | null;
+      nodes: TaskNode[];
+      childCount: number;
+    }>;
     pickTaskGroupPrimaryRow: (node: TaskNode) => {
       order?: number;
       session?: { sessionKey?: string };
@@ -115,7 +178,9 @@ const {
   getTaskVisualProgressState,
   getTaskReadinessState,
   getTaskWorkflowSummary,
+  getTaskProjectSummary,
   getTaskKanbanSurfaceStatus,
+  groupTaskNodesByProject,
   pickTaskGroupPrimaryRow,
   sortTaskTreeByRecency,
 } = loadTaskPresenterApi();
@@ -249,6 +314,111 @@ describe("whatsapp overlay task presenter", () => {
       compactPath: "Ship smoke / ship",
       isCurrentTask: true,
     });
+  });
+
+  it("normalizes linked project runtime into a compact summary", () => {
+    expect(
+      getTaskProjectSummary({
+        project: {
+          projectId: "proj-1",
+          projectSlug: "ops-cadence",
+          projectTitle: "Ops Cadence",
+          projectStatus: "active",
+          projectSummary: "Keep work aligned",
+          projectNextStep: "Review workflow release state",
+          projectLastSignalAt: 1_711_234_567_000,
+          workflowCount: 2,
+          workflowRunId: "wf-run-1",
+          workflowRunTitle: "Ship smoke",
+          workflowRunStatus: "running",
+          workflowAggregateStatus: "running",
+          hottestWorkflowRunId: "wf-run-1",
+          hottestWorkflowTitle: "Ship smoke",
+          hottestWorkflowStatus: "running",
+          hottestNodeRunId: "node-run-1",
+          hottestNodeKey: "ship",
+          hottestNodeLabel: "Ship release",
+          hottestNodeStatus: "running",
+          hottestTaskId: "task-ship",
+          hottestTaskTitle: "Ship release",
+          hottestTaskStatus: "in_progress",
+          hottestTaskProgress: 42,
+          hottestTaskPriority: "high",
+        },
+      }),
+    ).toEqual({
+      id: "proj-1",
+      slug: "ops-cadence",
+      title: "Ops Cadence",
+      status: "active",
+      summary: "Keep work aligned",
+      nextStep: "Review workflow release state",
+      lastSignalAt: 1_711_234_567_000,
+      workflowCount: 2,
+      workflowRunId: "wf-run-1",
+      workflowRunTitle: "Ship smoke",
+      workflowRunStatus: "running",
+      runtimeStatus: "running",
+      hottestWorkflowRunId: "wf-run-1",
+      hottestWorkflowTitle: "Ship smoke",
+      hottestWorkflowStatus: "running",
+      hottestNodeRunId: "node-run-1",
+      hottestNodeKey: "ship",
+      hottestNodeLabel: "Ship release",
+      hottestNodeStatus: "running",
+      hottestTaskId: "task-ship",
+      hottestTaskTitle: "Ship release",
+      hottestTaskStatus: "in_progress",
+      hottestTaskProgress: 42,
+      hottestTaskPriority: "high",
+    });
+  });
+
+  it("groups task roots by linked project and sorts groups by signal", () => {
+    const groups = groupTaskNodesByProject([
+      {
+        task: {
+          id: "task-hot",
+          updatedAt: 50,
+          project: {
+            projectId: "proj-hot",
+            projectSlug: "hot",
+            projectTitle: "Hot Project",
+            workflowAggregateStatus: "running",
+            projectNextStep: "Review release",
+            projectLastSignalAt: 1_700_000_000_000,
+          },
+        },
+      },
+      {
+        task: {
+          id: "task-cold",
+          updatedAt: 90,
+          project: {
+            projectId: "proj-cold",
+            projectSlug: "cold",
+            projectTitle: "Cold Project",
+            workflowAggregateStatus: "ready",
+            projectNextStep: "Attach more workflow runs",
+            projectLastSignalAt: 1_600_000_000_000,
+          },
+        },
+      },
+      {
+        task: {
+          id: "task-unlinked",
+          updatedAt: 100,
+        },
+      },
+    ]);
+
+    expect(groups.map((group) => group.key)).toEqual(["hot", "cold", "__unlinked__"]);
+    expect(groups[0]?.project).toMatchObject({
+      slug: "hot",
+      title: "Hot Project",
+      runtimeStatus: "running",
+    });
+    expect(groups[2]?.nodes[0]?.task?.id).toBe("task-unlinked");
   });
 
   it("picks the earliest visible row recursively for grouped task headers", () => {

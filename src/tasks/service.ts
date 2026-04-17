@@ -3,6 +3,7 @@ import { nats } from "../nats.js";
 import { expandHome, getAgent } from "../router/index.js";
 import { getOrCreateSession, resolveSession } from "../router/sessions.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { isAbsolute, relative as relativePath, resolve as resolvePath } from "node:path";
@@ -189,6 +190,7 @@ export interface TaskStreamTaskEntity {
   satisfiedDependencyCount: number;
   unsatisfiedDependencyCount: number;
   workflow: TaskWorkflowSurface | null;
+  project: ProjectTaskSurface | null;
   artifacts: TaskArtifactSummary;
 }
 
@@ -254,6 +256,7 @@ export interface TaskStreamEventPayload {
   readiness: TaskReadiness;
   launchPlan: TaskLaunchPlan | null;
   activeAssignment: TaskAssignment | null;
+  project: ProjectTaskSurface | null;
   task: TaskStreamTaskEntity;
   event: TaskEvent;
   artifacts: TaskArtifactSummary;
@@ -1178,7 +1181,7 @@ function prepareTaskDispatchContext(
   taskDocPath: string | null;
   primaryArtifact: TaskProfileArtifactRef | null;
 } {
-  assertTaskStartAllowed(task, options.materializeSession ? "dispatch it" : "arm a launch plan");
+  assertTaskStartAllowed(task, options.materializeSession ? "dispatch" : "arm a launch plan");
 
   const { task: profiledTask, profile } = ensureResolvedTaskProfile(task, { persistMissingProfileId: true });
   const bootstrappedTask = ensureTaskWorkspaceBootstrap(profiledTask, profile);
@@ -1231,6 +1234,7 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
   const profile = resolveTaskProfileForTask(task);
   const status = deriveTaskReadStatus(task, activeAssignment);
   const dependencySurface = getTaskDependencySurface(task, activeAssignment);
+  const workflow = dbGetTaskWorkflowSurface(task.id);
   return {
     id: task.id,
     title: task.title,
@@ -1268,7 +1272,8 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     dependencyCount: dependencySurface.readiness.dependencyCount,
     satisfiedDependencyCount: dependencySurface.readiness.satisfiedDependencyCount,
     unsatisfiedDependencyCount: dependencySurface.readiness.unsatisfiedDependencyCount,
-    workflow: dbGetTaskWorkflowSurface(task.id),
+    workflow,
+    project: workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null,
     artifacts: buildTaskArtifactSummary(task, activeAssignment),
   };
 }
@@ -1454,6 +1459,7 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
   const profile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task, latestAssignment);
   const dependencySurface = getTaskDependencySurface(task, latestAssignment);
+  const taskEntity = toTaskStreamEntity(task, latestAssignment);
   return {
     kind: "task.event",
     taskId: task.id,
@@ -1477,7 +1483,8 @@ export function buildTaskEventPayload(task: TaskRecord, event: TaskEvent): TaskS
     readiness: dependencySurface.readiness,
     launchPlan: dependencySurface.launchPlan,
     activeAssignment: dbGetActiveAssignment(task.id),
-    task: toTaskStreamEntity(task, latestAssignment),
+    project: taskEntity.project,
+    task: taskEntity,
     event,
     artifacts,
   };
@@ -1959,6 +1966,7 @@ export function listTasks(options: ListTasksOptions = {}): TaskRecord[] {
 export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
   taskProfile: ResolvedTaskProfile | null;
+  project: ProjectTaskSurface | null;
   parentTask: TaskRecord | null;
   childTasks: TaskRecord[];
   activeAssignment: ReturnType<typeof dbGetActiveAssignment>;
@@ -1975,6 +1983,7 @@ export function getTaskDetails(taskId: string): {
   return {
     task: surfacedTask?.task ?? null,
     taskProfile: surfacedTask?.profile ?? null,
+    project: surfacedTask ? getTaskProjectSurface(surfacedTask.task.id) : null,
     parentTask,
     childTasks: surfacedTask
       ? dbListChildTasks(surfacedTask.task.id).map((childTask) => surfaceTaskRecordForRead(childTask).task)
@@ -1984,6 +1993,11 @@ export function getTaskDetails(taskId: string): {
     events: dbListTaskEvents(taskId, 200),
     comments: dbListTaskComments(taskId, 200),
   };
+}
+
+export function getTaskProjectSurface(taskId: string): ProjectTaskSurface | null {
+  const workflow = dbGetTaskWorkflowSurface(taskId);
+  return workflow ? getProjectSurfaceByWorkflowRunId(workflow.workflowRunId) : null;
 }
 
 function isTaskDependencyEditable(task: TaskRecord): boolean {
