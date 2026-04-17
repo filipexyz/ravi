@@ -52,6 +52,130 @@ export type RuntimeToolPermissionHandler = (
   input: Record<string, unknown>,
 ) => Promise<RuntimeToolPermissionResult>;
 
+export type RuntimeApprovalKind = "command_execution" | "file_change" | "permission" | "user_input";
+
+export interface RuntimeApprovalQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface RuntimeApprovalQuestion {
+  id?: string;
+  header?: string;
+  question: string;
+  options?: RuntimeApprovalQuestionOption[];
+  multiSelect?: boolean;
+}
+
+export interface RuntimeApprovalRequest {
+  kind: RuntimeApprovalKind;
+  method?: string;
+  toolName?: string;
+  input?: Record<string, unknown>;
+  rawRequest?: Record<string, unknown>;
+  metadata?: RuntimeEventMetadata;
+}
+
+export interface RuntimeApprovalResult {
+  approved: boolean;
+  reason?: string;
+  updatedInput?: Record<string, unknown>;
+  answers?: Record<string, string>;
+  permissions?: unknown;
+  inherited?: boolean;
+}
+
+export interface RuntimeApprovalEvent {
+  kind: RuntimeApprovalKind;
+  method?: string;
+  toolName?: string;
+  approved?: boolean;
+  reason?: string;
+  inherited?: boolean;
+}
+
+export type RuntimeApprovalHandler = (request: RuntimeApprovalRequest) => Promise<RuntimeApprovalResult>;
+
+export interface RuntimeDynamicToolSpec {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+  deferLoading?: boolean;
+}
+
+export type RuntimeDynamicToolCallContentItem =
+  | {
+      type: "inputText";
+      text: string;
+    }
+  | {
+      type: "inputImage";
+      imageUrl: string;
+    };
+
+export interface RuntimeDynamicToolCallRequest {
+  toolName: string;
+  callId?: string;
+  arguments?: unknown;
+  rawRequest?: Record<string, unknown>;
+  metadata?: RuntimeEventMetadata;
+}
+
+export interface RuntimeDynamicToolCallResult {
+  success: boolean;
+  contentItems: RuntimeDynamicToolCallContentItem[];
+  reason?: string;
+}
+
+export type RuntimeDynamicToolCallHandler = (
+  request: RuntimeDynamicToolCallRequest,
+) => Promise<RuntimeDynamicToolCallResult>;
+
+export type RuntimeControlOperation =
+  | "thread.list"
+  | "thread.read"
+  | "thread.rollback"
+  | "thread.fork"
+  | "turn.steer"
+  | "turn.interrupt";
+
+export interface RuntimeControlState {
+  provider: RuntimeProviderId;
+  threadId?: string;
+  turnId?: string;
+  activeTurn?: boolean;
+  supportedOperations?: RuntimeControlOperation[];
+}
+
+export interface RuntimeControlRequest {
+  operation: RuntimeControlOperation;
+  threadId?: string;
+  turnId?: string;
+  expectedTurnId?: string;
+  text?: string;
+  input?: unknown[];
+  includeTurns?: boolean;
+  cursor?: string | null;
+  limit?: number | null;
+  sortKey?: string | null;
+  modelProviders?: string[] | null;
+  sourceKinds?: string[] | null;
+  archived?: boolean | null;
+  cwd?: string | null;
+  searchTerm?: string | null;
+  numTurns?: number;
+  path?: string | null;
+  params?: Record<string, unknown>;
+}
+
+export interface RuntimeControlResult {
+  ok: boolean;
+  operation: RuntimeControlOperation;
+  data?: Record<string, unknown>;
+  state?: RuntimeControlState;
+  error?: string;
+}
+
 export interface RuntimeHookMatcher {
   matcher?: string;
   hooks: Array<(...args: any[]) => any>;
@@ -128,6 +252,9 @@ export interface RuntimeStartRequest {
   settingSources?: ("user" | "project")[];
   permissionOptions?: Record<string, unknown>;
   canUseTool?: RuntimeToolPermissionHandler;
+  approveRuntimeRequest?: RuntimeApprovalHandler;
+  dynamicTools?: RuntimeDynamicToolSpec[];
+  handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
   mcpServers?: Record<string, unknown>;
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
@@ -187,6 +314,16 @@ export type RuntimeEvent =
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
+      type: "approval.requested";
+      approval: RuntimeApprovalEvent;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
+      type: "approval.resolved";
+      approval: RuntimeApprovalEvent;
+      rawEvent?: Record<string, unknown>;
+    } & RuntimeEventBase)
+  | ({
       type: "turn.interrupted";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
@@ -210,6 +347,7 @@ export interface RuntimeSessionHandle {
   events: AsyncIterable<RuntimeEvent>;
   interrupt(): Promise<void>;
   setModel?(model: string): Promise<void>;
+  control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
 }
 
 export interface RuntimeCapabilities {

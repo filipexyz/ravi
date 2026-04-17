@@ -27,14 +27,25 @@ import {
   getAnnounceCompaction,
   getAccountForAgent,
   dbInsertCostEvent,
-  type SessionEntry,
   type AgentConfig,
+  type ContextRecord,
+  type SessionEntry,
 } from "./router/index.js";
 import { calculateCost } from "./constants.js";
 import { configStore } from "./config-store.js";
 import { runWithContext } from "./cli/context.js";
+import { getAllCommandClasses, createSdkTools } from "./cli/tool-definitions.js";
+import { extractTools, type ExportedTool, type ToolResult } from "./cli/tools-export.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
-import { createBashPermissionHook, createToolPermissionHook } from "./bash/index.js";
+import {
+  checkDangerousPatterns,
+  createBashPermissionHook,
+  createToolPermissionHook,
+  emitBashDeniedAudit,
+  evaluateBashPermission,
+  parseBashCommand,
+  UNCONDITIONAL_BLOCKS,
+} from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
 import { SANITIZED_ENV_VARS, createSanitizeBashHook } from "./hooks/sanitize-bash.js";
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
@@ -44,8 +55,13 @@ import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "./se
 import { delimiter, dirname, join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
-import { agentCan } from "./permissions/engine.js";
-import { requestCascadingApproval, requestPollAnswer } from "./approval/service.js";
+import { agentCan, canWithCapabilityContext } from "./permissions/engine.js";
+import {
+  authorizeRuntimeContext,
+  requestCascadingApproval,
+  requestPollAnswer,
+  type ApprovalTarget,
+} from "./approval/service.js";
 import {
   DEFAULT_DELIVERY_BARRIER,
   chooseMoreUrgentBarrier,
@@ -66,6 +82,18 @@ import {
   createRuntimeContext,
   createRuntimeProvider,
   snapshotAgentCapabilities,
+  type RuntimeApprovalHandler,
+  type RuntimeApprovalQuestion,
+  type RuntimeApprovalRequest,
+  type RuntimeApprovalResult,
+  type RuntimeControlRequest,
+  type RuntimeControlResult,
+  type RuntimeDynamicToolCallContentItem,
+  type RuntimeDynamicToolCallHandler,
+  type RuntimeDynamicToolCallRequest,
+  type RuntimeDynamicToolCallResult,
+  type RuntimeDynamicToolSpec,
+  type RuntimeEventMetadata,
   type RuntimeProviderId,
   type RuntimeSessionHandle,
   type RuntimeStartRequest,
@@ -265,6 +293,594 @@ function getRuntimeToolAccessMode(providerId: RuntimeProviderId, agentId: string
   }
 
   return hasUnrestrictedToolExecution(agentId) ? "unrestricted" : "restricted";
+}
+
+const CODEX_BUILTIN_EXECUTABLES = new Set(["ravi"]);
+let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
+let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
+
+function getRuntimeDynamicToolDefinitions(): ExportedTool[] {
+  if (!cachedRuntimeDynamicTools) {
+    cachedRuntimeDynamicTools = extractTools(getAllCommandClasses());
+  }
+  return cachedRuntimeDynamicTools;
+}
+
+function getRuntimeDynamicToolSpecs(): RuntimeDynamicToolSpec[] {
+  if (!cachedRuntimeDynamicToolSpecs) {
+    cachedRuntimeDynamicToolSpecs = createSdkTools(getAllCommandClasses()).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
+  }
+  return cachedRuntimeDynamicToolSpecs;
+}
+
+function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDynamicToolSpec[] {
+  const allowedToolNames = new Set(
+    getRuntimeDynamicToolDefinitions()
+      .filter((tool) => canAdvertiseRuntimeDynamicTool(context, tool))
+      .map((tool) => tool.name),
+  );
+
+  return getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
+}
+
+function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTool): boolean {
+  if (!canWithCapabilityContext(context, "use", "tool", tool.name)) {
+    return false;
+  }
+
+  const scope = tool.metadata.scope ?? "admin";
+  switch (scope) {
+    case "open":
+    case "resource":
+      return true;
+    case "superadmin":
+      return canWithCapabilityContext(context, "admin", "system", "*");
+    case "writeContacts":
+      return canWithCapabilityContext(context, "write_contacts", "system", "*");
+    case "admin":
+      return (
+        canWithCapabilityContext(context, "execute", "group", tool.metadata.group) ||
+        canWithCapabilityContext(context, "execute", "group", `${tool.metadata.group}_${tool.metadata.command}`)
+      );
+    default:
+      return false;
+  }
+}
+
+function createRuntimeApprovalBridge(options: {
+  context: ContextRecord;
+  agentId: string;
+  sessionName: string;
+  resolvedSource?: ApprovalTarget;
+  approvalSource?: ApprovalTarget;
+}): RuntimeApprovalHandler {
+  return async (request) => {
+    switch (request.kind) {
+      case "command_execution":
+        return authorizeCodexCommandExecution(options, request);
+      case "file_change":
+        return authorizeCodexFileChange(options, request);
+      case "permission":
+        return authorizeCodexPermissionRequest(options, request);
+      case "user_input":
+        return requestCodexUserInput(options, request);
+    }
+  };
+}
+
+function createRuntimeDynamicToolBridge(options: {
+  context: ContextRecord;
+  agentId: string;
+  sessionName: string;
+  toolContext: Record<string, unknown>;
+}): RuntimeDynamicToolCallHandler {
+  return async (request) => {
+    const tool = getRuntimeDynamicToolDefinitions().find((candidate) => candidate.name === request.toolName);
+    if (!tool) {
+      return {
+        success: false,
+        contentItems: [{ type: "inputText", text: `Unknown Ravi dynamic tool: ${request.toolName}` }],
+      };
+    }
+
+    const authorization = await authorizeRuntimeDynamicToolCall(options, tool, request);
+    if (!authorization.allowed) {
+      return {
+        success: false,
+        contentItems: [{ type: "inputText", text: authorization.reason ?? `${request.toolName} permission denied.` }],
+      };
+    }
+
+    const args = normalizeDynamicToolArguments(request.arguments);
+    const result = await runWithContext(options.toolContext, () => tool.handler(args));
+    return buildRuntimeDynamicToolResult(result);
+  };
+}
+
+async function authorizeRuntimeDynamicToolCall(
+  options: { context: ContextRecord; agentId: string; sessionName: string },
+  tool: ExportedTool,
+  request: RuntimeDynamicToolCallRequest,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const eventData = buildRuntimeDynamicToolEventData(request);
+  const toolAuthorization = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: tool.name,
+    eventData,
+  });
+  if (!toolAuthorization.allowed) {
+    return { allowed: false, reason: toolAuthorization.reason ?? `${tool.name} tool permission denied.` };
+  }
+
+  return authorizeRuntimeDynamicToolScope(options, tool, eventData);
+}
+
+async function authorizeRuntimeDynamicToolScope(
+  options: { context: ContextRecord },
+  tool: ExportedTool,
+  eventData: Record<string, unknown>,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const scope = tool.metadata.scope ?? "admin";
+  if (scope === "open" || scope === "resource") {
+    return { allowed: true };
+  }
+
+  if (scope === "superadmin") {
+    const result = await authorizeRuntimeContext({
+      context: options.context,
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+      eventData,
+    });
+    return result.allowed
+      ? { allowed: true }
+      : { allowed: false, reason: result.reason ?? "Superadmin permission denied." };
+  }
+
+  if (scope === "writeContacts") {
+    const result = await authorizeRuntimeContext({
+      context: options.context,
+      permission: "write_contacts",
+      objectType: "system",
+      objectId: "*",
+      eventData,
+    });
+    return result.allowed
+      ? { allowed: true }
+      : { allowed: false, reason: result.reason ?? "Contact write permission denied." };
+  }
+
+  const group = tool.metadata.group;
+  const command = tool.metadata.command;
+  if (canWithCapabilityContext(options.context, "execute", "group", group)) {
+    return { allowed: true };
+  }
+
+  const result = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "execute",
+    objectType: "group",
+    objectId: `${group}_${command}`,
+    eventData,
+  });
+  return result.allowed
+    ? { allowed: true }
+    : { allowed: false, reason: result.reason ?? `CLI tool permission denied: ${group}_${command}` };
+}
+
+function normalizeDynamicToolArguments(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCallResult {
+  return {
+    success: result.isError !== true,
+    contentItems: toDynamicToolContentItems(result.content),
+  };
+}
+
+function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynamicToolCallContentItem[] {
+  const items: RuntimeDynamicToolCallContentItem[] = [];
+  for (const item of content) {
+    if (item.type === "text") {
+      items.push({ type: "inputText", text: item.text });
+    }
+  }
+
+  return items.length > 0 ? items : [{ type: "inputText", text: "(no output)" }];
+}
+
+function buildRuntimeDynamicToolEventData(request: RuntimeDynamicToolCallRequest): Record<string, unknown> {
+  return {
+    codexToolCall: {
+      method: "item/tool/call",
+      toolName: request.toolName,
+      callId: request.callId,
+      arguments: truncateOutput(request.arguments),
+    },
+    runtimeMetadata: request.metadata,
+  };
+}
+
+async function authorizeCodexCommandExecution(
+  options: {
+    context: ContextRecord;
+    agentId: string;
+    sessionName: string;
+  },
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const command = typeof request.input?.command === "string" ? request.input.command : "";
+  if (!command.trim()) {
+    return { approved: false, reason: "Codex command approval request did not include a command." };
+  }
+
+  const eventData = buildRuntimeApprovalEventData(request);
+  const buildBashContext = () => ({
+    agentId: options.agentId,
+    ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
+    sessionName: options.context.sessionName ?? options.sessionName,
+    capabilities: options.context.capabilities,
+  });
+
+  const preliminary = evaluateBashPermission(command, buildBashContext());
+  if (!preliminary.allowed && preliminary.denialType === "env_spoofing") {
+    emitBashDeniedAudit(command, preliminary, options.agentId);
+    return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const dangerous = checkDangerousPatterns(command);
+  if (!dangerous.safe) {
+    return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const parsed = parseBashCommand(command);
+  if (!parsed.success) {
+    return { approved: false, reason: parsed.error ?? "Failed to parse command for approval." };
+  }
+
+  let inherited = true;
+  const toolAuthorization = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: "Bash",
+    eventData,
+  });
+  if (!toolAuthorization.allowed) {
+    return {
+      approved: false,
+      reason: toolAuthorization.reason ?? "Bash tool permission denied.",
+    };
+  }
+  inherited = inherited && toolAuthorization.inherited;
+
+  if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
+    for (const executable of parsed.executables) {
+      if (UNCONDITIONAL_BLOCKS.has(executable)) {
+        return { approved: false, reason: `${executable} is blocked by Ravi command policy.` };
+      }
+      if (CODEX_BUILTIN_EXECUTABLES.has(executable)) {
+        continue;
+      }
+
+      const executableAuthorization = await authorizeRuntimeContext({
+        context: options.context,
+        permission: "execute",
+        objectType: "executable",
+        objectId: executable,
+        eventData: {
+          ...eventData,
+          codexExecutable: executable,
+        },
+      });
+      if (!executableAuthorization.allowed) {
+        return {
+          approved: false,
+          reason: executableAuthorization.reason ?? `Executable permission denied: ${executable}`,
+        };
+      }
+      inherited = inherited && executableAuthorization.inherited;
+    }
+  }
+
+  const afterExecutableApproval = evaluateBashPermission(command, buildBashContext());
+  if (!afterExecutableApproval.allowed && afterExecutableApproval.denialType === "session_scope") {
+    const target = extractRaviSessionTarget(command);
+    if (target) {
+      const sessionAuthorization = await authorizeRuntimeContext({
+        context: options.context,
+        permission: "access",
+        objectType: "session",
+        objectId: target,
+        eventData: {
+          ...eventData,
+          codexSessionTarget: target,
+        },
+      });
+      if (!sessionAuthorization.allowed) {
+        emitBashDeniedAudit(command, afterExecutableApproval, options.agentId);
+        return {
+          approved: false,
+          reason: sessionAuthorization.reason ?? afterExecutableApproval.reason ?? `Session access denied: ${target}`,
+        };
+      }
+      inherited = inherited && sessionAuthorization.inherited;
+    }
+  }
+
+  const finalDecision = evaluateBashPermission(command, buildBashContext());
+  if (!finalDecision.allowed) {
+    emitBashDeniedAudit(command, finalDecision, options.agentId);
+    return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
+  }
+
+  return { approved: true, inherited, updatedInput: request.input };
+}
+
+async function authorizeCodexFileChange(
+  options: { context: ContextRecord },
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const toolName = request.toolName ?? "Edit";
+  const result = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: toolName,
+    eventData: buildRuntimeApprovalEventData(request),
+  });
+
+  if (!result.allowed) {
+    return { approved: false, reason: result.reason ?? `${toolName} permission denied.` };
+  }
+
+  return {
+    approved: true,
+    inherited: result.inherited,
+    updatedInput: request.input,
+  };
+}
+
+async function authorizeCodexPermissionRequest(
+  options: { context: ContextRecord },
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const capabilities = extractRuntimeApprovalCapabilities(request);
+  if (capabilities.length === 0) {
+    return {
+      approved: false,
+      reason: "Unsupported Codex permission approval request shape.",
+      permissions: {},
+    };
+  }
+
+  let inherited = true;
+  const eventData = buildRuntimeApprovalEventData(request);
+  for (const capability of capabilities) {
+    const result = await authorizeRuntimeContext({
+      context: options.context,
+      permission: capability.permission,
+      objectType: capability.objectType,
+      objectId: capability.objectId,
+      eventData,
+    });
+    if (!result.allowed) {
+      return {
+        approved: false,
+        reason: result.reason ?? `${capability.permission} ${capability.objectType}:${capability.objectId} denied.`,
+        permissions: {},
+      };
+    }
+    inherited = inherited && result.inherited;
+  }
+
+  return {
+    approved: true,
+    inherited,
+    permissions: buildGrantedPermissionsPayload(request.input?.permissions),
+  };
+}
+
+async function requestCodexUserInput(
+  options: {
+    agentId: string;
+    sessionName: string;
+    resolvedSource?: ApprovalTarget;
+    approvalSource?: ApprovalTarget;
+  },
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const questions = Array.isArray(request.input?.questions)
+    ? (request.input.questions as RuntimeApprovalQuestion[])
+    : [];
+  const targetSource = options.resolvedSource ?? options.approvalSource;
+  if (!targetSource || questions.length === 0) {
+    return { approved: true, answers: {}, inherited: true };
+  }
+
+  const eventData = buildRuntimeApprovalEventData(request);
+  const isDelegated = !options.resolvedSource && !!options.approvalSource;
+  nats
+    .emit("ravi.approval.request", {
+      type: "question",
+      sessionName: options.sessionName,
+      agentId: options.agentId,
+      delegated: isDelegated,
+      channel: targetSource.channel,
+      chatId: targetSource.chatId,
+      questionCount: questions.length,
+      timestamp: Date.now(),
+      ...eventData,
+    })
+    .catch(() => {});
+
+  const answers: Record<string, string> = {};
+
+  for (const question of questions) {
+    const optionLabels = question.options?.map((option) => option.label).filter(Boolean) ?? [];
+    if (optionLabels.length === 0) {
+      continue;
+    }
+
+    const hasDescriptions = question.options?.some((option) => option.description) ?? false;
+    let pollName = isDelegated ? `[${options.agentId}] ${question.question}` : question.question;
+    if (hasDescriptions) {
+      const descLines = (question.options ?? [])
+        .map((option) => (option.description ? `• ${option.label} — ${option.description}` : `• ${option.label}`))
+        .join("\n");
+      pollName += "\n\n" + descLines;
+    }
+    pollName += "\n(responda a mensagem para outro)";
+
+    const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
+      selectableCount: question.multiSelect ? optionLabels.length : 1,
+    });
+
+    const answerKey = question.id ?? question.question;
+    answers[answerKey] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
+  }
+
+  nats
+    .emit("ravi.approval.response", {
+      type: "question",
+      sessionName: options.sessionName,
+      agentId: options.agentId,
+      approved: true,
+      answers,
+      timestamp: Date.now(),
+      ...eventData,
+    })
+    .catch(() => {});
+
+  return { approved: true, answers };
+}
+
+function buildRuntimeApprovalEventData(request: RuntimeApprovalRequest): Record<string, unknown> {
+  return {
+    codexApproval: {
+      kind: request.kind,
+      method: request.method,
+      toolName: request.toolName,
+      input: truncateOutput(request.input),
+    },
+    runtimeMetadata: request.metadata,
+  };
+}
+
+function extractRuntimeApprovalCapabilities(
+  request: RuntimeApprovalRequest,
+): Array<{ permission: string; objectType: string; objectId: string }> {
+  const permissions = request.input?.permissions ?? request.rawRequest;
+  const candidates = collectRuntimeApprovalCapabilityCandidates(permissions);
+  return candidates.flatMap((candidate) => parseRuntimeApprovalCapability(candidate));
+}
+
+function collectRuntimeApprovalCapabilityCandidates(value: unknown): unknown[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const direct = parseRuntimeApprovalCapability(value);
+  if (direct.length > 0) {
+    return [value];
+  }
+
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+    if (entry === true || entry === null || entry === undefined) {
+      return [key];
+    }
+    if (entry === false) {
+      return [];
+    }
+    return [entry, key];
+  });
+}
+
+function parseRuntimeApprovalCapability(
+  candidate: unknown,
+): Array<{ permission: string; objectType: string; objectId: string }> {
+  if (typeof candidate === "string") {
+    const match = candidate.match(/^([a-z_]+)(?:\s+|:)([a-z_]+):(.+)$/i);
+    if (!match) {
+      return [];
+    }
+    return [{ permission: match[1], objectType: match[2], objectId: match[3] }];
+  }
+
+  const record = candidate && typeof candidate === "object" ? (candidate as Record<string, unknown>) : null;
+  if (!record) {
+    return [];
+  }
+
+  const permission = firstNonEmptyString(record.permission, record.action, record.verb);
+  const objectType = firstNonEmptyString(record.objectType, record.object_type, record.resourceType, record.type);
+  const objectId = firstNonEmptyString(record.objectId, record.object_id, record.resourceId, record.id, record.name);
+  if (permission && objectType && objectId) {
+    return [{ permission, objectType, objectId }];
+  }
+
+  const toolName = firstNonEmptyString(record.toolName, record.tool_name, record.tool);
+  if (toolName) {
+    return [{ permission: "use", objectType: "tool", objectId: toolName }];
+  }
+
+  return [];
+}
+
+function buildGrantedPermissionsPayload(value: unknown): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  const capabilities = collectRuntimeApprovalCapabilityCandidates(value).flatMap((candidate) =>
+    parseRuntimeApprovalCapability(candidate),
+  );
+  return Object.fromEntries(
+    capabilities.map((capability) => [
+      `${capability.permission}:${capability.objectType}:${capability.objectId}`,
+      true,
+    ]),
+  );
+}
+
+function extractRaviSessionTarget(command: string): string | null {
+  const match = command.match(
+    /(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+[\w-]+\s+[\w-]+\s+(?:(?:-\w+\s+\S+\s+)*)["']?([^"'\s]+)/,
+  );
+  return match?.[1] ?? null;
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function resolveCanonicalRaviCliPath(): string | null {
@@ -485,6 +1101,13 @@ interface StreamingSession {
   agentMode?: string;
 }
 
+interface RuntimeControlNatsRequest {
+  sessionName?: string;
+  sessionKey?: string;
+  request?: RuntimeControlRequest;
+  replyTopic?: string;
+}
+
 /** User message format for the SDK streaming input */
 interface UserMessage {
   type: "user";
@@ -585,6 +1208,7 @@ export class RaviBot {
     this.subscribeToPrompts();
     this.subscribeToSessionAborts();
     this.subscribeToSessionModelChanges();
+    this.subscribeToRuntimeControls();
     this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
     void this.recoverActiveTasksAfterRestart();
@@ -705,6 +1329,140 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Session abort subscription error, reconnecting in 2s", { error: err });
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  private resolveStreamingControlSession(
+    sessionName?: string,
+    sessionKey?: string,
+  ): { name: string; session: StreamingSession } | null {
+    if (sessionName) {
+      const direct = this.streamingSessions.get(sessionName);
+      if (direct) {
+        return { name: sessionName, session: direct };
+      }
+    }
+
+    if (sessionKey) {
+      const direct = this.streamingSessions.get(sessionKey);
+      if (direct) {
+        return { name: sessionKey, session: direct };
+      }
+
+      const stored = getSession(sessionKey);
+      if (stored?.name) {
+        const named = this.streamingSessions.get(stored.name);
+        if (named) {
+          return { name: stored.name, session: named };
+        }
+      }
+    }
+
+    if (sessionName) {
+      const stored = getSessionByName(sessionName) ?? getSession(sessionName);
+      if (stored?.sessionKey) {
+        const byKey = this.streamingSessions.get(stored.sessionKey);
+        if (byKey) {
+          return { name: stored.name ?? stored.sessionKey, session: byKey };
+        }
+      }
+    }
+
+    if (sessionKey) {
+      for (const [name, session] of this.streamingSessions) {
+        const stored = getSessionByName(name);
+        if (stored?.sessionKey === sessionKey) {
+          return { name, session };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private async replyRuntimeControlError(replyTopic: string | undefined, error: string): Promise<void> {
+    if (!replyTopic) {
+      log.warn("Runtime control request failed without reply topic", { error });
+      return;
+    }
+    await safeEmit(replyTopic, { error });
+  }
+
+  private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {
+    const { replyTopic, request } = data;
+    if (!request?.operation) {
+      await this.replyRuntimeControlError(replyTopic, "Runtime control request is missing an operation.");
+      return;
+    }
+
+    const resolved = this.resolveStreamingControlSession(data.sessionName, data.sessionKey);
+    if (!resolved) {
+      await this.replyRuntimeControlError(
+        replyTopic,
+        `No active runtime session found for ${data.sessionName ?? data.sessionKey ?? "(unknown)"}.`,
+      );
+      return;
+    }
+
+    if (!resolved.session.queryHandle.control) {
+      const result: RuntimeControlResult = {
+        ok: false,
+        operation: request.operation,
+        state: {
+          provider: resolved.session.queryHandle.provider,
+          activeTurn: resolved.session.turnActive,
+          supportedOperations: [],
+        },
+        error: `Runtime provider '${resolved.session.queryHandle.provider}' does not expose control operations.`,
+      };
+      if (replyTopic) {
+        await safeEmit(replyTopic, { result });
+      }
+      return;
+    }
+
+    const result = await resolved.session.queryHandle.control(request);
+    if (replyTopic) {
+      await safeEmit(replyTopic, { result });
+    }
+
+    await safeEmit(`ravi.session.${resolved.name}.runtime`, {
+      type: "runtime.control",
+      provider: resolved.session.queryHandle.provider,
+      operation: request.operation,
+      ok: result.ok,
+      error: result.error,
+      state: result.state,
+      timestamp: Date.now(),
+    }).catch((error) => {
+      log.warn("Failed to emit runtime control event", { sessionName: resolved.name, error });
+    });
+  }
+
+  /**
+   * Internal transparent controls for native runtime thread/turn semantics.
+   * User-facing session/task/project abstractions remain the primary surface.
+   */
+  private async subscribeToRuntimeControls(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of nats.subscribe("ravi.session.runtime.control")) {
+          if (!this.running) break;
+          try {
+            await this.handleRuntimeControlRequest(event.data as RuntimeControlNatsRequest);
+          } catch (error) {
+            const data = event.data as RuntimeControlNatsRequest;
+            await this.replyRuntimeControlError(
+              data?.replyTopic,
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Runtime control subscription error, reconnecting in 2s", { error: err });
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
@@ -1852,6 +2610,34 @@ export class RaviBot {
       );
       const runtimeEnv = buildRuntimeEnv(baseRuntimeEnv, raviEnv, providerBootstrap?.env, runtimeCapabilities);
 
+      const toolContext = {
+        contextId: runtimeContext.contextId,
+        context: runtimeContext,
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        source: resolvedSource,
+      };
+
+      const approveRuntimeRequest = createRuntimeApprovalBridge({
+        context: runtimeContext,
+        agentId: agent.id,
+        sessionName,
+        resolvedSource,
+        approvalSource,
+      });
+      const dynamicTools =
+        runtimeProviderId === "codex" ? getRuntimeDynamicToolSpecsForContext(runtimeContext) : undefined;
+      const handleRuntimeToolCall =
+        runtimeProviderId === "codex"
+          ? createRuntimeDynamicToolBridge({
+              context: runtimeContext,
+              agentId: agent.id,
+              sessionName,
+              toolContext,
+            })
+          : undefined;
+
       // canUseTool — auto-approve all tools.
       // Note: with bypassPermissions, canUseTool is NOT called. We use PreToolUse hooks instead.
       const canUseTool = async (_toolName: string, input: Record<string, unknown>) => {
@@ -1910,6 +2696,9 @@ export class RaviBot {
         abortController,
         permissionOptions,
         canUseTool,
+        approveRuntimeRequest,
+        ...(dynamicTools ? { dynamicTools } : {}),
+        ...(handleRuntimeToolCall ? { handleRuntimeToolCall } : {}),
         env: runtimeEnv,
         ...(specServer ? { mcpServers: { spec: specServer } } : {}),
         systemPromptAppend,
@@ -1953,16 +2742,6 @@ export class RaviBot {
       }
       streamingSession.queryHandle = runtimeSession;
       streamingSession.starting = false;
-
-      // Build tool context for CLI tools
-      const toolContext = {
-        contextId: runtimeContext.contextId,
-        context: runtimeContext,
-        sessionKey: dbSessionKey,
-        sessionName,
-        agentId: agent.id,
-        source: resolvedSource,
-      };
 
       // Run the event loop in the background (don't await — it stays alive)
       runWithContext(toolContext, () =>
@@ -2172,17 +2951,18 @@ export class RaviBot {
       });
     };
 
-    const emitChunk = async (text: string) => {
+    const emitChunk = async (text: string, metadata?: RuntimeEventMetadata) => {
       await safeEmit(`ravi.session.${sessionName}.stream`, {
         chunk: text,
+        ...(metadata ? { metadata } : {}),
       });
     };
 
     let chunkEmitTail: Promise<void> = Promise.resolve();
-    const queueChunkEmit = (text: string) => {
+    const queueChunkEmit = (text: string, metadata?: RuntimeEventMetadata) => {
       chunkEmitTail = chunkEmitTail
         .catch(() => {})
-        .then(() => emitChunk(text))
+        .then(() => emitChunk(text, metadata))
         .catch((error) => {
           log.warn("Failed to emit stream chunk", { sessionName, error });
         });
@@ -2202,7 +2982,7 @@ export class RaviBot {
         });
 
         if (event.type === "text.delta") {
-          queueChunkEmit(event.text);
+          queueChunkEmit(event.text, event.metadata);
           continue;
         }
 
@@ -2253,6 +3033,7 @@ export class RaviBot {
             timestamp: new Date().toISOString(),
             sessionName,
             agentId: agent.id,
+            metadata: event.metadata,
           }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
           continue;
         }
@@ -2323,6 +3104,7 @@ export class RaviBot {
             timestamp: new Date().toISOString(),
             sessionName,
             agentId: agent.id,
+            metadata: event.metadata,
           }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
           clearActiveToolState();

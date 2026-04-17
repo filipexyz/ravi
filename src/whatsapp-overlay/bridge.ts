@@ -42,6 +42,7 @@ import {
   type OverlayChatArtifactAnchor,
   type OverlayLiveState,
   type OverlayQuery,
+  type OverlayRuntimeMetadata,
   type OverlaySessionSnapshot,
   type OverlaySessionEvent,
   type OverlaySessionWorkspaceMessage,
@@ -2843,7 +2844,8 @@ async function trackSessionRuntime(): Promise<void> {
 
     if (topic.endsWith(".stream")) {
       const chunk = typeof data.chunk === "string" ? data.chunk : "";
-      updateStreamEvent(sessionName, chunk);
+      const metadata = extractRuntimeMetadata(data);
+      updateStreamEvent(sessionName, chunk, metadata);
       upsertLive(sessionName, "streaming", "streaming reply");
       continue;
     }
@@ -2879,11 +2881,13 @@ async function trackSessionRuntime(): Promise<void> {
       const toolId = cleanNullable(typeof data.toolId === "string" ? data.toolId : null) ?? `tool-${eventTimestamp}`;
       const toolName = typeof data.toolName === "string" ? data.toolName : "tool";
       const toolDetail = summarizeToolArtifactPreview(data, summarizeToolInput(data.input) || null) || undefined;
+      const metadata = extractRuntimeMetadata(data);
       pushLiveEvent(sessionName, {
         kind: "tool",
         label: toolName,
         detail: toolDetail,
         timestamp: eventTimestamp,
+        ...(metadata ? { metadata } : {}),
       });
       if (eventName === "start" || eventName === "end") {
         pushLiveArtifact(sessionName, buildToolArtifact(sessionName, toolId, toolName, data, eventTimestamp));
@@ -2901,13 +2905,50 @@ async function trackSessionRuntime(): Promise<void> {
       const subtype = typeof data.subtype === "string" ? data.subtype : undefined;
       const status = typeof data.status === "string" ? data.status : undefined;
       const eventTimestamp = Date.now();
+      const metadata = extractRuntimeMetadata(data);
 
-      if (status === "compacting" || (type === "system" && subtype === "status" && status === "compacting")) {
+      if (type === "approval.requested") {
+        pushLiveEvent(sessionName, {
+          kind: "approval",
+          label: "codex approval",
+          detail: formatRuntimeApprovalDetail(data, "pending"),
+          timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
+        });
+        upsertLive(sessionName, "awaiting_approval", "approval pending", true);
+      } else if (type === "approval.resolved") {
+        pushLiveEvent(sessionName, {
+          kind: "approval",
+          label: "codex approval",
+          detail: formatRuntimeApprovalDetail(data, "answered"),
+          timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
+        });
+        upsertLive(sessionName, "thinking", "approval answered", false);
+      } else if (isRuntimeGraphEvent(type)) {
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "codex runtime",
+          detail: formatRuntimeGraphDetail(type, data, metadata),
+          timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
+        });
+        upsertLive(sessionName, "thinking", formatRuntimeGraphSummary(type));
+      } else if (type === "runtime.control") {
+        pushLiveEvent(sessionName, {
+          kind: "runtime",
+          label: "runtime control",
+          detail: formatRuntimeControlDetail(data),
+          timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
+        });
+      } else if (status === "compacting" || (type === "system" && subtype === "status" && status === "compacting")) {
         pushLiveEvent(sessionName, {
           kind: "runtime",
           label: "runtime",
           detail: "compacting",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "compacting", "compacting");
       } else if (status === "thinking" || status === "queued") {
@@ -2920,6 +2961,7 @@ async function trackSessionRuntime(): Promise<void> {
           label: "tool",
           detail: "running",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "thinking", "tool running");
       } else if (type === "tool.completed") {
@@ -2928,6 +2970,7 @@ async function trackSessionRuntime(): Promise<void> {
           label: "tool",
           detail: "finished",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "thinking", "tool finished");
       } else if (type === "provider.raw" || type === "system" || type === "user") {
@@ -2944,6 +2987,7 @@ async function trackSessionRuntime(): Promise<void> {
           label: "runtime",
           detail: "turn.interrupted",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         pushLiveArtifact(sessionName, artifact);
         const pendingEmitId = getLatestResponseEmitId(sessionName);
@@ -2958,6 +3002,7 @@ async function trackSessionRuntime(): Promise<void> {
           label: "runtime",
           detail: type ?? status ?? "idle",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "idle", "idle");
         resetActiveArtifactTurnState(sessionName);
@@ -2967,6 +3012,7 @@ async function trackSessionRuntime(): Promise<void> {
           label: "runtime",
           detail: type ?? status ?? "idle",
           timestamp: eventTimestamp,
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "idle", "idle");
       }
@@ -2981,11 +3027,13 @@ async function trackApprovalRuntime(): Promise<void> {
     if (topic === "ravi.approval.request") {
       const sessionName = typeof data.sessionName === "string" ? data.sessionName : null;
       if (sessionName) {
+        const metadata = extractRuntimeMetadata(data);
         pushLiveEvent(sessionName, {
           kind: "approval",
           label: "approval",
           detail: "pending",
           timestamp: Date.now(),
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "awaiting_approval", "approval pending", true);
       }
@@ -2995,16 +3043,108 @@ async function trackApprovalRuntime(): Promise<void> {
     if (topic === "ravi.approval.response") {
       const sessionName = typeof data.sessionName === "string" ? data.sessionName : null;
       if (sessionName) {
+        const metadata = extractRuntimeMetadata(data);
         pushLiveEvent(sessionName, {
           kind: "approval",
           label: "approval",
           detail: "answered",
           timestamp: Date.now(),
+          ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "idle", "approval answered", false);
       }
     }
   }
+}
+
+const RUNTIME_GRAPH_EVENT_TYPES = ["thread.started", "turn.started", "item.started", "item.completed"] as const;
+type RuntimeGraphEventType = (typeof RUNTIME_GRAPH_EVENT_TYPES)[number];
+const RUNTIME_GRAPH_EVENT_TYPE_SET = new Set<string>(RUNTIME_GRAPH_EVENT_TYPES);
+
+function isRuntimeGraphEvent(type?: string): type is RuntimeGraphEventType {
+  return Boolean(type && RUNTIME_GRAPH_EVENT_TYPE_SET.has(type));
+}
+
+function extractRuntimeMetadata(data: Record<string, unknown>): OverlayRuntimeMetadata | undefined {
+  const metadata = data.metadata ?? data.runtimeMetadata;
+  return asPlainRecord(metadata) ?? undefined;
+}
+
+function formatRuntimeGraphDetail(
+  type: string,
+  data: Record<string, unknown>,
+  metadata: OverlayRuntimeMetadata | undefined,
+): string {
+  const thread = asPlainRecord(data.thread) ?? asPlainRecord(metadata?.thread);
+  const turn = asPlainRecord(data.turn) ?? asPlainRecord(metadata?.turn);
+  const item = asPlainRecord(data.item) ?? asPlainRecord(metadata?.item);
+
+  const parts = [
+    type,
+    formatRuntimeGraphPart("thread", cleanUnknownString(thread?.id)),
+    formatRuntimeGraphPart("turn", cleanUnknownString(turn?.id)),
+    formatRuntimeGraphPart("item", cleanUnknownString(item?.id)),
+    formatRuntimeGraphPart("kind", cleanUnknownString(item?.type)),
+    formatRuntimeGraphPart("status", cleanUnknownString(item?.status)),
+  ].filter(Boolean);
+
+  return parts.join(" ");
+}
+
+function formatRuntimeGraphSummary(type: string): string {
+  switch (type) {
+    case "thread.started":
+      return "runtime thread active";
+    case "turn.started":
+      return "runtime turn active";
+    case "item.started":
+      return "runtime item active";
+    case "item.completed":
+      return "runtime item completed";
+    default:
+      return "working";
+  }
+}
+
+function formatRuntimeApprovalDetail(data: Record<string, unknown>, fallbackState: string): string {
+  const approval = asPlainRecord(data.approval);
+  const kind = cleanUnknownString(approval?.kind) ?? "approval";
+  const approved = approval && typeof approval.approved === "boolean" ? approval.approved : undefined;
+  const state =
+    typeof approved === "boolean"
+      ? approved
+        ? "approved"
+        : "denied"
+      : (cleanUnknownString(approval?.status) ?? fallbackState);
+  const inherited = approval?.inherited === true ? "inherited" : null;
+  const toolName = formatRuntimeGraphPart("tool", cleanUnknownString(approval?.toolName));
+  const method = formatRuntimeGraphPart("method", cleanUnknownString(approval?.method));
+  const reason = cleanUnknownString(approval?.reason);
+
+  return [kind, state, inherited, toolName, method, reason].filter(Boolean).join(" · ");
+}
+
+function formatRuntimeControlDetail(data: Record<string, unknown>): string {
+  const operation = cleanUnknownString(data.operation) ?? "control";
+  const status = typeof data.ok === "boolean" ? (data.ok ? "ok" : "failed") : "requested";
+  const error = cleanUnknownString(data.error);
+  return [operation, status, error].filter(Boolean).join(" · ");
+}
+
+function formatRuntimeGraphPart(label: string, value: string | null): string | null {
+  if (!value) return null;
+  return `${label}=${formatLiveText(value, 96)}`;
+}
+
+function cleanUnknownString(value: unknown): string | null {
+  return typeof value === "string" ? cleanNullable(value) : null;
+}
+
+function asPlainRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
 }
 
 function isTerminalRuntimeEvent(type?: string): boolean {
@@ -3249,7 +3389,7 @@ function liveWorkspaceTextsOverlap(left: string, right: string): boolean {
   return left === right || left.includes(right) || right.includes(left);
 }
 
-function updateStreamEvent(sessionName: string, detail: string): void {
+function updateStreamEvent(sessionName: string, detail: string, metadata?: OverlayRuntimeMetadata): void {
   const current = liveBySessionName.get(sessionName);
   const previous = Array.isArray(current?.events) ? [...current.events] : [];
   const timestamp = Date.now();
@@ -3261,6 +3401,7 @@ function updateStreamEvent(sessionName: string, detail: string): void {
       ...previous[existingIndex]!,
       detail: nextDetail,
       timestamp,
+      ...(metadata ? { metadata } : {}),
     };
   } else {
     previous.unshift({
@@ -3268,6 +3409,7 @@ function updateStreamEvent(sessionName: string, detail: string): void {
       label: "stream",
       detail: nextDetail,
       timestamp,
+      ...(metadata ? { metadata } : {}),
     });
   }
 
@@ -3286,6 +3428,7 @@ function updateStreamEvent(sessionName: string, detail: string): void {
     createdAt: timestamp,
     source: "live",
     pending: true,
+    ...(metadata ? { metadata } : {}),
   });
 }
 
@@ -3317,6 +3460,7 @@ function buildInterruptionArtifact(
   anchor: OverlayChatArtifactAnchor,
 ): OverlayChatArtifact {
   const detail = extractRuntimeText(data) || "execução interrompida";
+  const metadata = extractRuntimeMetadata(data);
   return {
     id: `${sessionName}:turn.interrupted:${timestamp}`,
     kind: "interruption",
@@ -3325,6 +3469,7 @@ function buildInterruptionArtifact(
     createdAt: timestamp,
     updatedAt: timestamp,
     anchor,
+    ...(metadata ? { metadata } : {}),
   };
 }
 
@@ -3342,6 +3487,7 @@ function buildToolArtifact(
   const fullDetail = buildToolArtifactFullDetail(data, existing?.fullDetail ?? null);
   const status = resolveToolArtifactStatus(data, existing?.status ?? null);
   const duration = resolveToolArtifactDuration(data, existing?.duration ?? null);
+  const metadata = extractRuntimeMetadata(data) ?? existing?.metadata ?? undefined;
   return {
     id: artifactId,
     kind: "tool",
@@ -3356,6 +3502,7 @@ function buildToolArtifact(
     updatedAt: timestamp,
     anchor: existing?.anchor ?? resolveActiveArtifactAnchor(sessionName),
     dedupeKey: artifactId,
+    ...(metadata ? { metadata } : {}),
   };
 }
 

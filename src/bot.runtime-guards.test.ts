@@ -33,6 +33,9 @@ type RuntimeStartRequest = {
   abortController: AbortController;
   systemPromptAppend: string;
   env?: Record<string, string>;
+  approveRuntimeRequest?: (request: any) => Promise<any>;
+  dynamicTools?: Array<{ name: string; description: string; inputSchema: unknown }>;
+  handleRuntimeToolCall?: (request: any) => Promise<any>;
 };
 
 type RuntimePlugin = {
@@ -60,6 +63,7 @@ type RuntimeHandle = {
   events: AsyncIterable<Record<string, unknown>>;
   interrupt(): Promise<void>;
   setModel?(model: string): Promise<void>;
+  control?(request: Record<string, unknown>): Promise<Record<string, unknown>>;
 };
 
 const emittedEvents: Array<{ topic: string; data: any }> = [];
@@ -79,6 +83,8 @@ let agentCanImpl = (...args: Parameters<typeof actualPermissionsEngineModule.age
   actualPermissionsEngineModule.agentCan(...args);
 let canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngineModule.canWithCapabilities>) =>
   actualPermissionsEngineModule.canWithCapabilities(...args);
+let snapshotAgentCapabilitiesImpl = () =>
+  [] as Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
 
 const clearProviderSession = mock((sessionKey: string) => {
   const session = sessions.get(sessionKey);
@@ -294,11 +300,44 @@ mock.module("./cli/context.js", () => ({
   runWithContext: (_ctx: unknown, fn: () => unknown) => fn(),
 }));
 
+mock.module("./cli/tool-definitions.js", () => ({
+  getAllCommandClasses: () => [],
+  createSdkTools: () => [
+    {
+      name: "tools_list",
+      description: "List available tools",
+      inputSchema: { type: "object", properties: {}, required: [] },
+    },
+  ],
+}));
+
+mock.module("./cli/tools-export.js", () => ({
+  extractTools: () => [
+    {
+      name: "tools_list",
+      description: "List available tools",
+      handler: async () => ({
+        content: [{ type: "text" as const, text: "fake tools list" }],
+        isError: false,
+      }),
+      metadata: {
+        group: "tools",
+        command: "list",
+        method: "list",
+        args: [],
+        options: [],
+        scope: "open",
+      },
+    },
+  ],
+}));
+
 mock.module("./heartbeat/index.js", () => ({
   HEARTBEAT_OK: "HEARTBEAT_OK",
 }));
 
 mock.module("./bash/index.js", () => ({
+  checkDangerousPatterns: () => ({ safe: true }),
   createBashPermissionHook: () => ({
     matcher: "Bash",
     hooks: [async () => ({})],
@@ -306,6 +345,10 @@ mock.module("./bash/index.js", () => ({
   createToolPermissionHook: () => ({
     hooks: [async () => ({})],
   }),
+  emitBashDeniedAudit: mock(() => {}),
+  evaluateBashPermission: () => ({ allowed: true }),
+  parseBashCommand: () => ({ success: true, executables: [] }),
+  UNCONDITIONAL_BLOCKS: new Set(["bash", "sh", "zsh"]),
 }));
 
 mock.module("./hooks/index.js", () => ({
@@ -376,7 +419,7 @@ mock.module("./runtime/index.js", () => ({
     metadata: input.metadata,
     createdAt: Date.now(),
   }),
-  snapshotAgentCapabilities: () => [],
+  snapshotAgentCapabilities: () => snapshotAgentCapabilitiesImpl(),
   createRuntimeProvider: (providerId: RuntimeProviderId = "claude") => {
     const capabilities =
       providerId === "codex"
@@ -499,6 +542,7 @@ describe("RaviBot runtime guards", () => {
     resetRuntimeDoubles();
     saveMessageImpl = () => {};
     agentCanImpl = () => true;
+    snapshotAgentCapabilitiesImpl = () => [];
     canWithCapabilitiesImpl = (
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
       permission: string,
@@ -696,6 +740,95 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(preparePlugins).toEqual(discoveredPlugins);
+  });
+
+  it("passes a runtime approval bridge that honors inherited Codex file-change permissions", async () => {
+    activeProvider = "codex";
+    snapshotAgentCapabilitiesImpl = () => [
+      { permission: "use", objectType: "tool", objectId: "Write", source: "test" },
+      { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
+    ];
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-approval-bridge", makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
+    expect(typeof approveRuntimeRequest).toBe("function");
+
+    const result = await approveRuntimeRequest?.({
+      kind: "file_change",
+      method: "item/fileChange/requestApproval",
+      toolName: "Write",
+      input: { changes: [{ path: "hello.txt", kind: "add" }] },
+      metadata: {
+        provider: "codex",
+        source: "codex.app-server",
+        thread: { id: "thread_test" },
+        turn: { id: "turn_test" },
+      },
+    });
+
+    expect(result).toMatchObject({
+      approved: true,
+      inherited: true,
+      updatedInput: { changes: [{ path: "hello.txt", kind: "add" }] },
+    });
+
+    await expect(
+      approveRuntimeRequest?.({
+        kind: "permission",
+        method: "item/permissions/requestApproval",
+        input: { permissions: { "use:tool:Bash": true } },
+      }),
+    ).resolves.toMatchObject({
+      approved: true,
+      inherited: true,
+      permissions: { "use:tool:Bash": true },
+    });
+  });
+
+  it("passes a Codex dynamic tool bridge that executes inherited Ravi CLI tools", async () => {
+    activeProvider = "codex";
+    snapshotAgentCapabilitiesImpl = () => [
+      { permission: "use", objectType: "tool", objectId: "tools_list", source: "test" },
+    ];
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-dynamic-tools", makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const runtimeRequest = runtimeStartCalls[0];
+    expect(runtimeRequest?.dynamicTools?.some((tool) => tool.name === "tools_list")).toBe(true);
+    expect(typeof runtimeRequest?.handleRuntimeToolCall).toBe("function");
+
+    const result = await runtimeRequest?.handleRuntimeToolCall?.({
+      toolName: "tools_list",
+      callId: "dyn_tool_test",
+      arguments: {},
+      metadata: {
+        provider: "codex",
+        source: "codex.app-server",
+        thread: { id: "thread_test" },
+        turn: { id: "turn_test" },
+        item: { id: "dyn_tool_test", type: "dynamic_tool_call" },
+      },
+    });
+
+    expect(result?.success).toBe(true);
+    expect(result?.contentItems?.[0]?.type).toBe("inputText");
+    expect(result?.contentItems?.[0]?.text).toContain("fake tools list");
+  });
+
+  it("does not advertise Codex dynamic tools outside the runtime capability snapshot", async () => {
+    activeProvider = "codex";
+    snapshotAgentCapabilitiesImpl = () => [];
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-dynamic-tools-denied", makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls[0]?.dynamicTools ?? []).toEqual([]);
   });
 
   it("uses the session cwd instead of the agent default when a task/session overrides the workspace", async () => {
@@ -1026,6 +1159,17 @@ describe("RaviBot runtime guards", () => {
           metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
         };
         yield {
+          type: "text.delta",
+          text: "hello ",
+          metadata: {
+            provider: "codex",
+            nativeEvent: "item.text_delta",
+            thread: { id: "thread-codex" },
+            turn: { id: "turn-codex" },
+            item: { id: "item-text", type: "assistant_message_delta" },
+          },
+        };
+        yield {
           type: "assistant.message",
           text: "hello from codex",
         };
@@ -1054,6 +1198,14 @@ describe("RaviBot runtime guards", () => {
           entry.topic === `ravi.session.${sessionKey}.runtime` &&
           entry.data?.type === "provider.raw" &&
           (entry.data.metadata as any)?.thread?.id === "thread-codex",
+      ),
+    ).toBe(true);
+    expect(
+      emittedEvents.some(
+        (entry) =>
+          entry.topic === `ravi.session.${sessionKey}.stream` &&
+          entry.data?.chunk === "hello " &&
+          (entry.data.metadata as any)?.item?.id === "item-text",
       ),
     ).toBe(true);
   });
@@ -1466,6 +1618,79 @@ describe("RaviBot streaming session lifecycle", () => {
     await (bot as any).handlePromptImmediate(sessionKey, prompt);
 
     expect(streamingSession.currentSource?.chatId).toBe("new-chat");
+  });
+
+  it("routes runtime control requests to the active session handle", async () => {
+    const sessionKey = "agent:main:codex-control";
+    const sessionName = "codex-control";
+    const bot = createBot();
+    let controlRequest: Record<string, unknown> | undefined;
+
+    sessions.set(sessionKey, {
+      sessionKey,
+      name: sessionName,
+      agentId: "main",
+      agentCwd: "/tmp/main",
+      runtimeProvider: "codex",
+    });
+    (bot as any).streamingSessions.set(sessionName, {
+      queryHandle: {
+        provider: "codex",
+        interrupt: async () => {},
+        control: async (request: Record<string, unknown>) => {
+          controlRequest = request;
+          return {
+            ok: true,
+            operation: request.operation,
+            state: {
+              provider: "codex",
+              threadId: "thread_control",
+              turnId: "turn_control",
+              activeTurn: true,
+            },
+            data: { interrupted: true },
+          };
+        },
+      },
+      abortController: new AbortController(),
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      currentSource: undefined,
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      interrupted: false,
+      turnActive: true,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+
+    await (bot as any).handleRuntimeControlRequest({
+      sessionName,
+      sessionKey,
+      replyTopic: "ravi._reply.control",
+      request: { operation: "turn.interrupt", threadId: "thread_control" },
+    });
+
+    expect(controlRequest).toEqual({ operation: "turn.interrupt", threadId: "thread_control" });
+    expect(emittedEvents.find((event) => event.topic === "ravi._reply.control")?.data).toMatchObject({
+      result: {
+        ok: true,
+        operation: "turn.interrupt",
+        data: { interrupted: true },
+        state: { provider: "codex", threadId: "thread_control", turnId: "turn_control" },
+      },
+    });
+    expect(emittedEvents.find((event) => event.topic === `ravi.session.${sessionName}.runtime`)?.data).toMatchObject({
+      type: "runtime.control",
+      provider: "codex",
+      operation: "turn.interrupt",
+      ok: true,
+      state: { provider: "codex", threadId: "thread_control", turnId: "turn_control" },
+    });
   });
 
   it("aborts and clears all streaming sessions on stop", async () => {

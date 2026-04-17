@@ -6,7 +6,22 @@ import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import type {
+  RuntimeApprovalEvent,
+  RuntimeApprovalHandler,
+  RuntimeApprovalKind,
+  RuntimeApprovalQuestion,
+  RuntimeApprovalRequest,
+  RuntimeApprovalResult,
   RuntimeBillingType,
+  RuntimeControlOperation,
+  RuntimeControlRequest,
+  RuntimeControlResult,
+  RuntimeControlState,
+  RuntimeDynamicToolCallContentItem,
+  RuntimeDynamicToolCallHandler,
+  RuntimeDynamicToolCallRequest,
+  RuntimeDynamicToolCallResult,
+  RuntimeDynamicToolSpec,
   RuntimeExecutionMetadata,
   RuntimeEvent,
   RuntimeEventMetadata,
@@ -31,6 +46,14 @@ const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
 const RAVI_CODEX_BASH_HOOK_MATCHER = "^Bash$";
+const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
+  "thread.list",
+  "thread.read",
+  "thread.rollback",
+  "thread.fork",
+  "turn.steer",
+  "turn.interrupt",
+];
 const CODEX_SKILL_DISCOVERY_NOTE = [
   "Ravi may install native Codex skills under ~/.codex/skills (or $CODEX_HOME/skills).",
   "If the task clearly matches a skill, inspect that directory and follow the relevant SKILL.md files.",
@@ -62,6 +85,9 @@ interface CodexCliTurnRequest {
   prompt: string;
   resume?: string;
   systemPromptAppend: string;
+  approveRuntimeRequest?: RuntimeApprovalHandler;
+  dynamicTools?: RuntimeDynamicToolSpec[];
+  handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
 }
 
 interface CodexCliTurnResult {
@@ -74,10 +100,12 @@ interface CodexCliTurnHandle {
   events: AsyncIterable<CodexCliEvent>;
   result: Promise<CodexCliTurnResult>;
   interrupt(): Promise<void> | void;
+  control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
 }
 
 interface CodexCliTransport {
   startTurn(input: CodexCliTurnRequest): CodexCliTurnHandle;
+  control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
   close?(): Promise<void>;
 }
 
@@ -104,6 +132,11 @@ type PendingRequest = {
   resolve(value: Record<string, unknown>): void;
   reject(error: unknown): void;
 };
+
+interface AppServerApprovalTurn {
+  threadId?: string;
+  turnId?: string;
+}
 
 export interface CreateCodexRuntimeProviderOptions {
   transport?: CodexCliTransport;
@@ -158,6 +191,24 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           state.interrupted = true;
           await state.activeTurn.interrupt();
         },
+        control: async (request) => {
+          if (transport.control) {
+            return transport.control(request);
+          }
+          if (state.activeTurn?.control) {
+            return state.activeTurn.control(request);
+          }
+          return {
+            ok: false,
+            operation: request.operation,
+            state: {
+              provider: "codex",
+              activeTurn: Boolean(state.activeTurn),
+              supportedOperations: [],
+            },
+            error: "Codex runtime control is unavailable for this transport.",
+          };
+        },
       };
     },
   };
@@ -193,6 +244,9 @@ async function* normalizeCodexEvents(
         prompt: promptText,
         resume: previousSessionId,
         systemPromptAppend,
+        approveRuntimeRequest: input.approveRuntimeRequest,
+        dynamicTools: input.dynamicTools,
+        handleRuntimeToolCall: input.handleRuntimeToolCall,
       });
 
       state.activeTurn = turn;
@@ -338,6 +392,19 @@ async function* normalizeCodexEvents(
             continue;
           }
 
+          if (event.type === "approval.requested" || event.type === "approval.resolved") {
+            const approval = extractRuntimeApprovalEvent(rawEvent);
+            if (approval) {
+              yield {
+                type: event.type,
+                approval,
+                rawEvent,
+                metadata,
+              };
+            }
+            continue;
+          }
+
           if (event.type === "error") {
             lastErrorMessage = extractCliErrorMessage(event) ?? lastErrorMessage;
             continue;
@@ -456,6 +523,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     lastUsage?: CodexCliUsage;
     turnId?: string;
     threadId?: string;
+    approveRuntimeRequest?: RuntimeApprovalHandler;
+    handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
     settled: boolean;
     interruptRequested: boolean;
   };
@@ -625,30 +694,36 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     });
   }
 
-  async function handleServerRequest(id: string, method: string, _params: Record<string, unknown>): Promise<void> {
+  async function handleServerRequest(id: string, method: string, params: Record<string, unknown>): Promise<void> {
+    if (isCodexApprovalRequestMethod(method)) {
+      const request = buildRuntimeApprovalRequest(method, params, activeTurn, currentThreadId);
+      activeTurn?.queue.push(buildApprovalTraceEvent("approval.requested", request));
+
+      let approvalResult: RuntimeApprovalResult;
+      if (!activeTurn?.approveRuntimeRequest) {
+        approvalResult = {
+          approved: false,
+          reason: "No Ravi approval handler is available for this Codex request.",
+        };
+      } else {
+        try {
+          approvalResult = await activeTurn.approveRuntimeRequest(request);
+        } catch (error) {
+          approvalResult = {
+            approved: false,
+            reason: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
+      activeTurn?.queue.push(buildApprovalTraceEvent("approval.resolved", request, approvalResult));
+      await writeJsonRpc({ id, result: buildCodexApprovalResponse(method, params, approvalResult) });
+      return;
+    }
+
     switch (method) {
-      case "item/commandExecution/requestApproval":
-      case "execCommandApproval":
-        await writeJsonRpc({ id, result: { decision: "acceptForSession" } });
-        return;
-      case "item/fileChange/requestApproval":
-      case "applyPatchApproval":
-        await writeJsonRpc({ id, result: { decision: "acceptForSession" } });
-        return;
-      case "item/permissions/requestApproval":
-        await writeJsonRpc({ id, result: { permissions: {} } });
-        return;
-      case "item/tool/requestUserInput":
-        await writeJsonRpc({ id, result: { answers: {} } });
-        return;
       case "item/tool/call":
-        await writeJsonRpc({
-          id,
-          result: {
-            success: false,
-            contentItems: [{ type: "inputText", text: "Dynamic tools are unsupported in the Ravi Codex adapter." }],
-          },
-        });
+        await handleDynamicToolCall(id, params);
         return;
       default:
         await writeJsonRpc({
@@ -659,6 +734,34 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           },
         });
     }
+  }
+
+  async function handleDynamicToolCall(id: string, params: Record<string, unknown>): Promise<void> {
+    const request = buildRuntimeDynamicToolCallRequest(params, activeTurn, currentThreadId);
+    activeTurn?.queue.push(buildDynamicToolTraceEvent("item.started", request));
+
+    let result: RuntimeDynamicToolCallResult;
+    if (!activeTurn?.handleRuntimeToolCall) {
+      result = {
+        success: false,
+        contentItems: [
+          { type: "inputText", text: "No Ravi dynamic tool handler is available for this Codex request." },
+        ],
+      };
+    } else {
+      try {
+        result = await activeTurn.handleRuntimeToolCall(request);
+      } catch (error) {
+        result = {
+          success: false,
+          contentItems: [{ type: "inputText", text: error instanceof Error ? error.message : String(error) }],
+        };
+      }
+    }
+
+    const response = buildCodexDynamicToolCallResponse(result);
+    activeTurn?.queue.push(buildDynamicToolTraceEvent("item.completed", request, response));
+    await writeJsonRpc({ id, result: response });
   }
 
   const requestTurnInterrupt = async (turn: AppServerTurnState) => {
@@ -687,6 +790,184 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
       }, INTERRUPT_GRACE_MS);
       forcedKillTimer.unref?.();
+    }
+  };
+
+  const buildRuntimeControlState = (): RuntimeControlState => ({
+    provider: "codex",
+    threadId: activeTurn?.threadId ?? currentThreadId,
+    turnId: activeTurn?.turnId,
+    activeTurn: Boolean(activeTurn && !activeTurn.settled),
+    supportedOperations: CODEX_RUNTIME_CONTROL_OPERATIONS,
+  });
+
+  const buildRuntimeControlSuccess = (
+    request: RuntimeControlRequest,
+    data: Record<string, unknown> = {},
+  ): RuntimeControlResult => ({
+    ok: true,
+    operation: request.operation,
+    data,
+    state: buildRuntimeControlState(),
+  });
+
+  const buildRuntimeControlError = (request: RuntimeControlRequest, error: unknown): RuntimeControlResult => ({
+    ok: false,
+    operation: request.operation,
+    error: error instanceof Error ? error.message : String(error),
+    state: buildRuntimeControlState(),
+  });
+
+  const resolveControlThreadId = (request: RuntimeControlRequest): string => {
+    const threadId = request.threadId ?? activeTurn?.threadId ?? currentThreadId;
+    if (!threadId) {
+      throw new Error(`${request.operation} requires a Codex thread id.`);
+    }
+    return threadId;
+  };
+
+  const resolveActiveTurnForControl = (request: RuntimeControlRequest): AppServerTurnState => {
+    if (!activeTurn || activeTurn.settled) {
+      throw new Error(`${request.operation} requires an active Codex turn.`);
+    }
+    return activeTurn;
+  };
+
+  const normalizeRuntimeControlUserInput = (request: RuntimeControlRequest): unknown[] => {
+    if (Array.isArray(request.input) && request.input.length > 0) {
+      return request.input;
+    }
+
+    const text = typeof request.text === "string" ? request.text : "";
+    if (!text.trim()) {
+      throw new Error("turn.steer requires text or input.");
+    }
+
+    return [
+      {
+        type: "text",
+        text,
+        text_elements: [],
+      },
+    ];
+  };
+
+  const assertNoActiveTurnForThreadMutation = (request: RuntimeControlRequest) => {
+    if (activeTurn && !activeTurn.settled) {
+      throw new Error(`${request.operation} cannot run while a Codex turn is active.`);
+    }
+  };
+
+  const handleRuntimeControl = async (request: RuntimeControlRequest): Promise<RuntimeControlResult> => {
+    try {
+      switch (request.operation) {
+        case "thread.list": {
+          const data = await sendRequest("thread/list", {
+            cursor: request.cursor ?? null,
+            limit: request.limit ?? null,
+            sortKey: request.sortKey ?? null,
+            modelProviders: request.modelProviders ?? null,
+            sourceKinds: request.sourceKinds ?? null,
+            archived: request.archived ?? null,
+            cwd: request.cwd ?? null,
+            searchTerm: request.searchTerm ?? null,
+          });
+          return buildRuntimeControlSuccess(request, data);
+        }
+
+        case "thread.read": {
+          const threadId = resolveControlThreadId(request);
+          const data = await sendRequest("thread/read", {
+            threadId,
+            includeTurns: request.includeTurns ?? true,
+          });
+          return buildRuntimeControlSuccess(request, data);
+        }
+
+        case "thread.rollback": {
+          assertNoActiveTurnForThreadMutation(request);
+          const threadId = resolveControlThreadId(request);
+          const numTurns = request.numTurns ?? 1;
+          if (!Number.isInteger(numTurns) || numTurns < 1) {
+            throw new Error("thread.rollback requires numTurns >= 1.");
+          }
+
+          const data = await sendRequest("thread/rollback", {
+            threadId,
+            numTurns,
+          });
+          return buildRuntimeControlSuccess(request, data);
+        }
+
+        case "thread.fork": {
+          assertNoActiveTurnForThreadMutation(request);
+          const threadId = resolveControlThreadId(request);
+          const data = await sendRequest("thread/fork", {
+            threadId,
+            path: request.path ?? null,
+            model: null,
+            modelProvider: null,
+            serviceTier: null,
+            cwd: request.cwd ?? null,
+            approvalPolicy: "never",
+            approvalsReviewer: null,
+            sandbox: CODEX_APP_SERVER_SANDBOX,
+            config: null,
+            baseInstructions: null,
+            developerInstructions: null,
+            ephemeral: false,
+            persistExtendedHistory: true,
+          });
+          return buildRuntimeControlSuccess(request, data);
+        }
+
+        case "turn.steer": {
+          const turn = resolveActiveTurnForControl(request);
+          const threadId = request.threadId ?? turn.threadId ?? currentThreadId;
+          const turnId = request.expectedTurnId ?? request.turnId ?? turn.turnId;
+          if (!threadId || !turnId) {
+            throw new Error("turn.steer requires an active Codex thread and turn id.");
+          }
+
+          const data = await sendRequest("turn/steer", {
+            threadId,
+            input: normalizeRuntimeControlUserInput(request),
+            responsesapiClientMetadata: null,
+            expectedTurnId: turnId,
+          });
+          return buildRuntimeControlSuccess(request, data);
+        }
+
+        case "turn.interrupt": {
+          const turn = resolveActiveTurnForControl(request);
+          turn.interruptRequested = true;
+          const threadId = request.threadId ?? turn.threadId ?? currentThreadId;
+          const turnId = request.turnId ?? turn.turnId;
+          if (!threadId) {
+            throw new Error("turn.interrupt requires an active Codex thread id.");
+          }
+
+          if (turnId) {
+            if (turnId === turn.turnId) {
+              await requestTurnInterrupt(turn);
+            } else {
+              await sendRequest("turn/interrupt", { threadId, turnId });
+            }
+          }
+
+          return buildRuntimeControlSuccess(request, {
+            interrupted: Boolean(turnId),
+            pending: !turnId,
+            threadId,
+            turnId: turnId ?? null,
+          });
+        }
+
+        default:
+          return buildRuntimeControlError(request, `Unsupported Codex runtime control operation: ${request.operation}`);
+      }
+    } catch (error) {
+      return buildRuntimeControlError(request, error);
     }
   };
 
@@ -923,6 +1204,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               serviceName: null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
+              dynamicTools: input.dynamicTools ?? null,
               personality: null,
               ephemeral: false,
               experimentalRawEvents: false,
@@ -964,6 +1246,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   return {
+    control: handleRuntimeControl,
     startTurn(input) {
       if (activeTurn && !activeTurn.settled) {
         throw new Error("Codex app-server transport does not support overlapping turns");
@@ -978,6 +1261,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }),
         resolveResult,
         stderrOffset: stderr.length,
+        approveRuntimeRequest: input.approveRuntimeRequest,
+        handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
         interruptRequested: false,
       };
@@ -1029,6 +1314,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             await requestTurnInterrupt(turn);
           }
         },
+        control: handleRuntimeControl,
       };
     },
     close,
@@ -1510,7 +1796,8 @@ function extractCliToolStarted(item: unknown): RuntimeToolUse | null {
     return null;
   }
 
-  const toolName = normalizeCliToolName(record.type);
+  const toolName =
+    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
   const toolUseId = firstString(record.id);
   if (!toolUseId) {
     return null;
@@ -1530,7 +1817,8 @@ function extractCliToolCompleted(item: unknown): ToolCompletedEvent | null {
   }
 
   const toolUseId = firstString(record.id);
-  const toolName = normalizeCliToolName(record.type);
+  const toolName =
+    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
   const status = typeof record.status === "string" ? record.status : "completed";
 
   const result: ToolCompletedEvent = {
@@ -1568,6 +1856,9 @@ function normalizeCliToolName(type: string): string {
 }
 
 function extractCliToolInput(item: Record<string, unknown>): unknown {
+  if (item.type === "dynamic_tool_call") {
+    return item.arguments;
+  }
   if (typeof item.command === "string") {
     return { command: item.command };
   }
@@ -1578,6 +1869,9 @@ function extractCliToolInput(item: Record<string, unknown>): unknown {
 }
 
 function extractCliToolOutput(item: Record<string, unknown>): unknown {
+  if (item.type === "dynamic_tool_call") {
+    return item.content_items;
+  }
   if (typeof item.aggregated_output === "string") {
     return item.aggregated_output;
   }
@@ -1677,6 +1971,17 @@ function normalizeAppServerItem(value: unknown): Record<string, unknown> | null 
         diff: item.diff,
         path: item.path,
       };
+    case "dynamicToolCall":
+    case "dynamic_tool_call":
+      return {
+        ...base,
+        type: "dynamic_tool_call",
+        tool: item.tool,
+        arguments: item.arguments,
+        success: item.success,
+        content_items: item.contentItems ?? item.content_items,
+        duration_ms: item.durationMs ?? item.duration_ms,
+      };
     case "reasoning":
       return {
         ...base,
@@ -1710,6 +2015,402 @@ function normalizeAppServerStatus(value: unknown): string | undefined {
   }
 
   return value.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
+}
+
+function isCodexApprovalRequestMethod(method: string): boolean {
+  return (
+    method === "item/commandExecution/requestApproval" ||
+    method === "execCommandApproval" ||
+    method === "item/fileChange/requestApproval" ||
+    method === "applyPatchApproval" ||
+    method === "item/permissions/requestApproval" ||
+    method === "item/tool/requestUserInput"
+  );
+}
+
+function buildRuntimeDynamicToolCallRequest(
+  params: Record<string, unknown>,
+  turn: AppServerApprovalTurn | null,
+  currentThreadId: string | undefined,
+): RuntimeDynamicToolCallRequest {
+  const toolName = firstString(params.tool, params.toolName, params.name) ?? "unknown";
+  const callId = firstString(params.callId, params.call_id, params.id);
+  const threadId = firstString(params.threadId, params.thread_id, turn?.threadId, currentThreadId);
+  const turnId = firstString(params.turnId, params.turn_id, turn?.turnId);
+  const args = params.arguments ?? params.input ?? params.args ?? {};
+  const item = buildDynamicToolCallItem({
+    callId,
+    toolName,
+    args,
+    status: "in_progress",
+    parentId: turnId,
+  });
+  const metadata = buildCodexEventMetadata(
+    {
+      type: "item/tool/call",
+      source: "codex.app-server",
+      thread_id: threadId,
+      turn_id: turnId,
+      item,
+    },
+    { threadId, turnId },
+  );
+
+  return {
+    toolName,
+    ...(callId ? { callId } : {}),
+    arguments: args,
+    rawRequest: params,
+    metadata,
+  };
+}
+
+function buildDynamicToolTraceEvent(
+  type: "item.started" | "item.completed",
+  request: RuntimeDynamicToolCallRequest,
+  result?: { success: boolean; contentItems: RuntimeDynamicToolCallContentItem[] },
+): CodexCliEvent {
+  const status = type === "item.started" ? "in_progress" : result?.success ? "completed" : "failed";
+  return {
+    type,
+    source: "codex.app-server",
+    ...(request.metadata?.thread?.id ? { thread_id: request.metadata.thread.id } : {}),
+    ...(request.metadata?.turn?.id ? { turn_id: request.metadata.turn.id } : {}),
+    item: buildDynamicToolCallItem({
+      callId: request.callId,
+      toolName: request.toolName,
+      args: request.arguments,
+      status,
+      parentId: request.metadata?.turn?.id,
+      result,
+    }),
+  };
+}
+
+function buildDynamicToolCallItem(input: {
+  callId?: string;
+  toolName: string;
+  args: unknown;
+  status: string;
+  parentId?: string;
+  result?: { success: boolean; contentItems: RuntimeDynamicToolCallContentItem[] };
+}): Record<string, unknown> {
+  return {
+    id: input.callId ?? `${input.toolName}-unknown`,
+    type: "dynamic_tool_call",
+    status: input.status,
+    parent_id: input.parentId,
+    tool: input.toolName,
+    arguments: input.args,
+    ...(input.result
+      ? {
+          success: input.result.success,
+          content_items: input.result.contentItems,
+        }
+      : {}),
+  };
+}
+
+function buildCodexDynamicToolCallResponse(result: RuntimeDynamicToolCallResult): {
+  success: boolean;
+  contentItems: RuntimeDynamicToolCallContentItem[];
+} {
+  const success = result.success === true;
+  const contentItems = normalizeDynamicToolCallContentItems(result.contentItems, result.reason);
+  return { success, contentItems };
+}
+
+function normalizeDynamicToolCallContentItems(
+  contentItems: RuntimeDynamicToolCallContentItem[] | undefined,
+  fallbackText?: string,
+): RuntimeDynamicToolCallContentItem[] {
+  const normalized =
+    contentItems?.filter((item): item is RuntimeDynamicToolCallContentItem => {
+      if (item?.type === "inputText") {
+        return typeof item.text === "string";
+      }
+      if (item?.type === "inputImage") {
+        return typeof item.imageUrl === "string";
+      }
+      return false;
+    }) ?? [];
+
+  if (normalized.length > 0) {
+    return normalized;
+  }
+
+  return [{ type: "inputText", text: fallbackText ?? "(no output)" }];
+}
+
+function buildRuntimeApprovalRequest(
+  method: string,
+  params: Record<string, unknown>,
+  turn: AppServerApprovalTurn | null,
+  currentThreadId: string | undefined,
+): RuntimeApprovalRequest {
+  const item = normalizeAppServerItem(params.item) ?? asRecord(params.item) ?? undefined;
+  const metadataEvent = {
+    type: method,
+    source: "codex.app-server",
+    thread_id: turn?.threadId ?? currentThreadId,
+    turn_id: turn?.turnId,
+    ...(item ? { item } : {}),
+  };
+  const metadata = buildCodexEventMetadata(metadataEvent, {
+    threadId: turn?.threadId ?? currentThreadId,
+    turnId: turn?.turnId,
+  });
+
+  if (method === "item/commandExecution/requestApproval" || method === "execCommandApproval") {
+    const command = extractApprovalCommand(params);
+    return {
+      kind: "command_execution",
+      method,
+      toolName: "Bash",
+      input: {
+        ...(command ? { command } : {}),
+        ...(item ? { item } : {}),
+      },
+      rawRequest: params,
+      metadata,
+    };
+  }
+
+  if (method === "item/fileChange/requestApproval" || method === "applyPatchApproval") {
+    const input = extractFileChangeApprovalInput(params, item);
+    return {
+      kind: "file_change",
+      method,
+      toolName: inferFileChangeToolName(input),
+      input,
+      rawRequest: params,
+      metadata,
+    };
+  }
+
+  if (method === "item/tool/requestUserInput") {
+    return {
+      kind: "user_input",
+      method,
+      toolName: "AskUserQuestion",
+      input: {
+        questions: extractApprovalQuestions(params),
+        ...(item ? { item } : {}),
+      },
+      rawRequest: params,
+      metadata,
+    };
+  }
+
+  return {
+    kind: "permission",
+    method,
+    input: {
+      permissions: extractRequestedPermissions(params),
+      ...(item ? { item } : {}),
+    },
+    rawRequest: params,
+    metadata,
+  };
+}
+
+function buildApprovalTraceEvent(
+  type: "approval.requested" | "approval.resolved",
+  request: RuntimeApprovalRequest,
+  result?: RuntimeApprovalResult,
+): CodexCliEvent {
+  const approval: RuntimeApprovalEvent = {
+    kind: request.kind,
+    ...(request.method ? { method: request.method } : {}),
+    ...(request.toolName ? { toolName: request.toolName } : {}),
+    ...(result ? { approved: result.approved } : {}),
+    ...(typeof result?.inherited === "boolean" ? { inherited: result.inherited } : {}),
+    ...(result?.reason ? { reason: result.reason } : {}),
+  };
+
+  return {
+    type,
+    source: "codex.app-server",
+    ...(request.metadata?.thread?.id ? { thread_id: request.metadata.thread.id } : {}),
+    ...(request.metadata?.turn?.id ? { turn_id: request.metadata.turn.id } : {}),
+    ...(request.input?.item ? { item: request.input.item } : {}),
+    approval,
+  };
+}
+
+function extractRuntimeApprovalEvent(event: Record<string, unknown>): RuntimeApprovalEvent | null {
+  const approval = asRecord(event.approval);
+  const kind = firstString(approval?.kind);
+  if (!approval || !isRuntimeApprovalKind(kind)) {
+    return null;
+  }
+
+  return {
+    kind,
+    ...(firstString(approval.method) ? { method: firstString(approval.method) } : {}),
+    ...(firstString(approval.toolName) ? { toolName: firstString(approval.toolName) } : {}),
+    ...(typeof approval.approved === "boolean" ? { approved: approval.approved } : {}),
+    ...(typeof approval.inherited === "boolean" ? { inherited: approval.inherited } : {}),
+    ...(firstString(approval.reason) ? { reason: firstString(approval.reason) } : {}),
+  };
+}
+
+function isRuntimeApprovalKind(value: unknown): value is RuntimeApprovalKind {
+  return value === "command_execution" || value === "file_change" || value === "permission" || value === "user_input";
+}
+
+function buildCodexApprovalResponse(
+  method: string,
+  params: Record<string, unknown>,
+  result: RuntimeApprovalResult,
+): Record<string, unknown> {
+  if (method === "item/tool/requestUserInput") {
+    return {
+      answers: result.answers ?? {},
+      ...(result.approved ? {} : { denied: true, reason: result.reason ?? "Denied by Ravi approval policy." }),
+    };
+  }
+
+  if (method === "item/permissions/requestApproval") {
+    if (result.approved) {
+      return {
+        permissions: result.permissions ?? extractRequestedPermissions(params) ?? {},
+      };
+    }
+    return {
+      permissions: {},
+      denied: true,
+      reason: result.reason ?? "Denied by Ravi approval policy.",
+    };
+  }
+
+  if (result.approved) {
+    return { decision: "acceptForSession" };
+  }
+
+  return {
+    decision: "deny",
+    reason: result.reason ?? "Denied by Ravi approval policy.",
+  };
+}
+
+function extractApprovalCommand(params: Record<string, unknown>): string | undefined {
+  const item = asRecord(params.item);
+  const commandExecution = asRecord(params.commandExecution) ?? asRecord(params.command_execution);
+  const toolInput = asRecord(params.toolInput) ?? asRecord(params.tool_input);
+  return firstCommand(
+    params.command,
+    params.commandLine,
+    params.command_line,
+    commandExecution?.command,
+    toolInput?.command,
+    item?.command,
+  );
+}
+
+function firstCommand(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) {
+      const joined = value.join(" ").trim();
+      if (joined.length > 0) {
+        return joined;
+      }
+    }
+  }
+  return undefined;
+}
+
+function extractFileChangeApprovalInput(
+  params: Record<string, unknown>,
+  item: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const fileChange = asRecord(params.fileChange) ?? asRecord(params.file_change);
+  const changes = firstArray(params.changes, fileChange?.changes, item?.changes);
+  const path = firstString(params.path, fileChange?.path, item?.path);
+  const diff = firstString(params.diff, fileChange?.diff, item?.diff);
+  return {
+    ...(changes ? { changes } : {}),
+    ...(path ? { path } : {}),
+    ...(diff ? { diff } : {}),
+    ...(item ? { item } : {}),
+  };
+}
+
+function inferFileChangeToolName(input: Record<string, unknown>): string {
+  const changes = Array.isArray(input.changes) ? input.changes : [];
+  const hasAdditiveChange = changes.some((change) => {
+    const record = asRecord(change);
+    const kind = firstString(record?.kind, record?.type, record?.operation);
+    return kind === "add" || kind === "create" || kind === "write";
+  });
+  return hasAdditiveChange ? "Write" : "Edit";
+}
+
+function extractRequestedPermissions(params: Record<string, unknown>): unknown {
+  return params.permissions ?? params.permission ?? params.requestedPermissions ?? params.requested_permissions;
+}
+
+function extractApprovalQuestions(params: Record<string, unknown>): RuntimeApprovalQuestion[] {
+  const toolInput = asRecord(params.toolInput) ?? asRecord(params.tool_input);
+  const questions = firstArray(params.questions, toolInput?.questions);
+  if (!questions) {
+    return [];
+  }
+
+  return questions.flatMap((question) => {
+    const record = asRecord(question);
+    if (!record) {
+      return [];
+    }
+
+    const text = firstString(record.question, record.text, record.prompt, record.label, record.header);
+    if (!text) {
+      return [];
+    }
+
+    const options = firstArray(record.options, record.choices, record.values)
+      ?.map((option) => {
+        if (typeof option === "string") {
+          return { label: option };
+        }
+        const optionRecord = asRecord(option);
+        const label = firstString(optionRecord?.label, optionRecord?.value, optionRecord?.text, optionRecord?.name);
+        if (!label) {
+          return null;
+        }
+        return {
+          label,
+          ...(firstString(optionRecord?.description) ? { description: firstString(optionRecord?.description) } : {}),
+        };
+      })
+      .filter((option): option is { label: string; description?: string } => !!option);
+
+    return [
+      {
+        ...(firstString(record.id, record.name) ? { id: firstString(record.id, record.name) } : {}),
+        ...(firstString(record.header) ? { header: firstString(record.header) } : {}),
+        question: text,
+        ...(options && options.length > 0 ? { options } : {}),
+        ...(typeof record.multiSelect === "boolean"
+          ? { multiSelect: record.multiSelect }
+          : typeof record.selectableCount === "number"
+            ? { multiSelect: record.selectableCount > 1 }
+            : {}),
+      },
+    ];
+  });
+}
+
+function firstArray(...values: unknown[]): unknown[] | undefined {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function extractAppServerUsage(tokenUsage: unknown): CodexCliUsage | undefined {

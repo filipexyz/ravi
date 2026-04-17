@@ -714,6 +714,694 @@ rl.on("line", (line) => {
     expect(completions[0]?.metadata?.turn?.id).toBe("turn_app");
   });
 
+  it("executes app-server thread control requests through runtime control", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-thread-control-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const logPath = join(cwd, "requests.jsonl");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const logPath = process.env.RAVI_CODEX_TEST_LOG;
+const log = (message) => {
+  if (logPath) appendFileSync(logPath, JSON.stringify({ method: message.method, params: message.params ?? {} }) + "\\n");
+};
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method) log(message);
+
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && message.method === "thread/start") {
+    send({
+      id: message.id,
+      result: { thread: { id: "thread_control", title: "Control thread" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_control", title: "Control thread" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_control", turn: { id: "turn_control", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_control", turn: { id: "turn_control", status: "completed" } },
+    });
+    return;
+  }
+  if (message.id && message.method === "thread/list") {
+    send({ id: message.id, result: { threads: [{ id: "thread_control", title: "Control thread" }], nextCursor: null } });
+    return;
+  }
+  if (message.id && message.method === "thread/read") {
+    send({
+      id: message.id,
+      result: {
+        thread: { id: message.params.threadId, title: "Control thread" },
+        turns: message.params.includeTurns ? [{ id: "turn_control", status: "completed" }] : [],
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "thread/rollback") {
+    send({ id: message.id, result: { thread: { id: message.params.threadId }, rolledBackTurns: message.params.numTurns } });
+    return;
+  }
+  if (message.id && message.method === "thread/fork") {
+    send({ id: message.id, result: { thread: { id: "thread_forked", cwd: message.params.cwd ?? null } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    let releasePrompt!: () => void;
+    const promptDone = new Promise<void>((resolve) => {
+      releasePrompt = resolve;
+    });
+    const abortController = new AbortController();
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        abortController,
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        prompt: (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "control" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          await promptDone;
+        })(),
+      }),
+    );
+
+    const iterator = session.events[Symbol.asyncIterator]();
+    try {
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) {
+          throw new Error("Codex session ended before turn completion");
+        }
+        if (next.value.type === "turn.complete") {
+          break;
+        }
+      }
+
+      const list = await session.control?.({ operation: "thread.list", limit: 3, searchTerm: "Control" });
+      const read = await session.control?.({ operation: "thread.read", includeTurns: false });
+      const rollback = await session.control?.({ operation: "thread.rollback", numTurns: 2 });
+      const fork = await session.control?.({ operation: "thread.fork", cwd: cwd, path: "forked" });
+
+      expect(list?.ok).toBe(true);
+      expect(read?.ok).toBe(true);
+      expect(rollback?.ok).toBe(true);
+      expect(fork?.ok).toBe(true);
+      expect(read?.state?.threadId).toBe("thread_control");
+      expect(rollback?.data?.rolledBackTurns).toBe(2);
+      expect((fork?.data?.thread as Record<string, unknown> | undefined)?.id).toBe("thread_forked");
+
+      const requests = readFileSync(logPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(requests.map((request) => request.method)).toEqual([
+        "initialize",
+        "thread/start",
+        "turn/start",
+        "thread/list",
+        "thread/read",
+        "thread/rollback",
+        "thread/fork",
+      ]);
+      expect(requests.find((request) => request.method === "thread/read")?.params).toMatchObject({
+        threadId: "thread_control",
+        includeTurns: false,
+      });
+      expect(requests.find((request) => request.method === "thread/fork")?.params).toMatchObject({
+        approvalPolicy: "never",
+        sandbox: "danger-full-access",
+        persistExtendedHistory: true,
+      });
+    } finally {
+      abortController.abort();
+      releasePrompt();
+      await iterator.return?.();
+    }
+  });
+
+  it("steers and interrupts an active app-server turn through runtime control", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-control-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const logPath = join(cwd, "requests.jsonl");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const logPath = process.env.RAVI_CODEX_TEST_LOG;
+const log = (message) => {
+  if (logPath) appendFileSync(logPath, JSON.stringify({ method: message.method, params: message.params ?? {} }) + "\\n");
+};
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method) log(message);
+
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && message.method === "thread/start") {
+    send({
+      id: message.id,
+      result: { thread: { id: "thread_turn_control", title: "Turn control" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_turn_control", title: "Turn control" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_turn_control", turn: { id: "turn_live", status: "inProgress" } },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/steer") {
+    send({ id: message.id, result: { accepted: true, expectedTurnId: message.params.expectedTurnId } });
+    return;
+  }
+  if (message.id && message.method === "turn/interrupt") {
+    send({ id: message.id, result: { accepted: true } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_turn_control", turn: { id: "turn_live", status: "interrupted" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    let releasePrompt!: () => void;
+    const promptDone = new Promise<void>((resolve) => {
+      releasePrompt = resolve;
+    });
+    const abortController = new AbortController();
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        abortController,
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        prompt: (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "control" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          await promptDone;
+        })(),
+      }),
+    );
+
+    const iterator = session.events[Symbol.asyncIterator]();
+    try {
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) {
+          throw new Error("Codex session ended before turn start");
+        }
+        if (next.value.type === "turn.started") {
+          break;
+        }
+      }
+
+      const steer = await session.control?.({ operation: "turn.steer", text: "use this detail" });
+      const interrupt = await session.control?.({ operation: "turn.interrupt" });
+
+      expect(steer?.ok).toBe(true);
+      expect(steer?.data?.accepted).toBe(true);
+      expect(interrupt?.ok).toBe(true);
+      expect(interrupt?.data).toMatchObject({
+        interrupted: true,
+        pending: false,
+        threadId: "thread_turn_control",
+        turnId: "turn_live",
+      });
+
+      for (;;) {
+        const next = await iterator.next();
+        if (next.done) {
+          throw new Error("Codex session ended before turn interrupt event");
+        }
+        if (next.value.type === "turn.interrupted") {
+          break;
+        }
+      }
+
+      const requests = readFileSync(logPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      const steerRequest = requests.find((request) => request.method === "turn/steer");
+      expect(steerRequest?.params).toMatchObject({
+        threadId: "thread_turn_control",
+        expectedTurnId: "turn_live",
+        input: [{ type: "text", text: "use this detail", text_elements: [] }],
+      });
+      expect(requests.find((request) => request.method === "turn/interrupt")?.params).toEqual({
+        threadId: "thread_turn_control",
+        turnId: "turn_live",
+      });
+    } finally {
+      abortController.abort();
+      releasePrompt();
+      await iterator.return?.();
+    }
+  });
+
+  it("routes app-server approval requests through the runtime approval handler", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-approval-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const responses = {};
+const expected = ["cmd_req", "file_req", "perm_req", "input_req"];
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+const finishIfReady = () => {
+  if (!expected.every((id) => responses[id])) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_approval",
+        type: "agentMessage",
+        text: JSON.stringify(responses),
+        status: "completed",
+        parentItemId: "turn_approval",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "thread/tokenUsage/updated",
+    params: { tokenUsage: { last: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 } } },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_approval", turn: { id: "turn_approval", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    responses[message.id] = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: {
+        thread: { id: "thread_approval", title: "Approval thread" },
+        model: "gpt-5.4",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/started",
+      params: { thread: { id: "thread_approval", title: "Approval thread" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_approval", turn: { id: "turn_approval", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "cmd_req",
+      method: "item/commandExecution/requestApproval",
+      params: {
+        command: "pwd",
+        item: {
+          id: "cmd_approval",
+          type: "commandExecution",
+          command: "pwd",
+          status: "inProgress",
+          parentItemId: "turn_approval",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "file_req",
+      method: "item/fileChange/requestApproval",
+      params: {
+        item: {
+          id: "file_approval",
+          type: "fileChange",
+          changes: [{ path: "hello.txt", kind: "add" }],
+          status: "inProgress",
+          parentItemId: "turn_approval",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "perm_req",
+      method: "item/permissions/requestApproval",
+      params: {
+        permissions: [{ permission: "use", objectType: "tool", objectId: "Bash" }],
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "input_req",
+      method: "item/tool/requestUserInput",
+      params: {
+        questions: [
+          {
+            id: "choice",
+            question: "Pick one",
+            options: [{ label: "A", description: "alpha" }, { label: "B" }],
+          },
+        ],
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const approvalRequests: Array<Parameters<NonNullable<RuntimeStartRequest["approveRuntimeRequest"]>>[0]> = [];
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["approval"], {
+        cwd,
+        approveRuntimeRequest: async (request) => {
+          approvalRequests.push(request);
+          if (request.kind === "file_change") {
+            return { approved: false, reason: "file changes require review" };
+          }
+          if (request.kind === "permission") {
+            return { approved: true, inherited: false, permissions: { Bash: true } };
+          }
+          if (request.kind === "user_input") {
+            return { approved: true, answers: { choice: "A" } };
+          }
+          return { approved: true, inherited: true };
+        },
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const assistantText = findEventsByType(events, "assistant.message")[0]?.text ?? "{}";
+    const approvalResponses = JSON.parse(assistantText);
+    const requested = findEventsByType(events, "approval.requested");
+    const resolved = findEventsByType(events, "approval.resolved");
+
+    expect(approvalRequests.map((request) => request.kind)).toEqual([
+      "command_execution",
+      "file_change",
+      "permission",
+      "user_input",
+    ]);
+    expect(approvalRequests[0]?.metadata?.source).toBe("codex.app-server");
+    expect(approvalRequests[0]?.metadata?.thread?.id).toBe("thread_approval");
+    expect(approvalRequests[0]?.metadata?.turn?.id).toBe("turn_approval");
+    expect(approvalRequests[0]?.metadata?.item?.id).toBe("cmd_approval");
+    expect(requested).toHaveLength(4);
+    expect(resolved).toHaveLength(4);
+    expect(resolved.find((event) => event.approval.kind === "file_change")?.approval).toMatchObject({
+      approved: false,
+      reason: "file changes require review",
+    });
+    expect(approvalResponses.cmd_req.decision).toBe("acceptForSession");
+    expect(approvalResponses.file_req.decision).toBe("deny");
+    expect(approvalResponses.file_req.reason).toBe("file changes require review");
+    expect(approvalResponses.perm_req.permissions).toEqual({ Bash: true });
+    expect(approvalResponses.input_req.answers).toEqual({ choice: "A" });
+  });
+
+  it("routes app-server dynamic tool calls through the runtime tool handler", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+let toolResponse;
+const finishIfReady = () => {
+  if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_tool",
+        type: "agentMessage",
+        text: JSON.stringify(toolResponse),
+        status: "completed",
+        parentItemId: "turn_tool",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_tool", turn: { id: "turn_tool", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    toolResponse = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: { thread: { id: "thread_tool", title: "Tool thread" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_tool", title: "Tool thread" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_tool", turn: { id: "turn_tool", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "tool_req",
+      method: "item/tool/call",
+      params: {
+        callId: "dyn_tool_1",
+        threadId: "thread_tool",
+        turnId: "turn_tool",
+        tool: "tools_list",
+        arguments: { verbose: true },
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const toolRequests: Array<Parameters<NonNullable<RuntimeStartRequest["handleRuntimeToolCall"]>>[0]> = [];
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["tool"], {
+        cwd,
+        handleRuntimeToolCall: async (request) => {
+          toolRequests.push(request);
+          return {
+            success: true,
+            contentItems: [{ type: "inputText", text: "tool output" }],
+          };
+        },
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+    const toolStarted = findEventsByType(events, "tool.started");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+
+    expect(toolRequests).toHaveLength(1);
+    expect(toolRequests[0]?.toolName).toBe("tools_list");
+    expect(toolRequests[0]?.callId).toBe("dyn_tool_1");
+    expect(toolRequests[0]?.arguments).toEqual({ verbose: true });
+    expect(toolRequests[0]?.metadata?.source).toBe("codex.app-server");
+    expect(toolRequests[0]?.metadata?.thread?.id).toBe("thread_tool");
+    expect(toolRequests[0]?.metadata?.turn?.id).toBe("turn_tool");
+    expect(toolRequests[0]?.metadata?.item?.id).toBe("dyn_tool_1");
+    expect(toolStarted[0]?.toolUse).toEqual({
+      id: "dyn_tool_1",
+      name: "tools_list",
+      input: { verbose: true },
+    });
+    expect(toolStarted[0]?.metadata?.item?.type).toBe("dynamic_tool_call");
+    expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_1");
+    expect(toolCompleted[0]?.toolName).toBe("tools_list");
+    expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: "tool output" }]);
+    expect(toolCompleted[0]?.isError).toBe(false);
+    expect(response).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: "tool output" }],
+    });
+  });
+
+  it("denies app-server command approvals when no runtime approval handler is available", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-approval-deny-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    send({
+      jsonrpc: "2.0",
+      method: "item/completed",
+      params: {
+        item: {
+          id: "msg_deny",
+          type: "agentMessage",
+          text: JSON.stringify(message.result),
+          status: "completed",
+          parentItemId: "turn_deny",
+        },
+      },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_deny", turn: { id: "turn_deny", status: "completed" } },
+    });
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({ id: message.id, result: { thread: { id: "thread_deny" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_deny" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_deny", turn: { id: "turn_deny", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "cmd_deny_req",
+      method: "item/commandExecution/requestApproval",
+      params: { command: "pwd", item: { id: "cmd_deny", type: "commandExecution", command: "pwd" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["deny"], { cwd }));
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+
+    expect(response.decision).toBe("deny");
+    expect(response.reason).toContain("No Ravi approval handler");
+    expect(findEventsByType(events, "approval.resolved")[0]?.approval.approved).toBe(false);
+  });
+
   it("emits turn.interrupted and continues with the next turn", async () => {
     let rejectInterruptedTurn: ((error: Error) => void) | undefined;
     const { calls, transport } = createMockTransport([

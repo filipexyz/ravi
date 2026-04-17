@@ -32,6 +32,7 @@ export interface ContextAuthorizationOptions {
   objectType: string;
   objectId: string;
   timeoutMs?: number;
+  eventData?: Record<string, unknown>;
 }
 
 export interface ContextAuthorizationResult {
@@ -179,6 +180,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     timeoutMs: opts.timeoutMs,
     autoApproveWithoutSource: false,
     eventData: {
+      ...(opts.eventData ?? {}),
       contextId: context.contextId,
       permission,
       objectType,
