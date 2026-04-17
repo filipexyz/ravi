@@ -1,4 +1,5 @@
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { createProject, getProjectDetails, linkProject } from "./index.js";
 import type { ProjectResourceType, ProjectStatus } from "./types.js";
 import { getAgent } from "../router/index.js";
@@ -104,6 +105,8 @@ export interface SeedCanonicalProjectFixturesOptions {
   actorSessionName?: string;
 }
 
+const fixtureWorktree = process.env.RAVI_FIXTURE_WORKTREE ?? process.env.RAVI_REPO ?? process.cwd();
+
 const CANONICAL_PROJECT_FIXTURES: CanonicalFixtureDefinition[] = [
   {
     key: "ops-cadence",
@@ -128,7 +131,7 @@ const CANONICAL_PROJECT_FIXTURES: CanonicalFixtureDefinition[] = [
       edges: [{ from: "triage", to: "ship" }],
     },
     resource: {
-      assetId: "/Users/luis/dev/filipelabs/ravi.bot",
+      assetId: fixtureWorktree,
       type: "worktree",
       label: "ravi.bot worktree",
       role: "substrate",
@@ -174,7 +177,7 @@ const CANONICAL_PROJECT_FIXTURES: CanonicalFixtureDefinition[] = [
       ],
     },
     resource: {
-      assetId: "/Users/luis/dev/filipelabs/ravi.bot/README.md",
+      assetId: join(fixtureWorktree, "README.md"),
       type: "file",
       label: "Launch copy brief",
       role: "brief",

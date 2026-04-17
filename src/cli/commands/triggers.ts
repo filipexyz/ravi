@@ -144,7 +144,7 @@ export class TriggersCommands {
     session?: string,
     @Option({
       flags: "--filter <expression>",
-      description: "Filter expression (e.g. 'data.cwd == \"/Users/luis/ravi\"')",
+      description: "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
     })
     filter?: string,
   ) {

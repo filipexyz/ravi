@@ -104,7 +104,7 @@ Resumo:
 Para mutações importantes, prefira o wrapper do repo fonte:
 
 ```bash
-/Users/luis/dev/filipelabs/ravi.bot/bin/ravi
+<ravi.bot repo>/bin/ravi
 ```
 
 Se houver split entre wrapper e runtime vivo, trate como fronteira suspeita.

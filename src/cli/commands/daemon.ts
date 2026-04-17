@@ -453,9 +453,9 @@ ANTHROPIC_API_KEY=
   }
 
   private findProjectRoot(): string | null {
-    const knownPath = "/Users/luis/dev/filipelabs/ravi.bot";
-    if (existsSync(join(knownPath, "package.json"))) {
-      return knownPath;
+    const configuredPath = process.env.RAVI_REPO?.trim();
+    if (configuredPath && existsSync(join(configuredPath, "package.json"))) {
+      return configuredPath;
     }
 
     let dir = process.cwd();
@@ -474,7 +474,7 @@ ANTHROPIC_API_KEY=
       dir = join(dir, "..");
     }
 
-    return knownPath;
+    return null;
   }
 
   /**

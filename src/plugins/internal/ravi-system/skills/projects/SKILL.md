@@ -37,13 +37,13 @@ Não use `project` como scheduler, task umbrella, PM tool genérica ou ownership
 Para mutações importantes, prefira:
 
 ```bash
-/Users/luis/dev/filipelabs/ravi.bot/bin/ravi
+<ravi.bot repo>/bin/ravi
 ```
 
 Se `bin/ravi` não expõe `projects`, o bundle `dist` provavelmente está stale. Confirme no source e rode build antes de concluir:
 
 ```bash
-cd /Users/luis/dev/filipelabs/ravi.bot
+cd <ravi.bot repo>
 bun run build
 ./bin/ravi projects --help
 ```
@@ -104,7 +104,7 @@ ravi projects init "Ravi Projects System" \
   --next-step "..." \
   --owner-agent dev \
   --session dev \
-  --resource worktree:/Users/luis/dev/filipelabs/ravi.bot \
+  --resource worktree:<ravi.bot repo> \
   --workflow-template technical-change
 ```
 
@@ -161,14 +161,14 @@ O comando deve herdar `owner_agent_id` e `operator_session_name` do project quan
 Adicionar um resource:
 
 ```bash
-ravi projects resources add ravi-projects-system /Users/luis/dev/filipelabs/ravi.bot --type worktree --role source
+ravi projects resources add ravi-projects-system <ravi.bot repo> --type worktree --role source
 ```
 
 Importar vários:
 
 ```bash
 ravi projects resources import ravi-projects-system \
-  --worktree /Users/luis/dev/filipelabs/ravi.bot \
+  --worktree <ravi.bot repo> \
   --url https://example.com/spec \
   --group 120363424772797713@g.us
 ```

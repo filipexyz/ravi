@@ -128,7 +128,7 @@ ravi setup
 
 # Configure omni in ~/.ravi/.env
 #   OMNI_DIR=/path/to/omni-v2
-#   DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+#   DATABASE_URL=<postgres-url>
 
 # Start the daemon
 ravi daemon start
@@ -191,7 +191,7 @@ ANTHROPIC_API_KEY=...
 
 # Omni (required for channel support)
 OMNI_DIR=/path/to/omni-v2
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni
+DATABASE_URL=<postgres-url>
 
 # Optional media integrations
 OPENAI_API_KEY=...

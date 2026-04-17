@@ -1550,7 +1550,7 @@ function buildRaviCodexHookCommand(): string {
     return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
   }
 
-  return ["/Users/luis/dev/filipelabs/ravi.bot/bin/ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
 }
 
 function shellEscape(value: string): string {

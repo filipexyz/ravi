@@ -46,7 +46,7 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-mock.module("@omni/sdk", () => ({
+mock.module("../../omni/client.js", () => ({
   createOmniClient: () => ({
     instances: {
       list: async () => ({ items: [] }),

@@ -13,7 +13,7 @@ description: |
 
 Ravi é um sistema multi-agent construído sobre o Claude Agent SDK que orquestra conversas em múltiplas plataformas via omni (WhatsApp, Discord, Telegram).
 
-**Repositório:** `/Users/luis/dev/filipelabs/ravi.bot`
+**Repositório:** `<ravi.bot repo>`
 **Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS JetStream | **AI:** Claude SDK
 
 ## Fluxo Principal de Mensagens
@@ -68,7 +68,7 @@ Comportamento:
 - Config subscription com auto-reconnect para `ravi.config.changed`
 
 ### omni/sender.ts - Delivery
-HTTP client para omni REST API (`@omni/sdk`). Métodos:
+HTTP client para omni REST API. Métodos:
 - `send(instanceId, to, text)` — texto
 - `sendTyping(instanceId, to, active)` — indicador de digitação
 - `sendReaction(instanceId, to, messageId, emoji)` — reação
@@ -235,7 +235,7 @@ runWithContext({ sessionKey, agentId, source }, async () => {
 ```bash
 OMNI_DIR=/path/to/omni-v2      # obrigatório para canal WhatsApp/Discord/Telegram
 OMNI_API_PORT=8882              # default
-DATABASE_URL=postgresql://...   # banco do omni
+DATABASE_URL=<postgres-url>      # banco do omni
 NATS_PORT=4222                  # default
 ```
 

@@ -31,7 +31,7 @@ import qrcode from "qrcode-terminal";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
-import { createOmniClient } from "@omni/sdk";
+import { createOmniClient } from "../../omni/client.js";
 import {
   dbGetInstance,
   dbGetInstanceByInstanceId,
