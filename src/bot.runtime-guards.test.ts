@@ -33,9 +33,32 @@ type RuntimeStartRequest = {
   abortController: AbortController;
   systemPromptAppend: string;
   env?: Record<string, string>;
+  hooks?: Record<string, unknown>;
   approveRuntimeRequest?: (request: any) => Promise<any>;
   dynamicTools?: Array<{ name: string; description: string; inputSchema: unknown }>;
   handleRuntimeToolCall?: (request: any) => Promise<any>;
+};
+
+type RuntimeHostServices = {
+  authorizeCapability(request: {
+    permission: string;
+    objectType: string;
+    objectId: string;
+    eventData?: Record<string, unknown>;
+  }): Promise<{ allowed: boolean; inherited: boolean; reason?: string }>;
+  authorizeCommandExecution(request: {
+    command: string;
+    input?: Record<string, unknown>;
+    eventData?: Record<string, unknown>;
+  }): Promise<any>;
+  authorizeToolUse(request: {
+    toolName: string;
+    input?: Record<string, unknown>;
+    eventData?: Record<string, unknown>;
+  }): Promise<any>;
+  requestUserInput(request: { questions: any[]; eventData?: Record<string, unknown> }): Promise<any>;
+  listDynamicTools(): RuntimeStartRequest["dynamicTools"];
+  executeDynamicTool(request: any, options?: { eventData?: Record<string, unknown> }): Promise<any>;
 };
 
 type RuntimePlugin = {
@@ -72,8 +95,8 @@ let activeProvider: RuntimeProviderId = "claude";
 let runtimeStartCalls: RuntimeStartRequest[] = [];
 let runtimePrepareImpl: (
   providerId: RuntimeProviderId,
-  input: { agentId: string; cwd: string; plugins?: RuntimePlugin[] },
-) => Promise<{ env?: Record<string, string> } | undefined>;
+  input: { agentId: string; cwd: string; plugins?: RuntimePlugin[]; hostServices?: RuntimeHostServices },
+) => Promise<{ env?: Record<string, string>; startRequest?: Partial<RuntimeStartRequest> } | undefined>;
 let runtimeStartImpl: (providerId: RuntimeProviderId, request: RuntimeStartRequest) => RuntimeHandle;
 let discoveredPlugins: RuntimePlugin[] = [];
 const createdTaskIds: string[] = [];
@@ -109,6 +132,87 @@ function resetRuntimeDoubles(): void {
     })(),
     interrupt: async () => {},
   });
+}
+
+function createMockCodexStartRequest(hostServices: RuntimeHostServices): Partial<RuntimeStartRequest> {
+  return {
+    approveRuntimeRequest: async (request: any) => {
+      const eventData = {
+        runtimeApproval: {
+          provider: "codex",
+          kind: request.kind,
+          method: request.method,
+          toolName: request.toolName,
+          input: request.input,
+        },
+        runtimeMetadata: request.metadata,
+      };
+
+      if (request.kind === "command_execution") {
+        return hostServices.authorizeCommandExecution({
+          command: request.input?.command ?? "",
+          input: request.input,
+          eventData,
+        });
+      }
+      if (request.kind === "file_change") {
+        return hostServices.authorizeToolUse({
+          toolName: request.toolName ?? "Edit",
+          input: request.input,
+          eventData,
+        });
+      }
+      if (request.kind === "user_input") {
+        return hostServices.requestUserInput({
+          questions: Array.isArray(request.input?.questions) ? request.input.questions : [],
+          eventData,
+        });
+      }
+
+      const permission = request.input?.permissions;
+      const capabilities =
+        permission && typeof permission === "object"
+          ? Object.keys(permission).map((entry) => {
+              const [action = "", objectType = "", objectId = ""] = entry.split(":");
+              return { permission: action, objectType, objectId };
+            })
+          : [];
+      let inherited = true;
+      for (const capability of capabilities) {
+        const result = await hostServices.authorizeCapability({
+          ...capability,
+          eventData,
+        });
+        if (!result.allowed) {
+          return {
+            approved: false,
+            reason: result.reason,
+            permissions: {},
+          };
+        }
+        inherited = inherited && result.inherited;
+      }
+      return {
+        approved: true,
+        inherited,
+        permissions: permission ?? {},
+      };
+    },
+    dynamicTools: hostServices.listDynamicTools(),
+    handleRuntimeToolCall: (request: any) =>
+      hostServices.executeDynamicTool(request, {
+        eventData: {
+          runtimeToolCall: {
+            provider: "codex",
+            method: "item/tool/call",
+            toolName: request.toolName,
+            callId: request.callId,
+            arguments: request.arguments,
+          },
+          runtimeMetadata: request.metadata,
+        },
+      }),
+  };
 }
 
 function createDispatchedTaskForSession(
@@ -427,7 +531,8 @@ mock.module("./runtime/index.js", () => ({
             supportsSessionResume: true,
             supportsSessionFork: false,
             supportsPartialText: false,
-            supportsToolHooks: false,
+            supportsToolHooks: true,
+            supportsHostSessionHooks: false,
             supportsPlugins: false,
             supportsMcpServers: false,
             supportsRemoteSpawn: false,
@@ -437,6 +542,7 @@ mock.module("./runtime/index.js", () => ({
             supportsSessionFork: true,
             supportsPartialText: true,
             supportsToolHooks: true,
+            supportsHostSessionHooks: true,
             supportsPlugins: true,
             supportsMcpServers: true,
             supportsRemoteSpawn: true,
@@ -445,8 +551,21 @@ mock.module("./runtime/index.js", () => ({
     return {
       id: providerId,
       getCapabilities: () => capabilities,
-      prepareSession: (input: { agentId: string; cwd: string; plugins?: RuntimePlugin[] }) =>
-        runtimePrepareImpl(providerId, input),
+      prepareSession: async (input: {
+        agentId: string;
+        cwd: string;
+        plugins?: RuntimePlugin[];
+        hostServices?: RuntimeHostServices;
+      }) => {
+        const prepared = await runtimePrepareImpl(providerId, input);
+        if (providerId !== "codex" || !input.hostServices || prepared?.startRequest) {
+          return prepared;
+        }
+        return {
+          ...(prepared ?? {}),
+          startRequest: createMockCodexStartRequest(input.hostServices),
+        };
+      },
       startSession: (input: RuntimeStartRequest) => {
         runtimeStartCalls.push(input);
         return runtimeStartImpl(providerId, input);
@@ -1187,6 +1306,7 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.claude`)).toBe(false);
+    expect(runtimeStartCalls[0]?.hooks).toBeUndefined();
     expect(
       emittedEvents.some(
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "provider.raw",

@@ -7,10 +7,11 @@ export interface RuntimeUsage {
 
 export type RuntimeBillingType = "api" | "subscription" | "unknown";
 
-export type RuntimeProviderId = "claude" | "codex";
+export type RuntimeProviderId = string;
 export type RuntimeToolAccessMode = "restricted" | "unrestricted";
 export type RuntimeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeThinking = "off" | "normal" | "verbose";
+export type RuntimeToolAccessRequirement = "tool_and_executable" | "tool_surface";
 
 export type RuntimeStatus = "queued" | "thinking" | "compacting" | "idle";
 
@@ -96,6 +97,36 @@ export interface RuntimeApprovalEvent {
 
 export type RuntimeApprovalHandler = (request: RuntimeApprovalRequest) => Promise<RuntimeApprovalResult>;
 
+export interface RuntimeCapabilityAuthorizationRequest {
+  permission: string;
+  objectType: string;
+  objectId: string;
+  eventData?: Record<string, unknown>;
+}
+
+export interface RuntimeCapabilityAuthorizationResult {
+  allowed: boolean;
+  inherited: boolean;
+  reason?: string;
+}
+
+export interface RuntimeCommandAuthorizationRequest {
+  command: string;
+  input?: Record<string, unknown>;
+  eventData?: Record<string, unknown>;
+}
+
+export interface RuntimeToolUseAuthorizationRequest {
+  toolName: string;
+  input?: Record<string, unknown>;
+  eventData?: Record<string, unknown>;
+}
+
+export interface RuntimeUserInputRequest {
+  questions: RuntimeApprovalQuestion[];
+  eventData?: Record<string, unknown>;
+}
+
 export interface RuntimeDynamicToolSpec {
   name: string;
   description: string;
@@ -130,6 +161,22 @@ export interface RuntimeDynamicToolCallResult {
 export type RuntimeDynamicToolCallHandler = (
   request: RuntimeDynamicToolCallRequest,
 ) => Promise<RuntimeDynamicToolCallResult>;
+
+export interface RuntimeDynamicToolExecutionOptions {
+  eventData?: Record<string, unknown>;
+}
+
+export interface RuntimeHostServices {
+  authorizeCapability(request: RuntimeCapabilityAuthorizationRequest): Promise<RuntimeCapabilityAuthorizationResult>;
+  authorizeCommandExecution(request: RuntimeCommandAuthorizationRequest): Promise<RuntimeApprovalResult>;
+  authorizeToolUse(request: RuntimeToolUseAuthorizationRequest): Promise<RuntimeApprovalResult>;
+  requestUserInput(request: RuntimeUserInputRequest): Promise<RuntimeApprovalResult>;
+  listDynamicTools(): RuntimeDynamicToolSpec[];
+  executeDynamicTool(
+    request: RuntimeDynamicToolCallRequest,
+    options?: RuntimeDynamicToolExecutionOptions,
+  ): Promise<RuntimeDynamicToolCallResult>;
+}
 
 export type RuntimeControlOperation =
   | "thread.list"
@@ -190,10 +237,12 @@ export interface RuntimePrepareSessionRequest {
   agentId: string;
   cwd: string;
   plugins?: RuntimePlugin[];
+  hostServices?: RuntimeHostServices;
 }
 
 export interface RuntimePrepareSessionResult {
   env?: Record<string, string>;
+  startRequest?: Partial<Pick<RuntimeStartRequest, "approveRuntimeRequest" | "dynamicTools" | "handleRuntimeToolCall">>;
 }
 
 export interface RuntimeSessionState {
@@ -355,9 +404,12 @@ export interface RuntimeCapabilities {
   supportsSessionFork: boolean;
   supportsPartialText: boolean;
   supportsToolHooks: boolean;
+  supportsHostSessionHooks?: boolean;
   supportsPlugins: boolean;
   supportsMcpServers: boolean;
   supportsRemoteSpawn: boolean;
+  legacyEventTopicSuffix?: string;
+  toolAccessRequirement?: RuntimeToolAccessRequirement;
 }
 
 export interface RuntimeProvider {

@@ -34,7 +34,7 @@ const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
 export const DmScopeSchema = z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]);
 
 export const AgentModeSchema = z.enum(["active", "sentinel"]);
-export const RuntimeProviderSchema = z.enum(["claude", "codex"]);
+export const RuntimeProviderSchema = z.string().min(1);
 
 export const AgentInputSchema = z.object({
   id: z.string().min(1),
@@ -340,7 +340,7 @@ function getDb(): Database {
       name TEXT,
       cwd TEXT NOT NULL,
       model TEXT,
-      provider TEXT CHECK(provider IS NULL OR provider IN ('claude','codex')),
+      provider TEXT,
       remote TEXT,
       remote_user TEXT,
       dm_scope TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
@@ -372,7 +372,7 @@ function getDb(): Database {
       session_key TEXT PRIMARY KEY,
       name TEXT,
       sdk_session_id TEXT,
-      runtime_provider TEXT CHECK(runtime_provider IS NULL OR runtime_provider IN ('claude','codex')),
+      runtime_provider TEXT,
       runtime_session_json TEXT,
       runtime_session_display_id TEXT,
       agent_id TEXT NOT NULL,
@@ -1306,7 +1306,7 @@ function rowToAgent(row: AgentRow): AgentConfig {
 
   if (row.name !== null) result.name = row.name;
   if (row.model !== null) result.model = row.model;
-  if (row.provider === "claude" || row.provider === "codex") result.provider = row.provider;
+  if (row.provider !== null) result.provider = row.provider;
   if (row.remote !== null) result.remote = row.remote;
   if (row.remote_user !== null) result.remoteUser = row.remote_user;
   if (row.dm_scope !== null) {

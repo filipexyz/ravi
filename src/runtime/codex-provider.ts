@@ -25,6 +25,7 @@ import type {
   RuntimeExecutionMetadata,
   RuntimeEvent,
   RuntimeEventMetadata,
+  RuntimeHostServices,
   RuntimeItemMetadata,
   RuntimePlugin,
   RuntimePrepareSessionRequest,
@@ -162,9 +163,11 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         supportsSessionFork: false,
         supportsPartialText: true,
         supportsToolHooks: true,
+        supportsHostSessionHooks: false,
         supportsPlugins: false,
         supportsMcpServers: false,
         supportsRemoteSpawn: false,
+        toolAccessRequirement: "tool_surface",
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
@@ -172,7 +175,11 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       ensureGlobalCodexBashHookConfig();
       const syncedSkills = syncSkills(input.plugins ?? []);
       syncedSkillsByCwd.set(input.cwd, Array.isArray(syncedSkills) ? syncedSkills : []);
-      return {};
+      return input.hostServices
+        ? {
+            startRequest: createCodexRuntimeStartRequest(input.hostServices),
+          }
+        : {};
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
@@ -212,6 +219,246 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       };
     },
   };
+}
+
+function createCodexRuntimeStartRequest(
+  hostServices: RuntimeHostServices,
+): NonNullable<RuntimePrepareSessionResult["startRequest"]> {
+  return {
+    approveRuntimeRequest: createCodexApprovalHandler(hostServices),
+    dynamicTools: hostServices.listDynamicTools(),
+    handleRuntimeToolCall: createCodexDynamicToolHandler(hostServices),
+  };
+}
+
+function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeApprovalHandler {
+  return async (request) => {
+    switch (request.kind) {
+      case "command_execution":
+        return authorizeCodexCommandExecution(hostServices, request);
+      case "file_change":
+        return authorizeCodexFileChange(hostServices, request);
+      case "permission":
+        return authorizeCodexPermissionRequest(hostServices, request);
+      case "user_input":
+        return requestCodexUserInput(hostServices, request);
+    }
+  };
+}
+
+function createCodexDynamicToolHandler(hostServices: RuntimeHostServices): RuntimeDynamicToolCallHandler {
+  return (request) =>
+    hostServices.executeDynamicTool(request, {
+      eventData: buildCodexDynamicToolEventData(request),
+    });
+}
+
+async function authorizeCodexCommandExecution(
+  hostServices: RuntimeHostServices,
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const command = typeof request.input?.command === "string" ? request.input.command : "";
+  if (!command.trim()) {
+    return { approved: false, reason: "Codex command approval request did not include a command." };
+  }
+
+  return hostServices.authorizeCommandExecution({
+    command,
+    input: request.input,
+    eventData: buildCodexApprovalEventData(request),
+  });
+}
+
+async function authorizeCodexFileChange(
+  hostServices: RuntimeHostServices,
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  return hostServices.authorizeToolUse({
+    toolName: request.toolName ?? "Edit",
+    input: request.input,
+    eventData: buildCodexApprovalEventData(request),
+  });
+}
+
+async function authorizeCodexPermissionRequest(
+  hostServices: RuntimeHostServices,
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const capabilities = extractRuntimeApprovalCapabilities(request);
+  if (capabilities.length === 0) {
+    return {
+      approved: false,
+      reason: "Unsupported Codex permission approval request shape.",
+      permissions: {},
+    };
+  }
+
+  let inherited = true;
+  const eventData = buildCodexApprovalEventData(request);
+  for (const capability of capabilities) {
+    const result = await hostServices.authorizeCapability({
+      ...capability,
+      eventData,
+    });
+    if (!result.allowed) {
+      return {
+        approved: false,
+        reason: result.reason ?? `${capability.permission} ${capability.objectType}:${capability.objectId} denied.`,
+        permissions: {},
+      };
+    }
+    inherited = inherited && result.inherited;
+  }
+
+  return {
+    approved: true,
+    inherited,
+    permissions: buildGrantedPermissionsPayload(request.input?.permissions),
+  };
+}
+
+function requestCodexUserInput(
+  hostServices: RuntimeHostServices,
+  request: RuntimeApprovalRequest,
+): Promise<RuntimeApprovalResult> {
+  const questions = Array.isArray(request.input?.questions)
+    ? (request.input.questions as RuntimeApprovalQuestion[])
+    : [];
+  return hostServices.requestUserInput({
+    questions,
+    eventData: buildCodexApprovalEventData(request),
+  });
+}
+
+function buildCodexApprovalEventData(request: RuntimeApprovalRequest): Record<string, unknown> {
+  return {
+    runtimeApproval: {
+      provider: "codex",
+      kind: request.kind,
+      method: request.method,
+      toolName: request.toolName,
+      input: truncateRuntimeEventData(request.input),
+    },
+    runtimeMetadata: request.metadata,
+  };
+}
+
+function buildCodexDynamicToolEventData(request: RuntimeDynamicToolCallRequest): Record<string, unknown> {
+  return {
+    runtimeToolCall: {
+      provider: "codex",
+      method: "item/tool/call",
+      toolName: request.toolName,
+      callId: request.callId,
+      arguments: truncateRuntimeEventData(request.arguments),
+    },
+    runtimeMetadata: request.metadata,
+  };
+}
+
+function extractRuntimeApprovalCapabilities(
+  request: RuntimeApprovalRequest,
+): Array<{ permission: string; objectType: string; objectId: string }> {
+  const permissions = request.input?.permissions ?? request.rawRequest;
+  const candidates = collectRuntimeApprovalCapabilityCandidates(permissions);
+  return candidates.flatMap((candidate) => parseRuntimeApprovalCapability(candidate));
+}
+
+function collectRuntimeApprovalCapabilityCandidates(value: unknown): unknown[] {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    return [value];
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const direct = parseRuntimeApprovalCapability(value);
+  if (direct.length > 0) {
+    return [value];
+  }
+
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, entry]) => {
+    if (entry === true || entry === null || entry === undefined) {
+      return [key];
+    }
+    if (entry === false) {
+      return [];
+    }
+    return [entry, key];
+  });
+}
+
+function parseRuntimeApprovalCapability(
+  candidate: unknown,
+): Array<{ permission: string; objectType: string; objectId: string }> {
+  if (typeof candidate === "string") {
+    const match = candidate.match(/^([a-z_]+)(?:\s+|:)([a-z_]+):(.+)$/i);
+    if (!match) {
+      return [];
+    }
+    return [{ permission: match[1], objectType: match[2], objectId: match[3] }];
+  }
+
+  const record = asRecord(candidate);
+  if (!record) {
+    return [];
+  }
+
+  const permission = firstString(record.permission, record.action, record.verb);
+  const objectType = firstString(record.objectType, record.object_type, record.resourceType, record.type);
+  const objectId = firstString(record.objectId, record.object_id, record.resourceId, record.id, record.name);
+  if (permission && objectType && objectId) {
+    return [{ permission, objectType, objectId }];
+  }
+
+  const toolName = firstString(record.toolName, record.tool_name, record.tool);
+  if (toolName) {
+    return [{ permission: "use", objectType: "tool", objectId: toolName }];
+  }
+
+  return [];
+}
+
+function buildGrantedPermissionsPayload(value: unknown): Record<string, unknown> {
+  if (!value) {
+    return {};
+  }
+
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  const capabilities = collectRuntimeApprovalCapabilityCandidates(value).flatMap((candidate) =>
+    parseRuntimeApprovalCapability(candidate),
+  );
+  return Object.fromEntries(
+    capabilities.map((capability) => [
+      `${capability.permission}:${capability.objectType}:${capability.objectId}`,
+      true,
+    ]),
+  );
+}
+
+function truncateRuntimeEventData(value: unknown): unknown {
+  if (typeof value === "string" && value.length > 1000) {
+    return value.slice(0, 1000) + "... [truncated]";
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => truncateRuntimeEventData(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, truncateRuntimeEventData(entry)]),
+  );
 }
 
 async function* normalizeCodexEvents(
@@ -1191,6 +1438,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               config: input.effort ? { model_reasoning_effort: input.effort } : null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
+              dynamicTools: input.dynamicTools ?? null,
               personality: null,
               persistExtendedHistory: false,
             })

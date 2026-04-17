@@ -22,6 +22,7 @@ import {
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/index.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,
@@ -223,7 +224,7 @@ export class AgentsCommands {
     console.log(`  Name:          ${agent.name || "-"}`);
     console.log(`  CWD:           ${agent.cwd}`);
     console.log(`  Model:         ${agent.model || "-"}`);
-    console.log(`  Provider:      ${agent.provider || "claude"}`);
+    console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
     console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
     console.log(`  Mode:          ${agent.mode ?? "active"}`);
     console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
@@ -250,17 +251,14 @@ export class AgentsCommands {
   create(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("cwd", { description: "Working directory" }) cwd: string,
-    @Option({ flags: "--provider <provider>", description: "Runtime provider: claude or codex" }) provider?: string,
+    @Option({ flags: "--provider <provider>", description: "Runtime provider id" }) provider?: string,
     @Option({
       flags: "--allow-runtime-mismatch",
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
   ) {
-    if (provider && provider !== "claude" && provider !== "codex") {
-      fail(`Invalid provider: ${provider}. Valid providers: claude, codex`);
-    }
-    const normalizedProvider = provider === "claude" || provider === "codex" ? provider : undefined;
+    const normalizedProvider = provider?.trim() || undefined;
     assertAgentMutationRuntime(allowRuntimeMismatch);
 
     try {
@@ -441,12 +439,7 @@ export class AgentsCommands {
       }
     }
 
-    // Validate provider values
-    if (key === "provider") {
-      if (value !== "claude" && value !== "codex") {
-        fail(`Invalid provider: ${value}. Valid providers: claude, codex`);
-      }
-    }
+    // Provider ids are intentionally open; runtime registration decides whether an id can execute.
 
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
     if (key === "matrixAccount" && value !== "null" && value !== "") {

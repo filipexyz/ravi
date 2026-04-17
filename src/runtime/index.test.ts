@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { assertRuntimeCompatibility, createRuntimeProvider, getRuntimeCompatibilityIssues } from "./index.js";
+import {
+  assertRuntimeCompatibility,
+  createRuntimeProvider,
+  getRuntimeCompatibilityIssues,
+  listRegisteredRuntimeProviderIds,
+  registerRuntimeProvider,
+  unregisterRuntimeProvider,
+} from "./index.js";
 import type { RuntimeProvider } from "./types.js";
 
 describe("runtime compatibility preflight", () => {
@@ -15,7 +22,7 @@ describe("runtime compatibility preflight", () => {
     ).not.toThrow();
   });
 
-  it("reports Codex restrictions through the shared runtime abstraction", () => {
+  it("reports provider capability restrictions through the shared runtime abstraction", () => {
     const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("codex"), {
       requiresMcpServers: true,
       requiresRemoteSpawn: true,
@@ -54,5 +61,32 @@ describe("runtime compatibility preflight", () => {
         toolAccessMode: "unrestricted",
       }),
     ).not.toThrow();
+  });
+
+  it("supports registering additional runtime providers without changing the factory switch", () => {
+    try {
+      registerRuntimeProvider("test-provider", () => ({
+        id: "test-provider",
+        getCapabilities: () => ({
+          supportsSessionResume: false,
+          supportsSessionFork: false,
+          supportsPartialText: false,
+          supportsToolHooks: true,
+          supportsPlugins: false,
+          supportsMcpServers: false,
+          supportsRemoteSpawn: false,
+        }),
+        startSession: () => ({
+          provider: "test-provider",
+          events: (async function* () {})(),
+          interrupt: async () => {},
+        }),
+      }));
+
+      expect(listRegisteredRuntimeProviderIds()).toContain("test-provider");
+      expect(createRuntimeProvider("test-provider").id).toBe("test-provider");
+    } finally {
+      unregisterRuntimeProvider("test-provider");
+    }
   });
 });

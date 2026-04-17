@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGeneratedAgentsBridge } from "./agent-instructions.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
-import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
+import type { RuntimeEvent, RuntimeHostServices, RuntimeStartRequest } from "./types.js";
 
 type TransportRequest = {
   cwd: string;
@@ -147,6 +147,154 @@ describe("createCodexRuntimeProvider", () => {
         process.env.HOME = originalHome;
       }
     }
+  });
+
+  it("builds Codex-local start handlers from generic runtime host services", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    const toolSpec = {
+      name: "tools_list",
+      description: "List tools",
+      inputSchema: { type: "object" },
+    };
+    const capabilityRequests: Array<Parameters<RuntimeHostServices["authorizeCapability"]>[0]> = [];
+    const hostServices: RuntimeHostServices = {
+      authorizeCapability: async (request) => {
+        capabilityRequests.push(request);
+        return { allowed: true, inherited: false };
+      },
+      authorizeCommandExecution: async (request) => ({
+        approved: true,
+        inherited: true,
+        updatedInput: request.input,
+      }),
+      authorizeToolUse: async (request) => ({
+        approved: true,
+        inherited: true,
+        updatedInput: request.input,
+      }),
+      requestUserInput: async () => ({ approved: true, answers: { choice: "A" } }),
+      listDynamicTools: () => [toolSpec],
+      executeDynamicTool: async (request) => ({
+        success: true,
+        contentItems: [{ type: "inputText", text: `ran ${request.toolName}` }],
+      }),
+    };
+
+    const provider = createCodexRuntimeProvider({ defaultModel: "gpt-5", syncSkills: () => [] });
+    const prepared = await provider.prepareSession?.({
+      agentId: "main",
+      cwd,
+      plugins: [],
+      hostServices,
+    });
+
+    expect(prepared?.startRequest?.dynamicTools).toEqual([toolSpec]);
+    await expect(
+      prepared?.startRequest?.approveRuntimeRequest?.({
+        kind: "permission",
+        method: "item/permissions/requestApproval",
+        input: { permissions: { "use:tool:Bash": true } },
+      }),
+    ).resolves.toMatchObject({
+      approved: true,
+      inherited: false,
+      permissions: { "use:tool:Bash": true },
+    });
+    expect(capabilityRequests[0]).toMatchObject({
+      permission: "use",
+      objectType: "tool",
+      objectId: "Bash",
+    });
+
+    await expect(
+      prepared?.startRequest?.handleRuntimeToolCall?.({
+        toolName: "tools_list",
+        callId: "call_1",
+        arguments: {},
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      contentItems: [{ type: "inputText", text: "ran tools_list" }],
+    });
+  });
+
+  it("passes dynamic tools when bootstrapping a resumed app-server thread", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-resume-tools-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "thread-requests.jsonl");
+    const toolSpec = {
+      name: "tools_list",
+      description: "List tools",
+      inputSchema: { type: "object" },
+    };
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: { thread: { id: message.params.threadId ?? "thread_new" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_prev", turn: { id: "turn_resume", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread_prev", turn: { id: "turn_resume", status: "completed" } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["resume"], {
+        cwd,
+        resume: "thread_prev",
+        dynamicTools: [toolSpec],
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const threadRequests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(threadRequests).toHaveLength(1);
+    expect(threadRequests[0]?.method).toBe("thread/resume");
+    expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
+    expect(threadRequests[0]?.params.dynamicTools).toEqual([toolSpec]);
   });
 
   it("maps CLI completion events and composes prompts with system instructions", async () => {
