@@ -908,12 +908,23 @@ describe("RaviBot runtime guards", () => {
     const interrupted = new Promise<void>((resolve) => {
       releaseInterrupted = resolve;
     });
-    let releaseRetriedPrompt: (() => void) | undefined;
-    const retriedPromptSeen = new Promise<void>((resolve) => {
-      releaseRetriedPrompt = resolve;
+    let releaseRetryPrompt: (() => void) | undefined;
+    const retryPromptSeen = new Promise<void>((resolve) => {
+      releaseRetryPrompt = resolve;
     });
+    let releaseSecondInterrupted: (() => void) | undefined;
+    const secondInterrupted = new Promise<void>((resolve) => {
+      releaseSecondInterrupted = resolve;
+    });
+    let releaseFinalRetryPrompt: (() => void) | undefined;
+    const finalRetryPromptSeen = new Promise<void>((resolve) => {
+      releaseFinalRetryPrompt = resolve;
+    });
+    let interruptCount = 0;
     const interrupt = mock(async () => {
-      releaseInterrupted?.();
+      interruptCount += 1;
+      if (interruptCount === 1) releaseInterrupted?.();
+      if (interruptCount === 2) releaseSecondInterrupted?.();
     });
 
     runtimeStartImpl = (providerId, request) => ({
@@ -946,10 +957,25 @@ describe("RaviBot runtime guards", () => {
 
         const retry = await request.prompt.next();
         expect(retry.value?.message.content).toBe("first\n\nsecond");
-        releaseRetriedPrompt?.();
+        releaseRetryPrompt?.();
+        await secondInterrupted;
+        yield {
+          type: "turn.failed",
+          error: "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null",
+          recoverable: true,
+          rawEvent: {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],
+          },
+        };
+
+        const finalRetry = await request.prompt.next();
+        expect(finalRetry.value?.message.content).toBe("first\n\nsecond\n\nthird");
+        releaseFinalRetryPrompt?.();
         yield {
           type: "assistant.message",
-          text: "handled second",
+          text: "handled third",
         };
         yield {
           type: "turn.complete",
@@ -964,16 +990,19 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
     await afterTool;
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
-    await retriedPromptSeen;
+    await retryPromptSeen;
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("third"));
+    await finalRetryPromptSeen;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(interrupt).toHaveBeenCalledTimes(2);
     const responses = emittedEvents
       .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
       .map((entry) => String(entry.data?.response ?? ""));
-    expect(responses).toContain("handled second");
+    expect(responses).toContain("handled third");
     expect(responses.some((response) => response.includes("Request was aborted"))).toBe(false);
     expect(responses.some((response) => response.startsWith("Error: [ede_diagnostic]"))).toBe(false);
+    expect(responses.some((response) => response.includes("stop_reason=null"))).toBe(false);
   });
 
   it("queues p2/after_response prompts until the current turn completes", async () => {

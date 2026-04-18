@@ -138,7 +138,7 @@ function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<s
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
-function isRecoverableAbortFailure(event: {
+function isRecoverableInterruptionFailure(event: {
   error?: string;
   recoverable?: boolean;
   rawEvent?: Record<string, unknown>;
@@ -157,11 +157,17 @@ function isRecoverableAbortFailure(event: {
     .join("\n")
     .toLowerCase();
 
-  return (
+  const hasAbortMarker =
     details.includes("request was aborted") ||
     details.includes("operation was aborted") ||
-    details.includes("aborterror")
-  );
+    details.includes("aborterror");
+  const hasInterruptedDiagnostic =
+    details.includes("[ede_diagnostic]") &&
+    details.includes("result_type=user") &&
+    details.includes("last_content_type=n/a") &&
+    (details.includes("stop_reason=null") || details.includes("stop_reason=tool_use"));
+
+  return hasAbortMarker || hasInterruptedDiagnostic;
 }
 
 function formatUserFacingTurnFailure(error: string): string {
@@ -2283,7 +2289,7 @@ export class RaviBot {
           streaming.pendingAbort = false;
           streaming.turnActive = false;
 
-          if (streaming.interrupted && isRecoverableAbortFailure(event)) {
+          if (streaming.interrupted && isRecoverableInterruptionFailure(event)) {
             log.info("Suppressing recoverable interrupted turn failure", {
               runId,
               sessionName,
