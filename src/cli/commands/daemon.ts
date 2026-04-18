@@ -4,8 +4,8 @@
 
 import "reflect-metadata";
 import { execSync, spawn } from "node:child_process";
-import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
 import { hasContext, fail } from "../context.js";
@@ -14,6 +14,106 @@ import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
 const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
+
+type SourceProjectRootLookupOptions = {
+  configuredPath?: string | null;
+  cwd?: string;
+};
+
+type DaemonRuntimeTargetOptions = SourceProjectRootLookupOptions & {
+  build?: boolean;
+  configuredBundle?: string | null;
+  argvEntry?: string | null;
+  daemonCwd?: string | null;
+};
+
+export type DaemonRuntimeTarget = {
+  bundlePath: string;
+  cwd: string;
+  sourceProjectRoot?: string;
+};
+
+function normalizeRootSearchStart(startPath: string | null | undefined): string | null {
+  const trimmed = startPath?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const realPath = realpathSync(trimmed);
+    return statSync(realPath).isDirectory() ? realPath : dirname(realPath);
+  } catch {
+    return trimmed;
+  }
+}
+
+function isRaviProjectRoot(dir: string): boolean {
+  const pkgPath = join(dir, "package.json");
+  if (!existsSync(pkgPath)) return false;
+
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    return pkg.name === "ravi.bot" || pkg.name === "@filipelabs/ravi";
+  } catch {
+    return false;
+  }
+}
+
+function findRaviProjectRootFrom(startPath: string | null | undefined): string | null {
+  let dir = normalizeRootSearchStart(startPath);
+  while (dir) {
+    if (isRaviProjectRoot(dir)) return dir;
+
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  return null;
+}
+
+export function findSourceProjectRoot(options: SourceProjectRootLookupOptions = {}): string | null {
+  const candidates = [options.configuredPath ?? process.env.RAVI_REPO, options.cwd ?? process.cwd()];
+
+  for (const candidate of candidates) {
+    const root = findRaviProjectRootFrom(candidate);
+    if (root) return root;
+  }
+
+  return null;
+}
+
+function resolveExistingFile(path: string | null | undefined): string | null {
+  const trimmed = path?.trim();
+  if (!trimmed) return null;
+  try {
+    const realPath = realpathSync(trimmed);
+    return statSync(realPath).isFile() ? realPath : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveDaemonRuntimeTarget(options: DaemonRuntimeTargetOptions = {}): DaemonRuntimeTarget | null {
+  if (options.build) {
+    const sourceProjectRoot = findSourceProjectRoot(options);
+    if (!sourceProjectRoot) return null;
+
+    return {
+      bundlePath: join(sourceProjectRoot, "dist", "bundle", "index.js"),
+      cwd: sourceProjectRoot,
+      sourceProjectRoot,
+    };
+  }
+
+  const bundlePath = resolveExistingFile(
+    options.configuredBundle ?? process.env.RAVI_BUNDLE ?? options.argvEntry ?? process.argv[1],
+  );
+  if (!bundlePath) return null;
+
+  return {
+    bundlePath,
+    cwd: options.daemonCwd?.trim() || process.env.RAVI_DAEMON_CWD?.trim() || homedir(),
+  };
+}
 
 function requirePm2() {
   if (!isPm2Available()) {
@@ -40,21 +140,17 @@ export class DaemonCommands {
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices();
 
-    const projectRoot = this.requireProjectRoot();
-    const bundlePath = this.findBundlePath(projectRoot);
-    if (!bundlePath) {
-      fail("Bundle not found. Run: bun run build");
-    }
+    const target = this.requireRuntimeTarget();
 
     const { status } = runPm2([
       "start",
-      bundlePath,
+      target.bundlePath,
       "--name",
       PM2_PROCESS_NAME,
       "--interpreter",
       "bun",
       "--cwd",
-      projectRoot,
+      target.cwd,
       "--",
       "daemon",
       "run",
@@ -91,7 +187,6 @@ export class DaemonCommands {
     @Option({ flags: "-f, --force", description: "Bypass safety checks (active tasks)" }) force?: boolean,
   ) {
     requirePm2();
-    const projectRoot = this.requireProjectRoot();
 
     // Safety check: block restart if tasks are actively running
     if (!force) {
@@ -121,6 +216,7 @@ export class DaemonCommands {
 
     // When called inside daemon, spawn detached restart and return immediately
     if (hasContext()) {
+      const target = this.requireRuntimeTarget({ build });
       if (!message) {
         fail('Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m "motivo"');
       }
@@ -134,6 +230,7 @@ export class DaemonCommands {
       // Spawn detached process to do the actual restart
       const args = ["daemon", "restart"];
       if (build) args.push("--build");
+      if (force) args.push("--force");
 
       const cleanEnv = { ...process.env };
       for (const key of Object.keys(cleanEnv)) {
@@ -143,7 +240,7 @@ export class DaemonCommands {
       const child = spawn("ravi", args, {
         detached: true,
         stdio: "ignore",
-        cwd: projectRoot,
+        cwd: target.cwd,
         env: cleanEnv,
       });
       child.unref();
@@ -153,12 +250,13 @@ export class DaemonCommands {
     }
 
     // Build first if requested
+    const target = this.requireRuntimeTarget({ build });
     if (build) {
       console.log("Building...");
       try {
         execSync("bun run build", {
           stdio: "inherit",
-          cwd: projectRoot,
+          cwd: target.cwd,
         });
         console.log("Build completed");
       } catch {
@@ -180,13 +278,13 @@ export class DaemonCommands {
 
       const { status } = runPm2([
         "start",
-        this.requireBundlePath(projectRoot),
+        target.bundlePath,
         "--name",
         PM2_PROCESS_NAME,
         "--interpreter",
         "bun",
         "--cwd",
-        projectRoot,
+        target.cwd,
         "--",
         "daemon",
         "run",
@@ -318,7 +416,7 @@ export class DaemonCommands {
 
   @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
   async dev() {
-    const projectRoot = this.requireProjectRoot();
+    const projectRoot = this.requireSourceProjectRoot();
 
     console.log(`Dev mode - watching ${projectRoot}/src`);
     console.log("Auto-rebuild on changes. Use 'ravi daemon restart' to apply.\n");
@@ -425,56 +523,28 @@ ANTHROPIC_API_KEY=
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
 
-  private findBundlePath(projectRoot: string): string | null {
-    // Try known locations
-    const locations = [join(projectRoot, "dist", "bundle", "index.js")];
-
-    for (const loc of locations) {
-      if (existsSync(loc)) return loc;
+  private requireRuntimeTarget(options: { build?: boolean } = {}): DaemonRuntimeTarget {
+    const target = resolveDaemonRuntimeTarget(options);
+    if (!target) {
+      fail(
+        options.build
+          ? "Could not resolve source build target. Set RAVI_REPO or run from the Ravi source repo after building."
+          : "Could not resolve Ravi runtime bundle. Reinstall ravi.bot or set RAVI_BUNDLE.",
+      );
     }
-
-    return null;
+    return target;
   }
 
-  private requireBundlePath(projectRoot: string): string {
-    const bundlePath = this.findBundlePath(projectRoot);
-    if (!bundlePath) {
-      fail("Bundle not found. Run: bun run build");
-    }
-    return bundlePath;
-  }
-
-  private requireProjectRoot(): string {
-    const projectRoot = this.findProjectRoot();
+  private requireSourceProjectRoot(): string {
+    const projectRoot = this.findSourceProjectRoot();
     if (!projectRoot) {
-      fail("Could not find project root (package.json with ravi.bot)");
+      fail("Could not find source project root (package.json with ravi.bot). Set RAVI_REPO or run from the repo.");
     }
     return projectRoot;
   }
 
-  private findProjectRoot(): string | null {
-    const configuredPath = process.env.RAVI_REPO?.trim();
-    if (configuredPath && existsSync(join(configuredPath, "package.json"))) {
-      return configuredPath;
-    }
-
-    let dir = process.cwd();
-    while (dir !== "/") {
-      const pkgPath = join(dir, "package.json");
-      if (existsSync(pkgPath)) {
-        try {
-          const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-          if (pkg.name === "ravi.bot" || pkg.name === "@filipelabs/ravi") {
-            return dir;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      dir = join(dir, "..");
-    }
-
-    return null;
+  private findSourceProjectRoot(): string | null {
+    return findSourceProjectRoot();
   }
 
   /**
