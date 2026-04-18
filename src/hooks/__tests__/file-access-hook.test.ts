@@ -21,11 +21,11 @@ function checkFileAccess(
 }
 
 describe("file access hook security", () => {
-  const agentCwd = "/Users/luis/ravi/main";
+  const agentCwd = "/workspace/ravi/main";
   const memoryPath = join(agentCwd, "MEMORY.md");
 
   test("allows access to MEMORY.md with absolute path", () => {
-    const result = checkFileAccess(agentCwd, memoryPath, "/Users/luis/ravi/main/MEMORY.md");
+    const result = checkFileAccess(agentCwd, memoryPath, "/workspace/ravi/main/MEMORY.md");
     expect(result.allowed).toBe(true);
   });
 
@@ -48,7 +48,7 @@ describe("file access hook security", () => {
     // Try to escape using ../
     const attacks = [
       "../../../etc/passwd",
-      "/Users/luis/ravi/main/../../../etc/passwd",
+      "/workspace/ravi/main/../../../etc/passwd",
       "MEMORY.md/../../../etc/passwd",
       "./MEMORY.md/../AGENTS.md",
       "MEMORY.md/../../secret.txt",
@@ -67,7 +67,7 @@ describe("file access hook security", () => {
   });
 
   test("blocks access to other agent directories", () => {
-    const result = checkFileAccess(agentCwd, memoryPath, "/Users/luis/ravi/other-agent/MEMORY.md");
+    const result = checkFileAccess(agentCwd, memoryPath, "/workspace/ravi/other-agent/MEMORY.md");
     expect(result.allowed).toBe(false);
   });
 

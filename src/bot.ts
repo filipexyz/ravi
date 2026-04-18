@@ -40,6 +40,7 @@ import { SANITIZED_ENV_VARS, createSanitizeBashHook } from "./hooks/sanitize-bas
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
 import { discoverPlugins } from "./plugins/index.js";
+import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "./session-control.js";
 import { delimiter, dirname, join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
@@ -56,7 +57,10 @@ import {
   dbMarkTaskAcceptedForSession,
   dbResolveActiveTaskBindingForSession,
 } from "./tasks/task-db.js";
+import { resolveTaskProfileForTask } from "./tasks/profiles.js";
+import { resolveTaskRuntimeOptions } from "./tasks/runtime-options.js";
 import { emitTaskEvent } from "./tasks/service.js";
+import type { TaskRuntimeOptions, TaskRuntimeResolution } from "./tasks/types.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeContext,
@@ -73,6 +77,13 @@ const log = logger.child("bot");
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 60000; // keep payloads reasonable
 const MAX_CONCURRENT_SESSIONS = 30;
+const TASK_RUNTIME_ENV_VARS = [
+  "RAVI_TASK_ID",
+  "RAVI_TASK_PROFILE_ID",
+  "RAVI_PARENT_TASK_ID",
+  "RAVI_TASK_SESSION",
+  "RAVI_TASK_WORKSPACE",
+];
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -284,8 +295,13 @@ function buildRuntimeEnv(
   providerEnv: Record<string, string> | undefined,
   capabilities: ReturnType<ReturnType<typeof createRuntimeProvider>["getCapabilities"]>,
 ): Record<string, string> {
+  const sanitizedBaseEnv = { ...baseEnv };
+  for (const key of TASK_RUNTIME_ENV_VARS) {
+    delete sanitizedBaseEnv[key];
+  }
+
   const runtimeEnv = {
-    ...baseEnv,
+    ...sanitizedBaseEnv,
     ...raviEnv,
     ...(providerEnv ?? {}),
   };
@@ -309,7 +325,12 @@ function buildTaskRuntimeEnv(
   sessionCwd: string,
   taskBarrierTaskId?: string,
 ): Record<string, string> {
-  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskBarrierTaskId);
+  const normalizedTaskId = normalizePromptTaskBarrierTaskId(taskBarrierTaskId);
+  if (!normalizedTaskId) {
+    return {};
+  }
+
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, normalizedTaskId);
   if (!binding) {
     return {};
   }
@@ -328,6 +349,11 @@ function buildTaskRuntimeEnv(
     RAVI_TASK_SESSION: assignment.sessionName,
     ...(workspaceRoot ? { RAVI_TASK_WORKSPACE: workspaceRoot } : {}),
   };
+}
+
+function normalizePromptTaskBarrierTaskId(taskBarrierTaskId?: string): string | undefined {
+  const normalized = taskBarrierTaskId?.trim();
+  return normalized ? normalized : undefined;
 }
 
 /** Message context for structured prompts */
@@ -424,6 +450,14 @@ interface StreamingSession {
   pendingMessages: UserMessage[];
   /** Current response source for routing */
   currentSource?: MessageTarget;
+  /** Runtime model currently assigned to this live stream */
+  currentModel: string;
+  /** Runtime effort currently assigned to this live stream */
+  currentEffort?: TaskRuntimeOptions["effort"];
+  /** Runtime thinking mode currently assigned to this live stream */
+  currentThinking?: TaskRuntimeOptions["thinking"];
+  /** Explicit task context used to start this runtime process, if any. */
+  currentTaskBarrierTaskId?: string;
   /** Tool tracking */
   toolRunning: boolean;
   currentToolId?: string;
@@ -550,6 +584,7 @@ export class RaviBot {
     this.running = true;
     this.subscribeToPrompts();
     this.subscribeToSessionAborts();
+    this.subscribeToSessionModelChanges();
     this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
     void this.recoverActiveTasksAfterRestart();
@@ -673,6 +708,124 @@ export class RaviBot {
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
+  }
+
+  private async subscribeToSessionModelChanges(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of nats.subscribe(SESSION_MODEL_CHANGED_TOPIC)) {
+          if (!this.running) break;
+          const data = event.data as Partial<SessionModelChangedEvent>;
+          const effectiveModel = typeof data.effectiveModel === "string" ? data.effectiveModel.trim() : "";
+          if (!effectiveModel) continue;
+
+          const keys = [data.sessionName, data.sessionKey]
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+            .map((value) => value.trim());
+
+          for (const key of new Set(keys)) {
+            const status = await this.applySessionModelChange(key, effectiveModel);
+            if (status !== "missing") {
+              log.info("Session model change applied", { key, effectiveModel, status });
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Session model change subscription error, reconnecting in 2s", { error: err });
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  private async applySessionModelChange(
+    sessionName: string,
+    model: string,
+  ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
+    const streaming = this.streamingSessions.get(sessionName);
+    if (!streaming || streaming.done) {
+      return "missing";
+    }
+    if (streaming.currentModel === model) {
+      return "unchanged";
+    }
+
+    if (typeof streaming.queryHandle.setModel === "function") {
+      await streaming.queryHandle.setModel(model);
+      streaming.currentModel = model;
+      return "applied";
+    }
+
+    if (streaming.pendingMessages.length > 0) {
+      this.stashedMessages.set(
+        sessionName,
+        streaming.pendingMessages.map((message) => ({ ...message })),
+      );
+    }
+    streaming.currentModel = model;
+    this.signalStreamingSessionShutdown(streaming);
+    this.streamingSessions.delete(sessionName);
+    return "restart-next-turn";
+  }
+
+  private resolvePromptRuntime(
+    sessionName: string,
+    prompt: PromptMessage,
+    session: SessionEntry | null | undefined,
+    agent: AgentConfig,
+  ): TaskRuntimeResolution {
+    const binding = prompt.taskBarrierTaskId
+      ? dbResolveActiveTaskBindingForSession(sessionName, prompt.taskBarrierTaskId)
+      : null;
+    const profile = (() => {
+      if (!binding) {
+        return null;
+      }
+      try {
+        return resolveTaskProfileForTask(binding.task);
+      } catch (error) {
+        log.warn("Task runtime profile unavailable while resolving runtime options", {
+          sessionName,
+          taskId: binding.task.id,
+          profileId: binding.task.profileId,
+          error,
+        });
+        return null;
+      }
+    })();
+    return resolveTaskRuntimeOptions({
+      task: binding?.task,
+      assignment: binding?.assignment,
+      profile,
+      sessionModelOverride: session?.modelOverride,
+      sessionThinkingLevel: session?.thinkingLevel,
+      agentModel: agent.model,
+      configModel: this.config.model,
+    });
+  }
+
+  private runtimeRequiresRestart(
+    streaming: StreamingSession,
+    runtime: TaskRuntimeResolution,
+    prompt: PromptMessage,
+  ): boolean {
+    return (
+      streaming.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ||
+      streaming.currentEffort !== runtime.options.effort ||
+      streaming.currentThinking !== runtime.options.thinking
+    );
+  }
+
+  private restartStreamingSessionForRuntimeChange(sessionName: string, streaming: StreamingSession): void {
+    if (streaming.pendingMessages.length > 0) {
+      this.stashedMessages.set(
+        sessionName,
+        streaming.pendingMessages.map((message) => ({ ...message })),
+      );
+    }
+    this.signalStreamingSessionShutdown(streaming);
+    this.streamingSessions.delete(sessionName);
   }
 
   /**
@@ -1076,6 +1229,32 @@ export class RaviBot {
         this.signalStreamingSessionShutdown(existing);
         this.streamingSessions.delete(sessionName);
       } else {
+        const requestedRuntime = this.resolvePromptRuntime(sessionName, prompt, sessionEntry, agent);
+        const requestedModel = requestedRuntime.options.model ?? this.config.model;
+        if (this.runtimeRequiresRestart(existing, requestedRuntime, prompt)) {
+          log.info("Streaming: restarting session after runtime task settings change", {
+            sessionName,
+            currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
+            requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+            currentEffort: existing.currentEffort ?? null,
+            requestedEffort: requestedRuntime.options.effort ?? null,
+            currentThinking: existing.currentThinking ?? null,
+            requestedThinking: requestedRuntime.options.thinking ?? null,
+          });
+          this.restartStreamingSessionForRuntimeChange(sessionName, existing);
+          await this.startStreamingSession(sessionName, prompt);
+          return;
+        }
+        if (!existing.currentModel) {
+          existing.currentModel = requestedModel;
+        } else if (existing.currentModel !== requestedModel) {
+          const modelStatus = await this.applySessionModelChange(sessionName, requestedModel);
+          if (modelStatus === "restart-next-turn") {
+            await this.startStreamingSession(sessionName, prompt);
+            return;
+          }
+        }
+
         // Session alive — just push the new message into the generator
         log.info("Streaming: pushing message to existing session", { sessionName });
         // Resolve DB primary key for metadata updates
@@ -1266,7 +1445,8 @@ export class RaviBot {
     this.updateSessionMetadata(dbSessionKey, prompt);
     saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined);
 
-    const model = session.modelOverride ?? agent.model ?? this.config.model;
+    const runtimeResolution = this.resolvePromptRuntime(sessionName, prompt, session, agent);
+    const model = runtimeResolution.options.model ?? this.config.model;
 
     // Build permission options
     // Use bypassPermissions so subagents (teams/tasks) inherit skip-all-permissions.
@@ -1561,6 +1741,10 @@ export class RaviBot {
       pendingWake: false,
       pendingMessages: [this.createQueuedUserMessage(prompt)],
       currentSource: resolvedSource,
+      currentModel: model,
+      currentEffort: runtimeResolution.options.effort,
+      currentThinking: runtimeResolution.options.thinking,
+      currentTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId),
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
@@ -1595,6 +1779,10 @@ export class RaviBot {
         sessionName,
         agentId: agent.id,
         provider: runtimeProviderId,
+        model,
+        effort: runtimeResolution.options.effort ?? null,
+        thinking: runtimeResolution.options.thinking ?? null,
+        modelSource: runtimeResolution.sources.model,
         providerSessionId: resumableProviderSessionId ?? null,
         resuming: !!resumableProviderSessionId,
       });
@@ -1615,6 +1803,10 @@ export class RaviBot {
         capabilities: snapshotAgentCapabilities(agent.id),
         metadata: {
           runtimeProvider: runtimeProviderId,
+          runtimeModel: model,
+          ...(runtimeResolution.options.effort ? { runtimeEffort: runtimeResolution.options.effort } : {}),
+          ...(runtimeResolution.options.thinking ? { runtimeThinking: runtimeResolution.options.thinking } : {}),
+          runtimeModelSource: runtimeResolution.sources.model,
           ...(approvalSource ? { approvalSource } : {}),
         },
       });
@@ -1702,6 +1894,8 @@ export class RaviBot {
       const runtimeRequest: RuntimeStartRequest = {
         prompt: messageGenerator,
         model,
+        ...(runtimeResolution.options.effort ? { effort: runtimeResolution.options.effort } : {}),
+        ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
         cwd: sessionCwd,
         ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
         ...(canResumeStoredSession
@@ -1772,7 +1966,7 @@ export class RaviBot {
 
       // Run the event loop in the background (don't await — it stays alive)
       runWithContext(toolContext, () =>
-        this.runEventLoop(runId, sessionName, session, agent, streamingSession, runtimeSession, model),
+        this.runEventLoop(runId, sessionName, session, agent, streamingSession, runtimeSession),
       ).catch((err) => {
         const isAbort = err instanceof Error && /abort/i.test(err.message);
         if (isAbort) {
@@ -1904,7 +2098,6 @@ export class RaviBot {
     agent: AgentConfig,
     streaming: StreamingSession,
     runtimeSession: RuntimeSessionHandle,
-    model: string,
   ): Promise<void> {
     // Timeout watchdog
     const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
@@ -2199,7 +2392,8 @@ export class RaviBot {
               : runtimeSession.provider === "codex"
                 ? "openai"
                 : null);
-          const executionModel = executionProvider === "anthropic" ? (event.execution?.model ?? model) : null;
+          const executionModel =
+            executionProvider === "anthropic" ? (event.execution?.model ?? streaming.currentModel) : null;
           const cost = executionModel
             ? calculateCost(executionModel, {
                 inputTokens,

@@ -162,6 +162,12 @@ mock.module("../../tasks/index.js", () => ({
   }),
 }));
 
+mock.module("../context.js", () => ({
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
 const { WorkflowRunCommands, WorkflowSpecCommands } = await import("./workflows.js");
 
 describe("WorkflowSpecCommands", () => {

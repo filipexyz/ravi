@@ -77,7 +77,7 @@ function makeHealthyDeps() {
         },
       ] as any,
     inspectAgentInstructionFiles: () => ({
-      state: "agents-canonical",
+      state: "agents-canonical" as const,
       agents: null,
       claude: null,
     }),

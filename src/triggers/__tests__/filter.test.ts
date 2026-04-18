@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { evaluateFilter } from "../filter.js";
 
 const data = {
-  cwd: "/Users/luis/Dev/fm",
+  cwd: "/workspace/fm",
   session_id: "381f8b5c-3961-4bde-86d6-96e6a15c0176",
   permission_mode: "bypassPermissions",
   hook_event_name: "Stop",
@@ -26,15 +26,15 @@ describe("evaluateFilter", () => {
 
   describe("== operator", () => {
     it("returns true when value matches (double quotes)", () => {
-      expect(evaluateFilter(`data.cwd == "/Users/luis/Dev/fm"`, data)).toBe(true);
+      expect(evaluateFilter(`data.cwd == "/workspace/fm"`, data)).toBe(true);
     });
 
     it("returns true when value matches (single quotes)", () => {
-      expect(evaluateFilter(`data.cwd == '/Users/luis/Dev/fm'`, data)).toBe(true);
+      expect(evaluateFilter(`data.cwd == '/workspace/fm'`, data)).toBe(true);
     });
 
     it("returns false when value does not match", () => {
-      expect(evaluateFilter(`data.cwd == "/Users/luis/ravi"`, data)).toBe(false);
+      expect(evaluateFilter(`data.cwd == "/workspace/ravi"`, data)).toBe(false);
     });
 
     it("matches hook_event_name", () => {
@@ -45,21 +45,21 @@ describe("evaluateFilter", () => {
 
   describe("!= operator", () => {
     it("returns true when value is different", () => {
-      expect(evaluateFilter(`data.cwd != "/Users/luis/ravi"`, data)).toBe(true);
+      expect(evaluateFilter(`data.cwd != "/workspace/ravi"`, data)).toBe(true);
     });
 
     it("returns false when value is the same", () => {
-      expect(evaluateFilter(`data.cwd != "/Users/luis/Dev/fm"`, data)).toBe(false);
+      expect(evaluateFilter(`data.cwd != "/workspace/fm"`, data)).toBe(false);
     });
   });
 
   describe("startsWith operator", () => {
     it("returns true when value starts with prefix", () => {
-      expect(evaluateFilter(`data.cwd startsWith "/Users/luis/Dev"`, data)).toBe(true);
+      expect(evaluateFilter(`data.cwd startsWith "/workspace"`, data)).toBe(true);
     });
 
     it("returns false when value does not start with prefix", () => {
-      expect(evaluateFilter(`data.cwd startsWith "/Users/luis/ravi"`, data)).toBe(false);
+      expect(evaluateFilter(`data.cwd startsWith "/workspace/ravi"`, data)).toBe(false);
     });
   });
 
@@ -75,7 +75,7 @@ describe("evaluateFilter", () => {
 
   describe("includes operator", () => {
     it("returns true when value contains substring", () => {
-      expect(evaluateFilter(`data.cwd includes "Dev"`, data)).toBe(true);
+      expect(evaluateFilter(`data.cwd includes "workspace"`, data)).toBe(true);
     });
 
     it("returns false when value does not contain substring", () => {
@@ -103,7 +103,7 @@ describe("evaluateFilter", () => {
     });
 
     it("returns true (fail open) for missing quotes around value", () => {
-      expect(evaluateFilter("data.cwd == /Users/luis", data)).toBe(true);
+      expect(evaluateFilter("data.cwd == /workspace", data)).toBe(true);
     });
 
     it("returns true (fail open) for unknown operator", () => {

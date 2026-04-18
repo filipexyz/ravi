@@ -54,6 +54,7 @@ interface CodexCliTurnRequest {
   cwd: string;
   env: NodeJS.ProcessEnv;
   model?: string;
+  effort?: string;
   prompt: string;
   resume?: string;
   systemPromptAppend: string;
@@ -184,6 +185,7 @@ async function* normalizeCodexEvents(
         cwd: input.cwd,
         env: input.env ?? process.env,
         model: resolveCodexModelArg(input.model, defaultModel),
+        effort: resolveCodexEffortArg(input.effort),
         prompt: promptText,
         resume: previousSessionId,
         systemPromptAppend,
@@ -787,7 +789,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               cwd: input.cwd,
               approvalPolicy: "never",
               sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: null,
+              config: input.effort ? { model_reasoning_effort: input.effort } : null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
               personality: null,
@@ -799,7 +801,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               cwd: input.cwd,
               approvalPolicy: "never",
               sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: null,
+              config: input.effort ? { model_reasoning_effort: input.effort } : null,
               serviceName: null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
@@ -883,7 +885,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             approvalPolicy: null,
             sandboxPolicy: null,
             model: null,
-            effort: null,
+            effort: input.effort ?? null,
             summary: null,
             personality: null,
             outputSchema: null,
@@ -920,7 +922,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model);
+      const args = buildExecArgs(input.resume, input.model, input.effort);
       const child = spawn(command, args, {
         cwd: input.cwd,
         env: input.env,
@@ -1005,13 +1007,16 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
   };
 }
 
-function buildExecArgs(resume: string | undefined, model?: string): string[] {
+function buildExecArgs(resume: string | undefined, model?: string, effort?: string): string[] {
   const args = resume ? ["exec", "resume"] : ["exec"];
 
   args.push("--json", "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox");
 
   if (model) {
     args.push("--model", model);
+  }
+  if (effort) {
+    args.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
   }
 
   if (resume) {
@@ -1178,6 +1183,10 @@ function resolveCodexExecutionModel(model: string, fallbackModel: string): strin
   }
 
   return value;
+}
+
+function resolveCodexEffortArg(effort: string | undefined): string | undefined {
+  return effort === "max" ? "xhigh" : effort;
 }
 
 function normalizeDefaultCodexModel(fallbackModel: string): string | undefined {

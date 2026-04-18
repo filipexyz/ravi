@@ -150,10 +150,10 @@ If a filter expression has invalid syntax (does not match the expected format), 
 
 ```bash
 # Only fire for events in a specific directory
-ravi triggers set <id> filter 'data.cwd startsWith "/Users/luis/ravi"'
+ravi triggers set <id> filter 'data.cwd startsWith "/workspace/ravi"'
 
 # Exclude events from a directory
-ravi triggers set <id> filter 'data.cwd != "/Users/luis/Dev/fm"'
+ravi triggers set <id> filter 'data.cwd != "/workspace/fm"'
 
 # Match a specific event type
 ravi triggers set <id> filter 'data.permission_mode == "bypassPermissions"'
@@ -294,7 +294,7 @@ ravi triggers set <id> topic "ravi.*.cli.contacts.*"
 ravi triggers set <id> agent vendas
 ravi triggers set <id> session main
 ravi triggers set <id> cooldown 30s
-ravi triggers set <id> filter 'data.cwd startsWith "/Users/luis/ravi"'
+ravi triggers set <id> filter 'data.cwd startsWith "/workspace/ravi"'
 ravi triggers set <id> filter -          # Remove filter
 ```
 
@@ -368,7 +368,7 @@ Only fire for events in a specific project directory:
 ravi triggers add "Project Watcher" \
   --topic "ravi.*.tool" \
   --message "Activity detected in the project. Last action: {{data.last_assistant_message}}" \
-  --filter 'data.cwd startsWith "/Users/luis/ravi/copilot"' \
+  --filter 'data.cwd startsWith "/workspace/ravi/copilot"' \
   --cooldown 30s
 ```
 
@@ -442,12 +442,12 @@ The filter must match the regex pattern `data.<path> <operator> "<value>"`. Doub
 
 ```bash
 # Valid
-data.cwd == "/Users/luis/ravi"
+data.cwd == "/workspace/ravi"
 data.tool startsWith "contacts"
 data.output includes 'error'
 
 # Invalid (will fail open with a warning)
-cwd == "/Users/luis"          # Missing data. prefix
-data.cwd = "/Users/luis"      # Single = is not valid
-data.cwd == /Users/luis       # Missing quotes around value
+cwd == "/workspace"          # Missing data. prefix
+data.cwd = "/workspace"      # Single = is not valid
+data.cwd == /workspace       # Missing quotes around value
 ```

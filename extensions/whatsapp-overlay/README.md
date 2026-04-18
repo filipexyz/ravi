@@ -71,11 +71,11 @@ That sidebar should be:
 
 Reference spec:
 
-- [`docs/whatsapp-overlay-cockpit-v1.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-cockpit-v1.md)
+- [`docs/whatsapp-overlay-cockpit-v1.md`](../../docs/whatsapp-overlay-cockpit-v1.md)
 - Canonical current status:
-  - [`docs/whatsapp-overlay-status.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/whatsapp-overlay-status.md)
+  - [`docs/whatsapp-overlay-status.md`](../../docs/whatsapp-overlay-status.md)
 - Canonical next substrate:
-  - [`docs/ravi-v3-cli-stream-core.md`](/Users/luis/dev/filipelabs/ravi.bot/docs/ravi-v3-cli-stream-core.md)
+  - [`docs/ravi-v3-cli-stream-core.md`](../../docs/ravi-v3-cli-stream-core.md)
 
 ## Run
 

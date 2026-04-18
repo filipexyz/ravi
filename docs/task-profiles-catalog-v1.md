@@ -48,6 +48,7 @@ O contrato de um profile é declarativo. Os campos que realmente importam são:
 - `progress`
 - `artifacts`
 - `state`
+- `runtimeDefaults`
 - `templates`
 
 Na prática:
@@ -56,6 +57,7 @@ Na prática:
 - `artifacts` definem o corpo real do trabalho
 - `templates` definem o protocolo de dispatch/resume
 - `state` inicializa contexto persistido da task
+- `runtimeDefaults` sugere `model`, `effort` e `thinking` para turnos dessa task
 - `completion/progress` definem a política operacional
 
 `TASK.md` não é conceito do sistema. É só um artifact possível.
@@ -95,6 +97,8 @@ Isso separa:
 
 Se o catálogo mudar depois, task antiga não muda por acidente.
 
+`runtimeDefaults` fica dentro do snapshot. Assim, uma mudança posterior no profile não troca silenciosamente o modelo de tasks já criadas.
+
 ## Fluxo Canônico
 
 ### 1. Descoberta
@@ -116,7 +120,7 @@ Isso responde:
 ### 2. Criação
 
 ```bash
-ravi tasks create "..." --profile <id> [--input k=v]
+ravi tasks create "..." --profile <id> [--input k=v] [--model <model>] [--effort <level>] [--thinking <mode>]
 ```
 
 O runtime:
@@ -125,12 +129,12 @@ O runtime:
 2. valida inputs, templates e artifacts
 3. calcula `profile_state`
 4. aplica `workspaceBootstrap`
-5. persiste snapshot + state + input
+5. persiste snapshot + state + input + override de runtime opcional
 
 ### 3. Dispatch
 
 ```bash
-ravi tasks dispatch <task-id> --agent <agent>
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
 ```
 
 O runtime:
@@ -138,9 +142,23 @@ O runtime:
 1. resolve `session cwd`
 2. resolve `worktree` contextual
 3. resolve artifacts
-4. renderiza `dispatch`
-5. publica prompt
-6. registra assignment + event
+4. resolve runtime efetivo de model/effort/thinking
+5. renderiza `dispatch`
+6. publica prompt
+7. registra assignment + event
+
+### Runtime por Task
+
+O modelo efetivo é resolvido por campo, sem mutar a sessão:
+
+1. `runtimeOverride` do dispatch ou launch plan
+2. `runtimeOverride` da task
+3. `profile.runtimeDefaults`
+4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
+5. `agent.model`
+6. modelo global do config
+
+O contexto da task vence a preferência da sessão porque dispatch/resume representam um contrato operacional explícito. A preferência da sessão continua valendo para turnos sem task e como fallback quando a task/profile não define aquele campo.
 
 ### 4. Execução
 
@@ -153,7 +171,7 @@ O agent:
 Bindings operacionais:
 
 - `dispatch` e `resume` carregam `taskBarrierTaskId`, então o runtime consegue injetar `RAVI_TASK_ID` sem heurística
-- turnos sem task explícita só recebem env de task quando existe uma única assignment ativa para a sessão
+- turnos sem task explícita não recebem `RAVI_TASK_*`, mesmo que exista uma assignment ativa para a sessão
 - `RAVI_TASK_WORKSPACE` segue a assignment real (`worktree`, `task_dir` ou cwd efetivo da sessão)
 
 ### 5. Leitura

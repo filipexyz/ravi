@@ -29,7 +29,7 @@ Em frase curta:
 ## Separação Certa
 
 - `task`: lifecycle, assignments, comments, archive, watch, notify
-- `profile`: workspace bootstrap, artifacts, templates, inputs, state, policies
+- `profile`: workspace bootstrap, artifacts, templates, inputs, state, runtime defaults, policies
 - `agent`: `cwd`, provider, permissões, sessão
 - `worktree`: contexto extra, nunca override de `cwd`
 - `DB/NATS`: fonte autoritativa do estado
@@ -68,6 +68,29 @@ Resumo:
 
 - catálogo vive em arquivo
 - snapshot/state/input vivem no banco por task
+- `runtimeDefaults` do profile fica pinado no snapshot
+
+## Runtime de Modelo
+
+Profiles podem declarar `runtimeDefaults: { model?, effort?, thinking? }`.
+
+`ravi tasks create` e `ravi tasks dispatch` aceitam overrides explícitos:
+
+```bash
+ravi tasks create "..." --profile <id> --model <model> --effort <level> --thinking <mode>
+ravi tasks dispatch <task-id> --agent <agent> --model <model> --effort <level> --thinking <mode>
+```
+
+Precedência por campo:
+
+1. override do dispatch ou launch plan
+2. override da task
+3. `profile.runtimeDefaults`
+4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
+5. `agent.model`
+6. config global
+
+Não use `ravi sessions set-model` como mecanismo interno de task. O runtime resolve model/effort/thinking no turno ligado à task por `taskBarrierTaskId`, sem mutar a sessão.
 
 ## Built-ins Atuais
 
@@ -109,6 +132,7 @@ ravi tasks create --profile <id>
 -> bootstrap do workspace
 -> ravi tasks dispatch
 -> prompt/resumo/evento vêm do profile
+-> runtime model/effort/thinking vem da task/profile/dispatch quando definido
 -> agent trabalha no artifact certo
 -> ravi tasks report|block|done|fail
 -> show/watch expõem profile + workspace + artifacts
@@ -120,6 +144,8 @@ ravi tasks create --profile <id>
 2. ler o `artifact` primário surfaced pelo runtime
 3. seguir o protocolo do dispatch/resume
 4. sincronizar estado via `ravi tasks ...`
+
+Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vazar contexto de task para conversas fora da task.
 
 ### `default`
 

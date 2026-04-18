@@ -20,6 +20,7 @@ import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
+import { runUpdate } from "./commands/update.js";
 import { configureCliLogging } from "./logging.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,6 +49,15 @@ program
   .description("Wizard interativo de configuração")
   .action(async () => {
     await runSetup();
+  });
+
+program
+  .command("update")
+  .description("Update Ravi CLI to the configured npm channel")
+  .option("--next", "Switch to dev builds (npm @next tag)")
+  .option("--stable", "Switch to stable releases (npm @latest tag)")
+  .action(async (options: { next?: boolean; stable?: boolean }) => {
+    await runUpdate(options);
   });
 
 // TUI - full-screen terminal interface

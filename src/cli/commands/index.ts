@@ -39,6 +39,7 @@ export * from "./tmux.js";
 export * from "./tools.js";
 export * from "./transcribe.js";
 export * from "./triggers.js";
+export * from "./update.js";
 export * from "./video.js";
 export * from "./whatsapp-dm.js";
 export * from "./workflows.js";

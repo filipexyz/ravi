@@ -10,9 +10,9 @@
  * Operators: ==, !=, startsWith, endsWith, includes
  *
  * Examples:
- *   data.cwd == "/Users/luis/Dev/fm"
+ *   data.cwd == "/workspace/fm"
  *   data.permission_mode != "bypassPermissions"
- *   data.cwd startsWith "/Users/luis/ravi"
+ *   data.cwd startsWith "/workspace/ravi"
  *   data.cwd endsWith "/copilot"
  *   data.cwd includes "Dev"
  */

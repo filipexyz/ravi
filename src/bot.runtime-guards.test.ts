@@ -25,6 +25,8 @@ type RuntimeStartRequest = {
     parent_tool_use_id: string | null;
   }>;
   model: string;
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  thinking?: "off" | "normal" | "verbose";
   cwd: string;
   resume?: string;
   forkSession?: boolean;
@@ -47,6 +49,7 @@ type SessionState = {
   providerSessionId?: string;
   sdkSessionId?: string;
   modelOverride?: string;
+  thinkingLevel?: "off" | "normal" | "verbose";
   lastChannel?: string;
   lastTo?: string;
   lastAccountId?: string;
@@ -56,6 +59,7 @@ type RuntimeHandle = {
   provider: RuntimeProviderId;
   events: AsyncIterable<Record<string, unknown>>;
   interrupt(): Promise<void>;
+  setModel?(model: string): Promise<void>;
 };
 
 const emittedEvents: Array<{ topic: string; data: any }> = [];
@@ -107,6 +111,16 @@ function createDispatchedTaskForSession(
     profileId?: string;
     parentTaskId?: string;
     taskDir?: string;
+    taskRuntimeOverride?: {
+      model?: string;
+      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      thinking?: "off" | "normal" | "verbose";
+    };
+    dispatchRuntimeOverride?: {
+      model?: string;
+      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      thinking?: "off" | "normal" | "verbose";
+    };
   } = {},
 ) {
   const created = actualTaskDbModule.dbCreateTask({
@@ -116,6 +130,7 @@ function createDispatchedTaskForSession(
     agentId: "main",
     profileId: options.profileId,
     parentTaskId: options.parentTaskId,
+    runtimeOverride: options.taskRuntimeOverride,
   } as any);
   createdTaskIds.push(created.task.id);
   if (options.taskDir) {
@@ -125,6 +140,7 @@ function createDispatchedTaskForSession(
     agentId: "main",
     sessionName,
     assignedBy: "test",
+    runtimeOverride: options.dispatchRuntimeOverride,
   });
 }
 
@@ -160,6 +176,7 @@ function getOrCreateSessionState(
     providerSessionId: defaults?.providerSessionId,
     sdkSessionId: defaults?.sdkSessionId,
     modelOverride: defaults?.modelOverride,
+    thinkingLevel: defaults?.thinkingLevel,
     lastChannel: defaults?.lastChannel,
     lastTo: defaults?.lastTo,
     lastAccountId: defaults?.lastAccountId,
@@ -730,6 +747,132 @@ describe("RaviBot runtime guards", () => {
     });
   });
 
+  it("uses task runtime overrides for task-bound prompts without leaking them to later non-task turns", async () => {
+    const sessionKey = "agent:main:task-runtime-model";
+    sessions.set(sessionKey, {
+      sessionKey,
+      name: sessionKey,
+      agentId: "main",
+      agentCwd: "/tmp/ravi-test-bot/main",
+      modelOverride: "session-model",
+    });
+    const dispatched = createDispatchedTaskForSession(sessionKey, {
+      profileId: "task-doc-none",
+      taskRuntimeOverride: {
+        model: "task-model",
+        effort: "xhigh",
+      },
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("task turn"),
+      taskBarrierTaskId: dispatched.task.id,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(1);
+    expect(runtimeStartCalls[0]?.model).toBe("task-model");
+    expect(runtimeStartCalls[0]?.effort).toBe("xhigh");
+    expect(sessions.get(sessionKey)?.modelOverride).toBe("session-model");
+
+    completeTaskForSession(dispatched.task.id, sessionKey);
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(2);
+    expect(runtimeStartCalls[1]?.model).toBe("session-model");
+    expect(runtimeStartCalls[1]?.effort).toBeUndefined();
+    expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
+  });
+
+  it("restarts when leaving a task context even if the live runtime can update models in place", async () => {
+    const sessionKey = "agent:main:task-runtime-context-exit";
+    sessions.set(sessionKey, {
+      sessionKey,
+      name: sessionKey,
+      agentId: "main",
+      agentCwd: "/tmp/ravi-test-bot/main",
+      modelOverride: "test-model",
+    });
+    const dispatched = createDispatchedTaskForSession(sessionKey, {
+      profileId: "task-doc-none",
+      taskRuntimeOverride: {
+        model: "test-model",
+      },
+    });
+    const setModelCalls: string[] = [];
+    const releaseRuntimes: Array<() => void> = [];
+    runtimeStartImpl = (providerId, request) => {
+      const lifetime = new Promise<void>((resolve) => {
+        releaseRuntimes.push(resolve);
+      });
+      return {
+        provider: providerId,
+        events: (async function* () {
+          await request.prompt.next();
+          yield {
+            type: "turn.complete",
+            providerSessionId: `${providerId}-session`,
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+          await lifetime;
+        })(),
+        interrupt: async () => {
+          releaseRuntimes.shift()?.();
+        },
+        setModel: async (model: string) => {
+          setModelCalls.push(model);
+        },
+      };
+    };
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("task turn"),
+      taskBarrierTaskId: dispatched.task.id,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    completeTaskForSession(dispatched.task.id, sessionKey);
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("normal turn"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls).toHaveLength(2);
+    expect(setModelCalls).toEqual([]);
+    expect(runtimeStartCalls[0]?.env?.RAVI_TASK_ID).toBe(dispatched.task.id);
+    expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
+
+    for (const release of releaseRuntimes.splice(0)) {
+      release();
+    }
+    await bot.stop();
+  });
+
+  it("lets dispatch runtime overrides beat task runtime overrides at task start", async () => {
+    const sessionKey = "agent:main:dispatch-runtime-model";
+    const dispatched = createDispatchedTaskForSession(sessionKey, {
+      profileId: "task-doc-none",
+      taskRuntimeOverride: {
+        model: "task-model",
+      },
+      dispatchRuntimeOverride: {
+        model: "dispatch-model",
+        thinking: "verbose",
+      },
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...makePrompt("task turn"),
+      taskBarrierTaskId: dispatched.task.id,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(runtimeStartCalls[0]?.model).toBe("dispatch-model");
+    expect(runtimeStartCalls[0]?.thinking).toBe("verbose");
+  });
+
   it("accepts the next prompt after a completed Codex turn without interrupting the session", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:codex-follow-up";
@@ -832,6 +975,41 @@ describe("RaviBot runtime guards", () => {
       { provider: "claude", prompt: "first via codex\n\nsecond via claude" },
     ]);
 
+    await bot.stop();
+  });
+
+  it("applies model changes to an active streaming session without daemon restart", async () => {
+    const sessionKey = "agent:main:live-model-switch";
+    const setModelCalls: string[] = [];
+    let releaseRuntime: (() => void) | undefined;
+    const runtimeLifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+
+    runtimeStartImpl = (providerId) => ({
+      provider: providerId,
+      events: (async function* () {
+        await runtimeLifetime;
+        yield { type: "status", status: "idle" };
+      })(),
+      interrupt: async () => {},
+      setModel: async (model: string) => {
+        setModelCalls.push(model);
+      },
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const status = await (bot as any).applySessionModelChange(sessionKey, "test-model-2");
+    const streaming = (bot as any).streamingSessions.get(sessionKey);
+
+    expect(status).toBe("applied");
+    expect(setModelCalls).toEqual(["test-model-2"]);
+    expect(streaming?.currentModel).toBe("test-model-2");
+
+    releaseRuntime?.();
     await bot.stop();
   });
 

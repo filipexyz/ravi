@@ -16,6 +16,7 @@ import type {
   RuntimeSessionState,
   RuntimeSessionHandle,
   RuntimeStartRequest,
+  RuntimeThinking,
   RuntimeStatus,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -56,6 +57,7 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       const env = buildClaudeCodeEnvironment(input.env);
       const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
       let activeQuery: Query | null = null;
+      let currentModel = input.model;
 
       return {
         provider: "claude",
@@ -63,12 +65,24 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           initialResumeSessionId: resumeSessionId,
           env,
           pathToClaudeCodeExecutable,
+          getModel: () => currentModel,
           setActiveQuery: (queryResult) => {
             activeQuery = queryResult;
           },
         }),
         interrupt: async () => {
           await activeQuery?.interrupt();
+        },
+        setModel: async (model: string) => {
+          currentModel = model;
+          if (activeQuery) {
+            try {
+              await activeQuery.setModel(model);
+            } catch {
+              // Some transports only accept model changes between turns. The
+              // next query still uses currentModel.
+            }
+          }
         },
       };
     },
@@ -81,6 +95,7 @@ async function* runClaudeTurns(
     initialResumeSessionId?: string;
     env: Record<string, string>;
     pathToClaudeCodeExecutable?: string;
+    getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
   },
 ): AsyncGenerator<RuntimeEvent> {
@@ -99,7 +114,7 @@ async function* runClaudeTurns(
 
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions(input, runtime.env, {
+      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, runtime.env, {
         resumeSessionId,
         forkSession: useForkSession,
         pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,
@@ -136,8 +151,11 @@ function buildClaudeQueryOptions(
     pathToClaudeCodeExecutable?: string;
   },
 ): Options {
+  const thinking = resolveClaudeThinkingConfig(input.thinking);
   return {
     model: input.model,
+    ...(input.effort ? { effort: input.effort as Options["effort"] } : {}),
+    ...(thinking ? { thinking } : {}),
     cwd: input.cwd,
     ...(runtime.resumeSessionId ? { resume: runtime.resumeSessionId } : {}),
     ...(runtime.forkSession ? { forkSession: true } : {}),
@@ -174,6 +192,19 @@ function buildClaudeQueryOptions(
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
+}
+
+function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["thinking"] | undefined {
+  switch (thinking) {
+    case "off":
+      return { type: "disabled" };
+    case "verbose":
+      return { type: "adaptive", display: "summarized" };
+    case "normal":
+      return { type: "adaptive", display: "omitted" };
+    default:
+      return undefined;
+  }
 }
 
 function stringifyUserPrompt(content: unknown): string {

@@ -46,6 +46,11 @@ function writeTaskProfile(
     taskDocumentUsage?: "required" | "optional" | "none";
     templateMode?: "inline" | "path";
     inputs?: Array<{ key: string; defaultValue?: string }>;
+    runtimeDefaults?: {
+      model?: string;
+      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      thinking?: "off" | "normal" | "verbose";
+    };
     templateTexts?: {
       dispatch?: string;
       resume?: string;
@@ -90,6 +95,7 @@ function writeTaskProfile(
     label: options.label ?? profileId,
     description: options.description ?? `Profile ${profileId}`,
     sessionNameTemplate: "<task-id>-work",
+    ...(options.runtimeDefaults ? { runtimeDefaults: options.runtimeDefaults } : {}),
     workspaceBootstrap: {
       mode: "inherit",
       ensureTaskDir: taskDocumentUsage !== "none",
@@ -414,6 +420,40 @@ describe("task profile catalog", () => {
     expect(validation).toHaveLength(1);
     expect(validation[0]?.valid).toBeFalse();
     expect(validation[0]?.error).toContain('Unknown placeholder root "mystery"');
+  });
+
+  it("validates and snapshots profile runtime defaults on task creation", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-runtime-defaults-");
+    await createIsolatedRaviState("ravi-task-profiles-runtime-defaults-state-");
+    process.chdir(workspaceDir);
+
+    const profilesRoot = join(workspaceDir, ".ravi", "task-profiles");
+    writeTaskProfile(profilesRoot, "runtime-defaulted", {
+      taskDocumentUsage: "none",
+      runtimeDefaults: {
+        model: "gpt-5.4-mini",
+        effort: "high",
+        thinking: "verbose",
+      },
+    });
+
+    const profile = requireTaskProfileDefinition("runtime-defaulted");
+    expect(profile.runtimeDefaults).toEqual({
+      model: "gpt-5.4-mini",
+      effort: "high",
+      thinking: "verbose",
+    });
+
+    const created = createTask({
+      title: "Runtime defaulted task",
+      instructions: "Pin runtime defaults in the task snapshot.",
+      createdBy: "test",
+      profileId: "runtime-defaulted",
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(created.task.profileSnapshot?.runtimeDefaults).toEqual(profile.runtimeDefaults);
+    expect(getTaskDetails(created.task.id).taskProfile?.runtimeDefaults).toEqual(profile.runtimeDefaults);
   });
 
   it.skip("pins profile version, source, and snapshot when creating a task", async () => {

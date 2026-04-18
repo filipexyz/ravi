@@ -22,6 +22,34 @@ export type TaskProfileArtifactKind = string;
 
 export type TaskProfileStateTransform = "identity" | "slug";
 
+export type TaskRuntimeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export type TaskRuntimeThinking = "off" | "normal" | "verbose";
+
+export type TaskRuntimeOptionsSource =
+  | "dispatch_override"
+  | "task_override"
+  | "profile_default"
+  | "session_override"
+  | "agent_default"
+  | "global_default";
+
+export interface TaskRuntimeOptions {
+  model?: string;
+  effort?: TaskRuntimeEffort;
+  thinking?: TaskRuntimeThinking;
+}
+
+export interface TaskRuntimeResolution {
+  options: TaskRuntimeOptions;
+  sources: {
+    model: TaskRuntimeOptionsSource | null;
+    effort: TaskRuntimeOptionsSource | null;
+    thinking: TaskRuntimeOptionsSource | null;
+  };
+  hasTaskRuntimeContext: boolean;
+}
+
 export const TASK_REPORT_EVENTS = ["blocked", "done", "failed"] as const;
 
 export type TaskReportEvent = (typeof TASK_REPORT_EVENTS)[number];
@@ -216,6 +244,7 @@ export interface TaskProfileDefinition {
   label: string;
   description: string;
   sessionNameTemplate: string;
+  runtimeDefaults?: TaskRuntimeOptions;
   workspaceBootstrap: TaskProfileWorkspaceBootstrap;
   sync: TaskProfileSyncPolicy;
   rendererHints: TaskProfileRendererHints;
@@ -253,6 +282,7 @@ export interface TaskRecord {
   profileSnapshot?: TaskProfileSnapshot;
   profileState?: TaskProfileState;
   profileInput?: TaskProfileInputValues;
+  runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -285,6 +315,7 @@ export interface TaskAssignment {
   assignedByAgentId?: string;
   assignedBySessionName?: string;
   worktree?: TaskWorktreeConfig;
+  runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -336,6 +367,7 @@ export interface TaskLaunchPlan {
   assignedByAgentId?: string;
   assignedBySessionName?: string;
   worktree?: TaskWorktreeConfig;
+  runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -379,6 +411,7 @@ export interface CreateTaskInput {
   profileSnapshot?: TaskProfileSnapshot;
   profileState?: TaskProfileState;
   profileInput?: TaskProfileInputValues;
+  runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];
@@ -397,6 +430,7 @@ export interface DispatchTaskInput {
   assignedByAgentId?: string;
   assignedBySessionName?: string;
   worktree?: TaskWorktreeConfig;
+  runtimeOverride?: TaskRuntimeOptions;
   checkpointIntervalMs?: number;
   reportToSessionName?: string;
   reportEvents?: TaskReportEvent[];

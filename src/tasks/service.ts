@@ -1,10 +1,11 @@
 import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
 import { expandHome, getAgent } from "../router/index.js";
-import { getOrCreateSession, resolveSession } from "../router/sessions.js";
+import { getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
+import { loadConfig } from "../utils/config.js";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { isAbsolute, relative as relativePath, resolve as resolvePath } from "node:path";
 import { z } from "zod";
@@ -68,6 +69,12 @@ import {
   type TaskDocSection,
 } from "./task-doc.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
+import {
+  TASK_RUNTIME_EFFORT_LEVELS,
+  TASK_RUNTIME_THINKING_LEVELS,
+  normalizeTaskRuntimeOptions,
+  resolveTaskRuntimeOptions,
+} from "./runtime-options.js";
 import { dbGetTaskWorkflowSurface, syncWorkflowNodeRunForTask, type TaskWorkflowSurface } from "../workflows/index.js";
 import type {
   ResolvedTaskProfile,
@@ -90,6 +97,7 @@ import type {
   TaskReadiness,
   TaskRecord,
   TaskReportEvent,
+  TaskRuntimeResolution,
   TaskStatus,
   TaskTerminalInput,
   TaskUnarchiveInput,
@@ -106,6 +114,7 @@ const TASK_WORKTREE_MODES = ["inherit", "path"] as const;
 const TASK_RECOVERY_STATUSES: TaskStatus[] = ["dispatched", "in_progress"];
 const TASK_RECOVERY_MAX_STALE_MS = 20 * 60 * 1000;
 const TASK_REPORT_EVENT_SET = new Set<string>(TASK_REPORT_EVENTS);
+const DEFAULT_TASK_REPORT_EVENTS = [...TASK_REPORT_EVENTS] satisfies TaskReportEvent[];
 const log = logger.child("tasks:service");
 
 export const TASK_STREAM_SCOPE = "tasks";
@@ -162,6 +171,7 @@ export interface TaskStreamTaskEntity {
   progress: number;
   profileId: string;
   taskProfile: ResolvedTaskProfile;
+  runtime: TaskRuntimeResolution;
   checkpointIntervalMs: number | null;
   reportToSessionName: string | null;
   reportEvents: TaskReportEvent[];
@@ -325,6 +335,15 @@ const TaskWorktreeInputSchema = z
   .strict()
   .transform((value) => createTaskWorktreeConfig(value));
 
+const TaskRuntimeOptionsSchema = z
+  .object({
+    model: z.string().trim().min(1).optional(),
+    effort: z.enum(TASK_RUNTIME_EFFORT_LEVELS).optional(),
+    thinking: z.enum(TASK_RUNTIME_THINKING_LEVELS).optional(),
+  })
+  .strict()
+  .transform((value) => normalizeTaskRuntimeOptions(value));
+
 const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   title: z.string().trim().min(1),
   instructions: z.string().trim().min(1),
@@ -342,6 +361,7 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   assigneeAgentId: z.string().trim().min(1).optional(),
   sessionName: z.string().trim().min(1).optional(),
   worktree: TaskWorktreeInputSchema.optional(),
+  runtimeOverride: TaskRuntimeOptionsSchema.optional(),
 }).strict();
 
 const TaskDispatchCommandArgsSchema = z
@@ -355,6 +375,7 @@ const TaskDispatchCommandArgsSchema = z
     assignedBy: z.string().trim().min(1).optional(),
     actor: z.string().trim().min(1).optional(),
     worktree: TaskWorktreeInputSchema.optional(),
+    runtimeOverride: TaskRuntimeOptionsSchema.optional(),
   })
   .strict();
 
@@ -1235,6 +1256,11 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
   const status = deriveTaskReadStatus(task, activeAssignment);
   const dependencySurface = getTaskDependencySurface(task, activeAssignment);
   const workflow = dbGetTaskWorkflowSurface(task.id);
+  const runtime = resolveTaskRuntimeForRead(task, {
+    profile,
+    assignment: activeAssignment,
+    launchPlan: dependencySurface.launchPlan,
+  });
   return {
     id: task.id,
     title: task.title,
@@ -1245,6 +1271,7 @@ function toTaskStreamEntity(task: TaskRecord, activeAssignment?: TaskAssignment 
     progress: task.progress,
     profileId: profile.id,
     taskProfile: profile,
+    runtime,
     checkpointIntervalMs: task.checkpointIntervalMs ?? null,
     reportToSessionName: task.reportToSessionName ?? null,
     reportEvents: resolveTaskReportEvents(task.reportEvents),
@@ -1282,7 +1309,7 @@ function resolveTaskReportEvents(events?: readonly TaskReportEvent[] | null): Ta
   const normalized = [
     ...new Set((events ?? []).filter((event): event is TaskReportEvent => TASK_REPORT_EVENT_SET.has(event))),
   ];
-  return normalized.length > 0 ? normalized : ["done"];
+  return normalized.length > 0 ? normalized : [...DEFAULT_TASK_REPORT_EVENTS];
 }
 
 function toTaskReportEvent(type: TaskEvent["type"]): TaskReportEvent | null {
@@ -1448,6 +1475,39 @@ export function resolveTaskCreateAssigneeAgent(agentId?: string, assigneeAgentId
   return requireTaskRuntimeAgent(resolvedAgentId).id;
 }
 
+export function resolveTaskRuntimeForRead(
+  task: TaskRecord,
+  options: {
+    profile?: ResolvedTaskProfile;
+    assignment?: TaskAssignment | null;
+    launchPlan?: TaskLaunchPlan | null;
+    sessionModelOverride?: string | null;
+    sessionThinkingLevel?: string | null;
+  } = {},
+): TaskRuntimeResolution {
+  const profile = options.profile ?? resolveTaskProfileForTask(task);
+  const launchPlan = options.launchPlan === undefined ? dbGetTaskLaunchPlan(task.id) : options.launchPlan;
+  const agentId =
+    options.assignment?.agentId ?? launchPlan?.agentId ?? task.assigneeAgentId ?? task.createdByAgentId ?? undefined;
+  const agentModel = agentId ? getAgent(agentId)?.model : undefined;
+  const runtimeSessionName = options.assignment?.sessionName ?? launchPlan?.sessionName ?? task.assigneeSessionName;
+  const runtimeSession = runtimeSessionName ? getSessionByName(runtimeSessionName) : null;
+  const sessionModelOverride =
+    options.sessionModelOverride !== undefined ? options.sessionModelOverride : runtimeSession?.modelOverride;
+  const sessionThinkingLevel =
+    options.sessionThinkingLevel !== undefined ? options.sessionThinkingLevel : runtimeSession?.thinkingLevel;
+  return resolveTaskRuntimeOptions({
+    task,
+    profile,
+    assignment: options.assignment,
+    launchPlan,
+    sessionModelOverride,
+    sessionThinkingLevel,
+    agentModel,
+    configModel: loadConfig().model,
+  });
+}
+
 export function isTaskStreamCommand(name: string): name is TaskStreamCommandName {
   return (TASK_STREAM_COMMAND_NAMES as readonly string[]).includes(name);
 }
@@ -1578,6 +1638,7 @@ export async function executeTaskStreamCommand(
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
         ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
         ...(args.parentTaskId ? { parentTaskId: args.parentTaskId } : {}),
+        ...(args.runtimeOverride ? { runtimeOverride: args.runtimeOverride } : {}),
         createdBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
         createdByAgentId: args.createdByAgentId,
         createdBySessionName: args.createdBySessionName,
@@ -1598,6 +1659,7 @@ export async function executeTaskStreamCommand(
           ...(typeof args.checkpointIntervalMs === "number" ? { checkpointIntervalMs: args.checkpointIntervalMs } : {}),
           ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
           ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
+          ...(args.runtimeOverride ? { runtimeOverride: args.runtimeOverride } : {}),
           ...(args.worktree ? { worktree: args.worktree } : {}),
         });
         await emitTaskEvent(dispatch.task, dispatch.event);
@@ -1639,6 +1701,7 @@ export async function executeTaskStreamCommand(
         ...(typeof args.checkpointIntervalMs === "number" ? { checkpointIntervalMs: args.checkpointIntervalMs } : {}),
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
         ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
+        ...(args.runtimeOverride ? { runtimeOverride: args.runtimeOverride } : {}),
         ...(args.worktree ? { worktree: args.worktree } : {}),
       });
       await emitTaskEvent(result.task, result.event);
@@ -1918,6 +1981,7 @@ export function createTask(input: CreateTaskInput): {
     profileSnapshot: buildTaskProfileSnapshot(profile),
     ...(Object.keys(profileInput).length > 0 ? { profileInput } : {}),
     ...(initialProfileState ? { profileState: initialProfileState } : {}),
+    ...(input.runtimeOverride ? { runtimeOverride: normalizeTaskRuntimeOptions(input.runtimeOverride) } : {}),
   });
 
   try {
@@ -2106,6 +2170,9 @@ async function reconcileTaskReadinessTransition(
       ? { reportToSessionName: dependencySurface.launchPlan.reportToSessionName }
       : {}),
     ...(dependencySurface.launchPlan.reportEvents ? { reportEvents: dependencySurface.launchPlan.reportEvents } : {}),
+    ...(dependencySurface.launchPlan.runtimeOverride
+      ? { runtimeOverride: dependencySurface.launchPlan.runtimeOverride }
+      : {}),
   });
   relatedEvents.push({ task: dispatched.task, event: dispatched.event });
   return relatedEvents;
@@ -2583,6 +2650,9 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
           : {}),
         ...(dependencySurface.launchPlan.reportEvents
           ? { reportEvents: dependencySurface.launchPlan.reportEvents }
+          : {}),
+        ...(dependencySurface.launchPlan.runtimeOverride
+          ? { runtimeOverride: dependencySurface.launchPlan.runtimeOverride }
           : {}),
       });
       await emitTaskEvent(dispatched.task, dispatched.event);

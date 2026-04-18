@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { SQLQueryBindings } from "bun:sqlite";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import type {
   CreateWorkflowSpecInput,
@@ -678,7 +679,7 @@ function runWorkflowUpdate(
   const now = Date.now();
   const assignments = entries.map(([key]) => `${key} = ?`);
   assignments.push("updated_at = ?");
-  const values = entries.map(([, value]) => value);
+  const values: SQLQueryBindings[] = entries.map(([, value]) => value as SQLQueryBindings);
   values.push(now, idValue);
   getDb()
     .prepare(`UPDATE ${table} SET ${assignments.join(", ")} WHERE ${idColumn} = ?`)

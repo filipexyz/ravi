@@ -17,6 +17,7 @@ import {
   emitTaskEvent,
   deriveTaskReadStatus,
   formatTaskWorktree,
+  formatTaskRuntimeOptions,
   getTaskDependencySurface,
   getTaskDocPath,
   getTaskActor,
@@ -24,12 +25,14 @@ import {
   listTasks,
   getTaskProjectSurface,
   normalizeTaskProgressMessage,
+  normalizeTaskRuntimeOptions,
   getDefaultTaskSessionNameForTask,
   queueOrDispatchTask,
   requireTaskRuntimeAgent,
   readTaskDocFrontmatter,
   resolveTaskProfile,
   resolveTaskProfileForTask,
+  resolveTaskRuntimeForRead,
   reportTaskProgress,
   blockTask,
   failTask,
@@ -48,6 +51,8 @@ import type {
   TaskReadiness,
   TaskRecord,
   TaskReportEvent,
+  TaskRuntimeOptions,
+  TaskRuntimeResolution,
   TaskStatus,
 } from "../../tasks/types.js";
 
@@ -177,6 +182,42 @@ function parseReportEvents(value?: string): TaskReportEvent[] | undefined {
   }
 
   return [...new Set(parsed as TaskReportEvent[])];
+}
+
+function parseRuntimeOverride(model?: string, effort?: string, thinking?: string): TaskRuntimeOptions | undefined {
+  try {
+    return normalizeTaskRuntimeOptions({
+      ...(model?.trim() ? { model: model.trim() } : {}),
+      ...(effort?.trim() ? { effort: effort.trim() as TaskRuntimeOptions["effort"] } : {}),
+      ...(thinking?.trim() ? { thinking: thinking.trim() as TaskRuntimeOptions["thinking"] } : {}),
+    });
+  } catch (error) {
+    fail(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function formatRuntimeResolution(resolution: TaskRuntimeResolution): string {
+  const options = formatTaskRuntimeOptions(resolution.options);
+  if (options === "-") {
+    return "-";
+  }
+  return [
+    resolution.options.model ? `model=${resolution.options.model}(${resolution.sources.model})` : null,
+    resolution.options.effort ? `effort=${resolution.options.effort}(${resolution.sources.effort})` : null,
+    resolution.options.thinking ? `thinking=${resolution.options.thinking}(${resolution.sources.thinking})` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(", ");
+}
+
+function formatRuntimeListLabel(resolution: TaskRuntimeResolution): string {
+  if (!resolution.hasTaskRuntimeContext) {
+    return "-";
+  }
+  const model = resolution.options.model ?? "-";
+  const effort = resolution.options.effort ? `/${resolution.options.effort}` : "";
+  const thinking = resolution.options.thinking ? `/${resolution.options.thinking}` : "";
+  return `${model}${effort}${thinking}`.slice(0, 18);
 }
 
 function parseProfileInputs(raw?: string[] | string): Record<string, string> | undefined {
@@ -359,6 +400,10 @@ function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | 
   const taskProfile = resolveTaskProfileForTask(task);
   const artifacts = buildTaskArtifactSummary(task, activeAssignment);
   const dependencySurface = getTaskDependencySurface(task, activeAssignment);
+  const runtime = resolveTaskRuntimeForRead(task, {
+    assignment: activeAssignment,
+    launchPlan: dependencySurface.launchPlan,
+  });
   const projectSurface = getTaskProjectSurface(task.id);
   const visualStatus = deriveTaskVisualStatus(task, dependencySurface.readiness, activeAssignment);
   console.log(`\nTask:        ${task.id}`);
@@ -370,6 +415,8 @@ function printTaskSummary(task: TaskRecord, activeAssignment?: TaskAssignment | 
   console.log(`Progress:    ${task.progress}%`);
   console.log(`Profile:     ${taskProfile.id}@${taskProfile.version}`);
   console.log(`Profile src: ${taskProfile.sourceKind} :: ${taskProfile.source}`);
+  console.log(`Runtime:     ${formatRuntimeResolution(runtime)}`);
+  if (task.runtimeOverride) console.log(`Task RT ov.: ${formatTaskRuntimeOptions(task.runtimeOverride)}`);
   console.log(`Surface:     ${taskProfile.rendererHints.label}`);
   console.log(`Workspace:   ${describeTaskWorkspace(taskProfile)}`);
   if (projectSurface) {
@@ -613,7 +660,6 @@ function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): st
   const project =
     (payload.project as { projectSlug?: string | null } | null | undefined) ??
     (payload.task as { project?: { projectSlug?: string | null } | null } | null | undefined)?.project ??
-    null ??
     null;
   const profileSuffix = profileId && profileId !== "default" ? ` :: profile ${profileId}` : "";
   const artifactSuffix =
@@ -738,6 +784,12 @@ export class TaskCommands {
     @Option({ flags: "--input <key=value...>", description: "Profile input values pinned to the task" })
     profileInputRaw?: string[] | string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--model <model>", description: "Task runtime model override" })
+    model?: string,
+    @Option({ flags: "--effort <level>", description: "Runtime effort: low|medium|high|xhigh|max" })
+    effort?: string,
+    @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
+    thinking?: string,
   ) {
     if (!instructions?.trim()) {
       fail("--instructions is required");
@@ -764,6 +816,7 @@ export class TaskCommands {
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
     const profileInput = parseProfileInputs(normalizedTail.profileInputRaw);
+    const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const actor = getTaskActor();
     const created = await createTask({
       title: title.trim(),
@@ -775,6 +828,7 @@ export class TaskCommands {
       ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
       ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
       ...(profileInput ? { profileInput } : {}),
+      ...(runtimeOverride ? { runtimeOverride } : {}),
       createdBy: actor.actor,
       createdByAgentId: actor.agentId,
       createdBySessionName: actor.sessionName,
@@ -793,6 +847,7 @@ export class TaskCommands {
         ...(actor.agentId ? { assignedByAgentId: actor.agentId } : {}),
         ...(actor.sessionName ? { assignedBySessionName: actor.sessionName } : {}),
         ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
+        ...(runtimeOverride ? { runtimeOverride } : {}),
         ...(worktree ? { worktree } : {}),
       });
       await emitMutationEvents(launchResult);
@@ -913,6 +968,10 @@ export class TaskCommands {
               ...item.task,
               project: item.project,
               visualStatus: item.visualStatus,
+              runtime: resolveTaskRuntimeForRead(item.task, {
+                assignment: item.activeAssignment,
+                launchPlan: item.dependencySurface.launchPlan,
+              }),
               readiness: item.dependencySurface.readiness,
               dependencyCount: item.dependencySurface.readiness.dependencyCount,
               unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
@@ -939,23 +998,29 @@ export class TaskCommands {
     const showArchiveColumn = archiveMode !== "exclude";
     if (showArchiveColumn) {
       console.log(
-        "  ID              STATUS      READY        DEPS   PRIORITY  ARCHIVE   AGENT        PROJECT          UPDATED      TITLE",
+        "  ID              STATUS      READY        DEPS   PRIORITY  ARCHIVE   AGENT        RUNTIME             PROJECT          UPDATED      TITLE",
       );
       console.log(
-        "  --------------  ----------  -----------  -----  --------  --------  -----------  ---------------  ----------  ------------------------------",
+        "  --------------  ----------  -----------  -----  --------  --------  -----------  ------------------  ---------------  ----------  ------------------------------",
       );
     } else {
       console.log(
-        "  ID              STATUS      READY        DEPS   PRIORITY  AGENT        PROJECT          UPDATED      TITLE",
+        "  ID              STATUS      READY        DEPS   PRIORITY  AGENT        RUNTIME             PROJECT          UPDATED      TITLE",
       );
       console.log(
-        "  --------------  ----------  -----------  -----  --------  -----------  ---------------  ----------  ------------------------------",
+        "  --------------  ----------  -----------  -----  --------  -----------  ------------------  ---------------  ----------  ------------------------------",
       );
     }
     for (const item of surfacedTasks) {
       const { task, project, dependencySurface, visualStatus } = item;
       const archiveLabel = task.archivedAt ? "yes" : "-";
       const projectLabel = (project?.projectSlug ?? "-").slice(0, 15);
+      const runtimeLabel = formatRuntimeListLabel(
+        resolveTaskRuntimeForRead(task, {
+          assignment: item.activeAssignment,
+          launchPlan: dependencySurface.launchPlan,
+        }),
+      );
       const readinessLabel =
         dependencySurface.readiness.state === "waiting"
           ? `${dependencySurface.readiness.unsatisfiedDependencyCount} pending`
@@ -967,11 +1032,11 @@ export class TaskCommands {
       const row = `  ${task.id.padEnd(14)}  ${formatTaskStatus(visualStatus).padEnd(10)}  ${readinessLabel.padEnd(11)}  ${`${dependencySurface.readiness.satisfiedDependencyCount}/${dependencySurface.readiness.dependencyCount}`.padEnd(5)}  ${task.priority.padEnd(8)}`;
       if (showArchiveColumn) {
         console.log(
-          `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
+          `${row}  ${archiveLabel.padEnd(8)}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${runtimeLabel.padEnd(18)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
         );
       } else {
         console.log(
-          `${row}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
+          `${row}  ${(task.assigneeAgentId ?? "-").padEnd(11)}  ${runtimeLabel.padEnd(18)}  ${projectLabel.padEnd(15)}  ${timeAgo(task.updatedAt).padEnd(10)}  ${task.title.slice(0, 30)}`,
         );
       }
     }
@@ -1016,6 +1081,10 @@ export class TaskCommands {
             taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
             taskArtifacts,
             primaryArtifact: taskArtifacts.primary,
+            runtime: resolveTaskRuntimeForRead(details.task, {
+              assignment: details.activeAssignment,
+              launchPlan: dependencySurface.launchPlan,
+            }),
             readiness: dependencySurface.readiness,
             dependencies: dependencySurface.dependencies,
             dependents: dependencySurface.dependents,
@@ -1051,6 +1120,7 @@ export class TaskCommands {
       `  Surface:    ${details.taskProfile?.rendererHints.label ?? resolveTaskProfile(undefined).rendererHints.label}`,
     );
     console.log(`  Workspace:  ${describeTaskWorkspace(details.taskProfile ?? resolveTaskProfile(undefined))}`);
+    console.log(`  RT default: ${formatTaskRuntimeOptions(details.taskProfile?.runtimeDefaults)}`);
     if (details.task.profileInput && Object.keys(details.task.profileInput).length > 0) {
       console.log(
         `  Inputs:     ${Object.entries(details.task.profileInput)
@@ -1113,6 +1183,7 @@ export class TaskCommands {
       }
       console.log(`  Status:      ${details.activeAssignment.status}`);
       console.log(`  Assigned at: ${formatTime(details.activeAssignment.assignedAt)}`);
+      console.log(`  RT override: ${formatTaskRuntimeOptions(details.activeAssignment.runtimeOverride)}`);
       console.log(
         `  Checkpoint:  ${formatDurationMs(resolveTaskCheckpointIntervalMs(details.activeAssignment.checkpointIntervalMs))}`,
       );
@@ -1154,6 +1225,9 @@ export class TaskCommands {
     console.log("\nScheduling:");
     console.log(`  Readiness:   ${formatReadiness(dependencySurface.readiness)}`);
     console.log(`  Launch plan: ${formatLaunchPlanSummary(dependencySurface.launchPlan)}`);
+    if (dependencySurface.launchPlan?.runtimeOverride) {
+      console.log(`  Launch RT:   ${formatTaskRuntimeOptions(dependencySurface.launchPlan.runtimeOverride)}`);
+    }
 
     if (dependencySurface.dependencies.length > 0) {
       console.log("\nDependencies (gating):");
@@ -1312,6 +1386,12 @@ export class TaskCommands {
     @Option({ flags: "--report-events <events>", description: "Override report events for this assignment" })
     reportEvents?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--model <model>", description: "Dispatch runtime model override" })
+    model?: string,
+    @Option({ flags: "--effort <level>", description: "Runtime effort: low|medium|high|xhigh|max" })
+    effort?: string,
+    @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
+    thinking?: string,
   ) {
     if (!agentId?.trim()) {
       fail("--agent is required");
@@ -1331,6 +1411,7 @@ export class TaskCommands {
     const actor = getTaskActor();
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
+    const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const result = await queueOrDispatchTask(taskId, {
       agentId: normalizedAgentId,
       sessionName: sessionName?.trim() || getDefaultTaskSessionNameForTask(details.task),
@@ -1340,6 +1421,7 @@ export class TaskCommands {
       ...(typeof checkpointIntervalMs === "number" ? { checkpointIntervalMs } : {}),
       ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
       ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
+      ...(runtimeOverride ? { runtimeOverride } : {}),
     });
     await emitMutationEvents(result);
 
@@ -1352,6 +1434,9 @@ export class TaskCommands {
       console.log(`\n✓ Launch plan armed for ${taskId}`);
       console.log(`  Agent:      ${result.launchPlan.agentId}`);
       console.log(`  Session:    ${result.launchPlan.sessionName}`);
+      if (result.launchPlan.runtimeOverride) {
+        console.log(`  Runtime:    ${formatTaskRuntimeOptions(result.launchPlan.runtimeOverride)}`);
+      }
       console.log(`  Readiness:  ${formatReadiness(result.readiness)}`);
       console.log(`  Missing:    ${result.readiness.unsatisfiedDependencyIds.join(", ")}`);
       console.log(`  Inspect:    ravi tasks show ${taskId}`);
@@ -1365,6 +1450,9 @@ export class TaskCommands {
     console.log(`  Checkpoint: ${formatCheckpointSummary(result.assignment)}`);
     console.log(`  Report to: ${result.assignment.reportToSessionName ?? "-"}`);
     console.log(`  Report on: ${formatTaskReportEvents(result.assignment.reportEvents)}`);
+    console.log(
+      `  Runtime:   ${formatRuntimeResolution(resolveTaskRuntimeForRead(result.task, { assignment: result.assignment }))}`,
+    );
     console.log(`  Profile:  ${resolveTaskProfileForTask(result.task).id}`);
     if (result.primaryArtifact) {
       console.log(`  ${result.primaryArtifact.label}:  ${result.primaryArtifact.path}`);

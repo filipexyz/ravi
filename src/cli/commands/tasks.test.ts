@@ -161,7 +161,7 @@ let taskDetailsMock: Record<string, unknown> = {
     profileId: "default",
     checkpointIntervalMs: 300000,
     reportToSessionName: "dev-session",
-    reportEvents: ["done"],
+    reportEvents: ["blocked", "done", "failed"],
     parentTaskId: "task-parent-1",
     assigneeAgentId: "dev",
     assigneeSessionName: "task-cli-1-work",
@@ -361,8 +361,9 @@ mock.module("../../tasks/index.js", () => ({
         profileId: input.profileId ?? "default",
         checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
         reportToSessionName: input.reportToSessionName ?? input.createdBySessionName ?? null,
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
         profileInput: input.profileInput,
+        runtimeOverride: input.runtimeOverride,
         parentTaskId: input.parentTaskId,
         createdBy: input.createdBy,
         createdByAgentId: input.createdByAgentId,
@@ -453,10 +454,11 @@ mock.module("../../tasks/index.js", () => ({
         profileId: (taskDetailsMock.task as Record<string, unknown>).profileId ?? "default",
         checkpointIntervalMs: 300000,
         reportToSessionName: input.reportToSessionName ?? "dev-session",
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
         assigneeAgentId: input.agentId,
         assigneeSessionName: input.sessionName,
         worktree: input.worktree,
+        runtimeOverride: input.runtimeOverride,
         createdAt: 1,
         updatedAt: 2,
         dispatchedAt: 2,
@@ -468,7 +470,8 @@ mock.module("../../tasks/index.js", () => ({
         sessionName: input.sessionName,
         checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
         reportToSessionName: input.reportToSessionName ?? "dev-session",
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
+        runtimeOverride: input.runtimeOverride,
         checkpointDueAt: 300002,
         checkpointOverdueCount: 0,
         status: "assigned",
@@ -494,9 +497,10 @@ mock.module("../../tasks/index.js", () => ({
         assignedBy: input.assignedBy,
         assignedByAgentId: input.assignedByAgentId,
         assignedBySessionName: input.assignedBySessionName,
+        runtimeOverride: input.runtimeOverride,
         checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
         reportToSessionName: input.reportToSessionName ?? "dev-session",
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
         createdAt: 2,
         updatedAt: 2,
       };
@@ -529,7 +533,8 @@ mock.module("../../tasks/index.js", () => ({
           profileId: (taskDetailsMock.task as Record<string, unknown>).profileId ?? "default",
           checkpointIntervalMs: 300000,
           reportToSessionName: input.reportToSessionName ?? "dev-session",
-          reportEvents: input.reportEvents ?? ["done"],
+          reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
+          runtimeOverride: input.runtimeOverride,
           createdAt: 1,
           updatedAt: 2,
         },
@@ -567,10 +572,11 @@ mock.module("../../tasks/index.js", () => ({
         profileId: (taskDetailsMock.task as Record<string, unknown>).profileId ?? "default",
         checkpointIntervalMs: 300000,
         reportToSessionName: input.reportToSessionName ?? "dev-session",
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
         assigneeAgentId: input.agentId,
         assigneeSessionName: input.sessionName,
         worktree: input.worktree,
+        runtimeOverride: (taskDetailsMock.task as Record<string, unknown>).runtimeOverride,
         createdAt: 1,
         updatedAt: 2,
         dispatchedAt: 2,
@@ -582,7 +588,8 @@ mock.module("../../tasks/index.js", () => ({
         sessionName: input.sessionName,
         checkpointIntervalMs: input.checkpointIntervalMs ?? 300000,
         reportToSessionName: input.reportToSessionName ?? "dev-session",
-        reportEvents: input.reportEvents ?? ["done"],
+        reportEvents: input.reportEvents ?? ["blocked", "done", "failed"],
+        runtimeOverride: input.runtimeOverride,
         checkpointDueAt: 300002,
         checkpointOverdueCount: 0,
         status: "assigned",
@@ -630,6 +637,24 @@ mock.module("../../tasks/index.js", () => ({
   getTaskProjectSurface: () => taskProjectSurfaceMock,
   resolveTaskProfile: (profileId?: string | null) => buildMockResolvedProfile(profileId),
   resolveTaskProfileForTask: (task: { profileId?: string | null }) => buildMockResolvedProfile(task.profileId),
+  resolveTaskRuntimeForRead: (
+    task: { runtimeOverride?: Record<string, unknown> | null },
+    options?: {
+      assignment?: { runtimeOverride?: Record<string, unknown> | null } | null;
+      launchPlan?: { runtimeOverride?: Record<string, unknown> | null } | null;
+    },
+  ) =>
+    actualTasksIndexModule.resolveTaskRuntimeOptions({
+      task: task.runtimeOverride ? { runtimeOverride: task.runtimeOverride as never } : undefined,
+      assignment: options?.assignment?.runtimeOverride
+        ? { runtimeOverride: options.assignment.runtimeOverride as never }
+        : undefined,
+      launchPlan: options?.launchPlan?.runtimeOverride
+        ? { runtimeOverride: options.launchPlan.runtimeOverride as never }
+        : undefined,
+      agentModel: "test-agent-model",
+      configModel: "test-global-model",
+    }),
   listTasks: (input: Record<string, unknown>) => {
     listTasksCalls.push(input);
     return taskListMock;

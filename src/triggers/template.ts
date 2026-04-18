@@ -6,7 +6,7 @@
  * Available variables:
  *   {{topic}}                    — NATS topic that fired the trigger
  *   {{data.<path>}}              — dot-notation path into event data
- *   {{data.cwd}}                 — e.g. /Users/luis/ravi/copilot
+ *   {{data.cwd}}                 — e.g. /workspace/ravi/copilot
  *   {{data.last_assistant_message}} — last CC message (truncated to 300 chars)
  *   {{data.prompt}}              — user prompt (for UserPromptSubmit events)
  *

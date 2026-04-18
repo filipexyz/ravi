@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -234,10 +235,11 @@ describe("task automations", () => {
     await emitTaskEvent(completed.task, completed.event);
 
     const followUp = listTasks({ archiveMode: "include" }).find((task) => task.id !== created.task.id);
+    const projectDir = join(homedir(), "ravi/videomaker/out/macro-explainer");
     expect(followUp?.title).toBe("Review :: Render macro explainer");
-    expect(followUp?.instructions).toContain("/Users/luis/ravi/videomaker/out/macro-explainer");
-    expect(followUp?.instructions).toContain("/Users/luis/ravi/videomaker/out/macro-explainer/qc.json");
-    expect(followUp?.instructions).toContain("/Users/luis/ravi/videomaker/out/macro-explainer/render/video.mp4");
+    expect(followUp?.instructions).toContain(projectDir);
+    expect(followUp?.instructions).toContain(join(projectDir, "qc.json"));
+    expect(followUp?.instructions).toContain(join(projectDir, "render/video.mp4"));
     expect(followUp?.instructions).toContain(`ravi sessions read ${created.task.id}-work`);
   });
 });
