@@ -48,7 +48,7 @@ jobs:
           fi
           echo "prefix=3" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ steps.target.outputs.branch }}
           fetch-depth: 0

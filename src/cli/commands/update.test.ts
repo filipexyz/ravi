@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { detectFromBinaryPath, findPackageRoot, packageTagForChannel, resolveUpdateChannel } from "./update.js";
 
 describe("update command helpers", () => {
@@ -24,6 +26,8 @@ describe("update command helpers", () => {
 
   it("finds the package root from this test file", () => {
     const root = findPackageRoot(import.meta.path);
-    expect(root?.endsWith("ravi.bot")).toBe(true);
+    expect(root).toBeTruthy();
+    const pkg = JSON.parse(readFileSync(join(root!, "package.json"), "utf8")) as { name?: string };
+    expect(pkg.name).toBe("ravi.bot");
   });
 });
