@@ -512,7 +512,7 @@ describe("task substrate contract", () => {
       label: "TASK.md",
     });
     expect([false, null]).toContain(primaryArtifact?.exists);
-    expect(primaryArtifact?.path.absolutePath).toContain(created.task.id);
+    expect(primaryArtifact.path.displayPath).toContain(created.task.id);
     expect(snapshot.artifacts.status).toBe("planned");
   });
 
