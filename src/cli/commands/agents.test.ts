@@ -103,6 +103,7 @@ mock.module("../../runtime/agent-instructions.js", () => ({
     agents: null,
     claude: null,
   }),
+  loadAgentWorkspaceInstructions: () => null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
