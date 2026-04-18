@@ -41,6 +41,14 @@ export interface WorkflowSpecNode {
   releaseMode: WorkflowNodeReleaseMode;
 }
 
+export interface WorkflowSpecNodeInput {
+  key: string;
+  label: string;
+  kind?: WorkflowNodeKind;
+  requirement?: WorkflowNodeRequirement;
+  releaseMode?: WorkflowNodeReleaseMode;
+}
+
 export interface WorkflowSpecEdge {
   from: string;
   to: string;
@@ -66,7 +74,7 @@ export interface CreateWorkflowSpecInput {
   title: string;
   summary?: string;
   policy?: WorkflowSpecPolicy;
-  nodes: WorkflowSpecNode[];
+  nodes: WorkflowSpecNodeInput[];
   edges?: WorkflowSpecEdge[];
   createdBy?: string;
   createdByAgentId?: string;

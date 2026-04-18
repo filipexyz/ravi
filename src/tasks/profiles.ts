@@ -4,6 +4,11 @@ import { z } from "zod";
 import { discoverPlugins } from "../plugins/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
+import {
+  TASK_RUNTIME_EFFORT_LEVELS,
+  TASK_RUNTIME_THINKING_LEVELS,
+  normalizeTaskRuntimeOptions,
+} from "./runtime-options.js";
 import type {
   DispatchTaskInput,
   ResolvedTaskProfile,
@@ -85,12 +90,21 @@ const TaskProfileStateFieldDefinitionSchema = z.object({
   transform: z.enum(["identity", "slug"]).optional(),
 });
 
+const TaskRuntimeDefaultsSchema = z
+  .object({
+    model: z.string().trim().min(1).optional(),
+    effort: z.enum(TASK_RUNTIME_EFFORT_LEVELS).optional(),
+    thinking: z.enum(TASK_RUNTIME_THINKING_LEVELS).optional(),
+  })
+  .strict();
+
 const TaskProfileManifestSchema = z.object({
   id: z.string().trim().min(1),
   version: z.string().trim().min(1),
   label: z.string().trim().min(1),
   description: z.string().trim().min(1),
   sessionNameTemplate: z.string().trim().min(1),
+  runtimeDefaults: TaskRuntimeDefaultsSchema.optional(),
   workspaceBootstrap: z.object({
     mode: z.enum(["inherit", "task_dir", "path"]),
     path: z.string().trim().min(1).optional(),
@@ -369,6 +383,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     label: manifest.label,
     description: manifest.description,
     sessionNameTemplate: manifest.sessionNameTemplate,
+    ...(manifest.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(manifest.runtimeDefaults) } : {}),
     workspaceBootstrap: manifest.workspaceBootstrap,
     sync: normalizeTaskProfileSyncPolicy(manifest.sync),
     rendererHints: manifest.rendererHints,
@@ -417,6 +432,7 @@ function toResolvedTaskProfile(definition: TaskProfileDefinition, requestedId: s
     ...definition,
     sync,
     templates: normalizeTaskProfileTemplates(definition.templates ?? {}),
+    ...(definition.runtimeDefaults ? { runtimeDefaults: normalizeTaskRuntimeOptions(definition.runtimeDefaults) } : {}),
     defaultTags: [...(definition.defaultTags ?? [])],
     inputs: [...(definition.inputs ?? [])],
     completion: { ...(definition.completion ?? {}) },

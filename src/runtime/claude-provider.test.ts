@@ -255,7 +255,7 @@ describe("createClaudeRuntimeProvider", () => {
       releaseQueryGate = resolve;
     });
 
-    let releaseSecondPrompt: (() => void) | null = null;
+    let releaseSecondPrompt = () => {};
     const secondPromptReady = new Promise<void>((resolve) => {
       releaseSecondPrompt = resolve;
     });
@@ -290,7 +290,7 @@ describe("createClaudeRuntimeProvider", () => {
     await waitFor(() => queryCalls.length === 1 && querySetModelCalls.length === 1);
 
     queryGate = null;
-    releaseSecondPrompt?.();
+    releaseSecondPrompt();
     const events = await eventsPromise;
 
     expect(findEventsByType(events, "turn.complete")).toHaveLength(2);

@@ -454,6 +454,10 @@ describe("task-db", () => {
       reportToSessionName: "ops-session",
       reportEvents: ["blocked", "done"],
       checkpointIntervalMs: 600000,
+      runtimeOverride: {
+        model: "gpt-5.4",
+        effort: "xhigh",
+      },
     });
 
     expect(dbGetTaskLaunchPlan(created.task.id)).toEqual(
@@ -465,6 +469,10 @@ describe("task-db", () => {
         reportToSessionName: "ops-session",
         reportEvents: ["blocked", "done"],
         checkpointIntervalMs: 600000,
+        runtimeOverride: {
+          model: "gpt-5.4",
+          effort: "xhigh",
+        },
       }),
     );
 
@@ -479,14 +487,21 @@ describe("task-db", () => {
       reportToSessionName: launchPlan.reportToSessionName,
       reportEvents: launchPlan.reportEvents,
       checkpointIntervalMs: launchPlan.checkpointIntervalMs,
+      runtimeOverride: launchPlan.runtimeOverride,
     });
 
-    dbDispatchTask(created.task.id, {
+    const dispatched = dbDispatchTask(created.task.id, {
       agentId: "dev",
       sessionName: `${created.task.id}-work`,
       assignedBy: "lead-session",
+      runtimeOverride: {
+        model: "gpt-5.4-mini",
+      },
     });
 
+    expect(dispatched.assignment.runtimeOverride).toEqual({
+      model: "gpt-5.4-mini",
+    });
     expect(dbGetTaskLaunchPlan(created.task.id)).toBeNull();
   });
 

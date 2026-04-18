@@ -9,6 +9,8 @@ export type RuntimeBillingType = "api" | "subscription" | "unknown";
 
 export type RuntimeProviderId = "claude" | "codex";
 export type RuntimeToolAccessMode = "restricted" | "unrestricted";
+export type RuntimeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type RuntimeThinking = "off" | "normal" | "verbose";
 
 export type RuntimeStatus = "queued" | "thinking" | "compacting" | "idle";
 
@@ -84,6 +86,8 @@ export interface RuntimeExecutionMetadata {
 export interface RuntimeStartRequest {
   prompt: AsyncGenerator<RuntimePromptMessage>;
   model: string;
+  effort?: RuntimeEffort;
+  thinking?: RuntimeThinking;
   cwd: string;
   resume?: string;
   resumeSession?: RuntimeSessionState;

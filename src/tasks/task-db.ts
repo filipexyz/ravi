@@ -10,6 +10,7 @@ import { DEFAULT_TASK_PROFILE_ID, resolveTaskProfileForTask } from "./profiles.j
 import {
   type TaskArchiveInput,
   TASK_REPORT_EVENTS,
+  type TaskRuntimeOptions,
   type TaskProfileSnapshot,
   type TaskProfileState,
   type CreateTaskInput,
@@ -31,6 +32,7 @@ import {
   type TaskWorktreeConfig,
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
+import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
 
 interface TaskRow {
   id: string;
@@ -45,6 +47,7 @@ interface TaskRow {
   profile_snapshot_json: string | null;
   profile_state_json: string | null;
   profile_input_json: string | null;
+  runtime_override_json: string | null;
   checkpoint_interval_ms: number | null;
   report_to_session_name: string | null;
   report_events: string | null;
@@ -81,6 +84,7 @@ interface TaskAssignmentRow {
   worktree_mode: string | null;
   worktree_path: string | null;
   worktree_branch: string | null;
+  runtime_override_json: string | null;
   checkpoint_interval_ms: number | null;
   report_to_session_name: string | null;
   report_events: string | null;
@@ -134,6 +138,7 @@ interface TaskLaunchPlanRow {
   worktree_mode: string | null;
   worktree_path: string | null;
   worktree_branch: string | null;
+  runtime_override_json: string | null;
   checkpoint_interval_ms: number | null;
   report_to_session_name: string | null;
   report_events: string | null;
@@ -240,6 +245,9 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!taskColumns.has("profile_input_json")) {
     db.exec("ALTER TABLE tasks ADD COLUMN profile_input_json TEXT");
   }
+  if (!taskColumns.has("runtime_override_json")) {
+    db.exec("ALTER TABLE tasks ADD COLUMN runtime_override_json TEXT");
+  }
 
   const assignmentColumns = new Set(
     (db.prepare("PRAGMA table_info(task_assignments)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -277,6 +285,9 @@ function applyTaskWorktreeSchemaMigrations(): void {
   if (!assignmentColumns.has("assigned_by_session_name")) {
     db.exec("ALTER TABLE task_assignments ADD COLUMN assigned_by_session_name TEXT");
   }
+  if (!assignmentColumns.has("runtime_override_json")) {
+    db.exec("ALTER TABLE task_assignments ADD COLUMN runtime_override_json TEXT");
+  }
 
   const eventColumns = new Set(
     (db.prepare("PRAGMA table_info(task_events)").all() as Array<{ name: string }>).map((column) => column.name),
@@ -296,6 +307,9 @@ function applyTaskWorktreeSchemaMigrations(): void {
   }
   if (!launchPlanColumns.has("assigned_by_session_name")) {
     db.exec("ALTER TABLE task_launch_plans ADD COLUMN assigned_by_session_name TEXT");
+  }
+  if (!launchPlanColumns.has("runtime_override_json")) {
+    db.exec("ALTER TABLE task_launch_plans ADD COLUMN runtime_override_json TEXT");
   }
 
   db.prepare(`
@@ -345,6 +359,7 @@ function ensureTaskSchema(): void {
       profile_snapshot_json TEXT,
       profile_state_json TEXT,
       profile_input_json TEXT,
+      runtime_override_json TEXT,
       checkpoint_interval_ms INTEGER,
       report_to_session_name TEXT,
       report_events TEXT,
@@ -381,6 +396,7 @@ function ensureTaskSchema(): void {
       worktree_mode TEXT,
       worktree_path TEXT,
       worktree_branch TEXT,
+      runtime_override_json TEXT,
       checkpoint_interval_ms INTEGER,
       report_to_session_name TEXT,
       report_events TEXT,
@@ -441,6 +457,7 @@ function ensureTaskSchema(): void {
       worktree_mode TEXT,
       worktree_path TEXT,
       worktree_branch TEXT,
+      runtime_override_json TEXT,
       checkpoint_interval_ms INTEGER,
       report_to_session_name TEXT,
       report_events TEXT,
@@ -523,6 +540,20 @@ function serializeTaskProfileInput(input?: TaskProfileInputValues | null): strin
   return JSON.stringify(input);
 }
 
+function parseTaskRuntimeOptions(raw: string | null): TaskRuntimeOptions | undefined {
+  if (!raw) return undefined;
+  try {
+    return normalizeTaskRuntimeOptions(JSON.parse(raw) as TaskRuntimeOptions);
+  } catch {
+    return undefined;
+  }
+}
+
+function serializeTaskRuntimeOptions(options?: TaskRuntimeOptions | null): string | null {
+  const normalized = normalizeTaskRuntimeOptions(options);
+  return normalized ? JSON.stringify(normalized) : null;
+}
+
 function parseTaskProfileSnapshot(raw: string | null): TaskProfileSnapshot | undefined {
   if (!raw) return undefined;
   try {
@@ -552,6 +583,7 @@ function rowToTask(row: TaskRow): TaskRecord {
     ...(row.profile_snapshot_json ? { profileSnapshot: parseTaskProfileSnapshot(row.profile_snapshot_json) } : {}),
     ...(row.profile_state_json ? { profileState: parseTaskProfileState(row.profile_state_json) } : {}),
     ...(row.profile_input_json ? { profileInput: parseTaskProfileInput(row.profile_input_json) } : {}),
+    ...(row.runtime_override_json ? { runtimeOverride: parseTaskRuntimeOptions(row.runtime_override_json) } : {}),
     ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
     ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
     reportEvents: deserializeTaskReportEvents(row.report_events),
@@ -590,6 +622,7 @@ function rowToAssignment(row: TaskAssignmentRow): TaskAssignment {
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
       ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
       : {}),
+    ...(row.runtime_override_json ? { runtimeOverride: parseTaskRuntimeOptions(row.runtime_override_json) } : {}),
     ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
     ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
     reportEvents: deserializeTaskReportEvents(row.report_events),
@@ -651,6 +684,7 @@ function rowToTaskLaunchPlan(row: TaskLaunchPlanRow): TaskLaunchPlan {
     ...(rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch)
       ? { worktree: rowToWorktree(row.worktree_mode, row.worktree_path, row.worktree_branch) }
       : {}),
+    ...(row.runtime_override_json ? { runtimeOverride: parseTaskRuntimeOptions(row.runtime_override_json) } : {}),
     ...(typeof row.checkpoint_interval_ms === "number" ? { checkpointIntervalMs: row.checkpoint_interval_ms } : {}),
     ...(row.report_to_session_name ? { reportToSessionName: row.report_to_session_name } : {}),
     reportEvents: deserializeTaskReportEvents(row.report_events),
@@ -814,9 +848,10 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
   db.prepare(`
     INSERT INTO tasks (
       id, title, instructions, status, priority, progress, checkpoint_interval_ms, report_to_session_name, report_events,
-      profile_id, profile_version, profile_source, profile_snapshot_json, profile_state_json, profile_input_json, parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
+      profile_id, profile_version, profile_source, profile_snapshot_json, profile_state_json, profile_input_json,
+      runtime_override_json, parent_task_id, task_dir, created_by, created_by_agent_id, created_by_session_name, worktree_mode, worktree_path,
       worktree_branch, created_at, updated_at
-    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, 'open', ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.title,
@@ -831,6 +866,7 @@ export function dbCreateTask(input: CreateTaskInput): { task: TaskRecord; event:
     serializeTaskProfileSnapshot(input.profileSnapshot),
     serializeTaskProfileState(input.profileState),
     serializeTaskProfileInput(input.profileInput),
+    serializeTaskRuntimeOptions(input.runtimeOverride),
     input.parentTaskId ?? null,
     input.createdBy ?? null,
     input.createdByAgentId ?? null,
@@ -974,9 +1010,9 @@ export function dbSetTaskLaunchPlan(taskId: string, input: DispatchTaskInput): T
     `
       INSERT INTO task_launch_plans (
         task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
-        worktree_mode, worktree_path, worktree_branch, checkpoint_interval_ms, report_to_session_name,
+        worktree_mode, worktree_path, worktree_branch, runtime_override_json, checkpoint_interval_ms, report_to_session_name,
         report_events, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(task_id) DO UPDATE SET
         agent_id = excluded.agent_id,
         session_name = excluded.session_name,
@@ -986,6 +1022,7 @@ export function dbSetTaskLaunchPlan(taskId: string, input: DispatchTaskInput): T
         worktree_mode = excluded.worktree_mode,
         worktree_path = excluded.worktree_path,
         worktree_branch = excluded.worktree_branch,
+        runtime_override_json = excluded.runtime_override_json,
         checkpoint_interval_ms = excluded.checkpoint_interval_ms,
         report_to_session_name = excluded.report_to_session_name,
         report_events = excluded.report_events,
@@ -1001,6 +1038,7 @@ export function dbSetTaskLaunchPlan(taskId: string, input: DispatchTaskInput): T
     worktreeMode,
     worktreePath,
     worktreeBranch,
+    serializeTaskRuntimeOptions(input.runtimeOverride),
     input.checkpointIntervalMs ?? null,
     normalizeTaskReportToSessionName(input.reportToSessionName),
     serializeTaskReportEvents(input.reportEvents),
@@ -1549,9 +1587,9 @@ export function dbDispatchTask(
   db.prepare(`
     INSERT INTO task_assignments (
       id, task_id, agent_id, session_name, assigned_by, assigned_by_agent_id, assigned_by_session_name,
-      worktree_mode, worktree_path, worktree_branch, checkpoint_interval_ms, report_to_session_name, report_events,
+      worktree_mode, worktree_path, worktree_branch, runtime_override_json, checkpoint_interval_ms, report_to_session_name, report_events,
       checkpoint_last_report_at, checkpoint_due_at, checkpoint_overdue_count, status, assigned_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 'assigned', ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 0, 'assigned', ?)
   `).run(
     assignmentId,
     taskId,
@@ -1563,6 +1601,7 @@ export function dbDispatchTask(
     worktreeMode,
     worktreePath,
     worktreeBranch,
+    serializeTaskRuntimeOptions(input.runtimeOverride),
     checkpointIntervalMs,
     reportToSessionName,
     reportEvents,

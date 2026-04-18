@@ -41,6 +41,7 @@ Ele não deveria inventar processo por fora.
 - artifacts
 - workspace bootstrap
 - state defaults
+- runtime defaults
 - inputs
 - policies
 
@@ -61,7 +62,7 @@ Ele não deveria inventar processo por fora.
 ### Create
 
 ```bash
-ravi tasks create "..." --profile <id> [--input k=v]
+ravi tasks create "..." --profile <id> [--input k=v] [--model <model>] [--effort <level>] [--thinking <mode>]
 ```
 
 Fluxo:
@@ -75,7 +76,7 @@ Fluxo:
 ### Dispatch
 
 ```bash
-ravi tasks dispatch <task-id> --agent <agent>
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
 ```
 
 Fluxo:
@@ -83,9 +84,27 @@ Fluxo:
 1. resolve `session cwd`
 2. resolve `worktree` contextual
 3. resolve artifact primário
-4. renderiza prompt do profile
-5. publica prompt
-6. persiste assignment + event
+4. resolve runtime efetivo de model/effort/thinking
+5. renderiza prompt do profile
+6. publica prompt
+7. persiste assignment + event
+
+### Runtime Efetivo
+
+Profiles podem declarar `runtimeDefaults: { model?, effort?, thinking? }`. Esse contrato é validado no manifesto e pinado em `profile_snapshot_json`, então uma task antiga continua com os defaults que tinha no momento da criação.
+
+Tasks e dispatches podem gravar `runtimeOverride` explícito via `--model`, `--effort` e `--thinking`. O override fica na task, na assignment ou no launch plan, e não usa `sessions set-model`.
+
+A precedência por campo é:
+
+1. override do dispatch ou launch plan
+2. override da task
+3. `profile.runtimeDefaults`
+4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
+5. `agent.model`
+6. modelo global do config
+
+O contexto explícito da task vence `session.modelOverride` porque a task é o contrato operacional do turno. A preferência da sessão permanece como fallback para turnos sem task ou para tasks sem default/override.
 
 ### Execução
 
@@ -99,13 +118,13 @@ O agent deve:
 
 Quando o turno nasce a partir de uma task despachada ou retomada, o runtime injeta no processo da sessão:
 
-- `RAVI_TASK_ID` sempre que houver binding inequívoco entre prompt, assignment ativa e sessão
+- `RAVI_TASK_ID` quando o prompt carregar `taskBarrierTaskId` e houver binding ativo entre task, assignment e sessão
 - `RAVI_TASK_PROFILE_ID` quando o profile estiver resolvido na task
 - `RAVI_PARENT_TASK_ID` quando a task for filha
 - `RAVI_TASK_SESSION` com o nome real da sessão atribuída
 - `RAVI_TASK_WORKSPACE` com o workspace efetivo da assignment (`worktree`, `task_dir` ou cwd da sessão)
 
-Se uma mesma sessão tiver múltiplas assignments ativas ao mesmo tempo, o runtime não adivinha a task corrente sem `taskBarrierTaskId`.
+Turnos sem `taskBarrierTaskId` não recebem `RAVI_TASK_*`, mesmo que o processo pai tenha essas variáveis no ambiente. Isso evita vazamento de contexto entre uma task e uma conversa humana posterior.
 
 ### Watch / Show
 
@@ -176,8 +195,8 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 Runtime:
 
 ```bash
-ravi tasks create "..." --instructions "..." --profile <id> [--input k=v]
-ravi tasks dispatch <task-id> --agent <agent>
+ravi tasks create "..." --instructions "..." --profile <id> [--input k=v] [--model <model>] [--effort <level>] [--thinking <mode>]
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
 ravi tasks show <task-id>
 ravi tasks watch <task-id>
 ravi tasks report <task-id> --message "..."

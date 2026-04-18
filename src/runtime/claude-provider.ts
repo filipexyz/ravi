@@ -16,6 +16,7 @@ import type {
   RuntimeSessionState,
   RuntimeSessionHandle,
   RuntimeStartRequest,
+  RuntimeThinking,
   RuntimeStatus,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -150,8 +151,11 @@ function buildClaudeQueryOptions(
     pathToClaudeCodeExecutable?: string;
   },
 ): Options {
+  const thinking = resolveClaudeThinkingConfig(input.thinking);
   return {
     model: input.model,
+    ...(input.effort ? { effort: input.effort as Options["effort"] } : {}),
+    ...(thinking ? { thinking } : {}),
     cwd: input.cwd,
     ...(runtime.resumeSessionId ? { resume: runtime.resumeSessionId } : {}),
     ...(runtime.forkSession ? { forkSession: true } : {}),
@@ -188,6 +192,19 @@ function buildClaudeQueryOptions(
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
     ...(input.remoteSpawn ? { spawnClaudeCodeProcess: input.remoteSpawn as Options["spawnClaudeCodeProcess"] } : {}),
   };
+}
+
+function resolveClaudeThinkingConfig(thinking?: RuntimeThinking): Options["thinking"] | undefined {
+  switch (thinking) {
+    case "off":
+      return { type: "disabled" };
+    case "verbose":
+      return { type: "adaptive", display: "summarized" };
+    case "normal":
+      return { type: "adaptive", display: "omitted" };
+    default:
+      return undefined;
+  }
 }
 
 function stringifyUserPrompt(content: unknown): string {

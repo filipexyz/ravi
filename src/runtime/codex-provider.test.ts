@@ -10,6 +10,7 @@ type TransportRequest = {
   cwd: string;
   env: NodeJS.ProcessEnv;
   model?: string;
+  effort?: string;
   prompt: string;
   resume?: string;
   systemPromptAppend: string;
@@ -250,6 +251,25 @@ describe("createCodexRuntimeProvider", () => {
 
     expect(calls[0]?.model).toBe("gpt-5.4");
     expect(completions[0]?.execution?.model).toBe("gpt-5.4");
+  });
+
+  it("normalizes unsupported max effort to the strongest Codex effort", async () => {
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_effort" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(makeStartRequest(["hello"], { effort: "max" }));
+
+    await collectEvents(session.events);
+
+    expect(calls[0]?.effort).toBe("xhigh");
   });
 
   it("loads workspace instructions from AGENTS.md into the Codex system prompt", async () => {

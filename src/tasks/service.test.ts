@@ -52,6 +52,7 @@ const {
   requireTaskRuntimeAgent,
   readTaskDocFrontmatter,
   removeTaskDependency,
+  resolveTaskRuntimeForRead,
   resolveBrainstormTaskSlug,
   resolveTaskCreateAssigneeAgent,
   resolveTaskProfile,
@@ -63,7 +64,7 @@ const {
 const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
 const { createProject, linkProject } = await import("../projects/index.js");
 import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
-import { deleteSession, resolveSession } from "../router/sessions.js";
+import { deleteSession, getOrCreateSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
 
 afterAll(() => mock.restore());
@@ -382,6 +383,41 @@ describe("task substrate contract", () => {
       ],
     });
     expect(payload.artifacts.status).toBe("planned");
+  });
+
+  it("resolves task runtime read models from the assigned session when no task override exists", () => {
+    const agentId = "runtime-read-agent";
+    const sessionName = "runtime-read-session";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-runtime-read-agent", model: "agent-model" });
+    getOrCreateSession(`agent:${agentId}:runtime-read`, agentId, "/tmp/ravi-runtime-read-agent", {
+      name: sessionName,
+      modelOverride: "session-model",
+      thinkingLevel: "verbose",
+    });
+
+    const created = dbCreateTask({
+      title: "Runtime read session override",
+      instructions: "Surface the actual session runtime fallback.",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+
+    const runtime = resolveTaskRuntimeForRead(dispatched.task, { assignment: dispatched.assignment });
+
+    expect(runtime.options).toMatchObject({
+      model: "session-model",
+      thinking: "verbose",
+    });
+    expect(runtime.sources.model).toBe("session_override");
+    expect(runtime.sources.thinking).toBe("session_override");
   });
 
   it("builds a task snapshot with selection details and forward-compatible artifact placeholders", () => {

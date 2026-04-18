@@ -33,6 +33,11 @@ function makeTask(overrides: Partial<TaskStreamTaskEntity>): TaskStreamTaskEntit
     priority: overrides.priority ?? "normal",
     progress: overrides.progress ?? 0,
     profileId: overrides.profileId ?? "default",
+    runtime: overrides.runtime ?? {
+      options: { model: "test-model" },
+      sources: { model: "agent_default", effort: null, thinking: null },
+      hasTaskRuntimeContext: false,
+    },
     taskProfile:
       overrides.taskProfile ??
       ({

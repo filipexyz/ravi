@@ -57,7 +57,10 @@ import {
   dbMarkTaskAcceptedForSession,
   dbResolveActiveTaskBindingForSession,
 } from "./tasks/task-db.js";
+import { resolveTaskProfileForTask } from "./tasks/profiles.js";
+import { resolveTaskRuntimeOptions } from "./tasks/runtime-options.js";
 import { emitTaskEvent } from "./tasks/service.js";
+import type { TaskRuntimeOptions, TaskRuntimeResolution } from "./tasks/types.js";
 import {
   assertRuntimeCompatibility,
   createRuntimeContext,
@@ -74,6 +77,13 @@ const log = logger.child("bot");
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_PAYLOAD_BYTES = 60000; // keep payloads reasonable
 const MAX_CONCURRENT_SESSIONS = 30;
+const TASK_RUNTIME_ENV_VARS = [
+  "RAVI_TASK_ID",
+  "RAVI_TASK_PROFILE_ID",
+  "RAVI_PARENT_TASK_ID",
+  "RAVI_TASK_SESSION",
+  "RAVI_TASK_WORKSPACE",
+];
 
 function truncateOutput(output: unknown): unknown {
   if (typeof output === "string" && output.length > MAX_OUTPUT_LENGTH) {
@@ -285,8 +295,13 @@ function buildRuntimeEnv(
   providerEnv: Record<string, string> | undefined,
   capabilities: ReturnType<ReturnType<typeof createRuntimeProvider>["getCapabilities"]>,
 ): Record<string, string> {
+  const sanitizedBaseEnv = { ...baseEnv };
+  for (const key of TASK_RUNTIME_ENV_VARS) {
+    delete sanitizedBaseEnv[key];
+  }
+
   const runtimeEnv = {
-    ...baseEnv,
+    ...sanitizedBaseEnv,
     ...raviEnv,
     ...(providerEnv ?? {}),
   };
@@ -310,7 +325,12 @@ function buildTaskRuntimeEnv(
   sessionCwd: string,
   taskBarrierTaskId?: string,
 ): Record<string, string> {
-  const binding = dbResolveActiveTaskBindingForSession(sessionName, taskBarrierTaskId);
+  const normalizedTaskId = normalizePromptTaskBarrierTaskId(taskBarrierTaskId);
+  if (!normalizedTaskId) {
+    return {};
+  }
+
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, normalizedTaskId);
   if (!binding) {
     return {};
   }
@@ -329,6 +349,11 @@ function buildTaskRuntimeEnv(
     RAVI_TASK_SESSION: assignment.sessionName,
     ...(workspaceRoot ? { RAVI_TASK_WORKSPACE: workspaceRoot } : {}),
   };
+}
+
+function normalizePromptTaskBarrierTaskId(taskBarrierTaskId?: string): string | undefined {
+  const normalized = taskBarrierTaskId?.trim();
+  return normalized ? normalized : undefined;
 }
 
 /** Message context for structured prompts */
@@ -427,6 +452,12 @@ interface StreamingSession {
   currentSource?: MessageTarget;
   /** Runtime model currently assigned to this live stream */
   currentModel: string;
+  /** Runtime effort currently assigned to this live stream */
+  currentEffort?: TaskRuntimeOptions["effort"];
+  /** Runtime thinking mode currently assigned to this live stream */
+  currentThinking?: TaskRuntimeOptions["thinking"];
+  /** Explicit task context used to start this runtime process, if any. */
+  currentTaskBarrierTaskId?: string;
   /** Tool tracking */
   toolRunning: boolean;
   currentToolId?: string;
@@ -736,6 +767,65 @@ export class RaviBot {
     this.signalStreamingSessionShutdown(streaming);
     this.streamingSessions.delete(sessionName);
     return "restart-next-turn";
+  }
+
+  private resolvePromptRuntime(
+    sessionName: string,
+    prompt: PromptMessage,
+    session: SessionEntry | null | undefined,
+    agent: AgentConfig,
+  ): TaskRuntimeResolution {
+    const binding = prompt.taskBarrierTaskId
+      ? dbResolveActiveTaskBindingForSession(sessionName, prompt.taskBarrierTaskId)
+      : null;
+    const profile = (() => {
+      if (!binding) {
+        return null;
+      }
+      try {
+        return resolveTaskProfileForTask(binding.task);
+      } catch (error) {
+        log.warn("Task runtime profile unavailable while resolving runtime options", {
+          sessionName,
+          taskId: binding.task.id,
+          profileId: binding.task.profileId,
+          error,
+        });
+        return null;
+      }
+    })();
+    return resolveTaskRuntimeOptions({
+      task: binding?.task,
+      assignment: binding?.assignment,
+      profile,
+      sessionModelOverride: session?.modelOverride,
+      sessionThinkingLevel: session?.thinkingLevel,
+      agentModel: agent.model,
+      configModel: this.config.model,
+    });
+  }
+
+  private runtimeRequiresRestart(
+    streaming: StreamingSession,
+    runtime: TaskRuntimeResolution,
+    prompt: PromptMessage,
+  ): boolean {
+    return (
+      streaming.currentTaskBarrierTaskId !== normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ||
+      streaming.currentEffort !== runtime.options.effort ||
+      streaming.currentThinking !== runtime.options.thinking
+    );
+  }
+
+  private restartStreamingSessionForRuntimeChange(sessionName: string, streaming: StreamingSession): void {
+    if (streaming.pendingMessages.length > 0) {
+      this.stashedMessages.set(
+        sessionName,
+        streaming.pendingMessages.map((message) => ({ ...message })),
+      );
+    }
+    this.signalStreamingSessionShutdown(streaming);
+    this.streamingSessions.delete(sessionName);
   }
 
   /**
@@ -1139,7 +1229,22 @@ export class RaviBot {
         this.signalStreamingSessionShutdown(existing);
         this.streamingSessions.delete(sessionName);
       } else {
-        const requestedModel = sessionEntry?.modelOverride ?? agent.model ?? this.config.model;
+        const requestedRuntime = this.resolvePromptRuntime(sessionName, prompt, sessionEntry, agent);
+        const requestedModel = requestedRuntime.options.model ?? this.config.model;
+        if (this.runtimeRequiresRestart(existing, requestedRuntime, prompt)) {
+          log.info("Streaming: restarting session after runtime task settings change", {
+            sessionName,
+            currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
+            requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+            currentEffort: existing.currentEffort ?? null,
+            requestedEffort: requestedRuntime.options.effort ?? null,
+            currentThinking: existing.currentThinking ?? null,
+            requestedThinking: requestedRuntime.options.thinking ?? null,
+          });
+          this.restartStreamingSessionForRuntimeChange(sessionName, existing);
+          await this.startStreamingSession(sessionName, prompt);
+          return;
+        }
         if (!existing.currentModel) {
           existing.currentModel = requestedModel;
         } else if (existing.currentModel !== requestedModel) {
@@ -1340,7 +1445,8 @@ export class RaviBot {
     this.updateSessionMetadata(dbSessionKey, prompt);
     saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined);
 
-    const model = session.modelOverride ?? agent.model ?? this.config.model;
+    const runtimeResolution = this.resolvePromptRuntime(sessionName, prompt, session, agent);
+    const model = runtimeResolution.options.model ?? this.config.model;
 
     // Build permission options
     // Use bypassPermissions so subagents (teams/tasks) inherit skip-all-permissions.
@@ -1636,6 +1742,9 @@ export class RaviBot {
       pendingMessages: [this.createQueuedUserMessage(prompt)],
       currentSource: resolvedSource,
       currentModel: model,
+      currentEffort: runtimeResolution.options.effort,
+      currentThinking: runtimeResolution.options.thinking,
+      currentTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId),
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
@@ -1670,6 +1779,10 @@ export class RaviBot {
         sessionName,
         agentId: agent.id,
         provider: runtimeProviderId,
+        model,
+        effort: runtimeResolution.options.effort ?? null,
+        thinking: runtimeResolution.options.thinking ?? null,
+        modelSource: runtimeResolution.sources.model,
         providerSessionId: resumableProviderSessionId ?? null,
         resuming: !!resumableProviderSessionId,
       });
@@ -1690,6 +1803,10 @@ export class RaviBot {
         capabilities: snapshotAgentCapabilities(agent.id),
         metadata: {
           runtimeProvider: runtimeProviderId,
+          runtimeModel: model,
+          ...(runtimeResolution.options.effort ? { runtimeEffort: runtimeResolution.options.effort } : {}),
+          ...(runtimeResolution.options.thinking ? { runtimeThinking: runtimeResolution.options.thinking } : {}),
+          runtimeModelSource: runtimeResolution.sources.model,
           ...(approvalSource ? { approvalSource } : {}),
         },
       });
@@ -1777,6 +1894,8 @@ export class RaviBot {
       const runtimeRequest: RuntimeStartRequest = {
         prompt: messageGenerator,
         model,
+        ...(runtimeResolution.options.effort ? { effort: runtimeResolution.options.effort } : {}),
+        ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
         cwd: sessionCwd,
         ...(resumeProviderSessionId ? { resume: resumeProviderSessionId } : {}),
         ...(canResumeStoredSession
