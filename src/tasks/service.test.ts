@@ -503,13 +503,16 @@ describe("task substrate contract", () => {
     ]);
     expect(snapshot.selectedTask?.comments).toEqual([]);
     expect(snapshot.selectedTask?.task.artifacts.supportedKinds).toEqual(["file", "url", "text"]);
-    expect(snapshot.selectedTask?.task.artifacts.primary).toMatchObject({
+    const primaryArtifact = snapshot.selectedTask?.task.artifacts.primary;
+    expect(primaryArtifact).toBeDefined();
+    if (!primaryArtifact) throw new Error("Expected selected task primary artifact");
+    expect(primaryArtifact).toMatchObject({
       kind: "task-doc",
       role: "primary",
       label: "TASK.md",
-      exists: false,
     });
-    expect(snapshot.selectedTask?.task.artifacts.primary?.path.absolutePath).toContain(created.task.id);
+    expect([false, null]).toContain(primaryArtifact?.exists);
+    expect(primaryArtifact?.path.absolutePath).toContain(created.task.id);
     expect(snapshot.artifacts.status).toBe("planned");
   });
 

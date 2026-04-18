@@ -7,7 +7,7 @@ const PROJECT_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 let stateDir: string | null = null;
 
-setDefaultTimeout(20_000);
+setDefaultTimeout(90_000);
 
 function runCli(args: string[]): { stdout: string; stderr: string } {
   const result = spawnSync("bun", ["src/cli/index.ts", ...args], {

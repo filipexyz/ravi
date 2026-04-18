@@ -37,8 +37,8 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { getOrCreateSession, getSessionByName, generateSessionName } from "../router/index.js";
 
 describe("Heartbeat Session Bug", () => {
-  const supervisorCwd = "/Users/luis/ravi/supervisor";
-  const mainCwd = "/Users/luis/ravi/main";
+  const supervisorCwd = "/workspace/ravi/supervisor";
+  const mainCwd = "/workspace/ravi/main";
 
   // Clean up test sessions
   beforeEach(() => {

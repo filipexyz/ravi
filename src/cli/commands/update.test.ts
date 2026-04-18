@@ -18,7 +18,7 @@ describe("update command helpers", () => {
   });
 
   it("detects common global install paths", () => {
-    expect(detectFromBinaryPath("/Users/luis/.bun/bin/ravi")).toBe("bun");
+    expect(detectFromBinaryPath("/home/tester/.bun/bin/ravi")).toBe("bun");
     expect(detectFromBinaryPath("/opt/node/lib/node_modules/ravi.bot/bin/ravi")).toBe("npm");
   });
 

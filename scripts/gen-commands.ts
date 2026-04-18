@@ -7,7 +7,7 @@
  */
 
 import { readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const COMMANDS_DIR = join(import.meta.dir, "../src/cli/commands");
 const OUTPUT_FILE = join(COMMANDS_DIR, "index.ts");
@@ -31,4 +31,4 @@ ${exports}
 `;
 
 writeFileSync(OUTPUT_FILE, content);
-console.log(`Generated ${OUTPUT_FILE} with ${files.length} command files`);
+console.log(`Generated ${relative(process.cwd(), OUTPUT_FILE)} with ${files.length} command files`);

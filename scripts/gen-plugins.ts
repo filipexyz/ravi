@@ -10,7 +10,7 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const PLUGINS_DIR = join(import.meta.dir, "../src/plugins/internal");
 const OUTPUT_FILE = join(import.meta.dir, "../src/plugins/internal-registry.ts");
@@ -141,4 +141,4 @@ console.log("Generating internal plugins registry...");
 const plugins = scanPlugins();
 const code = generateCode(plugins);
 writeFileSync(OUTPUT_FILE, code);
-console.log(`Generated ${OUTPUT_FILE} with ${plugins.length} plugins`);
+console.log(`Generated ${relative(process.cwd(), OUTPUT_FILE)} with ${plugins.length} plugins`);

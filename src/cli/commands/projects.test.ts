@@ -415,7 +415,7 @@ mock.module("../../projects/fixtures.js", () => ({
           workflowRunId: "wf-run-1",
           workflowStatus: "running",
           operatorSessionName: "ops-session",
-          resourceAssetId: "/Users/luis/dev/filipelabs/ravi.bot",
+          resourceAssetId: "/workspace/ravi.bot",
           resourceType: "worktree",
           tasks: [{ nodeKey: "triage", taskId: "task-1", title: "Audit the release queue", status: "in_progress" }],
           proofCommands: [
@@ -548,7 +548,7 @@ describe("ProjectCommands", () => {
         "Attach the run",
         "main",
         "ops-room",
-        ["worktree:/Users/luis/dev/filipelabs/ravi.bot", "url:https://docs.example.com/runbook"],
+        ["worktree:/workspace/ravi.bot", "url:https://docs.example.com/runbook"],
         ["technical-change"],
         ["wf-run-1"],
         undefined,
@@ -578,7 +578,7 @@ describe("ProjectCommands", () => {
         resources: [
           expect.objectContaining({
             type: "worktree",
-            assetId: "/Users/luis/dev/filipelabs/ravi.bot",
+            assetId: "/workspace/ravi.bot",
             label: "ravi.bot worktree",
           }),
           expect.objectContaining({
@@ -764,7 +764,7 @@ describe("ProjectCommands", () => {
       commands.link(
         "resource",
         "ops-cadence",
-        "/Users/luis/dev/filipelabs/ravi.bot",
+        "/workspace/ravi.bot",
         "substrate",
         "worktree",
         "ravi.bot",
@@ -779,14 +779,14 @@ describe("ProjectCommands", () => {
       expect.objectContaining({
         projectRef: "ops-cadence",
         assetType: "resource",
-        assetId: "/Users/luis/dev/filipelabs/ravi.bot",
+        assetId: "/workspace/ravi.bot",
         role: "substrate",
         metadata: expect.objectContaining({
           lane: "core",
           type: "worktree",
           label: "ravi.bot",
-          locator: "/Users/luis/dev/filipelabs/ravi.bot",
-          path: "/Users/luis/dev/filipelabs/ravi.bot",
+          locator: "/workspace/ravi.bot",
+          path: "/workspace/ravi.bot",
           basename: "ravi.bot",
         }),
       }),

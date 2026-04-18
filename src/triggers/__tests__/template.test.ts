@@ -5,7 +5,7 @@ const context = {
   topic: "ravi.copilot.stop",
   data: {
     session_id: "abc123",
-    cwd: "/Users/luis/Dev/filipelabs/ravi.bot",
+    cwd: "/workspace/ravi.bot",
     permission_mode: "bypassPermissions",
     hook_event_name: "Stop",
     last_assistant_message: "Tô aqui, na escuta.",
@@ -33,7 +33,7 @@ describe("resolveTemplate", () => {
 
   describe("{{data.*}}", () => {
     it("resolves simple data field", () => {
-      expect(resolveTemplate("CWD: {{data.cwd}}", context)).toBe("CWD: /Users/luis/Dev/filipelabs/ravi.bot");
+      expect(resolveTemplate("CWD: {{data.cwd}}", context)).toBe("CWD: /workspace/ravi.bot");
     });
 
     it("resolves last_assistant_message", () => {
@@ -54,9 +54,7 @@ describe("resolveTemplate", () => {
   describe("multiple variables", () => {
     it("resolves multiple variables in one message", () => {
       const msg = "CC parou em {{data.cwd}}. Último output: {{data.last_assistant_message}}";
-      expect(resolveTemplate(msg, context)).toBe(
-        "CC parou em /Users/luis/Dev/filipelabs/ravi.bot. Último output: Tô aqui, na escuta.",
-      );
+      expect(resolveTemplate(msg, context)).toBe("CC parou em /workspace/ravi.bot. Último output: Tô aqui, na escuta.");
     });
   });
 
@@ -92,7 +90,7 @@ describe("resolveTemplate", () => {
   describe("whitespace in variable names", () => {
     it("trims whitespace around variable name", () => {
       expect(resolveTemplate("{{ topic }}", context)).toBe("ravi.copilot.stop");
-      expect(resolveTemplate("{{ data.cwd }}", context)).toBe("/Users/luis/Dev/filipelabs/ravi.bot");
+      expect(resolveTemplate("{{ data.cwd }}", context)).toBe("/workspace/ravi.bot");
     });
   });
 
