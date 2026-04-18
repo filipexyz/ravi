@@ -155,6 +155,7 @@ export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
   events: AsyncIterable<RuntimeEvent>;
   interrupt(): Promise<void>;
+  setModel?(model: string): Promise<void>;
 }
 
 export interface RuntimeCapabilities {

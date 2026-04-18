@@ -56,6 +56,7 @@ type RuntimeHandle = {
   provider: RuntimeProviderId;
   events: AsyncIterable<Record<string, unknown>>;
   interrupt(): Promise<void>;
+  setModel?(model: string): Promise<void>;
 };
 
 const emittedEvents: Array<{ topic: string; data: any }> = [];
@@ -832,6 +833,41 @@ describe("RaviBot runtime guards", () => {
       { provider: "claude", prompt: "first via codex\n\nsecond via claude" },
     ]);
 
+    await bot.stop();
+  });
+
+  it("applies model changes to an active streaming session without daemon restart", async () => {
+    const sessionKey = "agent:main:live-model-switch";
+    const setModelCalls: string[] = [];
+    let releaseRuntime: (() => void) | undefined;
+    const runtimeLifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+
+    runtimeStartImpl = (providerId) => ({
+      provider: providerId,
+      events: (async function* () {
+        await runtimeLifetime;
+        yield { type: "status", status: "idle" };
+      })(),
+      interrupt: async () => {},
+      setModel: async (model: string) => {
+        setModelCalls.push(model);
+      },
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const status = await (bot as any).applySessionModelChange(sessionKey, "test-model-2");
+    const streaming = (bot as any).streamingSessions.get(sessionKey);
+
+    expect(status).toBe("applied");
+    expect(setModelCalls).toEqual(["test-model-2"]);
+    expect(streaming?.currentModel).toBe("test-model-2");
+
+    releaseRuntime?.();
     await bot.stop();
   });
 

@@ -106,6 +106,7 @@ const TASK_WORKTREE_MODES = ["inherit", "path"] as const;
 const TASK_RECOVERY_STATUSES: TaskStatus[] = ["dispatched", "in_progress"];
 const TASK_RECOVERY_MAX_STALE_MS = 20 * 60 * 1000;
 const TASK_REPORT_EVENT_SET = new Set<string>(TASK_REPORT_EVENTS);
+const DEFAULT_TASK_REPORT_EVENTS = [...TASK_REPORT_EVENTS] satisfies TaskReportEvent[];
 const log = logger.child("tasks:service");
 
 export const TASK_STREAM_SCOPE = "tasks";
@@ -1282,7 +1283,7 @@ function resolveTaskReportEvents(events?: readonly TaskReportEvent[] | null): Ta
   const normalized = [
     ...new Set((events ?? []).filter((event): event is TaskReportEvent => TASK_REPORT_EVENT_SET.has(event))),
   ];
-  return normalized.length > 0 ? normalized : ["done"];
+  return normalized.length > 0 ? normalized : [...DEFAULT_TASK_REPORT_EVENTS];
 }
 
 function toTaskReportEvent(type: TaskEvent["type"]): TaskReportEvent | null {

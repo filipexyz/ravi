@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
+import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { DEFAULT_DELIVERY_BARRIER, normalizeDeliveryBarrier, type DeliveryBarrier } from "../../delivery-barriers.js";
 import {
@@ -31,6 +32,7 @@ import {
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
+import { loadConfig } from "../../utils/config.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
 import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
@@ -52,6 +54,13 @@ const CONTEXT_DB_META = { source: "context-db", freshness: "persisted" } as cons
 const ADAPTER_DB_META = { source: "adapter-db", freshness: "persisted" } as const;
 const SESSION_KEY_META = { source: "resolver", freshness: "derived-now", via: "session-key" } as const;
 const NEXT_COMMANDS_META = { source: "derived", freshness: "derived-now", via: "session-inspect" } as const;
+
+function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
+  const routerConfig = loadRouterConfig();
+  const runtimeConfig = loadConfig();
+  const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+  return modelOverride ?? agent?.model ?? runtimeConfig.model;
+}
 
 type StreamTerminalState =
   | { kind: "complete" }
@@ -580,7 +589,7 @@ export class SessionCommands {
   }
 
   @Command({ name: "set-model", description: "Set session model override" })
-  setModel(
+  async setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string,
   ) {
@@ -598,6 +607,7 @@ export class SessionCommands {
     }
 
     const label = s.name ?? s.sessionKey;
+    const modelOverride = model === "clear" ? null : model;
     if (model === "clear") {
       updateSessionModelOverride(s.sessionKey, null);
       console.log(`Cleared model override for: ${label}`);
@@ -606,7 +616,20 @@ export class SessionCommands {
       console.log(`Set model to "${model}" for: ${label}`);
     }
 
-    console.log("Note: takes effect on next session start (reset or daemon restart).");
+    const event: SessionModelChangedEvent = {
+      sessionKey: s.sessionKey,
+      sessionName: label,
+      modelOverride,
+      effectiveModel: resolveEffectiveSessionModel(s, modelOverride),
+      changedAt: Date.now(),
+    };
+
+    try {
+      await nats.emit(SESSION_MODEL_CHANGED_TOPIC, event);
+      console.log("Live daemon notified; active session will switch without daemon restart when supported.");
+    } catch {
+      console.log("Saved override. Live daemon notification failed; next cold session will use it.");
+    }
   }
 
   @Command({ name: "set-thinking", description: "Set session thinking level" })

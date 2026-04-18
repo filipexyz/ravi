@@ -13,6 +13,7 @@ let runtimeEvents: RuntimeEventPayload[] = [];
 let claudeEvents: RuntimeEventPayload[] = [];
 let responseEvents: ResponseEventPayload[] = [];
 const publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
@@ -51,7 +52,9 @@ mock.module("../../nats.js", () => ({
       if (topic.endsWith(".response")) return makeSubscription(responseEvents);
       return makeSubscription([]);
     },
-    emit: mock(async () => {}),
+    emit: mock(async (topic: string, data: Record<string, unknown>) => {
+      natsEmits.push({ topic, data });
+    }),
     close: mock(async () => {}),
   },
 }));
@@ -140,6 +143,22 @@ function captureLogs(run: () => void): string {
   return lines.join("\n");
 }
 
+async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return lines.join("\n");
+}
+
 describe("SessionCommands wait mode", () => {
   beforeEach(() => {
     runtimeEvents = [];
@@ -152,6 +171,7 @@ describe("SessionCommands wait mode", () => {
     listedAdapters = [];
     adapterSnapshots.clear();
     routerConfig = { agents: {} };
+    natsEmits.length = 0;
   });
 
   it("throws the runtime failure when a waited session fails without response output", async () => {
@@ -235,6 +255,66 @@ describe("SessionCommands wait mode", () => {
   });
 });
 
+describe("SessionCommands set-model", () => {
+  beforeEach(() => {
+    resolvedSession = null;
+    routerConfig = { agents: {} };
+    natsEmits.length = 0;
+  });
+
+  it("notifies the live daemon with the effective model", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-switch",
+      name: "model-switch",
+      agentId: "main",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          model: "model-default",
+        },
+      },
+    };
+
+    const output = await captureLogsAsync(async () => {
+      await new SessionCommands().setModel("model-switch", "model-live");
+    });
+
+    expect(output).toContain('Set model to "model-live" for: model-switch');
+    expect(output).toContain("Live daemon notified");
+    expect(natsEmits).toHaveLength(1);
+    expect(natsEmits[0]?.topic).toBe("ravi.session.model.changed");
+    expect(natsEmits[0]?.data.sessionKey).toBe("agent:main:model-switch");
+    expect(natsEmits[0]?.data.sessionName).toBe("model-switch");
+    expect(natsEmits[0]?.data.modelOverride).toBe("model-live");
+    expect(natsEmits[0]?.data.effectiveModel).toBe("model-live");
+    expect(typeof natsEmits[0]?.data.changedAt).toBe("number");
+  });
+
+  it("clears to the agent default model in the live daemon event", async () => {
+    resolvedSession = {
+      sessionKey: "agent:main:model-clear",
+      name: "model-clear",
+      agentId: "main",
+    };
+    routerConfig = {
+      agents: {
+        main: {
+          model: "model-default",
+        },
+      },
+    };
+
+    await captureLogsAsync(async () => {
+      await new SessionCommands().setModel("model-clear", "clear");
+    });
+
+    expect(natsEmits).toHaveLength(1);
+    expect(natsEmits[0]?.data.modelOverride).toBeNull();
+    expect(natsEmits[0]?.data.effectiveModel).toBe("model-default");
+  });
+});
+
 describe("SessionCommands info", () => {
   beforeEach(() => {
     resolvedSession = null;
@@ -243,6 +323,7 @@ describe("SessionCommands info", () => {
     listedAdapters = [];
     adapterSnapshots.clear();
     routerConfig = { agents: {} };
+    natsEmits.length = 0;
   });
 
   it("prints a unified inspect view with runtime identity, contexts, adapters, and next commands", () => {

@@ -344,7 +344,7 @@ describe("task substrate contract", () => {
     expect(payload.task.taskProfile.sync.taskDocument?.mode ?? "none").toBe("required");
     expect(payload.task.checkpointIntervalMs).toBe(300000);
     expect(payload.task.reportToSessionName).toBe("dev");
-    expect(payload.task.reportEvents).toEqual(["done"]);
+    expect(payload.task.reportEvents).toEqual(["blocked", "done", "failed"]);
     expect(payload.task.parentTaskId).toBeNull();
     expect(payload.task.taskDir).toBeNull();
     expect(payload.task.createdBy).toBe("test");
@@ -357,7 +357,7 @@ describe("task substrate contract", () => {
     expect(payload.createdByAgentId).toBe("main");
     expect(payload.createdBySessionName).toBe("dev");
     expect(payload.reportToSessionName).toBe("dev");
-    expect(payload.reportEvents).toEqual(["done"]);
+    expect(payload.reportEvents).toEqual(["blocked", "done", "failed"]);
     expect(payload.activeAssignment).toBeNull();
     expect(payload.task.worktree).toEqual({
       mode: "path",

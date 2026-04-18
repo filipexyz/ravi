@@ -66,7 +66,7 @@ describe("task-db", () => {
     expect(created.task.createdByAgentId).toBe("main");
     expect(created.task.createdBySessionName).toBe("dev");
     expect(created.task.reportToSessionName).toBe("dev");
-    expect(created.task.reportEvents).toEqual(["done"]);
+    expect(created.task.reportEvents).toEqual(["blocked", "done", "failed"]);
 
     const dispatched = dbDispatchTask(created.task.id, {
       agentId: "dev",
@@ -79,7 +79,7 @@ describe("task-db", () => {
     expect(dispatched.assignment.checkpointOverdueCount).toBe(0);
     expect(dispatched.assignment.checkpointDueAt).toBeUndefined();
     expect(dispatched.assignment.reportToSessionName).toBe("dev");
-    expect(dispatched.assignment.reportEvents).toEqual(["done"]);
+    expect(dispatched.assignment.reportEvents).toEqual(["blocked", "done", "failed"]);
     expect(dbGetActiveAssignment(created.task.id)?.sessionName).toBe(`${created.task.id}-work`);
 
     const progressed = dbReportTaskProgress(created.task.id, {

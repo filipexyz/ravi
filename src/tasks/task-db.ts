@@ -143,7 +143,8 @@ interface TaskLaunchPlanRow {
 
 let schemaReady = false;
 let schemaDbPath: string | null = null;
-const DEFAULT_TASK_REPORT_EVENTS_JSON = JSON.stringify(["done"] satisfies TaskReportEvent[]);
+const DEFAULT_TASK_REPORT_EVENTS = [...TASK_REPORT_EVENTS] satisfies TaskReportEvent[];
+const DEFAULT_TASK_REPORT_EVENTS_JSON = JSON.stringify(DEFAULT_TASK_REPORT_EVENTS);
 
 function normalizeTaskReportToSessionName(sessionName?: string | null): string | null {
   const trimmed = sessionName?.trim();
@@ -153,7 +154,7 @@ function normalizeTaskReportToSessionName(sessionName?: string | null): string |
 function normalizeTaskReportEvents(events?: readonly TaskReportEvent[] | null): TaskReportEvent[] {
   const allowed = new Set<string>(TASK_REPORT_EVENTS);
   const normalized = [...new Set((events ?? []).filter((event): event is TaskReportEvent => allowed.has(event)))];
-  return normalized.length > 0 ? normalized : ["done"];
+  return normalized.length > 0 ? normalized : [...DEFAULT_TASK_REPORT_EVENTS];
 }
 
 function serializeTaskReportEvents(events?: readonly TaskReportEvent[] | null): string {

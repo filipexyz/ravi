@@ -56,6 +56,7 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       const env = buildClaudeCodeEnvironment(input.env);
       const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
       let activeQuery: Query | null = null;
+      let currentModel = input.model;
 
       return {
         provider: "claude",
@@ -63,12 +64,24 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           initialResumeSessionId: resumeSessionId,
           env,
           pathToClaudeCodeExecutable,
+          getModel: () => currentModel,
           setActiveQuery: (queryResult) => {
             activeQuery = queryResult;
           },
         }),
         interrupt: async () => {
           await activeQuery?.interrupt();
+        },
+        setModel: async (model: string) => {
+          currentModel = model;
+          if (activeQuery) {
+            try {
+              await activeQuery.setModel(model);
+            } catch {
+              // Some transports only accept model changes between turns. The
+              // next query still uses currentModel.
+            }
+          }
         },
       };
     },
@@ -81,6 +94,7 @@ async function* runClaudeTurns(
     initialResumeSessionId?: string;
     env: Record<string, string>;
     pathToClaudeCodeExecutable?: string;
+    getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
   },
 ): AsyncGenerator<RuntimeEvent> {
@@ -99,7 +113,7 @@ async function* runClaudeTurns(
 
     const queryResult = query({
       prompt,
-      options: buildClaudeQueryOptions(input, runtime.env, {
+      options: buildClaudeQueryOptions({ ...input, model: runtime.getModel() }, runtime.env, {
         resumeSessionId,
         forkSession: useForkSession,
         pathToClaudeCodeExecutable: runtime.pathToClaudeCodeExecutable,

@@ -6,6 +6,9 @@ import type { RuntimeEvent, RuntimeStartRequest } from "./types.js";
 
 let nextMessages: any[] = [];
 let queryCalls: Array<{ prompt: unknown; options: Record<string, unknown> }> = [];
+let querySetModelCalls: Array<string | undefined> = [];
+let queryGate: Promise<void> | null = null;
+let releaseQueryGate: (() => void) | null = null;
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   query: (input: { prompt: unknown; options: Record<string, unknown> }) => {
@@ -13,7 +16,13 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
     const messages = [...nextMessages];
     return {
       interrupt: async () => {},
+      setModel: async (model?: string) => {
+        querySetModelCalls.push(model);
+      },
       async *[Symbol.asyncIterator]() {
+        if (queryGate) {
+          await queryGate;
+        }
         for (const message of messages) {
           yield message;
         }
@@ -53,12 +62,25 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
   return events.filter((event): event is Extract<RuntimeEvent, { type: T }> => event.type === type);
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe("createClaudeRuntimeProvider", () => {
   let tempDir: string | null = null;
 
   afterEach(() => {
     nextMessages = [];
     queryCalls = [];
+    querySetModelCalls = [];
+    queryGate = null;
+    releaseQueryGate = null;
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
       tempDir = null;
@@ -225,6 +247,55 @@ describe("createClaudeRuntimeProvider", () => {
     expect(queryCalls).toHaveLength(1);
     expect(queryCalls[0]?.prompt).toBe("hello");
     expect(queryCalls[0]?.options.pathToClaudeCodeExecutable).toBe("/opt/ravi/bin/native-runtime");
+  });
+
+  it("updates active and subsequent query models without recreating the provider session", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-model" }];
+    queryGate = new Promise<void>((resolve) => {
+      releaseQueryGate = resolve;
+    });
+
+    let releaseSecondPrompt: (() => void) | null = null;
+    const secondPromptReady = new Promise<void>((resolve) => {
+      releaseSecondPrompt = resolve;
+    });
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "first" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+          await secondPromptReady;
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "second" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { model: "model-a" },
+      ),
+    );
+
+    const eventsPromise = collectEvents(session.events);
+    await waitFor(() => queryCalls.length === 1);
+    await session.setModel?.("model-b");
+    expect(querySetModelCalls).toEqual(["model-b"]);
+    releaseQueryGate?.();
+    await waitFor(() => queryCalls.length === 1 && querySetModelCalls.length === 1);
+
+    queryGate = null;
+    releaseSecondPrompt?.();
+    const events = await eventsPromise;
+
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
+    expect(queryCalls[0]?.options.model).toBe("model-a");
+    expect(queryCalls[1]?.options.model).toBe("model-b");
   });
 
   it("backfills daemon auth env when the runtime env is partial", async () => {

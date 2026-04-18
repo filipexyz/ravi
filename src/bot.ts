@@ -40,6 +40,7 @@ import { SANITIZED_ENV_VARS, createSanitizeBashHook } from "./hooks/sanitize-bas
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
 import { getToolSafety } from "./hooks/tool-safety.js";
 import { discoverPlugins } from "./plugins/index.js";
+import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "./session-control.js";
 import { delimiter, dirname, join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
@@ -424,6 +425,8 @@ interface StreamingSession {
   pendingMessages: UserMessage[];
   /** Current response source for routing */
   currentSource?: MessageTarget;
+  /** Runtime model currently assigned to this live stream */
+  currentModel: string;
   /** Tool tracking */
   toolRunning: boolean;
   currentToolId?: string;
@@ -550,6 +553,7 @@ export class RaviBot {
     this.running = true;
     this.subscribeToPrompts();
     this.subscribeToSessionAborts();
+    this.subscribeToSessionModelChanges();
     this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
     void this.recoverActiveTasksAfterRestart();
@@ -673,6 +677,65 @@ export class RaviBot {
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
+  }
+
+  private async subscribeToSessionModelChanges(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of nats.subscribe(SESSION_MODEL_CHANGED_TOPIC)) {
+          if (!this.running) break;
+          const data = event.data as Partial<SessionModelChangedEvent>;
+          const effectiveModel = typeof data.effectiveModel === "string" ? data.effectiveModel.trim() : "";
+          if (!effectiveModel) continue;
+
+          const keys = [data.sessionName, data.sessionKey]
+            .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+            .map((value) => value.trim());
+
+          for (const key of new Set(keys)) {
+            const status = await this.applySessionModelChange(key, effectiveModel);
+            if (status !== "missing") {
+              log.info("Session model change applied", { key, effectiveModel, status });
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Session model change subscription error, reconnecting in 2s", { error: err });
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  private async applySessionModelChange(
+    sessionName: string,
+    model: string,
+  ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
+    const streaming = this.streamingSessions.get(sessionName);
+    if (!streaming || streaming.done) {
+      return "missing";
+    }
+    if (streaming.currentModel === model) {
+      return "unchanged";
+    }
+
+    if (typeof streaming.queryHandle.setModel === "function") {
+      await streaming.queryHandle.setModel(model);
+      streaming.currentModel = model;
+      return "applied";
+    }
+
+    if (streaming.pendingMessages.length > 0) {
+      this.stashedMessages.set(
+        sessionName,
+        streaming.pendingMessages.map((message) => ({ ...message })),
+      );
+    }
+    streaming.currentModel = model;
+    this.signalStreamingSessionShutdown(streaming);
+    this.streamingSessions.delete(sessionName);
+    return "restart-next-turn";
   }
 
   /**
@@ -1076,6 +1139,17 @@ export class RaviBot {
         this.signalStreamingSessionShutdown(existing);
         this.streamingSessions.delete(sessionName);
       } else {
+        const requestedModel = sessionEntry?.modelOverride ?? agent.model ?? this.config.model;
+        if (!existing.currentModel) {
+          existing.currentModel = requestedModel;
+        } else if (existing.currentModel !== requestedModel) {
+          const modelStatus = await this.applySessionModelChange(sessionName, requestedModel);
+          if (modelStatus === "restart-next-turn") {
+            await this.startStreamingSession(sessionName, prompt);
+            return;
+          }
+        }
+
         // Session alive — just push the new message into the generator
         log.info("Streaming: pushing message to existing session", { sessionName });
         // Resolve DB primary key for metadata updates
@@ -1561,6 +1635,7 @@ export class RaviBot {
       pendingWake: false,
       pendingMessages: [this.createQueuedUserMessage(prompt)],
       currentSource: resolvedSource,
+      currentModel: model,
       toolRunning: false,
       lastActivity: Date.now(),
       done: false,
@@ -1772,7 +1847,7 @@ export class RaviBot {
 
       // Run the event loop in the background (don't await — it stays alive)
       runWithContext(toolContext, () =>
-        this.runEventLoop(runId, sessionName, session, agent, streamingSession, runtimeSession, model),
+        this.runEventLoop(runId, sessionName, session, agent, streamingSession, runtimeSession),
       ).catch((err) => {
         const isAbort = err instanceof Error && /abort/i.test(err.message);
         if (isAbort) {
@@ -1904,7 +1979,6 @@ export class RaviBot {
     agent: AgentConfig,
     streaming: StreamingSession,
     runtimeSession: RuntimeSessionHandle,
-    model: string,
   ): Promise<void> {
     // Timeout watchdog
     const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
@@ -2199,7 +2273,8 @@ export class RaviBot {
               : runtimeSession.provider === "codex"
                 ? "openai"
                 : null);
-          const executionModel = executionProvider === "anthropic" ? (event.execution?.model ?? model) : null;
+          const executionModel =
+            executionProvider === "anthropic" ? (event.execution?.model ?? streaming.currentModel) : null;
           const cost = executionModel
             ? calculateCost(executionModel, {
                 inputTokens,
