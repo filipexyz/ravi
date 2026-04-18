@@ -497,6 +497,102 @@ describe("whatsapp overlay model", () => {
     });
   });
 
+  it("preserves runtime graph metadata on operational timeline items", () => {
+    const runtimeMetadata = {
+      provider: "codex",
+      thread: { id: "thread_1" },
+      turn: { id: "turn_1" },
+    };
+    const approvalMetadata = {
+      provider: "codex",
+      thread: { id: "thread_1" },
+      turn: { id: "turn_1" },
+      item: { id: "approval_1", type: "approval_request" },
+    };
+    const streamMetadata = {
+      provider: "codex",
+      thread: { id: "thread_1" },
+      turn: { id: "turn_1" },
+      item: { id: "message_1", type: "assistant_message_delta" },
+    };
+    const toolMetadata = {
+      provider: "codex",
+      thread: { id: "thread_1" },
+      turn: { id: "turn_1" },
+      item: { id: "tool_1", type: "tool_call", status: "completed" },
+    };
+
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "thinking",
+        events: [
+          {
+            kind: "runtime",
+            label: "runtime graph",
+            detail: "thread.started thread=thread_1",
+            timestamp: Date.parse("2026-04-12T03:00:00Z"),
+            metadata: runtimeMetadata,
+          },
+          {
+            kind: "approval",
+            label: "runtime approval",
+            detail: "command_execution · pending",
+            timestamp: Date.parse("2026-04-12T03:00:01Z"),
+            metadata: approvalMetadata,
+          },
+          {
+            kind: "stream",
+            label: "stream",
+            detail: "resposta parcial",
+            timestamp: Date.parse("2026-04-12T03:00:03Z"),
+            metadata: streamMetadata,
+          },
+        ],
+        artifacts: [
+          {
+            id: "tool-1",
+            kind: "tool",
+            label: "bash",
+            detail: "ok",
+            createdAt: Date.parse("2026-04-12T03:00:02Z"),
+            metadata: toolMetadata,
+          },
+        ],
+      },
+    });
+
+    const runtimeEvent = timeline.find((item) => item.type === "event" && item.label === "runtime graph");
+    expect(runtimeEvent).toMatchObject({
+      type: "event",
+      kind: "runtime",
+      detail: "thread.started thread=thread_1",
+      metadata: runtimeMetadata,
+    });
+
+    const approvalEvent = timeline.find((item) => item.type === "event" && item.kind === "approval");
+    expect(approvalEvent).toMatchObject({
+      type: "event",
+      label: "runtime approval",
+      metadata: approvalMetadata,
+    });
+
+    const streamMessage = timeline.find((item) => item.type === "message" && item.eventKind === "stream");
+    expect(streamMessage).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: "resposta parcial",
+      metadata: streamMetadata,
+    });
+
+    const toolArtifact = timeline.find((item) => item.type === "artifact" && item.kind === "tool");
+    expect(toolArtifact).toMatchObject({
+      type: "artifact",
+      label: "bash",
+      metadata: toolMetadata,
+    });
+  });
+
   it("suppresses kind:tool events when tool artifacts exist", () => {
     const timeline = buildOverlaySessionWorkspaceTimeline({
       messages: [],

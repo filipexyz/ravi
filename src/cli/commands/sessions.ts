@@ -36,6 +36,7 @@ import { loadConfig } from "../../utils/config.js";
 import type { ResponseMessage, ChannelContext } from "../../bot.js";
 import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
+import type { RuntimeProviderId } from "../../runtime/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   getScopeContext,
@@ -1460,7 +1461,7 @@ export interface NormalizedTranscriptMessage {
 
 export function extractNormalizedTranscriptMessages(
   raw: string,
-  runtimeProvider?: "claude" | "codex",
+  runtimeProvider?: RuntimeProviderId,
 ): NormalizedTranscriptMessage[] {
   if (runtimeProvider === "codex") {
     const messages = extractCodexTranscriptMessages(raw);

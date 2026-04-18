@@ -99,15 +99,19 @@ export function listRuntimeModels(
     return CLAUDE_MODEL_OPTIONS;
   }
 
-  const models = readCodexModelOptions(options.codexCachePath);
-  return models.length > 0 ? models : FALLBACK_CODEX_MODEL_OPTIONS;
+  if (provider === "codex") {
+    const models = readCodexModelOptions(options.codexCachePath);
+    return models.length > 0 ? models : FALLBACK_CODEX_MODEL_OPTIONS;
+  }
+
+  return [];
 }
 
 export function getDefaultModelForProvider(
   provider: RuntimeProviderId,
   options: RuntimeModelCatalogOptions = {},
 ): string {
-  return listRuntimeModels(provider, options)[0]?.id ?? (provider === "claude" ? "sonnet" : "gpt-5.4");
+  return listRuntimeModels(provider, options)[0]?.id ?? (provider === "claude" ? "sonnet" : "default");
 }
 
 export function resolvePreferredRuntimeModel(
@@ -117,6 +121,9 @@ export function resolvePreferredRuntimeModel(
 ): string {
   const normalized = normalizeRuntimeModel(provider, model);
   const models = listRuntimeModels(provider, options);
+  if (normalized && models.length === 0) {
+    return normalized;
+  }
   if (normalized && models.some((entry) => entry.id.toLowerCase() === normalized.toLowerCase())) {
     return normalized;
   }

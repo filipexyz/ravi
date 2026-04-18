@@ -210,6 +210,15 @@ function listProjectLinkRowsByAsset(assetType: ProjectLink["assetType"], assetId
     .all(assetType, assetId) as ProjectLinkRow[];
 }
 
+function nextProjectLinkTimestamp(projectId: string): number {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT MAX(updated_at) AS max_updated_at FROM project_links WHERE project_id = ?")
+    .get(projectId) as { max_updated_at?: number | null } | undefined;
+  const latest = typeof row?.max_updated_at === "number" ? row.max_updated_at : 0;
+  return Math.max(Date.now(), latest + 1);
+}
+
 function hasOwn<T extends object, K extends keyof T>(value: T, key: K): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -395,7 +404,7 @@ export function dbUpsertProjectLink(input: UpsertProjectLinkInput): ProjectLink 
       throw new Error(`Workflow ${input.assetId} already linked to project ${conflicting.project_id}.`);
     }
   }
-  const now = Date.now();
+  const now = nextProjectLinkTimestamp(project.id);
 
   if (input.assetType === "workflow" && input.role === "primary") {
     db.prepare(`

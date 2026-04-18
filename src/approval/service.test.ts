@@ -1,47 +1,52 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-
-afterAll(() => mock.restore());
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbCreateContext, dbDeleteContext, dbGetContext } from "../router/router-db.js";
+import {
+  authorizeRuntimeContext,
+  setApprovalServiceDependenciesForTest,
+  type ApprovalServiceDependencies,
+} from "./service.js";
 
 let requestReplyResult: { messageId?: string } = { messageId: "msg_1" };
 let subscribeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let stateDir: string | null = null;
 const createdContextIds = new Set<string>();
 
-mock.module("../utils/request-reply.js", () => ({
-  requestReply: async () => requestReplyResult,
-}));
-
-mock.module("../nats.js", () => ({
-  nats: {
-    emit: async (topic: string, data: Record<string, unknown>) => {
-      emitted.push({ topic, data });
-    },
-    subscribe: (...topics: string[]) =>
-      (async function* () {
-        for (const event of subscribeEvents) {
-          if (topics.includes(event.topic)) {
-            yield event;
-          }
-        }
-      })(),
-  },
-}));
-
-const { authorizeRuntimeContext } = await import("./service.js");
-const { dbCreateContext, dbDeleteContext, dbGetContext } = await import("../router/router-db.js");
-
 describe("approval service", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-approval-service-test-");
     requestReplyResult = { messageId: "msg_1" };
     subscribeEvents = [];
     emitted = [];
+    setApprovalServiceDependenciesForTest({
+      requestReply: (async <T>() => requestReplyResult as T) satisfies ApprovalServiceDependencies["requestReply"],
+      nats: {
+        emit: async (topic: string, data: Record<string, unknown>) => {
+          emitted.push({ topic, data });
+        },
+        subscribe: ((...args: unknown[]) => {
+          const topics = args.filter((arg): arg is string => typeof arg === "string");
+          return (async function* () {
+            for (const event of subscribeEvents) {
+              if (topics.includes(event.topic)) {
+                yield event;
+              }
+            }
+          })();
+        }) satisfies ApprovalServiceDependencies["nats"]["subscribe"],
+      },
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    setApprovalServiceDependenciesForTest();
     for (const contextId of createdContextIds) {
       dbDeleteContext(contextId);
     }
     createdContextIds.clear();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   it("returns inherited access when the context already has the capability", async () => {
@@ -100,6 +105,7 @@ describe("approval service", () => {
       permission: "execute",
       objectType: "group",
       objectId: "daemon",
+      timeoutMs: 20,
     });
 
     expect(result).toMatchObject({

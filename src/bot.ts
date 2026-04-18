@@ -27,14 +27,25 @@ import {
   getAnnounceCompaction,
   getAccountForAgent,
   dbInsertCostEvent,
-  type SessionEntry,
   type AgentConfig,
+  type ContextRecord,
+  type SessionEntry,
 } from "./router/index.js";
 import { calculateCost } from "./constants.js";
 import { configStore } from "./config-store.js";
 import { runWithContext } from "./cli/context.js";
+import { getAllCommandClasses, createSdkTools } from "./cli/tool-definitions.js";
+import { extractTools, type ExportedTool, type ToolResult } from "./cli/tools-export.js";
 import { HEARTBEAT_OK } from "./heartbeat/index.js";
-import { createBashPermissionHook, createToolPermissionHook } from "./bash/index.js";
+import {
+  checkDangerousPatterns,
+  createBashPermissionHook,
+  createToolPermissionHook,
+  emitBashDeniedAudit,
+  evaluateBashPermission,
+  parseBashCommand,
+  UNCONDITIONAL_BLOCKS,
+} from "./bash/index.js";
 import { createPreCompactHook } from "./hooks/index.js";
 import { SANITIZED_ENV_VARS, createSanitizeBashHook } from "./hooks/sanitize-bash.js";
 import { createSpecServer, isSpecModeActive, getSpecState } from "./spec/server.js";
@@ -44,8 +55,13 @@ import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "./se
 import { delimiter, dirname, join } from "node:path";
 import { createRemoteSpawn } from "./remote-spawn.js";
 import { createNatsRemoteSpawn } from "./remote-spawn-nats.js";
-import { agentCan } from "./permissions/engine.js";
-import { requestCascadingApproval, requestPollAnswer } from "./approval/service.js";
+import { agentCan, canWithCapabilityContext } from "./permissions/engine.js";
+import {
+  authorizeRuntimeContext,
+  requestCascadingApproval,
+  requestPollAnswer,
+  type ApprovalTarget,
+} from "./approval/service.js";
 import {
   DEFAULT_DELIVERY_BARRIER,
   chooseMoreUrgentBarrier,
@@ -62,13 +78,29 @@ import { resolveTaskRuntimeOptions } from "./tasks/runtime-options.js";
 import { emitTaskEvent } from "./tasks/service.js";
 import type { TaskRuntimeOptions, TaskRuntimeResolution } from "./tasks/types.js";
 import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
   assertRuntimeCompatibility,
   createRuntimeContext,
   createRuntimeProvider,
   snapshotAgentCapabilities,
+  type RuntimeApprovalResult,
+  type RuntimeCapabilities,
+  type RuntimeCapabilityAuthorizationResult,
+  type RuntimeCommandAuthorizationRequest,
+  type RuntimeControlRequest,
+  type RuntimeControlResult,
+  type RuntimeDynamicToolCallContentItem,
+  type RuntimeDynamicToolExecutionOptions,
+  type RuntimeDynamicToolCallRequest,
+  type RuntimeDynamicToolCallResult,
+  type RuntimeDynamicToolSpec,
+  type RuntimeEventMetadata,
+  type RuntimeHostServices,
   type RuntimeProviderId,
   type RuntimeSessionHandle,
   type RuntimeStartRequest,
+  type RuntimeToolUseAuthorizationRequest,
+  type RuntimeUserInputRequest,
   type RuntimeToolAccessMode,
 } from "./runtime/index.js";
 
@@ -239,8 +271,8 @@ function resolveStoredRuntimeProvider(session: SessionEntry): RuntimeProviderId 
   }
 
   if (session.providerSessionId || session.sdkSessionId) {
-    // Legacy sessions predate runtime_provider and can only belong to Claude.
-    return "claude";
+    // Legacy sessions predate runtime_provider and belong to the default runtime.
+    return DEFAULT_RUNTIME_PROVIDER_ID;
   }
 
   return undefined;
@@ -257,14 +289,473 @@ function hasUnrestrictedToolSurface(agentId: string): boolean {
   return agentCan(agentId, "admin", "system", "*") || agentCan(agentId, "use", "tool", "*");
 }
 
-function getRuntimeToolAccessMode(providerId: RuntimeProviderId, agentId: string): RuntimeToolAccessMode {
-  if (providerId === "codex") {
-    // Codex is currently Bash-governed only. Require unrestricted non-Bash tool access
-    // and let executable restrictions flow through the native Bash hook.
+function getRuntimeToolAccessMode(capabilities: RuntimeCapabilities, agentId: string): RuntimeToolAccessMode {
+  if (capabilities.toolAccessRequirement === "tool_surface") {
     return hasUnrestrictedToolSurface(agentId) ? "unrestricted" : "restricted";
   }
 
   return hasUnrestrictedToolExecution(agentId) ? "unrestricted" : "restricted";
+}
+
+function resolveCostTrackingModel(
+  runtimeProvider: RuntimeProviderId,
+  executionModel: string | null | undefined,
+  configuredModel: string,
+): string | null {
+  const explicitModel = executionModel?.trim();
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  return runtimeProvider === DEFAULT_RUNTIME_PROVIDER_ID ? configuredModel : null;
+}
+
+const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
+let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
+let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
+
+function getRuntimeDynamicToolDefinitions(): ExportedTool[] {
+  if (!cachedRuntimeDynamicTools) {
+    cachedRuntimeDynamicTools = extractTools(getAllCommandClasses());
+  }
+  return cachedRuntimeDynamicTools;
+}
+
+function getRuntimeDynamicToolSpecs(): RuntimeDynamicToolSpec[] {
+  if (!cachedRuntimeDynamicToolSpecs) {
+    cachedRuntimeDynamicToolSpecs = createSdkTools(getAllCommandClasses()).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema,
+    }));
+  }
+  return cachedRuntimeDynamicToolSpecs;
+}
+
+function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDynamicToolSpec[] {
+  const allowedToolNames = new Set(
+    getRuntimeDynamicToolDefinitions()
+      .filter((tool) => canAdvertiseRuntimeDynamicTool(context, tool))
+      .map((tool) => tool.name),
+  );
+
+  return getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
+}
+
+function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTool): boolean {
+  if (!canWithCapabilityContext(context, "use", "tool", tool.name)) {
+    return false;
+  }
+
+  const scope = tool.metadata.scope ?? "admin";
+  switch (scope) {
+    case "open":
+    case "resource":
+      return true;
+    case "superadmin":
+      return canWithCapabilityContext(context, "admin", "system", "*");
+    case "writeContacts":
+      return canWithCapabilityContext(context, "write_contacts", "system", "*");
+    case "admin":
+      return (
+        canWithCapabilityContext(context, "execute", "group", tool.metadata.group) ||
+        canWithCapabilityContext(context, "execute", "group", `${tool.metadata.group}_${tool.metadata.command}`)
+      );
+    default:
+      return false;
+  }
+}
+
+function createRuntimeHostServices(options: {
+  context: ContextRecord;
+  agentId: string;
+  sessionName: string;
+  resolvedSource?: ApprovalTarget;
+  approvalSource?: ApprovalTarget;
+  toolContext: Record<string, unknown>;
+}): RuntimeHostServices {
+  return {
+    authorizeCapability: (request) => authorizeRuntimeCapability(options.context, request),
+    authorizeCommandExecution: (request) => authorizeRuntimeCommandExecution(options, request),
+    authorizeToolUse: (request) => authorizeRuntimeToolUse(options, request),
+    requestUserInput: (request) => requestRuntimeUserInput(options, request),
+    listDynamicTools: () => getRuntimeDynamicToolSpecsForContext(options.context),
+    executeDynamicTool: (request, executionOptions) => executeRuntimeDynamicTool(options, request, executionOptions),
+  };
+}
+
+async function authorizeRuntimeCapability(
+  context: ContextRecord,
+  request: {
+    permission: string;
+    objectType: string;
+    objectId: string;
+    eventData?: Record<string, unknown>;
+  },
+): Promise<RuntimeCapabilityAuthorizationResult> {
+  return authorizeRuntimeContext({
+    context,
+    permission: request.permission,
+    objectType: request.objectType,
+    objectId: request.objectId,
+    eventData: request.eventData,
+  });
+}
+
+async function executeRuntimeDynamicTool(
+  options: {
+    context: ContextRecord;
+    agentId: string;
+    sessionName: string;
+    toolContext: Record<string, unknown>;
+  },
+  request: RuntimeDynamicToolCallRequest,
+  executionOptions?: RuntimeDynamicToolExecutionOptions,
+): Promise<RuntimeDynamicToolCallResult> {
+  const tool = getRuntimeDynamicToolDefinitions().find((candidate) => candidate.name === request.toolName);
+  if (!tool) {
+    return {
+      success: false,
+      contentItems: [{ type: "inputText", text: `Unknown Ravi dynamic tool: ${request.toolName}` }],
+    };
+  }
+
+  const authorization = await authorizeRuntimeDynamicToolCall(options, tool, executionOptions?.eventData);
+  if (!authorization.allowed) {
+    return {
+      success: false,
+      contentItems: [{ type: "inputText", text: authorization.reason ?? `${request.toolName} permission denied.` }],
+    };
+  }
+
+  const args = normalizeDynamicToolArguments(request.arguments);
+  const result = await runWithContext(options.toolContext, () => tool.handler(args));
+  return buildRuntimeDynamicToolResult(result);
+}
+
+async function authorizeRuntimeDynamicToolCall(
+  options: { context: ContextRecord; agentId: string; sessionName: string },
+  tool: ExportedTool,
+  eventData: Record<string, unknown> | undefined,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const toolAuthorization = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: tool.name,
+    eventData,
+  });
+  if (!toolAuthorization.allowed) {
+    return { allowed: false, reason: toolAuthorization.reason ?? `${tool.name} tool permission denied.` };
+  }
+
+  return authorizeRuntimeDynamicToolScope(options, tool, eventData);
+}
+
+async function authorizeRuntimeDynamicToolScope(
+  options: { context: ContextRecord },
+  tool: ExportedTool,
+  eventData?: Record<string, unknown>,
+): Promise<{ allowed: boolean; reason?: string }> {
+  const scope = tool.metadata.scope ?? "admin";
+  if (scope === "open" || scope === "resource") {
+    return { allowed: true };
+  }
+
+  if (scope === "superadmin") {
+    const result = await authorizeRuntimeContext({
+      context: options.context,
+      permission: "admin",
+      objectType: "system",
+      objectId: "*",
+      eventData,
+    });
+    return result.allowed
+      ? { allowed: true }
+      : { allowed: false, reason: result.reason ?? "Superadmin permission denied." };
+  }
+
+  if (scope === "writeContacts") {
+    const result = await authorizeRuntimeContext({
+      context: options.context,
+      permission: "write_contacts",
+      objectType: "system",
+      objectId: "*",
+      eventData,
+    });
+    return result.allowed
+      ? { allowed: true }
+      : { allowed: false, reason: result.reason ?? "Contact write permission denied." };
+  }
+
+  const group = tool.metadata.group;
+  const command = tool.metadata.command;
+  if (canWithCapabilityContext(options.context, "execute", "group", group)) {
+    return { allowed: true };
+  }
+
+  const result = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "execute",
+    objectType: "group",
+    objectId: `${group}_${command}`,
+    eventData,
+  });
+  return result.allowed
+    ? { allowed: true }
+    : { allowed: false, reason: result.reason ?? `CLI tool permission denied: ${group}_${command}` };
+}
+
+function normalizeDynamicToolArguments(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCallResult {
+  return {
+    success: result.isError !== true,
+    contentItems: toDynamicToolContentItems(result.content),
+  };
+}
+
+function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynamicToolCallContentItem[] {
+  const items: RuntimeDynamicToolCallContentItem[] = [];
+  for (const item of content) {
+    if (item.type === "text") {
+      items.push({ type: "inputText", text: item.text });
+    }
+  }
+
+  return items.length > 0 ? items : [{ type: "inputText", text: "(no output)" }];
+}
+
+async function authorizeRuntimeCommandExecution(
+  options: {
+    context: ContextRecord;
+    agentId: string;
+    sessionName: string;
+  },
+  request: RuntimeCommandAuthorizationRequest,
+): Promise<RuntimeApprovalResult> {
+  const command = request.command;
+  if (!command.trim()) {
+    return { approved: false, reason: "Runtime command approval request did not include a command." };
+  }
+
+  const eventData = request.eventData;
+  const buildBashContext = () => ({
+    agentId: options.agentId,
+    ...(options.context.sessionKey ? { sessionKey: options.context.sessionKey } : {}),
+    sessionName: options.context.sessionName ?? options.sessionName,
+    capabilities: options.context.capabilities,
+  });
+
+  const preliminary = evaluateBashPermission(command, buildBashContext());
+  if (!preliminary.allowed && preliminary.denialType === "env_spoofing") {
+    emitBashDeniedAudit(command, preliminary, options.agentId);
+    return { approved: false, reason: preliminary.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const dangerous = checkDangerousPatterns(command);
+  if (!dangerous.safe) {
+    return { approved: false, reason: dangerous.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const parsed = parseBashCommand(command);
+  if (!parsed.success) {
+    return { approved: false, reason: parsed.error ?? "Failed to parse command for approval." };
+  }
+
+  let inherited = true;
+  const toolAuthorization = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: "Bash",
+    eventData,
+  });
+  if (!toolAuthorization.allowed) {
+    return {
+      approved: false,
+      reason: toolAuthorization.reason ?? "Bash tool permission denied.",
+    };
+  }
+  inherited = inherited && toolAuthorization.inherited;
+
+  if (!canWithCapabilityContext(options.context, "execute", "executable", "*")) {
+    for (const executable of parsed.executables) {
+      if (UNCONDITIONAL_BLOCKS.has(executable)) {
+        return { approved: false, reason: `${executable} is blocked by Ravi command policy.` };
+      }
+      if (RUNTIME_BUILTIN_EXECUTABLES.has(executable)) {
+        continue;
+      }
+
+      const executableAuthorization = await authorizeRuntimeContext({
+        context: options.context,
+        permission: "execute",
+        objectType: "executable",
+        objectId: executable,
+        eventData: {
+          ...eventData,
+          runtimeExecutable: executable,
+        },
+      });
+      if (!executableAuthorization.allowed) {
+        return {
+          approved: false,
+          reason: executableAuthorization.reason ?? `Executable permission denied: ${executable}`,
+        };
+      }
+      inherited = inherited && executableAuthorization.inherited;
+    }
+  }
+
+  const afterExecutableApproval = evaluateBashPermission(command, buildBashContext());
+  if (!afterExecutableApproval.allowed && afterExecutableApproval.denialType === "session_scope") {
+    const target = extractRaviSessionTarget(command);
+    if (target) {
+      const sessionAuthorization = await authorizeRuntimeContext({
+        context: options.context,
+        permission: "access",
+        objectType: "session",
+        objectId: target,
+        eventData: {
+          ...eventData,
+          runtimeSessionTarget: target,
+        },
+      });
+      if (!sessionAuthorization.allowed) {
+        emitBashDeniedAudit(command, afterExecutableApproval, options.agentId);
+        return {
+          approved: false,
+          reason: sessionAuthorization.reason ?? afterExecutableApproval.reason ?? `Session access denied: ${target}`,
+        };
+      }
+      inherited = inherited && sessionAuthorization.inherited;
+    }
+  }
+
+  const finalDecision = evaluateBashPermission(command, buildBashContext());
+  if (!finalDecision.allowed) {
+    emitBashDeniedAudit(command, finalDecision, options.agentId);
+    return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
+  }
+
+  return { approved: true, inherited, updatedInput: request.input };
+}
+
+async function authorizeRuntimeToolUse(
+  options: { context: ContextRecord },
+  request: RuntimeToolUseAuthorizationRequest,
+): Promise<RuntimeApprovalResult> {
+  const result = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: request.toolName,
+    eventData: request.eventData,
+  });
+
+  if (!result.allowed) {
+    return { approved: false, reason: result.reason ?? `${request.toolName} permission denied.` };
+  }
+
+  return {
+    approved: true,
+    inherited: result.inherited,
+    updatedInput: request.input,
+  };
+}
+
+async function requestRuntimeUserInput(
+  options: {
+    agentId: string;
+    sessionName: string;
+    resolvedSource?: ApprovalTarget;
+    approvalSource?: ApprovalTarget;
+  },
+  request: RuntimeUserInputRequest,
+): Promise<RuntimeApprovalResult> {
+  const questions = request.questions;
+  const targetSource = options.resolvedSource ?? options.approvalSource;
+  if (!targetSource) {
+    return { approved: false, reason: "Runtime user input requires a target source." };
+  }
+  if (questions.length === 0) {
+    return { approved: false, reason: "Runtime user input request did not include questions." };
+  }
+  const unsupportedQuestion = questions.find(
+    (question) => (question.options?.map((option) => option.label).filter(Boolean) ?? []).length === 0,
+  );
+  if (unsupportedQuestion) {
+    return {
+      approved: false,
+      reason: `Runtime user input question requires selectable options: ${unsupportedQuestion.id ?? unsupportedQuestion.question}`,
+    };
+  }
+
+  const eventData = request.eventData;
+  const isDelegated = !options.resolvedSource && !!options.approvalSource;
+  nats
+    .emit("ravi.approval.request", {
+      type: "question",
+      sessionName: options.sessionName,
+      agentId: options.agentId,
+      delegated: isDelegated,
+      channel: targetSource.channel,
+      chatId: targetSource.chatId,
+      questionCount: questions.length,
+      timestamp: Date.now(),
+      ...eventData,
+    })
+    .catch(() => {});
+
+  const answers: Record<string, string> = {};
+
+  for (const question of questions) {
+    const optionLabels = question.options?.map((option) => option.label).filter(Boolean) ?? [];
+
+    const hasDescriptions = question.options?.some((option) => option.description) ?? false;
+    let pollName = isDelegated ? `[${options.agentId}] ${question.question}` : question.question;
+    if (hasDescriptions) {
+      const descLines = (question.options ?? [])
+        .map((option) => (option.description ? `• ${option.label} — ${option.description}` : `• ${option.label}`))
+        .join("\n");
+      pollName += "\n\n" + descLines;
+    }
+    pollName += "\n(responda a mensagem para outro)";
+
+    const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
+      selectableCount: question.multiSelect ? optionLabels.length : 1,
+    });
+
+    const answerKey = question.id ?? question.question;
+    answers[answerKey] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
+  }
+
+  nats
+    .emit("ravi.approval.response", {
+      type: "question",
+      sessionName: options.sessionName,
+      agentId: options.agentId,
+      approved: true,
+      answers,
+      timestamp: Date.now(),
+      ...eventData,
+    })
+    .catch(() => {});
+
+  return { approved: true, answers };
+}
+
+function extractRaviSessionTarget(command: string): string | null {
+  const match = command.match(
+    /(?:^|\s|&&|\|\||;)\s*(?:\S+=\S+\s+)*(?:\/\S+\/)?ravi\s+[\w-]+\s+[\w-]+\s+(?:(?:-\w+\s+\S+\s+)*)["']?([^"'\s]+)/,
+  );
+  return match?.[1] ?? null;
 }
 
 function resolveCanonicalRaviCliPath(): string | null {
@@ -485,6 +976,13 @@ interface StreamingSession {
   agentMode?: string;
 }
 
+interface RuntimeControlNatsRequest {
+  sessionName?: string;
+  sessionKey?: string;
+  request?: RuntimeControlRequest;
+  replyTopic?: string;
+}
+
 /** User message format for the SDK streaming input */
 interface UserMessage {
   type: "user";
@@ -585,6 +1083,7 @@ export class RaviBot {
     this.subscribeToPrompts();
     this.subscribeToSessionAborts();
     this.subscribeToSessionModelChanges();
+    this.subscribeToRuntimeControls();
     this.subscribeToTaskEvents();
     this.startSubscriberHealthCheck();
     void this.recoverActiveTasksAfterRestart();
@@ -705,6 +1204,140 @@ export class RaviBot {
       } catch (err) {
         if (!this.running) break;
         log.warn("Session abort subscription error, reconnecting in 2s", { error: err });
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
+  }
+
+  private resolveStreamingControlSession(
+    sessionName?: string,
+    sessionKey?: string,
+  ): { name: string; session: StreamingSession } | null {
+    if (sessionName) {
+      const direct = this.streamingSessions.get(sessionName);
+      if (direct) {
+        return { name: sessionName, session: direct };
+      }
+    }
+
+    if (sessionKey) {
+      const direct = this.streamingSessions.get(sessionKey);
+      if (direct) {
+        return { name: sessionKey, session: direct };
+      }
+
+      const stored = getSession(sessionKey);
+      if (stored?.name) {
+        const named = this.streamingSessions.get(stored.name);
+        if (named) {
+          return { name: stored.name, session: named };
+        }
+      }
+    }
+
+    if (sessionName) {
+      const stored = getSessionByName(sessionName) ?? getSession(sessionName);
+      if (stored?.sessionKey) {
+        const byKey = this.streamingSessions.get(stored.sessionKey);
+        if (byKey) {
+          return { name: stored.name ?? stored.sessionKey, session: byKey };
+        }
+      }
+    }
+
+    if (sessionKey) {
+      for (const [name, session] of this.streamingSessions) {
+        const stored = getSessionByName(name);
+        if (stored?.sessionKey === sessionKey) {
+          return { name, session };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private async replyRuntimeControlError(replyTopic: string | undefined, error: string): Promise<void> {
+    if (!replyTopic) {
+      log.warn("Runtime control request failed without reply topic", { error });
+      return;
+    }
+    await safeEmit(replyTopic, { error });
+  }
+
+  private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {
+    const { replyTopic, request } = data;
+    if (!request?.operation) {
+      await this.replyRuntimeControlError(replyTopic, "Runtime control request is missing an operation.");
+      return;
+    }
+
+    const resolved = this.resolveStreamingControlSession(data.sessionName, data.sessionKey);
+    if (!resolved) {
+      await this.replyRuntimeControlError(
+        replyTopic,
+        `No active runtime session found for ${data.sessionName ?? data.sessionKey ?? "(unknown)"}.`,
+      );
+      return;
+    }
+
+    if (!resolved.session.queryHandle.control) {
+      const result: RuntimeControlResult = {
+        ok: false,
+        operation: request.operation,
+        state: {
+          provider: resolved.session.queryHandle.provider,
+          activeTurn: resolved.session.turnActive,
+          supportedOperations: [],
+        },
+        error: `Runtime provider '${resolved.session.queryHandle.provider}' does not expose control operations.`,
+      };
+      if (replyTopic) {
+        await safeEmit(replyTopic, { result });
+      }
+      return;
+    }
+
+    const result = await resolved.session.queryHandle.control(request);
+    if (replyTopic) {
+      await safeEmit(replyTopic, { result });
+    }
+
+    await safeEmit(`ravi.session.${resolved.name}.runtime`, {
+      type: "runtime.control",
+      provider: resolved.session.queryHandle.provider,
+      operation: request.operation,
+      ok: result.ok,
+      error: result.error,
+      state: result.state,
+      timestamp: Date.now(),
+    }).catch((error) => {
+      log.warn("Failed to emit runtime control event", { sessionName: resolved.name, error });
+    });
+  }
+
+  /**
+   * Internal transparent controls for native runtime thread/turn semantics.
+   * User-facing session/task/project abstractions remain the primary surface.
+   */
+  private async subscribeToRuntimeControls(): Promise<void> {
+    while (this.running) {
+      try {
+        for await (const event of nats.subscribe("ravi.session.runtime.control")) {
+          if (!this.running) break;
+          try {
+            await this.handleRuntimeControlRequest(event.data as RuntimeControlNatsRequest);
+          } catch (error) {
+            const data = event.data as RuntimeControlNatsRequest;
+            await this.replyRuntimeControlError(
+              data?.replyTopic,
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        }
+      } catch (err) {
+        if (!this.running) break;
+        log.warn("Runtime control subscription error, reconnecting in 2s", { error: err });
         await new Promise((r) => setTimeout(r, 2000));
       }
     }
@@ -1207,7 +1840,7 @@ export class RaviBot {
     const sessionEntry = getSessionByName(sessionName);
     const agentId = (prompt as any)._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-    const requestedProvider: RuntimeProviderId = agent?.provider ?? "claude";
+    const requestedProvider: RuntimeProviderId = agent?.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
     const existing = this.streamingSessions.get(sessionName);
 
     if (existing && !existing.done) {
@@ -1379,7 +2012,7 @@ export class RaviBot {
     }
 
     const agentCwd = expandHome(agent.cwd);
-    const runtimeProviderId: RuntimeProviderId = agent.provider ?? "claude";
+    const runtimeProviderId: RuntimeProviderId = agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
     const runtimeProvider = createRuntimeProvider(runtimeProviderId);
     const runtimeCapabilities = runtimeProvider.getCapabilities();
 
@@ -1462,9 +2095,9 @@ export class RaviBot {
       agentMode: agent.mode,
     });
 
-    // Build hooks (SDK expects HookCallbackMatcher[] per event)
+    // Build provider-specific host hooks only for runtimes that consume this hook protocol.
     const hooks: Record<string, Array<{ matcher?: string; hooks: Array<(...args: any[]) => any> }>> = {};
-    if (runtimeCapabilities.supportsToolHooks) {
+    if (runtimeCapabilities.supportsHostSessionHooks) {
       const hookOpts = { getAgentId: () => agent.id };
       hooks.PreToolUse = [
         createToolPermissionHook(hookOpts), // SDK tools (dynamic REBAC)
@@ -1762,7 +2395,7 @@ export class RaviBot {
       assertRuntimeCompatibility(runtimeProvider, {
         requiresMcpServers: !!agent.specMode,
         requiresRemoteSpawn: !!agent.remote,
-        toolAccessMode: getRuntimeToolAccessMode(runtimeProviderId, agent.id),
+        toolAccessMode: getRuntimeToolAccessMode(runtimeCapabilities, agent.id),
       });
 
       // Create spec mode MCP server for this session (only if agent has specMode enabled)
@@ -1842,10 +2475,27 @@ export class RaviBot {
       }
       Object.assign(raviEnv, buildTaskRuntimeEnv(sessionName, sessionCwd, prompt.taskBarrierTaskId));
 
+      const toolContext = {
+        contextId: runtimeContext.contextId,
+        context: runtimeContext,
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        source: resolvedSource,
+      };
+      const hostServices = createRuntimeHostServices({
+        context: runtimeContext,
+        agentId: agent.id,
+        sessionName,
+        resolvedSource,
+        approvalSource,
+        toolContext,
+      });
       const providerBootstrap = await runtimeProvider.prepareSession?.({
         agentId: agent.id,
         cwd: sessionCwd,
         ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
+        hostServices,
       });
       const baseRuntimeEnv = Object.fromEntries(
         Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -1910,6 +2560,7 @@ export class RaviBot {
         abortController,
         permissionOptions,
         canUseTool,
+        ...(providerBootstrap?.startRequest ?? {}),
         env: runtimeEnv,
         ...(specServer ? { mcpServers: { spec: specServer } } : {}),
         systemPromptAppend,
@@ -1954,19 +2605,18 @@ export class RaviBot {
       streamingSession.queryHandle = runtimeSession;
       streamingSession.starting = false;
 
-      // Build tool context for CLI tools
-      const toolContext = {
-        contextId: runtimeContext.contextId,
-        context: runtimeContext,
-        sessionKey: dbSessionKey,
-        sessionName,
-        agentId: agent.id,
-        source: resolvedSource,
-      };
-
       // Run the event loop in the background (don't await — it stays alive)
       runWithContext(toolContext, () =>
-        this.runEventLoop(runId, sessionName, session, agent, streamingSession, runtimeSession),
+        this.runEventLoop(
+          runId,
+          sessionName,
+          session,
+          agent,
+          streamingSession,
+          runtimeSession,
+          runtimeCapabilities,
+          model,
+        ),
       ).catch((err) => {
         const isAbort = err instanceof Error && /abort/i.test(err.message);
         if (isAbort) {
@@ -2098,6 +2748,8 @@ export class RaviBot {
     agent: AgentConfig,
     streaming: StreamingSession,
     runtimeSession: RuntimeSessionHandle,
+    runtimeCapabilities: RuntimeCapabilities,
+    model: string,
   ): Promise<void> {
     // Timeout watchdog
     const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
@@ -2116,7 +2768,7 @@ export class RaviBot {
       }
     }, 30000);
 
-    let sdkEventCount = 0;
+    let providerRawEventCount = 0;
     let responseText = "";
     const clearActiveToolState = () => {
       streaming.toolRunning = false;
@@ -2132,8 +2784,9 @@ export class RaviBot {
       }
     };
 
-    const emitSdkEvent = async (event: Record<string, unknown>) => {
-      if (runtimeSession.provider !== "claude") {
+    const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
+      const legacyEventTopicSuffix = runtimeCapabilities.legacyEventTopicSuffix;
+      if (!legacyEventTopicSuffix) {
         return;
       }
 
@@ -2144,7 +2797,7 @@ export class RaviBot {
         (event.type === "result" || event.type === "silent") && streaming.currentSource
           ? { ...event, _source: streaming.currentSource }
           : event;
-      await safeEmit(`ravi.session.${sessionName}.claude`, augmented);
+      await safeEmit(`ravi.session.${sessionName}.${legacyEventTopicSuffix}`, augmented);
     };
 
     const emitRuntimeEvent = async (event: Record<string, unknown>) => {
@@ -2172,17 +2825,18 @@ export class RaviBot {
       });
     };
 
-    const emitChunk = async (text: string) => {
+    const emitChunk = async (text: string, metadata?: RuntimeEventMetadata) => {
       await safeEmit(`ravi.session.${sessionName}.stream`, {
         chunk: text,
+        ...(metadata ? { metadata } : {}),
       });
     };
 
     let chunkEmitTail: Promise<void> = Promise.resolve();
-    const queueChunkEmit = (text: string) => {
+    const queueChunkEmit = (text: string, metadata?: RuntimeEventMetadata) => {
       chunkEmitTail = chunkEmitTail
         .catch(() => {})
-        .then(() => emitChunk(text))
+        .then(() => emitChunk(text, metadata))
         .catch((error) => {
           log.warn("Failed to emit stream chunk", { sessionName, error });
         });
@@ -2190,31 +2844,31 @@ export class RaviBot {
 
     try {
       for await (const event of runtimeSession.events) {
-        sdkEventCount++;
+        providerRawEventCount++;
         streaming.lastActivity = Date.now();
 
         const logLevel = event.type === "text.delta" ? "debug" : "info";
         log[logLevel]("Runtime event", {
           runId,
-          seq: sdkEventCount,
+          seq: providerRawEventCount,
           type: event.type,
           sessionName,
         });
 
         if (event.type === "text.delta") {
-          queueChunkEmit(event.text);
+          queueChunkEmit(event.text, event.metadata);
           continue;
         }
 
         await chunkEmitTail;
 
         if (event.type === "provider.raw" && event.rawEvent) {
-          await emitSdkEvent(event.rawEvent);
+          await emitLegacyProviderEvent(event.rawEvent);
         }
 
         await emitRuntimeEvent(
           event.type === "provider.raw"
-            ? { type: "provider.raw", provider: runtimeSession.provider }
+            ? { type: "provider.raw", provider: runtimeSession.provider, metadata: event.metadata }
             : { ...event, provider: runtimeSession.provider },
         );
 
@@ -2253,6 +2907,7 @@ export class RaviBot {
             timestamp: new Date().toISOString(),
             sessionName,
             agentId: agent.id,
+            metadata: event.metadata,
           }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
           continue;
         }
@@ -2277,7 +2932,7 @@ export class RaviBot {
             } else if (!messageText) {
               // After stripping SILENT_TOKEN, nothing left
               log.info("Silent response (stripped)", { sessionName });
-              await emitSdkEvent({ type: "silent" });
+              await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
             } else {
               responseText += messageText;
@@ -2286,11 +2941,11 @@ export class RaviBot {
               if (trimmed === "prompt is too long") {
                 log.warn("Prompt too long — will auto-reset session", { sessionName });
                 streaming._promptTooLong = true;
-                await emitSdkEvent({ type: "silent" });
+                await emitLegacyProviderEvent({ type: "silent" });
                 await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
               } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
                 log.info("Heartbeat OK", { sessionName });
-                await emitSdkEvent({ type: "silent" });
+                await emitLegacyProviderEvent({ type: "silent" });
                 await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
               } else if (
                 trimmed === "no response requested." ||
@@ -2299,7 +2954,7 @@ export class RaviBot {
                 trimmed === "no response needed"
               ) {
                 log.info("Silent response (no response requested)", { sessionName });
-                await emitSdkEvent({ type: "silent" });
+                await emitLegacyProviderEvent({ type: "silent" });
                 await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
               } else {
                 await emitResponse(messageText);
@@ -2323,6 +2978,7 @@ export class RaviBot {
             timestamp: new Date().toISOString(),
             sessionName,
             agentId: agent.id,
+            metadata: event.metadata,
           }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
 
           clearActiveToolState();
@@ -2385,15 +3041,7 @@ export class RaviBot {
           updateTokens(session.sessionKey, inputTokens, outputTokens);
 
           // Track cost event
-          const executionProvider =
-            event.execution?.provider ??
-            (runtimeSession.provider === "claude"
-              ? "anthropic"
-              : runtimeSession.provider === "codex"
-                ? "openai"
-                : null);
-          const executionModel =
-            executionProvider === "anthropic" ? (event.execution?.model ?? streaming.currentModel) : null;
+          const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
           const cost = executionModel
             ? calculateCost(executionModel, {
                 inputTokens,

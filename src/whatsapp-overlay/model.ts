@@ -15,11 +15,14 @@ export interface OverlayQuery {
   session?: string | null;
 }
 
+export type OverlayRuntimeMetadata = Record<string, unknown>;
+
 export interface OverlaySessionEvent {
   kind: "prompt" | "stream" | "tool" | "response" | "approval" | "runtime";
   label: string;
   detail?: string;
   timestamp: number;
+  metadata?: OverlayRuntimeMetadata | null;
 }
 
 export type OverlayToolCallStatus = "running" | "ok" | "error";
@@ -47,6 +50,7 @@ export interface OverlayChatArtifact {
   updatedAt?: number;
   anchor?: OverlayChatArtifactAnchor;
   dedupeKey?: string | null;
+  metadata?: OverlayRuntimeMetadata | null;
 }
 
 export interface OverlayLiveState {
@@ -67,6 +71,7 @@ export interface OverlaySessionWorkspaceMessage {
   createdAt: number;
   source?: "history" | "live";
   pending?: boolean;
+  metadata?: OverlayRuntimeMetadata | null;
 }
 
 export type OverlaySessionWorkspaceTimelineItem =
@@ -79,6 +84,7 @@ export type OverlaySessionWorkspaceTimelineItem =
       source: "history" | "live";
       pending?: boolean;
       eventKind?: OverlaySessionEvent["kind"];
+      metadata?: OverlayRuntimeMetadata | null;
     }
   | {
       id: string;
@@ -88,6 +94,7 @@ export type OverlaySessionWorkspaceTimelineItem =
       detail: string;
       timestamp: number;
       source: "live";
+      metadata?: OverlayRuntimeMetadata | null;
     }
   | {
       id: string;
@@ -102,6 +109,7 @@ export type OverlaySessionWorkspaceTimelineItem =
       timestamp: number;
       source: "live";
       anchor?: OverlayChatArtifactAnchor;
+      metadata?: OverlayRuntimeMetadata | null;
     };
 
 export interface OverlayPermissionDecision {
@@ -345,6 +353,7 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
     timestamp: message.createdAt,
     source: message.source ?? "history",
     pending: message.pending ?? false,
+    ...(message.metadata ? { metadata: message.metadata } : {}),
   }));
 
   const liveMessageItems: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>[] = [];
@@ -360,6 +369,7 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
       timestamp: message.createdAt,
       source: message.source ?? "live",
       pending: message.pending ?? false,
+      ...(message.metadata ? { metadata: message.metadata } : {}),
     };
 
     if (hasMatchingWorkspaceMessage(historyMessages, item)) {
@@ -406,6 +416,7 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
       timestamp,
       source: "live",
       anchor: artifact.anchor,
+      ...(artifact.metadata ? { metadata: artifact.metadata } : {}),
     });
   }
 
@@ -563,6 +574,7 @@ function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySe
   const kind = normalizeLookupToken(event.kind);
   const detail = normalizeWorkspaceText(event.detail);
   const timestamp = parseOverlayTimestamp(event.timestamp);
+  const metadata = event.metadata ?? undefined;
 
   if (!kind || !timestamp) {
     return null;
@@ -579,6 +591,7 @@ function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySe
       source: "live",
       pending: true,
       eventKind: event.kind,
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -593,6 +606,7 @@ function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySe
       source: "live",
       pending: true,
       eventKind: event.kind,
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -607,6 +621,7 @@ function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySe
       source: "live",
       pending: true,
       eventKind: event.kind,
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -632,6 +647,7 @@ function toWorkspaceTimelineItemFromEvent(event: OverlaySessionEvent): OverlaySe
     detail: body,
     timestamp,
     source: "live",
+    ...(metadata ? { metadata } : {}),
   };
 }
 

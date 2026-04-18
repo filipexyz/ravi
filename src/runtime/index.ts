@@ -13,15 +13,40 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 
-export function createRuntimeProvider(providerId: RuntimeProviderId = "claude"): SessionRuntimeProvider {
-  switch (providerId) {
-    case "claude":
-      return createClaudeRuntimeProvider();
-    case "codex":
-      return createCodexRuntimeProvider();
-    default:
-      throw new Error(`Unknown runtime provider '${providerId}'`);
+type RuntimeProviderFactory = () => SessionRuntimeProvider;
+
+export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";
+
+const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
+  [DEFAULT_RUNTIME_PROVIDER_ID, createClaudeRuntimeProvider],
+  ["codex", createCodexRuntimeProvider],
+]);
+
+const builtInRuntimeProviderIds = new Set<RuntimeProviderId>([DEFAULT_RUNTIME_PROVIDER_ID, "codex"]);
+
+export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
+  runtimeProviderFactories.set(providerId, factory);
+}
+
+export function unregisterRuntimeProvider(providerId: RuntimeProviderId): void {
+  if (builtInRuntimeProviderIds.has(providerId)) {
+    throw new Error(`Cannot unregister built-in runtime provider '${providerId}'`);
   }
+  runtimeProviderFactories.delete(providerId);
+}
+
+export function listRegisteredRuntimeProviderIds(): RuntimeProviderId[] {
+  return [...runtimeProviderFactories.keys()];
+}
+
+export function createRuntimeProvider(
+  providerId: RuntimeProviderId = DEFAULT_RUNTIME_PROVIDER_ID,
+): SessionRuntimeProvider {
+  const factory = runtimeProviderFactories.get(providerId);
+  if (!factory) {
+    throw new Error(`Unknown runtime provider '${providerId}'`);
+  }
+  return factory();
 }
 
 export function getRuntimeCompatibilityIssues(
