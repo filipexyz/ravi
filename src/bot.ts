@@ -297,6 +297,19 @@ function getRuntimeToolAccessMode(capabilities: RuntimeCapabilities, agentId: st
   return hasUnrestrictedToolExecution(agentId) ? "unrestricted" : "restricted";
 }
 
+function resolveCostTrackingModel(
+  runtimeProvider: RuntimeProviderId,
+  executionModel: string | null | undefined,
+  configuredModel: string,
+): string | null {
+  const explicitModel = executionModel?.trim();
+  if (explicitModel) {
+    return explicitModel;
+  }
+
+  return runtimeProvider === DEFAULT_RUNTIME_PROVIDER_ID ? configuredModel : null;
+}
+
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
 let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
@@ -668,8 +681,20 @@ async function requestRuntimeUserInput(
 ): Promise<RuntimeApprovalResult> {
   const questions = request.questions;
   const targetSource = options.resolvedSource ?? options.approvalSource;
-  if (!targetSource || questions.length === 0) {
-    return { approved: true, answers: {}, inherited: true };
+  if (!targetSource) {
+    return { approved: false, reason: "Runtime user input requires a target source." };
+  }
+  if (questions.length === 0) {
+    return { approved: false, reason: "Runtime user input request did not include questions." };
+  }
+  const unsupportedQuestion = questions.find(
+    (question) => (question.options?.map((option) => option.label).filter(Boolean) ?? []).length === 0,
+  );
+  if (unsupportedQuestion) {
+    return {
+      approved: false,
+      reason: `Runtime user input question requires selectable options: ${unsupportedQuestion.id ?? unsupportedQuestion.question}`,
+    };
   }
 
   const eventData = request.eventData;
@@ -692,9 +717,6 @@ async function requestRuntimeUserInput(
 
   for (const question of questions) {
     const optionLabels = question.options?.map((option) => option.label).filter(Boolean) ?? [];
-    if (optionLabels.length === 0) {
-      continue;
-    }
 
     const hasDescriptions = question.options?.some((option) => option.description) ?? false;
     let pollName = isDelegated ? `[${options.agentId}] ${question.question}` : question.question;
@@ -3019,8 +3041,7 @@ export class RaviBot {
           updateTokens(session.sessionKey, inputTokens, outputTokens);
 
           // Track cost event
-          const executionModel =
-            event.execution?.model ?? (runtimeSession.provider === DEFAULT_RUNTIME_PROVIDER_ID ? streaming.currentModel : null);
+          const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
           const cost = executionModel
             ? calculateCost(executionModel, {
                 inputTokens,

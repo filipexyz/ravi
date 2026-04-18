@@ -529,14 +529,14 @@ describe("whatsapp overlay model", () => {
         events: [
           {
             kind: "runtime",
-            label: "codex runtime",
+            label: "runtime graph",
             detail: "thread.started thread=thread_1",
             timestamp: Date.parse("2026-04-12T03:00:00Z"),
             metadata: runtimeMetadata,
           },
           {
             kind: "approval",
-            label: "codex approval",
+            label: "runtime approval",
             detail: "command_execution · pending",
             timestamp: Date.parse("2026-04-12T03:00:01Z"),
             metadata: approvalMetadata,
@@ -562,7 +562,7 @@ describe("whatsapp overlay model", () => {
       },
     });
 
-    const runtimeEvent = timeline.find((item) => item.type === "event" && item.label === "codex runtime");
+    const runtimeEvent = timeline.find((item) => item.type === "event" && item.label === "runtime graph");
     expect(runtimeEvent).toMatchObject({
       type: "event",
       kind: "runtime",
@@ -573,7 +573,7 @@ describe("whatsapp overlay model", () => {
     const approvalEvent = timeline.find((item) => item.type === "event" && item.kind === "approval");
     expect(approvalEvent).toMatchObject({
       type: "event",
-      label: "codex approval",
+      label: "runtime approval",
       metadata: approvalMetadata,
     });
 

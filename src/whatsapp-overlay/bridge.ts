@@ -2910,7 +2910,7 @@ async function trackSessionRuntime(): Promise<void> {
       if (type === "approval.requested") {
         pushLiveEvent(sessionName, {
           kind: "approval",
-          label: "codex approval",
+          label: "runtime approval",
           detail: formatRuntimeApprovalDetail(data, "pending"),
           timestamp: eventTimestamp,
           ...(metadata ? { metadata } : {}),
@@ -2919,7 +2919,7 @@ async function trackSessionRuntime(): Promise<void> {
       } else if (type === "approval.resolved") {
         pushLiveEvent(sessionName, {
           kind: "approval",
-          label: "codex approval",
+          label: "runtime approval",
           detail: formatRuntimeApprovalDetail(data, "answered"),
           timestamp: eventTimestamp,
           ...(metadata ? { metadata } : {}),
@@ -2928,7 +2928,7 @@ async function trackSessionRuntime(): Promise<void> {
       } else if (isRuntimeGraphEvent(type)) {
         pushLiveEvent(sessionName, {
           kind: "runtime",
-          label: "codex runtime",
+          label: "runtime graph",
           detail: formatRuntimeGraphDetail(type, data, metadata),
           timestamp: eventTimestamp,
           ...(metadata ? { metadata } : {}),

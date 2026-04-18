@@ -108,6 +108,12 @@ let canWithCapabilitiesImpl = (...args: Parameters<typeof actualPermissionsEngin
   actualPermissionsEngineModule.canWithCapabilities(...args);
 let snapshotAgentCapabilitiesImpl = () =>
   [] as Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+type TestCostResult = { inputCost: number; outputCost: number; cacheCost: number; totalCost: number } | null;
+let calculateCostImpl: (
+  model: string,
+  usage: { inputTokens: number; outputTokens: number; cacheRead: number; cacheCreation: number },
+) => TestCostResult = () => null;
+const dbInsertCostEventMock = mock((_event: Record<string, unknown>) => {});
 
 const clearProviderSession = mock((sessionKey: string) => {
   const session = sessions.get(sessionKey);
@@ -374,7 +380,7 @@ mock.module("./router/index.js", () => ({
   expandHome: (path: string) => path.replace("~", "/tmp/ravi-test-bot"),
   getAnnounceCompaction: () => false,
   getAccountForAgent: () => null,
-  dbInsertCostEvent: mock(() => {}),
+  dbInsertCostEvent: dbInsertCostEventMock,
 }));
 
 mock.module("./config-store.js", () => ({
@@ -468,7 +474,7 @@ mock.module("./hooks/sanitize-bash.js", () => ({
 }));
 
 mock.module("./constants.js", () => ({
-  calculateCost: () => null,
+  calculateCost: (model: string, usage: Parameters<typeof calculateCostImpl>[1]) => calculateCostImpl(model, usage),
 }));
 
 mock.module("./plugins/index.js", () => ({
@@ -661,6 +667,8 @@ describe("RaviBot runtime guards", () => {
     resetRuntimeDoubles();
     saveMessageImpl = () => {};
     agentCanImpl = () => true;
+    dbInsertCostEventMock.mockClear();
+    calculateCostImpl = () => null;
     snapshotAgentCapabilitiesImpl = () => [];
     canWithCapabilitiesImpl = (
       capabilities: Array<{ permission: string; objectType: string; objectId: string }>,
@@ -904,6 +912,54 @@ describe("RaviBot runtime guards", () => {
       approved: true,
       inherited: true,
       permissions: { "use:tool:Bash": true },
+    });
+  });
+
+  it("denies runtime user input when no outbound target exists", async () => {
+    activeProvider = "codex";
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-source", { prompt: "hello" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
+    expect(typeof approveRuntimeRequest).toBe("function");
+
+    await expect(
+      approveRuntimeRequest?.({
+        kind: "user_input",
+        method: "item/tool/requestUserInput",
+        input: {
+          questions: [{ id: "choice", question: "Pick one", options: [{ label: "A" }] }],
+        },
+      }),
+    ).resolves.toMatchObject({
+      approved: false,
+      reason: "Runtime user input requires a target source.",
+    });
+  });
+
+  it("denies runtime user input questions without selectable options", async () => {
+    activeProvider = "codex";
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-options", makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
+    expect(typeof approveRuntimeRequest).toBe("function");
+
+    await expect(
+      approveRuntimeRequest?.({
+        kind: "user_input",
+        method: "item/tool/requestUserInput",
+        input: {
+          questions: [{ id: "freeform", question: "What should I do?" }],
+        },
+      }),
+    ).resolves.toMatchObject({
+      approved: false,
+      reason: "Runtime user input question requires selectable options: freeform",
     });
   });
 
@@ -1328,6 +1384,34 @@ describe("RaviBot runtime guards", () => {
           (entry.data.metadata as any)?.item?.id === "item-text",
       ),
     ).toBe(true);
+  });
+
+  it("does not backfill Codex cost events from the configured agent model when execution model is absent", async () => {
+    activeProvider = "codex";
+    const pricedModels: string[] = [];
+    calculateCostImpl = (model) => {
+      pricedModels.push(model);
+      return { inputCost: 1, outputCost: 2, cacheCost: 0, totalCost: 3 };
+    };
+    runtimeStartImpl = (providerId) => ({
+      provider: providerId,
+      events: (async function* () {
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          execution: { provider: "openai", model: null, billingType: "subscription" },
+          usage: { inputTokens: 10, outputTokens: 5 },
+        };
+      })(),
+      interrupt: async () => {},
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate("agent:main:codex-cost-no-model", makePrompt("hello"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(pricedModels).toEqual([]);
+    expect(dbInsertCostEventMock).not.toHaveBeenCalled();
   });
 
   it("interrupts an active text turn for p0/immediate_interrupt prompts", async () => {
