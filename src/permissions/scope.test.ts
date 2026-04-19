@@ -1,6 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import type { ToolContext } from "../cli/context.js";
 
 // ============================================================================
+const actualCliContextModule = await import("../cli/context.js");
+
+let mockContext: ToolContext | undefined;
+
+mock.module("../cli/context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => mockContext,
+}));
+
 const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../test/ravi-state.js");
 const { grantRelation } = await import("./relations.js");
 const {
@@ -36,6 +46,7 @@ let stateDir: string | null = null;
 let previousContextEnv: Partial<Record<(typeof CONTEXT_ENV_KEYS)[number], string>> = {};
 
 setDefaultTimeout(20_000);
+afterAll(() => mock.restore());
 
 // ============================================================================
 // Tests
@@ -43,6 +54,7 @@ setDefaultTimeout(20_000);
 
 describe("Scope Isolation", () => {
   beforeEach(async () => {
+    mockContext = undefined;
     stateDir = await createIsolatedRaviState("ravi-scope-test-");
     previousContextEnv = {};
     for (const key of CONTEXT_ENV_KEYS) {
@@ -64,6 +76,7 @@ describe("Scope Isolation", () => {
     previousContextEnv = {};
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+    mockContext = undefined;
   });
 
   // --------------------------------------------------------------------------
