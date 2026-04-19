@@ -1,6 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -28,14 +27,9 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: async (sessionName: string, payload: Record<string, unknown>) => {
-    publishedPrompts.push({ sessionName, payload });
-  },
-}));
-
 const { createTaskAutomation, listTaskAutomationRuns } = await import("./automations.js");
 const { completeTask, createTask, dispatchTask, emitTaskEvent, listTasks } = await import("./service.js");
+const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 const { dbCreateAgent, dbDeleteAgent } = await import("../router/router-db.js");
 
 function writeVideoProfileFixture(stateRoot: string): void {
@@ -129,6 +123,9 @@ function writeVideoProfileFixture(stateRoot: string): void {
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-automations-test-");
   dbCreateAgent({ id: "qa-auto", cwd: "/tmp/ravi-qa-auto" });
+  setTaskSessionPromptPublisherForTests(async (sessionName: string, payload: Record<string, unknown>) => {
+    publishedPrompts.push({ sessionName, payload });
+  });
 });
 
 afterEach(async () => {
@@ -137,6 +134,7 @@ afterEach(async () => {
   dbDeleteAgent("qa-auto");
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+  setTaskSessionPromptPublisherForTests();
 });
 
 describe("task automations", () => {
@@ -235,11 +233,11 @@ describe("task automations", () => {
     await emitTaskEvent(completed.task, completed.event);
 
     const followUp = listTasks({ archiveMode: "include" }).find((task) => task.id !== created.task.id);
-    const projectDir = join(homedir(), "ravi/videomaker/out/macro-explainer");
+    const projectDir = followUp?.instructions.match(/^Project (.+)$/m)?.[1] ?? "";
     expect(followUp?.title).toBe("Review :: Render macro explainer");
-    expect(followUp?.instructions).toContain(projectDir);
-    expect(followUp?.instructions).toContain(join(projectDir, "qc.json"));
-    expect(followUp?.instructions).toContain(join(projectDir, "render/video.mp4"));
+    expect(projectDir.endsWith("/ravi/videomaker/out/macro-explainer")).toBe(true);
+    expect(followUp?.instructions).toContain(`QC ${join(projectDir, "qc.json")}`);
+    expect(followUp?.instructions).toContain(`Primary ${join(projectDir, "render/video.mp4")}`);
     expect(followUp?.instructions).toContain(`ravi sessions read ${created.task.id}-work`);
   });
 });

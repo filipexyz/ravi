@@ -1,281 +1,917 @@
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ravi — A personal agent harness in WhatsApp</title>
+  <title>Ravi - Personal agent runtime</title>
   <meta
     name="description"
-    content="A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across the day."
+    content="Ravi is a personal agent runtime for routing conversations, coordinating work, and operating specialized agents where the day already happens."
   />
   <meta property="og:title" content="Ravi" />
   <meta
     property="og:description"
-    content="A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across the day."
+    content="A personal agent runtime for routing conversations, coordinating work, and operating specialized agents."
   />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://ravi.bot" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230f172a'/><text x='50' y='62' text-anchor='middle' font-size='46' fill='%23e2e8f0'>R</text></svg>" />
-  <script src="https://cdn.tailwindcss.com"></script>
+  <meta name="theme-color" content="#0d0d0d" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            ink: {
-              50: "#f8fafc",
-              100: "#f1f5f9",
-              200: "#e2e8f0",
-              300: "#cbd5e1",
-              400: "#94a3b8",
-              500: "#64748b",
-              600: "#475569",
-              700: "#334155",
-              800: "#1e293b",
-              900: "#0f172a",
-              950: "#020617"
-            }
-          },
-          fontFamily: {
-            sans: ["IBM Plex Sans", "system-ui", "sans-serif"],
-            mono: ["IBM Plex Mono", "monospace"]
-          }
-        }
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 256 256'%3E%3Crect width='256' height='256' fill='%230d0d0d'/%3E%3Cpath d='M56 198V58h72c34 0 57 18 57 48 0 21-11 36-29 43l37 49h-44l-32-43H94v43H56Zm38-73h31c15 0 23-7 23-19 0-12-8-19-23-19H94v38Z' fill='%23f3f2ef'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #0d0d0d;
+      --bg-raised: #131313;
+      --bg-soft: #171717;
+      --line: #2c2c2c;
+      --line-strong: #3a3a3a;
+      --text: #f3f2ef;
+      --muted: #b8b7b1;
+      --quiet: #7b7a74;
+      --good: #b7f6d1;
+      --warn: #f3d18a;
+      --font-sans: "Sora", "Avenir Next", "Segoe UI", sans-serif;
+      --font-mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-height: 100%;
+      scroll-behavior: smooth;
+      background: var(--bg);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      background-color: var(--bg);
+      background:
+        radial-gradient(1100px 700px at 84% -16%, #1d1d1d 0%, transparent 62%),
+        linear-gradient(180deg, #121212 0%, var(--bg) 30%, var(--bg) 100%);
+      color: var(--text);
+      font-family: var(--font-sans);
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      content: "";
+      opacity: 0.18;
+      background-image:
+        linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+      background-size: 72px 72px;
+      mask-image: linear-gradient(180deg, var(--bg), transparent 72%);
+    }
+
+    ::selection {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    a,
+    button {
+      transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, transform 180ms ease;
+    }
+
+    a:focus-visible,
+    button:focus-visible {
+      outline: 1px solid var(--text);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      left: 1rem;
+      top: 1rem;
+      z-index: 20;
+      transform: translateY(-150%);
+      border: 1px solid var(--text);
+      background: var(--text);
+      color: var(--bg);
+      padding: 0.65rem 0.85rem;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(100%, 1492px);
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    .site-header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 2rem;
+      border-bottom: 1px solid var(--line-strong);
+      padding: 1.5rem 0;
+    }
+
+    .brand,
+    .eyebrow,
+    .nav,
+    .meta,
+    .command-label,
+    .status-pill,
+    .footer-links,
+    .copy-button {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .brand {
+      color: var(--text);
+      letter-spacing: 0.22em;
+    }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      gap: clamp(1.5rem, 4vw, 3rem);
+      color: var(--muted);
+    }
+
+    .nav a:hover,
+    .footer-links a:hover {
+      color: var(--text);
+    }
+
+    .section {
+      border-bottom: 1px solid var(--line);
+      padding: clamp(4rem, 8vw, 6rem) 0;
+    }
+
+    .hero {
+      padding: clamp(3.5rem, 7vw, 5rem) 0 clamp(4rem, 8vw, 5.75rem);
+      text-align: center;
+    }
+
+    .hero-inner {
+      display: flex;
+      width: min(100%, 1060px);
+      margin: 0 auto;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--quiet);
+    }
+
+    .hero-title {
+      max-width: 11ch;
+      margin: 1.6rem 0 0;
+      font-size: clamp(4.9rem, 13.8vw, 10.5rem);
+      font-weight: 500;
+      letter-spacing: -0.06em;
+      line-height: 0.84;
+      text-transform: uppercase;
+      text-wrap: balance;
+    }
+
+    .hero-copy {
+      max-width: 38ch;
+      margin: 2rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1.22rem, 2.2vw, 1.65rem);
+      letter-spacing: -0.025em;
+      line-height: 1.35;
+    }
+
+    .quick-command {
+      width: min(100%, 760px);
+      margin-top: 3rem;
+      text-align: left;
+    }
+
+    .command-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      color: var(--quiet);
+    }
+
+    .copy-button {
+      cursor: pointer;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 0;
+    }
+
+    .copy-button:hover {
+      color: var(--text);
+    }
+
+    .command-box {
+      margin-top: 1rem;
+      border: 1px solid var(--line);
+      background: rgba(16, 16, 16, 0.72);
+      padding: 1.15rem 1.25rem;
+      overflow-x: auto;
+    }
+
+    .command-box pre,
+    .command-row pre {
+      margin: 0;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: clamp(0.82rem, 1.5vw, 0.95rem);
+      line-height: 1.7;
+      white-space: pre;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 3rem;
+    }
+
+    .sticky-title {
+      min-width: 0;
+      align-self: start;
+    }
+
+    .section-body {
+      min-width: 0;
+    }
+
+    .section-title {
+      max-width: 8.7ch;
+      margin: 1.75rem 0 0;
+      font-size: clamp(3rem, 6.4vw, 4.7rem);
+      font-weight: 500;
+      letter-spacing: -0.052em;
+      line-height: 0.9;
+      text-transform: uppercase;
+    }
+
+    .section-copy {
+      max-width: 30ch;
+      margin: 1.75rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 1.7vw, 1.25rem);
+      line-height: 1.45;
+    }
+
+    .studio-panel {
+      padding-top: 0.5rem;
+    }
+
+    .route-preview {
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 2.25rem;
+    }
+
+    .prompt-row {
+      display: flex;
+      align-items: center;
+      gap: clamp(1rem, 2vw, 1.4rem);
+      margin-top: 1.35rem;
+    }
+
+    .arrow {
+      color: var(--quiet);
+      font-size: clamp(2.4rem, 5vw, 4.2rem);
+      font-weight: 300;
+      line-height: 1;
+    }
+
+    .prompt-text {
+      min-width: 0;
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(2rem, 5vw, 4.6rem);
+      font-weight: 400;
+      letter-spacing: -0.05em;
+      line-height: 0.96;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem 1.4rem;
+      margin-top: 2rem;
+    }
+
+    .chip {
+      border-bottom: 1px solid transparent;
+      color: var(--quiet);
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      letter-spacing: 0.14em;
+      padding-bottom: 0.25rem;
+      text-transform: uppercase;
+    }
+
+    .chip.is-active {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    .compile-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+      min-width: 16rem;
+      margin-top: 2.5rem;
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      padding: 1.25rem 1.5rem;
+      text-transform: uppercase;
+    }
+
+    .compile-button:hover {
+      border-color: var(--text);
+    }
+
+    .output-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      min-height: 280px;
+      padding-top: 2.25rem;
+    }
+
+    .output-card {
+      border: 1px solid var(--line);
+      background: rgba(19, 19, 19, 0.72);
+      padding: 1.15rem;
+    }
+
+    .output-card strong {
+      display: block;
+      margin-top: 0.8rem;
+      color: var(--text);
+      font-size: clamp(1.4rem, 3vw, 2.4rem);
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      text-transform: uppercase;
+    }
+
+    .output-card p {
+      margin: 0.8rem 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.55;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      border: 1px solid var(--line);
+      color: var(--quiet);
+      padding: 0.4rem 0.5rem;
+    }
+
+    .status-pill.good {
+      color: var(--good);
+    }
+
+    .status-pill.warn {
+      color: var(--warn);
+    }
+
+    .steps {
+      border-top: 1px solid var(--line);
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 58px 1fr;
+      gap: 1.25rem;
+      border-bottom: 1px solid var(--line);
+      padding: clamp(2rem, 5vw, 2.6rem) 0;
+    }
+
+    .step:hover {
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 68%);
+    }
+
+    .step-number {
+      margin: 0;
+      color: var(--quiet);
+      font-family: var(--font-mono);
+      font-size: clamp(1.25rem, 2.5vw, 2rem);
+      letter-spacing: -0.04em;
+    }
+
+    .step h3 {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 4rem);
+      font-weight: 500;
+      letter-spacing: -0.055em;
+      line-height: 0.92;
+      text-transform: uppercase;
+    }
+
+    .step p {
+      max-width: 42ch;
+      margin: 1rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.65vw, 1.22rem);
+      line-height: 1.4;
+    }
+
+    .architecture {
+      border-top: 1px solid var(--line);
+    }
+
+    .command-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      min-width: 0;
+      border-bottom: 1px solid var(--line);
+      padding: 1.6rem 0;
+    }
+
+    .command-row pre {
+      min-width: 0;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+
+    .command-row p,
+    .footer p {
+      margin: 0;
+    }
+
+    .command-row .meta {
+      color: var(--quiet);
+    }
+
+    .cta {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2rem;
+      border: 1px solid var(--line-strong);
+      background: rgba(19, 19, 19, 0.56);
+      padding: clamp(1.5rem, 4vw, 2.2rem);
+    }
+
+    .cta h2 {
+      max-width: 12ch;
+      margin: 1.5rem 0 0;
+      font-size: clamp(2.8rem, 7vw, 5.5rem);
+      font-weight: 500;
+      letter-spacing: -0.06em;
+      line-height: 0.86;
+      text-transform: uppercase;
+    }
+
+    .cta p {
+      max-width: 48ch;
+      margin: 1.5rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1rem, 1.7vw, 1.22rem);
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      justify-content: flex-end;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line-strong);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      min-height: 3.5rem;
+      padding: 1rem 1.2rem;
+      text-transform: uppercase;
+    }
+
+    .button.primary {
+      border-color: var(--text);
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    .button:hover {
+      border-color: var(--text);
+      transform: translateY(-1px);
+    }
+
+    .footer {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 2rem 0 3rem;
+      color: var(--quiet);
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      color: var(--muted);
+    }
+
+    .reveal {
+      animation: rise 650ms ease;
+    }
+
+    .reveal.delay-1 {
+      animation-delay: 90ms;
+    }
+
+    .reveal.delay-2 {
+      animation-delay: 160ms;
+    }
+
+    .reveal.delay-3 {
+      animation-delay: 220ms;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(18px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
       }
     }
-  </script>
+
+    @media (min-width: 720px) {
+      .output-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .step {
+        grid-template-columns: 120px 1fr;
+        gap: 2.5rem;
+      }
+
+      .command-row {
+        grid-template-columns: 220px 1fr;
+        gap: 2rem;
+      }
+
+      .footer {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+
+    @media (min-width: 1000px) {
+      .split {
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 2.5rem;
+      }
+
+      .sticky-title {
+        position: sticky;
+        top: 3rem;
+        grid-column: span 4;
+      }
+
+      .section-body {
+        grid-column: span 8;
+      }
+
+      .cta {
+        grid-template-columns: minmax(0, 1fr) 20rem;
+        align-items: end;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .shell {
+        padding: 0 1.1rem;
+      }
+
+      .brand {
+        display: none;
+      }
+
+      .site-header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .nav {
+        width: 100%;
+        flex-wrap: wrap;
+        gap: 1rem 1.35rem;
+        justify-content: flex-start;
+      }
+
+      .hero-title {
+        width: 100%;
+        max-width: 7.4ch;
+        font-size: clamp(2.55rem, 11vw, 3rem);
+      }
+
+      .prompt-row {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.8rem;
+      }
+
+      .arrow {
+        font-size: 2rem;
+      }
+
+      .prompt-text {
+        font-size: clamp(1.75rem, 12vw, 2.7rem);
+        overflow-wrap: anywhere;
+      }
+
+      .compile-button {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
 </head>
-<body class="bg-ink-950 text-ink-100 font-sans antialiased">
-  <div class="min-h-screen">
-    <nav class="border-b border-ink-800 bg-ink-950/95 backdrop-blur">
-      <div class="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 sm:px-6">
-        <a href="/" class="text-sm font-semibold tracking-[0.24em] uppercase text-ink-200">Ravi</a>
-        <div class="flex items-center gap-4 text-sm text-ink-400 sm:gap-5">
-          <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
-          <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
-        </div>
-      </div>
-    </nav>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="shell">
+    <header class="site-header">
+      <a class="brand" href="/">Ravi</a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#surface">Surface</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/filipexyz/ravi">GitHub</a>
+      </nav>
+    </header>
 
-    <main>
-      <section class="border-b border-ink-900">
-        <div class="mx-auto grid max-w-6xl gap-10 px-5 py-16 sm:gap-16 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,1fr)_28rem] lg:items-start">
+    <main id="main-content">
+      <section class="section hero" aria-labelledby="hero-title">
+        <div class="hero-inner">
+          <p class="eyebrow reveal">/ 01 - Intro</p>
+          <h1 id="hero-title" class="hero-title reveal delay-1">Operate Your Agents.</h1>
+          <p class="hero-copy reveal delay-2">
+            Ravi connects WhatsApp, Telegram, Discord, and Slack through omni, then runs work through Codex, local coding agents, and more runtimes soon.
+          </p>
+          <div class="quick-command reveal delay-3">
+            <div class="command-head">
+              <p class="command-label">Install / macOS + Linux</p>
+              <button class="copy-button" type="button" data-copy="bun install -g ravi.bot@latest">[COPY]</button>
+            </div>
+            <div class="command-box">
+              <pre><code>bun install -g ravi.bot@latest</code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="surface" class="section split" aria-labelledby="surface-title">
+        <div class="sticky-title">
+          <p class="eyebrow">/ 02 - Surface</p>
+          <h2 id="surface-title" class="section-title">Work Routing Preview</h2>
+          <p class="section-copy">
+            The public shape is simple: messages enter, Ravi resolves context, then the right runtime surface takes over.
+          </p>
+        </div>
+
+        <div class="section-body studio-panel">
+          <div class="route-preview">
+            <p class="command-label">Incoming Intent</p>
+            <div class="prompt-row">
+              <span class="arrow" aria-hidden="true">-&gt;</span>
+              <p class="prompt-text">turn this conversation into a tracked task</p>
+            </div>
+            <div class="chips" aria-label="Routing options">
+              <span class="chip is-active">session context</span>
+              <span class="chip">task lane</span>
+              <span class="chip">workflow signal</span>
+              <span class="chip">agent policy</span>
+            </div>
+            <a class="compile-button" href="https://docs.ravi.bot">
+              <span>Inspect runtime</span>
+              <span aria-hidden="true">↵</span>
+            </a>
+          </div>
+
+          <div class="output-grid" aria-label="Resolved runtime preview">
+            <article class="output-card">
+              <span class="status-pill good">ready</span>
+              <strong>Session</strong>
+              <p>Durable context per DM, group, workflow lane, or specialist agent.</p>
+            </article>
+            <article class="output-card">
+              <span class="status-pill warn">guarded</span>
+              <strong>Policy</strong>
+              <p>Permissions, scope, executable checks, and runtime boundaries stay explicit.</p>
+            </article>
+            <article class="output-card">
+              <span class="status-pill good">tracked</span>
+              <strong>Task</strong>
+              <p>When work becomes execution, it gets a task, artifacts, status, and follow-through.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" class="section split" aria-labelledby="workflow-title">
+        <div class="sticky-title">
+          <p class="eyebrow">/ 03 - Workflow</p>
+          <h2 id="workflow-title" class="section-title">Four Operating Layers</h2>
+        </div>
+
+        <div class="section-body steps">
+          <article class="step">
+            <p class="step-number">01</p>
+            <div>
+              <h3>Capture</h3>
+              <p>WhatsApp, CLI, overlay, and background events enter the same operational stream.</p>
+            </div>
+          </article>
+          <article class="step">
+            <p class="step-number">02</p>
+            <div>
+              <h3>Route</h3>
+              <p>Ravi resolves session, agent, permissions, model, and execution context before work starts.</p>
+            </div>
+          </article>
+          <article class="step">
+            <p class="step-number">03</p>
+            <div>
+              <h3>Execute</h3>
+              <p>Specialized agents work inside scoped runtime lanes with task artifacts and clear state transitions.</p>
+            </div>
+          </article>
+          <article class="step">
+            <p class="step-number">04</p>
+            <div>
+              <h3>Report</h3>
+              <p>Results, denials, insights, tasks, and workflow status return to the operator surface instead of disappearing into logs.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section split" aria-labelledby="architecture-title">
+        <div class="sticky-title">
+          <p class="eyebrow">/ 04 - Runtime</p>
+          <h2 id="architecture-title" class="section-title">Stable Core.<br />Open Surfaces.</h2>
+          <p class="section-copy">
+            Ravi is the harness. The visible UI can change; routing, tasks, permissions, and coordination stay coherent.
+          </p>
+        </div>
+
+        <div class="section-body architecture">
+          <article class="command-row">
+            <p class="meta">runtime</p>
+            <pre><code>sessions -> agents -> tasks -> workflows</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">agent runtimes</p>
+            <pre><code>Codex / local coding agents / more soon</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">channels<br />through omni</p>
+            <pre><code>WhatsApp / Telegram / Discord / Slack</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">operator surface</p>
+            <pre><code>whatsapp overlay / cli / cockpit / future apps</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">control plane</p>
+            <pre><code>permissions + audit + hooks + model routing</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">coordination</p>
+            <pre><code>workflow coordinates -> task executes -> session reports</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section id="install" class="section split" aria-labelledby="install-title">
+        <div class="sticky-title">
+          <p class="eyebrow">/ 05 - Install</p>
+          <h2 id="install-title" class="section-title">Start From The CLI</h2>
+        </div>
+
+        <div class="section-body architecture">
+          <article class="command-row">
+            <p class="meta">install package</p>
+            <pre><code>bun install -g ravi.bot@latest</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">configure runtime</p>
+            <pre><code>ravi setup
+ravi doctor</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">start daemon</p>
+            <pre><code>ravi daemon start
+ravi daemon status</code></pre>
+          </article>
+          <article class="command-row">
+            <p class="meta">operate</p>
+            <pre><code>ravi agents list
+ravi agents show main
+ravi sessions list</code></pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="closing-title">
+        <div class="cta">
           <div>
-            <p class="mb-4 text-xs font-medium uppercase tracking-[0.28em] text-ink-500">Personal Operating Layer</p>
-            <h1 class="max-w-4xl text-3xl font-semibold tracking-tight leading-tight text-white sm:text-5xl">
-              A personal agent harness in WhatsApp, keeping context, routing work, and coordinating specialized agents across my day.
-            </h1>
-            <p class="mt-5 max-w-3xl text-base leading-7 text-ink-300 sm:mt-6 sm:text-lg sm:leading-8">
-              Ravi is the operating layer behind a personal agent system that lives where the day already happens.
-              It keeps durable context per conversation, routes work into the right session or specialist agent, and
-              coordinates follow-through across tasks, messages, and background runs.
+            <p class="eyebrow">/ 06 - Close</p>
+            <h2 id="closing-title">The work stays visible.</h2>
+            <p>
+              Ravi keeps context durable, routes the next action, protects boundaries, and brings the work back to the operator surface.
             </p>
-            <p class="mt-4 max-w-3xl text-sm leading-6 text-ink-400 sm:text-base sm:leading-7">
-              <span class="text-ink-200">omni</span> handles transport and channels. Ravi keeps memory, routing,
-              permissions, task execution, and cross-agent coordination coherent. The CLI and the WhatsApp overlay can
-              sit on top as operator surfaces, but the harness itself lives here.
-            </p>
-            <div class="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row">
-              <a
-                href="https://github.com/filipexyz/ravi"
-                class="inline-flex w-full items-center justify-center rounded-md bg-white px-5 py-3 text-sm font-medium text-ink-950 transition hover:bg-ink-100 sm:w-auto"
-              >
-                View source
-              </a>
-              <a
-                href="https://docs.ravi.bot/start"
-                class="inline-flex w-full items-center justify-center rounded-md border border-ink-700 px-5 py-3 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-white sm:w-auto"
-              >
-                Read the docs
-              </a>
-            </div>
           </div>
-
-          <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-5 sm:p-6">
-            <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Mental Model</p>
-            <div class="mt-5 space-y-3 text-sm leading-6 text-ink-300 sm:mt-6 sm:space-y-4">
-              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-                <div class="font-mono text-ink-200">omni</div>
-                <div class="mt-1 text-ink-400">Transport and channel APIs.</div>
-              </div>
-              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-                <div class="font-mono text-ink-200">JetStream</div>
-                <div class="mt-1 text-ink-400">The event backbone for routing and automation.</div>
-              </div>
-              <div class="rounded-xl border border-ink-700 bg-ink-900 p-4">
-                <div class="font-mono text-white">Ravi</div>
-                <div class="mt-1 text-ink-300">The harness that keeps context, routing, tasks, permissions, and coordination stable.</div>
-              </div>
-              <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-                <div class="font-mono text-ink-200">CLI / Overlay</div>
-                <div class="mt-1 text-ink-400">Operator surfaces on top of the same runtime.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="border-b border-ink-900">
-        <div class="mx-auto max-w-6xl px-5 py-16 sm:px-6 sm:py-20">
-          <div class="grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <div>
-              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">What Ravi Handles</p>
-              <h2 class="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Context, work routing, and follow-through.</h2>
-            </div>
-            <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-4 sm:p-5">
-                <h3 class="text-base font-semibold text-white">Sessions and routing</h3>
-                <p class="mt-2 text-sm leading-6 text-ink-400">
-                  Durable session context for DMs, groups, threads, and workflow lanes, with routing that decides where each message should land.
-                </p>
-              </div>
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-4 sm:p-5">
-                <h3 class="text-base font-semibold text-white">Specialized agents</h3>
-                <p class="mt-2 text-sm leading-6 text-ink-400">
-                  Multiple agents with separate prompts, models, scopes, permissions, and working directories.
-                </p>
-              </div>
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-4 sm:p-5">
-                <h3 class="text-base font-semibold text-white">Task runtime</h3>
-                <p class="mt-2 text-sm leading-6 text-ink-400">
-                  `TASK.md`-first tasks, assignments, comments, parent-child lineage, callbacks, and tracked execution lanes.
-                </p>
-              </div>
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-4 sm:p-5">
-                <h3 class="text-base font-semibold text-white">Automation</h3>
-                <p class="mt-2 text-sm leading-6 text-ink-400">
-                  Cron, triggers, heartbeat, and event-driven coordination on the same backbone.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="border-b border-ink-900">
-        <div class="mx-auto max-w-6xl px-5 py-16 sm:px-6 sm:py-20">
-          <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_24rem]">
-            <div>
-              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Architecture</p>
-              <div class="mt-6 rounded-2xl border border-ink-800 bg-ink-900/70 p-4 sm:p-6">
-                <div class="font-mono text-xs uppercase tracking-[0.22em] text-ink-500">$ ravi daemon start</div>
-                <div class="mt-4 space-y-3 text-sm leading-6 text-ink-300">
-                  <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-                    <div class="font-mono text-ink-200">nats-server :4222</div>
-                    <div class="mt-1 text-ink-400">JetStream backbone for routing, tasks, triggers, and runtime events.</div>
-                  </div>
-                  <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">
-                    <div class="font-mono text-ink-200">omni API :8882</div>
-                    <div class="mt-1 text-ink-400">Channel transport for WhatsApp, Telegram, and Discord.</div>
-                  </div>
-                  <div class="rounded-xl border border-ink-700 bg-ink-900 p-4">
-                    <div class="font-mono text-white">ravi runtime</div>
-                    <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">session routing</div>
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">agent runtimes</div>
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">task runtime</div>
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">permissions + policies</div>
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">runners + automation</div>
-                      <div class="rounded-lg border border-ink-800 bg-ink-950/60 px-3 py-2">CLI + overlay surfaces</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="rounded-2xl border border-ink-800 bg-ink-900/60 p-5 sm:p-6">
-              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Primary Surface</p>
-              <h3 class="mt-4 text-xl font-semibold text-white">WhatsApp first</h3>
-              <p class="mt-3 text-sm leading-6 text-ink-400">
-                WhatsApp is the main operator surface today. Telegram and Discord can use the same backbone when omni
-                is configured, but Ravi is shaped around durable personal operations in WhatsApp.
-              </p>
-              <div class="mt-6 space-y-3 text-sm text-ink-300">
-                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">CLI for control and inspection</div>
-                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">WhatsApp overlay for live operational context</div>
-                <div class="rounded-xl border border-ink-800 bg-ink-950/70 p-4">Other operator surfaces can sit on top of the same runtime</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="border-b border-ink-900">
-        <div class="mx-auto max-w-5xl px-5 py-16 sm:px-6 sm:py-20">
-          <div class="grid gap-12 lg:grid-cols-[18rem_minmax(0,1fr)]">
-            <div>
-              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Quick Start</p>
-              <h2 class="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Bring the harness up locally.</h2>
-            </div>
-            <div class="space-y-4 sm:space-y-5">
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-4 sm:p-5">
-                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">1. Install</p>
-                <pre class="mt-3 overflow-x-auto font-mono text-xs leading-6 text-ink-200 sm:text-sm sm:leading-7"><code>git clone https://github.com/filipexyz/ravi.git
-cd ravi
-bun install
-bun run build
-bun link</code></pre>
-              </div>
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-4 sm:p-5">
-                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">2. Configure</p>
-                <pre class="mt-3 overflow-x-auto font-mono text-xs leading-6 text-ink-200 sm:text-sm sm:leading-7"><code>ravi setup
-
-# then configure ~/.ravi/.env
-OMNI_DIR=/path/to/omni-v2
-DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/omni</code></pre>
-              </div>
-              <div class="rounded-2xl border border-ink-800 bg-ink-900/70 p-4 sm:p-5">
-                <p class="text-xs uppercase tracking-[0.22em] text-ink-500">3. Start</p>
-                <pre class="mt-3 overflow-x-auto font-mono text-xs leading-6 text-ink-200 sm:text-sm sm:leading-7"><code>ravi daemon start
-ravi whatsapp connect</code></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="mx-auto max-w-6xl px-5 py-16 sm:px-6 sm:py-20">
-          <div class="grid gap-8 rounded-3xl border border-ink-800 bg-ink-900/60 p-5 sm:p-8 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
-            <div>
-              <p class="text-xs font-medium uppercase tracking-[0.24em] text-ink-500">Positioning</p>
-              <h2 class="mt-4 text-2xl font-semibold tracking-tight text-white sm:text-3xl">Ravi is the harness. Not the gimmick.</h2>
-              <p class="mt-4 max-w-3xl text-base leading-7 text-ink-400">
-                The system is centered on durable context, routing, task execution, and agent coordination inside the
-                conversations where work is already happening. The interface can evolve. The operating layer stays here.
-              </p>
-            </div>
-            <div class="flex flex-col gap-3">
-              <a
-                href="https://docs.ravi.bot"
-                class="inline-flex w-full items-center justify-center rounded-md bg-white px-5 py-3 text-sm font-medium text-ink-950 transition hover:bg-ink-100"
-              >
-                Open docs
-              </a>
-              <a
-                href="https://github.com/filipexyz/ravi"
-                class="inline-flex w-full items-center justify-center rounded-md border border-ink-700 px-5 py-3 text-sm font-medium text-ink-200 transition hover:border-ink-500 hover:text-white"
-              >
-                GitHub
-              </a>
-            </div>
+          <div class="actions">
+            <a class="button primary" href="https://github.com/filipexyz/ravi">View source</a>
+            <a class="button" href="https://docs.ravi.bot">Open docs</a>
           </div>
         </div>
       </section>
     </main>
 
-    <footer class="border-t border-ink-900">
-      <div class="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-8 text-sm text-ink-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <div>filipe labs</div>
-        <div class="flex flex-wrap items-center gap-4 sm:gap-5">
-          <a href="https://docs.ravi.bot" class="hover:text-white transition-colors">Docs</a>
-          <a href="https://github.com/filipexyz/ravi" class="hover:text-white transition-colors">GitHub</a>
-          <span>MIT</span>
-        </div>
+    <footer class="footer">
+      <p>Ravi runtime</p>
+      <div class="footer-links">
+        <a href="https://docs.ravi.bot">Docs</a>
+        <a href="https://github.com/filipexyz/ravi">GitHub</a>
+        <span>MIT</span>
       </div>
     </footer>
   </div>
+
+  <script>
+    const copyButton = document.querySelector("[data-copy]");
+
+    copyButton?.addEventListener("click", async () => {
+      const text = copyButton.getAttribute("data-copy") || "";
+
+      try {
+        await navigator.clipboard.writeText(text);
+        copyButton.textContent = "[COPIED]";
+      } catch {
+        copyButton.textContent = "[COPY FAILED]";
+      }
+
+      window.setTimeout(() => {
+        copyButton.textContent = "[COPY]";
+      }, 1400);
+    });
+  </script>
 </body>
 </html>

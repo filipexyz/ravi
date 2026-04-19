@@ -2,7 +2,6 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 afterAll(() => mock.restore());
 const actualTasksIndexModule = await import("../../tasks/index.js");
-const actualLoggerModule = await import("../../utils/logger.js");
 const actualNatsModule = await import("../../nats.js");
 
 const createCalls: Array<Record<string, unknown>> = [];
@@ -309,6 +308,7 @@ function buildMockTaskArtifacts(task: Record<string, unknown>) {
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -334,14 +334,6 @@ mock.module("../../nats.js", () => ({
     subscribe: mock((pattern?: string) => subscribeImpl(pattern)),
     emit: mock(async () => {}),
     close: mock(async () => {}),
-  },
-}));
-
-mock.module("../../utils/logger.js", () => ({
-  ...actualLoggerModule,
-  logger: {
-    ...actualLoggerModule.logger,
-    setLevel: mock(() => {}),
   },
 }));
 

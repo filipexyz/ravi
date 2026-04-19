@@ -36,6 +36,7 @@ const instructionStates = new Map<string, string>();
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -62,18 +63,29 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: mock(() => (async function* () {})()),
   nats: {
     emit: mock(async () => {}),
+    subscribe: mock(() => (async function* () {})()),
+    close: mock(async () => {}),
   },
 }));
 
 mock.module("../../router/config.js", () => ({
+  getRaviDir: () => "/tmp/ravi",
   getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : null),
   getAllAgents: () => allAgents,
   createAgent: () => {},
   updateAgent: () => {},
   deleteAgent: () => false,
   setAgentDebounce: () => {},
+  checkAgentDirs: () => [],
   ensureAgentDirs: () => {},
   loadRouterConfig: () => ({ defaultAgent: "main" }),
   setAgentSpecMode: () => {},
@@ -103,6 +115,7 @@ mock.module("../../runtime/agent-instructions.js", () => ({
     agents: null,
     claude: null,
   }),
+  loadAgentWorkspaceInstructions: () => null,
 }));
 
 mock.module("../../router/router-db.js", () => ({

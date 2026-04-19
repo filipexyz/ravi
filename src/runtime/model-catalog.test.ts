@@ -62,4 +62,10 @@ describe("model catalog", () => {
 
     expect(resolvePreferredRuntimeModel("codex", "sonnet", { codexCachePath: cachePath })).toBe("gpt-5.2-codex");
   });
+
+  test("passes through models for providers without a registered catalog", () => {
+    expect(listRuntimeModels("custom-provider")).toEqual([]);
+    expect(getDefaultModelForProvider("custom-provider")).toBe("default");
+    expect(resolvePreferredRuntimeModel("custom-provider", "custom-model")).toBe("custom-model");
+  });
 });

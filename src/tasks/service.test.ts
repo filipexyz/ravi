@@ -12,13 +12,9 @@ mock.module("../plugins/index.js", () => actualPluginsIndexModule);
 const actualRouterIndexModule = await import("../router/index.js");
 mock.module("../router/index.js", () => actualRouterIndexModule);
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async () => {}),
-}));
-
 const actualTaskServiceModule = await import("./service.js");
 mock.module("./service.js", () => actualTaskServiceModule);
-const { publishSessionPrompt } = await import("../omni/session-stream.js");
+const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 
 const {
   addTaskDependency,
@@ -74,10 +70,7 @@ const tempStateDirs: string[] = [];
 const createdAgentIds: string[] = [];
 const createdSessionNames: string[] = [];
 let stateDir: string | null = null;
-const publishSessionPromptMock = publishSessionPrompt as unknown as {
-  mockClear: () => void;
-  mock: { calls: Array<[string, { prompt: string; deliveryBarrier: string }]> };
-};
+const publishSessionPromptMock = mock(async (_sessionName: string, _payload: Record<string, unknown>) => {});
 
 setDefaultTimeout(20_000);
 
@@ -289,6 +282,7 @@ beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-service-test-");
   writeLegacyProfileFixtures(stateDir);
   publishSessionPromptMock.mockClear();
+  setTaskSessionPromptPublisherForTests(publishSessionPromptMock);
 });
 
 afterEach(async () => {
@@ -314,6 +308,7 @@ afterEach(async () => {
   const activeStateDir = process.env.RAVI_STATE_DIR ?? stateDir;
   await cleanupIsolatedRaviState(activeStateDir);
   stateDir = null;
+  setTaskSessionPromptPublisherForTests();
 
   while (tempStateDirs.length > 0) {
     const dir = tempStateDirs.pop();

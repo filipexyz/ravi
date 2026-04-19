@@ -2,7 +2,7 @@
  * Builds the system prompt appendix for agents
  */
 
-import type { ChannelContext } from "./bot.js";
+import type { ChannelContext } from "./runtime/message-types.js";
 
 /** Silent reply token - when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";

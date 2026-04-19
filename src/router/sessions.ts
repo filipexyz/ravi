@@ -64,8 +64,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
   return {
     sessionKey: row.session_key,
     name: row.name ?? undefined,
-    runtimeProvider:
-      row.runtime_provider === "claude" || row.runtime_provider === "codex" ? row.runtime_provider : undefined,
+    runtimeProvider: row.runtime_provider ?? undefined,
     runtimeSessionParams,
     runtimeSessionDisplayId: row.runtime_session_display_id ?? undefined,
     providerSessionId,

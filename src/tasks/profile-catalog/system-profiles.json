@@ -20,11 +20,7 @@
       "showTaskDoc": true,
       "showWorkspace": true
     },
-    "defaultTags": [
-      "task.profile.default",
-      "task.doc.required",
-      "task.sync.task-doc-first"
-    ],
+    "defaultTags": ["task.profile.default", "task.doc.required", "task.sync.task-doc-first"],
     "inputs": [],
     "completion": {
       "summaryRequired": true,

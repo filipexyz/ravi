@@ -10,6 +10,7 @@ const emitMock = mock(async () => {});
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -23,8 +24,17 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: mock(() => (async function* () {})()),
   nats: {
     emit: emitMock,
+    subscribe: mock(() => (async function* () {})()),
+    close: mock(async () => {}),
   },
 }));
 

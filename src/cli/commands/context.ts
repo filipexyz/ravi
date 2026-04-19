@@ -300,10 +300,10 @@ export class ContextCommands {
     console.log(JSON.stringify(payload, null, 2));
   }
 
-  private handleCodexBashHook(): Record<string, unknown> {
+  private handleCodexBashHook(inputPayload?: Record<string, unknown>): Record<string, unknown> {
     let payload: Record<string, unknown>;
     try {
-      payload = parseCodexHookPayload();
+      payload = inputPayload ?? parseCodexHookPayload();
     } catch (error) {
       return buildPreToolUseDenyResult(
         `Invalid Codex hook payload: ${error instanceof Error ? error.message : String(error)}`,

@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { EventEmitter } from "node:events";
 import { getDb, dbCreateAgent } from "../router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createSessionAdapterBus } from "./session-adapter-bus.js";
-import { saveSessionAdapter, saveSessionAdapterSubscription } from "./adapter-db.js";
+import { ensureSessionAdapterStoreSchema, saveSessionAdapter, saveSessionAdapterSubscription } from "./adapter-db.js";
 import type {
   StdioCommandInput,
   StdioProtocolCommandAck,
@@ -30,6 +31,7 @@ interface TopicStream {
 }
 
 function cleanupAdapterState(): void {
+  ensureSessionAdapterStoreSchema();
   const db = getDb();
   db.prepare("DELETE FROM session_adapter_subscriptions WHERE adapter_id = ?").run(TEST_ADAPTER_ID);
   db.prepare("DELETE FROM session_adapters WHERE adapter_id = ?").run(TEST_ADAPTER_ID);
@@ -262,7 +264,10 @@ class FakeSupervisor implements StdioSupervisor {
 }
 
 describe("session adapter bus", () => {
-  beforeEach(() => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-session-adapter-bus-test-");
     cleanupAdapterState();
     dbCreateAgent({
       id: TEST_AGENT_ID,
@@ -293,8 +298,13 @@ describe("session adapter bus", () => {
     });
   });
 
-  afterEach(() => {
-    cleanupAdapterState();
+  afterEach(async () => {
+    try {
+      cleanupAdapterState();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = null;
+    }
   });
 
   it("binds session context, forwards commands, publishes runtime events, and rebinds after restart", async () => {

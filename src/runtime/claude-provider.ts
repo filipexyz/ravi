@@ -38,9 +38,11 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         supportsSessionFork: true,
         supportsPartialText: true,
         supportsToolHooks: true,
+        supportsHostSessionHooks: true,
         supportsPlugins: true,
         supportsMcpServers: true,
         supportsRemoteSpawn: true,
+        legacyEventTopicSuffix: "claude",
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {

@@ -167,8 +167,9 @@ export class RaviTmuxManager {
       throw new Error(`Session '${sessionName}' belongs to agent '${resolved.agentId}', not '${agentId}'`);
     }
 
-    const effectiveSessionName =
-      resolved?.name ?? resolved?.sessionKey ?? this.ensureMainRaviSession(agentId).name ?? `agent:${agentId}:main`;
+    const effectiveSessionName = sessionName
+      ? (resolved?.name ?? resolved?.sessionKey ?? sessionName)
+      : (this.ensureMainRaviSession(agentId).name ?? `agent:${agentId}:main`);
 
     return this.ensureWindowForResolvedSession({
       agentId,

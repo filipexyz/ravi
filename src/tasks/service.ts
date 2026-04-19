@@ -1,8 +1,8 @@
 import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
-import { expandHome, getAgent } from "../router/index.js";
+import { getAgent } from "../router/config.js";
+import { expandHome } from "../router/resolver.js";
 import { getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
@@ -68,6 +68,7 @@ import {
   taskDocExists,
   type TaskDocSection,
 } from "./task-doc.js";
+import { publishTaskSessionPrompt } from "./session-publisher.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
 import {
   TASK_RUNTIME_EFFORT_LEVELS,
@@ -1383,7 +1384,7 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
     ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
     sessionName: sourceSessionName,
   });
-  await publishSessionPrompt(reportToSessionName, {
+  await publishTaskSessionPrompt(reportToSessionName, {
     prompt: `[System] Answer: [from: ${sourceSessionName}] ${buildTaskReportMessageForProfile(task, reportEvent, {
       effectiveCwd,
       sourceSessionName,
@@ -2529,7 +2530,7 @@ export async function dispatchTask(
     primaryArtifact,
   });
   syncWorkflowNodeRunForTask(documentedTask.id);
-  await publishSessionPrompt(sessionName, {
+  await publishTaskSessionPrompt(sessionName, {
     prompt,
     deliveryBarrier: "after_task",
     taskBarrierTaskId: documentedTask.id,
@@ -2605,7 +2606,7 @@ export async function recoverActiveTasksAfterRestart(): Promise<TaskRecoveryResu
           taskProfile: profile,
           primaryArtifact,
         });
-        await publishSessionPrompt(sessionName, {
+        await publishTaskSessionPrompt(sessionName, {
           prompt,
           deliveryBarrier: "after_task",
           taskBarrierTaskId: documentedTask.id,
@@ -2762,7 +2763,7 @@ export async function commentTask(
 
   let steeredSessionName: string | undefined;
   if (shouldSteerTaskComment(updatedTask) && updatedTask.assigneeSessionName) {
-    await publishSessionPrompt(updatedTask.assigneeSessionName, {
+    await publishTaskSessionPrompt(updatedTask.assigneeSessionName, {
       prompt: buildTaskCommentSteerPrompt(updatedTask, comment),
       deliveryBarrier: "after_response",
     });

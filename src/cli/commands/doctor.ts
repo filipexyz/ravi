@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
-import { getRuntimeCompatibilityIssues } from "../../runtime/index.js";
+import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import { dbListAgents, dbListInstances, getRaviDbPath } from "../../router/router-db.js";
 import { listTaskAutomations } from "../../tasks/index.js";
@@ -48,6 +48,7 @@ type DoctorDeps = {
       requiresRemoteSpawn?: boolean;
     },
   ) => RuntimeCompatibilityIssue[];
+  listRegisteredRuntimeProviderIds: typeof listRegisteredRuntimeProviderIds;
   exists: (path: string) => boolean;
   readFile: (path: string) => string;
   homeDir: () => string;
@@ -62,6 +63,7 @@ const DEFAULT_DEPS: DoctorDeps = {
   inspectAgentInstructionFiles,
   listTaskAutomations,
   getRuntimeCompatibilityIssues,
+  listRegisteredRuntimeProviderIds,
   exists: existsSync,
   readFile: (path: string) => readFileSync(path, "utf8"),
   homeDir: homedir,
@@ -620,7 +622,7 @@ function buildUnexpectedFailureCheck(id: string, title: string, error: unknown):
 }
 
 function buildProviderCompatibilityCheck(deps: DoctorDeps): DoctorCheck {
-  const providers: RuntimeProviderId[] = ["claude", "codex"];
+  const providers = deps.listRegisteredRuntimeProviderIds();
   const results = providers.map((provider) => ({
     provider,
     issues: deps.getRuntimeCompatibilityIssues(provider, { toolAccessMode: "restricted" }),

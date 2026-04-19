@@ -1,11 +1,30 @@
-import { nats } from "../nats.js";
+import { nats as runtimeNats } from "../nats.js";
 import { canWithCapabilityContext } from "../permissions/engine.js";
 import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
-import { requestReply } from "../utils/request-reply.js";
+import { requestReply as runtimeRequestReply } from "../utils/request-reply.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("approval:service");
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
+
+export interface ApprovalServiceDependencies {
+  nats: Pick<typeof runtimeNats, "emit" | "subscribe">;
+  requestReply: typeof runtimeRequestReply;
+}
+
+const defaultApprovalServiceDependencies: ApprovalServiceDependencies = {
+  nats: runtimeNats,
+  requestReply: runtimeRequestReply,
+};
+
+let approvalServiceDependencies = defaultApprovalServiceDependencies;
+
+export function setApprovalServiceDependenciesForTest(overrides?: Partial<ApprovalServiceDependencies>): void {
+  approvalServiceDependencies = {
+    ...defaultApprovalServiceDependencies,
+    ...(overrides ?? {}),
+  };
+}
 
 export interface ApprovalTarget {
   channel: string;
@@ -32,6 +51,7 @@ export interface ContextAuthorizationOptions {
   objectType: string;
   objectId: string;
   timeoutMs?: number;
+  eventData?: Record<string, unknown>;
 }
 
 export interface ContextAuthorizationResult {
@@ -51,7 +71,7 @@ export async function requestApproval(
 
   let sendResult: { messageId?: string };
   try {
-    sendResult = await requestReply<{ messageId?: string }>(
+    sendResult = await approvalServiceDependencies.requestReply<{ messageId?: string }>(
       "ravi.outbound.deliver",
       {
         channel: source.channel,
@@ -85,7 +105,7 @@ export async function requestPollAnswer(
 
   let sendResult: { messageId?: string };
   try {
-    sendResult = await requestReply<{ messageId?: string }>(
+    sendResult = await approvalServiceDependencies.requestReply<{ messageId?: string }>(
       "ravi.outbound.deliver",
       {
         channel: source.channel,
@@ -128,7 +148,7 @@ export async function requestCascadingApproval(
   const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
   log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
 
-  nats
+  approvalServiceDependencies.nats
     .emit("ravi.approval.request", {
       type: opts.type,
       sessionName: opts.sessionName,
@@ -144,7 +164,7 @@ export async function requestCascadingApproval(
   const approvalText = buildApprovalText(opts.type, opts.text, opts.agentId, isDelegated);
   const result = await requestApproval(targetSource, approvalText, { timeoutMs: opts.timeoutMs });
 
-  nats
+  approvalServiceDependencies.nats
     .emit("ravi.approval.response", {
       type: opts.type,
       sessionName: opts.sessionName,
@@ -179,6 +199,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     timeoutMs: opts.timeoutMs,
     autoApproveWithoutSource: false,
     eventData: {
+      ...(opts.eventData ?? {}),
       contextId: context.contextId,
       permission,
       objectType,
@@ -244,7 +265,7 @@ async function waitForApprovalResponse(
   messageId: string,
   timeoutMs: number,
 ): Promise<{ approved: boolean; reason?: string }> {
-  const stream = nats.subscribe("ravi.inbound.reaction", "ravi.inbound.reply");
+  const stream = approvalServiceDependencies.nats.subscribe("ravi.inbound.reaction", "ravi.inbound.reply");
 
   return new Promise((resolve) => {
     let settled = false;
@@ -293,7 +314,7 @@ async function waitForPollAnswer(
   messageId: string,
   timeoutMs: number,
 ): Promise<{ selectedLabels: string[] } | { freeText: string }> {
-  const stream = nats.subscribe("ravi.inbound.reply", "ravi.inbound.pollVote");
+  const stream = approvalServiceDependencies.nats.subscribe("ravi.inbound.reply", "ravi.inbound.pollVote");
 
   return new Promise((resolve) => {
     let settled = false;

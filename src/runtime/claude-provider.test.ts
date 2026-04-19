@@ -11,6 +11,14 @@ let queryGate: Promise<void> | null = null;
 let releaseQueryGate: (() => void) | null = null;
 
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+  createSdkMcpServer: (config: Record<string, unknown>) => ({
+    type: "sdk",
+    name: config.name ?? "mock",
+    instance: {
+      connect: async () => {},
+      close: async () => {},
+    },
+  }),
   query: (input: { prompt: unknown; options: Record<string, unknown> }) => {
     queryCalls.push(input);
     const messages = [...nextMessages];
@@ -29,6 +37,13 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
       },
     };
   },
+  tool: (name: string, description: string, inputSchema: unknown, handler: unknown, options?: unknown) => ({
+    name,
+    description,
+    inputSchema,
+    handler,
+    options,
+  }),
 }));
 
 const { buildClaudeCodeEnvironment, createClaudeRuntimeProvider } = await import("./claude-provider.js");
