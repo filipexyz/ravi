@@ -99,6 +99,103 @@ ravi sessions read <name> -n 50
 
 Returns normalized message history (user and assistant messages only, no tool calls). Messages are read from the SDK transcript JSONL file. Silent responses (`@@SILENT@@`) are excluded.
 
+## Inspecting Session Trace
+
+Use `sessions trace` when you need to understand what happened in a real session
+end to end. Unlike `sessions read`, trace includes channel ingress, routing,
+dispatch decisions, runtime startup, adapter requests, tool activity, assistant
+messages, response emission, delivery observations, and terminal turn state.
+
+SQLite is the canonical source for this inspection path. NATS and daemon logs
+can help with live or process-level debugging, but they are not required to
+reconstruct the persisted session trace.
+
+```bash
+# Read the last two hours and explain common incident patterns
+ravi sessions trace <name> --since 2h --explain
+
+# Narrow to one provider turn
+ravi sessions trace <name> --turn <turn_id> --explain
+
+# Follow a source channel message
+ravi sessions trace <name> --message <source_message_id> --explain
+
+# Inspect a request/correlation id inside payloads
+ravi sessions trace <name> --correlation <correlation_id> --raw --explain
+```
+
+Useful filters:
+
+```bash
+ravi sessions trace <name> --only adapter
+ravi sessions trace <name> --only tools
+ravi sessions trace <name> --only delivery
+ravi sessions trace <name> --only dispatch
+ravi sessions trace <name> --only turn
+ravi sessions trace <name> --since 30m --limit 40
+ravi sessions trace <name> --json
+```
+
+Payload flags are explicit because prompts and request payloads can contain
+sensitive operational context:
+
+```bash
+ravi sessions trace <name> --turn <turn_id> --show-user-prompt
+ravi sessions trace <name> --turn <turn_id> --show-system-prompt
+ravi sessions trace <name> --turn <turn_id> --raw
+```
+
+When reading a trace, first check whether the sequence reached
+`adapter.request`. If it did, Ravi built the final provider request. If it did
+not, look earlier in `channel`, `routing`, `prompt`, `dispatch`, and
+`runtime.start` rows.
+
+Common incident cues from `--explain`:
+
+| Finding | What it usually means |
+| --- | --- |
+| `prompt-without-adapter-request` | Prompt did not reach provider handoff; inspect queue, debounce, task barrier, or runtime startup. |
+| `adapter-request-without-terminal-turn` | Provider request was built, but no terminal turn state was recorded. |
+| `response-without-delivery` | Ravi emitted a response, but the gateway did not record final delivery. |
+| `delivery-failed` / `delivery-dropped` | Outbound channel delivery failed or was intentionally dropped, often because of target/routing. |
+| `interruption-or-abort` | A turn was interrupted or an abort was requested. Read `abortReason` and nearby `dispatch.*` rows. |
+| `timeout` | Runtime idle timeout or turn timeout was observed. |
+| `resume-disabled-with-provider-session` | Resume was disabled even though a provider session id existed; inspect reset, delete, fork, provider switch, or model/runtime changes. |
+| `tool-start-without-end` | Tool began but no completion event was recorded. |
+| `system-prompt-changed` | More than one system prompt hash appeared in the trace window. |
+
+SDE incident golden path for "the agent saw my message but did not reply":
+
+```bash
+ravi sessions trace <name> --since 2h --explain
+ravi sessions trace <name> --message <source_message_id> --explain
+ravi sessions trace <name> --turn <turn_id> --explain
+```
+
+Classify the gap by the last reliable row:
+
+| Last reliable row | Likely boundary |
+| --- | --- |
+| no `channel.message.received` | inbound did not reach Ravi or the window/session is wrong |
+| `channel.message.received` without `route.resolved` | routing or contact resolution |
+| `route.resolved` without `prompt.published` | session stream publish |
+| `prompt.published` without `adapter.request` | dispatch, task barrier, debounce, concurrency, or runtime startup |
+| `adapter.request` without terminal turn | provider/runtime after handoff |
+| `assistant.message` without `response.emitted` | silent/no-response behavior, suppression, or interruption |
+| `response.emitted` without `delivery.*` | gateway or outbound observation |
+| `delivery.failed` / `delivery.dropped` | final channel delivery |
+
+For abort or context-loss reports, check `session.abort`, `session.timeout`,
+`turn.interrupted`, `provider_session_id_before`, `provider_session_id_after`,
+and the system prompt hash. `resume=false` with an existing provider session id
+is suspicious unless a reset, delete, fork, provider/model change, or runtime
+capability explains it.
+
+Safe examples should use placeholders such as `<name>`, `<turn_id>`, and
+`<source_message_id>`. Do not paste real phone numbers, group ids, customer
+prompts, context keys, tokens, or provider session ids into docs or shared
+incident notes.
+
 ## Managing Sessions
 
 ### Rename

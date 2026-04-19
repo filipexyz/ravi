@@ -13,6 +13,7 @@ import {
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
+import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeCapabilities, RuntimeEventMetadata, RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
@@ -182,6 +183,47 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     safeEmit,
     drainPendingStarts,
   } = options;
+  const recordTraceEvent = (
+    input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
+  ) => {
+    recordRuntimeTraceEvent({
+      sessionKey: session.sessionKey,
+      sessionName,
+      agentId: agent.id,
+      runId,
+      ...input,
+    });
+  };
+  const recordTerminalTraceOnce = (
+    input: Omit<
+      Parameters<typeof recordTerminalTurnTrace>[0],
+      "sessionKey" | "sessionName" | "agentId" | "runId" | "turnId" | "provider" | "model" | "startedAt"
+    >,
+  ) => {
+    if (!streaming.currentTraceTurnId || streaming.currentTraceTurnTerminalRecorded) {
+      return;
+    }
+    recordTerminalTurnTrace({
+      sessionKey: session.sessionKey,
+      sessionName,
+      agentId: agent.id,
+      runId,
+      turnId: streaming.currentTraceTurnId,
+      provider: runtimeSession.provider,
+      model,
+      startedAt: streaming.currentTraceTurnStartedAt,
+      ...input,
+    });
+    streaming.currentTraceTurnTerminalRecorded = true;
+  };
+  const clearTraceTurnState = () => {
+    streaming.currentTraceTurnId = undefined;
+    streaming.currentTraceTurnStartedAt = undefined;
+    streaming.currentTraceUserPromptSha256 = undefined;
+    streaming.currentTraceSystemPromptSha256 = undefined;
+    streaming.currentTraceRequestBlobSha256 = undefined;
+    streaming.currentTraceTurnTerminalRecorded = false;
+  };
 
   // Timeout watchdog
   const SESSION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (longer for streaming)
@@ -190,6 +232,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (elapsed > SESSION_TIMEOUT_MS) {
       log.warn("Streaming session idle timeout", { sessionName, elapsedMs: elapsed });
       streaming.internalAbortReason = "idle_timeout";
+      recordTraceEvent({
+        turnId: streaming.currentTraceTurnId,
+        provider: runtimeSession.provider,
+        model,
+        eventType: "session.timeout",
+        eventGroup: "session",
+        status: "timeout",
+        source: streaming.currentSource,
+        payloadJson: {
+          elapsedMs: elapsed,
+          timeoutMs: SESSION_TIMEOUT_MS,
+        },
+      });
+      recordTerminalTraceOnce({
+        status: "timeout",
+        eventType: "turn.interrupted",
+        abortReason: "idle_timeout",
+        completedAt: Date.now(),
+        payloadJson: {
+          elapsedMs: elapsed,
+          timeoutMs: SESSION_TIMEOUT_MS,
+        },
+      });
       safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: "session.timeout",
         sessionName,
@@ -322,6 +387,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const wasCompacting = streaming.compacting;
         streaming.compacting = status === "compacting";
         log.info("Compaction status", { sessionName, compacting: streaming.compacting });
+        recordTraceEvent({
+          turnId: streaming.currentTraceTurnId,
+          provider: runtimeSession.provider,
+          model,
+          eventType: "runtime.status",
+          eventGroup: "runtime",
+          status,
+          payloadJson: {
+            status,
+            wasCompacting,
+            compacting: streaming.compacting,
+            metadata: event.metadata,
+          },
+        });
 
         if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
           if (streaming.compacting && !wasCompacting) {
@@ -341,6 +420,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
         );
+        recordTraceEvent({
+          turnId: streaming.currentTraceTurnId,
+          provider: runtimeSession.provider,
+          model,
+          eventType: "tool.start",
+          eventGroup: "tool",
+          status: "running",
+          payloadJson: {
+            toolId: event.toolUse.id,
+            toolName: event.toolUse.name,
+            safety: streaming.currentToolSafety,
+            input: truncateOutput(event.toolUse.input),
+            metadata: event.metadata,
+          },
+          preview: event.toolUse.name,
+        });
 
         safeEmit(`ravi.session.${sessionName}.tool`, {
           event: "start",
@@ -380,6 +475,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
           } else {
             responseText += messageText;
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "assistant.message",
+              eventGroup: "response",
+              status: "received",
+              payloadJson: {
+                chars: messageText.length,
+                metadata: event.metadata,
+              },
+              preview: messageText,
+            });
 
             const trimmed = messageText.trim().toLowerCase();
             if (trimmed === "prompt is too long") {
@@ -411,6 +519,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       // Handle tool results
       if (event.type === "tool.completed") {
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
+        recordTraceEvent({
+          turnId: streaming.currentTraceTurnId,
+          provider: runtimeSession.provider,
+          model,
+          eventType: "tool.end",
+          eventGroup: "tool",
+          status: event.isError ? "failed" : "complete",
+          durationMs,
+          payloadJson: {
+            toolId: streaming.currentToolId ?? event.toolUseId ?? "unknown",
+            toolName: streaming.currentToolName ?? event.toolName ?? "unknown",
+            output: truncateOutput(event.content),
+            isError: event.isError ?? false,
+            metadata: event.metadata,
+          },
+          preview: streaming.currentToolName ?? event.toolName ?? "unknown",
+        });
 
         safeEmit(`ravi.session.${sessionName}.tool`, {
           event: "end",
@@ -441,6 +566,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
           log.info("Executing deferred abort after unsafe tool completed", { sessionName });
           streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
+          recordTraceEvent({
+            turnId: streaming.currentTraceTurnId,
+            provider: runtimeSession.provider,
+            model,
+            eventType: "session.abort",
+            eventGroup: "session",
+            status: "requested",
+            source: streaming.currentSource,
+            payloadJson: {
+              reason: streaming.internalAbortReason,
+              deferred: true,
+              toolCompleted: true,
+            },
+          });
+          recordTerminalTraceOnce({
+            status: "aborted",
+            eventType: "turn.interrupted",
+            abortReason: streaming.internalAbortReason,
+            payloadJson: {
+              reason: streaming.internalAbortReason,
+              deferred: true,
+            },
+          });
           streaming.abortController.abort();
           streamingSessions.delete(sessionName);
         }
@@ -515,6 +663,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             createdAt: Date.now(),
           });
         }
+        recordTerminalTraceOnce({
+          status: "complete",
+          eventType: "turn.complete",
+          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          usage: event.usage,
+          costUsd: cost?.totalCost ?? null,
+          responseChars: responseText.trim().length,
+          payloadJson: {
+            execution: event.execution ?? null,
+            session: event.session ?? null,
+            metadata: event.metadata ?? null,
+            promptTooLongReset: streaming._promptTooLong ?? false,
+          },
+        });
 
         // Auto-reset session when prompt is too long (compact failed)
         if (streaming._promptTooLong) {
@@ -549,6 +711,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.pendingAbort = false;
         streaming.turnActive = false;
+        clearTraceTurnState();
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
@@ -557,10 +720,20 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "turn.interrupted") {
         log.info("Turn interrupted", { runId, sessionName });
+        recordTerminalTraceOnce({
+          status: "interrupted",
+          eventType: "turn.interrupted",
+          abortReason: streaming.internalAbortReason ?? "provider_interrupted",
+          payloadJson: {
+            metadata: event.metadata ?? null,
+            rawEvent: summarizeRuntimeFailureRawEvent(event.rawEvent) ?? null,
+          },
+        });
         streaming.interrupted = true;
         responseText = "";
         clearActiveToolState();
         streaming.turnActive = false;
+        clearTraceTurnState();
         signalTurnComplete();
         continue;
       }
@@ -595,12 +768,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         } else {
           await emitRuntimeEvent({ ...event, provider: runtimeSession.provider });
         }
+        recordTerminalTraceOnce({
+          status: suppressedRecoverable ? "interrupted" : "failed",
+          eventType: suppressedRecoverable ? "turn.interrupted" : "turn.failed",
+          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
+          error: suppressedRecoverable ? null : event.error,
+          payloadJson: {
+            recoverable: event.recoverable ?? true,
+            suppressedRecoverable,
+            failureDetails: formatRuntimeFailureDetails(event) ?? null,
+            rawEvent: rawEventSummary ?? null,
+            metadata: event.metadata ?? null,
+          },
+        });
 
         responseText = "";
         clearActiveToolState();
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         streaming.internalAbortReason = undefined;
+        clearTraceTurnState();
 
         if (suppressedRecoverable) {
           log.info("Suppressing recoverable interrupted turn failure", {

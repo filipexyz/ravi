@@ -8,6 +8,7 @@ import {
 } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSessionByName } from "../router/index.js";
+import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -93,6 +94,7 @@ export class RuntimeSessionDispatcher {
     });
     for (const [sessionName, session] of this.streamingSessions) {
       log.info("Aborting streaming session", { sessionName });
+      recordStreamingAbortTrace(sessionName, session, "shutdown_all");
       shutdownRuntimeStreamingSession(session, "shutdown_all");
     }
     this.streamingSessions.clear();
@@ -107,6 +109,7 @@ export class RuntimeSessionDispatcher {
     });
     const session = this.streamingSessions.get(sessionName);
     if (!session) return false;
+    const sessionEntry = getSessionByName(sessionName);
 
     if (session.toolRunning && session.currentToolSafety === "unsafe") {
       log.info("Deferring abort - unsafe tool running", {
@@ -115,6 +118,24 @@ export class RuntimeSessionDispatcher {
       });
       session.internalAbortReason = "explicit_abort_deferred";
       session.pendingAbort = true;
+      recordRuntimeTraceEvent({
+        sessionKey: sessionEntry?.sessionKey ?? sessionName,
+        sessionName,
+        agentId: session.agentId,
+        runId: session.traceRunId,
+        turnId: session.currentTraceTurnId,
+        provider: session.queryHandle.provider,
+        model: session.currentModel,
+        eventType: "session.abort",
+        eventGroup: "session",
+        status: "deferred",
+        source: session.currentSource,
+        payloadJson: {
+          reason: "explicit_abort_deferred",
+          tool: session.currentToolName ?? null,
+          toolSafety: session.currentToolSafety,
+        },
+      });
       return true;
     }
 
@@ -124,6 +145,7 @@ export class RuntimeSessionDispatcher {
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done });
+    recordStreamingAbortTrace(sessionName, session, "explicit_abort", sessionEntry?.sessionKey);
     shutdownRuntimeStreamingSession(session, "explicit_abort");
     this.streamingSessions.delete(sessionName);
     return true;
@@ -142,6 +164,24 @@ export class RuntimeSessionDispatcher {
     }
 
     if (resolveRuntimeModelSwitchStrategy(streaming.queryHandle) === "direct-set") {
+      recordRuntimeTraceEvent({
+        sessionKey: sessionName,
+        sessionName,
+        agentId: streaming.agentId,
+        runId: streaming.traceRunId,
+        turnId: streaming.currentTraceTurnId,
+        provider: streaming.queryHandle.provider,
+        model,
+        eventType: "session.model_changed",
+        eventGroup: "session",
+        status: "applied",
+        source: streaming.currentSource,
+        payloadJson: {
+          previousModel: streaming.currentModel,
+          nextModel: model,
+          strategy: "direct-set",
+        },
+      });
       await applyDirectRuntimeModelSwitch(streaming.queryHandle, model);
       streaming.currentModel = model;
       return "applied";
@@ -151,6 +191,24 @@ export class RuntimeSessionDispatcher {
       stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages);
     }
     streaming.currentModel = model;
+    recordRuntimeTraceEvent({
+      sessionKey: sessionName,
+      sessionName,
+      agentId: streaming.agentId,
+      runId: streaming.traceRunId,
+      turnId: streaming.currentTraceTurnId,
+      provider: streaming.queryHandle.provider,
+      model,
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source: streaming.currentSource,
+      payloadJson: {
+        reason: "model_change_restart",
+        nextModel: model,
+      },
+    });
+    recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
     shutdownRuntimeStreamingSession(streaming, "model_change_restart");
     this.streamingSessions.delete(sessionName);
     return "restart-next-turn";
@@ -284,6 +342,27 @@ export class RuntimeSessionDispatcher {
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
         }
 
+        recordRuntimeTraceEvent({
+          sessionKey: sessionEntry?.sessionKey ?? sessionName,
+          sessionName,
+          agentId: existing.agentId,
+          runId: existing.traceRunId,
+          turnId: existing.currentTraceTurnId,
+          provider: existing.queryHandle.provider,
+          model: existing.currentModel,
+          eventType: "dispatch.restart_requested",
+          eventGroup: "dispatch",
+          status: "requested",
+          source: existing.currentSource,
+          payloadJson: {
+            reason: restartReason,
+            activeAgentId: existing.agentId,
+            requestedAgentId: agent.id,
+            activeProvider: existing.queryHandle.provider,
+            requestedProvider,
+          },
+        });
+        recordStreamingTurnInterruptedTrace(sessionName, existing, restartReason, sessionEntry?.sessionKey);
         shutdownRuntimeStreamingSession(existing, restartReason);
         this.streamingSessions.delete(sessionName);
       } else {
@@ -306,6 +385,34 @@ export class RuntimeSessionDispatcher {
             requestedThinking: requestedRuntime.options.thinking ?? null,
           });
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
+          recordRuntimeTraceEvent({
+            sessionKey: sessionEntry?.sessionKey ?? sessionName,
+            sessionName,
+            agentId: existing.agentId,
+            runId: existing.traceRunId,
+            turnId: existing.currentTraceTurnId,
+            provider: existing.queryHandle.provider,
+            model: existing.currentModel,
+            eventType: "dispatch.restart_requested",
+            eventGroup: "dispatch",
+            status: "requested",
+            source: existing.currentSource,
+            payloadJson: {
+              reason: "runtime_task_settings_change",
+              currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
+              requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+              currentEffort: existing.currentEffort ?? null,
+              requestedEffort: requestedRuntime.options.effort ?? null,
+              currentThinking: existing.currentThinking ?? null,
+              requestedThinking: requestedRuntime.options.thinking ?? null,
+            },
+          });
+          recordStreamingTurnInterruptedTrace(
+            sessionName,
+            existing,
+            "runtime_task_settings_change",
+            sessionEntry?.sessionKey,
+          );
           shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
           this.streamingSessions.delete(sessionName);
           await this.startStreamingSession(sessionName, prompt);
@@ -337,6 +444,25 @@ export class RuntimeSessionDispatcher {
         existing.pendingMessages.push(userMsg);
 
         const barrier = userMsg.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+        recordRuntimeTraceEvent({
+          sessionKey: sessionEntry?.sessionKey ?? sessionName,
+          sessionName,
+          agentId: existing.agentId,
+          runId: existing.traceRunId,
+          turnId: existing.currentTraceTurnId,
+          provider: existing.queryHandle.provider,
+          model: existing.currentModel,
+          eventType: "dispatch.push_existing",
+          eventGroup: "dispatch",
+          status: "queued",
+          source: prompt.source ?? existing.currentSource,
+          messageId: prompt.context?.messageId,
+          payloadJson: {
+            queueSize: existing.pendingMessages.length,
+            barrier: describeDeliveryBarrier(barrier),
+            taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+          },
+        });
 
         if (existing.pushMessage) {
           if (hasDeliverableRuntimeMessages(sessionName, existing)) {
@@ -355,6 +481,25 @@ export class RuntimeSessionDispatcher {
               barrier: describeDeliveryBarrier(barrier),
               reason: "waiting_for_barrier",
             });
+            recordRuntimeTraceEvent({
+              sessionKey: sessionEntry?.sessionKey ?? sessionName,
+              sessionName,
+              agentId: existing.agentId,
+              runId: existing.traceRunId,
+              turnId: existing.currentTraceTurnId,
+              provider: existing.queryHandle.provider,
+              model: existing.currentModel,
+              eventType: "dispatch.queued_busy",
+              eventGroup: "dispatch",
+              status: "queued",
+              source: prompt.source ?? existing.currentSource,
+              messageId: prompt.context?.messageId,
+              payloadJson: {
+                queueSize: existing.pendingMessages.length,
+                barrier: describeDeliveryBarrier(barrier),
+                reason: "waiting_for_barrier",
+              },
+            });
           }
         } else {
           const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
@@ -365,6 +510,26 @@ export class RuntimeSessionDispatcher {
               barrier: describeDeliveryBarrier(barrier),
               reason: decision.reason,
               tool: existing.currentToolName,
+            });
+            recordRuntimeTraceEvent({
+              sessionKey: sessionEntry?.sessionKey ?? sessionName,
+              sessionName,
+              agentId: existing.agentId,
+              runId: existing.traceRunId,
+              turnId: existing.currentTraceTurnId,
+              provider: existing.queryHandle.provider,
+              model: existing.currentModel,
+              eventType: "dispatch.queued_busy",
+              eventGroup: "dispatch",
+              status: "queued",
+              source: prompt.source ?? existing.currentSource,
+              messageId: prompt.context?.messageId,
+              payloadJson: {
+                queueSize: existing.pendingMessages.length,
+                barrier: describeDeliveryBarrier(barrier),
+                reason: decision.reason,
+                tool: existing.currentToolName ?? null,
+              },
             });
           } else {
             nats
@@ -387,6 +552,26 @@ export class RuntimeSessionDispatcher {
               queueSize: existing.pendingMessages.length,
               barrier: describeDeliveryBarrier(barrier),
               reason: decision.reason,
+            });
+            recordRuntimeTraceEvent({
+              sessionKey: sessionEntry?.sessionKey ?? sessionName,
+              sessionName,
+              agentId: existing.agentId,
+              runId: existing.traceRunId,
+              turnId: existing.currentTraceTurnId,
+              provider: existing.queryHandle.provider,
+              model: existing.currentModel,
+              eventType: "dispatch.interrupt_requested",
+              eventGroup: "dispatch",
+              status: "requested",
+              source: prompt.source ?? existing.currentSource,
+              messageId: prompt.context?.messageId,
+              payloadJson: {
+                queueSize: existing.pendingMessages.length,
+                barrier: describeDeliveryBarrier(barrier),
+                reason: decision.reason,
+                taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+              },
             });
             existing.interrupted = true;
             existing.queryHandle.interrupt().catch(() => {});
@@ -412,9 +597,39 @@ export class RuntimeSessionDispatcher {
         sessionName,
         queued: queued.length,
       });
+      recordRuntimeTraceEvent({
+        sessionKey: sessionEntry?.sessionKey ?? sessionName,
+        sessionName,
+        agentId: agent.id,
+        eventType: "dispatch.deferred_after_task",
+        eventGroup: "dispatch",
+        status: "deferred",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        payloadJson: {
+          queued: queued.length,
+          taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        },
+      });
       return;
     }
 
+    recordRuntimeTraceEvent({
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      sessionName,
+      agentId: agent.id,
+      provider: requestedProvider,
+      eventType: "dispatch.cold_start",
+      eventGroup: "dispatch",
+      status: "starting",
+      source: prompt.source,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        provider: requestedProvider,
+        taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+      },
+    });
     await this.startStreamingSession(sessionName, prompt);
   }
 
@@ -500,4 +715,63 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
 
 function getMessageTargetKey(target: RuntimeMessageTarget): string {
   return [target.channel, target.accountId, target.chatId, target.threadId ?? ""].join(":");
+}
+
+function recordStreamingAbortTrace(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  reason: string,
+  sessionKey = sessionName,
+): void {
+  recordRuntimeTraceEvent({
+    sessionKey,
+    sessionName,
+    agentId: session.agentId,
+    runId: session.traceRunId,
+    turnId: session.currentTraceTurnId,
+    provider: session.queryHandle.provider,
+    model: session.currentModel,
+    eventType: "session.abort",
+    eventGroup: "session",
+    status: "requested",
+    source: session.currentSource,
+    payloadJson: {
+      reason,
+      queueSize: session.pendingMessages.length,
+      toolRunning: session.toolRunning,
+      tool: session.currentToolName ?? null,
+    },
+  });
+  recordStreamingTurnInterruptedTrace(sessionName, session, reason, sessionKey, "aborted");
+}
+
+function recordStreamingTurnInterruptedTrace(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  reason: string,
+  sessionKey = sessionName,
+  status: "interrupted" | "aborted" = "interrupted",
+): void {
+  if (!session.currentTraceTurnId || session.currentTraceTurnTerminalRecorded) {
+    return;
+  }
+
+  recordTerminalTurnTrace({
+    sessionKey,
+    sessionName,
+    agentId: session.agentId,
+    runId: session.traceRunId,
+    turnId: session.currentTraceTurnId,
+    provider: session.queryHandle.provider,
+    model: session.currentModel,
+    status,
+    eventType: "turn.interrupted",
+    abortReason: reason,
+    startedAt: session.currentTraceTurnStartedAt,
+    payloadJson: {
+      reason,
+      source: session.currentSource ?? null,
+    },
+  });
+  session.currentTraceTurnTerminalRecorded = true;
 }

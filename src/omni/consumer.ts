@@ -21,6 +21,7 @@ import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
 import { dbSaveMessageMeta } from "../router/router-db.js";
+import { recordChannelMessageReceivedTrace, recordRouteResolvedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
 import type { MessageTarget } from "../runtime/message-types.js";
 import type { OmniSender } from "./sender.js";
@@ -505,6 +506,67 @@ export class OmniConsumer {
       return;
     }
 
+    const traceSource = {
+      channel: sessionChannel,
+      accountId: effectiveAccountId,
+      chatId: chatJid,
+      threadId: threadId ?? null,
+      messageId: payload.externalId ?? null,
+    };
+
+    try {
+      recordChannelMessageReceivedTrace({
+        sessionKey: resolved.sessionKey,
+        sessionName: resolved.sessionName,
+        agentId: resolved.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          eventId: event.id,
+          subject,
+          omniType: event.type,
+          instanceId,
+          channelType,
+          contentType: payload.content?.type ?? null,
+          isGroup,
+          senderId: senderPhone,
+          routePhone,
+        },
+        preview: payload.content?.text ?? null,
+      });
+      recordRouteResolvedTrace({
+        sessionKey: resolved.sessionKey,
+        sessionName: resolved.sessionName,
+        agentId: resolved.agent.id,
+        timestamp: msgTs,
+        source: traceSource,
+        payloadJson: {
+          sessionKey: resolved.sessionKey,
+          sessionName: resolved.sessionName,
+          agentId: resolved.agent.id,
+          dmScope: resolved.dmScope,
+          route: resolved.route
+            ? {
+                pattern: resolved.route.pattern,
+                priority: resolved.route.priority ?? null,
+                policy: resolved.route.policy ?? null,
+                dmScope: resolved.route.dmScope ?? null,
+                session: resolved.route.session ?? null,
+              }
+            : null,
+          peerKind: peerKind ?? (isGroup ? "group" : "dm"),
+          groupId: sessionGroupId ?? null,
+          threadId: threadId ?? null,
+        },
+      });
+    } catch (error) {
+      log.warn("Failed to record inbound session trace", {
+        sessionName: resolved.sessionName,
+        messageId: payload.externalId,
+        error,
+      });
+    }
+
     // -- Policy resolution helper --
     // Lookup order: route.policy → instance config → default
     const resolvePolicy = (
@@ -713,6 +775,7 @@ export class OmniConsumer {
       accountId: effectiveAccountId,
       chatId: chatJid,
       ...(threadId ? { threadId } : {}),
+      ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
     };
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)

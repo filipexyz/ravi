@@ -14,6 +14,8 @@ export interface RuntimeMessageTarget {
   chatId: string;
   /** Thread/topic ID for platforms that support it (Telegram topics, Slack threads, Discord threads) */
   threadId?: string;
+  /** Original inbound channel message ID, used for session trace correlation. */
+  sourceMessageId?: string;
 }
 
 export interface RuntimeUserMessage extends RuntimePromptMessage {
@@ -76,6 +78,15 @@ export interface RuntimeHostStreamingSession {
   pendingAbort: boolean;
   /** Agent mode (e.g. "sentinel") - controls compaction announcements and system commands */
   agentMode?: string;
+  /** Session trace run ID for this live runtime process. */
+  traceRunId?: string;
+  /** Current Session Trace turn ID while a provider turn is active. */
+  currentTraceTurnId?: string;
+  currentTraceTurnStartedAt?: number;
+  currentTraceUserPromptSha256?: string;
+  currentTraceSystemPromptSha256?: string;
+  currentTraceRequestBlobSha256?: string;
+  currentTraceTurnTerminalRecorded?: boolean;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}

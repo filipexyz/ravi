@@ -46,6 +46,14 @@ import {
   filterAccessibleSessions,
 } from "../../permissions/scope.js";
 import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
+import { parseSessionTraceTime, querySessionTrace, type SessionTraceQueryResult } from "../../session-trace/query.js";
+import { explainSessionTrace, type SessionTraceExplanation } from "../../session-trace/explain.js";
+import type {
+  JsonValue,
+  SessionEventRecord,
+  SessionTraceBlobRecord,
+  SessionTurnRecord,
+} from "../../session-trace/types.js";
 
 const SEND_TIMEOUT_MS = 120000; // 2 minutes
 const CONFIG_DB_META = { source: "config-db", freshness: "persisted", via: "router-config" } as const;
@@ -369,6 +377,415 @@ function buildSuggestedDebugCommands(
   }
 
   return commands;
+}
+
+function formatTraceTimestamp(ts: number): string {
+  const time = new Date(ts).toLocaleTimeString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+  return `${time}.${String(new Date(ts).getMilliseconds()).padStart(3, "0")}`;
+}
+
+function formatTraceDateTime(ts: number | null): string {
+  if (!ts) return "(none)";
+  return new Date(ts).toISOString();
+}
+
+function formatTraceSha(sha: string | null | undefined): string {
+  if (!sha) return "(none)";
+  return `sha256:${sha.slice(0, 12)}`;
+}
+
+function compactTraceText(value: string | null | undefined, max = 180): string | null {
+  const text = value?.replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  return text.length <= max ? text : `${text.slice(0, max - 3)}...`;
+}
+
+function quoteTraceText(value: string | null | undefined, max = 180): string | null {
+  const text = compactTraceText(value, max);
+  return text ? JSON.stringify(text) : null;
+}
+
+function isTraceJsonRecord(value: JsonValue | null): value is Record<string, JsonValue> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function getTraceJsonString(value: JsonValue | null, key: string): string | null {
+  if (!isTraceJsonRecord(value)) return null;
+  const item = value[key];
+  if (typeof item === "string" && item.trim()) return item;
+  if (typeof item === "number" || typeof item === "boolean") return String(item);
+  return null;
+}
+
+function getTraceJsonNumber(value: JsonValue | null, key: string): number | null {
+  if (!isTraceJsonRecord(value)) return null;
+  const item = value[key];
+  if (typeof item === "number" && Number.isFinite(item)) return item;
+  if (typeof item === "string" && item.trim() && Number.isFinite(Number(item))) return Number(item);
+  return null;
+}
+
+function getTraceJsonStringArray(value: JsonValue | null, key: string): string[] {
+  if (!isTraceJsonRecord(value)) return [];
+  const item = value[key];
+  if (!Array.isArray(item)) return [];
+  return item.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+}
+
+function stringifyTraceJson(value: unknown, pretty = false): string {
+  try {
+    return JSON.stringify(value, null, pretty ? 2 : 0);
+  } catch {
+    return String(value);
+  }
+}
+
+function indentTraceBlock(value: string, prefix = "    "): string[] {
+  return value.split(/\r?\n/).map((line) => `${prefix}${line}`);
+}
+
+function formatTraceSource(event: SessionEventRecord): string | null {
+  const parts = [
+    event.sourceChannel,
+    event.sourceAccountId,
+    event.sourceChatId,
+    event.sourceThreadId ? `#${event.sourceThreadId}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join("/") : null;
+}
+
+function formatTraceWindow(trace: SessionTraceQueryResult): string {
+  const since = trace.filters.since;
+  const until = trace.filters.until;
+  if (!since && !until) return "all";
+  if (since && until) return `${formatTraceDateTime(since)}..${formatTraceDateTime(until)}`;
+  if (since) return `since ${formatTraceDateTime(since)}`;
+  return `until ${formatTraceDateTime(until)}`;
+}
+
+function parseTraceLimit(value: string | undefined): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid trace limit: ${value}. Use a positive integer.`);
+  }
+  const limit = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    throw new Error(`Invalid trace limit: ${value}. Use a positive integer.`);
+  }
+  return limit;
+}
+
+function getTurnForEvent(trace: SessionTraceQueryResult, event: SessionEventRecord): SessionTurnRecord | null {
+  if (!event.turnId) return null;
+  return trace.turns.find((turn) => turn.turnId === event.turnId) ?? null;
+}
+
+function getBlob(trace: SessionTraceQueryResult, sha: string | null | undefined): SessionTraceBlobRecord | null {
+  if (!sha) return null;
+  return trace.blobsBySha256[sha] ?? null;
+}
+
+function blobContent(blob: SessionTraceBlobRecord): string {
+  if (blob.contentText !== null) return blob.contentText;
+  return stringifyTraceJson(blob.contentJson, true);
+}
+
+function formatBlobLines(label: string, blob: SessionTraceBlobRecord): string[] {
+  const suffix = blob.redacted ? " redacted=true" : "";
+  return [
+    `${label}=${formatTraceSha(blob.sha256)} kind=${blob.kind} bytes=${blob.sizeBytes}${suffix}`,
+    ...indentTraceBlock(blobContent(blob)),
+  ];
+}
+
+function traceEventSortKey(event: SessionEventRecord): string {
+  return `${String(event.timestamp).padStart(16, "0")}:1:${String(event.seq).padStart(8, "0")}:${String(event.id).padStart(8, "0")}`;
+}
+
+function traceTurnSortKey(turn: SessionTurnRecord): string {
+  return `${String(turn.startedAt).padStart(16, "0")}:0:${turn.turnId}`;
+}
+
+function buildTraceEventDetailLines(
+  trace: SessionTraceQueryResult,
+  event: SessionEventRecord,
+  options: { raw?: boolean; showSystemPrompt?: boolean; showUserPrompt?: boolean },
+): string[] {
+  const lines: string[] = [];
+  const ids = [
+    event.runId ? `run=${event.runId}` : null,
+    event.turnId ? `turn=${event.turnId}` : null,
+    event.status ? `status=${event.status}` : null,
+    event.provider ? `provider=${event.provider}` : null,
+    event.model ? `model=${event.model}` : null,
+    typeof event.durationMs === "number" ? `duration=${Math.round(event.durationMs)}ms` : null,
+  ].filter(Boolean);
+  if (ids.length > 0) lines.push(ids.join(" "));
+
+  const source = formatTraceSource(event);
+  if (source || event.messageId) {
+    lines.push(
+      [source ? `source=${source}` : null, event.messageId ? `messageId=${event.messageId}` : null]
+        .filter(Boolean)
+        .join(" "),
+    );
+  }
+
+  if (event.eventType === "adapter.request") {
+    const payload = event.payloadJson;
+    const resume = getTraceJsonString(payload, "resume");
+    const fork = getTraceJsonString(payload, "fork");
+    const cwd = getTraceJsonString(payload, "cwd");
+    const systemPromptSha =
+      getTraceJsonString(payload, "system_prompt_sha256") ?? getTurnForEvent(trace, event)?.systemPromptSha256;
+    const userPromptSha =
+      getTraceJsonString(payload, "user_prompt_sha256") ?? getTurnForEvent(trace, event)?.userPromptSha256;
+    const requestBlobSha =
+      getTraceJsonString(payload, "request_blob_sha256") ?? getTurnForEvent(trace, event)?.requestBlobSha256;
+    const systemChars = getTraceJsonNumber(payload, "system_prompt_chars");
+    const userChars = getTraceJsonNumber(payload, "user_prompt_chars");
+    const sections = getTraceJsonStringArray(payload, "system_prompt_sections");
+
+    if (resume !== null || fork !== null) {
+      lines.push(
+        [resume !== null ? `resume=${resume}` : null, fork !== null ? `fork=${fork}` : null].filter(Boolean).join(" "),
+      );
+    }
+    if (cwd) lines.push(`cwd=${cwd}`);
+    lines.push(
+      [
+        `systemPrompt=${formatTraceSha(systemPromptSha)}`,
+        systemChars !== null ? `chars=${systemChars}` : null,
+        sections.length > 0 ? `sections=${sections.join(",")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    lines.push(
+      [
+        `userPrompt=${formatTraceSha(userPromptSha)}`,
+        userChars !== null ? `chars=${userChars}` : null,
+        event.preview ? `preview=${quoteTraceText(event.preview)}` : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+
+    if (options.raw) {
+      const requestBlob = getBlob(trace, requestBlobSha);
+      if (requestBlob) lines.push(...formatBlobLines("requestBlob", requestBlob));
+    }
+    if (options.showSystemPrompt) {
+      const systemPrompt = getBlob(trace, systemPromptSha);
+      if (systemPrompt) lines.push(...formatBlobLines("systemPromptBlob", systemPrompt));
+    }
+    if (options.showUserPrompt) {
+      const userPrompt = getBlob(trace, userPromptSha);
+      if (userPrompt) lines.push(...formatBlobLines("userPromptBlob", userPrompt));
+    }
+  } else if (event.preview) {
+    lines.push(`preview=${quoteTraceText(event.preview)}`);
+  }
+
+  if (event.error) {
+    lines.push(`error=${quoteTraceText(event.error, 240)}`);
+  }
+
+  if (options.raw && event.payloadJson !== null) {
+    lines.push("payload=");
+    lines.push(...indentTraceBlock(stringifyTraceJson(event.payloadJson, true)));
+  }
+
+  return lines;
+}
+
+function buildTraceTurnDetailLines(
+  trace: SessionTraceQueryResult,
+  turn: SessionTurnRecord,
+  options: { raw?: boolean; showSystemPrompt?: boolean; showUserPrompt?: boolean },
+): string[] {
+  const lines = [
+    [
+      `turn=${turn.turnId}`,
+      turn.runId ? `run=${turn.runId}` : null,
+      `status=${turn.status}`,
+      turn.provider ? `provider=${turn.provider}` : null,
+      turn.model ? `model=${turn.model}` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    [
+      `resume=${turn.resume}`,
+      `fork=${turn.fork}`,
+      turn.cwd ? `cwd=${turn.cwd}` : null,
+      turn.completedAt ? `completed=${formatTraceDateTime(turn.completedAt)}` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    [
+      `tokens=input:${turn.inputTokens}`,
+      `output:${turn.outputTokens}`,
+      `cacheRead:${turn.cacheReadTokens}`,
+      `cacheCreate:${turn.cacheCreationTokens}`,
+      `cost=${turn.costUsd.toFixed(6)}`,
+    ].join(" "),
+    `systemPrompt=${formatTraceSha(turn.systemPromptSha256)} userPrompt=${formatTraceSha(turn.userPromptSha256)} requestBlob=${formatTraceSha(turn.requestBlobSha256)}`,
+  ];
+
+  if (turn.error) lines.push(`error=${quoteTraceText(turn.error, 240)}`);
+  if (turn.abortReason) lines.push(`abortReason=${quoteTraceText(turn.abortReason, 240)}`);
+
+  if (options.raw) {
+    const requestBlob = getBlob(trace, turn.requestBlobSha256);
+    if (requestBlob) lines.push(...formatBlobLines("requestBlob", requestBlob));
+  }
+  if (options.showSystemPrompt) {
+    const systemPrompt = getBlob(trace, turn.systemPromptSha256);
+    if (systemPrompt) lines.push(...formatBlobLines("systemPromptBlob", systemPrompt));
+  }
+  if (options.showUserPrompt) {
+    const userPrompt = getBlob(trace, turn.userPromptSha256);
+    if (userPrompt) lines.push(...formatBlobLines("userPromptBlob", userPrompt));
+  }
+
+  return lines;
+}
+
+export function printSessionTraceHuman(
+  trace: SessionTraceQueryResult,
+  options: {
+    raw?: boolean;
+    showSystemPrompt?: boolean;
+    showUserPrompt?: boolean;
+    explanation?: SessionTraceExplanation | null;
+  } = {},
+): void {
+  const firstTurn = trace.turns[0] ?? null;
+  const firstEvent = trace.events[0] ?? null;
+  const headerSession = trace.sessionName ?? trace.sessionKey ?? trace.session ?? "(unknown)";
+  const agent = firstTurn?.agentId ?? firstEvent?.agentId ?? "(unknown)";
+  const provider = firstTurn?.provider ?? firstEvent?.provider ?? "(unknown)";
+  const model = firstTurn?.model ?? firstEvent?.model ?? "(unknown)";
+  const cwd = firstTurn?.cwd ?? "(unknown)";
+  const firstSource = trace.events.find((event) => formatTraceSource(event));
+
+  console.log(`\nSession trace: ${headerSession}`);
+  console.log(`Agent: ${agent}`);
+  console.log(`Runtime: provider=${provider} model=${model} cwd=${cwd}`);
+  console.log(`Route: ${firstSource ? formatTraceSource(firstSource) : "(unknown)"}`);
+  console.log(`Window: ${formatTraceWindow(trace)}`);
+  console.log(`Rows: events=${trace.events.length} turns=${trace.turns.length}\n`);
+
+  const adapterTurnIds = new Set(
+    trace.events
+      .filter((event) => event.eventType === "adapter.request")
+      .map((event) => event.turnId)
+      .filter((turnId): turnId is string => Boolean(turnId)),
+  );
+  const items = [
+    ...trace.events.map((event) => ({ key: traceEventSortKey(event), event, turn: null as SessionTurnRecord | null })),
+    ...trace.turns
+      .filter((turn) => !adapterTurnIds.has(turn.turnId))
+      .map((turn) => ({ key: traceTurnSortKey(turn), event: null as SessionEventRecord | null, turn })),
+  ].sort((a, b) => a.key.localeCompare(b.key));
+
+  if (items.length === 0) {
+    console.log("No trace rows found.");
+  }
+
+  for (const item of items) {
+    if (item.event) {
+      console.log(`${formatTraceTimestamp(item.event.timestamp)} ${item.event.eventType}`);
+      for (const line of buildTraceEventDetailLines(trace, item.event, options)) {
+        console.log(`  ${line}`);
+      }
+      console.log();
+      continue;
+    }
+
+    if (item.turn) {
+      console.log(`${formatTraceTimestamp(item.turn.startedAt)} turn.snapshot`);
+      for (const line of buildTraceTurnDetailLines(trace, item.turn, options)) {
+        console.log(`  ${line}`);
+      }
+      console.log();
+    }
+  }
+
+  if (options.explanation) {
+    printSessionTraceExplanationHuman(options.explanation);
+  }
+}
+
+export function buildSessionTraceJsonlRecords(
+  trace: SessionTraceQueryResult,
+  explanation?: SessionTraceExplanation | null,
+): unknown[] {
+  const timeline = [
+    ...trace.events.map((event) => ({ key: traceEventSortKey(event), record: { recordType: "event", ...event } })),
+    ...trace.turns.map((turn) => ({ key: traceTurnSortKey(turn), record: { recordType: "turn", ...turn } })),
+  ].sort((a, b) => a.key.localeCompare(b.key));
+
+  const records: unknown[] = [
+    {
+      recordType: "metadata",
+      session: trace.session,
+      sessionKey: trace.sessionKey,
+      sessionName: trace.sessionName,
+      filters: trace.filters,
+      counts: {
+        events: trace.events.length,
+        turns: trace.turns.length,
+        blobs: Object.keys(trace.blobsBySha256).length,
+      },
+    },
+    ...timeline.map((item) => item.record),
+    ...Object.values(trace.blobsBySha256).map((blob) => ({ recordType: "blob", ...blob })),
+  ];
+
+  if (explanation) {
+    records.push({ recordType: "explanation", ...explanation });
+  }
+
+  return records;
+}
+
+export function printSessionTraceJsonl(
+  trace: SessionTraceQueryResult,
+  explanation?: SessionTraceExplanation | null,
+): void {
+  for (const record of buildSessionTraceJsonlRecords(trace, explanation)) {
+    console.log(JSON.stringify(record));
+  }
+}
+
+function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation): void {
+  console.log("Explanation:");
+  console.log(
+    `  status=${explanation.status} events=${explanation.counters.events} turns=${explanation.counters.turns} adapterRequests=${explanation.counters.adapterRequests} deliveries=${explanation.counters.deliveries}`,
+  );
+  if (explanation.findings.length === 0) {
+    console.log("  No common incident patterns detected.");
+    return;
+  }
+
+  for (const finding of explanation.findings) {
+    console.log(`  [${finding.severity}] ${finding.code} - ${finding.title}`);
+    console.log(`    ${finding.detail}`);
+    const refs = [
+      finding.turnId ? `turn=${finding.turnId}` : null,
+      finding.runId ? `run=${finding.runId}` : null,
+      finding.eventIds?.length ? `events=${finding.eventIds.join(",")}` : null,
+    ].filter(Boolean);
+    if (refs.length > 0) console.log(`    ${refs.join(" ")}`);
+    if (finding.hint) console.log(`    hint=${finding.hint}`);
+  }
 }
 
 @Group({
@@ -1021,6 +1438,80 @@ export class SessionCommands {
   }
 
   @Command({
+    name: "trace",
+    description: "Read the SQLite session trace timeline",
+  })
+  trace(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--since <time>", description: "Start time: ISO, epoch ms, or duration like 2h" })
+    sinceStr?: string,
+    @Option({ flags: "--until <time>", description: "End time: ISO, epoch ms, or duration like 30m" })
+    untilStr?: string,
+    @Option({ flags: "--turn <id>", description: "Filter by turn id" })
+    turnId?: string,
+    @Option({ flags: "--run <id>", description: "Filter by run id" })
+    runId?: string,
+    @Option({ flags: "--message <id>", description: "Filter by source message id" })
+    messageId?: string,
+    @Option({ flags: "--correlation <id>", description: "Filter by payload correlation/request id" })
+    correlationId?: string,
+    @Option({ flags: "--json", description: "Print structured JSONL" })
+    asJson?: boolean,
+    @Option({ flags: "--raw", description: "Include raw payloads and request blobs" })
+    raw?: boolean,
+    @Option({ flags: "--show-system-prompt", description: "Include full system prompt blob when available" })
+    showSystemPrompt?: boolean,
+    @Option({ flags: "--show-user-prompt", description: "Include full user prompt blob when available" })
+    showUserPrompt?: boolean,
+    @Option({ flags: "--include-stream", description: "Include provider stream/delta events" })
+    includeStream?: boolean,
+    @Option({
+      flags: "--only <filter>",
+      description: "Only show an event group or event type, e.g. adapter/tools/delivery",
+    })
+    only?: string,
+    @Option({ flags: "--limit <count>", description: "Show only the latest N timeline rows after filters" })
+    limitStr?: string,
+    @Option({ flags: "--explain", description: "Explain likely interruption, abort, timeout, or delivery issues" })
+    explain?: boolean,
+  ) {
+    const target = this.resolveTraceTarget(nameOrKey);
+    if (!target) return;
+
+    const trace = querySessionTrace({
+      session: nameOrKey,
+      sessionKey: target.session?.sessionKey,
+      sessionName: target.session?.name ?? null,
+      since: parseSessionTraceTime(sinceStr),
+      until: parseSessionTraceTime(untilStr),
+      turnId,
+      runId,
+      messageId,
+      correlationId,
+      only,
+      limit: parseTraceLimit(limitStr),
+      includeStream,
+      raw,
+      showSystemPrompt,
+      showUserPrompt,
+    });
+    const explanation = explain ? explainSessionTrace(trace) : null;
+
+    if (asJson) {
+      printSessionTraceJsonl(trace, explanation);
+    } else {
+      printSessionTraceHuman(trace, {
+        raw,
+        showSystemPrompt,
+        showUserPrompt,
+        explanation,
+      });
+    }
+
+    return { trace, explanation };
+  }
+
+  @Command({
     name: "debug",
     description: "Tail live runtime events for a session (defaults to current session when available)",
   })
@@ -1126,6 +1617,25 @@ export class SessionCommands {
   /**
    * Resolve a target session by name, key, or chatId. Optionally create with -a.
    */
+  private resolveTraceTarget(nameOrKey: string): { session: SessionEntry | null } | null {
+    let session = resolveSession(nameOrKey);
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      const candidate = session?.name ?? session?.sessionKey ?? nameOrKey;
+      if (!canAccessSession(scopeCtx, candidate)) {
+        fail(`Session not found: ${nameOrKey}`);
+        return null;
+      }
+    }
+
+    return { session };
+  }
+
   private resolveTarget(nameOrKey: string, createWithAgent?: string): SessionEntry | null {
     let session = resolveSession(nameOrKey);
 

@@ -9,6 +9,7 @@ description: |
   - Estender, manter ou excluir sessões efêmeras
   - Enviar prompts, perguntas ou comandos entre sessões
   - Ler histórico de mensagens de uma sessão
+  - Inspecionar trace SQLite de uma sessão para incidentes de runtime/canal
 ---
 
 # Sessions Manager
@@ -41,6 +42,9 @@ ravi sessions info <name>
 
 # Ler histórico de mensagens (normalizado, sem tool calls)
 ravi sessions read <name> [-n count]
+
+# Inspecionar timeline operacional persistida em SQLite
+ravi sessions trace <name> --since 2h --explain
 ```
 
 ### Gerenciamento
@@ -102,6 +106,93 @@ ravi sessions execute <name> "tarefa"
 # Informar algo (fire-and-forget, agent pode silenciar se irrelevante)
 ravi sessions inform <name> "info"
 ```
+
+### Session Trace
+
+Use `ravi sessions trace` quando precisar entender uma sessão real ponta a ponta:
+inbound de canal, routing, prompt publish, decisões de dispatch, request final
+do adapter, tools, resposta, delivery e falhas.
+
+SQLite (`ravi.db`) é a fonte canônica do trace. NATS/logs são apoio para debug
+ao vivo, não a fonte primária para reconstruir incidente.
+
+```bash
+# Golden path de incidente
+ravi sessions trace <name> --since 2h --explain
+
+# Filtros úteis
+ravi sessions trace <name> --turn <turn_id> --explain
+ravi sessions trace <name> --run <run_id>
+ravi sessions trace <name> --message <source_message_id> --explain
+ravi sessions trace <name> --correlation <correlation_id> --raw --explain
+
+# Cortes de leitura
+ravi sessions trace <name> --only adapter
+ravi sessions trace <name> --only tools
+ravi sessions trace <name> --only delivery
+ravi sessions trace <name> --only dispatch
+ravi sessions trace <name> --only turn
+ravi sessions trace <name> --since 30m --limit 40
+ravi sessions trace <name> --json
+
+# Payloads grandes só quando necessário
+ravi sessions trace <name> --turn <turn_id> --show-user-prompt
+ravi sessions trace <name> --turn <turn_id> --show-system-prompt
+ravi sessions trace <name> --turn <turn_id> --raw
+```
+
+Leitura rápida:
+
+- `channel.message.received` = inbound chegou no Ravi.
+- `route.resolved` = rota escolheu sessão e agent.
+- `prompt.published` = prompt entrou no stream da sessão.
+- `dispatch.*` = cold start, push em sessão viva, queue, interrupt, restart ou task barrier.
+- `runtime.start` = runtime começou ou falhou antes do provider.
+- `adapter.request` = Ravi montou a request final para o provider. Se existe, chegou no handoff.
+- `tool.start` / `tool.end` = atividade de tool do provider.
+- `assistant.message` = texto do assistant recebido do provider.
+- `response.emitted` = Ravi emitiu resposta para o gateway.
+- `delivery.*` = gateway observou delivered, failed, dropped ou outro status.
+- `turn.complete` / `turn.failed` / `turn.interrupted` = estado terminal do turno.
+
+Achados comuns do `--explain`:
+
+- `prompt-without-adapter-request`: prompt nao chegou no handoff do provider; olhar dispatch, debounce, task barrier ou runtime startup.
+- `adapter-request-without-terminal-turn`: request foi criada, mas nao houve terminal turn; olhar provider/runtime apos handoff.
+- `response-without-delivery`: resposta saiu do runtime mas nao teve delivery observado.
+- `delivery-failed` / `delivery-dropped`: falha ou drop no outbound; olhar payload de delivery e target.
+- `interruption-or-abort`: houve interrupt/abort; ler `abortReason`, `session.abort` e `dispatch.interrupt_requested`.
+- `timeout`: watchdog/timeout interrompeu a sessao/turno.
+- `resume-disabled-with-provider-session`: havia provider session id mas `resume=false`; investigar reset/delete/fork/troca de provider ou modelo.
+- `tool-start-without-end`: tool iniciou e nao completou no trace.
+- `system-prompt-changed`: hashes de system prompt mudaram entre turns.
+
+Golden path SDE para "agent viu a mensagem mas nao respondeu":
+
+1. `ravi sessions trace <name> --since 2h --explain`
+2. `ravi sessions trace <name> --message <source_message_id> --explain`
+3. `ravi sessions trace <name> --turn <turn_id> --explain`
+
+Classifique pela ultima linha confiavel:
+
+- sem `channel.message.received`: inbound nao chegou ou janela/sessao errada.
+- `channel.message.received` sem `route.resolved`: routing/contact resolution.
+- `route.resolved` sem `prompt.published`: publish no stream da sessao.
+- `prompt.published` sem `adapter.request`: dispatch, task barrier, debounce, concorrencia ou runtime startup.
+- `adapter.request` sem terminal turn: provider/runtime apos handoff.
+- `assistant.message` sem `response.emitted`: resposta silenciosa, suppressao ou interrupcao.
+- `response.emitted` sem `delivery.*`: gateway/outbound observation.
+- `delivery.failed` / `delivery.dropped`: entrega final no canal.
+
+Para abort/context loss, procure `session.abort`, `session.timeout`,
+`turn.interrupted`, `provider_session_id_before`, `provider_session_id_after` e
+hash de system prompt. `resume=false` com provider session id existente e
+suspeito, exceto se reset/delete/fork/troca de provider/modelo/capability
+explicar.
+
+Use placeholders em runbooks e issues (`<name>`, `<turn_id>`, `<message_id>`).
+Nao cole telefones reais, ids de grupo/chat, prompts de cliente, context keys,
+tokens ou provider session ids em documentacao compartilhada.
 
 ## Notas
 

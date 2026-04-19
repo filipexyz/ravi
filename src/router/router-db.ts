@@ -459,6 +459,95 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cost_events_session ON cost_events(session_key);
     CREATE INDEX IF NOT EXISTS idx_cost_events_created ON cost_events(created_at);
 
+    -- Session trace: append-only session inspection ledger
+    CREATE TABLE IF NOT EXISTS session_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      agent_id TEXT,
+      run_id TEXT,
+      turn_id TEXT,
+      seq INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      event_group TEXT NOT NULL,
+      status TEXT,
+      timestamp INTEGER NOT NULL,
+      source_channel TEXT,
+      source_account_id TEXT,
+      source_chat_id TEXT,
+      source_thread_id TEXT,
+      message_id TEXT,
+      provider TEXT,
+      model TEXT,
+      payload_json TEXT,
+      preview TEXT,
+      error TEXT,
+      duration_ms INTEGER,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_time
+      ON session_events(session_key, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_name_time
+      ON session_events(session_name, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
+      ON session_events(run_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
+      ON session_events(turn_id, seq);
+    CREATE INDEX IF NOT EXISTS idx_session_events_type_time
+      ON session_events(event_type, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
+      ON session_events(source_chat_id, timestamp);
+
+    CREATE TABLE IF NOT EXISTS session_turns (
+      turn_id TEXT PRIMARY KEY,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      run_id TEXT,
+      agent_id TEXT,
+      provider TEXT,
+      model TEXT,
+      effort TEXT,
+      thinking TEXT,
+      cwd TEXT,
+      status TEXT NOT NULL,
+      resume INTEGER NOT NULL DEFAULT 0,
+      fork INTEGER NOT NULL DEFAULT 0,
+      provider_session_id_before TEXT,
+      provider_session_id_after TEXT,
+      user_prompt_sha256 TEXT,
+      system_prompt_sha256 TEXT,
+      request_blob_sha256 TEXT,
+      input_tokens INTEGER DEFAULT 0,
+      output_tokens INTEGER DEFAULT 0,
+      cache_read_tokens INTEGER DEFAULT 0,
+      cache_creation_tokens INTEGER DEFAULT 0,
+      cost_usd REAL DEFAULT 0,
+      error TEXT,
+      abort_reason TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_turns_session_time
+      ON session_turns(session_key, started_at);
+    CREATE INDEX IF NOT EXISTS idx_session_turns_run
+      ON session_turns(run_id, started_at);
+
+    CREATE TABLE IF NOT EXISTS session_trace_blobs (
+      sha256 TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      size_bytes INTEGER NOT NULL,
+      content_text TEXT,
+      content_json TEXT,
+      redacted INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_kind
+      ON session_trace_blobs(kind, created_at);
+
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
       name         TEXT PRIMARY KEY,

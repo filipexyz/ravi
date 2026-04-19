@@ -17,6 +17,7 @@
 import { AckPolicy, DeliverPolicy, RetentionPolicy, StringCodec, type JetStreamManager } from "nats";
 import { getNats, ensureConnected } from "../nats.js";
 import { inferDeliveryBarrier } from "../delivery-barriers.js";
+import { recordPromptPublishedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("session-stream");
@@ -136,4 +137,9 @@ export async function publishSessionPrompt(sessionName: string, payload: Record<
     deliveryBarrier: inferDeliveryBarrier(payload),
   };
   await js.publish(`ravi.session.${sessionName}.prompt`, sc.encode(JSON.stringify(enrichedPayload)));
+  try {
+    recordPromptPublishedTrace({ sessionName, payload: enrichedPayload });
+  } catch (error) {
+    log.warn("Failed to record prompt published trace", { sessionName, error });
+  }
 }

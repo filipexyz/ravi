@@ -1,7 +1,13 @@
 import { buildSystemPrompt } from "../prompt-builder.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
+import {
+  createSessionTraceTurnId,
+  recordAdapterRequestTrace,
+  summarizeRuntimeCapabilities,
+} from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
+import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   type RuntimeHostStreamingSession,
   type RuntimeMessageTarget,
@@ -15,6 +21,7 @@ import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
 
 export interface RuntimeStartRequestBuildOptions {
+  runId: string;
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   session: SessionEntry;
@@ -61,6 +68,7 @@ export async function buildRuntimeStartRequest(
   options: RuntimeStartRequestBuildOptions,
 ): Promise<RuntimeStartRequestBuildResult> {
   const {
+    runId,
     sessionName,
     prompt,
     session,
@@ -81,12 +89,6 @@ export async function buildRuntimeStartRequest(
     stashedMessages,
     defaultRuntimeProviderId,
   } = options;
-
-  const messageGenerator = createRuntimeMessageGenerator({
-    sessionName,
-    session: streamingSession,
-    stashedMessages,
-  });
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -148,6 +150,51 @@ export async function buildRuntimeStartRequest(
     resolvedSource,
     approvalSource,
   });
+  const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
+    agentMode: agent.mode,
+  });
+  const pluginNames = runtimePlugins.map((plugin) => plugin.path);
+  const mcpServerNames = specServer ? ["spec"] : [];
+  const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id);
+  const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+    const firstMessage = input.deliverableMessages[0];
+    return recordAdapterRequestTrace({
+      sessionKey: dbSessionKey,
+      sessionName,
+      agentId: agent.id,
+      runId,
+      turnId: createSessionTraceTurnId(),
+      provider: runtimeProviderId,
+      model,
+      effort: runtimeResolution.options.effort ?? null,
+      thinking: runtimeResolution.options.thinking ?? null,
+      prompt: input.combinedPrompt,
+      systemPrompt: systemPromptAppend,
+      cwd: sessionCwd,
+      resume: Boolean(resumeProviderSessionId || canResumeStoredSession),
+      fork: Boolean(forkFromProviderSessionId),
+      providerSessionIdBefore: forkFromProviderSessionId ?? resumeProviderSessionId ?? storedProviderSessionId ?? null,
+      contextId: runtimeContext.contextId,
+      source: streamingSession.currentSource ?? resolvedSource ?? null,
+      deliveryBarrier: firstMessage?.deliveryBarrier ?? null,
+      taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
+      settingSources: agent.settingSources ?? ["project"],
+      hasHooks: Boolean(hooks && Object.keys(hooks).length > 0),
+      pluginNames,
+      mcpServerNames,
+      hasRemoteSpawn: Boolean(remoteSpawn),
+      toolAccessMode,
+      capabilitySummary: summarizeRuntimeCapabilities(runtimeCapabilities),
+      queuedMessageCount: input.deliverableMessages.length,
+      pendingIds: input.deliverableMessages.map((message) => message.pendingId).filter((id): id is string => !!id),
+    });
+  };
+  const messageGenerator = createRuntimeMessageGenerator({
+    sessionName,
+    session: streamingSession,
+    stashedMessages,
+    traceTurnStart,
+  });
 
   return {
     runtimeRequest: {
@@ -174,9 +221,7 @@ export async function buildRuntimeStartRequest(
       ...(providerBootstrap?.startRequest ?? {}),
       env: runtimeEnv,
       ...(specServer ? { mcpServers: { spec: specServer } } : {}),
-      systemPromptAppend: buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
-        agentMode: agent.mode,
-      }),
+      systemPromptAppend,
       settingSources: agent.settingSources ?? ["project"],
       ...(hooks ? { hooks } : {}),
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),

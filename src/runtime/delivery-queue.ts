@@ -1,4 +1,5 @@
 import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barriers.js";
+import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
@@ -143,12 +144,17 @@ export interface RuntimeMessageGeneratorOptions {
   sessionName: string;
   session: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
+  traceTurnStart?: (input: {
+    combinedPrompt: string;
+    deliverableMessages: RuntimeUserMessage[];
+  }) => Promise<RuntimeTraceTurnStartResult | null | undefined> | RuntimeTraceTurnStartResult | null | undefined;
 }
 
 export async function* createRuntimeMessageGenerator({
   sessionName,
   session,
   stashedMessages,
+  traceTurnStart,
 }: RuntimeMessageGeneratorOptions): AsyncGenerator<RuntimePromptMessage> {
   const stashed = stashedMessages.get(sessionName);
   if (stashed && stashed.length > 0) {
@@ -189,6 +195,25 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    session.currentTraceTurnTerminalRecorded = false;
+
+    if (traceTurnStart) {
+      try {
+        const traceTurn = await traceTurnStart({
+          combinedPrompt: combined,
+          deliverableMessages: deliverable.map((message) => ({ ...message })),
+        });
+        if (traceTurn) {
+          session.currentTraceTurnId = traceTurn.turnId;
+          session.currentTraceTurnStartedAt = traceTurn.startedAt;
+          session.currentTraceUserPromptSha256 = traceTurn.userPromptSha256;
+          session.currentTraceSystemPromptSha256 = traceTurn.systemPromptSha256;
+          session.currentTraceRequestBlobSha256 = traceTurn.requestBlobSha256;
+        }
+      } catch (error) {
+        log.warn("Generator: failed to trace turn start", { sessionName, error });
+      }
+    }
 
     yield {
       type: "user" as const,

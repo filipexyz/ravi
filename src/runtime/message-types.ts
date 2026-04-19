@@ -37,6 +37,8 @@ export interface MessageTarget {
   chatId: string;
   /** Thread/topic ID for platforms that support it (Telegram topics, Slack threads, Discord threads) */
   threadId?: string;
+  /** Original inbound channel message ID, used for session trace correlation. */
+  sourceMessageId?: string;
 }
 
 /** Prompt message structure */

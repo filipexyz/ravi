@@ -17,6 +17,7 @@
 import { nats } from "./nats.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
+import { recordDeliveryTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
@@ -47,18 +48,21 @@ export interface GatewayOptions {
   logLevel?: "debug" | "info" | "warn" | "error";
   omniSender: OmniSender;
   omniConsumer: OmniConsumer;
+  emitEvent?: typeof nats.emit;
 }
 
 export class Gateway {
   private running = false;
   private omniSender: OmniSender;
   private omniConsumer: OmniConsumer;
+  private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
   private typingTracker = new SessionTypingTracker();
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
     this.omniConsumer = options.omniConsumer;
+    this.emitEvent = options.emitEvent ?? nats.emit;
     if (options.logLevel) {
       logger.setLevel(options.logLevel);
     }
@@ -94,6 +98,111 @@ export class Gateway {
     const iid = configStore.resolveInstanceId(target.accountId);
     if (iid) {
       await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+    }
+  }
+
+  private recordResponseTrace(sessionName: string, response: ResponseMessage): void {
+    try {
+      recordResponseEmittedTrace({ sessionName, response });
+    } catch (error) {
+      log.warn("Failed to record response emitted trace", { sessionName, error });
+    }
+  }
+
+  private async emitDeliveryEvent(
+    sessionName: string,
+    response: ResponseMessage,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const delivery = {
+      emitId: response._emitId,
+      sessionName,
+      timestamp: Date.now(),
+      ...data,
+    };
+
+    try {
+      recordDeliveryTrace({ sessionName, response, delivery });
+    } catch (error) {
+      log.warn("Failed to record delivery trace", { sessionName, status: data.status, error });
+    }
+
+    await this.emitEvent(`ravi.session.${sessionName}.delivery`, delivery);
+  }
+
+  private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
+    this.recordResponseTrace(sessionName, response);
+
+    const emitDelivery = (data: Record<string, unknown>) => this.emitDeliveryEvent(sessionName, response, data);
+
+    const target = response.target;
+    if (!target) {
+      await emitDelivery({ status: "dropped", reason: "missing_target" });
+      return;
+    }
+
+    const instanceId = configStore.resolveInstanceId(target.accountId);
+    if (!instanceId) {
+      await emitDelivery({ status: "dropped", reason: "missing_instance", target });
+      return;
+    }
+    const chatId = normalizeOutboundJid(target.chatId);
+
+    const text = response.error ? `Error: ${response.error}` : response.response;
+
+    if (text && text.trim() === SILENT_TOKEN) {
+      log.debug("Silent response, not sending to channel", { sessionName });
+      await emitDelivery({ status: "dropped", reason: "silent", target });
+      return;
+    }
+
+    if (!text) {
+      await emitDelivery({ status: "dropped", reason: "empty_response", target });
+      return;
+    }
+
+    if (!response._emitId) {
+      log.warn("GHOST RESPONSE DROPPED", {
+        sessionName,
+        textPreview: text.slice(0, 200),
+      });
+      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
+      return;
+    }
+
+    const t0 = Date.now();
+    log.info("Sending response", {
+      sessionName,
+      instanceId,
+      chatId,
+      textLen: text.length,
+      emitId: response._emitId,
+    });
+
+    try {
+      const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
+      await emitDelivery({
+        status: "delivered",
+        emitId: response._emitId,
+        messageId: delivered.messageId,
+        target,
+        deliveredAt: Date.now(),
+        durationMs: Date.now() - t0,
+        textLen: text.length,
+      });
+      log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
+    } catch (err) {
+      log.error("Failed to send response", { instanceId, chatId, error: err });
+      await emitDelivery({
+        status: "failed",
+        reason: "send_error",
+        target,
+        instanceId,
+        chatId,
+        textLen: text.length,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - t0,
+      });
     }
   }
 
@@ -150,87 +259,7 @@ export class Gateway {
       async (event) => {
         const sessionName = event.topic.split(".")[2];
         const response = event.data as unknown as ResponseMessage;
-        const emitDelivery = (data: Record<string, unknown>) =>
-          nats.emit(`ravi.session.${sessionName}.delivery`, {
-            emitId: response._emitId,
-            sessionName,
-            timestamp: Date.now(),
-            ...data,
-          });
-
-        const target = response.target;
-        if (!target) {
-          await emitDelivery({ status: "dropped", reason: "missing_target" });
-          return;
-        }
-
-        const instanceId = configStore.resolveInstanceId(target.accountId);
-        if (!instanceId) {
-          await emitDelivery({ status: "dropped", reason: "missing_instance", target });
-          return;
-        }
-        const chatId = normalizeOutboundJid(target.chatId);
-
-        const text = response.error ? `Error: ${response.error}` : response.response;
-
-        if (text && text.trim() === SILENT_TOKEN) {
-          log.debug("Silent response, not sending to channel", { sessionName });
-          await emitDelivery({ status: "dropped", reason: "silent", target });
-          return;
-        }
-
-        if (!text) {
-          await emitDelivery({ status: "dropped", reason: "empty_response", target });
-          return;
-        }
-
-        if (text) {
-          if (!response._emitId) {
-            log.warn("GHOST RESPONSE DROPPED", {
-              sessionName,
-              textPreview: text.slice(0, 200),
-            });
-            await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
-            return;
-          }
-
-          const t0 = Date.now();
-          log.info("Sending response", {
-            sessionName,
-            instanceId,
-            chatId,
-            textLen: text.length,
-            emitId: response._emitId,
-          });
-
-          try {
-            const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
-            if (delivered.messageId) {
-              await emitDelivery({
-                status: "delivered",
-                emitId: response._emitId,
-                messageId: delivered.messageId,
-                target,
-                deliveredAt: Date.now(),
-                durationMs: Date.now() - t0,
-                textLen: text.length,
-              });
-            }
-            log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
-          } catch (err) {
-            log.error("Failed to send response", { instanceId, chatId, error: err });
-            await emitDelivery({
-              status: "failed",
-              reason: "send_error",
-              target,
-              instanceId,
-              chatId,
-              textLen: text.length,
-              error: err instanceof Error ? err.message : String(err),
-              durationMs: Date.now() - t0,
-            });
-          }
-        }
+        await this.handleResponseEvent(sessionName, response);
       },
       { queue: "ravi-gateway" },
     );

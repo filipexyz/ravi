@@ -7,6 +7,7 @@ import {
   updateSessionDisplayName,
   updateSessionSource,
 } from "../router/index.js";
+import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -79,6 +80,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     safeEmit,
     drainPendingStarts,
   } = options;
+  const runId = createSessionTraceRunId();
 
   if (streamingSessions.size >= maxConcurrentSessions) {
     log.warn("Session start queued - concurrency limit reached", {
@@ -86,6 +88,20 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       active: streamingSessions.size,
       queued: pendingStarts.length + 1,
       max: maxConcurrentSessions,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey: sessionName,
+      sessionName,
+      runId,
+      eventType: "dispatch.queued_busy",
+      eventGroup: "dispatch",
+      status: "queued",
+      payloadJson: {
+        reason: "concurrency_limit",
+        active: streamingSessions.size,
+        queued: pendingStarts.length + 1,
+        max: maxConcurrentSessions,
+      },
     });
     const pendingStart: PendingRuntimeSessionStart = {
       sessionName,
@@ -172,17 +188,40 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     currentToolSafety: null,
     pendingAbort: false,
     agentMode: agent.mode,
+    traceRunId: runId,
   };
   streamingSessions.set(sessionName, streamingSession);
 
   try {
+    recordRuntimeTraceEvent({
+      sessionKey: dbSessionKey,
+      sessionName,
+      agentId: agent.id,
+      runId,
+      provider: runtimeProviderId,
+      model,
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "starting",
+      source: resolvedSource,
+      payloadJson: {
+        provider: runtimeProviderId,
+        model,
+        effort: runtimeResolution.options.effort ?? null,
+        thinking: runtimeResolution.options.thinking ?? null,
+        cwd: sessionCwd,
+        canResumeStoredSession,
+        storedProviderSessionId: canResumeStoredSession ? storedProviderSessionId : null,
+        taskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
+      },
+    });
+
     assertRuntimeCompatibility(runtimeProvider, {
       requiresMcpServers: !!agent.specMode,
       requiresRemoteSpawn: !!agent.remote,
       toolAccessMode: getRuntimeToolAccessMode(runtimeCapabilities, agent.id),
     });
 
-    const runId = Math.random().toString(36).slice(2, 8);
     const resumableProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
 
     log.info("Starting streaming session", {
@@ -199,6 +238,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
 
     const { runtimeRequest, toolContext } = await buildRuntimeStartRequest({
+      runId,
       sessionName,
       prompt,
       session,
@@ -285,6 +325,24 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     streamingSessions.delete(sessionName);
     drainPendingStarts();
+
+    recordRuntimeTraceEvent({
+      sessionKey: dbSessionKey,
+      sessionName,
+      agentId: agent.id,
+      runId,
+      provider: runtimeProviderId,
+      model,
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      status: "failed",
+      source: resolvedSource,
+      error: errorMessage,
+      payloadJson: {
+        provider: runtimeProviderId,
+        recoverable: false,
+      },
+    });
 
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
