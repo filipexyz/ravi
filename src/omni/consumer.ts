@@ -23,8 +23,9 @@ import { isContactAllowedForAgent, saveAccountPending, getContactName, getContac
 import { dbSaveMessageMeta } from "../router/router-db.js";
 import { recordChannelMessageReceivedTrace, recordRouteResolvedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
-import type { MessageTarget } from "../runtime/message-types.js";
+import type { MessageContext, MessageTarget } from "../runtime/message-types.js";
 import type { OmniSender } from "./sender.js";
+import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
@@ -122,6 +123,17 @@ function isUrgentInboundText(text: string): boolean {
     normalized.startsWith("urgente:") ||
     normalized.startsWith("p0:")
   );
+}
+
+function cleanString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "-") return undefined;
+  return trimmed;
+}
+
+function rawPayloadString(rawPayload: Record<string, unknown> | undefined, key: string): string | undefined {
+  return cleanString(rawPayload?.[key]);
 }
 
 /**
@@ -394,6 +406,7 @@ export class OmniConsumer {
       rawIsGroup === true ||
       (rawIsDm === false && (channelType === "slack" || channelType === "discord"));
     const senderPhone = stripJid(payload.from);
+    const resolvedSenderPhone = this.resolveSenderPhone(rawPayload, senderPhone);
     const chatJid = payload.chatId;
     // For routing: use phone for DMs, chatJid for groups
     const routePhone = isGroup ? chatJid : senderPhone;
@@ -530,6 +543,8 @@ export class OmniConsumer {
           contentType: payload.content?.type ?? null,
           isGroup,
           senderId: senderPhone,
+          resolvedSenderPhone,
+          chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },
         preview: payload.content?.text ?? null,
@@ -676,11 +691,26 @@ export class OmniConsumer {
     }
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
-    const pushName = (payload.rawPayload as Record<string, unknown> | undefined)?.pushName as string | undefined;
-    const senderName = pushName || getContactName(senderPhone) || senderPhone;
+    const pushName = rawPayloadString(rawPayload, "pushName");
+    const senderName =
+      pushName || getContactName(resolvedSenderPhone) || getContactName(senderPhone) || resolvedSenderPhone;
 
-    // Resolve group name from contacts DB
-    const groupName = isGroup ? (getContactName(chatJid) ?? undefined) : undefined;
+    // Resolve group metadata from local Omni cache/API, then fall back to the inbound payload.
+    const rawGroupName = isGroup ? this.resolveGroupName(rawPayload, chatJid) : undefined;
+    const groupMetadata = isGroup
+      ? await resolveOmniGroupMetadata({
+          omniApiUrl: this.omniApiUrl,
+          omniApiKey: this.omniApiKey,
+          accountId: effectiveAccountId,
+          instanceId,
+          chatId: chatJid,
+          channel: channelType,
+          fallbackName: rawGroupName,
+        })
+      : null;
+    const groupName = groupMetadata?.name ?? rawGroupName;
+    const groupMembers =
+      formatOmniGroupMembersForPrompt(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
 
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);
@@ -742,6 +772,10 @@ export class OmniConsumer {
             payload,
             isGroup,
             senderPhone,
+            resolvedSenderPhone,
+            senderName,
+            groupName,
+            groupMembers,
             chatJid,
             event,
           ),
@@ -809,6 +843,10 @@ export class OmniConsumer {
           payload,
           isGroup,
           senderPhone,
+          resolvedSenderPhone,
+          senderName,
+          groupName,
+          groupMembers,
           chatJid,
           event,
         ),
@@ -1186,6 +1224,61 @@ export class OmniConsumer {
     }
   }
 
+  private resolveSenderPhone(rawPayload: Record<string, unknown> | undefined, fallback: string): string {
+    const resolved = rawPayloadString(rawPayload, "resolvedSenderPhone");
+    if (resolved) return stripJid(resolved);
+
+    const participantAlt = (rawPayload?.key as Record<string, unknown> | undefined)?.participantAlt;
+    const alt = cleanString(participantAlt);
+    if (alt) return stripJid(alt);
+
+    return fallback;
+  }
+
+  private resolveGroupName(rawPayload: Record<string, unknown> | undefined, chatJid: string): string | undefined {
+    return (
+      rawPayloadString(rawPayload, "chatName") ??
+      getContactName(chatJid) ??
+      getContactName(`group:${stripJid(chatJid)}`) ??
+      undefined
+    );
+  }
+
+  private resolveGroupMembers(rawPayload: Record<string, unknown> | undefined): string[] | undefined {
+    const candidates = [rawPayload?.participants, rawPayload?.groupParticipants, rawPayload?.members];
+
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+
+      const members = candidate
+        .map((entry) => this.formatGroupMember(entry))
+        .filter((entry): entry is string => Boolean(entry));
+
+      if (members.length > 0) return Array.from(new Set(members));
+    }
+
+    return undefined;
+  }
+
+  private formatGroupMember(entry: unknown): string | undefined {
+    if (typeof entry === "string") {
+      const id = stripJid(entry);
+      return getContactName(id) ?? getContactName(entry) ?? id;
+    }
+
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return undefined;
+
+    const record = entry as Record<string, unknown>;
+    const name = cleanString(record.name) ?? cleanString(record.pushName) ?? cleanString(record.notify);
+    if (name) return name;
+
+    const id = cleanString(record.id) ?? cleanString(record.jid) ?? cleanString(record.phone);
+    if (!id) return undefined;
+
+    const stripped = stripJid(id);
+    return getContactName(stripped) ?? getContactName(id) ?? stripped;
+  }
+
   private buildContext(
     channelType: string,
     accountId: string,
@@ -1193,9 +1286,15 @@ export class OmniConsumer {
     payload: MessageReceivedPayload,
     isGroup: boolean,
     senderPhone: string,
+    resolvedSenderPhone: string,
+    senderName: string,
+    groupName: string | undefined,
+    groupMembers: string[] | undefined,
     chatJid: string,
     event: OmniEvent,
-  ): Record<string, unknown> {
+  ): MessageContext & { instanceId: string } {
+    const groupId = isGroup ? stripJid(chatJid) : undefined;
+
     return {
       channelId: channelType,
       channelName: this.channelDisplayName(channelType),
@@ -1204,7 +1303,12 @@ export class OmniConsumer {
       chatId: chatJid,
       messageId: payload.externalId,
       senderId: senderPhone,
+      senderName,
+      senderPhone: resolvedSenderPhone,
       isGroup,
+      ...(groupName ? { groupName } : {}),
+      ...(groupId ? { groupId } : {}),
+      ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),
       timestamp: event.timestamp,
     };
   }

@@ -499,6 +499,30 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
       ON session_events(source_chat_id, timestamp);
 
+    -- Omni group metadata cache: local snapshot used by prompt context.
+    CREATE TABLE IF NOT EXISTS omni_group_metadata (
+      account_id TEXT NOT NULL,
+      instance_id TEXT NOT NULL,
+      chat_id TEXT NOT NULL,
+      chat_uuid TEXT,
+      external_id TEXT,
+      channel TEXT,
+      name TEXT,
+      description TEXT,
+      avatar_url TEXT,
+      participant_count INTEGER,
+      participants_json TEXT,
+      settings_json TEXT,
+      platform_metadata_json TEXT,
+      fetched_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (account_id, instance_id, chat_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_omni_group_metadata_fetched
+      ON omni_group_metadata(fetched_at);
+
     CREATE TABLE IF NOT EXISTS session_turns (
       turn_id TEXT PRIMARY KEY,
       session_key TEXT NOT NULL,

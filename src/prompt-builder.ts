@@ -49,16 +49,18 @@ function systemCommandsText(): string {
 export function buildGroupContext(ctx: ChannelContext): string {
   if (!ctx.isGroup) return "";
 
-  const members = ctx.groupMembers?.join(", ") ?? "unknown";
-  const memberCount = ctx.groupMembers?.length ?? 0;
+  const groupLabel = ctx.groupName?.trim() || ctx.groupId?.trim() || "current group";
+  const groupMembers = ctx.groupMembers?.filter((member) => member.trim().length > 0) ?? [];
+  const memberCount = groupMembers.length;
   const isLargeGroup = memberCount >= 3;
 
-  const lines = [
-    `## Group Chat Context`,
-    ``,
-    `You are replying inside the ${ctx.channelName} group "${ctx.groupName ?? ctx.groupId}".`,
-    `Group members: ${members}.`,
-  ];
+  const lines = [`## Group Chat Context`, ``, `You are replying inside the ${ctx.channelName} group "${groupLabel}".`];
+
+  if (memberCount > 0) {
+    lines.push(`Group members (${memberCount}): ${groupMembers.join(", ")}.`);
+  } else {
+    lines.push(`Group member list is not available for this group yet.`);
+  }
 
   if (ctx.botTag) {
     lines.push(`Your tag in this group: "${ctx.botTag}"`);
