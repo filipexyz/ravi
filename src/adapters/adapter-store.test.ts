@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { RESERVED_RAVI_ENV_KEYS, SessionAdapterDefinitionSchema, type SessionAdapterDefinition } from "./types.js";
 import {
   ensureSessionAdapterStoreSchema,
@@ -77,13 +78,21 @@ function buildDefinition(): SessionAdapterDefinition {
 }
 
 describe("Session adapter store", () => {
-  beforeEach(() => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-adapter-store-test-");
     cleanupAdapterState();
     getOrCreateSession(TEST_SESSION_KEY, "agent-test", "/tmp/agent-test");
   });
 
-  afterEach(() => {
-    cleanupAdapterState();
+  afterEach(async () => {
+    try {
+      cleanupAdapterState();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = null;
+    }
   });
 
   it("rejects reserved Ravi identity env vars in adapter definitions", () => {

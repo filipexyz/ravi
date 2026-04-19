@@ -11,240 +11,250 @@ description: |
 
 # Ravi - Arquitetura do Sistema
 
-Ravi é um sistema multi-agent construído sobre o Claude Agent SDK que orquestra conversas em múltiplas plataformas via omni (WhatsApp, Discord, Telegram).
+Ravi é um runtime multi-agent com canais via omni, coordenação interna por NATS JetStream,
+estado em SQLite e execução por providers plugáveis atrás de um contrato único.
 
 **Repositório:** `<ravi.bot repo>`
-**Runtime:** Bun | **DB:** SQLite | **PubSub:** NATS JetStream | **AI:** Claude SDK
+**Runtime:** Bun
+**DB:** SQLite
+**PubSub:** NATS JetStream
 
 ## Fluxo Principal de Mensagens
 
-```
-[WhatsApp/Discord/Telegram]
-    -> omni API (child process)
-    -> NATS JetStream (stream MESSAGE)
-    -> OmniConsumer (subscriber JetStream)
-    -> nats.emit("ravi.{sessionKey}.prompt")
-    -> RaviBot (Claude SDK query)
-    -> nats.emit("ravi.{sessionKey}.response")
-    -> Gateway
-    -> OmniSender (HTTP POST /api/v2/messages/send)
-    -> omni API
-    -> [WhatsApp/Discord/Telegram]
-```
-
-## Componentes Core
-
-### daemon.ts - Ponto de Entrada
-Orquestra startup de todos os subsistemas:
-1. Carrega env de `~/.ravi/.env`
-2. Inicia nats-server com JetStream (`local/server.ts`)
-3. Inicia omni API server (`local/omni.ts`)
-4. Inicia RaviBot (Claude SDK)
-5. Inicia OmniConsumer + Gateway
-6. Inicia HeartbeatRunner, CronRunner, TriggerRunner
-
-Shutdown tem timeout global de 15s (force-exit se travar).
-
-### local/server.ts - nats-server
-Spawna nats-server com JetStream habilitado (`-js`). Armazena em `~/.ravi/jetstream/`.
-Inclui recovery automático: se startup falhar (WAL corrompido), limpa storage e reinicia.
-
-### local/omni.ts - omni API
-Spawna omni API como child process (bun). Gerencia:
-- Build do bundle na primeira vez
-- Migrations de banco
-- API key bootstrap (`~/.ravi/omni-api-key`)
-- Healthcheck via HTTP GET /health
-
-### omni/consumer.ts - Inbound
-Subscriber de dois streams JetStream do omni:
-- `MESSAGE` (filter: `message.received.>`) → prompts de agente
-- `INSTANCE` (filter: `instance.>`) → QR codes, conexão
-
-Comportamento:
-- `start()` aguarda consumers ficarem prontos (timeout 60s, continua em background)
-- `msg.ack()` apenas após handler suceder; `msg.nak()` em erro (retry automático)
-- Auto-reconnect em erro de consumo (loop com retry 2s)
-- Config subscription com auto-reconnect para `ravi.config.changed`
-
-### omni/sender.ts - Delivery
-HTTP client para omni REST API. Métodos:
-- `send(instanceId, to, text)` — texto
-- `sendTyping(instanceId, to, active)` — indicador de digitação
-- `sendReaction(instanceId, to, messageId, emoji)` — reação
-- `sendMedia(instanceId, to, path, type, filename, caption)` — mídia
-
-Retry com backoff exponencial (3x, 1s/2s/3s). Só retenta TypeErrors (rede) e 5xx.
-
-### gateway.ts - Orquestrador Interno
-Subscriptions internas do ravi (não gerencia canais):
-- `ravi.*.response` → OmniSender.send()
-- `ravi.outbound.deliver` → OmniSender.send()
-- `ravi.*.claude` → typing heartbeat → OmniSender.sendTyping()
-- `ravi.outbound.reaction` → OmniSender.sendReaction()
-- `ravi.config.changed` → sync REBAC
-
-### bot.ts - Core do Bot
-Processa prompts usando Claude Agent SDK.
-
-**Fluxo:**
-1. Subscribe em `ravi.*.prompt`
-2. Resolve agent config pela session key
-3. Debounce se configurado
-4. Cria/resume SDK session
-5. Streama resposta → emite responses parciais
-6. Gerencia interrupts (msg nova durante processamento)
-
-**Abort control:**
-- Cada sessão tem AbortController
-- Novo prompt aborta subprocess anterior
-- Daemon stop aborta TODOS os controllers
-- Watchdog de 5min detecta sessões travadas
-
-### router/ - Sistema de Roteamento
-
-**Resolução de rota (prioridade):**
-1. Rota `thread:ID` — mais específica (thread dentro de grupo)
-2. Rota `group:ID` ou padrão de telefone
-3. Mapeamento `instance.agent` (tabela `instances`)
-4. Agent default
-
-**Policy resolution (por mensagem):**
-```
-route.policy → instance.dmPolicy/groupPolicy → legacy account.* settings → "open"
+```text
+WhatsApp/Discord/Telegram/Matrix
+  -> omni API
+  -> NATS JetStream MESSAGE
+  -> OmniConsumer
+  -> ravi.<session>.prompt
+  -> RuntimePromptSubscription
+  -> RuntimeSessionDispatcher
+  -> RuntimeSessionLauncher
+  -> RuntimeProvider.startSession(RuntimeStartRequest)
+  -> RuntimeEvent stream
+  -> RuntimeEventLoop
+  -> ravi.session.<session>.runtime/tool/stream/response
+  -> Gateway
+  -> OmniSender
+  -> canal
 ```
 
-**Session keys:**
+## Fronteiras Core
+
+### `daemon.ts`
+
+Composition root do processo:
+
+- carrega env de `~/.ravi/.env`
+- inicia NATS/JetStream
+- inicia omni
+- inicia RaviBot
+- inicia OmniConsumer e Gateway
+- inicia heartbeat, cron e triggers
+- controla shutdown global
+
+### `bot.ts`
+
+Composition root do runtime de conversas.
+
+Responsabilidades permitidas:
+
+- construir `RuntimeSessionDispatcher`
+- construir `RuntimePromptSubscription`
+- construir `RuntimeHostSubscriptions`
+- iniciar/parar subscriptions
+- expor wrappers estreitos para testes/CLI
+
+Responsabilidades proibidas:
+
+- lógica específica de provider
+- montagem de prompt/env/provider request
+- autorização de tool/bash/session
+- event loop de provider
+- regra de fila/interrupção
+- regra de task/profile/model
+
+### `runtime/session-dispatcher.ts`
+
+Decide o que fazer com um prompt:
+
+- debounce
+- sessão viva vs cold start
+- troca de provider
+- troca de modelo/effort/thinking
+- queue, wake, interrupt
+- delivery barrier
+- after_task deferral
+- limite de concorrência
+
+### `runtime/session-launcher.ts`
+
+Orquestra o start de uma sessão runtime.
+
+Não deve virar saco de responsabilidades. Ele coordena:
+
+- resolução de sessão/agent/provider via `session-resolver`
+- resolução task/profile/model via `task-runtime-context`
+- montagem do `RuntimeStartRequest` via `runtime-request-builder`
+- persistência inicial de provider state
+- aceite da task vinculada
+- start do `RuntimeEventLoop`
+
+### `runtime/runtime-request-builder.ts`
+
+Compoe o `RuntimeStartRequest` final a partir dos modulos menores:
+
+- `runtime-request-context.ts` — runtime context, tool context e env Ravi
+- `runtime-provider-bootstrap.ts` — `prepareSession`, host services e plugins
+- `runtime-session-continuity.ts` — resume/fork por provider state
+- `runtime-host-attachments.ts` — hooks, spec server e remote spawn
+- `runtime-request-builder.ts` — composicao final do start request
+
+Regra: novo provider entra por adapter + capabilities. Nao adicionar branch por provider em
+`bot.ts`, `session-launcher.ts` ou `runtime-request-builder.ts`.
+
+### `runtime/host-services.ts`
+
+Bridge de serviços do host:
+
+- dynamic tools
+- autorização de tool
+- autorização de comando
+- autorização de capability
+- user input/poll
+- session scope
+- auditoria de denies
+
+### `runtime/host-hooks.ts`
+
+Bridge de hooks nativos quando o provider suporta:
+
+- pre-tool permission
+- bash permission
+- sanitize bash
+- pre-compact
+- AskUserQuestion
+- spec/exit plan hooks
+
+### `runtime/host-event-loop.ts`
+
+Traduz eventos do provider para eventos canônicos Ravi:
+
+- `runtime`
+- `tool`
+- `stream`
+- `response`
+
+Também persiste provider session state em `turn.complete`.
+
+## Runtime Provider Contract
+
+O provider é adapter. O Ravi runtime é a fonte de verdade.
+
+Contrato canônico:
+
+- provider recebe `RuntimeStartRequest`
+- provider emite `RuntimeEvent`
+- provider declara `RuntimeCapabilities`
+- provider pode expor `interrupt`, `setModel` e `control`
+- provider não muta task/session/canal diretamente
+
+Documento canônico: `docs/runtime-provider-contract.md`
+
+Checklist para novo provider:
+
+1. Implementar `RuntimeProvider` e declarar `RuntimeCapabilities`.
+2. Usar `prepareSession` apenas para env/bootstrap/dynamic tools/approvals.
+3. Normalizar output nativo para `RuntimeEvent`.
+4. Cobrir capability matrix e prepare-session shape nos testes de contrato.
+5. Criar testes especificos do provider para normalizacao de eventos.
+
+## Capability Gates
+
+Use `RuntimeCapabilities`, nunca branch solto por provider fora do registry/adapters.
+
+Capabilities importantes:
+
+- `supportsSessionResume`
+- `supportsSessionFork`
+- `supportsPartialText`
+- `supportsToolHooks`
+- `supportsHostSessionHooks`
+- `supportsPlugins`
+- `supportsMcpServers`
+- `supportsRemoteSpawn`
+- `toolAccessRequirement`
+- `legacyEventTopicSuffix`
+
+## Model Switching
+
+A troca de modelo é estratégia runtime:
+
+- `direct-set`: handle suporta `setModel`
+- `restart-next-turn`: precisa reiniciar antes do próximo turno
+
+Código: `runtime/model-switch.ts`
+
+Não faça branch por provider para isso.
+
+## Router / Sessions
+
+Resolução de rota:
+
+1. `thread:<id>`
+2. grupo/contato
+3. instance default agent
+4. global default agent
+
+Session key segue o formato:
+
+```text
+agent:<agentId>:main
+agent:<agentId>:dm:<phone>
+agent:<agentId>:whatsapp:group:<groupId>
+agent:<agentId>:whatsapp:main:group:<groupId>:thread:<threadId>
 ```
-agent:{agentId}:{scope}:{peerId}
-agent:main:main                          # Todas DMs (scope=main)
-agent:main:dm:5511999                    # Por contato
-agent:main:whatsapp:group:123456         # Grupo
-agent:main:whatsapp:main:group:123456:thread:abc  # Thread
-```
 
-**Instâncias (tabela `instances`):**
-Entidade central que une canal + agent + policies. Substitui namespace `account.*` de settings.
-```typescript
-interface InstanceConfig {
-  name: string;        // nome da conta omni (ex: "main", "vendas")
-  instanceId?: string; // UUID do omni
-  channel: string;     // "whatsapp" | "matrix" | ...
-  agent?: string;      // agent padrão desta instância
-  dmPolicy: "open" | "pairing" | "closed";
-  groupPolicy: "open" | "allowlist" | "closed";
-  dmScope?: DmScope;
-}
-```
+O runtime autoritativo é a sessão no DB + provider state persistido.
 
-**Arquivos:**
-- `router/resolver.ts` - Resolve rota → session key (matchRoute, findRoute)
-- `router/session-key.ts` - Constrói/parseia session keys
-- `router/sessions.ts` - CRUD de sessões (SQLite)
-- `router/config.ts` - Carrega RouterConfig (agents + routes + instances)
-- `router/router-db.ts` - Camada de banco (CRUD agents, routes, instances, settings)
+## Tasks / Profiles / Workflow / Project
 
-## Subsistemas de Automação
+Fronteira obrigatória:
 
-### Triggers (`triggers/`)
-Automação event-driven disparada por eventos do sistema.
+- `task` executa
+- `profile` define protocolo local da task
+- `workflow` coordena nodes/edges/readiness/run state
+- `project` organiza alignment/contexto
 
-**Fluxo:**
-1. Runner subscribe em topics configurados
-2. Evento dispara → busca triggers ativos com match
-3. Emite prompt para sessão target do trigger
-4. Respeita cooldown entre disparos
+Invariantes:
 
-### Cron (`cron/`)
-Jobs agendados com suporte a múltiplos formatos.
+- `parentTaskId` não é scheduling
+- `launch plan` fica na task
+- `project_id` não deve ser gravado direto em tasks
+- task aparece em project por inferência via workflow
+- profile não coordena workflow
 
-**Schedules:** cron expression | interval ("30m") | daily ("09:00") | at (one-time)
+## Plugins / Skills
 
-**Fluxo:** Timer → job due → emite prompt → calcula próximo run
+Plugins internos ficam em `src/plugins/internal`.
 
-### Heartbeat (`heartbeat/`)
-Check-ins periódicos de agents dentro de horários ativos.
-
-**Fluxo:**
-1. Checa agents com heartbeat enabled
-2. Para cada sessão, verifica se está due
-3. Checa active hours (timezone-aware)
-4. Envia prompt de status check
-5. `HEARTBEAT_OK` = silencioso, qualquer outro texto = envia pro canal
-
-### Session Messaging (`cli/commands/sessions.ts`)
-Mensagens entre sessões (inter-session communication).
-
-**Comandos:** `sessions send` | `sessions inform` | `sessions execute` | `sessions ask` | `sessions answer`
-
-## Sistema de Plugins
-
-**Duas fontes:**
-1. **Internos** - Embutidos no build, extraídos para `~/.cache/ravi/plugins/`
-2. **Usuário** - Customizados em `~/ravi/plugins/`
-
-**Build time:** `gen-plugins.ts` escaneia `src/plugins/internal/` e gera `internal-registry.ts`
-**Runtime:** `discoverPlugins()` extrai internos + escaneia user dir → passa para SDK
-
-## Sistema de Hooks
-
-### PreToolUse (bash/hook.ts)
-Intercepta chamadas Bash e valida permissões via REBAC.
-Checa `agentCan(id, "execute", "executable", exec)` pra cada executável parsed.
-
-### PreCompact (hooks/pre-compact.ts)
-Extrai memórias antes do SDK compactar contexto.
-Lê `COMPACT_INSTRUCTIONS.md` do agent, roda modelo barato em background, atualiza `MEMORY.md`.
-
-## Infraestrutura CLI
-
-### Decorators
-```typescript
-@Group({ name: "agents" })
-class AgentCommands {
-  @Command({ name: "list" })
-  list() { ... }
-
-  @Command({ name: "create" })
-  create(@Arg("id") id: string) { ... }
-}
-```
-
-### Contexto (AsyncLocalStorage)
-```typescript
-runWithContext({ sessionKey, agentId, source }, async () => {
-  const ctx = getContext();
-});
-```
-
-## Storage
-
-```
-~/.ravi/ravi.db         - SQLite: agents, routes, sessions, contacts, settings
-~/.ravi/.env            - API keys e env vars
-~/.ravi/omni-api-key    - API key para omni (auto-gerada)
-~/.ravi/jetstream/      - JetStream storage (nats-server)
-~/.ravi/logs/           - Logs do daemon
-~/ravi/{agent-id}/      - Diretórios dos agents (AGENTS.md, MEMORY.md, optional CLAUDE.md bridge)
-~/.cache/ravi/plugins/  - Plugins internos extraídos
-~/.claude/sessions/     - SDK session files (JSONL)
-```
-
-## Env Vars Importantes
+Build:
 
 ```bash
-OMNI_DIR=/path/to/omni-v2      # obrigatório para canal WhatsApp/Discord/Telegram
-OMNI_API_PORT=8882              # default
-DATABASE_URL=<postgres-url>      # banco do omni
-NATS_PORT=4222                  # default
+bun run gen:plugins
 ```
 
-## Padrões Importantes
+Isso atualiza `src/plugins/internal-registry.ts`.
 
-1. **JetStream pull consumers** - Mensagens inbound via durable consumers (ACK explícito)
-2. **PubSub via NATS** - Tudo comunica via topics internos
-3. **Ghost detection** - `_emitId` + `_instanceId` previne duplicatas
-4. **Abort control** - AbortController por sessão, cleanup no stop
-5. **Debouncing** - Agrupa msgs rápidas por window configurável
-6. **Silent token** - `@@SILENT@@` suprime emissão pro canal
-7. **Session resumption** - SDK sessions persistem entre mensagens
+Skills nativas de runtime podem ser sincronizadas para ambientes de provider quando suportado.
+
+## Validação Recomendada Antes De Fechar Mudança Core
+
+```bash
+bun test src/runtime/model-switch.test.ts src/runtime/provider-contract.test.ts src/runtime/index.test.ts
+bun test src/bot.runtime-guards.test.ts src/delivery-barriers.test.ts
+bun run typecheck
+bun run build
+```
+
+Se mexer em provider adapter, rode também o teste específico do provider alterado.

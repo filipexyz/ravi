@@ -22,7 +22,7 @@ import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
 import { dbSaveMessageMeta } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
-import type { MessageTarget } from "../bot.js";
+import type { MessageTarget } from "../runtime/message-types.js";
 import type { OmniSender } from "./sender.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";

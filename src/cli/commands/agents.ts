@@ -22,7 +22,7 @@ import {
 } from "../../router/config.js";
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/index.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,

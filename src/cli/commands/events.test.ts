@@ -5,12 +5,22 @@ afterAll(() => mock.restore());
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Option: () => () => {},
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: mock(() => (async function* () {})()),
   nats: {
     subscribe: () => (async function* () {})(),
+    emit: mock(async () => {}),
+    close: mock(async () => {}),
   },
 }));
 

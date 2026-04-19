@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+
+const actualTasksIndexModule = await import("../../tasks/index.js");
 
 const createProjectCalls: Array<Record<string, unknown>> = [];
 const initProjectCalls: Array<Record<string, unknown>> = [];
@@ -430,7 +432,17 @@ mock.module("../../projects/fixtures.js", () => ({
 }));
 
 mock.module("../../router/config.js", () => ({
+  getRaviDir: () => "/tmp/ravi",
   getAgent: (id: string) => (id === "main" ? { id: "main", cwd: "/tmp/main" } : null),
+  getAllAgents: () => [{ id: "main", cwd: "/tmp/main" }],
+  createAgent: () => {},
+  updateAgent: () => {},
+  deleteAgent: () => false,
+  setAgentDebounce: () => {},
+  checkAgentDirs: () => [],
+  ensureAgentDirs: () => {},
+  loadRouterConfig: () => ({ defaultAgent: "main" }),
+  setAgentSpecMode: () => {},
 }));
 
 mock.module("../../router/index.js", () => ({
@@ -461,6 +473,7 @@ mock.module("../../workflows/index.js", () => ({
 }));
 
 mock.module("../../tasks/index.js", () => ({
+  ...actualTasksIndexModule,
   emitTaskEvent: async (task: Record<string, unknown>, event: Record<string, unknown>) => {
     emittedTaskEvents.push({ task, event });
   },
@@ -473,6 +486,8 @@ const {
   ProjectTaskCommands,
   ProjectWorkflowCommands,
 } = await import("./projects.js");
+
+afterAll(() => mock.restore());
 
 describe("ProjectCommands", () => {
   beforeEach(() => {

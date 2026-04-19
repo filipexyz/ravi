@@ -7,7 +7,6 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 const actualNatsModule = await import("../../nats.js");
 const actualCliContextModule = await import("../context.js");
 
-let mockStdin = "";
 let publishedAuditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let resolvedContext:
   | {
@@ -124,12 +123,9 @@ let revokedContext:
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
-}));
-
-mock.module("node:fs", () => ({
-  readFileSync: () => mockStdin,
 }));
 
 mock.module("../context.js", () => ({
@@ -216,8 +212,7 @@ mock.module("../../nats.js", () => ({
 const { ContextCommands } = await import("./context.js");
 
 function callCodexBashHook(payload: Record<string, unknown>): Record<string, unknown> {
-  mockStdin = JSON.stringify(payload);
-  return (new ContextCommands() as any).handleCodexBashHook();
+  return (new ContextCommands() as any).handleCodexBashHook(payload);
 }
 
 describe("ContextCommands", () => {
@@ -245,7 +240,6 @@ describe("ContextCommands", () => {
     fetchedContext = resolvedContext;
     listedContexts = [resolvedContext];
     revokedContext = undefined;
-    mockStdin = "";
     publishedAuditEvents = [];
   });
 
@@ -262,7 +256,6 @@ describe("ContextCommands", () => {
     fetchedContext = undefined;
     listedContexts = [];
     revokedContext = undefined;
-    mockStdin = "";
     publishedAuditEvents = [];
   });
 

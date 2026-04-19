@@ -1,10 +1,8 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-
-afterAll(() => mock.restore());
+import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 
 const actualRouterIndexModule = await import("../router/index.js");
 const actualContactsModule = await import("../contacts.js");
-const actualLoggerModule = await import("../utils/logger.js");
+const { logger } = await import("../utils/logger.js");
 
 const publishCalls: Array<[string, Record<string, unknown>]> = [];
 const warnCalls: Array<[string, Record<string, unknown> | undefined]> = [];
@@ -66,26 +64,22 @@ mock.module("../contacts.js", () => ({
   getContact: () => null,
 }));
 
-mock.module("../utils/logger.js", () => ({
-  ...actualLoggerModule,
-  logger: {
-    ...actualLoggerModule.logger,
-    child: () => ({
-      info: (message: string, meta?: Record<string, unknown>) => {
-        infoCalls.push([message, meta]);
-      },
-      error: (message: string, meta?: Record<string, unknown>) => {
-        errorCalls.push([message, meta]);
-      },
-      warn: (message: string, meta?: Record<string, unknown>) => {
-        warnCalls.push([message, meta]);
-      },
-      debug: (message: string, meta?: Record<string, unknown>) => {
-        debugCalls.push([message, meta]);
-      },
-    }),
+const capturedLogger = {
+  info: (message: string, meta?: Record<string, unknown>) => {
+    infoCalls.push([message, meta]);
   },
-}));
+  error: (message: string, meta?: Record<string, unknown>) => {
+    errorCalls.push([message, meta]);
+  },
+  warn: (message: string, meta?: Record<string, unknown>) => {
+    warnCalls.push([message, meta]);
+  },
+  debug: (message: string, meta?: Record<string, unknown>) => {
+    debugCalls.push([message, meta]);
+  },
+};
+
+const loggerChildSpy = spyOn(logger, "child").mockImplementation(() => capturedLogger as never);
 
 mock.module("../utils/media.js", () => ({
   fetchOmniMedia: mock(async () => null),
@@ -98,6 +92,11 @@ mock.module("../transcribe/openai.js", () => ({
 }));
 
 const { OmniConsumer } = await import("./consumer.js");
+
+afterAll(() => {
+  loggerChildSpy.mockRestore();
+  mock.restore();
+});
 
 function makeEvent(instanceId: string) {
   return {

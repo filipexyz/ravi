@@ -1,6 +1,6 @@
 import type { Statement } from "bun:sqlite";
 import { z } from "zod";
-import { getDb, getDbChanges } from "../router/router-db.js";
+import { getDb, getDbChanges, getRaviDbPath } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import type { StdioSupervisorHealth } from "./stdio-supervisor.js";
 import {
@@ -170,10 +170,20 @@ interface AdapterStatements {
 }
 
 let ensuredSchema = false;
+let ensuredSchemaDbPath: string | null = null;
 let stmts: AdapterStatements | null = null;
+let statementsDbPath: string | null = null;
 
 function ensureAdapterSchema(): void {
-  if (ensuredSchema) return;
+  const currentDbPath = getRaviDbPath();
+  if (ensuredSchema && ensuredSchemaDbPath === currentDbPath) return;
+  if (ensuredSchema && ensuredSchemaDbPath !== currentDbPath) {
+    ensuredSchema = false;
+    ensuredSchemaDbPath = null;
+    stmts = null;
+    statementsDbPath = null;
+  }
+
   const db = getDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS session_adapters (
@@ -229,15 +239,28 @@ function ensureAdapterSchema(): void {
       ON session_adapter_debug(updated_at);
   `);
   ensuredSchema = true;
+  ensuredSchemaDbPath = currentDbPath;
 }
 
 export function ensureSessionAdapterStoreSchema(): void {
   ensureAdapterSchema();
 }
 
+export function closeSessionAdapterStore(): void {
+  stmts = null;
+  statementsDbPath = null;
+  ensuredSchema = false;
+  ensuredSchemaDbPath = null;
+}
+
 function getStatements(): AdapterStatements {
   ensureAdapterSchema();
-  if (stmts) return stmts;
+  const currentDbPath = getRaviDbPath();
+  if (stmts && statementsDbPath === currentDbPath) return stmts;
+  if (stmts && statementsDbPath !== currentDbPath) {
+    stmts = null;
+    statementsDbPath = null;
+  }
 
   const db = getDb();
   stmts = {
@@ -288,6 +311,7 @@ function getStatements(): AdapterStatements {
     `),
     getDebugSnapshot: db.prepare("SELECT * FROM session_adapter_debug WHERE adapter_id = ?"),
   };
+  statementsDbPath = currentDbPath;
 
   return stmts;
 }

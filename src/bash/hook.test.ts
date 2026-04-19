@@ -3,7 +3,6 @@ import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
 afterAll(() => mock.restore());
 
 const actualCliContextModule = await import("../cli/context.js");
-const actualLoggerModule = await import("../utils/logger.js");
 
 // ============================================================================
 // Mock dependencies
@@ -60,20 +59,6 @@ let mockContext:
 mock.module("../cli/context.js", () => ({
   ...actualCliContextModule,
   getContext: () => mockContext,
-}));
-
-// Mock logger
-mock.module("../utils/logger.js", () => ({
-  ...actualLoggerModule,
-  logger: {
-    ...actualLoggerModule.logger,
-    child: () => ({
-      debug: () => {},
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-    }),
-  },
 }));
 
 // Import AFTER mocks

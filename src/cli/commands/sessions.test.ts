@@ -45,6 +45,18 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: (topic: string) => {
+    if (topic.endsWith(".runtime")) return makeSubscription(runtimeEvents);
+    if (topic.endsWith(".claude")) return makeSubscription(claudeEvents);
+    if (topic.endsWith(".response")) return makeSubscription(responseEvents);
+    return makeSubscription([]);
+  },
   nats: {
     subscribe: (topic: string) => {
       if (topic.endsWith(".runtime")) return makeSubscription(runtimeEvents);
