@@ -18,6 +18,52 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 - **Wildcards**: `*` casa com um nível, `>` casa com múltiplos níveis
 - **Connection**: TCP direto para `nats://127.0.0.1:4222` (sem HTTP/WebSocket intermediário)
 
+## Comandos CLI
+
+### Stream ao vivo
+
+```bash
+ravi events stream
+ravi events stream -f "ravi.session.*"
+ravi events stream --only tool
+```
+
+### Replay de eventos persistidos
+
+Use `replay` quando precisar reconstruir uma janela histórica do JetStream:
+
+```bash
+# Últimos 15 minutos, todos os streams não-KV
+ravi events replay
+
+# Mensagens inbound de canal em uma janela específica
+ravi events replay --stream MESSAGE --subject "message.received.>" --since 2026-04-19T11:35:00Z --until 2026-04-19T11:45:00Z
+
+# Filtrar por chat/session/texto e imprimir JSONL
+ravi events replay --stream MESSAGE --subject "message.received.>" --chat "120363...@g.us" --contains "perdeu contexto" --json
+
+# Reconstruir uma sessão: resolve session name/key + chatId quando existir
+ravi events replay --stream RAVI_EVENTS,MESSAGE,REACTION,SYSTEM --session main-dm-615153 --since 2h --raw
+
+# Filtros por JSON path
+ravi events replay --stream MESSAGE --where "payload.chatId=63295117615153@lid;payload.content.type=text"
+```
+
+Filtros úteis:
+
+- `--stream`: stream(s) separados por vírgula (`MESSAGE,CUSTOM,SYSTEM`)
+- `--subject`: filtro de subject NATS (`message.received.>`)
+- `--since` / `--until`: ISO, epoch ou duração (`15m`, `2h`, `1d`)
+- `--contains`: busca textual no payload bruto e subject
+- `--where`: `path=value`, `path!=value` ou `path~=texto`
+- `--session`: resolve sessão local e filtra por name/key/chatId quando possível
+- `--chat`, `--agent`: filtros substring práticos
+- `--raw`: imprime payload bruto armazenado
+- `--json`: imprime JSONL
+
+Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTION`/`SYSTEM`.
+`MESSAGE` sozinho cobre canal, mas não cobre eventos internos como prompt consumido, interrupção de turno, tool, response, delivery e abort.
+
 ## Tópicos do Ravi
 
 ### Sessões (por session name)
@@ -29,6 +75,7 @@ O NATS é o pub/sub central do Ravi. Todas as mensagens, prompts, tool calls e r
 | `ravi.session.{name}.claude` | Evento bruto do SDK Claude: `{ type: "system"\|"assistant"\|"result"\|"silent"\|..., _source? }` |
 | `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` / End: `{ event: "end", toolId, toolName, output, isError, durationMs, timestamp, sessionName, agentId }` |
 | `ravi.session.{name}.stream` | `{ chunk }` — streaming de text deltas pro TUI |
+| `ravi.session.{name}.delivery` | `{ status: "delivered"\|"failed"\|"dropped", reason?, emitId?, messageId?, target?, durationMs?, textLen? }` |
 | `ravi.session.abort` | `{ sessionKey?, sessionName? }` — abortar sessão ephemeral |
 
 > **Nota:** O tópico usa o **session name** (ex: `agent-main-abc123`), não o session key (ex: `agent:main:main`). O prompt vai via JetStream WorkQueue stream (`SESSION_PROMPTS`), os demais são plain NATS pub/sub.

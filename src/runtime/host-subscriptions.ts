@@ -47,6 +47,19 @@ export class RuntimeHostSubscriptions {
           const key = data.sessionName ?? data.sessionKey;
           if (!key) continue;
           const aborted = this.options.dispatcher.abortSession(key);
+          this.options
+            .safeEmit(`ravi.session.${key}.runtime`, {
+              type: "session.abort.received",
+              sessionName: data.sessionName,
+              sessionKey: data.sessionKey,
+              key,
+              aborted,
+              request: data,
+              timestamp: new Date().toISOString(),
+            })
+            .catch((error) => {
+              log.warn("Failed to emit session abort audit event", { key, error });
+            });
           log.info("Session abort request", { key, aborted });
         }
       } catch (err) {

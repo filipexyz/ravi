@@ -1570,6 +1570,51 @@ describe("RaviBot runtime guards", () => {
     expect(runtimeEvents.filter((entry) => entry.data?.type === "turn.interrupted")).toHaveLength(2);
   });
 
+  it("suppresses recoverable abort failures from explicit internal aborts", async () => {
+    const sessionKey = "agent:main:explicit-abort-no-outbound";
+    let releaseFailure: (() => void) | undefined;
+    const failureAllowed = new Promise<void>((resolve) => {
+      releaseFailure = resolve;
+    });
+    const interrupt = mock(async () => {
+      releaseFailure?.();
+    });
+
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        const first = await request.prompt.next();
+        expect(first.value?.message.content).toBe("first");
+        await failureAllowed;
+        yield {
+          type: "turn.failed",
+          error: "Runtime process aborted by user",
+          recoverable: true,
+        };
+      })(),
+      interrupt,
+    });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(bot.abortSession(sessionKey)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    const responses = emittedEvents
+      .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
+      .map((entry) => String(entry.data?.response ?? ""));
+    expect(responses.some((response) => response.includes("aborted"))).toBe(false);
+
+    const runtimeEvents = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.runtime`);
+    expect(runtimeEvents.some((entry) => entry.data?.type === "turn.failed")).toBe(false);
+    expect(
+      runtimeEvents.some((entry) => entry.data?.type === "turn.interrupted" && entry.data?.reason === "explicit_abort"),
+    ).toBe(true);
+  });
+
   it("queues p2/after_response prompts until the current turn completes", async () => {
     const sessionKey = "agent:main:p2-after-response";
     const interrupt = mock(async () => {});

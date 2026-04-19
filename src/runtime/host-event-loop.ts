@@ -108,7 +108,9 @@ function isRecoverableInterruptionFailure(event: {
   const hasAbortMarker =
     details.includes("request was aborted") ||
     details.includes("operation was aborted") ||
-    details.includes("aborterror");
+    details.includes("aborterror") ||
+    details.includes("aborted by user") ||
+    details.includes("process aborted");
   const hasInterruptedDiagnostic =
     details.includes("[ede_diagnostic]") &&
     details.includes("result_type=user") &&
@@ -187,6 +189,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const elapsed = Date.now() - streaming.lastActivity;
     if (elapsed > SESSION_TIMEOUT_MS) {
       log.warn("Streaming session idle timeout", { sessionName, elapsedMs: elapsed });
+      streaming.internalAbortReason = "idle_timeout";
+      safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "session.timeout",
+        sessionName,
+        elapsedMs: elapsed,
+        timeoutMs: SESSION_TIMEOUT_MS,
+        timestamp: new Date().toISOString(),
+      }).catch((error) => {
+        log.warn("Failed to emit session timeout audit event", { sessionName, error });
+      });
       streaming.done = true;
       if (streaming.pushMessage) {
         streaming.pushMessage(null);
@@ -428,6 +440,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             );
           }
           log.info("Executing deferred abort after unsafe tool completed", { sessionName });
+          streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
           streaming.abortController.abort();
           streamingSessions.delete(sessionName);
         }
@@ -522,6 +535,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           }
 
           // Abort the streaming session so next message creates a fresh one
+          streaming.internalAbortReason = "prompt_too_long_reset";
           streaming.abortController.abort();
         }
 
@@ -553,24 +567,28 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "turn.failed") {
         const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
+        const internalAbortReason = streaming.internalAbortReason;
+        const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+        const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
-        log[interruptedRecoverable ? "info" : "warn"](
-          interruptedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
+        log[suppressedRecoverable ? "info" : "warn"](
+          suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
           {
             runId,
             sessionName,
             recoverable: event.recoverable ?? true,
+            internalAbortReason,
             error: event.error,
             failureDetails: formatRuntimeFailureDetails(event),
             rawEvent: rawEventSummary,
           },
         );
 
-        if (interruptedRecoverable) {
+        if (suppressedRecoverable) {
           await emitRuntimeEvent({
             type: "turn.interrupted",
             provider: runtimeSession.provider,
-            reason: "recoverable_interrupt_failure",
+            reason: internalAbortReason ?? "recoverable_interrupt_failure",
             rawEvent: event.rawEvent,
             metadata: event.metadata,
           });
@@ -582,11 +600,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearActiveToolState();
         streaming.pendingAbort = false;
         streaming.turnActive = false;
+        streaming.internalAbortReason = undefined;
 
-        if (interruptedRecoverable) {
+        if (suppressedRecoverable) {
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
+            internalAbortReason,
             error: event.error,
           });
           signalTurnComplete();

@@ -168,6 +168,59 @@ ravi events stream --only prompt
 ravi events stream --only audit
 ```
 
+## Using `ravi events replay`
+
+Use replay for persisted JetStream history. It reads stored stream messages, applies filters, then prints a chronological slice:
+
+```bash
+# Last 15 minutes across all non-KV streams
+ravi events replay
+
+# Channel inbound messages in a fixed window
+ravi events replay \
+  --stream MESSAGE \
+  --subject "message.received.>" \
+  --since 2026-04-19T11:35:00Z \
+  --until 2026-04-19T11:45:00Z
+
+# Find one chat/session by substring and show raw payload
+ravi events replay \
+  --stream MESSAGE \
+  --subject "message.received.>" \
+  --chat "63295117615153@lid" \
+  --contains "melhor plano" \
+  --raw
+
+# Reconstruct a session using session name/key plus its channel chat id
+ravi events replay \
+  --stream RAVI_EVENTS,MESSAGE,REACTION,SYSTEM \
+  --session main-dm-615153 \
+  --since 2h \
+  --raw
+
+# JSON path filters
+ravi events replay \
+  --stream MESSAGE \
+  --where "payload.chatId=63295117615153@lid;payload.content.type=text"
+```
+
+Useful flags:
+
+- `--stream MESSAGE,CUSTOM,SYSTEM`
+- `--subject "message.received.>"`
+- `--since 15m`, `--since 2026-04-19T11:35:00Z`, or epoch milliseconds
+- `--until 5m`
+- `--contains "text"`
+- `--where "path=value;path~=text;path!=value"`
+- `--session`, `--chat`, `--agent`
+- `--json` or `--raw`
+
+`--session` attempts to resolve a Ravi session locally. When found, it matches the session name, session key, and channel chat id, so a replay can include both internal session events from `RAVI_EVENTS` and channel events from `MESSAGE`/`REACTION`/`SYSTEM`.
+
+For complete session reconstruction, include `RAVI_EVENTS`. `MESSAGE` alone only captures channel events; it does not capture internal runtime events such as consumed prompts, turn interrupts, tool activity, responses, delivery, or abort requests.
+
+Delivery events use `status: "delivered" | "failed" | "dropped"` so replay can distinguish a sent response from a silent/drop/missing-target/send-error case.
+
 ## Common Debugging Scenarios
 
 ### Messages not arriving

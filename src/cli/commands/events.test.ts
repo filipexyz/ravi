@@ -24,7 +24,7 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-const { formatData } = await import("./events.js");
+const { formatData, matchesReplayFilters, parseReplayTime } = await import("./events.js");
 
 describe("formatData", () => {
   it("includes runtime failure details", () => {
@@ -45,5 +45,66 @@ describe("formatData", () => {
 
     expect(text).toContain("turn.interrupted");
     expect(text).toContain("user interrupted");
+  });
+
+  it("formats channel message events compactly", () => {
+    const text = formatData(
+      {
+        type: "message.received",
+        payload: {
+          chatId: "120@g.us",
+          from: "5511999",
+          content: { type: "text", text: "hello from channel" },
+        },
+      },
+      "message.received.whatsapp-baileys.main",
+    );
+
+    expect(text).toContain("message.received");
+    expect(text).toContain("hello from channel");
+    expect(text).toContain("chat=120@g.us");
+  });
+});
+
+describe("event replay filters", () => {
+  it("matches subject, contains, type and where filters", () => {
+    const event = {
+      subject: "message.received.whatsapp-baileys.main",
+      raw: JSON.stringify({
+        type: "message.received",
+        payload: {
+          chatId: "120@g.us",
+          content: { type: "text", text: "context lost" },
+        },
+      }),
+      data: {
+        type: "message.received",
+        payload: {
+          chatId: "120@g.us",
+          content: { type: "text", text: "context lost" },
+        },
+      },
+    };
+
+    expect(
+      matchesReplayFilters(event, {
+        subject: "message.received.>",
+        contains: ["context"],
+        type: "message.received",
+        session: { input: "main-dm", needles: ["main-dm", "120@g.us"] },
+        where: [{ path: "payload.content.text", op: "~=", expected: "lost" }],
+      }),
+    ).toBe(true);
+
+    expect(
+      matchesReplayFilters(event, {
+        where: [{ path: "payload.chatId", op: "=", expected: "other@g.us" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("parses ISO and epoch replay times", () => {
+    expect(parseReplayTime("2026-04-19T12:00:00.000Z").toISOString()).toBe("2026-04-19T12:00:00.000Z");
+    expect(parseReplayTime("1776598847376").toISOString()).toBe("2026-04-19T11:40:47.376Z");
   });
 });

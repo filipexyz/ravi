@@ -1,5 +1,5 @@
 import { StringCodec } from "nats";
-import { getNats } from "../nats.js";
+import { getNats, nats } from "../nats.js";
 import {
   SESSION_STREAM,
   ensureSessionConsumer,
@@ -104,6 +104,21 @@ export class RuntimePromptSubscription {
             this.promptsReceived++;
 
             const sessionName = msg.subject.split(".")[2];
+            nats
+              .emit(`ravi.session.${sessionName}.runtime`, {
+                type: "prompt.received",
+                sessionName,
+                prompt: prompt.prompt,
+                source: prompt.source,
+                context: prompt.context,
+                deliveryBarrier: prompt.deliveryBarrier,
+                taskBarrierTaskId: prompt.taskBarrierTaskId,
+                _agentId: prompt._agentId,
+                timestamp: new Date().toISOString(),
+              })
+              .catch((error) => {
+                log.warn("Failed to emit prompt audit event", { sessionName, error });
+              });
             this.options.handlePrompt(sessionName, prompt).catch((err) => {
               log.error("Failed to handle prompt", err);
             });

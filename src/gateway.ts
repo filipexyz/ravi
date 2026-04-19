@@ -150,18 +150,37 @@ export class Gateway {
       async (event) => {
         const sessionName = event.topic.split(".")[2];
         const response = event.data as unknown as ResponseMessage;
+        const emitDelivery = (data: Record<string, unknown>) =>
+          nats.emit(`ravi.session.${sessionName}.delivery`, {
+            emitId: response._emitId,
+            sessionName,
+            timestamp: Date.now(),
+            ...data,
+          });
 
         const target = response.target;
-        if (!target) return;
+        if (!target) {
+          await emitDelivery({ status: "dropped", reason: "missing_target" });
+          return;
+        }
 
         const instanceId = configStore.resolveInstanceId(target.accountId);
-        if (!instanceId) return;
+        if (!instanceId) {
+          await emitDelivery({ status: "dropped", reason: "missing_instance", target });
+          return;
+        }
         const chatId = normalizeOutboundJid(target.chatId);
 
         const text = response.error ? `Error: ${response.error}` : response.response;
 
         if (text && text.trim() === SILENT_TOKEN) {
           log.debug("Silent response, not sending to channel", { sessionName });
+          await emitDelivery({ status: "dropped", reason: "silent", target });
+          return;
+        }
+
+        if (!text) {
+          await emitDelivery({ status: "dropped", reason: "empty_response", target });
           return;
         }
 
@@ -171,6 +190,7 @@ export class Gateway {
               sessionName,
               textPreview: text.slice(0, 200),
             });
+            await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
             return;
           }
 
@@ -186,16 +206,29 @@ export class Gateway {
           try {
             const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
             if (delivered.messageId) {
-              await nats.emit(`ravi.session.${sessionName}.delivery`, {
+              await emitDelivery({
+                status: "delivered",
                 emitId: response._emitId,
                 messageId: delivered.messageId,
                 target,
                 deliveredAt: Date.now(),
+                durationMs: Date.now() - t0,
+                textLen: text.length,
               });
             }
             log.info("Response delivered", { sessionName, durationMs: Date.now() - t0 });
           } catch (err) {
             log.error("Failed to send response", { instanceId, chatId, error: err });
+            await emitDelivery({
+              status: "failed",
+              reason: "send_error",
+              target,
+              instanceId,
+              chatId,
+              textLen: text.length,
+              error: err instanceof Error ? err.message : String(err),
+              durationMs: Date.now() - t0,
+            });
           }
         }
       },

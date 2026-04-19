@@ -6,6 +6,7 @@ import {
   describeDeliveryBarrier,
   type DeliveryBarrier,
 } from "../delivery-barriers.js";
+import { nats } from "../nats.js";
 import { getSessionByName } from "../router/index.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
@@ -92,7 +93,7 @@ export class RuntimeSessionDispatcher {
     });
     for (const [sessionName, session] of this.streamingSessions) {
       log.info("Aborting streaming session", { sessionName });
-      shutdownRuntimeStreamingSession(session);
+      shutdownRuntimeStreamingSession(session, "shutdown_all");
     }
     this.streamingSessions.clear();
   }
@@ -112,6 +113,7 @@ export class RuntimeSessionDispatcher {
         sessionName,
         tool: session.currentToolName,
       });
+      session.internalAbortReason = "explicit_abort_deferred";
       session.pendingAbort = true;
       return true;
     }
@@ -122,7 +124,7 @@ export class RuntimeSessionDispatcher {
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done });
-    shutdownRuntimeStreamingSession(session);
+    shutdownRuntimeStreamingSession(session, "explicit_abort");
     this.streamingSessions.delete(sessionName);
     return true;
   }
@@ -149,7 +151,7 @@ export class RuntimeSessionDispatcher {
       stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages);
     }
     streaming.currentModel = model;
-    shutdownRuntimeStreamingSession(streaming);
+    shutdownRuntimeStreamingSession(streaming, "model_change_restart");
     this.streamingSessions.delete(sessionName);
     return "restart-next-turn";
   }
@@ -282,7 +284,7 @@ export class RuntimeSessionDispatcher {
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
         }
 
-        shutdownRuntimeStreamingSession(existing);
+        shutdownRuntimeStreamingSession(existing, restartReason);
         this.streamingSessions.delete(sessionName);
       } else {
         const requestedRuntime = resolveRuntimeForPrompt({
@@ -304,7 +306,7 @@ export class RuntimeSessionDispatcher {
             requestedThinking: requestedRuntime.options.thinking ?? null,
           });
           stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
-          shutdownRuntimeStreamingSession(existing);
+          shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
           this.streamingSessions.delete(sessionName);
           await this.startStreamingSession(sessionName, prompt);
           return;
@@ -365,6 +367,21 @@ export class RuntimeSessionDispatcher {
               tool: existing.currentToolName,
             });
           } else {
+            nats
+              .emit(`ravi.session.${sessionName}.runtime`, {
+                type: "turn.interrupt.requested",
+                sessionName,
+                queueSize: existing.pendingMessages.length,
+                barrier: describeDeliveryBarrier(barrier),
+                reason: decision.reason,
+                source: prompt.source,
+                context: prompt.context,
+                taskBarrierTaskId: prompt.taskBarrierTaskId,
+                timestamp: new Date().toISOString(),
+              })
+              .catch((error) => {
+                log.warn("Failed to emit turn interrupt audit event", { sessionName, error });
+              });
             log.info("Streaming: interrupting turn", {
               sessionName,
               queueSize: existing.pendingMessages.length,

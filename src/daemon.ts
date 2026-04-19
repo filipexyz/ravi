@@ -27,6 +27,7 @@ import { createSessionAdapterBus } from "./adapters/index.js";
 import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
+import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -183,6 +184,9 @@ export async function startDaemon() {
   log.info("Ensuring SESSION_PROMPTS JetStream stream...");
   await ensureSessionPromptsStream();
   log.info("SESSION_PROMPTS stream ready");
+  log.info("Ensuring RAVI_EVENTS JetStream stream...");
+  await ensureRaviEventsStream();
+  log.info("RAVI_EVENTS stream ready");
 
   // Step 5: Sync REBAC relations from agent configs
   syncRelationsFromConfig();

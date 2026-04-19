@@ -60,6 +60,8 @@ export interface RuntimeHostStreamingSession {
   done: boolean;
   /** Whether the current turn was interrupted (discard response, keep queue) */
   interrupted: boolean;
+  /** Internal cancellation reason; suppresses provider abort noise from user-facing output. */
+  internalAbortReason?: string;
   /** Whether a provider turn is currently active until a terminal event arrives */
   turnActive: boolean;
   /** Signal from result handler to unblock generator after turn completes */
@@ -101,7 +103,10 @@ export function stashPendingRuntimeMessages(
   );
 }
 
-export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession): void {
+export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {
+  if (reason) {
+    session.internalAbortReason = reason;
+  }
   session.done = true;
   session.starting = false;
 
