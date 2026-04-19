@@ -29,7 +29,7 @@ export const RAVI_EVENTS_SUBJECTS = [
   "ravi.triggers.>",
   "ravi.cron.>",
   "ravi.heartbeat.>",
-  "ravi.*.cli.>",
+  "ravi._cli.cli.>",
 ] as const;
 
 const MAX_AGE_NS = 7 * 24 * 60 * 60 * 1_000_000_000; // 7 days
