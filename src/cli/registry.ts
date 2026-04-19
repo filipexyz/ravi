@@ -15,24 +15,10 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { nats, isExplicitConnect } from "../nats.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
+import { emitCliAuditEvent } from "./audit.js";
 
 type CommandClass = new () => object;
-
-const MAX_INPUT_LENGTH = 500;
-
-function truncate(value: unknown): unknown {
-  if (typeof value === "string") {
-    return value.length > MAX_INPUT_LENGTH ? value.slice(0, MAX_INPUT_LENGTH) + "…" : value;
-  }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = truncate(v);
-    return out;
-  }
-  return value;
-}
 
 /**
  * Resolve a nested command path, creating intermediate commands as needed.
@@ -184,21 +170,16 @@ function registerCommand(
       console.error(`Error: ${err instanceof Error ? err.message : err}`);
     }
 
-    await nats
-      .emit(`ravi._cli.cli.${groupName}.${cmdMeta.name}`, {
-        tool: toolName,
-        input: truncate(input),
-        isError,
-        durationMs: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        sessionKey: "_cli",
-      })
-      .catch(() => {});
-
-    // Close lazy NATS connections so the CLI process can exit
-    if (!isExplicitConnect()) {
-      await nats.close().catch(() => {});
-    }
+    await emitCliAuditEvent({
+      group: groupName,
+      name: cmdMeta.name,
+      tool: toolName,
+      input,
+      isError,
+      status: "completed",
+      durationMs: Date.now() - startTime,
+      closeLazyConnection: true,
+    });
 
     if (isError) process.exit(1);
   });

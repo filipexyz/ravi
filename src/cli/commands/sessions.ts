@@ -48,6 +48,7 @@ import {
 import { formatInspectionSection, printInspectionBlock, printInspectionField } from "../inspection-output.js";
 import { parseSessionTraceTime, querySessionTrace, type SessionTraceQueryResult } from "../../session-trace/query.js";
 import { explainSessionTrace, type SessionTraceExplanation } from "../../session-trace/explain.js";
+import { buildCliInvocationMetadata, hashForAudit, type CliInvocationMetadata } from "../provenance.js";
 import type {
   JsonValue,
   SessionEventRecord,
@@ -69,6 +70,83 @@ function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: stri
   const runtimeConfig = loadConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
   return modelOverride ?? agent?.model ?? runtimeConfig.model;
+}
+
+interface SessionMutationAuditSnapshot {
+  sessionKey: string;
+  sessionName?: string;
+  agentId: string;
+  agentCwd?: string;
+  chatType?: string;
+  channel?: string;
+  accountId?: string;
+  groupIdHash?: string;
+  displayName?: string;
+  runtimeProvider?: string;
+  runtimeSessionDisplayIdHash?: string;
+  providerSessionIdHash?: string;
+  sdkSessionIdHash?: string;
+  hasRuntimeSessionParams: boolean;
+  systemSent?: boolean;
+  abortedLastRun?: boolean;
+  compactionCount?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function buildSessionMutationAuditSnapshot(session: SessionEntry): SessionMutationAuditSnapshot {
+  return {
+    sessionKey: session.sessionKey,
+    ...(session.name ? { sessionName: session.name } : {}),
+    agentId: session.agentId,
+    ...(session.agentCwd ? { agentCwd: session.agentCwd } : {}),
+    ...(session.chatType ? { chatType: session.chatType } : {}),
+    ...(session.channel ? { channel: session.channel } : {}),
+    ...(session.accountId ? { accountId: session.accountId } : {}),
+    ...(session.groupId ? { groupIdHash: hashForAudit(session.groupId) } : {}),
+    ...(session.displayName ? { displayName: session.displayName } : {}),
+    ...(session.runtimeProvider ? { runtimeProvider: session.runtimeProvider } : {}),
+    ...(session.runtimeSessionDisplayId
+      ? { runtimeSessionDisplayIdHash: hashForAudit(session.runtimeSessionDisplayId) }
+      : {}),
+    ...(session.providerSessionId ? { providerSessionIdHash: hashForAudit(session.providerSessionId) } : {}),
+    ...(session.sdkSessionId ? { sdkSessionIdHash: hashForAudit(session.sdkSessionId) } : {}),
+    hasRuntimeSessionParams: Boolean(session.runtimeSessionParams),
+    ...(session.systemSent !== undefined ? { systemSent: session.systemSent } : {}),
+    ...(session.abortedLastRun !== undefined ? { abortedLastRun: session.abortedLastRun } : {}),
+    ...(session.compactionCount !== undefined ? { compactionCount: session.compactionCount } : {}),
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
+async function emitSessionMutationAudit(
+  operation: "reset" | "delete",
+  phase: "requested" | "completed",
+  payload: {
+    cliInvocation: CliInvocationMetadata;
+    before: SessionMutationAuditSnapshot;
+    after?: SessionMutationAuditSnapshot | null;
+    changed?: boolean;
+    durationMs?: number;
+  },
+): Promise<void> {
+  await nats
+    .emit(`ravi.session.${operation}.${phase}`, {
+      operation,
+      phase,
+      timestamp: new Date().toISOString(),
+      actor: "cli",
+      actorSessionKey: "_cli",
+      sessionKey: payload.before.sessionKey,
+      ...(payload.before.sessionName ? { sessionName: payload.before.sessionName } : {}),
+      cliInvocation: payload.cliInvocation,
+      before: payload.before,
+      ...(payload.after !== undefined ? { after: payload.after } : {}),
+      ...(payload.changed !== undefined ? { changed: payload.changed } : {}),
+      ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
+    })
+    .catch(() => {});
 }
 
 type StreamTerminalState =
@@ -1101,6 +1179,15 @@ export class SessionCommands {
       return;
     }
 
+    const cliInvocation = buildCliInvocationMetadata({
+      group: "sessions",
+      name: "reset",
+      tool: "sessions_reset",
+    });
+    const before = buildSessionMutationAuditSnapshot(s);
+    const startedAt = Date.now();
+    await emitSessionMutationAudit("reset", "requested", { cliInvocation, before });
+
     // Abort active SDK subprocess so it doesn't keep the old context
     try {
       await nats.emit("ravi.session.abort", {
@@ -1111,7 +1198,15 @@ export class SessionCommands {
       /* session may not be active */
     }
 
-    resetSession(s.sessionKey);
+    const changed = resetSession(s.sessionKey);
+    const afterSession = resolveSession(s.sessionKey);
+    await emitSessionMutationAudit("reset", "completed", {
+      cliInvocation,
+      before,
+      after: afterSession ? buildSessionMutationAuditSnapshot(afterSession) : null,
+      changed,
+      durationMs: Date.now() - startedAt,
+    });
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
   }
@@ -1131,6 +1226,15 @@ export class SessionCommands {
       return;
     }
 
+    const cliInvocation = buildCliInvocationMetadata({
+      group: "sessions",
+      name: "delete",
+      tool: "sessions_delete",
+    });
+    const before = buildSessionMutationAuditSnapshot(s);
+    const startedAt = Date.now();
+    await emitSessionMutationAudit("delete", "requested", { cliInvocation, before });
+
     // Abort SDK subprocess first
     try {
       await nats.emit("ravi.session.abort", {
@@ -1141,7 +1245,14 @@ export class SessionCommands {
       /* session may not be active */
     }
 
-    deleteSession(s.sessionKey);
+    const changed = deleteSession(s.sessionKey);
+    await emitSessionMutationAudit("delete", "completed", {
+      cliInvocation,
+      before,
+      after: null,
+      changed,
+      durationMs: Date.now() - startedAt,
+    });
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
   }
 

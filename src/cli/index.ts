@@ -21,6 +21,7 @@ import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
+import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -41,14 +42,31 @@ program
   .description("Inspect critical Ravi runtime, substrate, and contract health")
   .option("--json", "Print raw JSON result")
   .action(async (options: { json?: boolean }) => {
-    runDoctor({ json: options.json });
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "doctor",
+        tool: "root_doctor",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runDoctor({ json: options.json }),
+    );
   });
 
 program
   .command("setup")
   .description("Wizard interativo de configuração")
   .action(async () => {
-    await runSetup();
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "setup",
+        tool: "root_setup",
+        closeLazyConnection: true,
+      },
+      () => runSetup(),
+    );
   });
 
 program
@@ -57,7 +75,16 @@ program
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
   .action(async (options: { next?: boolean; stable?: boolean }) => {
-    await runUpdate(options);
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "update",
+        tool: "root_update",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runUpdate(options),
+    );
   });
 
 // TUI - full-screen terminal interface
@@ -67,13 +94,24 @@ program
   .argument("[target]", "Agent ID or Ravi session name", "main")
   .option("--direct", "Open the legacy single-window TUI without tmux")
   .action(async (target: string, options: { direct?: boolean }) => {
-    if (options.direct) {
-      await spawnDirectTui(target);
-      return;
-    }
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "tui",
+        tool: "root_tui",
+        input: { target, ...options },
+        closeLazyConnection: true,
+      },
+      async () => {
+        if (options.direct) {
+          await spawnDirectTui(target);
+          return;
+        }
 
-    const { launchTmuxTui } = await import("../tmux/tui-entry.js");
-    await launchTmuxTui(target);
+        const { launchTmuxTui } = await import("../tmux/tui-entry.js");
+        await launchTmuxTui(target);
+      },
+    );
   });
 
 program
@@ -83,12 +121,31 @@ program
   .option("--topic <pattern...>", "Override topic patterns")
   .option("--heartbeat-ms <ms>", "Heartbeat interval in milliseconds", "5000")
   .action(async (options: { scope: string; topic?: string[]; heartbeatMs: string }) => {
-    const { runCliStreamServer } = await import("../stream/server.js");
-    await runCliStreamServer({
-      scope: options.scope,
-      topicPatterns: options.topic,
-      heartbeatMs: Number.parseInt(options.heartbeatMs, 10) || 5000,
+    await emitCliAuditEvent({
+      group: "_root",
+      name: "stream",
+      tool: "root_stream",
+      input: options,
+      status: "started",
+      closeLazyConnection: false,
     });
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "stream",
+        tool: "root_stream",
+        input: options,
+        closeLazyConnection: false,
+      },
+      async () => {
+        const { runCliStreamServer } = await import("../stream/server.js");
+        await runCliStreamServer({
+          scope: options.scope,
+          topicPatterns: options.topic,
+          heartbeatMs: Number.parseInt(options.heartbeatMs, 10) || 5000,
+        });
+      },
+    );
   });
 
 // Parse and execute
