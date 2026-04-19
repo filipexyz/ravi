@@ -5,14 +5,61 @@ import type { ToolContext } from "../cli/context.js";
 const actualCliContextModule = await import("../cli/context.js");
 
 let mockContext: ToolContext | undefined;
+let relations: Array<{
+  subjectType: string;
+  subjectId: string;
+  relation: string;
+  objectType: string;
+  objectId: string;
+}> = [];
 
 mock.module("../cli/context.js", () => ({
   ...actualCliContextModule,
   getContext: () => mockContext,
 }));
 
-const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../test/ravi-state.js");
-const { grantRelation } = await import("./relations.js");
+mock.module("./relations.js", () => ({
+  hasRelation: (
+    subjectType: string,
+    subjectId: string,
+    relation: string,
+    objectType: string,
+    objectId: string,
+  ): boolean => {
+    return relations.some(
+      (r) =>
+        r.subjectType === subjectType &&
+        r.subjectId === subjectId &&
+        r.relation === relation &&
+        r.objectType === objectType &&
+        r.objectId === objectId,
+    );
+  },
+  listRelations: (filter?: {
+    subjectType?: string;
+    subjectId?: string;
+    relation?: string;
+    objectType?: string;
+    objectId?: string;
+  }) => {
+    return relations
+      .filter((r) => {
+        if (filter?.subjectType && r.subjectType !== filter.subjectType) return false;
+        if (filter?.subjectId && r.subjectId !== filter.subjectId) return false;
+        if (filter?.relation && r.relation !== filter.relation) return false;
+        if (filter?.objectType && r.objectType !== filter.objectType) return false;
+        if (filter?.objectId && r.objectId !== filter.objectId) return false;
+        return true;
+      })
+      .map((r, index) => ({
+        id: index + 1,
+        ...r,
+        source: "test",
+        createdAt: 0,
+      }));
+  },
+}));
+
 const {
   getScopeContext,
   isScopeEnforced,
@@ -27,7 +74,7 @@ const {
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
+  relations.push({ subjectType, subjectId, relation, objectType, objectId });
 }
 
 type MinimalSession = { name?: string; sessionKey: string; agentId?: string };
@@ -42,7 +89,6 @@ const CONTEXT_ENV_KEYS = [
   "RAVI_CHAT_ID",
 ] as const;
 
-let stateDir: string | null = null;
 let previousContextEnv: Partial<Record<(typeof CONTEXT_ENV_KEYS)[number], string>> = {};
 
 setDefaultTimeout(20_000);
@@ -55,7 +101,7 @@ afterAll(() => mock.restore());
 describe("Scope Isolation", () => {
   beforeEach(async () => {
     mockContext = undefined;
-    stateDir = await createIsolatedRaviState("ravi-scope-test-");
+    relations = [];
     previousContextEnv = {};
     for (const key of CONTEXT_ENV_KEYS) {
       if (process.env[key] !== undefined) {
@@ -74,8 +120,7 @@ describe("Scope Isolation", () => {
       }
     }
     previousContextEnv = {};
-    await cleanupIsolatedRaviState(stateDir);
-    stateDir = null;
+    relations = [];
     mockContext = undefined;
   });
 
