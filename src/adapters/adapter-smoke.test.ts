@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { getDb, dbCreateAgent } from "../router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createSessionAdapterBus,
   ensureSessionAdapterStoreSchema,
@@ -166,7 +167,10 @@ function buildDefinition(): SessionAdapterDefinition {
 }
 
 describe("adapter smoke", () => {
-  beforeEach(() => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-adapter-smoke-test-");
     cleanupAdapterState();
     dbCreateAgent({
       id: TEST_AGENT_ID,
@@ -197,8 +201,13 @@ describe("adapter smoke", () => {
     });
   });
 
-  afterEach(() => {
-    cleanupAdapterState();
+  afterEach(async () => {
+    try {
+      cleanupAdapterState();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+      stateDir = null;
+    }
   });
 
   it("runs a real smoke CLI end-to-end through the session adapter bus and rebinds after restart", async () => {

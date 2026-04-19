@@ -13,7 +13,7 @@
  * the runner uses a different session_key than the bot).
  */
 
-import { describe, test, expect, beforeEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 /**
  * Simulates the sequence of events that causes the bug:
@@ -35,13 +35,16 @@ import { describe, test, expect, beforeEach } from "bun:test";
 
 // Import DB functions directly for testing
 import { getOrCreateSession, getSessionByName, generateSessionName } from "../router/index.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 describe("Heartbeat Session Bug", () => {
   const supervisorCwd = "/workspace/ravi/supervisor";
   const mainCwd = "/workspace/ravi/main";
+  let stateDir: string | null = null;
 
   // Clean up test sessions
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-heartbeat-runner-test-");
     // Delete any existing supervisor session
     try {
       const { getDb } = require("../router/router-db.js");
@@ -51,6 +54,11 @@ describe("Heartbeat Session Bug", () => {
     } catch (_e) {
       // DB might not be initialized yet
     }
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   test("generateSessionName for supervisor returns 'supervisor'", () => {

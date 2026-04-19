@@ -33,7 +33,7 @@ import {
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
-import type { ResponseMessage, ChannelContext } from "../../bot.js";
+import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
 import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";

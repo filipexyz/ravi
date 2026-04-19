@@ -1,4 +1,5 @@
-import { expandHome, getAgent } from "../router/index.js";
+import { getAgent } from "../router/config.js";
+import { expandHome } from "../router/resolver.js";
 import { logger } from "../utils/logger.js";
 import { evaluateFilter } from "../triggers/filter.js";
 import { resolveTemplate } from "../triggers/template.js";

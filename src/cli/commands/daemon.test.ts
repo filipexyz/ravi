@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,11 +17,14 @@ function writePackageRoot(root: string): void {
   writeFileSync(join(root, "package.json"), JSON.stringify({ name: "ravi.bot" }), "utf8");
 }
 
-afterEach(() => {
+function clearDaemonRuntimeEnv(): void {
   delete process.env.RAVI_REPO;
   delete process.env.RAVI_BUNDLE;
   delete process.env.RAVI_DAEMON_CWD;
-});
+}
+
+beforeEach(clearDaemonRuntimeEnv);
+afterEach(clearDaemonRuntimeEnv);
 
 afterAll(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -48,6 +51,28 @@ describe("daemon runtime target", () => {
     ).toEqual({
       bundlePath: realpathSync(bundlePath),
       cwd: operatorHome,
+    });
+  });
+
+  it("infers daemon cwd from the bundle project root when no explicit cwd is configured", () => {
+    const tempRoot = makeTempDir("ravi-daemon-bundle-root-");
+    const sourceRoot = join(tempRoot, "source");
+    const bundlePath = join(sourceRoot, "dist", "bundle", "index.js");
+    const operatorHome = join(tempRoot, "home", "ravi");
+
+    writePackageRoot(sourceRoot);
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    mkdirSync(operatorHome, { recursive: true });
+    writeFileSync(bundlePath, "", "utf8");
+
+    expect(
+      resolveDaemonRuntimeTarget({
+        cwd: operatorHome,
+        argvEntry: bundlePath,
+      }),
+    ).toEqual({
+      bundlePath: realpathSync(bundlePath),
+      cwd: realpathSync(sourceRoot),
     });
   });
 

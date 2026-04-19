@@ -10,6 +10,7 @@ const refreshCalls: Array<Record<string, unknown>> = [];
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));

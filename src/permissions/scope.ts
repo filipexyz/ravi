@@ -52,9 +52,9 @@ export interface ScopeContext {
 export function getScopeContext(): ScopeContext {
   const ctx = getContext();
   return {
-    agentId: ctx?.agentId,
-    sessionKey: ctx?.sessionKey,
-    sessionName: ctx?.sessionName,
+    agentId: ctx?.agentId ?? process.env.RAVI_AGENT_ID,
+    sessionKey: ctx?.sessionKey ?? process.env.RAVI_SESSION_KEY,
+    sessionName: ctx?.sessionName ?? process.env.RAVI_SESSION_NAME,
   };
 }
 

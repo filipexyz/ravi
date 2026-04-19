@@ -1,68 +1,8 @@
-import { afterAll, describe, expect, it, beforeEach, mock } from "bun:test";
-
-afterAll(() => mock.restore());
-
-const actualCliContextModule = await import("../cli/context.js");
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 
 // ============================================================================
-// Mock dependencies
-// ============================================================================
-
-let relations: Array<{
-  subjectType: string;
-  subjectId: string;
-  relation: string;
-  objectType: string;
-  objectId: string;
-}> = [];
-
-// Mock the relations module
-mock.module("./relations.js", () => ({
-  hasRelation: (
-    subjectType: string,
-    subjectId: string,
-    relation: string,
-    objectType: string,
-    objectId: string,
-  ): boolean => {
-    return relations.some(
-      (r) =>
-        r.subjectType === subjectType &&
-        r.subjectId === subjectId &&
-        r.relation === relation &&
-        r.objectType === objectType &&
-        r.objectId === objectId,
-    );
-  },
-  listRelations: (filter?: { subjectType?: string; subjectId?: string; relation?: string; objectType?: string }) => {
-    return relations.filter((r) => {
-      if (filter?.subjectType && r.subjectType !== filter.subjectType) return false;
-      if (filter?.subjectId && r.subjectId !== filter.subjectId) return false;
-      if (filter?.relation && r.relation !== filter.relation) return false;
-      if (filter?.objectType && r.objectType !== filter.objectType) return false;
-      return true;
-    });
-  },
-}));
-
-// Mock CLI context
-let mockContext:
-  | {
-      agentId?: string;
-      sessionKey?: string;
-      sessionName?: string;
-      context?: {
-        capabilities: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
-      };
-    }
-  | undefined;
-
-mock.module("../cli/context.js", () => ({
-  ...actualCliContextModule,
-  getContext: () => mockContext,
-}));
-
-// Import AFTER mocks
+const { cleanupIsolatedRaviState, createIsolatedRaviState } = await import("../test/ravi-state.js");
+const { grantRelation } = await import("./relations.js");
 const {
   getScopeContext,
   isScopeEnforced,
@@ -77,19 +17,53 @@ const {
 
 // Helpers
 function grant(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
-  relations.push({ subjectType, subjectId, relation, objectType, objectId });
+  grantRelation(subjectType, subjectId, relation, objectType, objectId, "test");
 }
 
 type MinimalSession = { name?: string; sessionKey: string; agentId?: string };
+
+const CONTEXT_ENV_KEYS = [
+  "RAVI_CONTEXT_KEY",
+  "RAVI_SESSION_KEY",
+  "RAVI_SESSION_NAME",
+  "RAVI_AGENT_ID",
+  "RAVI_CHANNEL",
+  "RAVI_ACCOUNT_ID",
+  "RAVI_CHAT_ID",
+] as const;
+
+let stateDir: string | null = null;
+let previousContextEnv: Partial<Record<(typeof CONTEXT_ENV_KEYS)[number], string>> = {};
+
+setDefaultTimeout(20_000);
 
 // ============================================================================
 // Tests
 // ============================================================================
 
 describe("Scope Isolation", () => {
-  beforeEach(() => {
-    relations = [];
-    mockContext = undefined;
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-scope-test-");
+    previousContextEnv = {};
+    for (const key of CONTEXT_ENV_KEYS) {
+      if (process.env[key] !== undefined) {
+        previousContextEnv[key] = process.env[key];
+      }
+      delete process.env[key];
+    }
+  });
+
+  afterEach(async () => {
+    for (const key of CONTEXT_ENV_KEYS) {
+      if (previousContextEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previousContextEnv[key];
+      }
+    }
+    previousContextEnv = {};
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   // --------------------------------------------------------------------------
@@ -103,7 +77,9 @@ describe("Scope Isolation", () => {
     });
 
     it("extracts agentId from CLI context", () => {
-      mockContext = { agentId: "dev", sessionName: "dev-main", sessionKey: "key" };
+      process.env.RAVI_AGENT_ID = "dev";
+      process.env.RAVI_SESSION_NAME = "dev-main";
+      process.env.RAVI_SESSION_KEY = "key";
       const ctx = getScopeContext();
       expect(ctx.agentId).toBe("dev");
       expect(ctx.sessionName).toBe("dev-main");
@@ -136,14 +112,8 @@ describe("Scope Isolation", () => {
 
   describe("enforceScopeCheck", () => {
     it("allows CLI groups for live superadmin with stale runtime capabilities", () => {
-      mockContext = {
-        agentId: "dev",
-        context: {
-          capabilities: [{ permission: "execute", objectType: "group", objectId: "context" }],
-        },
-      };
-
       grant("agent", "dev", "admin", "system", "*");
+      process.env.RAVI_AGENT_ID = "dev";
 
       expect(enforceScopeCheck("admin", "daemon", "restart").allowed).toBe(true);
       expect(enforceScopeCheck("admin", "agents", "create").allowed).toBe(true);

@@ -109,9 +109,11 @@ export function resolveDaemonRuntimeTarget(options: DaemonRuntimeTargetOptions =
   );
   if (!bundlePath) return null;
 
+  const inferredProjectRoot = findRaviProjectRootFrom(bundlePath);
+
   return {
     bundlePath,
-    cwd: options.daemonCwd?.trim() || process.env.RAVI_DAEMON_CWD?.trim() || homedir(),
+    cwd: options.daemonCwd?.trim() || process.env.RAVI_DAEMON_CWD?.trim() || inferredProjectRoot || homedir(),
   };
 }
 
@@ -142,19 +144,11 @@ export class DaemonCommands {
 
     const target = this.requireRuntimeTarget();
 
-    const { status } = runPm2([
-      "start",
-      target.bundlePath,
-      "--name",
-      PM2_PROCESS_NAME,
-      "--interpreter",
-      "bun",
-      "--cwd",
-      target.cwd,
-      "--",
-      "daemon",
-      "run",
-    ]);
+    const { status } = runPm2(
+      ["start", target.bundlePath, "--name", PM2_PROCESS_NAME, "--interpreter", "bun", "--", "daemon", "run"],
+      undefined,
+      { cwd: target.cwd },
+    );
 
     if (status === 0) {
       console.log("Daemon started via PM2");
@@ -228,7 +222,7 @@ export class DaemonCommands {
       writeFileSync(RESTART_REASON_FILE, restartData);
 
       // Spawn detached process to do the actual restart
-      const args = ["daemon", "restart"];
+      const args = [target.bundlePath, "daemon", "restart"];
       if (build) args.push("--build");
       if (force) args.push("--force");
 
@@ -236,8 +230,10 @@ export class DaemonCommands {
       for (const key of Object.keys(cleanEnv)) {
         if (key.startsWith("RAVI_")) delete cleanEnv[key];
       }
+      cleanEnv.RAVI_BUNDLE = target.bundlePath;
+      cleanEnv.RAVI_DAEMON_CWD = target.cwd;
 
-      const child = spawn("ravi", args, {
+      const child = spawn(process.execPath, args, {
         detached: true,
         stdio: "ignore",
         cwd: target.cwd,
@@ -276,19 +272,11 @@ export class DaemonCommands {
         fail("Failed to stop daemon before restart");
       }
 
-      const { status } = runPm2([
-        "start",
-        target.bundlePath,
-        "--name",
-        PM2_PROCESS_NAME,
-        "--interpreter",
-        "bun",
-        "--cwd",
-        target.cwd,
-        "--",
-        "daemon",
-        "run",
-      ]);
+      const { status } = runPm2(
+        ["start", target.bundlePath, "--name", PM2_PROCESS_NAME, "--interpreter", "bun", "--", "daemon", "run"],
+        undefined,
+        { cwd: target.cwd },
+      );
       if (status === 0) {
         console.log("Daemon restarted");
       } else {

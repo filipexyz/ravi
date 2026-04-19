@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { inspectAgentInstructionFiles, type AgentInstructionState } from "../../runtime/agent-instructions.js";
-import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/index.js";
+import { getRuntimeCompatibilityIssues, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
 import type { RuntimeCompatibilityIssue, RuntimeProviderId } from "../../runtime/types.js";
 import { dbListAgents, dbListInstances, getRaviDbPath } from "../../router/router-db.js";
 import { listTaskAutomations } from "../../tasks/index.js";

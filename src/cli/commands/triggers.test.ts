@@ -9,6 +9,7 @@ const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -21,8 +22,17 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: mock(() => (async function* () {})()),
   nats: {
     emit: mock(async () => {}),
+    subscribe: mock(() => (async function* () {})()),
+    close: mock(async () => {}),
   },
 }));
 
@@ -40,7 +50,17 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 mock.module("../../router/config.js", () => ({
+  getRaviDir: () => "/tmp/ravi",
   getAgent: () => ({ id: "agent-1" }),
+  getAllAgents: () => [{ id: "agent-1" }],
+  createAgent: () => {},
+  updateAgent: () => {},
+  deleteAgent: () => false,
+  setAgentDebounce: () => {},
+  checkAgentDirs: () => [],
+  ensureAgentDirs: () => {},
+  loadRouterConfig: () => ({ defaultAgent: "agent-1" }),
+  setAgentSpecMode: () => {},
 }));
 
 mock.module("../../router/router-db.js", () => ({

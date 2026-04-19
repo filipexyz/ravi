@@ -19,8 +19,17 @@ mock.module("../context.js", () => ({
 }));
 
 mock.module("../../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
+  getNats: mock(() => ({})),
+  isExplicitConnect: () => false,
+  publish: mock(async () => {}),
+  subscribe: mock(() => (async function* () {})()),
   nats: {
     emit: mock(async () => {}),
+    subscribe: mock(() => (async function* () {})()),
+    close: mock(async () => {}),
   },
 }));
 

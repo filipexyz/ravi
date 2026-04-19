@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+
+const actualTasksIndexModule = await import("../../tasks/index.js");
 
 const createWorkflowSpecCalls: Array<Record<string, unknown>> = [];
 const startWorkflowRunCalls: Array<Record<string, unknown>> = [];
@@ -113,6 +115,7 @@ mock.module("../../workflows/index.js", () => ({
 }));
 
 mock.module("../../tasks/index.js", () => ({
+  ...actualTasksIndexModule,
   getTaskActor: () => ({
     actor: "cli-user",
     agentId: "main",
@@ -169,6 +172,8 @@ mock.module("../context.js", () => ({
 }));
 
 const { WorkflowRunCommands, WorkflowSpecCommands } = await import("./workflows.js");
+
+afterAll(() => mock.restore());
 
 describe("WorkflowSpecCommands", () => {
   beforeEach(() => {

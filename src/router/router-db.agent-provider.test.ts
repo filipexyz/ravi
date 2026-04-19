@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { dbCreateAgent, dbGetAgent, dbUpdateAgent } from "./router-db.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 const TEST_AGENT_IDS = ["test-provider-agent-a", "test-provider-agent-b"];
+let stateDir: string | null = null;
 
 function cleanupAgents() {
   try {
@@ -16,12 +18,15 @@ function cleanupAgents() {
 }
 
 describe("Agent provider persistence", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-agent-provider-test-");
     cleanupAgents();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     cleanupAgents();
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   it("persists provider on create", () => {

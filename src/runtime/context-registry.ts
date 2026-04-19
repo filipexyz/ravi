@@ -8,7 +8,7 @@ import {
   type ContextRecord,
   type ContextSource,
 } from "../router/router-db.js";
-import { canWithCapabilityContext } from "../permissions/engine.js";
+import { canWithCapabilityContext } from "../permissions/capability-context.js";
 import { listRelations } from "../permissions/relations.js";
 
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";

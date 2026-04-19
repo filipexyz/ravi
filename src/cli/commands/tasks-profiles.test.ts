@@ -13,6 +13,7 @@ mock.module("../../plugins/index.js", () => ({
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  Scope: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));

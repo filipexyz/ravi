@@ -15,7 +15,7 @@
  */
 
 import { nats } from "./nats.js";
-import type { ResponseMessage } from "./bot.js";
+import type { ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
