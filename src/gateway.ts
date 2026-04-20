@@ -285,25 +285,15 @@ export class Gateway {
         data.type === "turn.failed" ||
         data.type === "turn.interrupted"
       ) {
-        // Prefer _source from event (works cross-daemon), fallback to local activeTargets
-        const target = data._source ?? this.omniConsumer.getActiveTarget(sessionName);
-        if (target) {
-          await this.sendTypingIfChanged(sessionName, target, false);
+        const localTarget = this.omniConsumer.getActiveTarget(sessionName);
+        if (localTarget) {
+          this.omniConsumer.clearActiveTarget(sessionName);
+        } else if (data._source) {
+          // Cross-daemon fallback: the daemon that sees the terminal event may
+          // not be the same daemon that received the inbound message.
+          await this.sendTypingIfChanged(sessionName, data._source, false);
         }
-        this.omniConsumer.clearActiveTarget(sessionName);
         return;
-      }
-
-      if (
-        data.type === "system" ||
-        data.type === "assistant" ||
-        data.type === "assistant.message" ||
-        (data.type === "status" && data.status !== "idle")
-      ) {
-        const target = this.omniConsumer.getActiveTarget(sessionName);
-        if (target) {
-          await this.sendTypingIfChanged(sessionName, target, true);
-        }
       }
     });
   }

@@ -26,6 +26,7 @@ import { logger } from "../utils/logger.js";
 import type { MessageContext, MessageTarget } from "../runtime/message-types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
+import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
@@ -155,6 +156,9 @@ export class OmniConsumer {
   private running = false;
   /** Active targets for typing heartbeat: sessionName → MessageTarget */
   private activeTargets = new Map<string, MessageTarget>();
+  private readonly typingPresence = new TypingPresenceHeartbeat((target, active) =>
+    this.sender.sendTyping(target.instanceId, target.to, active),
+  );
   /** Stored JetStreamManager for use inside consume loops */
   private jsm: JetStreamManager | null = null;
   /** Startup timestamp (ms) — messages older than this are history sync, skip them */
@@ -203,6 +207,8 @@ export class OmniConsumer {
   async stop(): Promise<void> {
     log.info("Stopping omni consumer...");
     this.running = false;
+    await this.typingPresence.stopAll();
+    this.activeTargets.clear();
     // Consume loops detect this.running === false and exit gracefully
   }
 
@@ -823,8 +829,7 @@ export class OmniConsumer {
         .catch(() => {});
     }
 
-    this.activeTargets.set(sessionName, source);
-    await this.sender.sendTyping(instanceId, chatJid, true);
+    await this.activateTarget(sessionName, source, instanceId, chatJid);
 
     // Mark message as read (blue check)
     if (payload.externalId) {
@@ -853,8 +858,7 @@ export class OmniConsumer {
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
-      await this.sender.sendTyping(instanceId, chatJid, false);
-      this.activeTargets.delete(sessionName);
+      this.clearActiveTarget(sessionName);
     }
   }
 
@@ -938,11 +942,22 @@ export class OmniConsumer {
     return this.activeTargets.get(sessionName);
   }
 
+  private async activateTarget(
+    sessionName: string,
+    source: MessageTarget,
+    instanceId: string,
+    chatJid: string,
+  ): Promise<void> {
+    this.activeTargets.set(sessionName, source);
+    await this.typingPresence.start(sessionName, { instanceId, to: chatJid });
+  }
+
   /**
    * Clear active target (called when response is sent).
    */
   clearActiveTarget(sessionName: string): void {
     this.activeTargets.delete(sessionName);
+    void this.typingPresence.stop(sessionName);
   }
 
   // ============================================================================
