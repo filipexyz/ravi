@@ -1356,6 +1356,11 @@ export class SessionCommands {
       await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
         sessionName: s.name,
+        source: "cli",
+        action: "sessions.reset",
+        reason: "cli_session_reset",
+        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+        correlationId: cliInvocation.invocationId,
       });
     } catch {
       /* session may not be active */
@@ -1418,6 +1423,11 @@ export class SessionCommands {
       await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
         sessionName: s.name,
+        source: "cli",
+        action: "sessions.delete",
+        reason: "cli_session_delete",
+        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+        correlationId: cliInvocation.invocationId,
       });
     } catch {
       /* session may not be active */

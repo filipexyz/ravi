@@ -43,10 +43,26 @@ export class RuntimeHostSubscriptions {
       try {
         for await (const event of nats.subscribe("ravi.session.abort")) {
           if (!this.options.isRunning()) break;
-          const data = event.data as { sessionKey?: string; sessionName?: string };
+          const data = event.data as {
+            sessionKey?: string;
+            sessionName?: string;
+            source?: string;
+            action?: string;
+            reason?: string;
+            actor?: string;
+            correlationId?: string;
+          };
           const key = data.sessionName ?? data.sessionKey;
           if (!key) continue;
-          const aborted = this.options.dispatcher.abortSession(key);
+          const provenance = {
+            source: data.source ?? "nats",
+            action: data.action ?? "ravi.session.abort",
+            reason: data.reason ?? "nats_abort_request",
+            actor: data.actor,
+            correlationId: data.correlationId,
+            request: data,
+          };
+          const aborted = this.options.dispatcher.abortSession(key, provenance);
           this.options
             .safeEmit(`ravi.session.${key}.runtime`, {
               type: "session.abort.received",
@@ -54,13 +70,14 @@ export class RuntimeHostSubscriptions {
               sessionKey: data.sessionKey,
               key,
               aborted,
+              provenance,
               request: data,
               timestamp: new Date().toISOString(),
             })
             .catch((error) => {
               log.warn("Failed to emit session abort audit event", { key, error });
             });
-          log.info("Session abort request", { key, aborted });
+          log.info("Session abort request", { key, aborted, provenance });
         }
       } catch (err) {
         if (!this.options.isRunning()) break;

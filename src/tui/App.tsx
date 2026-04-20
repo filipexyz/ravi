@@ -214,7 +214,14 @@ export function App() {
     if (!isWorking) return;
     const sk = currentSession?.sessionKey;
     if (sk) {
-      publish("ravi.session.abort", { sessionKey: sk, sessionName }).catch(() => {});
+      publish("ravi.session.abort", {
+        sessionKey: sk,
+        sessionName,
+        source: "tui",
+        action: "abort",
+        reason: "tui_abort",
+        actor: "operator",
+      }).catch(() => {});
     }
     stopWorking();
     pushMessage({
@@ -246,7 +253,14 @@ export function App() {
         case "reset": {
           const sk = currentSession?.sessionKey;
           if (sk) {
-            publish("ravi.session.abort", { sessionKey: sk, sessionName }).catch(() => {});
+            publish("ravi.session.abort", {
+              sessionKey: sk,
+              sessionName,
+              source: "tui",
+              action: "reset",
+              reason: "tui_reset",
+              actor: "operator",
+            }).catch(() => {});
             resetSession(sk);
           }
           clearMessages();

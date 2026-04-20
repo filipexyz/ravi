@@ -53,6 +53,15 @@ export interface RuntimeSessionDispatcherOptions {
   getConfigModel(): string;
 }
 
+export interface RuntimeAbortProvenance {
+  source?: string;
+  action?: string;
+  reason?: string;
+  actor?: string;
+  correlationId?: string;
+  request?: unknown;
+}
+
 export class RuntimeSessionDispatcher {
   readonly streamingSessions = new Map<string, RuntimeHostStreamingSession>();
   readonly debounceStates = new Map<string, DebounceState>();
@@ -100,12 +109,14 @@ export class RuntimeSessionDispatcher {
     this.streamingSessions.clear();
   }
 
-  abortSession(sessionName: string): boolean {
+  abortSession(sessionName: string, provenance: RuntimeAbortProvenance = {}): boolean {
+    const abortReason = provenance.reason ?? "explicit_abort";
     const allNames = [...this.streamingSessions.keys()];
     log.info("abortSession called", {
       sessionName,
       allNames,
       found: this.streamingSessions.has(sessionName),
+      provenance,
     });
     const session = this.streamingSessions.get(sessionName);
     if (!session) return false;
@@ -115,8 +126,9 @@ export class RuntimeSessionDispatcher {
       log.info("Deferring abort - unsafe tool running", {
         sessionName,
         tool: session.currentToolName,
+        provenance,
       });
-      session.internalAbortReason = "explicit_abort_deferred";
+      session.internalAbortReason = `${abortReason}_deferred`;
       session.pendingAbort = true;
       recordRuntimeTraceEvent({
         sessionKey: sessionEntry?.sessionKey ?? sessionName,
@@ -131,7 +143,8 @@ export class RuntimeSessionDispatcher {
         status: "deferred",
         source: session.currentSource,
         payloadJson: {
-          reason: "explicit_abort_deferred",
+          reason: session.internalAbortReason,
+          provenance,
           tool: session.currentToolName ?? null,
           toolSafety: session.currentToolSafety,
         },
@@ -144,9 +157,9 @@ export class RuntimeSessionDispatcher {
       stashPendingRuntimeMessages(sessionName, session, this.stashedMessages);
     }
 
-    log.info("Aborting streaming session", { sessionName, done: session.done });
-    recordStreamingAbortTrace(sessionName, session, "explicit_abort", sessionEntry?.sessionKey);
-    shutdownRuntimeStreamingSession(session, "explicit_abort");
+    log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
+    recordStreamingAbortTrace(sessionName, session, abortReason, sessionEntry?.sessionKey, provenance);
+    shutdownRuntimeStreamingSession(session, abortReason);
     this.streamingSessions.delete(sessionName);
     return true;
   }
@@ -722,6 +735,7 @@ function recordStreamingAbortTrace(
   session: RuntimeHostStreamingSession,
   reason: string,
   sessionKey = sessionName,
+  provenance: RuntimeAbortProvenance = {},
 ): void {
   recordRuntimeTraceEvent({
     sessionKey,
@@ -737,6 +751,7 @@ function recordStreamingAbortTrace(
     source: session.currentSource,
     payloadJson: {
       reason,
+      provenance,
       queueSize: session.pendingMessages.length,
       toolRunning: session.toolRunning,
       tool: session.currentToolName ?? null,

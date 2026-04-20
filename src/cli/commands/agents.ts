@@ -780,11 +780,15 @@ export class AgentsCommands {
     // Helper: abort SDK session + delete from DB
     const resetOne = async (key: string, name?: string): Promise<boolean> => {
       // Abort SDK streaming session in daemon (use session name for topic)
-      if (name) {
-        await nats.emit("ravi.session.abort", { sessionName: name, sessionKey: key });
-      } else {
-        await nats.emit("ravi.session.abort", { sessionKey: key });
-      }
+      const abortRequest = {
+        sessionKey: key,
+        ...(name ? { sessionName: name } : {}),
+        source: "cli",
+        action: "agents.reset-session",
+        reason: "cli_agent_session_reset",
+        actor: "cli",
+      };
+      await nats.emit("ravi.session.abort", abortRequest);
       return deleteSession(key);
     };
 

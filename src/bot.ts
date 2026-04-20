@@ -9,7 +9,7 @@ import type { PromptMessage } from "./runtime/message-types.js";
 import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
 import { RuntimePromptSubscription } from "./runtime/prompt-subscription.js";
 import { safeEmit } from "./runtime/safe-emit.js";
-import { RuntimeSessionDispatcher } from "./runtime/session-dispatcher.js";
+import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
 
 export type {
   ChannelContext,
@@ -125,8 +125,8 @@ export class RaviBot {
   }
 
   /** Abort a streaming session by name. If an unsafe tool is running, defers until the tool completes. */
-  public abortSession(sessionName: string): boolean {
-    return this.sessionDispatcher.abortSession(sessionName);
+  public abortSession(sessionName: string, provenance?: RuntimeAbortProvenance): boolean {
+    return this.sessionDispatcher.abortSession(sessionName, provenance);
   }
 
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {

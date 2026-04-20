@@ -65,6 +65,10 @@ Sem ação = sessão será excluída automaticamente.`;
         await nats.emit("ravi.session.abort", {
           sessionKey: session.sessionKey,
           sessionName: session.name,
+          source: "ephemeral-runner",
+          action: "expire-session",
+          reason: "ephemeral_session_expired",
+          actor: "system",
         });
       } catch {
         // Ignore abort errors — session may not be active

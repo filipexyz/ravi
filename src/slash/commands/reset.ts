@@ -46,7 +46,13 @@ export const resetCommand: SlashCommand = {
     log.info("/reset called", { sessionName, sessionKey, agentId, isGroup: ctx.isGroup });
 
     const bot = getBotInstance();
-    const aborted = bot?.abortSession(sessionName) ?? false;
+    const aborted =
+      bot?.abortSession(sessionName, {
+        source: "slash",
+        action: "/reset",
+        reason: "slash_reset",
+        actor: ctx.senderId,
+      }) ?? false;
     log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
 
     const reset = resetSession(sessionKey);

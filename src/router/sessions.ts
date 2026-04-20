@@ -118,6 +118,7 @@ interface SessionStatements {
   findByAttributes: Statement;
   updateSdkId: Statement;
   updateProviderState: Statement;
+  updateRuntimeProviderOnly: Statement;
   clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
@@ -205,6 +206,9 @@ function getStatements(): SessionStatements {
     ),
     updateProviderState: db.prepare(
       "UPDATE sessions SET sdk_session_id = ?, runtime_provider = ?, runtime_session_json = ?, runtime_session_display_id = ?, updated_at = ? WHERE session_key = ?",
+    ),
+    updateRuntimeProviderOnly: db.prepare(
+      "UPDATE sessions SET runtime_provider = ?, updated_at = ? WHERE session_key = ?",
     ),
     clearProviderState: db.prepare(
       "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
@@ -392,6 +396,20 @@ export function updateRuntimeProviderState(
   } = {},
 ): void {
   const s = getStatements();
+  const hasProviderSessionId =
+    typeof options.providerSessionId === "string" && options.providerSessionId.trim().length > 0;
+  const hasRuntimeSessionParams = options.runtimeSessionParams !== undefined;
+  const hasRuntimeSessionDisplayId = typeof options.runtimeSessionDisplayId === "string";
+
+  if (!hasProviderSessionId && !hasRuntimeSessionParams && !hasRuntimeSessionDisplayId) {
+    s.updateRuntimeProviderOnly.run(runtimeProvider ?? null, Date.now(), sessionKey);
+    log.debug("Updated runtime provider metadata without clearing provider session state", {
+      sessionKey,
+      runtimeProvider,
+    });
+    return;
+  }
+
   const providerSessionId = options.providerSessionId?.trim() || null;
   const runtimeSessionDisplayId = options.runtimeSessionDisplayId ?? providerSessionId;
   s.updateProviderState.run(

@@ -54,6 +54,22 @@ describe("Session provider state", () => {
     expect(session?.providerSessionId).toBeUndefined();
   });
 
+  it("does not clear an existing provider session id when only refreshing runtime provider metadata", () => {
+    getOrCreateSession(TEST_SESSION_KEYS[0]!, "agent-a", "/tmp/agent-a");
+    updateProviderSession(TEST_SESSION_KEYS[0]!, "codex", "resp_existing", {
+      runtimeSessionParams: { sessionId: "resp_existing" },
+      runtimeSessionDisplayId: "resp_existing",
+    });
+
+    updateRuntimeProviderState(TEST_SESSION_KEYS[0]!, "codex");
+
+    const session = getSession(TEST_SESSION_KEYS[0]!);
+    expect(session?.runtimeProvider).toBe("codex");
+    expect(session?.runtimeSessionParams).toEqual({ sessionId: "resp_existing" });
+    expect(session?.runtimeSessionDisplayId).toBe("resp_existing");
+    expect(session?.providerSessionId).toBe("resp_existing");
+  });
+
   it("clears provider session state explicitly", () => {
     getOrCreateSession(TEST_SESSION_KEYS[1]!, "agent-b", "/tmp/agent-b");
     updateProviderSession(TEST_SESSION_KEYS[1]!, "claude", "claude-session-1");

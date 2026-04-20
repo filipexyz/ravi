@@ -145,6 +145,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     storedRuntimeSessionParams,
     storedProviderSessionId,
     canResumeStoredSession,
+    resumeDecision,
   } = resolvedSession;
 
   log.info("startRuntimeSession", {
@@ -153,6 +154,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     provider: runtimeProviderId,
     providerSessionId: canResumeStoredSession ? storedProviderSessionId : undefined,
     willResume: canResumeStoredSession,
+    resumeDecision,
   });
 
   const resolvedSource = resolveRuntimePromptSource(prompt, session);
@@ -212,6 +214,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         cwd: sessionCwd,
         canResumeStoredSession,
         storedProviderSessionId: canResumeStoredSession ? storedProviderSessionId : null,
+        resumeDecision,
         taskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
       },
     });

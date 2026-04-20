@@ -737,6 +737,10 @@ async function handleAction(req: Request, url: URL): Promise<Response> {
         await publish("ravi.session.abort", {
           sessionKey: session.sessionKey,
           sessionName: session.name ?? session.sessionKey,
+          source: "whatsapp-overlay",
+          action: "abort",
+          reason: "overlay_abort",
+          actor: "operator",
         });
         upsertLive(session.name ?? session.sessionKey, "blocked", "aborted from WhatsApp overlay");
         break;
@@ -744,6 +748,10 @@ async function handleAction(req: Request, url: URL): Promise<Response> {
         await publish("ravi.session.abort", {
           sessionKey: session.sessionKey,
           sessionName: session.name ?? session.sessionKey,
+          source: "whatsapp-overlay",
+          action: "reset",
+          reason: "overlay_reset",
+          actor: "operator",
         });
         resetSession(session.sessionKey);
         upsertLive(session.name ?? session.sessionKey, "idle", "session reset from WhatsApp overlay");

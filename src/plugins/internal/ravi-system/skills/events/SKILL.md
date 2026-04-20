@@ -76,7 +76,7 @@ Para timeline completa de sessão, use `RAVI_EVENTS` junto de `MESSAGE`/`REACTIO
 | `ravi.session.{name}.tool` | Start: `{ event: "start", toolId, toolName, safety, input, timestamp, sessionName, agentId }` / End: `{ event: "end", toolId, toolName, output, isError, durationMs, timestamp, sessionName, agentId }` |
 | `ravi.session.{name}.stream` | `{ chunk }` — streaming de text deltas pro TUI |
 | `ravi.session.{name}.delivery` | `{ status: "delivered"\|"failed"\|"dropped", reason?, emitId?, messageId?, target?, durationMs?, textLen? }` |
-| `ravi.session.abort` | `{ sessionKey?, sessionName? }` — abortar sessão ephemeral |
+| `ravi.session.abort` | `{ sessionKey?, sessionName?, source?, action?, reason?, actor?, correlationId? }` — abortar sessão ativa com provenance auditável |
 
 > **Nota:** O tópico usa o **session name** (ex: `agent-main-abc123`), não o session key (ex: `agent:main:main`). O prompt vai via JetStream WorkQueue stream (`SESSION_PROMPTS`), os demais são plain NATS pub/sub.
 
