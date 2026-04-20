@@ -30,6 +30,7 @@ import {
   type AgentInstructionState,
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
+import type { AgentConfig } from "../../router/types.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -82,6 +83,23 @@ interface AgentInstructionSyncSummary {
   before: AgentInstructionState;
   after: AgentInstructionState;
   changed: boolean;
+}
+
+type AgentJsonSummary = AgentConfig & {
+  isDefault: boolean;
+  effectiveProvider: string;
+};
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSummary {
+  return {
+    ...agent,
+    isDefault: agent.id === defaultAgent,
+    effectiveProvider: agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID,
+  };
 }
 
 function buildDebugSessionSummary(session: {
@@ -179,10 +197,19 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
-  list() {
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const ctx = getScopeContext();
     const agents = filterVisibleAgents(ctx, getAllAgents());
     const config = loadRouterConfig();
+
+    if (asJson) {
+      printJson({
+        total: agents.length,
+        defaultAgent: config.defaultAgent,
+        agents: agents.map((agent) => buildAgentJson(agent, config.defaultAgent)),
+      });
+      return;
+    }
 
     if (agents.length === 0) {
       console.log("No agents configured.");
@@ -206,7 +233,10 @@ export class AgentsCommands {
   }
 
   @Command({ name: "show", description: "Show agent details" })
-  show(@Arg("id", { description: "Agent ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const ctx = getScopeContext();
     if (!canViewAgent(ctx, id)) {
       fail(`Agent not found: ${id}`);
@@ -219,6 +249,14 @@ export class AgentsCommands {
     }
 
     const isDefault = agent.id === config.defaultAgent;
+
+    if (asJson) {
+      printJson({
+        agent: buildAgentJson(agent, config.defaultAgent),
+        permissionsCommand: `ravi permissions list --subject agent:${agent.id}`,
+      });
+      return;
+    }
 
     console.log(`\nAgent: ${agent.id}${isDefault ? " (default)" : ""}`);
     console.log(`  Name:          ${agent.name || "-"}`);
@@ -257,6 +295,7 @@ export class AgentsCommands {
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const normalizedProvider = provider?.trim() || undefined;
     assertAgentMutationRuntime(allowRuntimeMismatch);
@@ -270,6 +309,23 @@ export class AgentsCommands {
       ensureAgentInstructionFiles(cwd.replace("~", homedir()), {
         createAgentsStub: `# ${id}\n\nInstruções do agente aqui.\n`,
       });
+
+      const createdAgent =
+        getAgent(id) ?? ({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) } as AgentConfig);
+      if (asJson) {
+        printJson({
+          action: "create",
+          changed: true,
+          agent: buildAgentJson(createdAgent, config.defaultAgent),
+          runtimeTarget: inspectCliRuntimeTarget(),
+          permissions: {
+            default: "closed",
+            initCommand: `ravi permissions init agent:${id} full-access`,
+          },
+        });
+        emitConfigChanged();
+        return;
+      }
 
       printAgentMutationTarget();
       console.log(`\u2713 Agent created: ${id}`);
@@ -369,10 +425,24 @@ export class AgentsCommands {
   }
 
   @Command({ name: "delete", description: "Delete an agent" })
-  delete(@Arg("id", { description: "Agent ID" }) id: string) {
+  delete(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     try {
+      const before = getAgent(id);
       const deleted = deleteAgent(id);
       if (deleted) {
+        if (asJson) {
+          printJson({
+            action: "delete",
+            changed: true,
+            agentId: id,
+            before,
+          });
+          emitConfigChanged();
+          return;
+        }
         console.log(`\u2713 Agent deleted: ${id}`);
         emitConfigChanged();
       } else {
@@ -388,6 +458,7 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property key" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -421,6 +492,18 @@ export class AgentsCommands {
       }
       try {
         updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
+        if (asJson) {
+          printJson({
+            action: "set",
+            changed: true,
+            agentId: id,
+            key,
+            value: parsed === 0 ? null : parsed,
+            agent: getAgent(id),
+          });
+          emitConfigChanged();
+          return;
+        }
         console.log(
           parsed === 0 ? `\u2713 groupDebounceMs disabled: ${id}` : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
         );
@@ -503,6 +586,18 @@ export class AgentsCommands {
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }
+      if (asJson) {
+        printJson({
+          action: "set",
+          changed: true,
+          agentId: id,
+          key,
+          value: parsedValue,
+          agent: getAgent(id),
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(
         `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
       );
@@ -516,6 +611,7 @@ export class AgentsCommands {
   debounce(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("ms", { required: false, description: "Debounce time in ms (0 to disable)" }) ms?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -525,6 +621,14 @@ export class AgentsCommands {
     // No ms = show current debounce
     if (ms === undefined) {
       const current = agent.debounceMs;
+      if (asJson) {
+        printJson({
+          agentId: id,
+          debounceMs: current && current > 0 ? current : null,
+          enabled: Boolean(current && current > 0),
+        });
+        return;
+      }
       if (current && current > 0) {
         console.log(`\nDebounce for agent: ${id}`);
         console.log(`  Time: ${current}ms`);
@@ -549,6 +653,16 @@ export class AgentsCommands {
 
     try {
       setAgentDebounce(id, debounceMs);
+      if (asJson) {
+        printJson({
+          action: "set-debounce",
+          changed: true,
+          agentId: id,
+          debounceMs: debounceMs === 0 ? null : debounceMs,
+          enabled: debounceMs > 0,
+        });
+        return;
+      }
       if (debounceMs === 0) {
         console.log(`✓ Debounce disabled: ${id}`);
       } else {
@@ -563,6 +677,7 @@ export class AgentsCommands {
   specMode(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("enabled", { required: false, description: "true/false" }) enabled?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -570,6 +685,13 @@ export class AgentsCommands {
     }
 
     if (enabled === undefined) {
+      if (asJson) {
+        printJson({
+          agentId: id,
+          specMode: Boolean(agent.specMode),
+        });
+        return;
+      }
       console.log(`\nSpec mode for agent: ${id}`);
       console.log(`  Status: ${agent.specMode ? "enabled" : "disabled"}`);
       console.log("\nUsage:");
@@ -585,6 +707,16 @@ export class AgentsCommands {
     const value = enabled === "true";
     try {
       setAgentSpecMode(id, value);
+      if (asJson) {
+        printJson({
+          action: "set-spec-mode",
+          changed: true,
+          agentId: id,
+          specMode: value,
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ Spec mode ${value ? "enabled" : "disabled"}: ${id}`);
       emitConfigChanged();
     } catch (err) {
@@ -593,13 +725,25 @@ export class AgentsCommands {
   }
 
   @Command({ name: "session", description: "Show agent session status" })
-  session(@Arg("id", { description: "Agent ID" }) id: string) {
+  session(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
 
     const sessions = getSessionsByAgent(id);
+
+    if (asJson) {
+      printJson({
+        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+        total: sessions.length,
+        sessions: sessions.map(buildDebugSessionSummary),
+      });
+      return;
+    }
 
     console.log(`\n📋 Sessions for agent: ${id}\n`);
 
@@ -626,6 +770,7 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("nameOrKey", { required: false, description: "Session name/key, 'all' to reset all, or omit for main" })
     nameOrKey?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -647,12 +792,41 @@ export class AgentsCommands {
     if (nameOrKey === "all") {
       const sessions = getSessionsByAgent(id);
       if (sessions.length === 0) {
+        if (asJson) {
+          printJson({
+            action: "reset",
+            changed: false,
+            agentId: id,
+            target: "all",
+            resetSessions: [],
+            count: 0,
+          });
+          return;
+        }
         console.log(`ℹ️  No sessions to reset for agent: ${id}`);
         return;
       }
       let count = 0;
+      const resetSessions: Array<{ sessionKey: string; name?: string; deleted: boolean }> = [];
       for (const s of sessions) {
-        if (await resetOne(s.sessionKey, s.name)) count++;
+        const deleted = await resetOne(s.sessionKey, s.name);
+        if (deleted) count++;
+        resetSessions.push({
+          sessionKey: s.sessionKey,
+          ...(s.name ? { name: s.name } : {}),
+          deleted,
+        });
+      }
+      if (asJson) {
+        printJson({
+          action: "reset",
+          changed: count > 0,
+          agentId: id,
+          target: "all",
+          resetSessions,
+          count,
+        });
+        return;
       }
       console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
       return;
@@ -669,6 +843,16 @@ export class AgentsCommands {
     if (session) {
       const deleted = await resetOne(session.sessionKey, session.name);
       const label = session.name ?? session.sessionKey;
+      if (asJson) {
+        printJson({
+          action: "reset",
+          changed: deleted,
+          agentId: id,
+          target: nameOrKey ?? "main",
+          session: buildDebugSessionSummary(session),
+        });
+        return;
+      }
       if (deleted) {
         console.log(`✅ Session reset: ${label}`);
       } else {
@@ -677,6 +861,17 @@ export class AgentsCommands {
     } else {
       // Show available sessions as hint
       const sessions = getSessionsByAgent(id);
+      if (asJson) {
+        printJson({
+          action: "reset",
+          changed: false,
+          agentId: id,
+          target: nameOrKey ?? "main",
+          reason: "not_found",
+          availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
+        });
+        return;
+      }
       if (sessions.length > 0) {
         console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
         console.log(`\n  Available sessions for ${id}:`);

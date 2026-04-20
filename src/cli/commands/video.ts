@@ -28,8 +28,11 @@ export class VideoCommands {
     @Option({ flags: "-o, --output <path>", description: "Output file path (default: auto-generated in cwd)" })
     output?: string,
     @Option({ flags: "-p, --prompt <text>", description: "Custom analysis prompt" }) prompt?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    console.log("Analyzing video...");
+    if (!asJson) {
+      console.log("Analyzing video...");
+    }
 
     const result = await analyzeVideo(url, prompt);
 
@@ -40,12 +43,38 @@ export class VideoCommands {
 
     writeFileSync(filename, result.markdown);
 
+    const payload = {
+      success: true,
+      artifact: {
+        filePath: filename,
+        mimeType: "text/markdown",
+      },
+      video: {
+        source: result.source,
+        title: result.title,
+        duration: result.duration,
+        summary: result.summary,
+        topics: result.topics,
+        transcript: result.transcript,
+        visualDescription: result.visualDescription,
+      },
+      options: {
+        ...(prompt ? { prompt } : {}),
+      },
+    };
+
     // Print path + short summary for agent consumption
     const summaryPreview = result.summary.slice(0, 500);
-    console.log(`\n✓ Video analysis saved: ${filename}`);
-    console.log(`\nTitle: ${result.title}`);
-    console.log(`Duration: ${result.duration}`);
-    console.log(`Topics: ${result.topics.join(", ")}`);
-    console.log(`\nSummary:\n${summaryPreview}${result.summary.length > 500 ? "..." : ""}`);
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\n✓ Video analysis saved: ${filename}`);
+      console.log(`\nTitle: ${result.title}`);
+      console.log(`Duration: ${result.duration}`);
+      console.log(`Topics: ${result.topics.join(", ")}`);
+      console.log(`\nSummary:\n${summaryPreview}${result.summary.length > 500 ? "..." : ""}`);
+    }
+
+    return payload;
   }
 }

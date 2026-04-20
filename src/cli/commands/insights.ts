@@ -80,6 +80,10 @@ function formatTimestamp(ts: number): string {
   });
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 @Group({
   name: "insights",
   description: "Operational insights with explicit lineage",
@@ -107,6 +111,7 @@ export class InsightCommands {
     comment?: string,
     @Option({ flags: "--auto-context", description: "Auto-link the current runtime session and agent when present" })
     autoContext?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const author = resolveRuntimeActor();
     const ctx = getContext();
@@ -155,12 +160,22 @@ export class InsightCommands {
       links,
     });
 
-    if (comment?.trim()) {
-      dbAddInsightComment({
-        insightId: created.id,
-        body: comment.trim(),
-        author,
+    const createdComment = comment?.trim()
+      ? dbAddInsightComment({
+          insightId: created.id,
+          body: comment.trim(),
+          author,
+        })
+      : undefined;
+    const insight = createdComment ? (dbGetInsight(created.id) ?? created) : created;
+
+    if (asJson) {
+      printJson({
+        success: true,
+        insight,
+        ...(createdComment ? { comment: createdComment } : {}),
       });
+      return insight;
     }
 
     console.log(`✓ Insight created: ${created.id}`);
@@ -182,6 +197,7 @@ export class InsightCommands {
     @Option({ flags: "--query <text>", description: "Free-text search over summaries/details/comments" })
     query?: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const parsedLimit = Number.parseInt(limit ?? "20", 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
@@ -199,6 +215,15 @@ export class InsightCommands {
     };
     const items = dbListInsights(queryInput);
 
+    if (asJson) {
+      printJson({
+        count: items.length,
+        query: queryInput,
+        insights: items,
+      });
+      return items;
+    }
+
     if (items.length === 0) {
       console.log("No insights found.");
       return;
@@ -215,10 +240,18 @@ export class InsightCommands {
   }
 
   @Command({ name: "show", description: "Show one insight with lineage and comments" })
-  show(@Arg("id", { description: "Insight ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Insight ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const insight = dbGetInsight(id.trim());
     if (!insight) {
       fail(`Insight not found: ${id}`);
+    }
+
+    if (asJson) {
+      printJson({ insight });
+      return insight;
     }
 
     console.log(`\nInsight: ${insight.id}`);
@@ -250,6 +283,7 @@ export class InsightCommands {
   search(
     @Arg("text", { description: "Search text" }) text: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const parsedLimit = Number.parseInt(limit ?? "20", 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
@@ -257,6 +291,18 @@ export class InsightCommands {
     }
 
     const items = dbSearchInsights(text.trim(), { limit: parsedLimit });
+    if (asJson) {
+      printJson({
+        count: items.length,
+        query: {
+          text: text.trim(),
+          limit: parsedLimit,
+        },
+        insights: items,
+      });
+      return items;
+    }
+
     if (items.length === 0) {
       console.log("No insights found.");
       return;

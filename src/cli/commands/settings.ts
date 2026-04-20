@@ -98,6 +98,50 @@ function legacyAccountSettingHint(key: string): string {
   return `Use \`ravi instances set ${instanceName} ${field} <value>\` instead.`;
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function knownSettingDefault(key: string): string | null {
+  if (key === "defaultAgent") return "main";
+  if (key === "defaultDmScope") return "per-peer";
+  return null;
+}
+
+function serializeSetting(key: string, value: string | null) {
+  const legacy = isLegacyAccountSetting(key);
+  const meta = KNOWN_SETTINGS[key];
+  return {
+    key,
+    value,
+    isSet: value !== null,
+    known: Boolean(meta),
+    legacy,
+    description: meta?.description ?? null,
+    defaultValue: value === null ? knownSettingDefault(key) : null,
+    hint: legacy ? legacyAccountSettingHint(key) : null,
+  };
+}
+
+function buildSettingsListPayload(showLegacy: boolean) {
+  const settings = dbListSettings();
+  const customKeys = Object.keys(settings).filter((key) => !KNOWN_SETTINGS[key]);
+  const legacyKeys = customKeys.filter((key) => isLegacyAccountSetting(key));
+  const unknownKeys = customKeys.filter((key) => !isLegacyAccountSetting(key));
+
+  return {
+    total: Object.keys(settings).length,
+    showLegacy,
+    knownSettings: Object.entries(KNOWN_SETTINGS).map(([key]) => serializeSetting(key, settings[key] ?? null)),
+    customSettings: unknownKeys.map((key) => serializeSetting(key, settings[key] ?? null)),
+    legacySettings: {
+      total: legacyKeys.length,
+      hidden: !showLegacy,
+      settings: showLegacy ? legacyKeys.map((key) => serializeSetting(key, settings[key] ?? null)) : [],
+    },
+  };
+}
+
 @Group({
   name: "settings",
   description: "Global settings management",
@@ -108,8 +152,14 @@ export class SettingsCommands {
   list(
     @Option({ flags: "--legacy", description: "Show legacy account.* settings shadowed by instances" })
     showLegacy = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const settings = dbListSettings();
+
+    if (asJson) {
+      printJson(buildSettingsListPayload(showLegacy));
+      return;
+    }
 
     console.log("\nSettings:\n");
 
@@ -147,9 +197,17 @@ export class SettingsCommands {
   }
 
   @Command({ name: "get", description: "Get a setting value" })
-  get(@Arg("key", { description: "Setting key" }) key: string) {
+  get(
+    @Arg("key", { description: "Setting key" }) key: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
     const value = dbGetSetting(key);
     const legacy = isLegacyAccountSetting(key);
+
+    if (asJson) {
+      printJson({ setting: serializeSetting(key, value) });
+      return;
+    }
 
     if (value === null) {
       if (legacy) {
@@ -182,6 +240,7 @@ export class SettingsCommands {
   set(
     @Arg("key", { description: "Setting key" }) key: string,
     @Arg("value", { description: "Setting value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     if (isLegacyAccountSetting(key)) {
       fail(`Legacy setting shadowed by instances: ${key}. ${legacyAccountSettingHint(key)}`);
@@ -208,6 +267,16 @@ export class SettingsCommands {
 
     try {
       dbSetSetting(key, value);
+      if (asJson) {
+        printJson({
+          status: "set",
+          target: { type: "setting", key },
+          changedCount: 1,
+          setting: serializeSetting(key, value),
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ ${key} set: ${value}`);
       emitConfigChanged();
     } catch (err) {
@@ -216,9 +285,23 @@ export class SettingsCommands {
   }
 
   @Command({ name: "delete", description: "Delete a setting" })
-  delete(@Arg("key", { description: "Setting key" }) key: string) {
+  delete(
+    @Arg("key", { description: "Setting key" }) key: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
     const legacy = isLegacyAccountSetting(key);
     const deleted = dbDeleteSetting(key);
+    if (asJson) {
+      printJson({
+        status: deleted ? "deleted" : "not_found",
+        target: { type: "setting", key },
+        changedCount: deleted ? 1 : 0,
+        setting: serializeSetting(key, null),
+      });
+      if (deleted) emitConfigChanged();
+      return;
+    }
+
     if (deleted) {
       console.log(
         legacy ? `\u2713 Deleted legacy setting shadowed by instances: ${key}` : `\u2713 Setting deleted: ${key}`,

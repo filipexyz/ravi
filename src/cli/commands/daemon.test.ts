@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
+import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
 
 const tempDirs: string[] = [];
 
@@ -96,5 +96,36 @@ describe("daemon runtime target", () => {
       cwd: realpathSync(sourceRoot),
       sourceProjectRoot: realpathSync(sourceRoot),
     });
+  });
+});
+
+describe("DaemonCommands --json", () => {
+  it("prints structured daemon status without stdout fallback fields", () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      new DaemonCommands().status(true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(lines).toHaveLength(1);
+    const payload = JSON.parse(lines[0] ?? "{}");
+    expect(typeof payload.pm2Available).toBe("boolean");
+    expect(payload.processName).toBe("ravi");
+    expect(payload.ravi).toEqual(
+      expect.objectContaining({
+        name: "ravi",
+        managed: expect.any(Boolean),
+        running: expect.any(Boolean),
+        status: expect.any(String),
+      }),
+    );
+    expect(payload.stdout).toBeUndefined();
+    expect(payload.stderr).toBeUndefined();
   });
 });

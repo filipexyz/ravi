@@ -125,6 +125,44 @@ function formatIdentitiesShort(contact: Contact, maxLen = 40): string {
   return full.slice(0, maxLen - 1) + "…";
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function serializeContact(contact: Contact) {
+  return {
+    ...contact,
+    routeAgent: getRouteAgent(contact),
+    sessionName: getSessionName(contact),
+  };
+}
+
+function serializeContactMaybe(contact: Contact | null) {
+  return contact ? serializeContact(contact) : null;
+}
+
+function getUpdatedContact(contact: Contact): Contact {
+  return getContact(contact.id) ?? getContact(contact.phone) ?? contact;
+}
+
+function parseAgentIds(agentIds?: string): string[] | null {
+  if (!agentIds) return null;
+  return agentIds
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
+
+function summarizeContacts(contacts: Contact[]) {
+  return {
+    total: contacts.length,
+    allowed: contacts.filter((c) => c.status === "allowed").length,
+    pending: contacts.filter((c) => c.status === "pending").length,
+    blocked: contacts.filter((c) => c.status === "blocked").length,
+    discovered: contacts.filter((c) => c.status === "discovered").length,
+  };
+}
+
 @Group({
   name: "contacts",
   description: "Contact management",
@@ -132,7 +170,10 @@ function formatIdentitiesShort(contact: Contact, maxLen = 40): string {
 export class ContactsCommands {
   @Scope("open")
   @Command({ name: "list", description: "List all contacts" })
-  list(@Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string) {
+  list(
+    @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
 
     // Scope isolation: filter contacts by agent scope (via REBAC)
@@ -144,6 +185,15 @@ export class ContactsCommands {
         const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
         return canAccessContact(scopeCtx, c, null, contactSessions);
       });
+    }
+
+    if (asJson) {
+      printJson({
+        filter: { status: filterStatus ?? null },
+        counts: summarizeContacts(contacts),
+        contacts: contacts.map(serializeContact),
+      });
+      return;
     }
 
     if (contacts.length === 0) {
@@ -177,9 +227,28 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "pending", description: "List pending contacts" })
-  pending(@Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string) {
+  pending(
+    @Option({ flags: "-a, --account <id>", description: "Filter by account" }) account?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     // Global pending contacts
     const contacts = getPendingContacts();
+    const accountPending = listAccountPending(account);
+
+    if (asJson) {
+      printJson({
+        filter: { account: account ?? null },
+        total: contacts.length + accountPending.length,
+        pendingContacts: contacts.map(serializeContact),
+        accountPending: accountPending.map((entry) => ({
+          ...entry,
+          type: entry.isGroup ? "group" : "dm",
+          contact: serializeContactMaybe(getContact(entry.phone)),
+        })),
+      });
+      return;
+    }
+
     if (contacts.length > 0) {
       console.log(`\nPending contacts (${contacts.length}):\n`);
       console.log("  ID          NAME                 IDENTITIES                          SINCE");
@@ -196,7 +265,6 @@ export class ContactsCommands {
     }
 
     // Per-account pending (unrouted messages on accounts without matching routes)
-    const accountPending = listAccountPending(account);
     if (accountPending.length > 0) {
       console.log(`\nAccount pending (${accountPending.length}):\n`);
       console.log("  ACCOUNT       NAME                  IDENTITIES                          SINCE");
@@ -226,16 +294,26 @@ export class ContactsCommands {
     @Arg("identity", { description: "Phone number, LID, or group ID" }) identity: string,
     @Arg("name", { required: false, description: "Contact name" }) name?: string,
     @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const normalized = normalizePhone(identity);
     upsertContact(normalized, name ?? null, "allowed", "manual");
     const contact = getContact(normalized);
     if (contact && agentIds) {
-      const agents = agentIds
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
+      const agents = parseAgentIds(agentIds) ?? [];
       updateContact(contact.id, { allowedAgents: agents });
+    }
+    const updated = contact ? getUpdatedContact(contact) : getContact(normalized);
+    if (asJson) {
+      printJson({
+        status: "added",
+        target: identity,
+        normalized,
+        contact: serializeContactMaybe(updated),
+        allowedAgents: parseAgentIds(agentIds),
+        changedCount: updated ? 1 : 0,
+      });
+      return;
     }
     const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
     console.log(
@@ -250,6 +328,7 @@ export class ContactsCommands {
     @Arg("mode", { required: false, description: "Reply mode (auto|mention)" })
     replyMode?: string,
     @Option({ flags: "--agent <ids>", description: "Restrict to agent(s), comma-separated" }) agentIds?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (replyMode && replyMode !== "auto" && replyMode !== "mention") {
       fail("Reply mode must be 'auto' or 'mention'");
@@ -265,13 +344,23 @@ export class ContactsCommands {
       setContactReplyMode(contact.phone, replyMode as ReplyMode);
     }
     if (agentIds) {
-      const agents = agentIds
-        .split(",")
-        .map((a) => a.trim())
-        .filter(Boolean);
+      const agents = parseAgentIds(agentIds) ?? [];
       updateContact(contact.id, { allowedAgents: agents });
     }
     emitConfigChanged();
+
+    const updated = getUpdatedContact(contact);
+    if (asJson) {
+      printJson({
+        status: "approved",
+        target: contactRef,
+        contact: serializeContact(updated),
+        replyMode: replyMode ?? null,
+        allowedAgents: parseAgentIds(agentIds),
+        changedCount: 1,
+      });
+      return;
+    }
 
     const modeInfo = replyMode ? ` (${replyMode})` : "";
     const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
@@ -280,8 +369,19 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
-  remove(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
+  remove(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const deleted = deleteContact(contactRef);
+    if (asJson) {
+      printJson({
+        status: deleted ? "removed" : "not_found",
+        target: contactRef,
+        changedCount: deleted ? 1 : 0,
+      });
+      return;
+    }
     if (deleted) {
       console.log(`✓ Contact removed: ${contactRef}`);
     } else {
@@ -291,24 +391,52 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "allow", description: "Allow a contact" })
-  allow(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
+  allow(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const contact = getContact(contactRef);
     if (!contact) {
       fail(`Contact not found: ${contactRef}`);
     }
     allowContact(contact.phone);
+    const updated = getUpdatedContact(contact);
+    if (asJson) {
+      printJson({
+        status: "allowed",
+        target: contactRef,
+        contact: serializeContact(updated),
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
+    }
     console.log(`✓ Contact allowed: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     emitConfigChanged();
   }
 
   @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
-  block(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
+  block(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const contact = getContact(contactRef);
     if (!contact) {
       fail(`Contact not found: ${contactRef}`);
     }
     blockContact(contact.phone);
+    const updated = getUpdatedContact(contact);
+    if (asJson) {
+      printJson({
+        status: "blocked",
+        target: contactRef,
+        contact: serializeContact(updated),
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
+    }
     console.log(`✗ Contact blocked: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     emitConfigChanged();
   }
@@ -319,11 +447,14 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("key", { description: "Property key" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
       fail(`Contact not found: ${contactRef}`);
     }
+
+    let jsonValue: unknown = value;
 
     if (key === "agent") {
       fail("agent is no longer set on contacts. Use 'ravi instances routes add <instance> <pattern> <agent>' instead.");
@@ -332,19 +463,22 @@ export class ContactsCommands {
         fail("Mode must be 'auto' or 'mention'");
       }
       setContactReplyMode(contact.phone, value as ReplyMode);
-      console.log(`✓ Mode set: ${contact.id} → ${value}`);
+      if (!asJson) console.log(`✓ Mode set: ${contact.id} → ${value}`);
     } else if (key === "email") {
-      updateContact(contact.id, { email: value === "-" ? null : value });
-      console.log(`✓ Email set: ${contact.id} → ${value}`);
+      jsonValue = value === "-" ? null : value;
+      updateContact(contact.id, { email: jsonValue as string | null });
+      if (!asJson) console.log(`✓ Email set: ${contact.id} → ${value}`);
     } else if (key === "name") {
-      updateContact(contact.id, { name: value === "-" ? null : value });
-      console.log(`✓ Name set: ${contact.id} → ${value}`);
+      jsonValue = value === "-" ? null : value;
+      updateContact(contact.id, { name: jsonValue as string | null });
+      if (!asJson) console.log(`✓ Name set: ${contact.id} → ${value}`);
     } else if (key === "tags") {
       try {
         const tags = JSON.parse(value);
         if (!Array.isArray(tags)) fail("Tags must be a JSON array");
+        jsonValue = tags;
         updateContact(contact.id, { tags });
-        console.log(`✓ Tags set: ${contact.id} → ${value}`);
+        if (!asJson) console.log(`✓ Tags set: ${contact.id} → ${value}`);
       } catch {
         fail('Tags must be a valid JSON array, e.g. \'["lead","vip"]\'');
       }
@@ -352,34 +486,39 @@ export class ContactsCommands {
       try {
         const notes = JSON.parse(value);
         if (typeof notes !== "object" || Array.isArray(notes)) fail("Notes must be a JSON object");
+        jsonValue = notes;
         updateContact(contact.id, { notes });
-        console.log(`✓ Notes set: ${contact.id}`);
+        if (!asJson) console.log(`✓ Notes set: ${contact.id}`);
       } catch {
         fail('Notes must be a valid JSON object, e.g. \'{"empresa":"Acme"}\'');
       }
     } else if (key === "opt-out" || key === "optout") {
       const boolValue = value === "true" || value === "yes" || value === "1";
+      jsonValue = boolValue;
       setOptOut(contact.phone, boolValue);
-      console.log(`✓ Opt-out set: ${contact.id} → ${boolValue ? "yes" : "no"}`);
+      if (!asJson) console.log(`✓ Opt-out set: ${contact.id} → ${boolValue ? "yes" : "no"}`);
     } else if (key === "source") {
       const validSources = ["inbound", "outbound", "manual", "discovered"];
       if (value !== "-" && !validSources.includes(value)) {
         fail(`Source must be one of: ${validSources.join(", ")} (or '-' to clear)`);
       }
-      updateContact(contact.id, { source: value === "-" ? null : (value as ContactSource) });
-      console.log(`✓ Source set: ${contact.id} → ${value}`);
+      jsonValue = value === "-" ? null : (value as ContactSource);
+      updateContact(contact.id, { source: jsonValue as ContactSource | null });
+      if (!asJson) console.log(`✓ Source set: ${contact.id} → ${value}`);
     } else if (key === "allowed-agents") {
       if (value === "-" || value === "null") {
+        jsonValue = null;
         updateContact(contact.id, { allowedAgents: null });
-        console.log(`✓ Allowed agents cleared: ${contact.id} → (all)`);
+        if (!asJson) console.log(`✓ Allowed agents cleared: ${contact.id} → (all)`);
       } else {
         try {
           const agents = JSON.parse(value);
           if (!Array.isArray(agents) || !agents.every((a: unknown) => typeof a === "string")) {
             fail("allowed-agents must be a JSON array of strings");
           }
+          jsonValue = agents;
           updateContact(contact.id, { allowedAgents: agents });
-          console.log(`✓ Allowed agents set: ${contact.id} → ${agents.join(", ")}`);
+          if (!asJson) console.log(`✓ Allowed agents set: ${contact.id} → ${agents.join(", ")}`);
         } catch {
           fail("allowed-agents must be a valid JSON array, e.g. '[\"main\",\"sentinel\"]' (or '-' to clear)");
         }
@@ -387,15 +526,42 @@ export class ContactsCommands {
     } else {
       fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out, source, allowed-agents`);
     }
+
+    if (asJson) {
+      printJson({
+        status: "updated",
+        target: contactRef,
+        key,
+        value: jsonValue,
+        contact: serializeContact(getUpdatedContact(contact)),
+        changedCount: 1,
+      });
+    }
   }
 
   @Scope("open")
   @Command({ name: "info", description: "Show contact details with all identities" })
-  info(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
+  info(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const contact = getContact(contactRef);
 
     if (!contact) {
+      if (asJson) {
+        printJson({ found: false, target: contactRef, contact: null });
+        return;
+      }
       console.log(`\nContact not found: ${contactRef}`);
+      return;
+    }
+
+    if (asJson) {
+      printJson({
+        found: true,
+        target: contactRef,
+        contact: serializeContact(contact),
+      });
       return;
     }
 
@@ -447,8 +613,11 @@ export class ContactsCommands {
 
   @Scope("open")
   @Command({ name: "check", description: "Check contact status (alias for info)" })
-  check(@Arg("contact", { description: "Contact ID or identity" }) contactRef: string) {
-    this.info(contactRef);
+  check(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    this.info(contactRef, asJson);
   }
 
   @Scope("open")
@@ -456,8 +625,19 @@ export class ContactsCommands {
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
     @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
+
+    if (asJson) {
+      printJson({
+        query,
+        byTag: Boolean(byTag),
+        total: contacts.length,
+        contacts: contacts.map(serializeContact),
+      });
+      return;
+    }
 
     if (contacts.length === 0) {
       console.log(`No contacts found for: ${query}`);
@@ -481,6 +661,7 @@ export class ContactsCommands {
   tag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to add" }) tag: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -488,6 +669,16 @@ export class ContactsCommands {
     }
 
     addContactTag(contact.phone, tag);
+    if (asJson) {
+      printJson({
+        status: "tag_added",
+        target: contactRef,
+        tag,
+        contact: serializeContact(getUpdatedContact(contact)),
+        changedCount: 1,
+      });
+      return;
+    }
     console.log(`✓ Tag added: ${contact.id} +${tag}`);
   }
 
@@ -496,6 +687,7 @@ export class ContactsCommands {
   untag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("tag", { description: "Tag to remove" }) tag: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -503,6 +695,16 @@ export class ContactsCommands {
     }
 
     removeContactTag(contact.phone, tag);
+    if (asJson) {
+      printJson({
+        status: "tag_removed",
+        target: contactRef,
+        tag,
+        contact: serializeContact(getUpdatedContact(contact)),
+        changedCount: 1,
+      });
+      return;
+    }
     console.log(`✓ Tag removed: ${contact.id} -${tag}`);
   }
 
@@ -512,6 +714,7 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
     @Arg("tag", { description: "Tag label" }) tag: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -523,6 +726,18 @@ export class ContactsCommands {
     }
 
     setGroupTag(contact.id, group.id, tag);
+    if (asJson) {
+      printJson({
+        status: "group_tag_set",
+        target: contactRef,
+        groupRef,
+        tag,
+        contact: serializeContact(getUpdatedContact(contact)),
+        group: serializeContact(getUpdatedContact(group)),
+        changedCount: 1,
+      });
+      return;
+    }
     console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
   }
 
@@ -531,6 +746,7 @@ export class ContactsCommands {
   groupUntag(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("group", { description: "Group contact ID or identity" }) groupRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -542,6 +758,17 @@ export class ContactsCommands {
     }
 
     removeGroupTag(contact.id, group.id);
+    if (asJson) {
+      printJson({
+        status: "group_tag_removed",
+        target: contactRef,
+        groupRef,
+        contact: serializeContact(getUpdatedContact(contact)),
+        group: serializeContact(getUpdatedContact(group)),
+        changedCount: 1,
+      });
+      return;
+    }
     console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
   }
 
@@ -552,6 +779,7 @@ export class ContactsCommands {
     @Arg("platform", { description: "Platform (phone, whatsapp_lid, whatsapp_group, matrix, telegram)" })
     platform: string,
     @Arg("value", { description: "Identity value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
@@ -560,6 +788,16 @@ export class ContactsCommands {
 
     try {
       addContactIdentity(contact.id, platform, value);
+      if (asJson) {
+        printJson({
+          status: "identity_added",
+          target: contactRef,
+          identity: { platform, value },
+          contact: serializeContact(getUpdatedContact(contact)),
+          changedCount: 1,
+        });
+        return;
+      }
       console.log(`✓ Identity added: ${contact.id} ${platformIcon(platform)} ${formatPhone(value)}`);
     } catch (err: any) {
       fail(err.message);
@@ -571,8 +809,19 @@ export class ContactsCommands {
   identityRemove(
     @Arg("platform", { description: "Platform" }) platform: string,
     @Arg("value", { description: "Identity value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const contact = getContact(value);
     removeContactIdentity(platform, value);
+    if (asJson) {
+      printJson({
+        status: "identity_removed",
+        identity: { platform, value },
+        contactId: contact?.id ?? null,
+        changedCount: 1,
+      });
+      return;
+    }
     console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatPhone(value)}`);
   }
 
@@ -581,6 +830,7 @@ export class ContactsCommands {
   merge(
     @Arg("target", { description: "Target contact ID" }) targetRef: string,
     @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const target = getContact(targetRef);
     const source = getContact(sourceRef);
@@ -589,6 +839,19 @@ export class ContactsCommands {
 
     try {
       const result = mergeContacts(target.id, source.id);
+      if (asJson) {
+        printJson({
+          status: "merged",
+          target: targetRef,
+          source: sourceRef,
+          merged: result.merged,
+          targetContact: serializeContact(getUpdatedContact(target)),
+          sourceContact: serializeContact(source),
+          changedCount: result.merged,
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ Merged: ${source.id} → ${target.id} (${result.merged} identities moved)`);
       emitConfigChanged();
     } catch (err: any) {

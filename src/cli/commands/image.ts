@@ -37,6 +37,8 @@ export class ImageCommands {
     send?: boolean,
     @Option({ flags: "--caption <text>", description: "Caption when sending (used with --send)" })
     caption?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     // Resolve agent defaults (CLI flags take precedence)
     const agentId = getContext()?.agentId;
@@ -47,7 +49,9 @@ export class ImageCommands {
     const resolvedAspect = aspect ?? (defaults?.image_aspect as string);
     const resolvedSize = size ?? (defaults?.image_size as string);
 
-    console.log(`Generating image (${resolvedMode})...`);
+    if (!asJson) {
+      console.log(`Generating image (${resolvedMode})...`);
+    }
 
     const results = await generateImage(prompt, {
       mode: resolvedMode,
@@ -57,14 +61,57 @@ export class ImageCommands {
       outputDir: output ? resolve(output) : undefined,
     });
 
-    for (const img of results) {
-      console.log(`\n✓ Image saved: ${img.filePath}`);
-      console.log(`  Send to chat: ravi media send "${img.filePath}"`);
-    }
+    const payload: {
+      success: true;
+      images: Array<{
+        filePath: string;
+        mimeType: string;
+        prompt: string;
+        sendCommand: string;
+      }>;
+      options: {
+        mode: "fast" | "quality";
+        aspect?: string;
+        size?: string;
+        source?: string;
+        outputDir?: string;
+      };
+      sent: Array<{
+        topic: "ravi.media.send";
+        channel: string;
+        accountId: string;
+        chatId: string;
+        filename: string;
+        caption: string;
+      }>;
+    } = {
+      success: true,
+      images: results.map((img) => ({
+        filePath: img.filePath,
+        mimeType: img.mimeType,
+        prompt: img.prompt,
+        sendCommand: `ravi media send "${img.filePath}"`,
+      })),
+      options: {
+        mode: resolvedMode,
+        ...(resolvedAspect ? { aspect: resolvedAspect } : {}),
+        ...(resolvedSize ? { size: resolvedSize } : {}),
+        ...(source ? { source: resolve(source) } : {}),
+        ...(output ? { outputDir: resolve(output) } : {}),
+      },
+      sent: [],
+    };
 
-    console.log(`\nPrompt: ${prompt}`);
-    if (source) console.log(`Source: ${source}`);
-    console.log(`Mode: ${resolvedMode} | Aspect: ${resolvedAspect ?? "auto"} | Size: ${resolvedSize ?? "1K"}`);
+    if (!asJson) {
+      for (const img of results) {
+        console.log(`\n✓ Image saved: ${img.filePath}`);
+        console.log(`  Send to chat: ravi media send "${img.filePath}"`);
+      }
+
+      console.log(`\nPrompt: ${prompt}`);
+      if (source) console.log(`Source: ${source}`);
+      console.log(`Mode: ${resolvedMode} | Aspect: ${resolvedAspect ?? "auto"} | Size: ${resolvedSize ?? "1K"}`);
+    }
 
     if (send && results.length > 0) {
       const ctx = getContext()?.source;
@@ -87,16 +134,24 @@ export class ImageCommands {
           filename: basename(img.filePath),
           caption: caption ?? prompt,
         });
-        console.log(`✓ Sent to chat: ${basename(img.filePath)}`);
+        payload.sent.push({
+          topic: "ravi.media.send",
+          channel,
+          accountId,
+          chatId,
+          filename: basename(img.filePath),
+          caption: caption ?? prompt,
+        });
+        if (!asJson) {
+          console.log(`✓ Sent to chat: ${basename(img.filePath)}`);
+        }
       }
     }
 
-    return {
-      success: true,
-      images: results.map((r) => ({
-        path: r.filePath,
-        sendCommand: `ravi media send "${r.filePath}"`,
-      })),
-    };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    }
+
+    return payload;
   }
 }

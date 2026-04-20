@@ -6,6 +6,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  Arg: () => () => {},
   Option: () => () => {},
 }));
 
@@ -24,7 +25,7 @@ mock.module("../../nats.js", () => ({
   },
 }));
 
-const { formatData, matchesReplayFilters, parseReplayTime } = await import("./events.js");
+const { formatData, formatLiveEventJsonRecord, matchesReplayFilters, parseReplayTime } = await import("./events.js");
 
 describe("formatData", () => {
   it("includes runtime failure details", () => {
@@ -106,5 +107,25 @@ describe("event replay filters", () => {
   it("parses ISO and epoch replay times", () => {
     expect(parseReplayTime("2026-04-19T12:00:00.000Z").toISOString()).toBe("2026-04-19T12:00:00.000Z");
     expect(parseReplayTime("1776598847376").toISOString()).toBe("2026-04-19T11:40:47.376Z");
+  });
+});
+
+describe("event stream JSONL records", () => {
+  it("formats live stream events as structured JSON records", () => {
+    const record = formatLiveEventJsonRecord({
+      count: 3,
+      topic: "ravi.session.agent-main.runtime",
+      data: { type: "turn.done", sessionName: "main" },
+      now: new Date("2026-04-19T12:00:00.000Z"),
+    });
+
+    expect(record).toEqual({
+      type: "event",
+      count: 3,
+      topic: "ravi.session.agent-main.runtime",
+      shortTopic: "session.agent-main.runtime",
+      timestamp: "2026-04-19T12:00:00.000Z",
+      data: { type: "turn.done", sessionName: "main" },
+    });
   });
 });

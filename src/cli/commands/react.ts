@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
 
@@ -17,6 +17,7 @@ export class ReactCommands {
   async send(
     @Arg("messageId", { description: "Message ID to react to (from [mid:ID] tag)" }) messageId: string,
     @Arg("emoji", { description: "Emoji to react with" }) emoji: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ctx = getContext();
     const source = ctx?.source;
@@ -27,15 +28,37 @@ export class ReactCommands {
 
     const { channel, accountId, chatId } = source;
 
-    await nats.emit("ravi.outbound.reaction", {
+    const eventPayload = {
       channel,
       accountId,
       chatId,
       messageId,
       emoji,
-    });
+    };
 
-    console.log(`✓ Reaction ${emoji} sent to message ${messageId}`);
-    return { success: true, messageId, emoji, channel, chatId };
+    await nats.emit("ravi.outbound.reaction", eventPayload);
+
+    const payload = {
+      success: true,
+      topic: "ravi.outbound.reaction",
+      reaction: {
+        messageId,
+        emoji,
+      },
+      target: {
+        channel,
+        accountId,
+        chatId,
+      },
+      event: eventPayload,
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`✓ Reaction ${emoji} sent to message ${messageId}`);
+    }
+
+    return payload;
   }
 }

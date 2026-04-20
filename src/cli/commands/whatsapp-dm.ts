@@ -10,6 +10,10 @@ import { getFirstAccountName } from "../../router/router-db.js";
 import { phoneToJid, jidToSessionId } from "../../utils/phone.js";
 import { getRecentHistory } from "../../db.js";
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 /**
  * Resolve the best WhatsApp JID for a contact reference.
  * Prefers LID (direct chat) over phone number.
@@ -56,18 +60,34 @@ export class WhatsAppDmCommands {
     @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
+    const accountId = account ?? getFirstAccountName() ?? "";
 
     // Strip common bash escape artifacts (e.g. Claude writes "oi\!" instead of "oi!")
     const cleanMessage = message.replace(/\\([!#$&*?])/g, "$1");
 
     await nats.emit("ravi.outbound.deliver", {
       channel: "whatsapp",
-      accountId: account ?? getFirstAccountName() ?? "",
+      accountId,
       to: jid,
       text: cleanMessage,
     });
+
+    if (asJson) {
+      printJson({
+        status: "sent",
+        channel: "whatsapp",
+        accountId,
+        target: contactRef,
+        to: jid,
+        displayName,
+        text: cleanMessage,
+        changedCount: 1,
+      });
+      return;
+    }
 
     console.log(`✓ Message sent to ${displayName} (${jid})`);
   }
@@ -78,23 +98,41 @@ export class WhatsAppDmCommands {
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
     @Option({ flags: "--no-ack", description: "Don't send read receipt" }) noAck?: boolean,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
     const sessionId = jidToSessionId(jid);
     const limit = last ? parseInt(last, 10) : 10;
+    const accountId = account ?? getFirstAccountName() ?? "";
 
     const messages = getRecentHistory(sessionId, limit);
+    let ackedMessageId: string | null = null;
 
     if (messages.length === 0) {
+      if (asJson) {
+        printJson({
+          contact: contactRef,
+          displayName,
+          jid,
+          sessionId,
+          limit,
+          total: 0,
+          messages: [],
+          ackedMessageId: null,
+        });
+        return;
+      }
       console.log(`No messages found for ${displayName}`);
       return;
     }
 
-    console.log(`\n💬 ${displayName} (last ${messages.length})\n`);
-    for (const msg of messages) {
-      const time = msg.created_at.replace("T", " ").slice(0, 16);
-      const role = msg.role === "user" ? "👤" : "🤖";
-      console.log(`${role} [${time}] ${msg.content}`);
+    if (!asJson) {
+      console.log(`\n💬 ${displayName} (last ${messages.length})\n`);
+      for (const msg of messages) {
+        const time = msg.created_at.replace("T", " ").slice(0, 16);
+        const role = msg.role === "user" ? "👤" : "🤖";
+        console.log(`${role} [${time}] ${msg.content}`);
+      }
     }
 
     // Send ack for the last user message by default
@@ -106,14 +144,28 @@ export class WhatsAppDmCommands {
         if (midMatch) {
           await nats.emit("ravi.outbound.receipt", {
             channel: "whatsapp",
-            accountId: account ?? getFirstAccountName() ?? "",
+            accountId,
             chatId: jid,
             senderId: jid,
             messageIds: [midMatch[1]],
           });
-          console.log(`\n✓ Read receipt sent (${midMatch[1]})`);
+          ackedMessageId = midMatch[1];
+          if (!asJson) console.log(`\n✓ Read receipt sent (${midMatch[1]})`);
         }
       }
+    }
+
+    if (asJson) {
+      printJson({
+        contact: contactRef,
+        displayName,
+        jid,
+        sessionId,
+        limit,
+        total: messages.length,
+        messages,
+        ackedMessageId,
+      });
     }
   }
 
@@ -122,16 +174,32 @@ export class WhatsAppDmCommands {
     @Arg("contact", { description: "Contact ID, phone, or LID" }) contactRef: string,
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid(contactRef);
+    const accountId = account ?? getFirstAccountName() ?? "";
 
     await nats.emit("ravi.outbound.receipt", {
       channel: "whatsapp",
-      accountId: account ?? getFirstAccountName() ?? "",
+      accountId,
       chatId: jid,
       senderId: jid,
       messageIds: [messageId],
     });
+
+    if (asJson) {
+      printJson({
+        status: "acknowledged",
+        channel: "whatsapp",
+        accountId,
+        target: contactRef,
+        jid,
+        displayName,
+        messageIds: [messageId],
+        changedCount: 1,
+      });
+      return;
+    }
 
     console.log(`✓ Read receipt sent for ${messageId} in ${displayName}`);
   }

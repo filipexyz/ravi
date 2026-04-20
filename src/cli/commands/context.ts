@@ -273,7 +273,7 @@ export class ContextCommands {
     name: "codex-bash-hook",
     description: "Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context",
   })
-  codexBashHook() {
+  codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
     const output = this.handleCodexBashHook();
     console.log(JSON.stringify(output));
   }

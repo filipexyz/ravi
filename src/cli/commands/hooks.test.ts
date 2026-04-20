@@ -74,6 +74,22 @@ mock.module("../../hooks-runtime/index.js", () => ({
   dbListHooks: () => [],
   dbUpdateHook: (id: string, patch: Record<string, unknown>) => {
     updatedHooks.push({ id, patch });
+    return {
+      id,
+      name: "bridge",
+      eventName: "FileChanged",
+      scopeType: "workspace",
+      scopeValue: "/tmp/work",
+      actionType: "inject_context",
+      actionPayload: { message: "hello" },
+      enabled: false,
+      async: false,
+      cooldownMs: 5000,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 2,
+      ...patch,
+    };
   },
   emitHookRefresh: mock(async () => {
     refreshCalls.push({});
@@ -86,6 +102,22 @@ mock.module("../../hooks-runtime/index.js", () => ({
 }));
 
 const { HooksCommands } = await import("./hooks.js");
+
+async function captureJson(run: () => Promise<void>): Promise<Record<string, unknown>> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return JSON.parse(lines.join("\n")) as Record<string, unknown>;
+}
 
 describe("HooksCommands", () => {
   beforeEach(() => {
@@ -142,6 +174,25 @@ describe("HooksCommands", () => {
     await commands.enable("hook-1");
 
     expect(updatedHooks).toEqual([{ id: "hook-1", patch: { enabled: true } }]);
+    expect(refreshCalls).toHaveLength(1);
+  });
+
+  it("prints enabled hook data in --json mode", async () => {
+    const commands = new HooksCommands();
+
+    const payload = await captureJson(() => commands.enable("hook-1", true));
+
+    expect(payload).toMatchObject({
+      status: "enabled",
+      target: { type: "hook", id: "hook-1" },
+      changedCount: 1,
+      hook: {
+        id: "hook-1",
+        enabled: true,
+        scope: "workspace:/tmp/work",
+        cooldownDescription: "5s",
+      },
+    });
     expect(refreshCalls).toHaveLength(1);
   });
 });

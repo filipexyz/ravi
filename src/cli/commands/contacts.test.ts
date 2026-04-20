@@ -9,6 +9,9 @@ const actualRouterSessionsModule = await import("../../router/sessions.js");
 let contactRecord: Record<string, unknown> | null = null;
 let sessionRecord: Record<string, unknown> | null = null;
 let routeRecords: Array<{ pattern: string; agent: string }> = [];
+let allContacts: Array<Record<string, unknown>> = [];
+let pendingContacts: Array<Record<string, unknown>> = [];
+let accountPendingEntries: Array<Record<string, unknown>> = [];
 
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
@@ -35,9 +38,19 @@ mock.module("../../nats.js", () => ({
 
 mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
-  getAllContacts: () => [],
-  getContact: () => contactRecord,
-  getPendingContacts: () => [],
+  getAllContacts: () => allContacts,
+  getContact: (ref: string) =>
+    contactRecord ??
+    allContacts.find(
+      (contact) =>
+        contact.id === ref ||
+        contact.phone === ref ||
+        ((contact.identities as Array<{ value?: string }> | undefined) ?? []).some(
+          (identity) => identity.value === ref,
+        ),
+    ) ??
+    null,
+  getPendingContacts: () => pendingContacts,
   upsertContact: () => {},
   deleteContact: () => false,
   allowContact: () => {},
@@ -56,7 +69,8 @@ mock.module("../../contacts.js", () => ({
   mergeContacts: () => ({}),
   setGroupTag: () => {},
   removeGroupTag: () => {},
-  listAccountPending: () => [],
+  listAccountPending: (account?: string) =>
+    accountPendingEntries.filter((entry) => !account || entry.accountId === account),
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -100,6 +114,10 @@ function captureLogs(run: () => void): string {
   return lines.join("\n");
 }
 
+function captureJson(run: () => void): Record<string, unknown> {
+  return JSON.parse(captureLogs(run)) as Record<string, unknown>;
+}
+
 describe("ContactsCommands info", () => {
   beforeEach(() => {
     contactRecord = {
@@ -121,6 +139,9 @@ describe("ContactsCommands info", () => {
       updated_at: "2026-04-11 12:05:00",
       identities: [{ platform: "phone", value: "5511999999999", isPrimary: true }],
     };
+    allContacts = [contactRecord];
+    pendingContacts = [];
+    accountPendingEntries = [];
     sessionRecord = { name: "wa-support" };
     routeRecords = [{ pattern: "5511999999999", agent: "sales" }];
   });
@@ -134,5 +155,54 @@ describe("ContactsCommands info", () => {
     expect(output).toContain("source=resolver freshness=derived-now via=route-lookup");
     expect(output).toContain("source=session-db freshness=derived-now via=identity-lookup");
     expect(output).toContain("Identities (1):[source=contact-db freshness=persisted]");
+  });
+
+  it("prints typed contact details in --json mode", () => {
+    const payload = captureJson(() => {
+      new ContactsCommands().info("contact-1", true);
+    });
+
+    expect(payload.found).toBe(true);
+    expect(payload.target).toBe("contact-1");
+    expect((payload.contact as Record<string, unknown>).id).toBe("contact-1");
+    expect((payload.contact as Record<string, unknown>).routeAgent).toBe("sales");
+    expect((payload.contact as Record<string, unknown>).sessionName).toBe("wa-support");
+  });
+
+  it("prints contact lists with counts and enriched entities in --json mode", () => {
+    const payload = captureJson(() => {
+      new ContactsCommands().list(undefined, true);
+    });
+
+    expect((payload.counts as Record<string, unknown>).total).toBe(1);
+    const contacts = payload.contacts as Array<Record<string, unknown>>;
+    expect(contacts).toHaveLength(1);
+    expect(contacts[0].routeAgent).toBe("sales");
+  });
+
+  it("prints global and account pending approvals in --json mode", () => {
+    pendingContacts = [{ ...contactRecord!, status: "pending" }];
+    accountPendingEntries = [
+      {
+        accountId: "main",
+        phone: "group:123",
+        name: "Launch Group",
+        chatId: "group:123",
+        isGroup: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+    contactRecord = null;
+
+    const payload = captureJson(() => {
+      new ContactsCommands().pending("main", true);
+    });
+
+    expect(payload.total).toBe(2);
+    expect(payload.pendingContacts).toHaveLength(1);
+    const accountPending = payload.accountPending as Array<Record<string, unknown>>;
+    expect(accountPending[0].type).toBe("group");
+    expect(accountPending[0].accountId).toBe("main");
   });
 });

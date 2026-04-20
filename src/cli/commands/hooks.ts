@@ -156,6 +156,18 @@ function formatScope(hook: HookRecord): string {
   return hook.scopeValue ? `${hook.scopeType}:${hook.scopeValue}` : hook.scopeType;
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function serializeHook(hook: HookRecord) {
+  return {
+    ...hook,
+    scope: formatScope(hook),
+    cooldownDescription: formatDurationMs(hook.cooldownMs),
+  };
+}
+
 @Group({
   name: "hooks",
   description: "Generic runtime hooks",
@@ -163,8 +175,13 @@ function formatScope(hook: HookRecord): string {
 })
 export class HooksCommands {
   @Command({ name: "list", description: "List configured hooks" })
-  list() {
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const hooks = dbListHooks();
+    if (asJson) {
+      printJson({ total: hooks.length, hooks: hooks.map(serializeHook) });
+      return;
+    }
+
     if (hooks.length === 0) {
       console.log("\nNo hooks configured.\n");
       console.log("Usage:");
@@ -201,10 +218,18 @@ export class HooksCommands {
   }
 
   @Command({ name: "show", description: "Show hook details" })
-  show(@Arg("id", { description: "Hook ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Hook ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const hook = dbGetHook(id);
     if (!hook) {
       fail(`Hook not found: ${id}`);
+    }
+
+    if (asJson) {
+      printJson({ hook: serializeHook(hook) });
+      return;
     }
 
     console.log(`\nHook: ${hook.name}\n`);
@@ -252,6 +277,7 @@ export class HooksCommands {
     @Option({ flags: "--dedupe-key <template>", description: "Optional dedupe template" }) dedupeKey?: string,
     @Option({ flags: "--async", description: "Run hook action asynchronously" }) asyncMode?: boolean,
     @Option({ flags: "--disabled", description: "Create hook disabled" }) disabled?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const eventName = normalizeEventName(event);
     const actionType = normalizeActionType(action);
@@ -289,6 +315,16 @@ export class HooksCommands {
     const created = dbCreateHook(input);
     await emitHookRefresh();
 
+    if (asJson) {
+      printJson({
+        status: "created",
+        target: { type: "hook", id: created.id },
+        changedCount: 1,
+        hook: serializeHook(created),
+      });
+      return;
+    }
+
     console.log(`\n✓ Created hook: ${created.id}`);
     console.log(`  Name:       ${created.name}`);
     console.log(`  Event:      ${created.eventName}`);
@@ -298,24 +334,48 @@ export class HooksCommands {
   }
 
   @Command({ name: "enable", description: "Enable a hook" })
-  async enable(@Arg("id", { description: "Hook ID" }) id: string) {
+  async enable(
+    @Arg("id", { description: "Hook ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const hook = dbGetHook(id);
     if (!hook) {
       fail(`Hook not found: ${id}`);
     }
-    dbUpdateHook(id, { enabled: true });
+    const updated = dbUpdateHook(id, { enabled: true });
     await emitHookRefresh();
+    if (asJson) {
+      printJson({
+        status: "enabled",
+        target: { type: "hook", id },
+        changedCount: 1,
+        hook: serializeHook(updated),
+      });
+      return;
+    }
     console.log(`✓ Enabled hook: ${id} (${hook.name})`);
   }
 
   @Command({ name: "disable", description: "Disable a hook" })
-  async disable(@Arg("id", { description: "Hook ID" }) id: string) {
+  async disable(
+    @Arg("id", { description: "Hook ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const hook = dbGetHook(id);
     if (!hook) {
       fail(`Hook not found: ${id}`);
     }
-    dbUpdateHook(id, { enabled: false });
+    const updated = dbUpdateHook(id, { enabled: false });
     await emitHookRefresh();
+    if (asJson) {
+      printJson({
+        status: "disabled",
+        target: { type: "hook", id },
+        changedCount: 1,
+        hook: serializeHook(updated),
+      });
+      return;
+    }
     console.log(`✓ Disabled hook: ${id} (${hook.name})`);
   }
 
@@ -324,13 +384,25 @@ export class HooksCommands {
     description: "Delete a hook",
     aliases: ["delete", "remove"],
   })
-  async remove(@Arg("id", { description: "Hook ID" }) id: string) {
+  async remove(
+    @Arg("id", { description: "Hook ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const hook = dbGetHook(id);
     if (!hook) {
       fail(`Hook not found: ${id}`);
     }
     dbDeleteHook(id);
     await emitHookRefresh();
+    if (asJson) {
+      printJson({
+        status: "deleted",
+        target: { type: "hook", id },
+        changedCount: 1,
+        hook: serializeHook(hook),
+      });
+      return;
+    }
     console.log(`✓ Deleted hook: ${id} (${hook.name})`);
   }
 
@@ -341,7 +413,7 @@ export class HooksCommands {
   ) {
     const result = await runHookById(id);
     if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
+      printJson(result);
       return;
     }
 

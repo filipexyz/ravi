@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -32,6 +32,104 @@ export type DaemonRuntimeTarget = {
   cwd: string;
   sourceProjectRoot?: string;
 };
+
+type Pm2ProcessSnapshot = ReturnType<typeof getPm2Processes>[number];
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function printJsonl(payload: unknown): void {
+  console.log(JSON.stringify(payload));
+}
+
+function runPm2Quiet(args: string[], options: { cwd?: string } = {}): { status: number } {
+  const result = spawnSync("pm2", args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf-8",
+    cwd: options.cwd,
+    env: process.env as Record<string, string>,
+  });
+  return { status: result.status ?? 1 };
+}
+
+function capturePm2(
+  args: string[],
+  options: { cwd?: string } = {},
+): { status: number; stdout: string; stderr: string } {
+  const result = spawnSync("pm2", args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf-8",
+    cwd: options.cwd,
+    env: process.env as Record<string, string>,
+  });
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? "",
+    stderr: result.stderr ?? "",
+  };
+}
+
+function serializePm2Process(process: Pm2ProcessSnapshot | undefined, fallbackName: string): Record<string, unknown> {
+  if (!process) {
+    return {
+      name: fallbackName,
+      managed: false,
+      running: false,
+      status: fallbackName === PM2_PROCESS_NAME ? "stopped" : "not_managed_by_pm2",
+      pid: null,
+      pmId: null,
+      cpu: null,
+      memoryBytes: null,
+      memoryMb: null,
+    };
+  }
+
+  return {
+    name: process.name,
+    managed: true,
+    running: process.status === "online",
+    status: process.status,
+    pid: process.pid,
+    pmId: process.pm_id,
+    cpu: process.cpu,
+    memoryBytes: process.memory,
+    memoryMb: Number((process.memory / 1024 / 1024).toFixed(1)),
+  };
+}
+
+function buildDaemonStatusJson(): Record<string, unknown> {
+  const pm2Available = isPm2Available();
+  const processes = pm2Available ? getPm2Processes() : [];
+  const findProcess = (name: string) => processes.find((process) => process.name === name);
+
+  return {
+    pm2Available,
+    processName: PM2_PROCESS_NAME,
+    ravi: serializePm2Process(findProcess(PM2_PROCESS_NAME), PM2_PROCESS_NAME),
+    infrastructure: {
+      omniNats: serializePm2Process(findProcess("omni-nats"), "omni-nats"),
+      omniApi: serializePm2Process(findProcess("omni-api"), "omni-api"),
+    },
+    processes: processes.map((process) => serializePm2Process(process, process.name)),
+  };
+}
+
+function resolvePm2OutLogPath(): string | null {
+  try {
+    const info = execSync(`pm2 info ${PM2_PROCESS_NAME} --no-color 2>/dev/null`, {
+      encoding: "utf-8",
+    });
+    const line = info
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .find((item) => item.includes("out log path"));
+    const logPath = line?.split("│").pop()?.trim();
+    return logPath || null;
+  } catch {
+    return null;
+  }
+}
 
 function normalizeRootSearchStart(startPath: string | null | undefined): string | null {
   const trimmed = startPath?.trim();
@@ -130,25 +228,55 @@ function requirePm2() {
 })
 export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon via PM2" })
-  start() {
+  start(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
     if (isRaviRunning()) {
+      if (asJson) {
+        const payload = {
+          action: "start",
+          changed: false,
+          reason: "already_running",
+          status: buildDaemonStatusJson(),
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log("Daemon is already running");
       console.log(`PID: ${getRaviPid()}`);
       return;
     }
 
     // Clean up old launchd/systemd if present
-    this.cleanupLegacyServices();
+    this.cleanupLegacyServices({ silent: Boolean(asJson) });
 
     const target = this.requireRuntimeTarget();
 
-    const { status } = runPm2(
-      ["start", target.bundlePath, "--name", PM2_PROCESS_NAME, "--interpreter", "bun", "--", "daemon", "run"],
-      undefined,
-      { cwd: target.cwd },
-    );
+    const args = [
+      "start",
+      target.bundlePath,
+      "--name",
+      PM2_PROCESS_NAME,
+      "--interpreter",
+      "bun",
+      "--",
+      "daemon",
+      "run",
+    ];
+    const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
+
+    if (asJson) {
+      const payload = {
+        action: "start",
+        changed: status === 0,
+        pm2Status: status,
+        target,
+        status: buildDaemonStatusJson(),
+      };
+      printJson(payload);
+      if (status !== 0) fail("Failed to start daemon");
+      return payload;
+    }
 
     if (status === 0) {
       console.log("Daemon started via PM2");
@@ -158,15 +286,37 @@ export class DaemonCommands {
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
-  stop() {
+  stop(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
     if (!isRaviRunning()) {
+      if (asJson) {
+        const payload = {
+          action: "stop",
+          changed: false,
+          reason: "not_running",
+          status: buildDaemonStatusJson(),
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log("Daemon is not running");
       return;
     }
 
-    const { status } = runPm2(["delete", PM2_PROCESS_NAME]);
+    const { status } = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
+    if (asJson) {
+      const payload = {
+        action: "stop",
+        changed: status === 0,
+        pm2Status: status,
+        status: buildDaemonStatusJson(),
+      };
+      printJson(payload);
+      if (status !== 0) fail("Failed to stop daemon");
+      return payload;
+    }
+
     if (status === 0) {
       console.log("Daemon stopped");
     } else {
@@ -179,6 +329,7 @@ export class DaemonCommands {
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
     @Option({ flags: "-f, --force", description: "Bypass safety checks (active tasks)" }) force?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
 
@@ -241,21 +392,51 @@ export class DaemonCommands {
       });
       child.unref();
 
+      if (asJson) {
+        const payload = {
+          action: "restart",
+          mode: "detached",
+          scheduled: true,
+          changed: true,
+          message,
+          build: Boolean(build),
+          force: Boolean(force),
+          target,
+          sessionName,
+        };
+        printJson(payload);
+        return payload;
+      }
+
       console.log("Restart scheduled (detached)");
       return;
     }
 
     // Build first if requested
     const target = this.requireRuntimeTarget({ build });
+    let buildResult: { requested: boolean; ok: boolean } = { requested: Boolean(build), ok: true };
     if (build) {
-      console.log("Building...");
+      if (!asJson) console.log("Building...");
       try {
         execSync("bun run build", {
-          stdio: "inherit",
+          stdio: asJson ? ["ignore", "pipe", "pipe"] : "inherit",
           cwd: target.cwd,
         });
-        console.log("Build completed");
+        if (!asJson) console.log("Build completed");
       } catch {
+        buildResult = { requested: true, ok: false };
+        if (asJson) {
+          const payload = {
+            action: "restart",
+            changed: false,
+            build: buildResult,
+            force: Boolean(force),
+            message: message ?? null,
+            target,
+            status: buildDaemonStatusJson(),
+          };
+          printJson(payload);
+        }
         fail("Build failed, aborting restart");
       }
     }
@@ -266,29 +447,90 @@ export class DaemonCommands {
       writeFileSync(RESTART_REASON_FILE, message);
     }
 
+    let pm2Status = 0;
+    const previousRunning = isRaviRunning();
     if (isRaviRunning()) {
-      const stop = runPm2(["delete", PM2_PROCESS_NAME]);
+      const stop = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
+      pm2Status = stop.status;
       if (stop.status !== 0) {
         fail("Failed to stop daemon before restart");
       }
 
-      const { status } = runPm2(
-        ["start", target.bundlePath, "--name", PM2_PROCESS_NAME, "--interpreter", "bun", "--", "daemon", "run"],
-        undefined,
-        { cwd: target.cwd },
-      );
+      const args = [
+        "start",
+        target.bundlePath,
+        "--name",
+        PM2_PROCESS_NAME,
+        "--interpreter",
+        "bun",
+        "--",
+        "daemon",
+        "run",
+      ];
+      const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
+      pm2Status = status;
+      if (asJson) {
+        const payload = {
+          action: "restart",
+          changed: status === 0,
+          previousRunning,
+          pm2Status,
+          build: buildResult,
+          force: Boolean(force),
+          message: message ?? null,
+          target,
+          status: buildDaemonStatusJson(),
+        };
+        printJson(payload);
+        if (status !== 0) fail("Failed to restart daemon");
+        return payload;
+      }
       if (status === 0) {
         console.log("Daemon restarted");
       } else {
         fail("Failed to restart daemon");
       }
     } else {
+      if (asJson) {
+        const args = [
+          "start",
+          target.bundlePath,
+          "--name",
+          PM2_PROCESS_NAME,
+          "--interpreter",
+          "bun",
+          "--",
+          "daemon",
+          "run",
+        ];
+        const { status } = runPm2Quiet(args, { cwd: target.cwd });
+        const payload = {
+          action: "restart",
+          changed: status === 0,
+          previousRunning,
+          pm2Status: status,
+          build: buildResult,
+          force: Boolean(force),
+          message: message ?? null,
+          target,
+          status: buildDaemonStatusJson(),
+        };
+        printJson(payload);
+        if (status !== 0) fail("Failed to restart daemon");
+        return payload;
+      }
       this.start();
     }
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })
-  status() {
+  status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    if (asJson) {
+      const payload = buildDaemonStatusJson();
+      printJson(payload);
+      return payload;
+    }
+
     if (!isPm2Available()) {
       console.log("\nPM2 not installed. Install: bun add -g pm2\n");
       return;
@@ -333,24 +575,39 @@ export class DaemonCommands {
     @Option({ flags: "-t, --tail <lines>", description: "Number of lines to show", defaultValue: "50" }) tail?: string,
     @Option({ flags: "--clear", description: "Flush PM2 logs for ravi" }) clear?: boolean,
     @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean,
+    @Option({ flags: "--json", description: "Print structured log result; with --follow, print JSONL records" })
+    asJson?: boolean,
   ) {
     requirePm2();
 
     if (path) {
-      try {
-        const info = execSync(`pm2 info ${PM2_PROCESS_NAME} --no-color 2>/dev/null | grep "out log path"`, {
-          encoding: "utf-8",
-        }).trim();
-        const logPath = info.split("│").pop()?.trim();
-        console.log(logPath || "Run 'pm2 info ravi' to find log path");
-      } catch {
-        console.log("Run 'pm2 info ravi' to find log path");
+      const logPath = resolvePm2OutLogPath();
+      if (asJson) {
+        const payload = {
+          action: "logs",
+          process: PM2_PROCESS_NAME,
+          path: logPath,
+          available: Boolean(logPath),
+        };
+        printJson(payload);
+        return payload;
       }
+      console.log(logPath || "Run 'pm2 info ravi' to find log path");
       return;
     }
 
     if (clear) {
-      runPm2(["flush", PM2_PROCESS_NAME]);
+      const result = asJson ? runPm2Quiet(["flush", PM2_PROCESS_NAME]) : runPm2(["flush", PM2_PROCESS_NAME]);
+      if (asJson) {
+        const payload = {
+          action: "flush-logs",
+          changed: result.status === 0,
+          pm2Status: result.status,
+          process: PM2_PROCESS_NAME,
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log("Logs flushed");
       return;
     }
@@ -358,6 +615,80 @@ export class DaemonCommands {
     const lines = tail || "50";
     const args = ["logs", PM2_PROCESS_NAME, "--lines", lines];
     if (!follow) args.push("--nostream");
+
+    if (asJson && !follow) {
+      const result = capturePm2(args);
+      const records = [
+        ...result.stdout
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => ({ stream: "stdout", line })),
+        ...result.stderr
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .map((line) => ({ stream: "stderr", line })),
+      ];
+      const payload = {
+        action: "logs",
+        process: PM2_PROCESS_NAME,
+        follow: false,
+        tail: lines,
+        pm2Status: result.status,
+        records,
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    if (asJson && follow) {
+      const child = spawn("pm2", args, { stdio: ["ignore", "pipe", "pipe"] });
+      const emitLines = (stream: NodeJS.ReadableStream | null, streamName: "stdout" | "stderr") => {
+        if (!stream) return;
+        let buffer = "";
+        stream.on("data", (chunk: Buffer | string) => {
+          buffer += chunk.toString();
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line) continue;
+            printJsonl({
+              type: "daemon.log",
+              time: new Date().toISOString(),
+              process: PM2_PROCESS_NAME,
+              stream: streamName,
+              line,
+            });
+          }
+        });
+        stream.on("end", () => {
+          if (!buffer) return;
+          printJsonl({
+            type: "daemon.log",
+            time: new Date().toISOString(),
+            process: PM2_PROCESS_NAME,
+            stream: streamName,
+            line: buffer,
+          });
+        });
+      };
+
+      emitLines(child.stdout, "stdout");
+      emitLines(child.stderr, "stderr");
+      process.on("SIGINT", () => {
+        child.kill();
+        process.exit(0);
+      });
+      child.on("close", (code) => {
+        printJsonl({
+          type: "daemon.logs_closed",
+          time: new Date().toISOString(),
+          process: PM2_PROCESS_NAME,
+          code: code ?? 0,
+        });
+        process.exit(code || 0);
+      });
+      return;
+    }
 
     const child = spawn("pm2", args, { stdio: "inherit" });
 
@@ -374,24 +705,50 @@ export class DaemonCommands {
   }
 
   @Command({ name: "install", description: "Save PM2 process list and suggest startup" })
-  install() {
+  install(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
-    runPm2(["save"]);
+    const result = asJson ? runPm2Quiet(["save"]) : runPm2(["save"]);
+    if (asJson) {
+      const payload = {
+        action: "install",
+        changed: result.status === 0,
+        pm2Status: result.status,
+        startupCommand: "pm2 startup",
+      };
+      printJson(payload);
+      return payload;
+    }
     console.log("\nPM2 process list saved.");
     console.log("To start on boot, run: pm2 startup");
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
-  uninstall() {
+  uninstall(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
 
+    const wasRunning = isRaviRunning();
+    let deleteStatus: number | null = null;
     if (isRaviRunning()) {
-      runPm2(["delete", PM2_PROCESS_NAME]);
+      const result = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
+      deleteStatus = result.status;
     }
-    runPm2(["save"]);
+    const saveResult = asJson ? runPm2Quiet(["save"]) : runPm2(["save"]);
 
     // Clean up old launchd/systemd if present
-    this.cleanupLegacyServices();
+    this.cleanupLegacyServices({ silent: Boolean(asJson) });
+
+    if (asJson) {
+      const payload = {
+        action: "uninstall",
+        changed: wasRunning || saveResult.status === 0,
+        wasRunning,
+        deleteStatus,
+        saveStatus: saveResult.status,
+        status: buildDaemonStatusJson(),
+      };
+      printJson(payload);
+      return payload;
+    }
 
     console.log("Ravi removed from PM2");
   }
@@ -471,9 +828,10 @@ export class DaemonCommands {
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
-  env() {
+  env(@Option({ flags: "--json", description: "Print raw JSON result without opening an editor" }) asJson?: boolean) {
     mkdirSync(RAVI_DIR, { recursive: true });
 
+    const existedBefore = existsSync(ENV_FILE);
     if (!existsSync(ENV_FILE)) {
       const defaultEnv = `# Ravi Daemon Environment
 # This file is loaded when the daemon starts.
@@ -496,7 +854,21 @@ ANTHROPIC_API_KEY=
 # RAVI_LOG_LEVEL=info
 `;
       writeFileSync(ENV_FILE, defaultEnv);
-      console.log(`Created ${ENV_FILE}`);
+      if (!asJson) {
+        console.log(`Created ${ENV_FILE}`);
+      }
+    }
+
+    if (asJson) {
+      const payload = {
+        action: "env",
+        path: ENV_FILE,
+        existedBefore,
+        created: !existedBefore,
+        openedEditor: false,
+      };
+      printJson(payload);
+      return payload;
     }
 
     const editor = process.env.EDITOR || "nano";
@@ -538,7 +910,7 @@ ANTHROPIC_API_KEY=
   /**
    * Remove old launchd plist or systemd unit if they exist.
    */
-  private cleanupLegacyServices() {
+  private cleanupLegacyServices(options: { silent?: boolean } = {}) {
     const plistPath = join(homedir(), "Library/LaunchAgents/sh.ravi.daemon.plist");
     const systemdPath = "/etc/systemd/system/ravi.service";
 
@@ -551,7 +923,9 @@ ANTHROPIC_API_KEY=
       try {
         const { unlinkSync } = require("node:fs");
         unlinkSync(plistPath);
-        console.log("Removed old launchd service");
+        if (!options.silent) {
+          console.log("Removed old launchd service");
+        }
       } catch {
         /* ignore */
       }
@@ -563,7 +937,9 @@ ANTHROPIC_API_KEY=
         execSync("sudo systemctl disable ravi 2>/dev/null", { stdio: "pipe" });
         execSync(`sudo rm ${systemdPath} 2>/dev/null`, { stdio: "pipe" });
         execSync("sudo systemctl daemon-reload 2>/dev/null", { stdio: "pipe" });
-        console.log("Removed old systemd service");
+        if (!options.silent) {
+          console.log("Removed old systemd service");
+        }
       } catch {
         /* ignore */
       }

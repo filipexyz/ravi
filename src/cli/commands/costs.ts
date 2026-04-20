@@ -32,10 +32,41 @@ type SessionCostRow = CostSummary & {
   session_key: string;
 };
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 function hoursToSinceMs(hours?: string): number {
   const value = Number(hours ?? "24");
   const safeHours = Number.isFinite(value) && value > 0 ? value : 24;
   return Date.now() - safeHours * 60 * 60 * 1000;
+}
+
+function normalizeHours(hours?: string): number {
+  const value = Number(hours ?? "24");
+  return Number.isFinite(value) && value > 0 ? value : 24;
+}
+
+function totalTokens(summary: CostSummary): number {
+  return summary.total_input + summary.total_output + summary.total_cache_read + summary.total_cache_creation;
+}
+
+function buildWindowJson(hours?: string): Record<string, unknown> {
+  const effectiveHours = normalizeHours(hours);
+  const sinceMs = Date.now() - effectiveHours * 60 * 60 * 1000;
+  return {
+    requestedHours: hours ?? null,
+    effectiveHours,
+    sinceMs,
+    untilMs: Date.now(),
+  };
+}
+
+function buildSummaryJson(summary: CostSummary): CostSummary & { total_tokens: number } {
+  return {
+    ...summary,
+    total_tokens: totalTokens(summary),
+  };
 }
 
 function formatUsd(value: number): string {
@@ -72,9 +103,20 @@ function printSummary(label: string, summary: CostSummary): void {
 })
 export class CostCommands {
   @Command({ name: "summary", description: "Show total cost summary for a recent window" })
-  summary(@Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string) {
+  summary(
+    @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const sinceMs = hoursToSinceMs(hours);
     const summary = dbGetCostSummary(sinceMs) as CostSummary;
+    if (asJson) {
+      const payload = {
+        window: buildWindowJson(hours),
+        summary: buildSummaryJson(summary),
+      };
+      printJson(payload);
+      return payload;
+    }
     printSummary(`Cost Summary (${hours ?? "24"}h)`, summary);
     return summary;
   }
@@ -83,6 +125,7 @@ export class CostCommands {
   agents(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max agents to show (default: 20)" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const rows = dbGetCostByAgent(sinceMs) as AgentCostRow[];
@@ -121,19 +164,33 @@ export class CostCommands {
     }
 
     const items = [...byAgent.entries()]
-      .map(([agentId, data]) => ({ agentId, ...data }))
+      .map(([agentId, data]) => ({ agentId, ...data, models: [...data.models].sort() }))
       .sort((a, b) => b.total_cost - a.total_cost)
       .slice(0, max);
+
+    if (asJson) {
+      const payload = {
+        window: buildWindowJson(hours),
+        limit: max,
+        totalAgents: byAgent.size,
+        agents: items.map((item) => ({
+          agentId: item.agentId,
+          ...buildSummaryJson(item),
+          models: item.models,
+        })),
+      };
+      printJson(payload);
+      return payload;
+    }
 
     console.log(`\nCost By Agent (${hours ?? "24"}h)\n`);
     console.log("  AGENT                 COST       TURNS   TOKENS      MODELS");
     console.log("  ────────────────────  ─────────  ──────  ──────────  ──────");
     for (const item of items) {
-      const totalTokens = item.total_input + item.total_output + item.total_cache_read + item.total_cache_creation;
       console.log(
         `  ${item.agentId.padEnd(20)}  ${formatUsd(item.total_cost).padStart(9)}  ${String(item.turns).padStart(
           6,
-        )}  ${formatTokens(totalTokens).padStart(10)}  ${String(item.models.size).padStart(6)}`,
+        )}  ${formatTokens(totalTokens(item)).padStart(10)}  ${String(item.models.length).padStart(6)}`,
       );
     }
     console.log();
@@ -144,32 +201,46 @@ export class CostCommands {
   topSessions(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
     @Option({ flags: "--limit <n>", description: "Max sessions to show (default: 10)" }) limit?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const max = Math.max(1, Number(limit ?? "10") || 10);
     const rows = dbGetTopSessions(sinceMs, max) as SessionCostRow[];
 
-    console.log(`\nTop Sessions (${hours ?? "24"}h)\n`);
-    console.log("  SESSION                          AGENT         COST       TURNS   TOKENS");
-    console.log("  ───────────────────────────────  ────────────  ─────────  ──────  ──────────");
-
     const items = rows.map((row) => {
       const session = getSession(row.session_key);
       const name = session?.name ?? row.session_key;
       const agentId = session?.agentId ?? "-";
-      const totalTokens = row.total_input + row.total_output + row.total_cache_read + row.total_cache_creation;
-      console.log(
-        `  ${name.slice(0, 31).padEnd(31)}  ${agentId.slice(0, 12).padEnd(12)}  ${formatUsd(row.total_cost).padStart(
-          9,
-        )}  ${String(row.turns).padStart(6)}  ${formatTokens(totalTokens).padStart(10)}`,
-      );
       return {
         sessionKey: row.session_key,
+        sessionName: session?.name ?? null,
         name,
         agentId,
-        ...row,
+        ...buildSummaryJson(row),
       };
     });
+
+    if (asJson) {
+      const payload = {
+        window: buildWindowJson(hours),
+        limit: max,
+        sessions: items,
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`\nTop Sessions (${hours ?? "24"}h)\n`);
+    console.log("  SESSION                          AGENT         COST       TURNS   TOKENS");
+    console.log("  ───────────────────────────────  ────────────  ─────────  ──────  ──────────");
+
+    for (const item of items) {
+      console.log(
+        `  ${item.name.slice(0, 31).padEnd(31)}  ${item.agentId.slice(0, 12).padEnd(12)}  ${formatUsd(
+          item.total_cost,
+        ).padStart(9)}  ${String(item.turns).padStart(6)}  ${formatTokens(item.total_tokens).padStart(10)}`,
+      );
+    }
 
     console.log();
     return items;
@@ -179,24 +250,42 @@ export class CostCommands {
   agent(
     @Arg("agentId", { description: "Agent ID" }) agentId: string,
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const sinceMs = hoursToSinceMs(hours);
     const summary = dbGetCostForAgent(agentId, sinceMs) as CostSummary;
+    if (asJson) {
+      const payload = {
+        agentId,
+        window: buildWindowJson(hours),
+        summary: buildSummaryJson(summary),
+      };
+      printJson(payload);
+      return payload;
+    }
     printSummary(`Agent Cost (${agentId}, ${hours ?? "24"}h)`, summary);
     return summary;
   }
 
   @Command({ name: "session", description: "Show detailed cost summary for one session" })
-  session(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  session(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const session = resolveSession(nameOrKey);
     const sessionKey = session?.sessionKey ?? nameOrKey;
     const summary = dbGetCostForSession(sessionKey) as CostSummary;
-    printSummary(`Session Cost (${session?.name ?? sessionKey})`, summary);
-    return {
+    const payload = {
       sessionKey,
-      sessionName: session?.name,
-      agentId: session?.agentId,
-      ...summary,
+      sessionName: session?.name ?? null,
+      agentId: session?.agentId ?? null,
+      summary: buildSummaryJson(summary),
     };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    printSummary(`Session Cost (${session?.name ?? sessionKey})`, summary);
+    return payload;
   }
 }

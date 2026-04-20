@@ -89,6 +89,10 @@ function printBinding(binding: TagBinding): void {
   );
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 @Group({
   name: "tags",
   description: "Unified tags for agents and sessions",
@@ -113,7 +117,12 @@ export class TagCommands {
     });
 
     if (asJson) {
-      console.log(JSON.stringify({ tag }, null, 2));
+      printJson({
+        status: "created",
+        target: { type: "tag", slug: tag.slug },
+        changedCount: 1,
+        tag,
+      });
       return;
     }
 
@@ -189,7 +198,17 @@ export class TagCommands {
     });
 
     if (asJson) {
-      console.log(JSON.stringify({ binding }, null, 2));
+      printJson({
+        status: "attached",
+        target: {
+          type: "tag-binding",
+          tagSlug: binding.tagSlug,
+          assetType: binding.assetType,
+          assetId: binding.assetId,
+        },
+        changedCount: 1,
+        binding,
+      });
       return;
     }
 
@@ -204,19 +223,35 @@ export class TagCommands {
     @Arg("slug", { description: "Tag slug" }) slug: string,
     @Option({ flags: "--agent <id>", description: "Target agent id" }) agentId?: string,
     @Option({ flags: "--session <name>", description: "Target session name" }) sessionName?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const normalizedSlug = normalizeSlug(slug);
     const target = resolveTagTarget(agentId, sessionName);
     const removed = dbDeleteTagBinding({
-      slug: normalizeSlug(slug),
+      slug: normalizedSlug,
       assetType: target.assetType,
       assetId: target.assetId,
     });
 
     if (!removed) {
-      fail(`Binding not found for ${normalizeSlug(slug)} -> ${target.assetType}:${target.assetId}`);
+      fail(`Binding not found for ${normalizedSlug} -> ${target.assetType}:${target.assetId}`);
     }
 
-    console.log(`\n✓ Detached ${normalizeSlug(slug)} from ${target.assetType}:${target.assetId}`);
+    if (asJson) {
+      printJson({
+        status: "detached",
+        target: {
+          type: "tag-binding",
+          tagSlug: normalizedSlug,
+          assetType: target.assetType,
+          assetId: target.assetId,
+        },
+        changedCount: 1,
+      });
+      return;
+    }
+
+    console.log(`\n✓ Detached ${normalizedSlug} from ${target.assetType}:${target.assetId}`);
   }
 
   @Command({ name: "search", description: "Search bindings by tag or asset" })

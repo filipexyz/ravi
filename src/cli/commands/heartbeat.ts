@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +19,58 @@ import { nats } from "../../nats.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { expandHome, getMainSession } from "../../router/index.js";
 import { getAgent, getAllAgents } from "../../router/config.js";
+import type { AgentConfig, HeartbeatConfig } from "../../router/types.js";
+
+const DEFAULT_HEARTBEAT_CONFIG: HeartbeatConfig = {
+  enabled: false,
+  intervalMs: 1800000,
+};
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function normalizeHeartbeatConfig(agent: AgentConfig): HeartbeatConfig {
+  return agent.heartbeat ?? { ...DEFAULT_HEARTBEAT_CONFIG };
+}
+
+function formatActiveHours(config: HeartbeatConfig): string {
+  return config.activeStart && config.activeEnd ? `${config.activeStart}-${config.activeEnd}` : "always";
+}
+
+function heartbeatFilePath(agent: AgentConfig): string {
+  return join(expandHome(agent.cwd), "HEARTBEAT.md");
+}
+
+function serializeHeartbeatConfig(config: HeartbeatConfig) {
+  return {
+    enabled: config.enabled,
+    intervalMs: config.intervalMs,
+    intervalDescription: formatDuration(config.intervalMs),
+    model: config.model ?? null,
+    accountId: config.accountId ?? null,
+    activeStart: config.activeStart ?? null,
+    activeEnd: config.activeEnd ?? null,
+    activeHours: formatActiveHours(config),
+    lastRunAt: config.lastRunAt ?? null,
+  };
+}
+
+function serializeHeartbeatAgent(agent: AgentConfig) {
+  const heartbeatFile = heartbeatFilePath(agent);
+  return {
+    agent: {
+      id: agent.id,
+      name: agent.name ?? null,
+      cwd: agent.cwd,
+      model: agent.model ?? null,
+      provider: agent.provider ?? null,
+    },
+    heartbeat: serializeHeartbeatConfig(normalizeHeartbeatConfig(agent)),
+    heartbeatFile,
+    heartbeatFileExists: existsSync(heartbeatFile),
+  };
+}
 
 @Group({
   name: "heartbeat",
@@ -27,8 +79,13 @@ import { getAgent, getAllAgents } from "../../router/config.js";
 })
 export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })
-  status() {
+  status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const agents = getAllAgents();
+
+    if (asJson) {
+      printJson({ total: agents.length, agents: agents.map(serializeHeartbeatAgent) });
+      return;
+    }
 
     console.log("\nHeartbeat Status:\n");
     console.log("  AGENT           ENABLED  INTERVAL  ACTIVE HOURS      LAST RUN");
@@ -58,16 +115,21 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "show", description: "Show heartbeat config for an agent" })
-  show(@Arg("id", { description: "Agent ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
 
-    const hb = agent.heartbeat ?? {
-      enabled: false,
-      intervalMs: 1800000,
-    };
+    const hb = normalizeHeartbeatConfig(agent);
+
+    if (asJson) {
+      printJson(serializeHeartbeatAgent(agent));
+      return;
+    }
 
     console.log(`\nHeartbeat Config: ${id}\n`);
     console.log(`  Enabled:        ${hb.enabled ? "yes" : "no"}`);
@@ -85,6 +147,7 @@ export class HeartbeatCommands {
   async enable(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("interval", { required: false, description: "Interval (e.g., 30m, 1h)" }) interval?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -98,12 +161,21 @@ export class HeartbeatCommands {
         updates.intervalMs = parseDuration(interval);
       }
 
-      updateAgentHeartbeatConfig(id, updates);
+      const updatedAgent = updateAgentHeartbeatConfig(id, updates);
 
       // Signal daemon to refresh timers
       await nats.emit("ravi.heartbeat.refresh", {});
 
       const hb = getAgentHeartbeatConfig(id)!;
+      if (asJson) {
+        printJson({
+          status: "enabled",
+          target: { type: "heartbeat", agentId: id },
+          changedCount: 1,
+          ...serializeHeartbeatAgent(updatedAgent),
+        });
+        return;
+      }
       console.log(`✓ Heartbeat enabled: ${id}`);
       console.log(`  Interval: ${formatDuration(hb.intervalMs)}`);
     } catch (err) {
@@ -112,18 +184,30 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "disable", description: "Disable heartbeat for an agent" })
-  async disable(@Arg("id", { description: "Agent ID" }) id: string) {
+  async disable(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
 
     try {
-      updateAgentHeartbeatConfig(id, { enabled: false });
+      const updatedAgent = updateAgentHeartbeatConfig(id, { enabled: false });
 
       // Signal daemon to refresh timers
       await nats.emit("ravi.heartbeat.refresh", {});
 
+      if (asJson) {
+        printJson({
+          status: "disabled",
+          target: { type: "heartbeat", agentId: id },
+          changedCount: 1,
+          ...serializeHeartbeatAgent(updatedAgent),
+        });
+        return;
+      }
       console.log(`✓ Heartbeat disabled: ${id}`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -135,6 +219,7 @@ export class HeartbeatCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Arg("key", { description: "Property: interval, model, account, active-hours" }) key: string,
     @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
@@ -142,36 +227,46 @@ export class HeartbeatCommands {
     }
 
     try {
+      let normalizedValue: unknown = value;
+      const logHuman = (message: string) => {
+        if (!asJson) console.log(message);
+      };
+
       switch (key) {
         case "interval": {
           const intervalMs = parseDuration(value);
           updateAgentHeartbeatConfig(id, { intervalMs });
-          console.log(`✓ Interval set: ${id} -> ${formatDuration(intervalMs)}`);
+          normalizedValue = intervalMs;
+          logHuman(`✓ Interval set: ${id} -> ${formatDuration(intervalMs)}`);
           break;
         }
 
         case "model": {
           const model = value === "null" || value === "-" ? undefined : value;
           updateAgentHeartbeatConfig(id, { model });
-          console.log(`✓ Model set: ${id} -> ${model ?? "(agent default)"}`);
+          normalizedValue = model ?? null;
+          logHuman(`✓ Model set: ${id} -> ${model ?? "(agent default)"}`);
           break;
         }
 
         case "account": {
           const accountId = value === "null" || value === "-" ? undefined : value;
           updateAgentHeartbeatConfig(id, { accountId });
-          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          normalizedValue = accountId ?? null;
+          logHuman(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
           break;
         }
 
         case "active-hours": {
           if (value === "null" || value === "-" || value === "always") {
             updateAgentHeartbeatConfig(id, { activeStart: undefined, activeEnd: undefined });
-            console.log(`✓ Active hours cleared: ${id} (always active)`);
+            normalizedValue = null;
+            logHuman(`✓ Active hours cleared: ${id} (always active)`);
           } else {
             const { start, end } = parseActiveHours(value);
             updateAgentHeartbeatConfig(id, { activeStart: start, activeEnd: end });
-            console.log(`✓ Active hours set: ${id} -> ${start}-${end}`);
+            normalizedValue = { activeStart: start, activeEnd: end };
+            logHuman(`✓ Active hours set: ${id} -> ${start}-${end}`);
           }
           break;
         }
@@ -182,28 +277,53 @@ export class HeartbeatCommands {
 
       // Signal daemon to refresh timers
       await nats.emit("ravi.heartbeat.refresh", {});
+      if (asJson) {
+        const updatedAgent = getAgent(id);
+        printJson({
+          status: "updated",
+          target: { type: "heartbeat", agentId: id },
+          changedCount: 1,
+          property: key,
+          value: normalizedValue,
+          ...(updatedAgent ? serializeHeartbeatAgent(updatedAgent) : { agent: { id }, heartbeat: null }),
+        });
+      }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
   @Command({ name: "trigger", description: "Manually trigger a heartbeat" })
-  async trigger(@Arg("id", { description: "Agent ID" }) id: string) {
+  async trigger(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const agent = getAgent(id);
     if (!agent) {
       fail(`Agent not found: ${id}`);
     }
 
-    console.log(`\nTriggering heartbeat for: ${id}`);
+    if (!asJson) {
+      console.log(`\nTriggering heartbeat for: ${id}`);
+    }
 
     try {
       // Note: Manual triggers bypass active hours check
 
       // Check HEARTBEAT.md exists and is not empty
-      const agentCwd = expandHome(agent.cwd);
-      const heartbeatFile = join(agentCwd, "HEARTBEAT.md");
+      const heartbeatFile = heartbeatFilePath(agent);
 
       if (!existsSync(heartbeatFile)) {
+        if (asJson) {
+          printJson({
+            status: "skipped",
+            reason: "missing_heartbeat_file",
+            target: { type: "heartbeat", agentId: id },
+            changedCount: 0,
+            heartbeatFile,
+          });
+          return;
+        }
         console.log("✗ No HEARTBEAT.md file found");
         console.log(`  Expected: ${heartbeatFile}`);
         return;
@@ -211,6 +331,16 @@ export class HeartbeatCommands {
 
       const content = readFileSync(heartbeatFile, "utf-8").trim();
       if (!content) {
+        if (asJson) {
+          printJson({
+            status: "skipped",
+            reason: "empty_heartbeat_file",
+            target: { type: "heartbeat", agentId: id },
+            changedCount: 0,
+            heartbeatFile,
+          });
+          return;
+        }
         console.log("✗ HEARTBEAT.md is empty");
         return;
       }
@@ -224,6 +354,16 @@ export class HeartbeatCommands {
         _agentId: id,
       });
 
+      if (asJson) {
+        printJson({
+          status: "triggered",
+          target: { type: "heartbeat", agentId: id },
+          changedCount: 0,
+          sessionName,
+          heartbeatFile,
+        });
+        return;
+      }
       console.log("✓ Heartbeat triggered");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {

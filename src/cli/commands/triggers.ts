@@ -8,7 +8,7 @@ import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
-import { getAccountForAgent } from "../../router/router-db.js";
+import { getAccountForAgent, getDefaultAgentId } from "../../router/router-db.js";
 import { parseDurationMs, formatDurationMs } from "../../cron/schedule.js";
 import {
   dbCreateTrigger,
@@ -17,8 +17,21 @@ import {
   dbUpdateTrigger,
   dbDeleteTrigger,
   type TriggerInput,
+  type Trigger,
 } from "../../triggers/index.js";
 import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function serializeTrigger(trigger: Trigger) {
+  return {
+    ...trigger,
+    effectiveAgentId: trigger.agentId ?? getDefaultAgentId(),
+    cooldownDescription: formatDurationMs(trigger.cooldownMs),
+  };
+}
 
 @Group({
   name: "triggers",
@@ -27,13 +40,18 @@ import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
 })
 export class TriggersCommands {
   @Command({ name: "list", description: "List all event triggers" })
-  list() {
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     let triggers = dbListTriggers();
 
     // Scope isolation: filter to own agent's triggers
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
       triggers = triggers.filter((t) => canAccessResource(scopeCtx, t.agentId));
+    }
+
+    if (asJson) {
+      printJson({ total: triggers.length, triggers: triggers.map(serializeTrigger) });
+      return;
     }
 
     if (triggers.length === 0) {
@@ -74,10 +92,18 @@ export class TriggersCommands {
   }
 
   @Command({ name: "show", description: "Show trigger details" })
-  show(@Arg("id", { description: "Trigger ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Trigger ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
+    }
+
+    if (asJson) {
+      printJson({ trigger: serializeTrigger(trigger) });
+      return;
     }
 
     console.log(`\nTrigger: ${trigger.name}\n`);
@@ -147,6 +173,7 @@ export class TriggersCommands {
       description: "Filter expression (e.g. 'data.cwd == \"/path/to/workspace\"')",
     })
     filter?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!topic) {
       fail("--topic is required");
@@ -213,6 +240,16 @@ export class TriggersCommands {
 
       await nats.emit("ravi.triggers.refresh", {});
 
+      if (asJson) {
+        printJson({
+          status: "created",
+          target: { type: "trigger", id: trigger.id },
+          changedCount: 1,
+          trigger: serializeTrigger(trigger),
+        });
+        return;
+      }
+
       console.log(`\n✓ Created trigger: ${trigger.id}`);
       console.log(`  Name:       ${trigger.name}`);
       console.log(`  Topic:      ${trigger.topic}`);
@@ -224,15 +261,27 @@ export class TriggersCommands {
   }
 
   @Command({ name: "enable", description: "Enable a trigger" })
-  async enable(@Arg("id", { description: "Trigger ID" }) id: string) {
+  async enable(
+    @Arg("id", { description: "Trigger ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
     try {
-      dbUpdateTrigger(id, { enabled: true });
+      const updated = dbUpdateTrigger(id, { enabled: true });
       await nats.emit("ravi.triggers.refresh", {});
+      if (asJson) {
+        printJson({
+          status: "enabled",
+          target: { type: "trigger", id },
+          changedCount: 1,
+          trigger: serializeTrigger(updated),
+        });
+        return;
+      }
       console.log(`✓ Enabled trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -240,15 +289,27 @@ export class TriggersCommands {
   }
 
   @Command({ name: "disable", description: "Disable a trigger" })
-  async disable(@Arg("id", { description: "Trigger ID" }) id: string) {
+  async disable(
+    @Arg("id", { description: "Trigger ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
     try {
-      dbUpdateTrigger(id, { enabled: false });
+      const updated = dbUpdateTrigger(id, { enabled: false });
       await nats.emit("ravi.triggers.refresh", {});
+      if (asJson) {
+        printJson({
+          status: "disabled",
+          target: { type: "trigger", id },
+          changedCount: 1,
+          trigger: serializeTrigger(updated),
+        });
+        return;
+      }
       console.log(`✓ Disabled trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -263,6 +324,7 @@ export class TriggersCommands {
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
@@ -270,15 +332,21 @@ export class TriggersCommands {
     }
 
     try {
+      let updated: Trigger | null = null;
+      let normalizedValue: unknown = value;
+      const logHuman = (message: string) => {
+        if (!asJson) console.log(message);
+      };
+
       switch (key) {
         case "name":
-          dbUpdateTrigger(id, { name: value });
-          console.log(`✓ Name set: ${id} -> ${value}`);
+          updated = dbUpdateTrigger(id, { name: value });
+          logHuman(`✓ Name set: ${id} -> ${value}`);
           break;
 
         case "message":
-          dbUpdateTrigger(id, { message: value });
-          console.log(`✓ Message set: ${id}`);
+          updated = dbUpdateTrigger(id, { message: value });
+          logHuman(`✓ Message set: ${id}`);
           break;
 
         case "topic": {
@@ -286,8 +354,8 @@ export class TriggersCommands {
           if (blockedReason) {
             fail(blockedReason);
           }
-          dbUpdateTrigger(id, { topic: value });
-          console.log(`✓ Topic set: ${id} -> ${value}`);
+          updated = dbUpdateTrigger(id, { topic: value });
+          logHuman(`✓ Topic set: ${id} -> ${value}`);
           break;
         }
 
@@ -299,15 +367,17 @@ export class TriggersCommands {
               fail(`Agent not found: ${agentId}`);
             }
           }
-          dbUpdateTrigger(id, { agentId });
-          console.log(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
+          updated = dbUpdateTrigger(id, { agentId });
+          normalizedValue = agentId ?? null;
+          logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
           break;
         }
 
         case "account": {
           const accountId = value === "null" || value === "-" ? undefined : value;
-          dbUpdateTrigger(id, { accountId });
-          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          updated = dbUpdateTrigger(id, { accountId });
+          normalizedValue = accountId ?? null;
+          logHuman(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
           break;
         }
 
@@ -316,24 +386,26 @@ export class TriggersCommands {
           if (!validValues.includes(value)) {
             fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
           }
-          dbUpdateTrigger(id, {
+          updated = dbUpdateTrigger(id, {
             session: value as "main" | "isolated",
           });
-          console.log(`✓ Session set: ${id} -> ${value}`);
+          logHuman(`✓ Session set: ${id} -> ${value}`);
           break;
         }
 
         case "cooldown": {
           const ms = parseDurationMs(value);
-          dbUpdateTrigger(id, { cooldownMs: ms });
-          console.log(`✓ Cooldown set: ${id} -> ${formatDurationMs(ms)}`);
+          updated = dbUpdateTrigger(id, { cooldownMs: ms });
+          normalizedValue = ms;
+          logHuman(`✓ Cooldown set: ${id} -> ${formatDurationMs(ms)}`);
           break;
         }
 
         case "filter": {
           const filterValue = value === "null" || value === "-" ? undefined : value;
-          dbUpdateTrigger(id, { filter: filterValue });
-          console.log(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);
+          updated = dbUpdateTrigger(id, { filter: filterValue });
+          normalizedValue = filterValue ?? null;
+          logHuman(`✓ Filter set: ${id} -> ${filterValue ?? "(none)"}`);
           break;
         }
 
@@ -342,23 +414,48 @@ export class TriggersCommands {
       }
 
       await nats.emit("ravi.triggers.refresh", {});
+      if (asJson) {
+        const current = updated ?? dbGetTrigger(id);
+        printJson({
+          status: "updated",
+          target: { type: "trigger", id },
+          changedCount: 1,
+          property: key,
+          value: normalizedValue,
+          trigger: current ? serializeTrigger(current) : null,
+        });
+      }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
   @Command({ name: "test", description: "Test trigger with fake event data" })
-  async test(@Arg("id", { description: "Trigger ID" }) id: string) {
+  async test(
+    @Arg("id", { description: "Trigger ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
     }
 
-    console.log(`\nTesting trigger: ${trigger.name}`);
-    console.log(`  Topic: ${trigger.topic}`);
+    if (!asJson) {
+      console.log(`\nTesting trigger: ${trigger.name}`);
+      console.log(`  Topic: ${trigger.topic}`);
+    }
 
     try {
       await nats.emit("ravi.triggers.test", { triggerId: id });
+      if (asJson) {
+        printJson({
+          status: "test_emitted",
+          target: { type: "trigger", id },
+          changedCount: 0,
+          trigger: serializeTrigger(trigger),
+        });
+        return;
+      }
       console.log("✓ Test event sent");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {
@@ -371,7 +468,10 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
-  async rm(@Arg("id", { description: "Trigger ID" }) id: string) {
+  async rm(
+    @Arg("id", { description: "Trigger ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       fail(`Trigger not found: ${id}`);
@@ -380,6 +480,15 @@ export class TriggersCommands {
     try {
       dbDeleteTrigger(id);
       await nats.emit("ravi.triggers.refresh", {});
+      if (asJson) {
+        printJson({
+          status: "deleted",
+          target: { type: "trigger", id },
+          changedCount: 1,
+          trigger: serializeTrigger(trigger),
+        });
+        return;
+      }
       console.log(`✓ Deleted trigger: ${id} (${trigger.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

@@ -69,6 +69,19 @@ function resolveCronRouting(job: CronJob): CronRoutingResolution {
   };
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function serializeCronJob(job: CronJob) {
+  return {
+    ...job,
+    effectiveAgentId: job.agentId ?? getDefaultAgentId(),
+    scheduleDescription: describeSchedule(job.schedule),
+    routing: resolveCronRouting(job),
+  };
+}
+
 @Group({
   name: "cron",
   description: "Scheduled job management",
@@ -76,13 +89,18 @@ function resolveCronRouting(job: CronJob): CronRoutingResolution {
 })
 export class CronCommands {
   @Command({ name: "list", description: "List all scheduled jobs" })
-  list() {
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     let jobs = dbListCronJobs();
 
     // Scope isolation: filter to own agent's jobs
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx)) {
       jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
+    }
+
+    if (asJson) {
+      printJson({ total: jobs.length, jobs: jobs.map(serializeCronJob) });
+      return;
     }
 
     if (jobs.length === 0) {
@@ -119,10 +137,18 @@ export class CronCommands {
   }
 
   @Command({ name: "show", description: "Show job details" })
-  show(@Arg("id", { description: "Job ID" }) id: string) {
+  show(
+    @Arg("id", { description: "Job ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
+    }
+
+    if (asJson) {
+      printJson({ job: serializeCronJob(job) });
+      return;
     }
 
     const agentId = job.agentId ?? getDefaultAgentId();
@@ -147,7 +173,10 @@ export class CronCommands {
     @Option({ flags: "--account <name>", description: "Account for channel delivery (auto-detected from agent)" })
     account?: string,
     @Option({ flags: "--description <text>", description: "Job description" }) description?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const warnings: string[] = [];
+
     // Validate message is provided
     if (!message) {
       fail("--message is required");
@@ -164,7 +193,12 @@ export class CronCommands {
 
     // Warn if --tz is used without --cron
     if (tz && !cronExpr) {
-      console.log("Warning: --tz is only used with --cron, ignoring");
+      const warning = "Warning: --tz is only used with --cron, ignoring";
+      if (asJson) {
+        warnings.push(warning);
+      } else {
+        console.log(warning);
+      }
     }
 
     // Use default timezone for cron if not specified
@@ -226,6 +260,17 @@ export class CronCommands {
       // Signal daemon to refresh timers
       await nats.emit("ravi.cron.refresh", {});
 
+      if (asJson) {
+        printJson({
+          status: "created",
+          target: { type: "cron", id: job.id },
+          changedCount: 1,
+          warnings,
+          job: serializeCronJob(job),
+        });
+        return;
+      }
+
       console.log(`\n✓ Created job: ${job.id}`);
       console.log(`  Name:       ${job.name}`);
       console.log(`  Schedule:   ${describeSchedule(job.schedule)}`);
@@ -238,7 +283,10 @@ export class CronCommands {
   }
 
   @Command({ name: "enable", description: "Enable a job" })
-  async enable(@Arg("id", { description: "Job ID" }) id: string) {
+  async enable(
+    @Arg("id", { description: "Job ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
@@ -252,6 +300,15 @@ export class CronCommands {
       await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id)!;
+      if (asJson) {
+        printJson({
+          status: "enabled",
+          target: { type: "cron", id },
+          changedCount: 1,
+          job: serializeCronJob(updatedJob),
+        });
+        return;
+      }
       console.log(`✓ Enabled job: ${id} (${job.name})`);
       if (updatedJob.nextRunAt) {
         console.log(`  Next run: ${new Date(updatedJob.nextRunAt).toLocaleString()}`);
@@ -262,7 +319,10 @@ export class CronCommands {
   }
 
   @Command({ name: "disable", description: "Disable a job" })
-  async disable(@Arg("id", { description: "Job ID" }) id: string) {
+  async disable(
+    @Arg("id", { description: "Job ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
@@ -271,6 +331,16 @@ export class CronCommands {
     try {
       dbUpdateCronJob(id, { enabled: false });
       await nats.emit("ravi.cron.refresh", {});
+      if (asJson) {
+        const updatedJob = dbGetCronJob(id) ?? { ...job, enabled: false };
+        printJson({
+          status: "disabled",
+          target: { type: "cron", id },
+          changedCount: 1,
+          job: serializeCronJob(updatedJob),
+        });
+        return;
+      }
       console.log(`✓ Disabled job: ${id} (${job.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -286,6 +356,7 @@ export class CronCommands {
     })
     key: string,
     @Arg("value", { description: "Property value" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
@@ -293,15 +364,20 @@ export class CronCommands {
     }
 
     try {
+      let normalizedValue: unknown = value;
+      const logHuman = (message: string) => {
+        if (!asJson) console.log(message);
+      };
+
       switch (key) {
         case "name":
           dbUpdateCronJob(id, { name: value });
-          console.log(`✓ Name set: ${id} -> ${value}`);
+          logHuman(`✓ Name set: ${id} -> ${value}`);
           break;
 
         case "message":
           dbUpdateCronJob(id, { message: value });
-          console.log(`✓ Message set: ${id}`);
+          logHuman(`✓ Message set: ${id}`);
           break;
 
         case "cron": {
@@ -310,7 +386,8 @@ export class CronCommands {
           }
           const schedule: CronSchedule = { type: "cron", cron: value, timezone: job.schedule.timezone };
           dbUpdateCronJob(id, { schedule });
-          console.log(`✓ Cron set: ${id} -> ${value}`);
+          normalizedValue = schedule;
+          logHuman(`✓ Cron set: ${id} -> ${value}`);
           break;
         }
 
@@ -318,7 +395,8 @@ export class CronCommands {
           const ms = parseDurationMs(value);
           const schedule: CronSchedule = { type: "every", every: ms };
           dbUpdateCronJob(id, { schedule });
-          console.log(`✓ Interval set: ${id} -> ${formatDurationMs(ms)}`);
+          normalizedValue = schedule;
+          logHuman(`✓ Interval set: ${id} -> ${formatDurationMs(ms)}`);
           break;
         }
 
@@ -338,7 +416,8 @@ export class CronCommands {
           }
           const schedule: CronSchedule = { ...job.schedule, timezone };
           dbUpdateCronJob(id, { schedule });
-          console.log(`✓ Timezone set: ${id} -> ${timezone ?? "(system default)"}`);
+          normalizedValue = timezone ?? null;
+          logHuman(`✓ Timezone set: ${id} -> ${timezone ?? "(system default)"}`);
           break;
         }
 
@@ -351,20 +430,23 @@ export class CronCommands {
             }
           }
           dbUpdateCronJob(id, { agentId });
-          console.log(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
+          normalizedValue = agentId ?? null;
+          logHuman(`✓ Agent set: ${id} -> ${agentId ?? "(default)"}`);
           break;
         }
 
         case "account": {
           const accountId = value === "null" || value === "-" ? undefined : value;
           dbUpdateCronJob(id, { accountId });
-          console.log(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
+          normalizedValue = accountId ?? null;
+          logHuman(`✓ Account set: ${id} -> ${accountId ?? "(auto)"}`);
           break;
         }
 
         case "description":
-          dbUpdateCronJob(id, { description: value === "null" || value === "-" ? undefined : value });
-          console.log(`✓ Description set: ${id}`);
+          normalizedValue = value === "null" || value === "-" ? null : value;
+          dbUpdateCronJob(id, { description: normalizedValue === null ? undefined : value });
+          logHuman(`✓ Description set: ${id}`);
           break;
 
         case "session": {
@@ -373,24 +455,27 @@ export class CronCommands {
             fail(`Invalid session value: ${value}. Valid: ${validValues.join(", ")}`);
           }
           dbUpdateCronJob(id, { sessionTarget: value as "main" | "isolated" });
-          console.log(`✓ Session set: ${id} -> ${value}`);
+          logHuman(`✓ Session set: ${id} -> ${value}`);
           break;
         }
 
         case "reply-session": {
           const replySession = value === "null" || value === "-" ? undefined : value;
           dbUpdateCronJob(id, { replySession });
-          console.log(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);
+          normalizedValue = replySession ?? null;
+          logHuman(`✓ Reply session set: ${id} -> ${replySession ?? "(auto)"}`);
           break;
         }
 
         case "delete-after": {
-          const boolValue = value === "true" || value === "yes" || value === "1";
-          if (!["true", "false", "yes", "no", "1", "0"].includes(value.toLowerCase())) {
+          const normalizedBooleanInput = value.toLowerCase();
+          const boolValue = normalizedBooleanInput === "true" || normalizedBooleanInput === "yes" || value === "1";
+          if (!["true", "false", "yes", "no", "1", "0"].includes(normalizedBooleanInput)) {
             fail(`Invalid boolean value: ${value}. Use: true, false, yes, no, 1, 0`);
           }
           dbUpdateCronJob(id, { deleteAfterRun: boolValue });
-          console.log(`✓ Delete-after set: ${id} -> ${boolValue ? "yes" : "no"}`);
+          normalizedValue = boolValue;
+          logHuman(`✓ Delete-after set: ${id} -> ${boolValue ? "yes" : "no"}`);
           break;
         }
 
@@ -402,23 +487,49 @@ export class CronCommands {
 
       // Signal daemon to refresh timers
       await nats.emit("ravi.cron.refresh", {});
+
+      if (asJson) {
+        const updatedJob = dbGetCronJob(id);
+        printJson({
+          status: "updated",
+          target: { type: "cron", id },
+          changedCount: 1,
+          property: key,
+          value: normalizedValue,
+          job: updatedJob ? serializeCronJob(updatedJob) : null,
+        });
+      }
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }
 
   @Command({ name: "run", description: "Manually run a job (ignores schedule)" })
-  async run(@Arg("id", { description: "Job ID" }) id: string) {
+  async run(
+    @Arg("id", { description: "Job ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
     }
 
-    console.log(`\nTriggering job: ${job.name}`);
+    if (!asJson) {
+      console.log(`\nTriggering job: ${job.name}`);
+    }
 
     try {
       // Send trigger signal to daemon
       await nats.emit("ravi.cron.trigger", { jobId: id });
+      if (asJson) {
+        printJson({
+          status: "triggered",
+          target: { type: "cron", id },
+          changedCount: 0,
+          job: serializeCronJob(job),
+        });
+        return;
+      }
       console.log("✓ Job triggered");
       console.log("  Check daemon logs: ravi daemon logs -f");
     } catch (err) {
@@ -427,7 +538,10 @@ export class CronCommands {
   }
 
   @Command({ name: "rm", description: "Delete a job", aliases: ["delete", "remove"] })
-  async rm(@Arg("id", { description: "Job ID" }) id: string) {
+  async rm(
+    @Arg("id", { description: "Job ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
       fail(`Job not found: ${id}`);
@@ -436,6 +550,15 @@ export class CronCommands {
     try {
       dbDeleteCronJob(id);
       await nats.emit("ravi.cron.refresh", {});
+      if (asJson) {
+        printJson({
+          status: "deleted",
+          target: { type: "cron", id },
+          changedCount: 1,
+          job: serializeCronJob(job),
+        });
+        return;
+      }
       console.log(`✓ Deleted job: ${id} (${job.name})`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);

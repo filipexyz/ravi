@@ -29,6 +29,7 @@ export class TranscribeCommands {
   async file(
     @Arg("path", { description: "Path to audio file" }) filePath: string,
     @Option({ flags: "--lang <lang>", description: "Language code (default: pt)", defaultValue: "pt" }) _lang?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ext = extname(filePath).toLowerCase();
     const mimetype = EXT_MIME[ext];
@@ -44,22 +45,42 @@ export class TranscribeCommands {
     }
 
     const sizeMB = (buffer.length / 1024 / 1024).toFixed(1);
-    console.log(`Transcribing ${filePath} (${sizeMB}MB, ${mimetype})...`);
+    if (!asJson) {
+      console.log(`Transcribing ${filePath} (${sizeMB}MB, ${mimetype})...`);
+    }
 
     const result = await transcribeAudio(buffer, mimetype);
 
-    if (result.chunks && result.chunks > 1) {
-      console.log(`\n✓ Transcribed in ${result.chunks} chunks (${result.duration?.toFixed(0)}s total)\n`);
+    const payload = {
+      success: true,
+      transcription: {
+        text: result.text,
+        ...(result.duration !== undefined ? { duration: result.duration } : {}),
+        ...(result.chunks !== undefined ? { chunks: result.chunks } : {}),
+      },
+      source: {
+        filePath,
+        mimeType: mimetype,
+        sizeBytes: buffer.length,
+        sizeMB: Number(sizeMB),
+      },
+      options: {
+        lang: _lang ?? "pt",
+      },
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
     } else {
-      console.log(`\n✓ Transcribed${result.duration ? ` (${result.duration.toFixed(0)}s)` : ""}\n`);
+      if (result.chunks && result.chunks > 1) {
+        console.log(`\n✓ Transcribed in ${result.chunks} chunks (${result.duration?.toFixed(0)}s total)\n`);
+      } else {
+        console.log(`\n✓ Transcribed${result.duration ? ` (${result.duration.toFixed(0)}s)` : ""}\n`);
+      }
+
+      console.log(result.text);
     }
 
-    console.log(result.text);
-
-    return {
-      text: result.text,
-      duration: result.duration,
-      chunks: result.chunks,
-    };
+    return payload;
   }
 }

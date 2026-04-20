@@ -421,6 +421,31 @@ type ReplayEvent = {
   raw: string;
 };
 
+type LiveEventJsonRecord = {
+  type: "event";
+  count: number;
+  topic: string;
+  shortTopic: string;
+  timestamp: string;
+  data: Record<string, unknown>;
+};
+
+export function formatLiveEventJsonRecord(input: {
+  count: number;
+  topic: string;
+  data: Record<string, unknown>;
+  now?: Date;
+}): LiveEventJsonRecord {
+  return {
+    type: "event",
+    count: input.count,
+    topic: input.topic,
+    shortTopic: formatTopic(input.topic),
+    timestamp: (input.now ?? new Date()).toISOString(),
+    data: input.data,
+  };
+}
+
 function formatReplayLine(event: ReplayEvent): string {
   const ts = formatReplayTimestamp(event.timestampMs);
   const col = topicColor(event.subject);
@@ -507,17 +532,20 @@ export class EventsCommands {
     @Option({ flags: "--no-heartbeat", description: "Hide heartbeat events" }) noHeartbeat?: boolean,
     @Option({ flags: "--only <type>", description: "Only show: prompt, response, tool, claude, runtime, cli, audit" })
     only?: string,
+    @Option({ flags: "--json", description: "Print raw events as JSONL" }) asJson?: boolean,
   ) {
     const topicPattern = ">"; // NATS wildcard for all topics
 
-    console.log(`\n${c.bold}NATS Event Stream${c.reset}`);
-    if (filter) console.log(`  filter:   ${c.cyan}${filter}${c.reset}`);
-    if (only) console.log(`  only:     ${c.cyan}${only}${c.reset}`);
-    if (noClaude) console.log(`  hiding:   claude SDK events`);
-    if (noHeartbeat) console.log(`  hiding:   heartbeat events`);
-    console.log(`  topic:    ${c.gray}>${c.reset}  (all)`);
-    console.log(`\n${c.dim}Ctrl+C to exit${c.reset}\n`);
-    console.log(`${c.dim}${"─".repeat(80)}${c.reset}`);
+    if (!asJson) {
+      console.log(`\n${c.bold}NATS Event Stream${c.reset}`);
+      if (filter) console.log(`  filter:   ${c.cyan}${filter}${c.reset}`);
+      if (only) console.log(`  only:     ${c.cyan}${only}${c.reset}`);
+      if (noClaude) console.log(`  hiding:   claude SDK events`);
+      if (noHeartbeat) console.log(`  hiding:   heartbeat events`);
+      console.log(`  topic:    ${c.gray}>${c.reset}  (all)`);
+      console.log(`\n${c.dim}Ctrl+C to exit${c.reset}\n`);
+      console.log(`${c.dim}${"─".repeat(80)}${c.reset}`);
+    }
 
     let count = 0;
 
@@ -564,16 +592,26 @@ export class EventsCommands {
       if (topic.includes(".claude") && (data as Record<string, unknown>).type === "stream_event") continue;
 
       count++;
+      if (asJson) {
+        process.stdout.write(
+          `${JSON.stringify(formatLiveEventJsonRecord({ count, topic, data: data as Record<string, unknown> }))}\n`,
+        );
+        continue;
+      }
+
       const ts = formatTimestamp();
       const col = topicColor(topic);
       const icon = topicIcon(topic);
       const short = formatTopic(topic);
       const body = formatData(data as Record<string, unknown>, topic);
-
       process.stdout.write(`${c.dim}${ts}${c.reset} ${col}${icon}${c.reset} ${col}${short}${c.reset}  ${body}\n`);
     }
 
-    console.log(`\n${c.dim}${count} events received${c.reset}`);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ type: "stream.end", count, timestamp: new Date().toISOString() })}\n`);
+    } else {
+      console.log(`\n${c.dim}${count} events received${c.reset}`);
+    }
   }
 
   @Command({ name: "replay", description: "Replay persisted JetStream events with filters" })
@@ -682,6 +720,7 @@ export class EventsCommands {
             subject: event.subject,
             timestamp: new Date(event.timestampMs).toISOString(),
             data: event.data,
+            ...(rawOutput ? { raw: event.raw } : {}),
           }),
         );
       } else if (rawOutput) {

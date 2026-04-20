@@ -78,6 +78,11 @@ import { formatInspectionSection, printInspectionField } from "../inspection-out
 const CONFIG_DB_META = { source: "config-db", freshness: "persisted" } as const;
 const LIVE_OMNI_META = { source: "live-omni", freshness: "live" } as const;
 type ListedRoute = ReturnType<typeof dbListRoutes>[number];
+type OmniInstanceStatus = { isConnected?: boolean; profileName?: string; state?: string };
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
@@ -173,21 +178,41 @@ function inspectRouteLiveWinner(
   return null;
 }
 
-function printRouteLiveEffect(name: string, pattern: string, expectedAgent: string, channel?: string): void {
+function getRouteLiveEffect(name: string, pattern: string, expectedAgent?: string, channel?: string) {
   const winner = inspectRouteLiveWinner(name, pattern, channel);
   if (!winner) {
-    if (pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern))) {
-      console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
-      return;
-    }
+    const exactPattern = pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern));
+    return {
+      status: exactPattern ? "unresolved" : "skipped_broad_pattern",
+      verified: false,
+      winningPattern: null,
+      winningAgent: null,
+    };
+  }
+
+  const verified = expectedAgent ? winner.winningPattern === pattern && winner.winningAgent === expectedAgent : false;
+  return {
+    status: expectedAgent ? (verified ? "verified" : "different_winner") : "matched",
+    verified,
+    winningPattern: winner.winningPattern,
+    winningAgent: winner.winningAgent,
+  };
+}
+
+function printRouteLiveEffect(name: string, pattern: string, expectedAgent: string, channel?: string): void {
+  const effect = getRouteLiveEffect(name, pattern, expectedAgent, channel);
+  if (effect.status === "unresolved") {
+    console.log(`  Live effect:   unresolved for ${pattern} on instance ${name}`);
+    return;
+  }
+  if (effect.status === "skipped_broad_pattern") {
     console.log(`  Live effect:   broad pattern — exact winner check skipped for ${pattern}`);
     return;
   }
 
-  const verified = winner.winningPattern === pattern && winner.winningAgent === expectedAgent;
-  console.log(`  Live effect:   ${verified ? "verified" : "different winner"}`);
-  console.log(`  Winning route: ${winner.winningPattern}`);
-  console.log(`  Winning agent: ${winner.winningAgent}`);
+  console.log(`  Live effect:   ${effect.verified ? "verified" : "different winner"}`);
+  console.log(`  Winning route: ${effect.winningPattern}`);
+  console.log(`  Winning agent: ${effect.winningAgent}`);
 }
 
 function getRouteStatusIcon(pattern: string): string {
@@ -264,6 +289,18 @@ function printRouteList(name?: string): void {
   console.log(`  Mutate:   ravi instances routes add <instance> <pattern> <agent>`);
 }
 
+function buildRouteListPayload(name?: string) {
+  if (name) {
+    requireInstance(name);
+  }
+  const routes = dbListRoutes(name);
+  return {
+    instance: name ?? null,
+    total: routes.length,
+    routes,
+  };
+}
+
 function printRouteDetails(name: string, pattern: string): void {
   requireInstance(name);
   const route = dbGetRoute(pattern, name);
@@ -278,6 +315,70 @@ function printRouteDetails(name: string, pattern: string): void {
   console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
   console.log(`\n  Explain live routing: ravi routes explain ${name} "${pattern}"`);
   console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
+}
+
+function buildRouteDetailsPayload(name: string, pattern: string) {
+  requireInstance(name);
+  const route = dbGetRoute(pattern, name);
+  if (!route) fail(`Route not found: ${pattern} (instance: ${name})`);
+  return {
+    instance: name,
+    pattern,
+    route,
+  };
+}
+
+function buildRouteExplanationPayload(name: string, pattern?: string, channel?: string) {
+  const target = inspectCliRuntimeTarget(name);
+
+  if (!target.instance?.exists) {
+    fail(`Instance not found: ${name}`);
+  }
+
+  if (!pattern) {
+    return {
+      target,
+      instance: name,
+      pattern: null,
+      channel: channel ?? null,
+      configuredRoute: null,
+      liveEffect: null,
+    };
+  }
+
+  const configuredRoute = dbGetRoute(pattern, name);
+  if (configuredRoute) {
+    return {
+      target,
+      instance: name,
+      pattern,
+      channel: channel ?? configuredRoute.channel ?? null,
+      configuredRoute,
+      liveEffect: getRouteLiveEffect(
+        name,
+        pattern,
+        configuredRoute.agent,
+        channel ?? configuredRoute.channel ?? undefined,
+      ),
+    };
+  }
+
+  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  return {
+    target,
+    instance: name,
+    pattern,
+    channel: channel ?? null,
+    configuredRoute: null,
+    liveEffect: winner
+      ? {
+          status: "different_winner",
+          verified: false,
+          winningPattern: winner.winningPattern,
+          winningAgent: winner.winningAgent,
+        }
+      : getRouteLiveEffect(name, pattern, undefined, channel),
+  };
 }
 
 function printRouteExplanation(name: string, pattern?: string, channel?: string): void {
@@ -325,7 +426,7 @@ function printRouteExplanation(name: string, pattern?: string, channel?: string)
   console.log(`  Mutate config: ravi instances routes add ${name} "${pattern}" <agent>`);
 }
 
-function deleteConflictingSessions(pattern: string, targetAgent: string): number {
+function deleteConflictingSessions(pattern: string, targetAgent: string, opts: { silent?: boolean } = {}): number {
   const sessions = listSessions();
   let deleted = 0;
   for (const session of sessions) {
@@ -333,14 +434,14 @@ function deleteConflictingSessions(pattern: string, targetAgent: string): number
       const groupId = pattern.replace("group:", "");
       if (session.sessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);
-        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
         deleted++;
       }
     } else if (pattern.startsWith("lid:")) {
       const lid = pattern.replace("lid:", "");
       if (session.sessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);
-        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
         deleted++;
       }
     } else if (pattern.includes("*")) {
@@ -348,7 +449,7 @@ function deleteConflictingSessions(pattern: string, targetAgent: string): number
       const match = session.sessionKey.match(/dm:(\d+)/);
       if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
         deleteSession(session.sessionKey);
-        console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
         deleted++;
       }
     }
@@ -381,12 +482,12 @@ export class InstancesCommands {
   // list
   // --------------------------------------------------------------------------
   @Command({ name: "list", description: "List all instances" })
-  async list() {
+  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const instances = dbListInstances();
     const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
     // Try to enrich with omni status
-    const omniStatus: Record<string, { isConnected?: boolean; profileName?: string }> = {};
+    const omniStatus: Record<string, OmniInstanceStatus> = {};
     try {
       const omni = getOmniClient();
       const result = await omni.instances.list({});
@@ -395,6 +496,19 @@ export class InstancesCommands {
       }
     } catch {
       /* omni offline */
+    }
+
+    if (asJson) {
+      printJson({
+        total: instances.length,
+        instances: instances.map((inst) => ({
+          ...inst,
+          raviStatus: inst.enabled === false ? "disabled" : "enabled",
+          live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
+        })),
+        ignoredOmniInstanceIds,
+      });
+      return;
     }
 
     if (instances.length === 0) {
@@ -440,12 +554,15 @@ export class InstancesCommands {
   // show
   // --------------------------------------------------------------------------
   @Command({ name: "show", description: "Show instance details" })
-  async show(@Arg("name", { description: "Instance name" }) name: string) {
+  async show(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = requireInstance(name);
 
     const routes = dbListRoutes(name);
 
-    let omniInfo: { isConnected?: boolean; profileName?: string; state?: string } = {};
+    let omniInfo: OmniInstanceStatus = {};
     if (inst.instanceId) {
       try {
         const omni = getOmniClient();
@@ -453,6 +570,18 @@ export class InstancesCommands {
       } catch {
         /* omni offline */
       }
+    }
+
+    if (asJson) {
+      printJson({
+        instance: {
+          ...inst,
+          raviStatus: inst.enabled === false ? "disabled" : "enabled",
+        },
+        routes,
+        live: inst.instanceId ? omniInfo : null,
+      });
+      return;
     }
 
     console.log(`\nInstance: ${inst.name}\n`);
@@ -490,6 +619,7 @@ export class InstancesCommands {
     dmPolicy?: string,
     @Option({ flags: "--group-policy <policy>", description: "Group policy: open|allowlist|closed (default: open)" })
     groupPolicy?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (agent && !dbGetAgent(agent)) {
       fail(
@@ -507,13 +637,22 @@ export class InstancesCommands {
       if (!r.success) fail(`Invalid groupPolicy: ${groupPolicy}. Valid: open, allowlist, closed`);
     }
     try {
-      dbUpsertInstance({
+      const instance = dbUpsertInstance({
         name,
         channel: channel ?? "whatsapp",
         agent: agent ?? undefined,
         dmPolicy: (dmPolicy ?? "open") as "open" | "pairing" | "closed",
         groupPolicy: (groupPolicy ?? "open") as "open" | "allowlist" | "closed",
       });
+      if (asJson) {
+        printJson({
+          status: "created",
+          instance,
+          changedCount: 1,
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ Instance created: ${name} (channel: ${channel ?? "whatsapp"})`);
       if (agent) console.log(`  Agent: ${agent}`);
       emitConfigChanged();
@@ -529,11 +668,20 @@ export class InstancesCommands {
   get(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     const val = (inst as unknown as Record<string, unknown>)[key];
     if (val === undefined) fail(`Unknown key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
+    if (asJson) {
+      printJson({
+        instance: name,
+        key,
+        value: val ?? null,
+      });
+      return;
+    }
     console.log(`${name}.${key}: ${val ?? "(not set)"}`);
   }
 
@@ -545,6 +693,7 @@ export class InstancesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("key", { description: `Property key (${SETTABLE_KEYS.join(", ")})` }) key: string,
     @Arg("value", { description: "Property value (use '-' to clear)" }) value: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!SETTABLE_KEYS.includes(key as SettableKey)) {
       fail(`Invalid key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
@@ -553,6 +702,8 @@ export class InstancesCommands {
     if (!inst) fail(`Instance not found: ${name}. Create it first with: ravi instances create ${name}`);
 
     const clear = value === "-" || value === "null";
+
+    let jsonValue: unknown = clear ? null : value;
 
     if (key === "agent") {
       if (!clear && !dbGetAgent(value)) fail(`Agent not found: ${value}`);
@@ -574,10 +725,25 @@ export class InstancesCommands {
     } else if (key === "instanceId") {
       dbUpdateInstance(name, { instanceId: clear ? undefined : value });
     } else if (key === "channel") {
+      jsonValue = value;
       dbUpdateInstance(name, { channel: value });
     } else if (key === "enabled") {
       if (clear) fail("enabled cannot be cleared");
-      dbUpdateInstance(name, { enabled: parseEnabledValue(value) });
+      jsonValue = parseEnabledValue(value);
+      dbUpdateInstance(name, { enabled: jsonValue as boolean });
+    }
+
+    const updated = dbGetInstance(name);
+    if (asJson) {
+      printJson({
+        status: "updated",
+        key,
+        value: jsonValue,
+        instance: updated,
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
     }
 
     console.log(`✓ ${name}.${key} = ${clear ? "(cleared)" : value}`);
@@ -588,20 +754,51 @@ export class InstancesCommands {
   // enable
   // --------------------------------------------------------------------------
   @Command({ name: "enable", description: "Enable an instance in Ravi without changing omni" })
-  enable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+  enable(
+    @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = resolveInstanceByNameOrId(target);
     if (!inst) {
       const ignored = getIgnoredOmniInstanceIds();
       if (!ignored.includes(target)) fail(`Instance not found: ${target}`);
       saveIgnoredOmniInstanceIds(ignored.filter((instanceId) => instanceId !== target));
+      if (asJson) {
+        printJson({
+          status: "ignored_removed",
+          target,
+          changedCount: 1,
+          ignoredOmniInstanceIds: getIgnoredOmniInstanceIds(),
+        });
+        return;
+      }
       console.log(`✓ Removed ignored unknown omni instanceId from ravi: ${target}`);
       return;
     }
     if (inst.enabled !== false) {
+      if (asJson) {
+        printJson({
+          status: "unchanged",
+          target,
+          instance: inst,
+          changedCount: 0,
+        });
+        return;
+      }
       console.log(`Instance already enabled in ravi: ${inst.name}`);
       return;
     }
-    dbUpdateInstance(inst.name, { enabled: true });
+    const updated = dbUpdateInstance(inst.name, { enabled: true });
+    if (asJson) {
+      printJson({
+        status: "enabled",
+        target,
+        instance: updated,
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
+    }
     console.log(`✓ Instance enabled in ravi: ${inst.name}`);
     emitConfigChanged();
   }
@@ -610,23 +807,63 @@ export class InstancesCommands {
   // disable
   // --------------------------------------------------------------------------
   @Command({ name: "disable", description: "Disable an instance in Ravi without changing omni" })
-  disable(@Arg("target", { description: "Instance name or omni instanceId" }) target: string) {
+  disable(
+    @Arg("target", { description: "Instance name or omni instanceId" }) target: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = resolveInstanceByNameOrId(target);
     if (!inst) {
       const ignored = getIgnoredOmniInstanceIds();
       if (ignored.includes(target)) {
+        if (asJson) {
+          printJson({
+            status: "unchanged",
+            target,
+            changedCount: 0,
+            ignoredOmniInstanceIds: ignored,
+          });
+          return;
+        }
         console.log(`Unknown omni instanceId already ignored in ravi: ${target}`);
         return;
       }
       saveIgnoredOmniInstanceIds([...ignored, target]);
+      if (asJson) {
+        printJson({
+          status: "ignored",
+          target,
+          changedCount: 1,
+          ignoredOmniInstanceIds: getIgnoredOmniInstanceIds(),
+        });
+        return;
+      }
       console.log(`✓ Ignoring unknown omni instanceId in ravi: ${target}`);
       return;
     }
     if (inst.enabled === false) {
+      if (asJson) {
+        printJson({
+          status: "unchanged",
+          target,
+          instance: inst,
+          changedCount: 0,
+        });
+        return;
+      }
       console.log(`Instance already disabled in ravi: ${inst.name}`);
       return;
     }
-    dbUpdateInstance(inst.name, { enabled: false });
+    const updated = dbUpdateInstance(inst.name, { enabled: false });
+    if (asJson) {
+      printJson({
+        status: "disabled",
+        target,
+        instance: updated,
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
+    }
     console.log(`✓ Instance disabled in ravi: ${inst.name}`);
     emitConfigChanged();
   }
@@ -635,11 +872,23 @@ export class InstancesCommands {
   // delete
   // --------------------------------------------------------------------------
   @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
-  delete(@Arg("name", { description: "Instance name" }) name: string) {
+  delete(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     const deleted = dbDeleteInstance(name);
     if (deleted) {
+      if (asJson) {
+        printJson({
+          status: "deleted",
+          instance: inst,
+          changedCount: 1,
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ Instance deleted: ${name} (recoverable with: ravi instances restore ${name})`);
       emitConfigChanged();
     } else {
@@ -651,9 +900,21 @@ export class InstancesCommands {
   // restore
   // --------------------------------------------------------------------------
   @Command({ name: "restore", description: "Restore a soft-deleted instance" })
-  restore(@Arg("name", { description: "Instance name" }) name: string) {
+  restore(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const ok = dbRestoreInstance(name);
     if (ok) {
+      if (asJson) {
+        printJson({
+          status: "restored",
+          instance: dbGetInstance(name),
+          changedCount: 1,
+        });
+        emitConfigChanged();
+        return;
+      }
       console.log(`✓ Instance restored: ${name}`);
       emitConfigChanged();
     } else {
@@ -665,8 +926,15 @@ export class InstancesCommands {
   // deleted
   // --------------------------------------------------------------------------
   @Command({ name: "deleted", description: "List soft-deleted instances" })
-  deleted() {
+  deleted(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const instances = dbListDeletedInstances();
+    if (asJson) {
+      printJson({
+        total: instances.length,
+        instances,
+      });
+      return;
+    }
     if (instances.length === 0) {
       console.log("No deleted instances.");
       return;
@@ -687,9 +955,12 @@ export class InstancesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--channel <channel>", description: "Channel type (default: whatsapp)" }) channelOpt?: string,
     @Option({ flags: "--agent <id>", description: "Agent to route messages to" }) agent?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const TIMEOUT_MS = 120_000;
     const omni = getOmniClient();
+    let createdOmniInstance = false;
+    let createdAgent: { id: string; cwd: string } | null = null;
 
     let inst = dbGetInstance(name);
     const channel = channelOpt ?? inst?.channel ?? "whatsapp";
@@ -709,11 +980,12 @@ export class InstancesCommands {
     }
 
     if (!instanceId) {
-      console.log(`Creating ${channel} instance "${name}" in omni...`);
+      if (!asJson) console.log(`Creating ${channel} instance "${name}" in omni...`);
       try {
         const created = (await omni.instances.create({ name, channel: omniChannel })) as { id?: string };
         instanceId = created.id ?? "";
-        console.log(`✓ Instance created in omni: ${instanceId}`);
+        createdOmniInstance = true;
+        if (!asJson) console.log(`✓ Instance created in omni: ${instanceId}`);
       } catch (err) {
         fail(`Failed to create instance in omni: ${err instanceof Error ? err.message : String(err)}`);
         return;
@@ -727,17 +999,29 @@ export class InstancesCommands {
       const cwd = `${homedir()}/ravi/${agentId}`;
       mkdirSync(cwd, { recursive: true });
       dbCreateAgent({ id: agentId, cwd });
-      console.log(`✓ Created agent "${agentId}" at ${cwd}`);
+      createdAgent = { id: agentId, cwd };
+      if (!asJson) console.log(`✓ Created agent "${agentId}" at ${cwd}`);
     }
 
     emitConfigChanged();
     inst = dbGetInstance(name)!;
-    console.log(`Connecting: ${name} → agent ${inst.agent ?? "(default)"}  [${channel}]`);
+    if (!asJson) console.log(`Connecting: ${name} → agent ${inst.agent ?? "(default)"}  [${channel}]`);
 
     // Check if already connected
     try {
       const status = (await omni.instances.status(instanceId)) as { isConnected?: boolean; profileName?: string };
       if (status.isConnected) {
+        if (asJson) {
+          printJson({
+            status: "connected",
+            instance: inst,
+            live: status,
+            createdOmniInstance,
+            createdAgent,
+            changedCount: 1,
+          });
+          return;
+        }
         const profile = status.profileName ? ` as ${status.profileName}` : "";
         console.log(`\n✓ Already connected${profile}`);
         return;
@@ -747,7 +1031,7 @@ export class InstancesCommands {
     }
 
     // Initiate connection
-    console.log("Waiting for QR code...\n");
+    if (!asJson) console.log("Waiting for QR code...\n");
     try {
       await omni.instances.connect(instanceId, { whatsapp: { syncFullHistory: false } });
     } catch (err) {
@@ -763,6 +1047,10 @@ export class InstancesCommands {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
+        if (asJson) {
+          reject(new Error("Timeout waiting for connection (120s)"));
+          return;
+        }
         console.error("\n✗ Timeout waiting for connection (120s)");
         process.exit(1);
       }, TIMEOUT_MS);
@@ -773,11 +1061,39 @@ export class InstancesCommands {
             if (settled) break;
             const data = event.data as Record<string, unknown>;
             if (event.topic === qrTopic && data.type === "qr") {
+              if (asJson) {
+                clearTimeout(timer);
+                settled = true;
+                printJson({
+                  status: "qr_required",
+                  instance: inst,
+                  instanceId,
+                  channel,
+                  qr: data.qr ?? null,
+                  createdOmniInstance,
+                  createdAgent,
+                  changedCount: 1,
+                });
+                resolve();
+                return;
+              }
               console.log("Scan this QR code:\n");
               qrcode.generate(data.qr as string, { small: true });
             } else if (event.topic === connectedTopic && data.type === "connected") {
               clearTimeout(timer);
               settled = true;
+              if (asJson) {
+                printJson({
+                  status: "connected",
+                  instance: inst,
+                  live: data,
+                  createdOmniInstance,
+                  createdAgent,
+                  changedCount: 1,
+                });
+                resolve();
+                return;
+              }
               const profile = data.profileName ? ` as ${data.profileName}` : "";
               console.log(`\n✓ Connected${profile}`);
               resolve();
@@ -799,13 +1115,24 @@ export class InstancesCommands {
   // disconnect
   // --------------------------------------------------------------------------
   @Command({ name: "disconnect", description: "Disconnect an instance from omni" })
-  async disconnect(@Arg("name", { description: "Instance name" }) name: string) {
+  async disconnect(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     if (!inst.instanceId) fail(`Instance "${name}" has no omni instanceId set`);
     try {
       const omni = getOmniClient();
       await omni.instances.disconnect(inst.instanceId!);
+      if (asJson) {
+        printJson({
+          status: "disconnected",
+          instance: inst,
+          changedCount: 1,
+        });
+        return;
+      }
       console.log(`✓ Disconnected: ${name}`);
     } catch (err) {
       fail(`Failed to disconnect: ${err instanceof Error ? err.message : String(err)}`);
@@ -816,10 +1143,21 @@ export class InstancesCommands {
   // status
   // --------------------------------------------------------------------------
   @Command({ name: "status", description: "Show connection status for an instance" })
-  async status(@Arg("name", { description: "Instance name" }) name: string) {
+  async status(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const inst = dbGetInstance(name);
     if (!inst) fail(`Instance not found: ${name}`);
     if (!inst.instanceId) {
+      if (asJson) {
+        printJson({
+          instance: inst,
+          live: null,
+          status: "no_omni_id",
+        });
+        return;
+      }
       console.log(`\nInstance: ${name}\n  instanceId: (not set — run "ravi instances connect ${name}")`);
       return;
     }
@@ -830,6 +1168,17 @@ export class InstancesCommands {
         profileName?: string;
         state?: string;
       };
+      if (asJson) {
+        printJson({
+          instance: {
+            ...inst,
+            raviStatus: inst.enabled === false ? "disabled" : "enabled",
+          },
+          live: s,
+          status: s.isConnected ? "connected" : "disconnected",
+        });
+        return;
+      }
       console.log(`\nInstance: ${name}\n`);
       printInspectionField("Instance ID", inst.instanceId, CONFIG_DB_META, { labelWidth: 15 });
       printInspectionField("Channel", inst.channel, CONFIG_DB_META, { labelWidth: 15 });
@@ -860,7 +1209,12 @@ export class InstancesCommands {
       description: "Optional channel hint for live route inspection",
     })
     channel?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    if (asJson) {
+      printJson(buildRouteExplanationPayload(name, pattern, channel));
+      return;
+    }
     printRouteExplanation(name, pattern, channel);
   }
 }
@@ -876,7 +1230,14 @@ export class InstancesCommands {
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List routes across all instances or for one instance" })
-  list(@Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string) {
+  list(
+    @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (asJson) {
+      printJson(buildRouteListPayload(name));
+      return;
+    }
     printRouteList(name);
   }
 
@@ -884,7 +1245,12 @@ export class RoutesCommands {
   show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    if (asJson) {
+      printJson(buildRouteDetailsPayload(name, pattern));
+      return;
+    }
     printRouteDetails(name, pattern);
   }
 
@@ -897,7 +1263,12 @@ export class RoutesCommands {
       description: "Optional channel hint for live route inspection",
     })
     channel?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    if (asJson) {
+      printJson(buildRouteExplanationPayload(name, pattern, channel));
+      return;
+    }
     printRouteExplanation(name, pattern, channel);
   }
 }
@@ -913,7 +1284,14 @@ export class RoutesCommands {
 })
 export class InstancesRoutesCommands {
   @Command({ name: "list", description: "List routes for an instance" })
-  list(@Arg("name", { description: "Instance name" }) name: string) {
+  list(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (asJson) {
+      printJson(buildRouteListPayload(name));
+      return;
+    }
     printRouteList(name);
   }
 
@@ -921,7 +1299,12 @@ export class InstancesRoutesCommands {
   show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    if (asJson) {
+      printJson(buildRouteDetailsPayload(name, pattern));
+      return;
+    }
     printRouteDetails(name, pattern);
   }
 
@@ -945,6 +1328,7 @@ export class InstancesRoutesCommands {
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
     if (!dbGetAgent(agent))
@@ -962,7 +1346,7 @@ export class InstancesRoutesCommands {
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
-      dbCreateRoute({
+      const route = dbCreateRoute({
         pattern,
         accountId: name,
         agent,
@@ -972,11 +1356,6 @@ export class InstancesRoutesCommands {
         dmScope: dmScope ? DmScopeSchema.parse(dmScope) : undefined,
         channel: channel ?? undefined,
       });
-      printInstanceMutationTarget(name);
-      const policyLabel = policy ? ` [policy:${policy}]` : "";
-      const channelLabel = channel ? ` [channel:${channel}]` : "";
-      console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
-      printRouteLiveEffect(name, pattern, agent, channel);
       emitConfigChanged();
 
       // Remove from pending if applicable
@@ -992,10 +1371,30 @@ export class InstancesRoutesCommands {
           }
         }
       }
-      if (removedPending) console.log(`✓ Removed from pending`);
 
       // Clean conflicting sessions
-      const cleaned = deleteConflictingSessions(pattern, agent);
+      const cleaned = deleteConflictingSessions(pattern, agent, { silent: Boolean(asJson) });
+
+      if (asJson) {
+        printJson({
+          status: "added",
+          instance: name,
+          route,
+          target: inspectCliRuntimeTarget(name),
+          liveEffect: getRouteLiveEffect(name, pattern, agent, channel),
+          removedPending,
+          cleanedSessions: cleaned,
+          changedCount: 1,
+        });
+        return;
+      }
+
+      printInstanceMutationTarget(name);
+      const policyLabel = policy ? ` [policy:${policy}]` : "";
+      const channelLabel = channel ? ` [channel:${channel}]` : "";
+      console.log(`✓ Route added: ${pattern} → ${agent} (instance: ${name})${policyLabel}${channelLabel}`);
+      printRouteLiveEffect(name, pattern, agent, channel);
+      if (removedPending) console.log(`✓ Removed from pending`);
       if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
@@ -1011,11 +1410,25 @@ export class InstancesRoutesCommands {
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
+    const route = dbGetRoute(pattern, name);
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
+      if (asJson) {
+        printJson({
+          status: "removed",
+          instance: name,
+          pattern,
+          route,
+          target: inspectCliRuntimeTarget(name),
+          changedCount: 1,
+        });
+        emitConfigChanged();
+        return;
+      }
       printInstanceMutationTarget(name);
       console.log(
         `✓ Route removed: ${pattern} (instance: ${name}) — restore with: ravi instances routes restore ${name} "${pattern}"`,
@@ -1035,10 +1448,23 @@ export class InstancesRoutesCommands {
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
     const ok = dbRestoreRoute(pattern, name);
     if (ok) {
+      if (asJson) {
+        printJson({
+          status: "restored",
+          instance: name,
+          pattern,
+          route: dbGetRoute(pattern, name),
+          target: inspectCliRuntimeTarget(name),
+          changedCount: 1,
+        });
+        emitConfigChanged();
+        return;
+      }
       printInstanceMutationTarget(name);
       console.log(`✓ Route restored: ${pattern} (instance: ${name})`);
       emitConfigChanged();
@@ -1048,8 +1474,19 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "deleted", description: "List soft-deleted routes" })
-  deleted(@Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string) {
+  deleted(
+    @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const routes = dbListDeletedRoutes(name);
+    if (asJson) {
+      printJson({
+        instance: name ?? null,
+        total: routes.length,
+        routes,
+      });
+      return;
+    }
     if (routes.length === 0) {
       console.log("No deleted routes.");
       return;
@@ -1072,6 +1509,7 @@ export class InstancesRoutesCommands {
       description: "Allow mutation even when the CLI bundle differs from the live daemon runtime",
     })
     allowRuntimeMismatch?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     if (!dbGetRoute(pattern, name)) fail(`Route not found: ${pattern} (instance: ${name})`);
@@ -1081,6 +1519,7 @@ export class InstancesRoutesCommands {
 
     const clear = value === "-" || value === "null";
     const updates: Record<string, unknown> = {};
+    let jsonValue: unknown = clear ? null : value;
 
     if (key === "agent") {
       if (!dbGetAgent(value)) fail(`Agent not found: ${value}`);
@@ -1089,6 +1528,7 @@ export class InstancesRoutesCommands {
       const n = parseInt(value, 10);
       if (Number.isNaN(n)) fail(`Invalid priority: ${value}`);
       updates.priority = n;
+      jsonValue = n;
     } else if (key === "dmScope") {
       if (!clear) {
         const r = DmScopeSchema.safeParse(value);
@@ -1105,18 +1545,36 @@ export class InstancesRoutesCommands {
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
 
     try {
-      dbUpdateRoute(pattern, updates, name);
+      const route = dbUpdateRoute(pattern, updates, name);
+      emitConfigChanged();
+
+      let cleaned = 0;
+      if (key === "agent") {
+        cleaned = deleteConflictingSessions(pattern, value, { silent: Boolean(asJson) });
+      }
+
+      if (asJson) {
+        printJson({
+          status: "updated",
+          instance: name,
+          pattern,
+          key,
+          value: jsonValue,
+          route,
+          target: inspectCliRuntimeTarget(name),
+          liveEffect: key === "agent" && !clear ? getRouteLiveEffect(name, pattern, value, undefined) : null,
+          cleanedSessions: cleaned,
+          changedCount: 1,
+        });
+        return;
+      }
+
       printInstanceMutationTarget(name);
       console.log(`✓ ${key} set on route ${pattern} (instance: ${name}): ${clear ? "(cleared)" : value}`);
       if (key === "agent" && !clear) {
         printRouteLiveEffect(name, pattern, value, undefined);
       }
-      emitConfigChanged();
-
-      if (key === "agent") {
-        const cleaned = deleteConflictingSessions(pattern, value);
-        if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
-      }
+      if (cleaned > 0) console.log(`✓ Cleaned ${cleaned} conflicting session(s)`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -1134,9 +1592,24 @@ export class InstancesRoutesCommands {
 })
 export class InstancesPendingCommands {
   @Command({ name: "list", description: "List pending contacts/groups for an instance" })
-  list(@Arg("name", { description: "Instance name" }) name: string) {
+  list(
+    @Arg("name", { description: "Instance name" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const pending = listAccountPending(name);
+
+    if (asJson) {
+      printJson({
+        instance: name,
+        total: pending.length,
+        pending: pending.map((p) => ({
+          ...p,
+          type: p.isGroup ? "group" : "dm",
+        })),
+      });
+      return;
+    }
 
     if (pending.length === 0) {
       console.log(`No pending contacts for instance "${name}".`);
@@ -1158,10 +1631,22 @@ export class InstancesPendingCommands {
   approve(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact ID or phone" }) contact: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     allowContact(contact);
-    removeAccountPending(name, contact);
+    const removedPending = removeAccountPending(name, contact);
+    if (asJson) {
+      printJson({
+        status: "approved",
+        instance: name,
+        contact,
+        removedPending,
+        changedCount: 1,
+      });
+      emitConfigChanged();
+      return;
+    }
     console.log(`✓ Approved: ${contact} (instance: ${name})`);
     emitConfigChanged();
   }
@@ -1170,10 +1655,21 @@ export class InstancesPendingCommands {
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact ID or phone" }) contact: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const removed = removeAccountPending(name, contact);
     if (removed) {
+      if (asJson) {
+        printJson({
+          status: "rejected",
+          instance: name,
+          contact,
+          removedPending: true,
+          changedCount: 1,
+        });
+        return;
+      }
       console.log(`✓ Rejected and removed: ${contact} (instance: ${name})`);
     } else {
       fail(`Pending entry not found: ${contact} (instance: ${name})`);

@@ -13,10 +13,15 @@ import {
   clearRelations,
   syncRelationsFromConfig,
   type RelationFilter,
+  type Relation,
 } from "../../permissions/relations.js";
 import { can } from "../../permissions/engine.js";
 import { SDK_TOOLS, TOOL_GROUPS, resolveToolGroup } from "../tool-registry.js";
 import { getDefaultAllowlist } from "../../bash/permissions.js";
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
 
 @Group({
   name: "permissions",
@@ -29,6 +34,7 @@ export class PermissionsCommands {
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("relation", { description: "Relation (e.g., admin, access, execute, write_contacts)" }) relation: string,
     @Arg("object", { description: "Object (e.g., system:*, group:contacts, session:dev-*)" }) object: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
@@ -38,19 +44,52 @@ export class PermissionsCommands {
       return;
     }
 
+    const exactFilter: RelationFilter = { subjectType, subjectId, relation, objectType, objectId };
+    const existedAsManual = listRelations(exactFilter).some((item) => item.source === "manual");
     grantRelation(subjectType, subjectId, relation, objectType, objectId, "manual");
-    console.log(`✓ Granted: (${subject}) ${relation} (${object})`);
+    if (!asJson) {
+      console.log(`✓ Granted: (${subject}) ${relation} (${object})`);
+    }
 
     // Warn about redundancy
+    const warnings: Array<Record<string, unknown>> = [];
     if (objectId === "*") {
       const individuals = listRelations({ subjectType, subjectId, relation, objectType }).filter(
         (r) => r.objectId !== "*",
       );
       if (individuals.length > 0) {
-        console.log(`⚠ ${individuals.length} individual relation(s) are now redundant (covered by wildcard)`);
+        if (asJson) {
+          warnings.push({
+            type: "individual_relations_redundant",
+            count: individuals.length,
+            relations: individuals.map(serializeRelation),
+          });
+        } else {
+          console.log(`⚠ ${individuals.length} individual relation(s) are now redundant (covered by wildcard)`);
+        }
       }
     } else if (hasRelation(subjectType, subjectId, relation, objectType, "*")) {
-      console.log(`⚠ Redundant: wildcard ${objectType}:* already covers this`);
+      if (asJson) {
+        warnings.push({
+          type: "covered_by_wildcard",
+          wildcard: `${objectType}:*`,
+        });
+      } else {
+        console.log(`⚠ Redundant: wildcard ${objectType}:* already covers this`);
+      }
+    }
+
+    if (asJson) {
+      const granted = listRelations(exactFilter)[0] ?? null;
+      printJson({
+        status: "granted",
+        target: relationTarget(subject, relation, object),
+        changedCount: existedAsManual ? 0 : 1,
+        relation: granted
+          ? serializeRelation(granted)
+          : relationTuple(subjectType, subjectId, relation, objectType, objectId),
+        warnings,
+      });
     }
   }
 
@@ -59,6 +98,7 @@ export class PermissionsCommands {
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("relation", { description: "Relation" }) relation: string,
     @Arg("object", { description: "Object (e.g., system:*, group:contacts)" }) object: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
@@ -67,24 +107,42 @@ export class PermissionsCommands {
       return;
     }
 
+    const exactFilter: RelationFilter = { subjectType, subjectId, relation, objectType, objectId };
+    const relationBefore =
+      listRelations(exactFilter)[0] ?? relationTuple(subjectType, subjectId, relation, objectType, objectId);
     const deleted = revokeRelation(subjectType, subjectId, relation, objectType, objectId);
     if (deleted) {
-      console.log(`✓ Revoked: (${subject}) ${relation} (${object})`);
+      if (!asJson) {
+        console.log(`✓ Revoked: (${subject}) ${relation} (${object})`);
+      }
 
       // Warn about remaining individual grants after revoking wildcard
+      const remaining =
+        objectId === "*"
+          ? listRelations({ subjectType, subjectId, relation, objectType }).filter((r) => r.objectId !== "*")
+          : [];
       if (objectId === "*") {
-        const remaining = listRelations({ subjectType, subjectId, relation, objectType }).filter(
-          (r) => r.objectId !== "*",
-        );
         if (remaining.length > 0) {
-          console.log(`⚠ ${remaining.length} individual relation(s) still active:`);
-          for (const r of remaining.slice(0, 10)) {
-            console.log(`    ${objectType}:${r.objectId}`);
-          }
-          if (remaining.length > 10) {
-            console.log(`    ... and ${remaining.length - 10} more`);
+          if (!asJson) {
+            console.log(`⚠ ${remaining.length} individual relation(s) still active:`);
+            for (const r of remaining.slice(0, 10)) {
+              console.log(`    ${objectType}:${r.objectId}`);
+            }
+            if (remaining.length > 10) {
+              console.log(`    ... and ${remaining.length - 10} more`);
+            }
           }
         }
+      }
+
+      if (asJson) {
+        printJson({
+          status: "revoked",
+          target: relationTarget(subject, relation, object),
+          changedCount: 1,
+          relation: "id" in relationBefore ? serializeRelation(relationBefore) : relationBefore,
+          remainingIndividualRelations: remaining.map(serializeRelation),
+        });
       }
     } else {
       fail("Relation not found");
@@ -96,11 +154,22 @@ export class PermissionsCommands {
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("permission", { description: "Permission (e.g., execute, access, admin)" }) permission: string,
     @Arg("object", { description: "Object (e.g., group:contacts, session:dev-grupo1)" }) object: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
     const [objectType, objectId] = parseEntity(object);
 
     const allowed = can(subjectType, subjectId, permission, objectType, objectId);
+    if (asJson) {
+      printJson({
+        subject: { raw: subject, type: subjectType, id: subjectId },
+        permission,
+        object: { raw: object, type: objectType, id: objectId },
+        allowed,
+      });
+      return;
+    }
+
     if (allowed) {
       console.log(`✓ ALLOWED: (${subject}) ${permission} (${object})`);
     } else {
@@ -114,6 +183,7 @@ export class PermissionsCommands {
     @Option({ flags: "--object <o>", description: "Filter by object (e.g., group:contacts)" }) object?: string,
     @Option({ flags: "--relation <r>", description: "Filter by relation" }) relation?: string,
     @Option({ flags: "--source <src>", description: "Filter by source (config|manual)" }) source?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const filter: RelationFilter = {};
 
@@ -131,6 +201,15 @@ export class PermissionsCommands {
     if (source) filter.source = source;
 
     const relations = listRelations(Object.keys(filter).length > 0 ? filter : undefined);
+
+    if (asJson) {
+      printJson({
+        total: relations.length,
+        filter,
+        relations: relations.map(serializeRelation),
+      });
+      return;
+    }
 
     if (relations.length === 0) {
       console.log("No relations found.");
@@ -156,9 +235,18 @@ export class PermissionsCommands {
   }
 
   @Command({ name: "sync", description: "Re-sync relations from agent configs" })
-  sync() {
+  sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     syncRelationsFromConfig();
     const relations = listRelations({ source: "config" });
+    if (asJson) {
+      printJson({
+        status: "synced",
+        target: { type: "permission-relations", source: "config" },
+        changedCount: relations.length,
+        relations: relations.map(serializeRelation),
+      });
+      return;
+    }
     console.log(`✓ Synced ${relations.length} config relations`);
   }
 
@@ -167,6 +255,7 @@ export class PermissionsCommands {
     @Arg("subject", { description: "Subject (e.g., agent:dev)" }) subject: string,
     @Arg("template", { description: "Template: sdk-tools, all-tools, safe-executables, full-access, tool-groups" })
     template: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const [subjectType, subjectId] = parseEntity(subject);
 
@@ -213,12 +302,34 @@ export class PermissionsCommands {
     }
 
     const count = fn();
+    if (asJson) {
+      const relations = listRelations({ subjectType, subjectId, source: "manual" });
+      printJson({
+        status: "applied",
+        target: { type: "permission-template", subject, template },
+        changedCount: count,
+        relations: relations.map(serializeRelation),
+      });
+      return;
+    }
     console.log(`✓ Applied template "${template}" to ${subject} (${count} relation(s))`);
   }
 
   @Command({ name: "clear", description: "Clear all manual relations" })
-  clear(@Option({ flags: "--all", description: "Clear ALL relations (including config)" }) all?: boolean) {
+  clear(
+    @Option({ flags: "--all", description: "Clear ALL relations (including config)" }) all?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const count = all ? clearRelations() : clearRelations({ source: "manual" });
+
+    if (asJson) {
+      printJson({
+        status: "cleared",
+        target: { type: "permission-relations", source: all ? "all" : "manual" },
+        changedCount: count,
+      });
+      return;
+    }
 
     console.log(`✓ Cleared ${count} relation(s)`);
 
@@ -289,4 +400,39 @@ function parseEntity(entity: string): [string, string] {
     return ["", ""];
   }
   return [type, id];
+}
+
+function relationTarget(subject: string, relation: string, object: string) {
+  return {
+    type: "permission-relation",
+    subject,
+    relation,
+    object,
+  };
+}
+
+function relationTuple(subjectType: string, subjectId: string, relation: string, objectType: string, objectId: string) {
+  return {
+    subjectType,
+    subjectId,
+    subject: `${subjectType}:${subjectId}`,
+    relation,
+    objectType,
+    objectId,
+    object: `${objectType}:${objectId}`,
+  };
+}
+
+function serializeRelation(relation: Relation) {
+  const serialized: Record<string, unknown> = {
+    ...relation,
+    subject: `${relation.subjectType}:${relation.subjectId}`,
+    object: `${relation.objectType}:${relation.objectId}`,
+  };
+
+  if (relation.objectType === "toolgroup" && relation.objectId !== "*") {
+    serialized.objectMembers = resolveToolGroup(relation.objectId) ?? [];
+  }
+
+  return serialized;
 }

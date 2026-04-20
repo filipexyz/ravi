@@ -51,6 +51,7 @@ export class MediaCommands {
     @Option({ flags: "--to <chatId>", description: "Target chat ID" }) to?: string,
     @Option({ flags: "--account <id>", description: "Account ID" }) account?: string,
     @Option({ flags: "--ptt", description: "Send audio as voice note (PTT)" }) ptt?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const absPath = resolve(filePath);
 
@@ -74,7 +75,7 @@ export class MediaCommands {
       fail("No channel context available — use --channel, --to, and --account to specify target");
     }
 
-    await nats.emit("ravi.media.send", {
+    const eventPayload = {
       channel: targetChannel,
       accountId: targetAccount,
       chatId: targetChat,
@@ -84,9 +85,35 @@ export class MediaCommands {
       filename,
       caption,
       ...(ptt && type === "audio" ? { voiceNote: true } : {}),
-    });
+    };
 
-    console.log(`✓ ${type} queued: ${filename}`);
-    return { success: true, filename, type, channel: targetChannel, chatId: targetChat };
+    await nats.emit("ravi.media.send", eventPayload);
+
+    const payload = {
+      success: true,
+      topic: "ravi.media.send",
+      media: {
+        filePath: absPath,
+        filename,
+        mimeType: mimetype,
+        type,
+        ...(caption ? { caption } : {}),
+        voiceNote: ptt === true && type === "audio",
+      },
+      target: {
+        channel: targetChannel,
+        accountId: targetAccount,
+        chatId: targetChat,
+      },
+      event: eventPayload,
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`✓ ${type} queued: ${filename}`);
+    }
+
+    return payload;
   }
 }

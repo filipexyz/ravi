@@ -115,6 +115,10 @@ function requireAutomation(id: string) {
   return automation;
 }
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
 @Group({
   name: "tasks.automations",
   description: "Event-driven follow-up task automations",
@@ -303,7 +307,12 @@ export class TaskAutomationCommands {
     });
 
     if (asJson) {
-      console.log(JSON.stringify({ automation }, null, 2));
+      printJson({
+        status: "created",
+        target: { type: "task-automation", id: automation.id },
+        changedCount: 1,
+        automation,
+      });
       return;
     }
 
@@ -315,24 +324,60 @@ export class TaskAutomationCommands {
   }
 
   @Command({ name: "enable", description: "Enable a task automation" })
-  enable(@Arg("id", { description: "Task automation ID" }) id: string) {
+  enable(
+    @Arg("id", { description: "Task automation ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const automation = requireAutomation(id);
     const updated = updateTaskAutomation(id, { enabled: true });
+    if (asJson) {
+      printJson({
+        status: "enabled",
+        target: { type: "task-automation", id: updated.id },
+        changedCount: 1,
+        automation: updated,
+      });
+      return;
+    }
     console.log(`✓ Enabled task automation: ${updated.id} (${automation.name})`);
   }
 
   @Command({ name: "disable", description: "Disable a task automation" })
-  disable(@Arg("id", { description: "Task automation ID" }) id: string) {
+  disable(
+    @Arg("id", { description: "Task automation ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const automation = requireAutomation(id);
     const updated = updateTaskAutomation(id, { enabled: false });
+    if (asJson) {
+      printJson({
+        status: "disabled",
+        target: { type: "task-automation", id: updated.id },
+        changedCount: 1,
+        automation: updated,
+      });
+      return;
+    }
     console.log(`✓ Disabled task automation: ${updated.id} (${automation.name})`);
   }
 
   @Command({ name: "rm", description: "Delete a task automation", aliases: ["delete", "remove"] })
-  remove(@Arg("id", { description: "Task automation ID" }) id: string) {
+  remove(
+    @Arg("id", { description: "Task automation ID" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const automation = requireAutomation(id);
     if (!deleteTaskAutomation(id)) {
       fail(`Task automation not found: ${id}`);
+    }
+    if (asJson) {
+      printJson({
+        status: "deleted",
+        target: { type: "task-automation", id },
+        changedCount: 1,
+        automation,
+      });
+      return;
     }
     console.log(`✓ Deleted task automation: ${id} (${automation.name})`);
   }

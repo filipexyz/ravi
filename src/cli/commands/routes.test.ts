@@ -24,6 +24,15 @@ let routes: RouteRecord[] = [];
 let instanceNames = new Set<string>(["main"]);
 let contactStatuses = new Map<string, { status: string }>();
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
+let pendingEntries: Array<{
+  accountId: string;
+  phone: string;
+  name: string | null;
+  chatId: string | null;
+  isGroup: boolean;
+  createdAt: number;
+  updatedAt: number;
+}> = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -100,14 +109,38 @@ mock.module("../../router/router-db.js", () => ({
   dbGetRoute: (pattern: string, accountId: string) =>
     routes.find((route) => route.accountId === accountId && route.pattern === pattern) ?? null,
   dbListRoutes: (accountId?: string) => routes.filter((route) => (accountId ? route.accountId === accountId : true)),
-  dbCreateRoute: () => {},
-  dbUpdateRoute: () => {},
-  dbDeleteRoute: () => false,
-  dbRestoreRoute: () => false,
+  dbCreateRoute: (input: Record<string, unknown>) => {
+    const route = {
+      id: routes.length + 1,
+      accountId: input.accountId as string,
+      pattern: input.pattern as string,
+      agent: input.agent as string,
+      priority: (input.priority as number | undefined) ?? 0,
+      policy: (input.policy as string | undefined) ?? null,
+      session: (input.session as string | undefined) ?? null,
+      channel: (input.channel as string | undefined) ?? null,
+      dmScope: (input.dmScope as string | undefined) ?? null,
+    };
+    routes.push(route);
+    return route;
+  },
+  dbUpdateRoute: (pattern: string, updates: Record<string, unknown>, accountId: string) => {
+    const route = routes.find((item) => item.accountId === accountId && item.pattern === pattern);
+    if (!route) throw new Error("Route not found");
+    Object.assign(route, updates);
+    return route;
+  },
+  dbDeleteRoute: (pattern: string, accountId: string) => {
+    const before = routes.length;
+    routes = routes.filter((route) => !(route.accountId === accountId && route.pattern === pattern));
+    return routes.length !== before;
+  },
+  dbRestoreRoute: () => true,
   dbListDeletedRoutes: () => [],
   DmScopeSchema: {
     options: ["main", "per-peer"],
     safeParse: (value: string) => ({ success: ["main", "per-peer"].includes(value) }),
+    parse: (value: string) => value,
   },
   DmPolicySchema: {
     options: ["open", "pairing", "closed"],
@@ -143,8 +176,13 @@ mock.module("../../omni-config.js", () => ({
 mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
   getContact: (pattern: string) => contactStatuses.get(pattern) ?? null,
-  listAccountPending: () => [],
-  removeAccountPending: () => false,
+  listAccountPending: (accountId?: string) =>
+    pendingEntries.filter((entry) => !accountId || entry.accountId === accountId),
+  removeAccountPending: (accountId: string, phone: string) => {
+    const before = pendingEntries.length;
+    pendingEntries = pendingEntries.filter((entry) => !(entry.accountId === accountId && entry.phone === phone));
+    return pendingEntries.length !== before;
+  },
   allowContact: () => {},
 }));
 
@@ -163,7 +201,7 @@ mock.module("../runtime-target.js", () => ({
   getCliRuntimeMismatchMessage: () => null,
 }));
 
-const { RoutesCommands } = await import("./instances.js");
+const { RoutesCommands, InstancesRoutesCommands, InstancesPendingCommands } = await import("./instances.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -181,12 +219,17 @@ function captureLogs(run: () => void): string {
   return lines.join("\n");
 }
 
+function captureJson(run: () => void): Record<string, unknown> {
+  return JSON.parse(captureLogs(run)) as Record<string, unknown>;
+}
+
 describe("RoutesCommands", () => {
   beforeEach(() => {
     routes = [];
     instanceNames = new Set(["main"]);
     contactStatuses = new Map();
     liveWinner = null;
+    pendingEntries = [];
   });
 
   it("lists routes across all instances with discovery and mutation follow-ups", () => {
@@ -222,6 +265,29 @@ describe("RoutesCommands", () => {
     expect(output).toContain('Show one: ravi routes show <instance> "<pattern>"');
     expect(output).toContain('Explain:  ravi routes explain <instance> "<pattern>"');
     expect(output).toContain("Mutate:   ravi instances routes add <instance> <pattern> <agent>");
+  });
+
+  it("lists route entities in --json mode", () => {
+    routes = [
+      {
+        id: 1,
+        accountId: "main",
+        pattern: "5511999999999",
+        agent: "sales",
+        priority: 10,
+        policy: "open",
+        session: "vip",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new RoutesCommands().list(undefined, true);
+    });
+
+    expect(payload.total).toBe(1);
+    const payloadRoutes = payload.routes as Array<Record<string, unknown>>;
+    expect(payloadRoutes[0].pattern).toBe("5511999999999");
+    expect(payloadRoutes[0].agent).toBe("sales");
   });
 
   it("shows route details with next steps", () => {
@@ -280,5 +346,88 @@ describe("RoutesCommands", () => {
     expect(output).toContain("Winning agent: sales");
     expect(output).toContain('Route details: ravi routes show main "5511999999999"');
     expect(output).toContain('Mutate config: ravi instances routes set main "5511999999999" <key> <value>');
+  });
+
+  it("explains configured routes as typed JSON", () => {
+    routes = [
+      {
+        id: 1,
+        accountId: "main",
+        pattern: "5511999999999",
+        agent: "sales",
+        channel: "whatsapp",
+      },
+    ];
+    liveWinner = {
+      route: { pattern: "5511999999999" },
+      agentId: "sales",
+    };
+
+    const payload = captureJson(() => {
+      new RoutesCommands().explain("main", "5511999999999", "whatsapp", true);
+    });
+
+    expect((payload.configuredRoute as Record<string, unknown>).agent).toBe("sales");
+    expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+  });
+
+  it("prints route mutation results in --json mode", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "5511999999999",
+        name: "Alice",
+        chatId: "5511999999999",
+        isGroup: false,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+    liveWinner = {
+      route: { pattern: "5511999999999" },
+      agentId: "sales",
+    };
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().add(
+        "main",
+        "5511999999999",
+        "sales",
+        "7",
+        "open",
+        undefined,
+        undefined,
+        "whatsapp",
+        undefined,
+        true,
+      );
+    });
+
+    expect(payload.status).toBe("added");
+    expect(payload.removedPending).toBe(true);
+    expect((payload.route as Record<string, unknown>).priority).toBe(7);
+    expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+  });
+
+  it("prints pending entries in --json mode", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "group:123",
+        name: "Launch",
+        chatId: "group:123",
+        isGroup: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesPendingCommands().list("main", true);
+    });
+
+    expect(payload.total).toBe(1);
+    const pending = payload.pending as Array<Record<string, unknown>>;
+    expect(pending[0].type).toBe("group");
   });
 });

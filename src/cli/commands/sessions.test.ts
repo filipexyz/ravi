@@ -14,6 +14,7 @@ let claudeEvents: RuntimeEventPayload[] = [];
 let responseEvents: ResponseEventPayload[] = [];
 const publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
+let listedSessions: Array<Record<string, unknown>> = [];
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
 let listedContexts: Array<Record<string, unknown>> = [];
@@ -79,8 +80,8 @@ mock.module("../../omni/session-stream.js", () => ({
 
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
-  listSessions: () => [],
-  getSessionsByAgent: () => [],
+  listSessions: () => listedSessions,
+  getSessionsByAgent: (agentId: string) => listedSessions.filter((session) => session.agentId === agentId),
   deleteSession: () => {},
   resetSession: () => {},
   resolveSession: () => resolvedSession,
@@ -173,6 +174,7 @@ async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
 
 describe("SessionCommands wait mode", () => {
   beforeEach(() => {
+    listedSessions = [];
     runtimeEvents = [];
     claudeEvents = [];
     responseEvents = [];
@@ -267,8 +269,44 @@ describe("SessionCommands wait mode", () => {
   });
 });
 
+describe("SessionCommands list --json", () => {
+  beforeEach(() => {
+    listedSessions = [
+      {
+        sessionKey: "agent:main:main",
+        name: "main",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        runtimeProvider: "codex",
+        providerSessionId: "resp_1",
+        totalTokens: 42,
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+  });
+
+  it("prints structured session entities", () => {
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true);
+      }),
+    );
+
+    expect(payload.total).toBe(1);
+    expect(payload.sessions[0]).toMatchObject({
+      sessionKey: "agent:main:main",
+      label: "main",
+      runtimeId: "resp_1",
+      runtimeProvider: "codex",
+      tokenTotal: 42,
+    });
+  });
+});
+
 describe("SessionCommands set-model", () => {
   beforeEach(() => {
+    listedSessions = [];
     resolvedSession = null;
     routerConfig = { agents: {} };
     natsEmits.length = 0;

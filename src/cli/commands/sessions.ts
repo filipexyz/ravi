@@ -65,6 +65,73 @@ const ADAPTER_DB_META = { source: "adapter-db", freshness: "persisted" } as cons
 const SESSION_KEY_META = { source: "resolver", freshness: "derived-now", via: "session-key" } as const;
 const NEXT_COMMANDS_META = { source: "derived", freshness: "derived-now", via: "session-inspect" } as const;
 
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function printJsonl(payload: unknown): void {
+  console.log(JSON.stringify(payload));
+}
+
+function buildSessionJson(session: SessionEntry): Record<string, unknown> {
+  const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
+  return {
+    ...session,
+    label: session.name ?? session.sessionKey,
+    runtimeId,
+    tokenTotal:
+      session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
+    ephemeral: Boolean(session.ephemeral),
+    expiresAt: session.expiresAt ?? null,
+  };
+}
+
+function buildSessionMutationJson(
+  action: string,
+  before: SessionEntry,
+  after: SessionEntry | null,
+  changed: boolean,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    action,
+    changed,
+    sessionKey: before.sessionKey,
+    sessionName: before.name ?? null,
+    before: buildSessionJson(before),
+    after: after ? buildSessionJson(after) : null,
+    ...extra,
+  };
+}
+
+function buildDeliveryJson(
+  session: SessionEntry,
+  deliveryBarrier: DeliveryBarrier,
+  source: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined,
+  context: ChannelContext | undefined,
+): Record<string, unknown> {
+  return {
+    barrier: deliveryBarrier,
+    source: source ?? null,
+    context: context ?? null,
+    target: {
+      sessionKey: session.sessionKey,
+      sessionName: session.name ?? null,
+      agentId: session.agentId,
+    },
+  };
+}
+
+function buildRelatedContextJson(context: ContextRecord): Record<string, unknown> {
+  const { contextKey: _contextKey, ...safeContext } = context;
+  void _contextKey;
+  return {
+    ...safeContext,
+    status: formatContextStatus(context),
+    sourceSummary: formatContextSource(context) ?? null,
+  };
+}
+
 function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
   const routerConfig = loadRouterConfig();
   const runtimeConfig = loadConfig();
@@ -876,6 +943,7 @@ export class SessionCommands {
   list(
     @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -889,9 +957,23 @@ export class SessionCommands {
       sessions = sessions.filter((s) => s.ephemeral);
     }
 
+    const payload = {
+      total: sessions.length,
+      filters: {
+        agentId: agentId ?? null,
+        ephemeralOnly: Boolean(ephemeralOnly),
+      },
+      sessions: sessions.map(buildSessionJson),
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
     if (sessions.length === 0) {
       console.log(agentId ? `No sessions for agent: ${agentId}` : "No sessions found.");
-      return { sessions: [], total: 0 };
+      return payload;
     }
 
     const label = agentId ? `Sessions for ${agentId}` : ephemeralOnly ? "Ephemeral sessions" : "All sessions";
@@ -930,7 +1012,7 @@ export class SessionCommands {
     }
 
     console.log();
-    return { sessions, total: sessions.length };
+    return payload;
   }
 
   @Command({
@@ -938,7 +1020,10 @@ export class SessionCommands {
     description: "Show unified session inspection details",
     aliases: ["inspect"],
   })
-  info(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  info(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     let s = resolveSession(nameOrKey);
     if (!s) {
       const match = findSessionByChatId(nameOrKey);
@@ -962,6 +1047,27 @@ export class SessionCommands {
     const relatedContexts = dbListContexts({ sessionKey: s.sessionKey, includeInactive: true });
     const relatedAdapters = listSessionAdapters({ sessionKey: s.sessionKey });
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
+
+    if (asJson) {
+      const adapters = relatedAdapters.map((adapter) => {
+        const snapshot = getSessionAdapterDebugSnapshot(adapter.adapterId);
+        return {
+          adapter,
+          snapshot,
+          diagnosticState: resolveAdapterInspectionState(adapter, snapshot),
+        };
+      });
+      const payload = {
+        session: buildSessionJson(s),
+        agent: agentConfig ?? null,
+        derivedSource: derivedSource ?? null,
+        contexts: relatedContexts.map(buildRelatedContextJson),
+        adapters,
+        commands: suggestedCommands,
+      };
+      printJson(payload);
+      return payload;
+    }
 
     console.log(`\nSession: ${s.name ?? s.sessionKey}`);
     printInspectionField("Key", s.sessionKey, SESSION_DB_META, { labelWidth: 14 });
@@ -1066,6 +1172,7 @@ export class SessionCommands {
   rename(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("displayName", { description: "Display name" }) displayName: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -1080,7 +1187,16 @@ export class SessionCommands {
       return;
     }
 
+    const beforeDisplayName = s.displayName ?? null;
     updateSessionDisplayName(s.sessionKey, displayName);
+    const after = resolveSession(s.sessionKey) ?? ({ ...s, displayName } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("rename", s, after, beforeDisplayName !== displayName, {
+        displayName,
+      });
+      printJson(payload);
+      return payload;
+    }
     console.log(`Renamed: ${s.name ?? s.sessionKey} -> "${displayName}"`);
   }
 
@@ -1088,6 +1204,7 @@ export class SessionCommands {
   async setModel(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("model", { description: "Model name (sonnet, opus, haiku) or 'clear' to remove override" }) model: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -1104,12 +1221,13 @@ export class SessionCommands {
 
     const label = s.name ?? s.sessionKey;
     const modelOverride = model === "clear" ? null : model;
+    const beforeModelOverride = s.modelOverride ?? null;
     if (model === "clear") {
       updateSessionModelOverride(s.sessionKey, null);
-      console.log(`Cleared model override for: ${label}`);
+      if (!asJson) console.log(`Cleared model override for: ${label}`);
     } else {
       updateSessionModelOverride(s.sessionKey, model);
-      console.log(`Set model to "${model}" for: ${label}`);
+      if (!asJson) console.log(`Set model to "${model}" for: ${label}`);
     }
 
     const event: SessionModelChangedEvent = {
@@ -1120,11 +1238,35 @@ export class SessionCommands {
       changedAt: Date.now(),
     };
 
+    let notification = { delivered: false, error: null as string | null };
     try {
       await nats.emit(SESSION_MODEL_CHANGED_TOPIC, event);
-      console.log("Live daemon notified; active session will switch without daemon restart when supported.");
-    } catch {
-      console.log("Saved override. Live daemon notification failed; next cold session will use it.");
+      notification = { delivered: true, error: null };
+      if (!asJson)
+        console.log("Live daemon notified; active session will switch without daemon restart when supported.");
+    } catch (err) {
+      notification = { delivered: false, error: err instanceof Error ? err.message : String(err) };
+      if (!asJson) console.log("Saved override. Live daemon notification failed; next cold session will use it.");
+    }
+
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ...(modelOverride === null ? { modelOverride: undefined } : { modelOverride }),
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("set-model", s, after, beforeModelOverride !== modelOverride, {
+        modelOverride,
+        effectiveModel: event.effectiveModel,
+        event,
+        notification: {
+          topic: SESSION_MODEL_CHANGED_TOPIC,
+          ...notification,
+        },
+      });
+      printJson(payload);
+      return payload;
     }
   }
 
@@ -1132,6 +1274,7 @@ export class SessionCommands {
   setThinking(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("level", { description: "Thinking level (off, normal, verbose) or 'clear'" }) level: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -1153,19 +1296,39 @@ export class SessionCommands {
     }
 
     const label = s.name ?? s.sessionKey;
+    const beforeThinkingLevel = s.thinkingLevel ?? null;
+    const thinkingLevel = level === "clear" ? null : (level as NonNullable<SessionEntry["thinkingLevel"]>);
     if (level === "clear") {
       updateSessionThinkingLevel(s.sessionKey, null);
-      console.log(`Cleared thinking level for: ${label}`);
+      if (!asJson) console.log(`Cleared thinking level for: ${label}`);
     } else {
       updateSessionThinkingLevel(s.sessionKey, level);
-      console.log(`Set thinking to "${level}" for: ${label}`);
+      if (!asJson) console.log(`Set thinking to "${level}" for: ${label}`);
+    }
+
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ...(thinkingLevel === null ? { thinkingLevel: undefined } : { thinkingLevel }),
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("set-thinking", s, after, beforeThinkingLevel !== thinkingLevel, {
+        thinkingLevel,
+        appliesOn: "next-session-start",
+      });
+      printJson(payload);
+      return payload;
     }
 
     console.log("Note: takes effect on next session start (reset or daemon restart).");
   }
 
   @Command({ name: "reset", description: "Reset a session (fresh start)" })
-  async reset(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  async reset(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
@@ -1207,12 +1370,27 @@ export class SessionCommands {
       changed,
       durationMs: Date.now() - startedAt,
     });
+    if (asJson) {
+      const payload = buildSessionMutationJson("reset", s, afterSession, changed, {
+        nextMessageStartsFreshConversation: true,
+        audit: {
+          requested: true,
+          completed: true,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      printJson(payload);
+      return payload;
+    }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
   }
 
   @Command({ name: "delete", description: "Delete a session permanently" })
-  async delete(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  async delete(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
@@ -1253,6 +1431,17 @@ export class SessionCommands {
       changed,
       durationMs: Date.now() - startedAt,
     });
+    if (asJson) {
+      const payload = buildSessionMutationJson("delete", s, null, changed, {
+        audit: {
+          requested: true,
+          completed: true,
+          durationMs: Date.now() - startedAt,
+        },
+      });
+      printJson(payload);
+      return payload;
+    }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
   }
 
@@ -1264,6 +1453,7 @@ export class SessionCommands {
   setTtl(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("duration", { description: "TTL duration (e.g. 5h, 30m, 1d)" }) duration: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -1284,8 +1474,25 @@ export class SessionCommands {
       return;
     }
 
+    const startedAt = Date.now();
     setSessionEphemeral(s.sessionKey, ttlMs);
-    const expiresAt = new Date(Date.now() + ttlMs);
+    const expiresAt = new Date(startedAt + ttlMs);
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ephemeral: true,
+        expiresAt: expiresAt.getTime(),
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("set-ttl", s, after, true, {
+        duration,
+        ttlMs,
+        expiresAt: expiresAt.getTime(),
+      });
+      printJson(payload);
+      return payload;
+    }
     console.log(`⏳ Session "${s.name ?? s.sessionKey}" is now ephemeral.`);
     console.log(`   Expires: ${formatDate(expiresAt.getTime())}`);
   }
@@ -1294,6 +1501,7 @@ export class SessionCommands {
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("duration", { description: "Duration to add (default: 5h)", required: false }) duration?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
@@ -1319,14 +1527,34 @@ export class SessionCommands {
       return;
     }
 
+    const effectiveDuration = duration ?? "5h";
     extendSession(nameOrKey, ttlMs);
     const newExpiry = Math.max(s.expiresAt ?? Date.now(), Date.now()) + ttlMs;
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ephemeral: true,
+        expiresAt: newExpiry,
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("extend", s, after, true, {
+        duration: effectiveDuration,
+        ttlMs,
+        expiresAt: newExpiry,
+      });
+      printJson(payload);
+      return payload;
+    }
     console.log(`⏳ Extended "${s.name ?? s.sessionKey}" by ${duration ?? "5h"}.`);
     console.log(`   New expiry: ${formatDate(newExpiry)}`);
   }
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
-  keep(@Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string) {
+  keep(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
       fail(`Session not found: ${nameOrKey}`);
@@ -1341,11 +1569,30 @@ export class SessionCommands {
     }
 
     if (!s.ephemeral) {
+      if (asJson) {
+        const payload = buildSessionMutationJson("keep", s, s, false, {
+          reason: "already_permanent",
+        });
+        printJson(payload);
+        return payload;
+      }
       console.log(`Session "${s.name ?? s.sessionKey}" is already permanent.`);
       return;
     }
 
     makeSessionPermanent(nameOrKey);
+    const after =
+      resolveSession(s.sessionKey) ??
+      ({
+        ...s,
+        ephemeral: false,
+        expiresAt: undefined,
+      } as SessionEntry);
+    if (asJson) {
+      const payload = buildSessionMutationJson("keep", s, after, true);
+      printJson(payload);
+      return payload;
+    }
     console.log(`✅ Session "${s.name ?? s.sessionKey}" is now permanent.`);
   }
 
@@ -1366,8 +1613,15 @@ export class SessionCommands {
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const session = this.resolveTarget(nameOrKey, agentId);
+    let createdSession = false;
+    const session = this.resolveTarget(nameOrKey, agentId, {
+      silent: Boolean(asJson),
+      onCreated: () => {
+        createdSession = true;
+      },
+    });
     if (!session) return;
 
     const sessionName = session.name ?? nameOrKey;
@@ -1381,14 +1635,46 @@ export class SessionCommands {
 
     const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_tool");
 
+    if (asJson && (interactive || !prompt)) {
+      fail("sessions send --json requires a prompt and cannot be combined with --interactive.");
+      return;
+    }
+
     if (interactive || !prompt) {
       return this.interactiveMode(sessionName, session, channel, to);
     }
 
     const origin = getContext()?.sessionKey ?? "unknown";
     const fullPrompt = `[System] Inform: [from: ${origin}] ${prompt}`;
+    const { source, context } = this.resolveSource(session, channel, to);
+    const delivery = buildDeliveryJson(session, deliveryBarrier, source, context);
 
     if (wait) {
+      if (asJson) {
+        let responseText = "";
+        const chars = await this.streamToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier, {
+          silent: true,
+          onResponse: (chunk) => {
+            responseText += chunk;
+          },
+        });
+        const payload = {
+          action: "send",
+          mode: "wait",
+          published: true,
+          createdSession,
+          session: buildSessionJson(session),
+          promptLength: prompt.length,
+          delivery,
+          response: {
+            length: chars,
+            text: responseText,
+          },
+        };
+        printJson(payload);
+        return payload;
+      }
+
       console.log(`\n📤 Sending to ${sessionName}\n`);
       console.log(`Prompt: ${prompt}\n`);
       console.log("─".repeat(50));
@@ -1397,6 +1683,19 @@ export class SessionCommands {
       console.log(`\n✅ Done (${chars} chars)`);
     } else {
       await this.emitToSession(sessionName, fullPrompt, session, channel, to, deliveryBarrier);
+      if (asJson) {
+        const payload = {
+          action: "send",
+          mode: "fire-and-forget",
+          published: true,
+          createdSession,
+          session: buildSessionJson(session),
+          promptLength: prompt.length,
+          delivery,
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log(`📤 Sent to ${sessionName}`);
     }
   }
@@ -1409,6 +1708,7 @@ export class SessionCommands {
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -1416,15 +1716,22 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Ask: [from: ${origin}${senderTag}] ${message}\n(If you already know the answer, send it back immediately with: ravi sessions answer ${origin} "answer" "${sender ?? ""}" — no need to ask in the chat. Otherwise, your text output IS the message sent to the chat — just write the question directly, don't describe what you're doing. When you get answers, send each one back with: ravi sessions answer ${origin} "answer" "${sender ?? ""}". You can call answer multiple times as new info comes in. IMPORTANT: Don't consider the ask "done" after the first reply — if the person keeps adding details, context, or follow-ups, send another answer with the new info each time. Only forward messages related to this question — ignore unrelated conversation.)`;
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
-    );
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    if (asJson) {
+      const payload = {
+        action: "ask",
+        published: true,
+        session: buildSessionJson(session),
+        messageLength: message.length,
+        sender: sender ?? null,
+        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+      };
+      printJson(payload);
+      return payload;
+    }
     console.log(`✓ [ask] sent to ${session.name ?? target}`);
   }
 
@@ -1436,6 +1743,7 @@ export class SessionCommands {
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
@@ -1443,15 +1751,22 @@ export class SessionCommands {
     const origin = getContext()?.sessionKey ?? "unknown";
     const senderTag = sender ? `, sender: ${sender}` : "";
     const prompt = `[System] Answer: [from: ${origin}${senderTag}] ${message}`;
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt");
+    const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      resolveDeliveryBarrierOptionWithDefault(barrier, "immediate_interrupt"),
-    );
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    if (asJson) {
+      const payload = {
+        action: "answer",
+        published: true,
+        session: buildSessionJson(session),
+        messageLength: message.length,
+        sender: sender ?? null,
+        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+      };
+      printJson(payload);
+      return payload;
+    }
     console.log(`✓ [answer] sent to ${session.name ?? target}`);
   }
 
@@ -1462,20 +1777,27 @@ export class SessionCommands {
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Execute: ${message}`;
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_task");
+    const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      resolveDeliveryBarrierOptionWithDefault(barrier, "after_task"),
-    );
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    if (asJson) {
+      const payload = {
+        action: "execute",
+        published: true,
+        session: buildSessionJson(session),
+        messageLength: message.length,
+        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+      };
+      printJson(payload);
+      return payload;
+    }
     console.log(`✓ [execute] sent to ${session.name ?? target}`);
   }
 
@@ -1486,20 +1808,27 @@ export class SessionCommands {
     @Option({ flags: "--channel <channel>", description: "Override delivery channel" }) channel?: string,
     @Option({ flags: "--to <chatId>", description: "Override delivery target" }) to?: string,
     @Option({ flags: "--barrier <barrier>", description: "Delivery barrier: p0|p1|p2|p3" }) barrier?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(target);
     if (!session) return;
 
     const prompt = `[System] Inform: ${message}`;
+    const deliveryBarrier = resolveDeliveryBarrierOptionWithDefault(barrier, "after_response");
+    const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(
-      session.name ?? target,
-      prompt,
-      session,
-      channel,
-      to,
-      resolveDeliveryBarrierOptionWithDefault(barrier, "after_response"),
-    );
+    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier);
+    if (asJson) {
+      const payload = {
+        action: "inform",
+        published: true,
+        session: buildSessionJson(session),
+        messageLength: message.length,
+        delivery: buildDeliveryJson(session, deliveryBarrier, source, context),
+      };
+      printJson(payload);
+      return payload;
+    }
     console.log(`✓ [inform] sent to ${session.name ?? target}`);
   }
 
@@ -1508,12 +1837,27 @@ export class SessionCommands {
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
     countStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
 
     const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
     if (!providerSessionId) {
+      if (asJson) {
+        const payload = {
+          session: buildSessionJson(session),
+          transcript: {
+            available: false,
+            reason: "No runtime session",
+          },
+          messages: [],
+          totalMessages: 0,
+          count: 0,
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log("⚠️  No runtime session — no history available");
       return;
     }
@@ -1528,6 +1872,21 @@ export class SessionCommands {
     });
 
     if (!transcript.path) {
+      if (asJson) {
+        const payload = {
+          session: buildSessionJson(session),
+          transcript: {
+            available: false,
+            reason: transcript.reason ?? "Transcript not found",
+            providerSessionId,
+          },
+          messages: [],
+          totalMessages: 0,
+          count: 0,
+        };
+        printJson(payload);
+        return payload;
+      }
       console.log(`⚠️  ${transcript.reason ?? "Transcript not found"}`);
       return;
     }
@@ -1539,6 +1898,23 @@ export class SessionCommands {
     const messages = extractNormalizedTranscriptMessages(raw, session.runtimeProvider);
 
     const recent = messages.slice(-maxMessages);
+    if (asJson) {
+      const payload = {
+        session: buildSessionJson(session),
+        transcript: {
+          available: true,
+          path: transcript.path,
+          providerSessionId,
+          runtimeProvider: session.runtimeProvider ?? null,
+        },
+        messages: recent,
+        totalMessages: messages.length,
+        count: recent.length,
+      };
+      printJson(payload);
+      return payload;
+    }
+
     console.log(`\n💬 ${session.name ?? nameOrKey} — last ${recent.length} of ${messages.length} messages\n`);
 
     for (const msg of recent) {
@@ -1646,13 +2022,15 @@ export class SessionCommands {
     const timeoutSeconds = Number.parseInt(timeoutStr ?? "60", 10);
     const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 60_000;
 
-    console.log(`\n🔎 Session debug: ${sessionName}`);
-    console.log(`Agent: ${session.agentId}`);
-    console.log(
-      `Runtime: ${session.runtimeProvider ?? "(unknown)"} :: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`,
-    );
-    console.log(`Channel: ${session.lastChannel ?? "-"} -> ${session.lastTo ?? "-"}`);
-    console.log(`Window: ${Math.round(timeoutMs / 1000)}s\n`);
+    if (!asJson) {
+      console.log(`\n🔎 Session debug: ${sessionName}`);
+      console.log(`Agent: ${session.agentId}`);
+      console.log(
+        `Runtime: ${session.runtimeProvider ?? "(unknown)"} :: ${session.providerSessionId ?? session.sdkSessionId ?? "(none)"}`,
+      );
+      console.log(`Channel: ${session.lastChannel ?? "-"} -> ${session.lastTo ?? "-"}`);
+      console.log(`Window: ${Math.round(timeoutMs / 1000)}s\n`);
+    }
 
     let resolveCompletion: (() => void) | undefined;
     const completion = new Promise<void>((resolve) => {
@@ -1680,7 +2058,17 @@ export class SessionCommands {
     };
 
     const timer = setTimeout(() => {
-      console.log(`\n⏱️  Debug window ended after ${Math.round(timeoutMs / 1000)}s`);
+      if (asJson) {
+        printJsonl({
+          type: "debug.window_ended",
+          time: new Date().toISOString(),
+          sessionKey: session.sessionKey,
+          sessionName,
+          timeoutMs,
+        });
+      } else {
+        console.log(`\n⏱️  Debug window ended after ${Math.round(timeoutMs / 1000)}s`);
+      }
       cleanup();
     }, timeoutMs);
 
@@ -1706,7 +2094,16 @@ export class SessionCommands {
     const tasks = subscriptions.map((sub) => pump(sub));
 
     const sigintHandler = () => {
-      console.log("\n🛑 Debug interrupted");
+      if (asJson) {
+        printJsonl({
+          type: "debug.interrupted",
+          time: new Date().toISOString(),
+          sessionKey: session.sessionKey,
+          sessionName,
+        });
+      } else {
+        console.log("\n🛑 Debug interrupted");
+      }
       cleanup();
     };
     process.once("SIGINT", sigintHandler);
@@ -1747,7 +2144,11 @@ export class SessionCommands {
     return { session };
   }
 
-  private resolveTarget(nameOrKey: string, createWithAgent?: string): SessionEntry | null {
+  private resolveTarget(
+    nameOrKey: string,
+    createWithAgent?: string,
+    options: { silent?: boolean; onCreated?: (session: SessionEntry | null) => void } = {},
+  ): SessionEntry | null {
     let session = resolveSession(nameOrKey);
 
     // Try chatId lookup
@@ -1790,8 +2191,11 @@ export class SessionCommands {
 
       const agentCwd = expandHome(agent.cwd);
       getOrCreateSession(nameOrKey, createWithAgent, agentCwd, { name: nameOrKey });
-      console.log(`Created session: ${nameOrKey} (agent: ${createWithAgent})`);
+      if (!options.silent) {
+        console.log(`Created session: ${nameOrKey} (agent: ${createWithAgent})`);
+      }
       session = resolveSession(nameOrKey);
+      options.onCreated?.(session ?? null);
     }
 
     return session ?? null;
@@ -1886,6 +2290,7 @@ export class SessionCommands {
     channelOverride?: string,
     toOverride?: string,
     deliveryBarrier: DeliveryBarrier = DEFAULT_DELIVERY_BARRIER,
+    options: { silent?: boolean; onResponse?: (chunk: string) => void } = {},
   ): Promise<number> {
     let responseLength = 0;
     let settled = false;
@@ -1913,7 +2318,9 @@ export class SessionCommands {
       settleCompletion = settle;
 
       timeoutId = setTimeout(() => {
-        console.log("\n⏱️  Timeout");
+        if (!options.silent) {
+          console.log("\n⏱️  Timeout");
+        }
         settle({ kind: "timeout" });
       }, SEND_TIMEOUT_MS);
 
@@ -1969,7 +2376,10 @@ export class SessionCommands {
             break;
           }
           if (data.response) {
-            process.stdout.write(data.response);
+            if (!options.silent) {
+              process.stdout.write(data.response);
+            }
+            options.onResponse?.(data.response);
             responseLength += data.response.length;
           }
         }

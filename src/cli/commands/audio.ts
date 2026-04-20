@@ -42,6 +42,8 @@ export class AudioCommands {
     send?: boolean,
     @Option({ flags: "--caption <text>", description: "Caption when sending (used with --send)" })
     caption?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     // Resolve agent defaults (CLI flags take precedence)
     const agentId = getContext()?.agentId;
@@ -52,7 +54,9 @@ export class AudioCommands {
     const resolvedSpeed = speed ? Number.parseFloat(speed) : (defaults?.tts_speed as number | undefined);
     const resolvedLang = lang ?? (defaults?.tts_lang as string) ?? "pt-br";
 
-    console.log("Generating audio...");
+    if (!asJson) {
+      console.log("Generating audio...");
+    }
 
     const result = await generateAudio(text, {
       voice: resolvedVoice,
@@ -64,11 +68,59 @@ export class AudioCommands {
       ptt: !!send,
     });
 
-    console.log(`\n✓ Audio saved: ${result.filePath}`);
-    console.log(`  Send to chat: ravi media send "${result.filePath}"`);
-    console.log(`\nText: ${text.slice(0, 200)}${text.length > 200 ? "..." : ""}`);
-    if (voice) console.log(`Voice: ${voice}`);
-    if (speed) console.log(`Speed: ${speed}`);
+    const sendCommand = `ravi media send "${result.filePath}"`;
+    const payload: {
+      success: true;
+      audio: {
+        filePath: string;
+        mimeType: string;
+        text: string;
+        sendCommand: string;
+      };
+      options: {
+        voice?: string;
+        model?: string;
+        speed?: number;
+        lang: string;
+        format?: string;
+        outputDir?: string;
+        voiceNote: boolean;
+      };
+      sent?: {
+        topic: "ravi.media.send";
+        channel: string;
+        accountId: string;
+        chatId: string;
+        filename: string;
+        caption: string;
+        voiceNote: true;
+      };
+    } = {
+      success: true,
+      audio: {
+        filePath: result.filePath,
+        mimeType: result.mimeType,
+        text,
+        sendCommand,
+      },
+      options: {
+        ...(resolvedVoice ? { voice: resolvedVoice } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        ...(resolvedSpeed !== undefined ? { speed: resolvedSpeed } : {}),
+        lang: resolvedLang,
+        ...(format ? { format } : {}),
+        ...(output ? { outputDir: resolve(output) } : {}),
+        voiceNote: !!send,
+      },
+    };
+
+    if (!asJson) {
+      console.log(`\n✓ Audio saved: ${result.filePath}`);
+      console.log(`  Send to chat: ${sendCommand}`);
+      console.log(`\nText: ${text.slice(0, 200)}${text.length > 200 ? "..." : ""}`);
+      if (voice) console.log(`Voice: ${voice}`);
+      if (speed) console.log(`Speed: ${speed}`);
+    }
 
     if (send) {
       const ctx = getContext()?.source;
@@ -91,15 +143,24 @@ export class AudioCommands {
         caption: caption ?? text.slice(0, 100),
         voiceNote: true,
       });
-      console.log(`✓ Sent to chat: ${basename(result.filePath)}`);
+      payload.sent = {
+        topic: "ravi.media.send",
+        channel,
+        accountId,
+        chatId,
+        filename: basename(result.filePath),
+        caption: caption ?? text.slice(0, 100),
+        voiceNote: true,
+      };
+      if (!asJson) {
+        console.log(`✓ Sent to chat: ${basename(result.filePath)}`);
+      }
     }
 
-    return {
-      success: true,
-      audio: {
-        path: result.filePath,
-        sendCommand: `ravi media send "${result.filePath}"`,
-      },
-    };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    }
+
+    return payload;
   }
 }

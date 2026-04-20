@@ -3,9 +3,9 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg } from "../decorators.js";
+import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { extractTools, manifestToJSON } from "../tools-export.js";
+import { extractTools, generateManifest, manifestToJSON } from "../tools-export.js";
 import {
   getAllCommandClasses,
   getCliToolsByGroup,
@@ -20,8 +20,27 @@ import {
 })
 export class ToolsCommands {
   @Command({ name: "list", description: "List all available CLI tools" })
-  list() {
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const groups = getCliToolsByGroup();
+    const sdkTools = createSdkTools(getAllCommandClasses());
+
+    if (asJson) {
+      console.log(
+        JSON.stringify(
+          {
+            total: sdkTools.length,
+            groups: Object.keys(groups).map((group) => ({
+              name: group,
+              tools: sdkTools.filter((tool) => groups[group]?.includes(tool.name)),
+            })),
+            tools: sdkTools,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
 
     console.log("\n📋 Available CLI Tools\n");
     console.log("These are the CLI tools available as SDK tools.\n");
@@ -62,12 +81,36 @@ export class ToolsCommands {
   }
 
   @Command({ name: "show", description: "Show details for a specific tool" })
-  show(@Arg("name", { description: "Tool name (e.g., agents_list)" }) name: string) {
+  show(
+    @Arg("name", { description: "Tool name (e.g., agents_list)" }) name: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
     const tools = extractTools(getAllCommandClasses());
     const tool = tools.find((t) => t.name === name);
 
     if (!tool) {
       fail(`Tool not found: ${name}. Run 'ravi tools list' to see available tools`);
+    }
+
+    const sdkTool = createSdkTools(getAllCommandClasses(), { filter: new RegExp(`^${name}$`) })[0];
+
+    if (asJson) {
+      console.log(
+        JSON.stringify(
+          {
+            tool: {
+              name: tool.name,
+              description: tool.description,
+              metadata: tool.metadata,
+              inputSchema: sdkTool?.inputSchema,
+              manifest: generateManifest([tool])[0],
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      return;
     }
 
     console.log(`\n📋 Tool: ${tool.name}\n`);
@@ -104,20 +147,19 @@ export class ToolsCommands {
     }
 
     console.log("\nJSON Schema:");
-    const sdkTool = createSdkTools(getAllCommandClasses(), { filter: new RegExp(`^${name}$`) })[0];
     if (sdkTool) {
       console.log(JSON.stringify(sdkTool.inputSchema, null, 2));
     }
   }
 
   @Command({ name: "manifest", description: "Export tools as JSON manifest" })
-  manifest() {
+  manifest(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
     const tools = extractTools(getAllCommandClasses());
     console.log(manifestToJSON(tools));
   }
 
   @Command({ name: "schema", description: "Export tools as JSON Schema" })
-  schema() {
+  schema(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
     const schema = generateToolsJsonSchema(getAllCommandClasses());
     console.log(JSON.stringify(schema, null, 2));
   }
@@ -126,6 +168,7 @@ export class ToolsCommands {
   async test(
     @Arg("name", { description: "Tool name" }) name: string,
     @Arg("args", { required: false, description: "JSON args (optional)" }) argsJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const tools = extractTools(getAllCommandClasses());
     const tool = tools.find((t) => t.name === name);
@@ -143,18 +186,41 @@ export class ToolsCommands {
       }
     }
 
-    console.log(`\n🔧 Testing: ${name}`);
-    console.log(`Args: ${JSON.stringify(args)}\n`);
-    console.log("─".repeat(50));
+    if (!asJson) {
+      console.log(`\n🔧 Testing: ${name}`);
+      console.log(`Args: ${JSON.stringify(args)}\n`);
+      console.log("─".repeat(50));
+    }
 
     const result = await tool.handler(args);
 
-    console.log("\n─".repeat(50));
-    console.log("\nResult:");
-    console.log(`  isError: ${result.isError ?? false}`);
-    console.log(`  content:`);
-    for (const c of result.content) {
-      console.log(`    ${c.text}`);
+    if (asJson) {
+      console.log(
+        JSON.stringify(
+          {
+            tool: {
+              name: tool.name,
+              description: tool.description,
+              metadata: tool.metadata,
+            },
+            args,
+            result: {
+              isError: result.isError ?? false,
+              content: result.content,
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log("\n─".repeat(50));
+      console.log("\nResult:");
+      console.log(`  isError: ${result.isError ?? false}`);
+      console.log(`  content:`);
+      for (const c of result.content) {
+        console.log(`    ${c.text}`);
+      }
     }
   }
 }

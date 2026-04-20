@@ -66,6 +66,7 @@ mock.module("../../router/config.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
   getAccountForAgent: () => undefined,
+  getDefaultAgentId: () => "main",
 }));
 
 mock.module("../../cron/schedule.js", () => ({
@@ -80,8 +81,15 @@ mock.module("../../triggers/index.js", () => ({
       id: "trg_1",
       name: input.name,
       topic: input.topic,
+      message: input.message,
+      agentId: input.agentId,
+      accountId: input.accountId,
       cooldownMs: input.cooldownMs,
       session: input.session,
+      enabled: true,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
     };
   },
   dbGetTrigger: () => ({
@@ -99,11 +107,41 @@ mock.module("../../triggers/index.js", () => ({
   dbListTriggers: () => [],
   dbUpdateTrigger: (id: string, patch: Record<string, unknown>) => {
     updatedTriggers.push({ id, patch });
+    return {
+      id,
+      name: "trigger",
+      topic: "ravi.external.topic",
+      message: "hello",
+      agentId: "agent-1",
+      cooldownMs: 5000,
+      enabled: true,
+      session: "isolated",
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 2,
+      ...patch,
+    };
   },
   dbDeleteTrigger: () => {},
 }));
 
 const { TriggersCommands } = await import("./triggers.js");
+
+async function captureJson(run: () => Promise<void>): Promise<Record<string, unknown>> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return JSON.parse(lines.join("\n")) as Record<string, unknown>;
+}
 
 describe("TriggersCommands topic validation", () => {
   beforeEach(() => {
@@ -129,5 +167,53 @@ describe("TriggersCommands topic validation", () => {
     );
 
     expect(updatedTriggers).toHaveLength(0);
+  });
+
+  it("prints created trigger data in --json mode", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() =>
+      commands.add(
+        "json trigger",
+        "ravi.external.topic",
+        "hello",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(payload).toMatchObject({
+      status: "created",
+      target: { type: "trigger", id: "trg_1" },
+      changedCount: 1,
+      trigger: {
+        id: "trg_1",
+        name: "json trigger",
+        effectiveAgentId: "main",
+        cooldownDescription: "5s",
+      },
+    });
+  });
+
+  it("prints updated trigger data in --json mode", async () => {
+    const commands = new TriggersCommands();
+
+    const payload = await captureJson(() => commands.set("trg_1", "filter", "data.ok == true", true));
+
+    expect(payload).toMatchObject({
+      status: "updated",
+      target: { type: "trigger", id: "trg_1" },
+      changedCount: 1,
+      property: "filter",
+      value: "data.ok == true",
+      trigger: {
+        id: "trg_1",
+        filter: "data.ok == true",
+      },
+    });
   });
 });
