@@ -30,9 +30,11 @@ describe("TypingPresenceHeartbeat", () => {
 
     await heartbeat.start("session-a", { instanceId: "main", to: "chat@g.us" });
     handles[0]?.callback();
+    await heartbeat.renew("session-a");
     await heartbeat.stop("session-a");
 
     expect(calls).toEqual([
+      { to: "chat@g.us", active: true },
       { to: "chat@g.us", active: true },
       { to: "chat@g.us", active: true },
       { to: "chat@g.us", active: false },
@@ -62,5 +64,20 @@ describe("TypingPresenceHeartbeat", () => {
       { to: "second@g.us", active: true },
       { to: "second@g.us", active: true },
     ]);
+  });
+
+  it("does not renew inactive sessions", async () => {
+    const calls: Array<{ to: string; active: boolean }> = [];
+    const { timers } = makeTimers();
+    const heartbeat = new TypingPresenceHeartbeat(
+      async (target, active) => {
+        calls.push({ to: target.to, active });
+      },
+      20_000,
+      timers,
+    );
+
+    await expect(heartbeat.renew("missing")).resolves.toBe(false);
+    expect(calls).toEqual([]);
   });
 });

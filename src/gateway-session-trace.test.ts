@@ -12,6 +12,8 @@ const emitMock = mock(async (topic: string, payload: Record<string, unknown>) =>
   emitted.push([topic, payload]);
 });
 
+type RuntimePresenceEventData = { type?: string; _source?: NonNullable<ResponseMessage["target"]> };
+
 let stateDir: string | null = null;
 
 beforeEach(async () => {
@@ -39,21 +41,42 @@ function seedSession() {
   return { sessionKey, sessionName };
 }
 
-function makeGateway(send: (instanceId: string, chatId: string, text: string, threadId?: string) => Promise<unknown>) {
+function makeGateway(
+  send: (instanceId: string, chatId: string, text: string, threadId?: string) => Promise<unknown>,
+  overrides: {
+    getActiveTarget?: () => ResponseMessage["target"] | undefined;
+    clearActiveTarget?: () => void;
+    renewActiveTarget?: () => Promise<boolean>;
+    sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
+  } = {},
+) {
   return new Gateway({
     omniSender: {
       send,
-      sendTyping: mock(async () => {}),
+      sendTyping: overrides.sendTyping ?? mock(async () => {}),
       sendReaction: mock(async () => {}),
       sendMedia: mock(async () => ({})),
       markRead: mock(async () => {}),
     } as never,
     omniConsumer: {
-      getActiveTarget: () => undefined,
-      clearActiveTarget: () => {},
+      getActiveTarget: overrides.getActiveTarget ?? (() => undefined),
+      clearActiveTarget: overrides.clearActiveTarget ?? (() => {}),
+      renewActiveTarget: overrides.renewActiveTarget ?? mock(async () => false),
     } as never,
     emitEvent: emitMock,
   });
+}
+
+async function handleRuntimePresence(
+  gateway: unknown,
+  sessionName: string,
+  data: RuntimePresenceEventData,
+): Promise<void> {
+  await (
+    gateway as {
+      handleRuntimePresenceEvent(sessionName: string, data: RuntimePresenceEventData): Promise<void>;
+    }
+  ).handleRuntimePresenceEvent(sessionName, data);
 }
 
 async function handleResponse(gateway: unknown, sessionName: string, response: ResponseMessage): Promise<void> {
@@ -102,6 +125,55 @@ describe("Gateway session trace instrumentation", () => {
     expect(events[0]?.messageId).toBe("inbound-1");
     expect(events[1]?.messageId).toBe("inbound-1");
     expect(events[1]?.payloadJson).toMatchObject({ deliveryMessageId: "outbound-1", status: "delivered" });
+  });
+
+  it("renews active presence immediately after a delivered response", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => true);
+    const gateway = makeGateway(send, { renewActiveTarget });
+
+    await handleResponse(gateway, sessionName, makeResponse());
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps presence active on interrupted turns instead of pausing", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(() => {});
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: makeResponse().target });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(clearActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
+  });
+
+  it("stops presence on completed turns", async () => {
+    const { sessionName } = seedSession();
+    const clearActiveTarget = mock(() => {});
+    const target = makeResponse().target;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        getActiveTarget: () => target,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
   });
 
   it("records delivery.dropped when a response has no target", async () => {

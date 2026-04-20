@@ -44,6 +44,14 @@ export class TypingPresenceHeartbeat {
     this.sessions.set(sessionName, { target, timer });
   }
 
+  async renew(sessionName: string): Promise<boolean> {
+    const current = this.sessions.get(sessionName);
+    if (!current) return false;
+
+    await this.safeSend(sessionName, current.target, true);
+    return true;
+  }
+
   async stop(sessionName: string): Promise<void> {
     const current = this.sessions.get(sessionName);
     if (!current) return;

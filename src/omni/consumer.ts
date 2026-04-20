@@ -942,6 +942,10 @@ export class OmniConsumer {
     return this.activeTargets.get(sessionName);
   }
 
+  async renewActiveTarget(sessionName: string): Promise<boolean> {
+    return this.typingPresence.renew(sessionName);
+  }
+
   private async activateTarget(
     sessionName: string,
     source: MessageTarget,

@@ -181,6 +181,7 @@ export class Gateway {
 
     try {
       const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
+      await this.omniConsumer.renewActiveTarget(sessionName);
       await emitDelivery({
         status: "delivered",
         emitId: response._emitId,
@@ -275,27 +276,44 @@ export class Gateway {
       const data = event.data as {
         type?: string;
         status?: string;
-        _source?: { channel: string; accountId: string; chatId: string };
+        _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
       };
 
-      if (
-        data.type === "result" ||
-        data.type === "silent" ||
-        data.type === "turn.complete" ||
-        data.type === "turn.failed" ||
-        data.type === "turn.interrupted"
-      ) {
-        const localTarget = this.omniConsumer.getActiveTarget(sessionName);
-        if (localTarget) {
-          this.omniConsumer.clearActiveTarget(sessionName);
-        } else if (data._source) {
-          // Cross-daemon fallback: the daemon that sees the terminal event may
-          // not be the same daemon that received the inbound message.
-          await this.sendTypingIfChanged(sessionName, data._source, false);
-        }
-        return;
-      }
+      await this.handleRuntimePresenceEvent(sessionName, data);
     });
+  }
+
+  private async handleRuntimePresenceEvent(
+    sessionName: string,
+    data: {
+      type?: string;
+      status?: string;
+      _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
+    },
+  ): Promise<void> {
+    if (data.type === "turn.interrupted") {
+      const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
+      if (!renewed && data._source) {
+        await this.sendTypingIfChanged(sessionName, data._source, true);
+      }
+      return;
+    }
+
+    if (
+      data.type === "result" ||
+      data.type === "silent" ||
+      data.type === "turn.complete" ||
+      data.type === "turn.failed"
+    ) {
+      const localTarget = this.omniConsumer.getActiveTarget(sessionName);
+      if (localTarget) {
+        this.omniConsumer.clearActiveTarget(sessionName);
+      } else if (data._source) {
+        // Cross-daemon fallback: the daemon that sees the terminal event may
+        // not be the same daemon that received the inbound message.
+        await this.sendTypingIfChanged(sessionName, data._source, false);
+      }
+    }
   }
 
   /**
