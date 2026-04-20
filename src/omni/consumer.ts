@@ -171,6 +171,10 @@ export class OmniConsumer {
     private sender: OmniSender,
     private omniApiUrl: string,
     private omniApiKey: string,
+    private readonly options: {
+      resolveGroupMetadata?: typeof resolveOmniGroupMetadata;
+      formatGroupMembers?: typeof formatOmniGroupMembersForPrompt;
+    } = {},
   ) {}
 
   /**
@@ -703,8 +707,10 @@ export class OmniConsumer {
 
     // Resolve group metadata from local Omni cache/API, then fall back to the inbound payload.
     const rawGroupName = isGroup ? this.resolveGroupName(rawPayload, chatJid) : undefined;
+    const resolveGroupMetadata = this.options.resolveGroupMetadata ?? resolveOmniGroupMetadata;
+    const formatGroupMembers = this.options.formatGroupMembers ?? formatOmniGroupMembersForPrompt;
     const groupMetadata = isGroup
-      ? await resolveOmniGroupMetadata({
+      ? await resolveGroupMetadata({
           omniApiUrl: this.omniApiUrl,
           omniApiKey: this.omniApiKey,
           accountId: effectiveAccountId,
@@ -716,7 +722,7 @@ export class OmniConsumer {
       : null;
     const groupName = groupMetadata?.name ?? rawGroupName;
     const groupMembers =
-      formatOmniGroupMembersForPrompt(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
+      formatGroupMembers(groupMetadata) ?? (isGroup ? this.resolveGroupMembers(rawPayload) : undefined);
 
     // Process media (download from omni disk → agent attachments, transcribe audio)
     const agentCwd = expandHome(agent.cwd);

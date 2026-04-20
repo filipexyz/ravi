@@ -20,19 +20,6 @@ mock.module("./session-stream.js", () => ({
   }),
 }));
 
-mock.module("./group-metadata-cache.js", () => ({
-  resolveOmniGroupMetadata: mock(async () => ({
-    name: "ravi - dev",
-    participants: [
-      { platformUserId: "5511947879044", displayName: "Luis Filipe", role: "-" },
-      { platformUserId: "63295117615153", displayName: "R M", role: "-" },
-    ],
-  })),
-  formatOmniGroupMembersForPrompt: (
-    metadata: { participants?: Array<{ platformUserId: string; displayName?: string }> } | null,
-  ) => metadata?.participants?.map((participant) => participant.displayName ?? participant.platformUserId),
-}));
-
 mock.module("../slash/index.js", () => ({
   handleSlashCommand: mock(async () => false),
 }));
@@ -125,7 +112,21 @@ describe("OmniConsumer channel context", () => {
       sendTyping: mock(async () => {}),
       markRead: mock(async () => {}),
     };
-    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key");
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => ({
+        accountId: "main",
+        instanceId: "instance-1",
+        chatId: "120363424772797713@g.us",
+        name: "ravi - dev",
+        participants: [
+          { platformUserId: "5511947879044", displayName: "Luis Filipe", role: "-" },
+          { platformUserId: "63295117615153", displayName: "R M", role: "-" },
+        ],
+        fetchedAt: Date.now(),
+      }),
+      formatGroupMembers: (metadata) =>
+        metadata?.participants?.map((participant) => participant.displayName ?? participant.platformUserId),
+    });
 
     await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
       id: "evt-1",

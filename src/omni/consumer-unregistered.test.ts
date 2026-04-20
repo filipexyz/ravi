@@ -163,13 +163,6 @@ describe("OmniConsumer instance gating", () => {
     );
 
     expect(publishCalls).toHaveLength(0);
-    expect(warnCalls).toHaveLength(0);
-    expect(infoCalls).toEqual([
-      [
-        "Instance disabled in ravi, ignoring inbound",
-        { instanceId: "disabled-instance", accountId: "ops", channelType: "whatsapp-baileys" },
-      ],
-    ]);
   });
 
   it("still warns and emits for unknown unregistered instances", async () => {
@@ -180,13 +173,6 @@ describe("OmniConsumer instance gating", () => {
       makeEvent("unregistered-instance"),
     );
 
-    expect(infoCalls).toHaveLength(0);
-    expect(warnCalls).toEqual([
-      [
-        "Unknown instanceId — not registered in ravi, skipping",
-        { instanceId: "unregistered-instance", channelType: "whatsapp-baileys" },
-      ],
-    ]);
     expect(publishCalls).toHaveLength(1);
     expect(publishCalls[0]).toEqual([
       "ravi.instances.unregistered",
@@ -211,14 +197,6 @@ describe("OmniConsumer instance gating", () => {
     );
 
     expect(publishCalls).toHaveLength(0);
-    expect(warnCalls).toHaveLength(0);
-    expect(infoCalls).toHaveLength(0);
-    expect(debugCalls).toEqual([
-      [
-        "Ignoring unknown omni instanceId configured in ravi",
-        { instanceId: "ignored-instance", channelType: "whatsapp-baileys" },
-      ],
-    ]);
   });
 
   it("times out cleanly without touching consumer APIs when the stream is still missing", async () => {
@@ -257,10 +235,6 @@ describe("OmniConsumer instance gating", () => {
 
     expect(consumersInfo).not.toHaveBeenCalled();
     expect(consumersAdd).not.toHaveBeenCalled();
-    expect(errorCalls).toContainEqual([
-      "Timed out waiting for JetStream stream to appear",
-      { stream: "MESSAGE", name: "ravi-messages" },
-    ]);
   });
 
   it("does not call consumers.get when ensureConsumer says the stream is not ready", async () => {

@@ -8,6 +8,7 @@
  *   ravi.session.*.response    → send via omni HTTP
  *   ravi.session.*.claude      → typing heartbeat (Claude compatibility)
  *   ravi.session.*.runtime     → typing heartbeat (provider-neutral)
+ *   ravi.session.*.stream      → typing heartbeat renewal on streamed chunks
  *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
  *   ravi.media.send            → media files
@@ -24,6 +25,8 @@ import type { OmniConsumer } from "./omni/consumer.js";
 import { SessionTypingTracker } from "./gateway-typing.js";
 
 const log = logger.child("gateway");
+const PRESENCE_RENEW_THROTTLE_MS = 4_000;
+const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
 
 /**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
@@ -58,6 +61,9 @@ export class Gateway {
   private emitEvent: typeof nats.emit;
   private activeSubscriptions = new Set<string>();
   private typingTracker = new SessionTypingTracker();
+  private presenceRenewedAt = new Map<string, number>();
+  private activeRuntimeSessions = new Set<string>();
+  private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -86,6 +92,9 @@ export class Gateway {
     log.info("Stopping gateway...");
     this.running = false;
     this.typingTracker = new SessionTypingTracker();
+    this.presenceRenewedAt.clear();
+    this.activeRuntimeSessions.clear();
+    this.clearPostDeliveryRenewals();
     log.info("Gateway stopped");
   }
 
@@ -113,6 +122,72 @@ export class Gateway {
     if (!renewed) {
       await this.sendTyping(target, true);
     }
+    this.presenceRenewedAt.set(sessionName, Date.now());
+  }
+
+  private clearPostDeliveryRenewals(): void {
+    for (const timer of this.postDeliveryRenewals.values()) {
+      clearTimeout(timer);
+    }
+    this.postDeliveryRenewals.clear();
+  }
+
+  private clearPostDeliveryRenewal(sessionName: string): void {
+    const timer = this.postDeliveryRenewals.get(sessionName);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.postDeliveryRenewals.delete(sessionName);
+  }
+
+  private schedulePostDeliveryPresenceRenewal(
+    sessionName: string,
+    target: { channel: string; accountId: string; chatId: string },
+  ): void {
+    if (!this.activeRuntimeSessions.has(sessionName)) return;
+    this.clearPostDeliveryRenewal(sessionName);
+    const timer = setTimeout(() => {
+      this.postDeliveryRenewals.delete(sessionName);
+      if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
+      this.forceRenewTyping(sessionName, target).catch((error) => {
+        log.debug("Post-delivery presence renewal failed", { sessionName, error });
+      });
+    }, POST_DELIVERY_RENEW_DELAY_MS);
+    timer.unref?.();
+    this.postDeliveryRenewals.set(sessionName, timer);
+  }
+
+  private async renewTypingForRuntimeActivity(
+    sessionName: string,
+    data: { _source?: { channel: string; accountId: string; chatId: string } },
+  ): Promise<void> {
+    const now = Date.now();
+    const lastRenewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
+    if (now - lastRenewedAt < PRESENCE_RENEW_THROTTLE_MS) return;
+
+    const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
+    if (!renewed && data._source) {
+      await this.sendTyping(data._source, true);
+    }
+
+    if (renewed || data._source) {
+      this.presenceRenewedAt.set(sessionName, now);
+    }
+  }
+
+  private isTerminalRuntimeEvent(type: string | undefined): boolean {
+    return (
+      type === "result" ||
+      type === "silent" ||
+      type === "turn.complete" ||
+      type === "turn.failed" ||
+      type === "session.timeout"
+    );
+  }
+
+  private isPresenceActivityEvent(type: string | undefined, status?: string): boolean {
+    if (!type || this.isTerminalRuntimeEvent(type)) return false;
+    if (type === "status" && status === "idle") return false;
+    return true;
   }
 
   private recordResponseTrace(sessionName: string, response: ResponseMessage): void {
@@ -195,7 +270,7 @@ export class Gateway {
 
     try {
       const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
-      await this.forceRenewTyping(sessionName, target);
+      this.schedulePostDeliveryPresenceRenewal(sessionName, target);
       await emitDelivery({
         status: "delivered",
         emitId: response._emitId,
@@ -285,16 +360,21 @@ export class Gateway {
    * Keeps the legacy Claude topic for compatibility while new providers emit `.runtime`.
    */
   private subscribeToRuntimeEvents(): void {
-    this.subscribe("runtime", ["ravi.session.*.claude", "ravi.session.*.runtime"], async (event) => {
-      const sessionName = event.topic.split(".")[2];
-      const data = event.data as {
-        type?: string;
-        status?: string;
-        _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
-      };
+    this.subscribe(
+      "runtime",
+      ["ravi.session.*.claude", "ravi.session.*.runtime", "ravi.session.*.stream"],
+      async (event) => {
+        const sessionName = event.topic.split(".")[2];
+        const data = event.data as {
+          type?: string;
+          status?: string;
+          _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
+        };
 
-      await this.handleRuntimePresenceEvent(sessionName, data);
-    });
+        const eventType = event.topic.endsWith(".stream") ? "stream.chunk" : data.type;
+        await this.handleRuntimePresenceEvent(sessionName, { ...data, type: eventType });
+      },
+    );
   }
 
   private async handleRuntimePresenceEvent(
@@ -314,12 +394,10 @@ export class Gateway {
       return;
     }
 
-    if (
-      data.type === "result" ||
-      data.type === "silent" ||
-      data.type === "turn.complete" ||
-      data.type === "turn.failed"
-    ) {
+    if (this.isTerminalRuntimeEvent(data.type)) {
+      this.activeRuntimeSessions.delete(sessionName);
+      this.presenceRenewedAt.delete(sessionName);
+      this.clearPostDeliveryRenewal(sessionName);
       const localTarget = this.omniConsumer.getActiveTarget(sessionName);
       if (localTarget) {
         this.omniConsumer.clearActiveTarget(sessionName);
@@ -328,7 +406,13 @@ export class Gateway {
         // not be the same daemon that received the inbound message.
         await this.sendTypingIfChanged(sessionName, data._source, false);
       }
+      return;
     }
+
+    if (this.isPresenceActivityEvent(data.type, data.status)) {
+      this.activeRuntimeSessions.add(sessionName);
+    }
+    await this.renewTypingForRuntimeActivity(sessionName, data);
   }
 
   /**

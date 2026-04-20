@@ -12,7 +12,11 @@ const emitMock = mock(async (topic: string, payload: Record<string, unknown>) =>
   emitted.push([topic, payload]);
 });
 
-type RuntimePresenceEventData = { type?: string; _source?: NonNullable<ResponseMessage["target"]> };
+type RuntimePresenceEventData = {
+  type?: string;
+  status?: string;
+  _source?: NonNullable<ResponseMessage["target"]>;
+};
 
 let stateDir: string | null = null;
 
@@ -50,7 +54,7 @@ function makeGateway(
     sendTyping?: (instanceId: string, chatId: string, active?: boolean) => Promise<void>;
   } = {},
 ) {
-  return new Gateway({
+  const gateway = new Gateway({
     omniSender: {
       send,
       sendTyping: overrides.sendTyping ?? mock(async () => {}),
@@ -65,6 +69,8 @@ function makeGateway(
     } as never,
     emitEvent: emitMock,
   });
+  (gateway as unknown as { running: boolean }).running = true;
+  return gateway;
 }
 
 async function handleRuntimePresence(
@@ -85,6 +91,10 @@ async function handleResponse(gateway: unknown, sessionName: string, response: R
       handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void>;
     }
   ).handleResponseEvent(sessionName, response);
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function makeResponse(overrides: Partial<ResponseMessage> = {}): ResponseMessage {
@@ -127,34 +137,61 @@ describe("Gateway session trace instrumentation", () => {
     expect(events[1]?.payloadJson).toMatchObject({ deliveryMessageId: "outbound-1", status: "delivered" });
   });
 
-  it("renews active presence immediately after a delivered response", async () => {
+  it("renews active presence one second after a delivered non-final response", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
     const sendTyping = mock(async () => {});
     const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
 
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+    renewActiveTarget.mockClear();
     await handleResponse(gateway, sessionName, makeResponse());
 
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    await wait(1_050);
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).not.toHaveBeenCalled();
   });
 
-  it("forces presence renewal from the response target when delivery runs outside the active consumer", async () => {
+  it("forces delayed presence renewal from the response target for non-final cross-daemon delivery", async () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => false);
     const sendTyping = mock(async () => {});
     const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
 
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
     await handleResponse(gateway, sessionName, makeResponse());
 
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+    await wait(1_050);
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).toHaveBeenCalledWith(
       "11111111-1111-1111-1111-111111111111",
       "5511999999999@s.whatsapp.net",
       true,
     );
+  });
+
+  it("does not renew after a delivered final response when the turn completes within the grace window", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => true);
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target;
+    const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    await wait(1_050);
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });
 
   it("keeps presence active on interrupted turns instead of pausing", async () => {
@@ -197,6 +234,63 @@ describe("Gateway session trace instrumentation", () => {
       "5511999999999@s.whatsapp.net",
       true,
     );
+  });
+
+  it("renews active presence on runtime activity before the final response", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: makeResponse().target });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("forces presence renewal from streamed activity when delivery runs outside the active consumer", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => false);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
+
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
+  });
+
+  it("throttles repeated runtime activity presence renewals", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
   });
 
   it("stops presence on completed turns", async () => {

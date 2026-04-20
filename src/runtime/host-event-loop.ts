@@ -308,14 +308,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
-    const augmented =
-      (event.type === "turn.complete" ||
-        event.type === "turn.failed" ||
-        event.type === "turn.interrupted" ||
-        event.type === "silent") &&
-      streaming.currentSource
-        ? { ...event, _source: streaming.currentSource }
-        : event;
+    const augmented = streaming.currentSource ? { ...event, _source: streaming.currentSource } : event;
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
@@ -335,6 +328,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const emitChunk = async (text: string, metadata?: RuntimeEventMetadata) => {
     await safeEmit(`ravi.session.${sessionName}.stream`, {
       chunk: text,
+      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
       ...(metadata ? { metadata } : {}),
     });
   };
