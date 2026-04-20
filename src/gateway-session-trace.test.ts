@@ -131,11 +131,30 @@ describe("Gateway session trace instrumentation", () => {
     const { sessionName } = seedSession();
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
-    const gateway = makeGateway(send, { renewActiveTarget });
+    const sendTyping = mock(async () => {});
+    const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
 
     await handleResponse(gateway, sessionName, makeResponse());
 
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("forces presence renewal from the response target when delivery runs outside the active consumer", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => false);
+    const sendTyping = mock(async () => {});
+    const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
+
+    await handleResponse(gateway, sessionName, makeResponse());
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
   });
 
   it("keeps presence active on interrupted turns instead of pausing", async () => {
@@ -157,6 +176,27 @@ describe("Gateway session trace instrumentation", () => {
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(clearActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), false);
+  });
+
+  it("forces presence renewal from the event source on cross-daemon interrupts", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => false);
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: makeResponse().target });
+
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
   });
 
   it("stops presence on completed turns", async () => {

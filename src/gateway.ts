@@ -95,9 +95,23 @@ export class Gateway {
     active: boolean,
   ): Promise<void> {
     if (!this.typingTracker.shouldEmit(sessionName, active)) return;
+    await this.sendTyping(target, active);
+  }
+
+  private async sendTyping(
+    target: { channel: string; accountId: string; chatId: string },
+    active: boolean,
+  ): Promise<void> {
     const iid = configStore.resolveInstanceId(target.accountId);
     if (iid) {
       await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
+    }
+  }
+
+  private async forceRenewTyping(sessionName: string, target: { channel: string; accountId: string; chatId: string }) {
+    const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
+    if (!renewed) {
+      await this.sendTyping(target, true);
     }
   }
 
@@ -181,7 +195,7 @@ export class Gateway {
 
     try {
       const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
-      await this.omniConsumer.renewActiveTarget(sessionName);
+      await this.forceRenewTyping(sessionName, target);
       await emitDelivery({
         status: "delivered",
         emitId: response._emitId,
@@ -292,9 +306,10 @@ export class Gateway {
     },
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
-      const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
-      if (!renewed && data._source) {
-        await this.sendTypingIfChanged(sessionName, data._source, true);
+      if (data._source) {
+        await this.forceRenewTyping(sessionName, data._source);
+      } else {
+        await this.omniConsumer.renewActiveTarget(sessionName);
       }
       return;
     }
