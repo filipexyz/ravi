@@ -697,7 +697,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         if (!streaming.interrupted && responseText.trim()) {
           const sdkId = event.providerSessionId;
-          saveMessage(sessionName, "assistant", responseText.trim(), sdkId);
+          saveMessage(sessionName, "assistant", responseText.trim(), sdkId, {
+            agentId: streaming.agentId,
+            channel: streaming.currentSource?.channel,
+            accountId: streaming.currentSource?.accountId,
+            chatId: streaming.currentSource?.chatId,
+            sourceMessageId: streaming.currentSource?.sourceMessageId,
+          });
         }
 
         // Reset for next turn

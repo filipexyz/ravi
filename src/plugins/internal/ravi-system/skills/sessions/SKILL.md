@@ -40,7 +40,7 @@ ravi sessions list --ephemeral
 # Ver detalhes de uma sessão
 ravi sessions info <name>
 
-# Ler histórico de mensagens (normalizado, sem tool calls)
+# Ler histórico durável da sessão (normalizado, sem tool calls; atravessa restarts/resets de provider)
 ravi sessions read <name> [-n count]
 
 # Inspecionar timeline operacional persistida em SQLite
@@ -200,3 +200,4 @@ tokens ou provider session ids em documentacao compartilhada.
 - **Session names**: Nomes legíveis, únicos, sem pontos (`.`). Gerados automaticamente ou definidos manualmente.
 - **Source automático**: Todos os comandos de comunicação incluem source (channel/chatId) automaticamente — o agent sabe onde responder.
 - **`send` vs `inform`**: `send` é a opção mais geral e pode esperar resposta com `-w`; `inform` é fogo-e-esqueça explícito para contexto.
+- **Isolamento de contexto**: `sessions read` deve recuperar apenas a sessão atual. Nunca use histórico de outro grupo/DM como fallback para responder uma sessão fria.

@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { getRecentHistory, getRecentSessionHistory } from "../db.js";
+import { getRecentHistory, getRecentProviderSessionHistory } from "../db.js";
 import { ensureAgentInstructionFiles } from "../runtime/agent-instructions.js";
 import { snapshotAgentCapabilities } from "../runtime/context-registry.js";
 import { createAgent, ensureAgentDirs, getAllAgents, loadRouterConfig } from "../router/config.js";
@@ -1851,7 +1851,7 @@ function handleSessionWorkspace(url: URL): Response {
     );
   }
 
-  const providerHistoryMessages = getRecentSessionHistory(snapshot.session.sessionName, 80).map((message) => ({
+  const providerHistoryMessages = getRecentProviderSessionHistory(snapshot.session.sessionName, 80).map((message) => ({
     id: String(message.id),
     role: message.role,
     content: message.content,

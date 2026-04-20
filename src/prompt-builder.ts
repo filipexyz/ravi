@@ -112,6 +112,17 @@ export function buildRuntimeInfo(agentId: string, ctx: ChannelContext, sessionNa
   ].join("\n");
 }
 
+function sessionBoundaryText(sessionName?: string): string {
+  const sessionRef = sessionName ? `current session (${sessionName})` : "current session";
+  return [
+    `Treat the ${sessionRef} as the only conversational context for this reply.`,
+    `DMs, groups, channels, and threads are separate contexts even when the same people participate.`,
+    `If local context looks incomplete, use same-session history tools such as \`ravi sessions read ${sessionName ?? "<session>"}\` or \`ravi sessions trace ${sessionName ?? "<session>"}\`.`,
+    `Never recover missing context from another DM/group/session or from unrelated filesystem notes.`,
+    `If same-session durable history is unavailable, ask the user for the missing context instead of guessing.`,
+  ].join("\n");
+}
+
 /**
  * Build silent replies section for system prompt
  */
@@ -232,6 +243,7 @@ Your text output is NOT sent to the channel. Use these tools to send explicitly.
   if (ctx) {
     // Add runtime info
     builder.section("Runtime", buildRuntimeInfo(agentId, ctx, sessionName).replace(/^## Runtime\n\n/, ""));
+    builder.section("Session Boundary", sessionBoundaryText(sessionName));
 
     if (!isSentinel) {
       // Add output formatting based on channel

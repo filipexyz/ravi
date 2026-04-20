@@ -34,10 +34,17 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
-import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import { dbListContexts, dbListMessageMetaByChatId, type ContextRecord } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
+import {
+  countHistory,
+  countHistoryByChatIds,
+  getRecentHistory,
+  getRecentHistoryByChatIds,
+  type Message,
+} from "../../db.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -102,6 +109,124 @@ function buildSessionMutationJson(
     after: after ? buildSessionJson(after) : null,
     ...extra,
   };
+}
+
+function normalizeChatDbMessage(message: Message): NormalizedTranscriptMessage {
+  const source =
+    message.agent_id || message.channel || message.account_id || message.chat_id || message.source_message_id
+      ? {
+          agentId: message.agent_id ?? null,
+          channel: message.channel ?? null,
+          accountId: message.account_id ?? null,
+          chatId: message.chat_id ?? null,
+          sourceMessageId: message.source_message_id ?? null,
+        }
+      : undefined;
+  return {
+    role: message.role,
+    text: message.content,
+    time: message.created_at ? new Date(message.created_at).toLocaleTimeString() : "",
+    ...(source ? { source } : {}),
+  };
+}
+
+function printNormalizedMessages(messages: NormalizedTranscriptMessage[]): void {
+  for (const msg of messages) {
+    const who = msg.role === "user" ? "👤" : "🤖";
+    const timeStr = msg.time ? ` [${msg.time}]` : "";
+    console.log(`${who}${timeStr} ${msg.text}\n`);
+  }
+}
+
+function parseReadMessageCount(countStr: string | undefined): number {
+  const count = Number.parseInt(countStr ?? "20", 10);
+  return Number.isFinite(count) && count > 0 ? count : 20;
+}
+
+function buildMessageMetadataChatIdVariants(chatId: string | undefined): string[] {
+  const normalized = chatId?.trim();
+  if (!normalized) return [];
+
+  const variants = new Set<string>([normalized]);
+  const groupMatch = normalized.match(/^group:(.+)$/i);
+  if (groupMatch) {
+    variants.add(`${groupMatch[1]}@g.us`);
+  }
+
+  const groupJidMatch = normalized.match(/^(.+)@g\.us$/i);
+  if (groupJidMatch) {
+    variants.add(`group:${groupJidMatch[1]}`);
+  }
+
+  const whatsappDmMatch = normalized.match(/^(\d+)@s\.whatsapp\.net$/i);
+  if (whatsappDmMatch) {
+    variants.add(whatsappDmMatch[1]);
+    variants.add(`${whatsappDmMatch[1]}@lid`);
+  }
+
+  const lidDmMatch = normalized.match(/^(\d+)@lid$/i);
+  if (lidDmMatch) {
+    variants.add(lidDmMatch[1]);
+    variants.add(`${lidDmMatch[1]}@s.whatsapp.net`);
+  }
+
+  if (/^\d+$/.test(normalized)) {
+    variants.add(`group:${normalized}`);
+    variants.add(`${normalized}@g.us`);
+    variants.add(`${normalized}@s.whatsapp.net`);
+    variants.add(`${normalized}@lid`);
+  }
+
+  return [...variants];
+}
+
+function resolveSessionChatId(session: SessionEntry): string | undefined {
+  if (session.lastTo?.trim()) return session.lastTo;
+  if (session.lastContext) {
+    try {
+      const parsed = JSON.parse(session.lastContext) as { chatId?: unknown };
+      if (typeof parsed.chatId === "string" && parsed.chatId.trim()) return parsed.chatId;
+    } catch {
+      // Ignore malformed historical context.
+    }
+  }
+  return deriveSourceFromSessionKey(session.sessionKey)?.chatId;
+}
+
+function resolveSessionChatIdVariants(session: SessionEntry): string[] {
+  return buildMessageMetadataChatIdVariants(resolveSessionChatId(session));
+}
+
+function readMessageMetadataFallback(session: SessionEntry, limit: number): NormalizedTranscriptMessage[] {
+  const chatId = resolveSessionChatId(session);
+  const chatIds = resolveSessionChatIdVariants(session);
+  if (!chatId || chatIds.length === 0) return [];
+
+  const rowsById = new Map<string, ReturnType<typeof dbListMessageMetaByChatId>[number]>();
+  for (const variant of chatIds) {
+    for (const meta of dbListMessageMetaByChatId(variant, limit)) {
+      rowsById.set(meta.messageId, meta);
+    }
+  }
+
+  return [...rowsById.values()]
+    .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+    .slice(0, limit)
+    .reverse()
+    .map((meta): NormalizedTranscriptMessage | null => {
+      const text = meta.transcription?.trim()
+        ? `[Audio]\nTranscript:\n${meta.transcription.trim()}`
+        : meta.mediaType
+          ? `[${meta.mediaType} message${meta.mediaPath ? `: ${meta.mediaPath}` : ""}]`
+          : "";
+      if (!text) return null;
+      return {
+        role: "user" as const,
+        text,
+        time: meta.createdAt ? new Date(meta.createdAt).toLocaleTimeString() : "",
+      };
+    })
+    .filter((message): message is NormalizedTranscriptMessage => message !== null);
 }
 
 function buildDeliveryJson(
@@ -1852,6 +1977,85 @@ export class SessionCommands {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
 
+    const maxMessages = parseReadMessageCount(countStr);
+    const sessionLabel = session.name ?? nameOrKey;
+    const chatHistory = getRecentHistory(sessionLabel, maxMessages);
+    if (chatHistory.length > 0) {
+      const messages = chatHistory.map(normalizeChatDbMessage);
+      const totalMessages = countHistory(sessionLabel);
+      if (asJson) {
+        const payload = {
+          session: buildSessionJson(session),
+          transcript: {
+            available: true,
+            source: "chat-db",
+            sessionName: sessionLabel,
+          },
+          messages,
+          totalMessages,
+          count: messages.length,
+        };
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} messages\n`);
+      printNormalizedMessages(messages);
+      return;
+    }
+
+    const chatIdVariants = resolveSessionChatIdVariants(session);
+    const chatDbByChat = getRecentHistoryByChatIds(chatIdVariants, maxMessages, session.agentId);
+    if (chatDbByChat.length > 0) {
+      const messages = chatDbByChat.map(normalizeChatDbMessage);
+      const totalMessages = countHistoryByChatIds(chatIdVariants, session.agentId);
+      if (asJson) {
+        const payload = {
+          session: buildSessionJson(session),
+          transcript: {
+            available: true,
+            source: "chat-db-chat-id",
+            chatId: resolveSessionChatId(session),
+            chatIdVariants,
+            agentId: session.agentId,
+          },
+          messages,
+          totalMessages,
+          count: messages.length,
+        };
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`\n💬 ${sessionLabel} — last ${messages.length} of ${totalMessages} same-chat messages\n`);
+      printNormalizedMessages(messages);
+      return;
+    }
+
+    const messageMetadata = readMessageMetadataFallback(session, maxMessages);
+    if (messageMetadata.length > 0) {
+      if (asJson) {
+        const payload = {
+          session: buildSessionJson(session),
+          transcript: {
+            available: true,
+            source: "message-metadata",
+            chatId: resolveSessionChatId(session),
+            chatIdVariants,
+          },
+          messages: messageMetadata,
+          totalMessages: messageMetadata.length,
+          count: messageMetadata.length,
+        };
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`\n💬 ${sessionLabel} — last ${messageMetadata.length} message metadata entries\n`);
+      printNormalizedMessages(messageMetadata);
+      return;
+    }
+
     const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
     if (!providerSessionId) {
       if (asJson) {
@@ -1901,7 +2105,6 @@ export class SessionCommands {
       return;
     }
 
-    const maxMessages = parseInt(countStr ?? "20", 10);
     const raw = readFileSync(transcript.path, "utf-8") as string;
     const _lines = raw.trim().split("\n").filter(Boolean);
 
@@ -1913,6 +2116,7 @@ export class SessionCommands {
         session: buildSessionJson(session),
         transcript: {
           available: true,
+          source: "provider-transcript",
           path: transcript.path,
           providerSessionId,
           runtimeProvider: session.runtimeProvider ?? null,
@@ -1925,13 +2129,8 @@ export class SessionCommands {
       return payload;
     }
 
-    console.log(`\n💬 ${session.name ?? nameOrKey} — last ${recent.length} of ${messages.length} messages\n`);
-
-    for (const msg of recent) {
-      const who = msg.role === "user" ? "👤" : "🤖";
-      const timeStr = msg.time ? ` [${msg.time}]` : "";
-      console.log(`${who}${timeStr} ${msg.text}\n`);
-    }
+    console.log(`\n💬 ${sessionLabel} — last ${recent.length} of ${messages.length} provider transcript messages\n`);
+    printNormalizedMessages(recent);
   }
 
   @Command({
@@ -2498,6 +2697,13 @@ export interface NormalizedTranscriptMessage {
   role: "user" | "assistant";
   text: string;
   time: string;
+  source?: {
+    agentId: string | null;
+    channel: string | null;
+    accountId: string | null;
+    chatId: string | null;
+    sourceMessageId: string | null;
+  };
 }
 
 export function extractNormalizedTranscriptMessages(

@@ -161,7 +161,13 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const approvalSource = prompt._approvalSource;
 
   updateRuntimeSessionMetadata(dbSessionKey, prompt);
-  saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined);
+  saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined, {
+    agentId: agent.id,
+    channel: resolvedSource?.channel ?? prompt.context?.channelId,
+    accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
+    chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
+    sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+  });
 
   const runtimeResolution = resolveRuntimeForPrompt({ sessionName, prompt, session, agent, configModel });
   const model = runtimeResolution.options.model ?? configModel;

@@ -86,6 +86,7 @@ export {
   // Message metadata
   dbSaveMessageMeta,
   dbGetMessageMeta,
+  dbListMessageMetaByChatId,
   dbCleanupMessageMeta,
   type MessageMetadata,
   // Session cleanup

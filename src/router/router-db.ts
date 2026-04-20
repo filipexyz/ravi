@@ -1175,6 +1175,7 @@ interface PreparedStatements {
   // Message metadata
   upsertMessageMeta: Statement;
   getMessageMeta: Statement;
+  listMessageMetaByChatId: Statement;
   cleanupMessageMeta: Statement;
   cleanupExpiredSessions: Statement;
   // Audit log
@@ -1322,6 +1323,9 @@ function getStatements(): PreparedStatements {
         media_type = COALESCE(excluded.media_type, message_metadata.media_type)
     `),
     getMessageMeta: database.prepare("SELECT * FROM message_metadata WHERE message_id = ?"),
+    listMessageMetaByChatId: database.prepare(
+      "SELECT * FROM message_metadata WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?",
+    ),
     cleanupMessageMeta: database.prepare("DELETE FROM message_metadata WHERE created_at < ?"),
     cleanupExpiredSessions: database.prepare(
       "DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
@@ -2442,6 +2446,27 @@ export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
     mediaType: row.media_type ?? undefined,
     createdAt: row.created_at,
   };
+}
+
+export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMetadata[] {
+  const s = getStatements();
+  const rows = s.listMessageMetaByChatId.all(chatId, limit) as Array<{
+    message_id: string;
+    chat_id: string;
+    transcription: string | null;
+    media_path: string | null;
+    media_type: string | null;
+    created_at: number;
+  }>;
+
+  return rows.reverse().map((row) => ({
+    messageId: row.message_id,
+    chatId: row.chat_id,
+    transcription: row.transcription ?? undefined,
+    mediaPath: row.media_path ?? undefined,
+    mediaType: row.media_type ?? undefined,
+    createdAt: row.created_at,
+  }));
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days

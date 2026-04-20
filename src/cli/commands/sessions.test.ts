@@ -21,6 +21,9 @@ let listedContexts: Array<Record<string, unknown>> = [];
 let listedAdapters: Array<Record<string, unknown>> = [];
 const adapterSnapshots = new Map<string, Record<string, unknown>>();
 let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents: {} };
+let chatHistory: Array<Record<string, unknown>> = [];
+let chatHistoryByChat: Array<Record<string, unknown>> = [];
+let messageMetadataRows: Array<Record<string, unknown>> = [];
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -112,6 +115,22 @@ mock.module("../../router/router-db.js", () => ({
       if (!options?.sessionKey) return true;
       return context.sessionKey === options.sessionKey;
     }),
+  dbListMessageMetaByChatId: (chatId: string, limit: number) =>
+    messageMetadataRows.filter((row) => row.chatId === chatId).slice(-limit),
+}));
+
+mock.module("../../db.js", () => ({
+  getRecentHistory: (_sessionId: string, limit: number) => chatHistory.slice(-limit),
+  countHistory: () => chatHistory.length,
+  getRecentHistoryByChatIds: (chatIds: string[], limit: number, agentId?: string | null) =>
+    chatHistoryByChat
+      .filter((row) => chatIds.includes(String(row.chat_id)) && (!agentId || row.agent_id === agentId))
+      .slice(-limit),
+  countHistoryByChatIds: (chatIds: string[], agentId?: string | null) =>
+    chatHistoryByChat.filter((row) => chatIds.includes(String(row.chat_id)) && (!agentId || row.agent_id === agentId))
+      .length,
+  getRecentSessionHistory: (_sessionId: string, limit: number) => chatHistory.slice(-limit),
+  getRecentProviderSessionHistory: () => [],
 }));
 
 mock.module("../../adapters/index.js", () => ({
@@ -171,6 +190,12 @@ async function captureLogsAsync(run: () => Promise<void>): Promise<string> {
 
   return lines.join("\n");
 }
+
+beforeEach(() => {
+  chatHistory = [];
+  chatHistoryByChat = [];
+  messageMetadataRows = [];
+});
 
 describe("SessionCommands wait mode", () => {
   beforeEach(() => {
@@ -507,6 +532,211 @@ describe("SessionCommands info", () => {
     expect(output).toContain("Next debug commands: [source=derived freshness=derived-now via=session-inspect]");
     expect(output).toContain("ravi context list --session agent:main:whatsapp:main:group:123456");
     expect(output).toContain("ravi adapters show adapter-1");
+  });
+});
+
+describe("SessionCommands read", () => {
+  beforeEach(() => {
+    resolvedSession = {
+      sessionKey: "agent:main:dm:615153",
+      name: "main-dm-615153",
+      agentId: "main",
+      agentCwd: "/tmp/main",
+      providerSessionId: "provider-current",
+      runtimeProvider: "claude",
+      lastTo: "63295117615153@lid",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+    sessionDerivedSource = undefined;
+  });
+
+  it("reads durable session history across provider session changes before provider transcript", () => {
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "opção 1, 2 e 3",
+        sdk_session_id: "provider-old",
+        agent_id: "main",
+        channel: "whatsapp-baileys",
+        account_id: "main",
+        chat_id: "63295117615153@lid",
+        source_message_id: "wamid-1",
+        created_at: "2026-04-20 04:29:35",
+      },
+      {
+        id: 2,
+        session_id: "main-dm-615153",
+        role: "user",
+        content: "qual o melhor?",
+        sdk_session_id: "provider-current",
+        created_at: "2026-04-20 04:30:48",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.transcript.source).toBe("chat-db");
+    expect(payload.totalMessages).toBe(2);
+    expect(payload.messages.map((message: { text: string }) => message.text)).toEqual([
+      "opção 1, 2 e 3",
+      "qual o melhor?",
+    ]);
+    expect(payload.messages[0].source).toEqual({
+      agentId: "main",
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "63295117615153@lid",
+      sourceMessageId: "wamid-1",
+    });
+  });
+
+  it("defaults to a safe read count when --count is invalid", () => {
+    chatHistory = [
+      {
+        id: 1,
+        session_id: "main-dm-615153",
+        role: "assistant",
+        content: "histórico durável",
+        sdk_session_id: "provider-old",
+        created_at: "2026-04-20 04:29:35",
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "nope", true);
+      }),
+    );
+
+    expect(payload.transcript.source).toBe("chat-db");
+    expect(payload.count).toBe(1);
+  });
+
+  it("falls back to same-chat durable history before message metadata", () => {
+    chatHistoryByChat = [
+      {
+        id: 1,
+        session_id: "old-session-name",
+        role: "assistant",
+        content: "histórico durável pelo chat",
+        sdk_session_id: "provider-old",
+        agent_id: "main",
+        channel: "whatsapp-baileys",
+        account_id: "main",
+        chat_id: "63295117615153@lid",
+        source_message_id: "wamid-old",
+        created_at: "2026-04-20 04:29:35",
+      },
+      {
+        id: 2,
+        session_id: "other-agent-session",
+        role: "assistant",
+        content: "histórico de outro agent",
+        sdk_session_id: "provider-other",
+        agent_id: "other",
+        channel: "whatsapp-baileys",
+        account_id: "main",
+        chat_id: "63295117615153@lid",
+        source_message_id: "wamid-other",
+        created_at: "2026-04-20 04:30:35",
+      },
+    ];
+    messageMetadataRows = [
+      {
+        messageId: "audio-1",
+        chatId: "63295117615153@lid",
+        transcription: "fallback mais fraco",
+        mediaType: "audio",
+        createdAt: 1776659448900,
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.transcript.source).toBe("chat-db-chat-id");
+    expect(payload.messages).toHaveLength(1);
+    expect(payload.messages[0].text).toBe("histórico durável pelo chat");
+  });
+
+  it("falls back to same-chat message metadata when chat history is missing", () => {
+    messageMetadataRows = [
+      {
+        messageId: "audio-1",
+        chatId: "63295117615153@lid",
+        transcription: "continuação do assunto certo",
+        mediaType: "audio",
+        createdAt: 1776659448900,
+      },
+      {
+        messageId: "other-chat",
+        chatId: "120363000@g.us",
+        transcription: "não pode aparecer",
+        mediaType: "audio",
+        createdAt: 1776659449000,
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.transcript.source).toBe("message-metadata");
+    expect(payload.transcript.chatId).toBe("63295117615153@lid");
+    expect(payload.messages).toHaveLength(1);
+    expect(payload.messages[0].text).toContain("continuação do assunto certo");
+  });
+
+  it("uses same-chat id variants for message metadata without crossing into another chat", () => {
+    resolvedSession = {
+      ...resolvedSession!,
+      sessionKey: "agent:main:dm:63295117615153",
+      lastTo: undefined,
+    };
+    sessionDerivedSource = {
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "63295117615153",
+    };
+    messageMetadataRows = [
+      {
+        messageId: "lid-audio",
+        chatId: "63295117615153@lid",
+        transcription: "histórico certo da DM",
+        mediaType: "audio",
+        createdAt: 1776659448900,
+      },
+      {
+        messageId: "other-audio",
+        chatId: "63295117615154@lid",
+        transcription: "histórico de outra DM",
+        mediaType: "audio",
+        createdAt: 1776659449000,
+      },
+    ];
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().read("main-dm-615153", "10", true);
+      }),
+    );
+
+    expect(payload.transcript.source).toBe("message-metadata");
+    expect(payload.transcript.chatIdVariants).toContain("63295117615153@lid");
+    expect(payload.messages).toHaveLength(1);
+    expect(payload.messages[0].text).toContain("histórico certo da DM");
   });
 });
 

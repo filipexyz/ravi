@@ -445,7 +445,14 @@ export class RuntimeSessionDispatcher {
         if (sessionEntry) {
           updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
         }
-        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId);
+        const messageSource = prompt.source ?? existing.currentSource;
+        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+          agentId: sessionEntry?.agentId ?? existing.agentId,
+          channel: messageSource?.channel ?? prompt.context?.channelId,
+          accountId: messageSource?.accountId ?? prompt.context?.accountId,
+          chatId: messageSource?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+        });
 
         if (prompt.source) {
           existing.currentSource = prompt.source;
