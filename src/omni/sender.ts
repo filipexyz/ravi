@@ -136,6 +136,28 @@ export class OmniSender {
   }
 
   /**
+   * Send a WhatsApp sticker.
+   *
+   * Omni exposes stickers as a dedicated contract instead of generic media.
+   * Using /messages/send/media with type=sticker returns 400 on WhatsApp.
+   */
+  async sendSticker(instanceId: string, to: string, localPath: string): Promise<{ messageId?: string }> {
+    try {
+      const data = readFileSync(localPath);
+      const base64 = data.toString("base64");
+      const result = await this.client.messages.sendSticker({
+        instanceId,
+        to,
+        base64,
+      });
+      return { messageId: result.messageId };
+    } catch (err) {
+      log.error("Failed to send sticker", { instanceId, to, localPath, error: err });
+      throw err;
+    }
+  }
+
+  /**
    * Mark messages as read in a chat.
    */
   async markRead(instanceId: string, chatId: string, messageIds: string[]): Promise<void> {

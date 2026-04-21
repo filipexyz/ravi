@@ -7,10 +7,12 @@
 
 import type { Statement } from "bun:sqlite";
 import type { SessionEntry } from "./types.js";
-import { getDb, getDbChanges, getRaviDbPath } from "./router-db.js";
+import { dbRenameRouteSessionName, getDb, getDbChanges, getRaviDbPath } from "./router-db.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
+
+const SESSION_NAME_FORBIDDEN_CHARS = /[.\s*>]/;
 
 // ============================================================================
 // Row Type
@@ -509,6 +511,17 @@ function serializeRuntimeSessionParams(params: Record<string, unknown> | undefin
   return JSON.stringify(params);
 }
 
+function normalizeCanonicalSessionName(name: string): string {
+  const normalized = name.trim();
+  if (!normalized) {
+    throw new Error("Session name must not be empty");
+  }
+  if (SESSION_NAME_FORBIDDEN_CHARS.test(normalized)) {
+    throw new Error(`Session name must be a single NATS-safe token without whitespace, dots, '*' or '>': "${name}"`);
+  }
+  return normalized;
+}
+
 /**
  * Find the most recent session that routes to a given chatId (last_to).
  * Useful for resolving a phone/LID to a session key.
@@ -604,14 +617,79 @@ export function getSessionByName(name: string): SessionEntry | null {
 
 /**
  * Update session name.
- * Names must not contain dots (used as topic separator in NATS).
+ * Names must be one NATS subject token.
  */
 export function updateSessionName(sessionKey: string, name: string): void {
-  if (name.includes(".")) {
-    throw new Error(`Session name must not contain dots: "${name}"`);
-  }
+  const normalized = normalizeCanonicalSessionName(name);
   const s = getStatements();
-  s.updateName.run(name, Date.now(), sessionKey);
+  s.updateName.run(normalized, Date.now(), sessionKey);
+}
+
+export interface RenameSessionNameResult {
+  before: SessionEntry;
+  after: SessionEntry;
+  oldName: string | null;
+  newName: string;
+  changed: boolean;
+  routeReferencesUpdated: number;
+}
+
+/**
+ * Rename the canonical session name. The session_key remains stable; routes
+ * that force the old canonical name are moved with the rename so routing does
+ * not recreate the stale name later.
+ */
+export function renameSessionName(sessionKey: string, name: string): RenameSessionNameResult {
+  const before = getSession(sessionKey);
+  if (!before) {
+    throw new Error(`Session not found: ${sessionKey}`);
+  }
+
+  const newName = normalizeCanonicalSessionName(name);
+  const existing = getSessionByName(newName);
+  if (existing && existing.sessionKey !== sessionKey) {
+    throw new Error(`Session name already exists: ${newName}`);
+  }
+
+  const oldName = before.name ?? null;
+  if (oldName === newName) {
+    return {
+      before,
+      after: before,
+      oldName,
+      newName,
+      changed: false,
+      routeReferencesUpdated: 0,
+    };
+  }
+
+  const db = getDb();
+  const routeReferencesUpdated = db.transaction(() => {
+    const s = getStatements();
+    s.updateName.run(newName, Date.now(), sessionKey);
+    return oldName ? dbRenameRouteSessionName(oldName, newName) : 0;
+  })();
+
+  const after = getSession(sessionKey);
+  if (!after) {
+    throw new Error(`Session disappeared during rename: ${sessionKey}`);
+  }
+
+  log.info("Renamed session canonical name", {
+    sessionKey,
+    oldName,
+    newName,
+    routeReferencesUpdated,
+  });
+
+  return {
+    before,
+    after,
+    oldName,
+    newName,
+    changed: true,
+    routeReferencesUpdated,
+  };
 }
 
 /**

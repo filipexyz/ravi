@@ -294,6 +294,9 @@ function createStubSender(): OmniSender {
     sendMedia: async () => {
       return {};
     },
+    sendSticker: async () => {
+      return {};
+    },
     getClient: () => {
       throw new Error("Omni not configured");
     },

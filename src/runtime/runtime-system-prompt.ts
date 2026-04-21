@@ -7,6 +7,7 @@ import {
 import type { AgentConfig } from "../router/types.js";
 import type { ChannelContext } from "./message-types.js";
 import { loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { buildStickerPromptSection } from "../stickers/prompt.js";
 
 export interface RuntimeSystemPromptInput {
   agent: AgentConfig;
@@ -14,6 +15,7 @@ export interface RuntimeSystemPromptInput {
   sessionName?: string;
   cwd: string;
   extraSections?: PromptSection[];
+  sessionRuntimeParams?: Record<string, unknown>;
 }
 
 export interface RuntimeSystemPrompt {
@@ -26,6 +28,7 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     ...buildSystemPromptSections(input.agent.id, input.ctx, undefined, input.sessionName, {
       agentMode: input.agent.mode,
     }),
+    ...buildStickerPromptSectionsForRuntime(input.agent, input.ctx, input.sessionRuntimeParams),
     ...(await buildWorkspacePromptSections(input.cwd)),
     ...buildAgentPromptSections(input.agent),
     ...buildExtraPromptSections(input.extraSections),
@@ -35,6 +38,17 @@ export async function buildRuntimeSystemPrompt(input: RuntimeSystemPromptInput):
     text: renderPromptSections(sections),
     sections,
   };
+}
+
+function buildStickerPromptSectionsForRuntime(
+  agent: AgentConfig,
+  ctx: ChannelContext | undefined,
+  sessionRuntimeParams: Record<string, unknown> | undefined,
+): PromptContextSection[] {
+  const section = buildStickerPromptSection(agent, ctx, {
+    sessionRuntimeParams,
+  });
+  return section ? [section] : [];
 }
 
 async function buildWorkspacePromptSections(cwd: string): Promise<PromptContextSection[]> {

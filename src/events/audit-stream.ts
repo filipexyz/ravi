@@ -26,6 +26,7 @@ export const RAVI_EVENTS_SUBJECTS = [
   "ravi.inbound.>",
   "ravi.outbound.>",
   "ravi.media.send",
+  "ravi.stickers.send",
   "ravi.contacts.>",
   "ravi.instances.>",
   "ravi.whatsapp.>",

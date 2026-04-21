@@ -24,6 +24,10 @@ let routerConfig: { agents: Record<string, Record<string, unknown>> } = { agents
 let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
+let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
+let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
+let renameSessionNameError: Error | null = null;
+let renameRouteReferencesUpdated = 0;
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -90,7 +94,30 @@ mock.module("../../router/sessions.js", () => ({
   resolveSession: () => resolvedSession,
   getOrCreateSession: () => null,
   findSessionByChatId: () => null,
-  updateSessionDisplayName: () => {},
+  updateSessionDisplayName: (sessionKey: string, displayName: string) => {
+    displayNameUpdates.push({ sessionKey, displayName });
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession = { ...resolvedSession, displayName };
+    }
+  },
+  renameSessionName: (sessionKey: string, newName: string) => {
+    renameSessionNameCalls.push({ sessionKey, newName });
+    if (renameSessionNameError) throw renameSessionNameError;
+    if (!resolvedSession || resolvedSession.sessionKey !== sessionKey) {
+      throw new Error(`Session not found: ${sessionKey}`);
+    }
+    const before = { ...resolvedSession };
+    const after = { ...resolvedSession, name: newName };
+    resolvedSession = after;
+    return {
+      before,
+      after,
+      oldName: typeof before.name === "string" ? before.name : null,
+      newName,
+      changed: before.name !== newName,
+      routeReferencesUpdated: before.name === newName ? 0 : renameRouteReferencesUpdated,
+    };
+  },
   updateSessionModelOverride: () => {},
   updateSessionThinkingLevel: () => {},
   setSessionEphemeral: () => {},
@@ -195,6 +222,10 @@ beforeEach(() => {
   chatHistory = [];
   chatHistoryByChat = [];
   messageMetadataRows = [];
+  displayNameUpdates = [];
+  renameSessionNameCalls = [];
+  renameSessionNameError = null;
+  renameRouteReferencesUpdated = 0;
 });
 
 describe("SessionCommands wait mode", () => {
@@ -326,6 +357,68 @@ describe("SessionCommands list --json", () => {
       runtimeProvider: "codex",
       tokenTotal: 42,
     });
+  });
+});
+
+describe("SessionCommands rename and display labels", () => {
+  beforeEach(() => {
+    resolvedSession = {
+      sessionKey: "agent:main:dm:615153",
+      name: "main-dm-615153",
+      displayName: "Old Label",
+      agentId: "main",
+      agentCwd: "/tmp/main",
+      createdAt: 1000,
+      updatedAt: 2000,
+    };
+  });
+
+  it("sets display label without changing the canonical session name or routes", () => {
+    const output = captureLogs(() => {
+      new SessionCommands().setDisplay("main-dm-615153", "Luis DM");
+    });
+
+    expect(output).toContain('Set display for main-dm-615153: "Luis DM"');
+    expect(output).not.toContain("Renamed");
+    expect(displayNameUpdates).toEqual([{ sessionKey: "agent:main:dm:615153", displayName: "Luis DM" }]);
+    expect(renameSessionNameCalls).toEqual([]);
+    expect(resolvedSession?.name).toBe("main-dm-615153");
+    expect(resolvedSession?.displayName).toBe("Luis DM");
+  });
+
+  it("renames the canonical session name and reports route cascade without changing the session key", () => {
+    renameRouteReferencesUpdated = 2;
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().rename("main-dm-615153", "main-dm-luis", true);
+      }),
+    );
+
+    expect(renameSessionNameCalls).toEqual([{ sessionKey: "agent:main:dm:615153", newName: "main-dm-luis" }]);
+    expect(displayNameUpdates).toEqual([]);
+    expect(payload).toMatchObject({
+      action: "rename",
+      changed: true,
+      sessionKey: "agent:main:dm:615153",
+      sessionName: "main-dm-615153",
+      oldName: "main-dm-615153",
+      newName: "main-dm-luis",
+      routeReferencesUpdated: 2,
+      sessionKeyChanged: false,
+    });
+    expect(payload.before.name).toBe("main-dm-615153");
+    expect(payload.after.name).toBe("main-dm-luis");
+    expect(payload.after.sessionKey).toBe("agent:main:dm:615153");
+    expect(resolvedSession?.name).toBe("main-dm-luis");
+  });
+
+  it("rejects canonical rename collisions", () => {
+    renameSessionNameError = new Error("Session name already exists: main");
+
+    expect(() => new SessionCommands().rename("main-dm-615153", "main")).toThrow("Session name already exists: main");
+    expect(renameSessionNameCalls).toEqual([{ sessionKey: "agent:main:dm:615153", newName: "main" }]);
+    expect(resolvedSession?.name).toBe("main-dm-615153");
   });
 });
 

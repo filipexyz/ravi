@@ -3,6 +3,7 @@
  */
 
 import type { ChannelContext } from "./runtime/message-types.js";
+import { renderChannelCapabilities, supportsChannelCapability } from "./channels/capabilities.js";
 
 /** Silent reply token - when response contains this, don't send to channel */
 export const SILENT_TOKEN = "@@SILENT@@";
@@ -147,20 +148,27 @@ export function buildGroupContext(ctx: ChannelContext): string {
  * Build runtime info section for system prompt
  */
 export function buildRuntimeInfo(agentId: string, ctx: ChannelContext, sessionName?: string): string {
-  const capabilities = "polls,reactions"; // TODO: get from plugin
+  const capabilities = renderChannelCapabilities(ctx);
   const sessionPart = sessionName ? ` | session=${sessionName}` : "";
 
-  return [
+  const lines = [
     `## Runtime`,
     ``,
     `Runtime: agent=${agentId}${sessionPart} | channel=${ctx.channelName} | capabilities=${capabilities}`,
-    ``,
-    `## AskUserQuestion`,
-    ``,
-    `O canal suporta polls. Quando você usar a tool AskUserQuestion, a pergunta será enviada como enquete no WhatsApp.`,
-    `O usuário pode votar numa opção ou responder a mensagem com texto livre (opção "Outro").`,
-    `Use AskUserQuestion sempre que precisar de input do usuário com opções definidas.`,
-  ].join("\n");
+  ];
+
+  if (supportsChannelCapability(ctx, "polls")) {
+    lines.push(
+      ``,
+      `## AskUserQuestion`,
+      ``,
+      `O canal suporta polls. Quando você usar a tool AskUserQuestion, a pergunta será enviada como enquete no WhatsApp.`,
+      `O usuário pode votar numa opção ou responder a mensagem com texto livre (opção "Outro").`,
+      `Use AskUserQuestion sempre que precisar de input do usuário com opções definidas.`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function sessionBoundaryText(sessionName?: string): string {
@@ -304,8 +312,9 @@ Your text output is NOT sent to the channel. Use these tools to send explicitly.
       // Add output formatting based on channel
       add("channel.output_formatting", "Output Formatting", outputFormattingText(ctx.channelName), 70);
 
-      // Add reactions section
-      add("channel.reactions", "Reactions", reactionsText(), 80);
+      if (supportsChannelCapability(ctx, "reactions")) {
+        add("channel.reactions", "Reactions", reactionsText(), 80);
+      }
     }
 
     // Add group context if applicable (includes silent reply instructions)

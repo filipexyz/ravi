@@ -358,6 +358,75 @@ The media type is auto-detected from the file extension:
 | Audio | `.mp3`, `.ogg`, `.wav`, `.m4a`, `.opus` |
 | Document | `.pdf` (and any other extension) |
 
+## Sticker Library
+
+Ravi has an official typed sticker catalog for channels that explicitly support stickers. Initial outbound support is WhatsApp only.
+
+The sticker catalog is stored outside the system prompt at:
+
+```bash
+~/.ravi/stickers/catalog.json
+```
+
+The prompt never receives sticker media, base64, local paths, or JSON. When stickers are available, the agent only receives a short Markdown section with sticker IDs and natural usage descriptions.
+
+### Enable Stickers For An Agent
+
+Sticker prompt instructions are opt-in per agent:
+
+```bash
+ravi agents set main defaults '{"stickers":{"enabled":true}}'
+```
+
+Advanced runtime launchers can also opt in for one session with `runtimeSessionParams.stickers.enabled=true`.
+
+### Manage Stickers
+
+```bash
+ravi stickers add wave "/path/to/wave.webp" \
+  --label "Wave" \
+  --description "Use for a friendly quick hello." \
+  --avoid "Do not use during serious incidents." \
+  --channels whatsapp
+
+ravi stickers list --json
+ravi stickers show wave --json
+ravi stickers remove wave --json
+```
+
+Catalog fields:
+
+| Field | Description |
+|---|---|
+| `id` | Stable lowercase ID used by agents and operators |
+| `label` | Human label |
+| `description` | Natural usage description shown in prompts |
+| `avoid` | When not to use the sticker |
+| `channels` | Channel allowlist; only `whatsapp` supports outbound stickers initially |
+| `agents` | Agent allowlist; empty means all agents |
+| `media` | File media reference kept outside prompts |
+| `enabled` | Whether the sticker can be offered and sent |
+
+### Send A Sticker
+
+From a routed WhatsApp session:
+
+```bash
+ravi stickers send wave --json
+```
+
+With an explicit target:
+
+```bash
+ravi stickers send wave \
+  --channel whatsapp \
+  --account main \
+  --to "5511999999999@s.whatsapp.net" \
+  --json
+```
+
+Sticker sending uses the omni media path with sticker media type. Non-WhatsApp channels are rejected before enqueueing.
+
 ## Inbound Media
 
 When a message arrives with media (images, videos, documents, stickers, audio), ravi automatically downloads the file and includes the local path in the agent's prompt.

@@ -24,6 +24,7 @@ import {
   getOrCreateSession,
   findSessionByChatId,
   updateSessionDisplayName,
+  renameSessionName,
   updateSessionModelOverride,
   updateSessionThinkingLevel,
   setSessionEphemeral,
@@ -1340,10 +1341,10 @@ export class SessionCommands {
     };
   }
 
-  @Command({ name: "rename", description: "Set session display name" })
-  rename(
+  @Command({ name: "set-display", description: "Set session display label" })
+  setDisplay(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
-    @Arg("displayName", { description: "Display name" }) displayName: string,
+    @Arg("displayName", { description: "Display label" }) displayName: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
@@ -1359,17 +1360,77 @@ export class SessionCommands {
       return;
     }
 
+    const nextDisplayName = displayName.trim();
+    if (!nextDisplayName) {
+      fail("Display label must not be empty");
+      return;
+    }
+
     const beforeDisplayName = s.displayName ?? null;
-    updateSessionDisplayName(s.sessionKey, displayName);
-    const after = resolveSession(s.sessionKey) ?? ({ ...s, displayName } as SessionEntry);
+    updateSessionDisplayName(s.sessionKey, nextDisplayName);
+    const after = resolveSession(s.sessionKey) ?? ({ ...s, displayName: nextDisplayName } as SessionEntry);
     if (asJson) {
-      const payload = buildSessionMutationJson("rename", s, after, beforeDisplayName !== displayName, {
-        displayName,
+      const payload = buildSessionMutationJson("set-display", s, after, beforeDisplayName !== nextDisplayName, {
+        displayName: nextDisplayName,
       });
       printJson(payload);
       return payload;
     }
-    console.log(`Renamed: ${s.name ?? s.sessionKey} -> "${displayName}"`);
+    if (beforeDisplayName === nextDisplayName) {
+      console.log(`Display unchanged for: ${s.name ?? s.sessionKey}`);
+      return;
+    }
+    console.log(`Set display for ${s.name ?? s.sessionKey}: "${nextDisplayName}"`);
+  }
+
+  @Command({ name: "rename", description: "Rename canonical session name" })
+  rename(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("newName", { description: "New canonical session name" }) newName: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const s = resolveSession(nameOrKey);
+    if (!s) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    // Scope: only own session can be modified
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    let result: ReturnType<typeof renameSessionName>;
+    try {
+      result = renameSessionName(s.sessionKey, newName);
+    } catch (err) {
+      fail(err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    if (asJson) {
+      const payload = buildSessionMutationJson("rename", result.before, result.after, result.changed, {
+        oldName: result.oldName,
+        newName: result.newName,
+        routeReferencesUpdated: result.routeReferencesUpdated,
+        sessionKeyChanged: false,
+      });
+      printJson(payload);
+      return payload;
+    }
+
+    if (!result.changed) {
+      console.log(`Session name unchanged: ${result.newName}`);
+      return;
+    }
+
+    console.log(`Renamed session: ${result.oldName ?? s.sessionKey} -> ${result.newName}`);
+    if (result.routeReferencesUpdated > 0) {
+      console.log(`Updated ${result.routeReferencesUpdated} route session reference(s).`);
+    }
+    console.log(`Session key unchanged: ${s.sessionKey}`);
   }
 
   @Command({ name: "set-model", description: "Set session model override" })

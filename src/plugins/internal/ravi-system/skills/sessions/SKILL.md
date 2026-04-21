@@ -50,8 +50,11 @@ ravi sessions trace <name> --since 2h --explain
 ### Gerenciamento
 
 ```bash
-# Renomear display name
-ravi sessions rename <name> "Novo Nome"
+# Renomear o nome canonico da sessao (sessions.name)
+ravi sessions rename <name> <novo-nome-canonico>
+
+# Definir label humano/display-only
+ravi sessions set-display <name> "Novo Nome Humano"
 
 # Definir modelo override
 ravi sessions set-model <name> <model>
@@ -201,7 +204,8 @@ tokens ou provider session ids em documentacao compartilhada.
 ## Notas
 
 - **Reset vs Delete**: `reset` limpa a conversa mas mantém nome/routing/config. `delete` remove a sessão inteira.
-- **Session names**: Nomes legíveis, únicos, sem pontos (`.`). Gerados automaticamente ou definidos manualmente.
+- **Session names**: nomes canonicos unicos usados em routing, historico e topicos NATS. Use um token sem espacos, pontos (`.`), `*` ou `>`. `sessions rename` muda esse nome canonico e atualiza rotas que apontavam para o nome antigo.
+- **Display labels**: labels humanos vivem em `display_name`. Use `sessions set-display` para nomes com espaco, acentos ou contexto visual; isso nao altera routing nem historico.
 - **Source automático**: Todos os comandos de comunicação incluem source (channel/chatId) automaticamente — o agent sabe onde responder.
 - **`send` vs `inform`**: `send` é a opção mais geral e pode esperar resposta com `-w`; `inform` é fogo-e-esqueça explícito para contexto.
 - **Isolamento de contexto**: `sessions read` deve recuperar apenas a sessão atual. Nunca use histórico de outro grupo/DM como fallback para responder uma sessão fria.

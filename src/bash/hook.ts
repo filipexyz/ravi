@@ -163,6 +163,7 @@ const SESSION_TARGET_COMMANDS = new Set([
   "sessions_reset",
   "sessions_delete",
   "sessions_rename",
+  "sessions_set-display",
   "sessions_set-model",
   "sessions_set-thinking",
   "sessions_set-ttl",

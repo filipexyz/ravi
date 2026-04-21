@@ -31,6 +31,7 @@ export * from "./sessions-runtime.js";
 export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
+export * from "./stickers.js";
 export * from "./tags.js";
 export * from "./tasks-automations.js";
 export * from "./tasks-deps.js";

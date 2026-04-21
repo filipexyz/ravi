@@ -55,6 +55,8 @@ export {
   dbCreateRoute,
   dbGetRoute,
   dbListRoutes,
+  dbListRoutesBySessionName,
+  dbRenameRouteSessionName,
   dbUpdateRoute,
   dbDeleteRoute,
   dbRestoreRoute,

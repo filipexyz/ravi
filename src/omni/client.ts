@@ -151,6 +151,13 @@ export function createOmniClient(config: { baseUrl: string; apiKey: string; cliV
         });
         return payload.data ?? {};
       },
+      async sendSticker(body: JsonObject): Promise<{ messageId?: string; status?: string }> {
+        const payload = await request<{ messageId?: string; status?: string }>("/messages/send/sticker", {
+          method: "POST",
+          body,
+        });
+        return payload.data ?? {};
+      },
       async batchMarkRead(body: { instanceId: string; chatId: string; messageIds: string[] }): Promise<void> {
         await request("/messages/read", { method: "POST", body });
       },

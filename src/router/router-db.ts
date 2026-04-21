@@ -1847,6 +1847,26 @@ export function dbListRoutes(accountId?: string): (RouteConfig & { id: number })
 }
 
 /**
+ * List active routes that force a specific session name.
+ */
+export function dbListRoutesBySessionName(sessionName: string): (RouteConfig & { id: number })[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM routes WHERE session_name = ? AND deleted_at IS NULL ORDER BY priority DESC, id")
+    .all(sessionName) as RouteRow[];
+  return rows.map(rowToRoute);
+}
+
+/**
+ * Rename active route session references after a canonical session rename.
+ */
+export function dbRenameRouteSessionName(oldName: string, newName: string): number {
+  getDb()
+    .prepare("UPDATE routes SET session_name = ?, updated_at = ? WHERE session_name = ? AND deleted_at IS NULL")
+    .run(newName, Date.now(), oldName);
+  return getDbChanges();
+}
+
+/**
  * Update an existing route
  */
 export function dbUpdateRoute(pattern: string, updates: Partial<RouteConfig>, accountId: string): RouteConfig {

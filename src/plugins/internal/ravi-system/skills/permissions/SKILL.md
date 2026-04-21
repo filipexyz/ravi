@@ -108,6 +108,7 @@ Estes funcionam pra qualquer agent sem grant:
 - `sessions` (open) — mas comandos de modificação checam session scope inline
 - `media` (open)
 - `react` (open)
+- `stickers` (open)
 - `tools` (open)
 - `transcribe` (open)
 - `video` (open)

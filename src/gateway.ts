@@ -12,6 +12,7 @@
  *   ravi.outbound.deliver      → direct channel delivery
  *   ravi.outbound.reaction     → emoji reactions
  *   ravi.media.send            → media files
+ *   ravi.stickers.send         → WhatsApp stickers
  *   ravi.config.changed        → reload router config + REBAC sync
  */
 
@@ -23,6 +24,8 @@ import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
 import { SessionTypingTracker } from "./gateway-typing.js";
+import { assertChannelSupportsStickers } from "./channels/capabilities.js";
+import type { StickerSendEvent } from "./stickers/send.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -83,6 +86,7 @@ export class Gateway {
     this.subscribeToDirectSend();
     this.subscribeToReactions();
     this.subscribeToMediaSend();
+    this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
 
     log.info("Gateway started");
@@ -581,6 +585,48 @@ export class Gateway {
           log.info("Media sent", { chatId: mediaChatId, type: data.type, filename: data.filename });
         } catch (err) {
           log.error("Failed to send media", { error: err });
+        }
+      },
+      { queue: "ravi-gateway" },
+    );
+  }
+
+  private async handleStickerSendEvent(data: StickerSendEvent): Promise<void> {
+    assertChannelSupportsStickers({
+      channelId: data.channel,
+      channelName: data.channel,
+    });
+
+    const stickerInstanceId = configStore.resolveInstanceId(data.accountId);
+    if (!stickerInstanceId) {
+      if (data.replyTopic) {
+        await this.emitEvent(data.replyTopic, { success: false, error: "No instance for account" });
+      }
+      return;
+    }
+
+    const stickerChatId = normalizeOutboundJid(data.chatId);
+    const result = await this.omniSender.sendSticker(stickerInstanceId, stickerChatId, data.filePath);
+    log.info("Sticker sent", { chatId: stickerChatId, stickerId: data.stickerId, filename: data.filename });
+
+    if (data.replyTopic) {
+      await this.emitEvent(data.replyTopic, { success: true, messageId: result.messageId });
+    }
+  }
+
+  /**
+   * Subscribe to sticker send events from agents.
+   * Queue group: only one gateway daemon sends each sticker.
+   */
+  private subscribeToStickerSend(): void {
+    this.subscribe(
+      "stickerSend",
+      ["ravi.stickers.send"],
+      async (event) => {
+        try {
+          await this.handleStickerSendEvent(event.data as StickerSendEvent);
+        } catch (err) {
+          log.error("Failed to send sticker", { error: err });
         }
       },
       { queue: "ravi-gateway" },
