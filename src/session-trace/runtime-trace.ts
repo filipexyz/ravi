@@ -8,7 +8,7 @@ import type {
   RuntimeUsage,
 } from "../runtime/types.js";
 import { logger } from "../utils/logger.js";
-import { recordSessionBlob, recordSessionEvent, upsertSessionTurn } from "./session-trace-db.js";
+import { recordSessionBlob, recordSessionEvent, sha256Text, upsertSessionTurn } from "./session-trace-db.js";
 
 const log = logger.child("session-trace:runtime");
 const PREVIEW_CHARS = 240;
@@ -31,10 +31,21 @@ export interface RuntimeTraceTurnStartResult {
   requestBlobSha256: string;
 }
 
+export interface RuntimeTracePromptSectionMetadata {
+  id: string;
+  title: string;
+  source: string;
+  priority?: number | null;
+  order?: number | null;
+  chars: number;
+  sha256: string;
+}
+
 export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   turnId: string;
   prompt: string;
   systemPrompt: string;
+  systemPromptSectionMetadata?: RuntimeTracePromptSectionMetadata[];
   cwd: string;
   effort?: RuntimeEffort | null;
   thinking?: RuntimeThinking | null;
@@ -168,6 +179,8 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       system_prompt_sha256: systemPrompt.sha256,
       system_prompt_chars: input.systemPrompt.length,
       system_prompt_sections: systemPromptSections,
+      system_prompt_section_metadata:
+        input.systemPromptSectionMetadata?.map((section) => normalizePromptSectionMetadata(section)) ?? [],
       user_prompt_sha256: userPrompt.sha256,
       user_prompt_chars: input.prompt.length,
       settings_sources: input.settingSources ?? [],
@@ -243,6 +256,32 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       requestBlobSha256: request.sha256,
     };
   });
+}
+
+function normalizePromptSectionMetadata(section: RuntimeTracePromptSectionMetadata): RuntimeTracePromptSectionMetadata {
+  return {
+    id: section.id,
+    title: section.title,
+    source: section.source,
+    priority: section.priority ?? null,
+    order: section.order ?? null,
+    chars: section.chars,
+    sha256: section.sha256,
+  };
+}
+
+export function buildRuntimeTracePromptSectionMetadata(
+  sections: Array<{ id: string; title: string; content: string; source: string; priority?: number; order?: number }>,
+): RuntimeTracePromptSectionMetadata[] {
+  return sections.map((section) => ({
+    id: section.id,
+    title: section.title,
+    source: section.source,
+    priority: section.priority ?? null,
+    order: section.order ?? null,
+    chars: section.content.length,
+    sha256: sha256Text(section.content),
+  }));
 }
 
 export function recordTerminalTurnTrace(input: RuntimeTraceTerminalTurnInput): void {

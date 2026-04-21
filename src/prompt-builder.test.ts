@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { buildGroupContext, buildSystemPrompt } from "./prompt-builder.js";
+import {
+  buildGroupContext,
+  buildSystemPrompt,
+  buildSystemPromptSections,
+  renderPromptSections,
+  type PromptContextSection,
+} from "./prompt-builder.js";
 
 describe("buildGroupContext", () => {
   it("does not render undefined or unknown when group metadata is partial", () => {
@@ -30,6 +36,48 @@ describe("buildGroupContext", () => {
 });
 
 describe("buildSystemPrompt", () => {
+  it("uses typed sections internally but renders plain Markdown text", () => {
+    const sections = buildSystemPromptSections(
+      "main",
+      {
+        channelId: "whatsapp-baileys",
+        channelName: "WhatsApp",
+        isGroup: false,
+      },
+      [{ title: "Extra Context", content: "Injected context text." }],
+      "dev",
+    );
+
+    expect(sections.map((section) => section.id)).toEqual([
+      "identity",
+      "system.commands",
+      "session.runtime",
+      "session.boundary",
+      "channel.output_formatting",
+      "channel.reactions",
+      "extra.extra.context",
+    ]);
+
+    const prompt = renderPromptSections(sections);
+    expect(prompt.startsWith("## Identidade\n\nVocê é Ravi.")).toBe(true);
+    expect(prompt).toContain("## Extra Context\n\nInjected context text.");
+    expect(prompt).not.toContain('"id"');
+    expect(prompt).not.toContain('"priority"');
+  });
+
+  it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {
+    const typedSection: PromptContextSection = {
+      id: "runtime",
+      title: "Runtime",
+      content: "Runtime rules.",
+      priority: 50,
+      source: "test",
+    };
+    const prompt = renderPromptSections([typedSection, { title: "Legacy Extra", content: "Legacy plugin text." }]);
+
+    expect(prompt).toMatch(/^## Runtime[\s\S]+## Legacy Extra/);
+  });
+
   it("instructs agents to recover missing context only from the current session", () => {
     const prompt = buildSystemPrompt(
       "main",

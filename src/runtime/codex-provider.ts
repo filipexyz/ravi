@@ -1701,7 +1701,10 @@ async function buildCodexSystemPromptAppend(
   syncedSkillNames: string[],
 ): Promise<string> {
   const sections = [buildCodexSkillCatalogInstruction(syncedSkillNames)];
-  const workspaceInstructions = await loadWorkspaceInstructions(cwd);
+  const runtimeInstructions = runtimeSystemPromptAppend.trim();
+  const workspaceInstructions = runtimePromptIncludesWorkspaceInstructions(runtimeInstructions)
+    ? null
+    : await loadWorkspaceInstructions(cwd);
   if (workspaceInstructions) {
     sections.push(
       [
@@ -1713,12 +1716,15 @@ async function buildCodexSystemPromptAppend(
     );
   }
 
-  const runtimeInstructions = runtimeSystemPromptAppend.trim();
   if (runtimeInstructions) {
     sections.push(runtimeInstructions);
   }
 
   return sections.join("\n\n");
+}
+
+function runtimePromptIncludesWorkspaceInstructions(runtimeSystemPromptAppend: string): boolean {
+  return /^## Workspace Instructions$/m.test(runtimeSystemPromptAppend);
 }
 
 function buildCodexSkillCatalogInstruction(syncedSkillNames: string[]): string {

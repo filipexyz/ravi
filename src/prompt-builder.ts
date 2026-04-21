@@ -12,6 +12,13 @@ export interface PromptSection {
   content: string;
 }
 
+export interface PromptContextSection extends PromptSection {
+  id: string;
+  priority: number;
+  source: string;
+  order?: number;
+}
+
 export class PromptBuilder {
   private sections: PromptSection[] = [];
 
@@ -27,8 +34,52 @@ export class PromptBuilder {
    * Build the final prompt string
    */
   build(): string {
-    return this.sections.map((s) => `## ${s.title}\n\n${s.content}`).join("\n\n");
+    return renderPromptSections(this.sections);
   }
+}
+
+export function renderPromptSections(sections: PromptSection[]): string {
+  const orderedSections = sections.some(isPromptContextSection)
+    ? sections
+        .map((section, index) => ({ section, index }))
+        .sort((a, b) => {
+          const left = isPromptContextSection(a.section) ? a.section : null;
+          const right = isPromptContextSection(b.section) ? b.section : null;
+          return (
+            (left?.priority ?? Number.MAX_SAFE_INTEGER) - (right?.priority ?? Number.MAX_SAFE_INTEGER) ||
+            (left?.order ?? a.index) - (right?.order ?? b.index) ||
+            a.index - b.index
+          );
+        })
+        .map((entry) => entry.section)
+    : sections;
+
+  return orderedSections
+    .filter((section) => section.content.trim().length > 0)
+    .map((section) => `## ${section.title}\n\n${section.content}`)
+    .join("\n\n");
+}
+
+function isPromptContextSection(section: PromptSection): section is PromptContextSection {
+  return "priority" in section;
+}
+
+function createPromptSection(
+  id: string,
+  title: string,
+  content: string,
+  priority: number,
+  order: number,
+  source = "runtime",
+): PromptContextSection {
+  return {
+    id,
+    title,
+    content,
+    priority,
+    order,
+    source,
+  };
 }
 
 /**
@@ -200,27 +251,30 @@ Quando NÃO reagir:
 - Não reaja em mensagens do sistema ou quando já vai responder com texto.`;
 }
 
-/**
- * Build system prompt with channel context
- */
-export function buildSystemPrompt(
+export function buildSystemPromptSections(
   agentId: string,
   ctx?: ChannelContext,
   extraSections?: PromptSection[],
   sessionName?: string,
   opts?: { agentMode?: string },
-): string {
+): PromptContextSection[] {
   const isSentinel = opts?.agentMode === "sentinel";
   const isLargeGroup = ctx?.isGroup && (ctx.groupMembers?.length ?? 0) >= 3;
+  const sections: PromptContextSection[] = [];
+  let order = 0;
+  const add = (id: string, title: string, content: string, priority: number, source = "runtime") => {
+    sections.push(createPromptSection(id, title, content, priority, order++, source));
+  };
 
-  const builder = new PromptBuilder().section("Identidade", "Você é Ravi.");
+  add("identity", "Identidade", "Você é Ravi.", 10);
 
   // System commands for all agents (sentinel needs them for cross-send execute/ask)
-  builder.section("System Commands", systemCommandsText());
+  add("system.commands", "System Commands", systemCommandsText(), 20);
 
   // Sentinel: add explicit channel messaging instructions
   if (isSentinel) {
-    builder.section(
+    add(
+      "sentinel.channel_messaging",
       "Channel Messaging",
       `You are a sentinel agent — you observe messages silently and never auto-reply.
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
@@ -231,40 +285,63 @@ When instructed via [System] Execute or [System] Ask, you CAN send messages expl
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
 Your text output is NOT sent to the channel. Use these tools to send explicitly.`,
+      30,
     );
   }
 
   // Silent replies only for groups with 3+ members
   if (isLargeGroup) {
-    builder.section("Silent Replies", buildSilentReplies().replace(/^## Silent Replies\n\n/, ""));
+    add("group.silent_replies", "Silent Replies", buildSilentReplies().replace(/^## Silent Replies\n\n/, ""), 40);
   }
 
   // Add context-dependent sections
   if (ctx) {
     // Add runtime info
-    builder.section("Runtime", buildRuntimeInfo(agentId, ctx, sessionName).replace(/^## Runtime\n\n/, ""));
-    builder.section("Session Boundary", sessionBoundaryText(sessionName));
+    add("session.runtime", "Runtime", buildRuntimeInfo(agentId, ctx, sessionName).replace(/^## Runtime\n\n/, ""), 50);
+    add("session.boundary", "Session Boundary", sessionBoundaryText(sessionName), 60);
 
     if (!isSentinel) {
       // Add output formatting based on channel
-      builder.section("Output Formatting", outputFormattingText(ctx.channelName));
+      add("channel.output_formatting", "Output Formatting", outputFormattingText(ctx.channelName), 70);
 
       // Add reactions section
-      builder.section("Reactions", reactionsText());
+      add("channel.reactions", "Reactions", reactionsText(), 80);
     }
 
     // Add group context if applicable (includes silent reply instructions)
     if (ctx.isGroup) {
-      builder.section("Contexto de Grupo", buildGroupContext(ctx).replace(/^## Group Chat Context\n\n/, ""));
+      add("group.context", "Contexto de Grupo", buildGroupContext(ctx).replace(/^## Group Chat Context\n\n/, ""), 90);
     }
   }
 
   // Plugin-injected sections
   if (extraSections) {
     for (const section of extraSections) {
-      builder.section(section.title, section.content);
+      add(
+        `extra.${section.title.toLowerCase().replace(/[^a-z0-9]+/g, ".")}`,
+        section.title,
+        section.content,
+        100,
+        "extra",
+      );
     }
   }
 
-  return builder.build();
+  return sections;
+}
+
+/**
+ * Build system prompt with channel context.
+ *
+ * The final prompt is always human-readable Markdown. Section metadata exists
+ * only inside the builder pipeline for ordering, dedupe, tests, and trace.
+ */
+export function buildSystemPrompt(
+  agentId: string,
+  ctx?: ChannelContext,
+  extraSections?: PromptSection[],
+  sessionName?: string,
+  opts?: { agentMode?: string },
+): string {
+  return renderPromptSections(buildSystemPromptSections(agentId, ctx, extraSections, sessionName, opts));
 }

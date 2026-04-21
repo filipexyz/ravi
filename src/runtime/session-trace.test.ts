@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
@@ -41,12 +43,13 @@ const source: RuntimeMessageTarget = {
   sourceMessageId: "wamid-1",
 };
 
-function makeAgent(): AgentConfig {
+function makeAgent(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     id: AGENT_ID,
     cwd: stateDir ?? "/tmp",
     provider: PROVIDER,
     settingSources: ["project"],
+    ...overrides,
   };
 }
 
@@ -170,6 +173,8 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("records adapter.request with prompt blobs when the runtime prompt generator yields", async () => {
+    writeFileSync(join(stateDir ?? "/tmp", "AGENTS.md"), "# Trace Workspace\n\nTrace workspace instruction.\n");
+
     const streaming = makeStreamingSession({
       pendingMessages: [
         createQueuedRuntimeUserMessage({
@@ -195,7 +200,7 @@ describe("runtime session trace instrumentation", () => {
         deliveryBarrier: "after_tool",
       },
       session: makeSession(),
-      agent: makeAgent(),
+      agent: makeAgent({ systemPromptAppend: "Trace agent instruction." }),
       runtimeProviderId: PROVIDER,
       runtimeProvider: provider,
       runtimeCapabilities: capabilities,
@@ -237,12 +242,33 @@ describe("runtime session trace instrumentation", () => {
 
     const turn = getSessionTurn(streaming.currentTraceTurnId ?? "");
     expect(turn?.status).toBe("running");
-    expect(getSessionTraceBlob(turn?.systemPromptSha256 ?? "")?.contentText).toContain("## Identidade");
+    const systemPrompt = getSessionTraceBlob(turn?.systemPromptSha256 ?? "")?.contentText;
+    expect(systemPrompt).toContain("## Identidade");
+    expect(systemPrompt).toContain("## Workspace Instructions");
+    expect(systemPrompt).toContain("Trace workspace instruction.");
+    expect(systemPrompt).toContain("## Agent Instructions");
+    expect(systemPrompt).toContain("Trace agent instruction.");
     expect(getSessionTraceBlob(turn?.userPromptSha256 ?? "")?.contentText).toBe("hello trace");
     expect(getSessionTraceBlob(turn?.requestBlobSha256 ?? "")?.contentJson).toMatchObject({
       user_prompt_chars: "hello trace".length,
       system_prompt_sha256: turn?.systemPromptSha256,
       user_prompt_sha256: turn?.userPromptSha256,
+      system_prompt_section_metadata: expect.arrayContaining([
+        expect.objectContaining({
+          id: "workspace.instructions",
+          title: "Workspace Instructions",
+          source: join(stateDir ?? "/tmp", "AGENTS.md"),
+          chars: expect.any(Number),
+          sha256: expect.any(String),
+        }),
+        expect.objectContaining({
+          id: "agent.system_prompt_append",
+          title: "Agent Instructions",
+          source: "agent:main:systemPromptAppend",
+          chars: "Trace agent instruction.".length,
+          sha256: expect.any(String),
+        }),
+      ]),
     });
   });
 

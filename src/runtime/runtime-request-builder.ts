@@ -1,6 +1,6 @@
-import { buildSystemPrompt } from "../prompt-builder.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import {
+  buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
   summarizeRuntimeCapabilities,
@@ -18,6 +18,7 @@ import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
 import { buildRuntimeRequestContext, buildRuntimeRequestEnv } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
+import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
 
 export interface RuntimeStartRequestBuildOptions {
@@ -150,9 +151,13 @@ export async function buildRuntimeStartRequest(
     resolvedSource,
     approvalSource,
   });
-  const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context, undefined, sessionName, {
-    agentMode: agent.mode,
+  const { text: systemPromptAppend, sections: systemPromptSections } = await buildRuntimeSystemPrompt({
+    agent,
+    ctx: prompt.context,
+    sessionName,
+    cwd: sessionCwd,
   });
+  const systemPromptSectionMetadata = buildRuntimeTracePromptSectionMetadata(systemPromptSections);
   const pluginNames = runtimePlugins.map((plugin) => plugin.path);
   const mcpServerNames = specServer ? ["spec"] : [];
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id);
@@ -170,6 +175,7 @@ export async function buildRuntimeStartRequest(
       thinking: runtimeResolution.options.thinking ?? null,
       prompt: input.combinedPrompt,
       systemPrompt: systemPromptAppend,
+      systemPromptSectionMetadata,
       cwd: sessionCwd,
       resume: Boolean(resumeProviderSessionId || canResumeStoredSession),
       fork: Boolean(forkFromProviderSessionId),

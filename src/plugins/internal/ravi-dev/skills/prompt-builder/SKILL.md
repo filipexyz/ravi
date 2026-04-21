@@ -11,43 +11,46 @@ description: |
 
 # Prompt Builder - Sistema de Injecao de Contexto
 
-O prompt builder constroi o system prompt appendix que e injetado em cada chamada do Claude SDK.
-Ele adapta o comportamento do agent baseado no canal, grupo, e contexto da mensagem.
+O prompt builder constroi secoes de prompt em Markdown. O contrato interno e tipado para ordenar,
+deduplicar e auditar secoes, mas o texto final enviado ao runtime e sempre Markdown humano, nunca JSON.
 
-**Arquivo:** `src/prompt-builder.ts`
+Camadas principais:
+
+- `src/prompt-builder.ts` - secoes base de identidade, comandos internos, sessao, canal e grupo.
+- `src/runtime/runtime-system-prompt.ts` - composicao runtime final com workspace, agent e secoes extras.
+- `src/runtime/runtime-request-builder.ts` - chama o builder final antes de iniciar o runtime.
 
 ## Como Funciona
 
 ```typescript
-// bot.ts - na hora de processar prompt
-const systemPromptAppend = buildSystemPrompt(agent.id, prompt.context);
-
-query({
-  prompt: prompt.prompt,
-  options: {
-    systemPrompt: {
-      type: "preset",
-      preset: "claude_code",
-      append: systemPromptAppend,  // <-- injetado aqui
-    },
-  },
+// runtime-request-builder.ts
+const { text: systemPromptAppend } = await buildRuntimeSystemPrompt({
+  agent,
+  ctx: prompt.context,
+  sessionName,
+  cwd: sessionCwd,
 });
 ```
 
-O SDK usa o preset `claude_code` como base e appenda nossas secoes.
+O runtime adapter recebe `systemPromptAppend` como texto Markdown renderizado.
 
 ## Estrutura do Builder
 
 ```typescript
-class PromptBuilder {
-  section(title: string, content: string): this;
-  build(): string;  // Retorna "## Title\n\nContent" para cada secao
+type PromptContextSection = {
+  id: string;
+  title: string;
+  content: string;
+  priority: number;
+  source: string;
 }
+
+renderPromptSections(sections); // Retorna "## Title\n\nContent" para cada secao
 ```
 
-## Secoes Injetadas
+## Secoes Base
 
-A funcao `buildSystemPrompt(agentId, ctx)` monta as secoes:
+A funcao `buildSystemPromptSections(agentId, ctx)` monta as secoes base:
 
 ### 1. Identidade (sempre)
 ```
@@ -98,6 +101,39 @@ Seja seletivo: responda so quando mencionado ou claramente util.
 Se nao precisa responder: @@SILENT@@
 ```
 
+## Secoes Runtime
+
+`buildRuntimeSystemPrompt()` adiciona secoes acima da base.
+
+### Workspace Instructions
+
+Carrega as instrucoes canonicas do `cwd` do agent:
+
+1. prefere `AGENTS.md`
+2. usa fallback legado quando necessario
+3. cria/usa bridge de compatibilidade quando aplicavel
+
+Render:
+
+```markdown
+## Workspace Instructions
+
+Workspace instructions loaded from /path/AGENTS.md. Treat them as authoritative for this workspace.
+Resolve relative file references from /path/.
+
+...conteudo do AGENTS.md...
+```
+
+### Agent Instructions
+
+Injeta `agent.systemPromptAppend` como texto Markdown:
+
+```markdown
+## Agent Instructions
+
+...conteudo configurado no agent...
+```
+
 ## Fluxo de Contexto
 
 ```
@@ -106,9 +142,9 @@ WhatsApp msg recebida
     -> Gateway extrai MessageContext:
        { channelId, channelName, senderId, isGroup, groupName, groupMembers, ... }
     -> Emite para bot com context
-    -> bot.ts chama buildSystemPrompt(agentId, context)
-    -> Prompt appendix montado com secoes relevantes
-    -> Passado para Claude SDK
+    -> runtime-request-builder chama buildRuntimeSystemPrompt(...)
+    -> Prompt appendix montado como Markdown
+    -> Runtime adapter recebe systemPromptAppend
 ```
 
 ## MessageContext (origem)
@@ -161,19 +197,34 @@ Quando o agent responde com este token:
 
 ## Como Adicionar uma Nova Secao
 
-1. Crie a funcao no `prompt-builder.ts`:
+1. Crie uma funcao/provider que retorne `PromptContextSection`:
+
 ```typescript
-function minhaSecao(ctx: ChannelContext): string {
-  return `Instrucoes especificas aqui...`;
+function minhaSecao(ctx: ChannelContext): PromptContextSection {
+  return {
+    id: "minha.secao",
+    title: "Minha Secao",
+    content: "Instrucoes especificas aqui...",
+    priority: 65,
+    source: "runtime",
+  };
 }
 ```
 
-2. Adicione ao builder em `buildSystemPrompt()`:
-```typescript
-builder.section("Minha Secao", minhaSecao(ctx));
+2. Adicione ao array de secoes antes de chamar `renderPromptSections()`.
+
+3. Garanta que o render final continue sendo Markdown:
+
+```markdown
+## Minha Secao
+
+Instrucoes especificas aqui...
 ```
 
-3. Rebuild e reinicie o daemon.
+## Regra Importante
+
+Nao injete JSON no system prompt. O JSON/metadata vive so no contrato interno, no trace ou no banco.
+O texto final precisa ser legivel como documento Markdown.
 
 ## Como Adicionar Formatacao para Novo Canal
 
@@ -184,4 +235,11 @@ if (channelName === "MeuCanal") {
 }
 ```
 
-2. O channelName vem do `channelType` do OmniConsumer (ex: `"whatsapp-baileys"`, `"discord"`, `"telegram"`).
+2. O `channelName` vem do contexto normalizado da mensagem.
+
+## Validacao Recomendada
+
+```bash
+bun test src/prompt-builder.test.ts src/runtime/runtime-system-prompt.test.ts
+bun run typecheck
+```

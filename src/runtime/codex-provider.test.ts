@@ -450,6 +450,45 @@ rl.on("line", (line) => {
     expect(calls[0]?.systemPromptAppend).toContain("Runtime rules go here.");
   });
 
+  it("does not duplicate workspace instructions when the runtime prompt already carries them", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
+    writeFileSync(join(cwd, "AGENTS.md"), "# Main Agent\n\nThis should not be loaded twice.\n");
+
+    const { calls, transport } = createMockTransport([
+      () => ({
+        events: (async function* () {
+          yield { type: "thread.started", thread_id: "thread_deduped_instructions" };
+          yield { type: "turn.started" };
+          yield { type: "turn.completed", usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } };
+        })(),
+      }),
+    ]);
+
+    const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["hello"], {
+        cwd,
+        systemPromptAppend: [
+          "## Workspace Instructions",
+          "",
+          "Workspace instructions loaded from runtime.",
+          "",
+          "## Runtime",
+          "",
+          "Runtime rules go here.",
+        ].join("\n"),
+      }),
+    );
+
+    await collectEvents(session.events);
+
+    expect(calls).toHaveLength(1);
+    const systemPromptAppend = calls[0]?.systemPromptAppend ?? "";
+    expect(systemPromptAppend.match(/## Workspace Instructions/g)?.length).toBe(1);
+    expect(systemPromptAppend).toContain("Workspace instructions loaded from runtime.");
+    expect(systemPromptAppend).not.toContain("This should not be loaded twice.");
+  });
+
   it("migrates legacy CLAUDE.md workspaces before loading Codex instructions", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
     writeFileSync(join(cwd, "CLAUDE.md"), "# Main Agent\n\nUse the Ravi skills when helpful.\n");
