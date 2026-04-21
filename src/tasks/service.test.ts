@@ -48,6 +48,7 @@ const {
   requireTaskRuntimeAgent,
   readTaskDocFrontmatter,
   removeTaskDependency,
+  resolveTaskReportToSessionName,
   resolveTaskRuntimeForRead,
   resolveBrainstormTaskSlug,
   resolveTaskCreateAssigneeAgent,
@@ -73,6 +74,12 @@ let stateDir: string | null = null;
 const publishSessionPromptMock = mock(async (_sessionName: string, _payload: Record<string, unknown>) => {});
 
 setDefaultTimeout(20_000);
+
+function createReportTargetSession(name: string, sessionKey = `agent:main:test:${name}`) {
+  const session = getOrCreateSession(sessionKey, "main", "/tmp/ravi-main", { name });
+  createdSessionNames.push(name);
+  return session;
+}
 
 function buildTestProfile(
   profileId: "default" | "brainstorm" | "task-doc-optional" | "task-doc-none" | string,
@@ -1075,7 +1082,61 @@ describe("task substrate contract", () => {
     expect(payload.reportEvents).toEqual(["blocked", "done"]);
   });
 
+  it("canonicalizes explicit report targets before storing tasks or assignments", async () => {
+    createReportTargetSession("caller-session");
+    const reportTarget = createReportTargetSession("lead-session", "agent:main:lead-report-target");
+    const dispatchTarget = createReportTargetSession("review-session", "agent:main:review-report-target");
+
+    const created = createTask({
+      title: "Canonical report target",
+      instructions: "Report target should resolve through the session store",
+      createdBy: "creator",
+      createdBySessionName: "caller-session",
+      reportToSessionName: reportTarget.sessionKey,
+      reportEvents: ["done"],
+    });
+    createdTaskIds.push(created.task.id);
+
+    expect(created.task.reportToSessionName).toBe("lead-session");
+
+    const dispatched = await queueOrDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "dispatcher",
+      assignedBySessionName: "caller-session",
+      reportToSessionName: dispatchTarget.sessionKey,
+      reportEvents: ["blocked", "done"],
+    });
+
+    if (dispatched.mode !== "dispatched") {
+      throw new Error("Expected task to dispatch immediately");
+    }
+    expect(dispatched.assignment.reportToSessionName).toBe("review-session");
+    expect(dispatched.task.reportToSessionName).toBe("lead-session");
+  });
+
+  it("fails explicit report target resolution with a caller-session suggestion", () => {
+    expect(() =>
+      resolveTaskReportToSessionName("webmaster", {
+        callerSessionName: "ravi-sde-webmaster",
+      }),
+    ).toThrow(
+      "Report target session not found: webmaster. Use --report-to ravi-sde-webmaster to report back to the caller session.",
+    );
+
+    expect(() =>
+      createTask({
+        title: "Missing report target",
+        instructions: "Invalid report target should fail before task creation",
+        createdBy: "creator",
+        createdBySessionName: "ravi-sde-webmaster",
+        reportToSessionName: "webmaster",
+      }),
+    ).toThrow("Use --report-to ravi-sde-webmaster");
+  });
+
   it("renders terminal report messages from profile-owned templates for done, blocked, and failed", async () => {
+    createReportTargetSession("lead-session");
     const profileSnapshot = buildTaskProfileSnapshot(
       buildTestProfile("default", {
         templates: {
@@ -1157,6 +1218,7 @@ describe("task substrate contract", () => {
   });
 
   it("falls back to the legacy terminal report text when pinned profile snapshots do not define report templates", async () => {
+    createReportTargetSession("lead-session");
     const baseProfile = buildTestProfile("default");
     const legacySnapshot = {
       ...buildTaskProfileSnapshot(baseProfile),

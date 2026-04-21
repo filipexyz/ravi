@@ -2,7 +2,7 @@ import { getContext } from "../cli/context.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
-import { getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
+import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
@@ -118,6 +118,63 @@ const DEFAULT_TASK_REPORT_EVENTS = [...TASK_REPORT_EVENTS] satisfies TaskReportE
 const log = logger.child("tasks:service");
 
 export const TASK_STREAM_SCOPE = "tasks";
+
+interface TaskReportTargetResolutionOptions {
+  callerSessionName?: string | null;
+}
+
+function hasExplicitTaskReportTarget(sessionName?: string | null): sessionName is string {
+  return Boolean(sessionName?.trim());
+}
+
+export function resolveTaskReportToSessionName(
+  rawSessionName?: string | null,
+  options: TaskReportTargetResolutionOptions = {},
+): string | undefined {
+  const target = rawSessionName?.trim();
+  if (!target) {
+    return undefined;
+  }
+
+  const session = resolveSession(target) ?? findSessionByChatId(target);
+  if (session) {
+    return session.name ?? session.sessionKey;
+  }
+
+  const callerSessionName = options.callerSessionName?.trim();
+  const callerSuggestion = callerSessionName
+    ? ` Use --report-to ${callerSessionName} to report back to the caller session.`
+    : "";
+  throw new Error(
+    `Report target session not found: ${target}.${callerSuggestion} Pass an existing session name, session key, or chat id.`,
+  );
+}
+
+function resolveCreateTaskReportTarget(input: CreateTaskInput): CreateTaskInput {
+  if (!hasExplicitTaskReportTarget(input.reportToSessionName)) {
+    return input;
+  }
+
+  return {
+    ...input,
+    reportToSessionName: resolveTaskReportToSessionName(input.reportToSessionName, {
+      callerSessionName: input.createdBySessionName,
+    }),
+  };
+}
+
+function resolveDispatchTaskReportTarget(input: DispatchTaskInput): DispatchTaskInput {
+  if (!hasExplicitTaskReportTarget(input.reportToSessionName)) {
+    return input;
+  }
+
+  return {
+    ...input,
+    reportToSessionName: resolveTaskReportToSessionName(input.reportToSessionName, {
+      callerSessionName: input.assignedBySessionName,
+    }),
+  };
+}
 export const TASK_STREAM_TOPIC_PATTERNS = ["ravi.task.>"] as const;
 export const TASK_STREAM_COMMAND_NAMES = [
   "task.create",
@@ -1372,6 +1429,12 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
 
   const profile = resolveTaskProfileForTask(task);
   const sourceSessionName = task.assigneeSessionName?.trim() || event.sessionName?.trim() || task.id;
+  const resolvedReportToSessionName = resolveTaskReportToSessionName(reportToSessionName, {
+    callerSessionName: sourceSessionName,
+  });
+  if (!resolvedReportToSessionName) {
+    return null;
+  }
   const effectiveCwd = resolveTaskReportEffectiveCwd(task);
   const worktree = latestAssignment?.worktree ?? task.worktree;
   const taskDocPath = resolveTaskDocumentPathForProfile(task, profile);
@@ -1383,7 +1446,7 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
     ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
     sessionName: sourceSessionName,
   });
-  await publishTaskSessionPrompt(reportToSessionName, {
+  await publishTaskSessionPrompt(resolvedReportToSessionName, {
     prompt: `[System] Answer: [from: ${sourceSessionName}] ${buildTaskReportMessageForProfile(task, reportEvent, {
       effectiveCwd,
       sourceSessionName,
@@ -1398,7 +1461,7 @@ export async function reportTaskEvent(task: TaskRecord, event: TaskEvent): Promi
     deliveryBarrier: "after_response",
   });
 
-  return reportToSessionName;
+  return resolvedReportToSessionName;
 }
 
 function summarizeTasks(tasks: TaskRecord[]): TaskStreamStats {
@@ -1947,26 +2010,30 @@ export function createTask(input: CreateTaskInput): {
   event: TaskEvent;
   relatedEvents: Array<{ task: TaskRecord; event: TaskEvent }>;
 } {
-  if (input.parentTaskId) {
-    const parentTask = dbGetTask(input.parentTaskId);
+  const resolvedInput = resolveCreateTaskReportTarget(input);
+
+  if (resolvedInput.parentTaskId) {
+    const parentTask = dbGetTask(resolvedInput.parentTaskId);
     if (!parentTask) {
-      throw new Error(`Parent task not found: ${input.parentTaskId}`);
+      throw new Error(`Parent task not found: ${resolvedInput.parentTaskId}`);
     }
   }
 
-  const dependencyIds = [...new Set((input.dependsOnTaskIds ?? []).map((taskId) => taskId.trim()).filter(Boolean))];
+  const dependencyIds = [
+    ...new Set((resolvedInput.dependsOnTaskIds ?? []).map((taskId) => taskId.trim()).filter(Boolean)),
+  ];
   for (const dependencyId of dependencyIds) {
     if (!dbGetTask(dependencyId)) {
       throw new Error(`Dependency task not found: ${dependencyId}`);
     }
   }
 
-  const profile = resolveTaskProfile(requireTaskProfileDefinition(input.profileId).id);
-  const profileInput = resolveTaskProfileInputValues(profile, input.profileInput);
-  validateTaskCreateProfileOrThrow(input, profile, profileInput);
+  const profile = resolveTaskProfile(requireTaskProfileDefinition(resolvedInput.profileId).id);
+  const profileInput = resolveTaskProfileInputValues(profile, resolvedInput.profileInput);
+  validateTaskCreateProfileOrThrow(resolvedInput, profile, profileInput);
   const initialProfileState = resolveTaskProfileState(
     {
-      title: input.title,
+      title: resolvedInput.title,
       profileId: profile.id,
       profileSnapshot: buildTaskProfileSnapshot(profile),
       profileInput,
@@ -1974,14 +2041,16 @@ export function createTask(input: CreateTaskInput): {
     profile,
   );
   const created = dbCreateTask({
-    ...input,
+    ...resolvedInput,
     profileId: profile.id,
     profileVersion: profile.version,
     profileSource: profile.source,
     profileSnapshot: buildTaskProfileSnapshot(profile),
     ...(Object.keys(profileInput).length > 0 ? { profileInput } : {}),
     ...(initialProfileState ? { profileState: initialProfileState } : {}),
-    ...(input.runtimeOverride ? { runtimeOverride: normalizeTaskRuntimeOptions(input.runtimeOverride) } : {}),
+    ...(resolvedInput.runtimeOverride
+      ? { runtimeOverride: normalizeTaskRuntimeOptions(resolvedInput.runtimeOverride) }
+      : {}),
   });
 
   try {
@@ -2196,9 +2265,10 @@ export async function queueTaskLaunch(
   if (dependencySurface.readiness.unsatisfiedDependencyCount === 0) {
     throw new Error(`Task ${taskId} is already ready; dispatch it instead of arming a launch plan.`);
   }
-  const prepared = prepareTaskDispatchContext(task, input, { materializeSession: false });
+  const resolvedInput = resolveDispatchTaskReportTarget(input);
+  const prepared = prepareTaskDispatchContext(task, resolvedInput, { materializeSession: false });
   const launchPlan = dbSetTaskLaunchPlan(taskId, {
-    ...input,
+    ...resolvedInput,
     agentId: prepared.agentId,
     sessionName: prepared.sessionName,
     ...(prepared.worktree ? { worktree: prepared.worktree } : {}),
@@ -2207,7 +2277,7 @@ export async function queueTaskLaunch(
     taskId,
     "task.launch-planned",
     {
-      actor: input.assignedBy,
+      actor: resolvedInput.assignedBy,
       agentId: launchPlan.agentId,
       sessionName: launchPlan.sessionName,
       message: `Launch plan armed for ${launchPlan.agentId}/${launchPlan.sessionName}.`,
@@ -2474,6 +2544,7 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
+  const resolvedInput = resolveDispatchTaskReportTarget(input);
   const {
     task: bootstrappedTask,
     profile,
@@ -2483,12 +2554,12 @@ export async function dispatchTask(
     worktree,
     taskDocPath,
     primaryArtifact,
-  } = prepareTaskDispatchContext(existingTask, input, { materializeSession: true });
+  } = prepareTaskDispatchContext(existingTask, resolvedInput, { materializeSession: true });
 
   const { task, assignment, event } = dbDispatchTask(
     taskId,
     {
-      ...input,
+      ...resolvedInput,
       agentId,
       sessionName,
       ...(worktree ? { worktree } : {}),
@@ -2497,7 +2568,7 @@ export async function dispatchTask(
       eventMessage: buildTaskDispatchEventMessageForProfile(
         bootstrappedTask,
         {
-          ...input,
+          ...resolvedInput,
           agentId,
           sessionName,
           ...(worktree ? { worktree } : {}),

@@ -25,9 +25,12 @@ mock.module("../omni/session-stream.js", () => ({
 
 const { blockTask, completeTask, emitTaskEvent } = await import("./service.js");
 const { dbCreateTask, dbDeleteTask, dbDispatchTask } = await import("./task-db.js");
+const { getOrCreateSession } = await import("../router/sessions.js");
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-notify-test-");
+  getOrCreateSession("agent:main:creator-session", "main", "/tmp/ravi-main", { name: "creator-session" });
+  getOrCreateSession("agent:main:ops-session", "main", "/tmp/ravi-main", { name: "ops-session" });
 });
 
 afterEach(async () => {
@@ -41,7 +44,7 @@ afterEach(async () => {
   stateDir = null;
 });
 
-describe.skip("task completion notify", () => {
+describe("task completion notify", () => {
   it("publishes the default completion report to the creator session on task.done", async () => {
     const created = dbCreateTask({
       title: "Notify smoke",
