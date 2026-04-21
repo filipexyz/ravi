@@ -93,6 +93,8 @@ Fluxo:
 
 Profiles podem declarar `runtimeDefaults: { model?, effort?, thinking? }`. Esse contrato é validado no manifesto e pinado em `profile_snapshot_json`, então uma task antiga continua com os defaults que tinha no momento da criação.
 
+`effort` usa a escala canônica do Ravi: `low|medium|high|xhigh`. O default é `xhigh`; qualquer valor inválido cai para esse default.
+
 Tasks e dispatches podem gravar `runtimeOverride` explícito via `--model`, `--effort` e `--thinking`. O override fica na task, na assignment ou no launch plan, e não usa `sessions set-model`.
 
 A precedência por campo é:
@@ -103,6 +105,7 @@ A precedência por campo é:
 4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
 5. `agent.model`
 6. modelo global do config
+7. `effort` default do runtime: `xhigh`
 
 O contexto explícito da task vence `session.modelOverride` porque a task é o contrato operacional do turno. A preferência da sessão permanece como fallback para turnos sem task ou para tasks sem default/override.
 

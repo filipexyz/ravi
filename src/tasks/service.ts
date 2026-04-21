@@ -71,7 +71,6 @@ import {
 import { publishTaskSessionPrompt } from "./session-publisher.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
 import {
-  TASK_RUNTIME_EFFORT_LEVELS,
   TASK_RUNTIME_THINKING_LEVELS,
   normalizeTaskRuntimeOptions,
   resolveTaskRuntimeOptions,
@@ -339,7 +338,7 @@ const TaskWorktreeInputSchema = z
 const TaskRuntimeOptionsSchema = z
   .object({
     model: z.string().trim().min(1).optional(),
-    effort: z.enum(TASK_RUNTIME_EFFORT_LEVELS).optional(),
+    effort: z.string().trim().min(1).optional(),
     thinking: z.enum(TASK_RUNTIME_THINKING_LEVELS).optional(),
   })
   .strict()

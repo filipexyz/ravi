@@ -53,7 +53,7 @@ function writeTaskProfile(
     inputs?: Array<{ key: string; defaultValue?: string }>;
     runtimeDefaults?: {
       model?: string;
-      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      effort?: "low" | "medium" | "high" | "xhigh";
       thinking?: "off" | "normal" | "verbose";
     };
     templateTexts?: {

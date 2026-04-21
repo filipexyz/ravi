@@ -151,12 +151,15 @@ O runtime:
 
 O modelo efetivo é resolvido por campo, sem mutar a sessão:
 
+`effort` usa `low|medium|high|xhigh`. O default é `xhigh`; qualquer valor inválido cai para esse default.
+
 1. `runtimeOverride` do dispatch ou launch plan
 2. `runtimeOverride` da task
 3. `profile.runtimeDefaults`
 4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
 5. `agent.model`
 6. modelo global do config
+7. `effort` default do runtime: `xhigh`
 
 O contexto da task vence a preferência da sessão porque dispatch/resume representam um contrato operacional explícito. A preferência da sessão continua valendo para turnos sem task e como fallback quando a task/profile não define aquele campo.
 

@@ -41,6 +41,7 @@ import type {
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
+import { toCodexRuntimeEffort } from "./effort.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
@@ -471,6 +472,7 @@ async function* normalizeCodexEvents(
   let previousSessionId = resolveCodexResumeId(input.resumeSession, input.resume, input.cwd);
   const outerAbortSignal = input.abortController.signal;
   const systemPromptAppend = await buildCodexSystemPromptAppend(input.cwd, input.systemPromptAppend, syncedSkillNames);
+  const effort = toCodexRuntimeEffort(input.effort);
 
   try {
     for await (const promptMessage of input.prompt) {
@@ -487,7 +489,7 @@ async function* normalizeCodexEvents(
         cwd: input.cwd,
         env: input.env ?? process.env,
         model: resolveCodexModelArg(input.model, defaultModel),
-        effort: resolveCodexEffortArg(input.effort),
+        effort,
         prompt: promptText,
         resume: previousSessionId,
         systemPromptAppend,
@@ -1427,6 +1429,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         });
 
         const resumeThreadId = currentThreadId ?? input.resume;
+        const effort = toCodexRuntimeEffort(input.effort);
         const threadResponse = resumeThreadId
           ? await sendRequest("thread/resume", {
               threadId: resumeThreadId,
@@ -1435,7 +1438,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               cwd: input.cwd,
               approvalPolicy: "never",
               sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: input.effort ? { model_reasoning_effort: input.effort } : null,
+              config: { model_reasoning_effort: effort },
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
               dynamicTools: input.dynamicTools ?? null,
@@ -1448,7 +1451,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               cwd: input.cwd,
               approvalPolicy: "never",
               sandbox: CODEX_APP_SERVER_SANDBOX,
-              config: input.effort ? { model_reasoning_effort: input.effort } : null,
+              config: { model_reasoning_effort: effort },
               serviceName: null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
@@ -1574,7 +1577,7 @@ function _createCodexCliTransport(options: { command?: string } = {}): CodexCliT
 
   return {
     startTurn(input) {
-      const args = buildExecArgs(input.resume, input.model, input.effort);
+      const args = buildExecArgs(input.resume, input.model, toCodexRuntimeEffort(input.effort));
       const child = spawn(command, args, {
         cwd: input.cwd,
         env: input.env,
@@ -1841,10 +1844,6 @@ function resolveCodexExecutionModel(model: string, fallbackModel: string): strin
   }
 
   return value;
-}
-
-function resolveCodexEffortArg(effort: string | undefined): string | undefined {
-  return effort === "max" ? "xhigh" : effort;
 }
 
 function normalizeDefaultCodexModel(fallbackModel: string): string | undefined {

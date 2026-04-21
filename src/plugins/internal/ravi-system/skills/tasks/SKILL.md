@@ -74,6 +74,8 @@ Resumo:
 
 Profiles podem declarar `runtimeDefaults: { model?, effort?, thinking? }`.
 
+`effort` usa a escala canônica do Ravi: `low|medium|high|xhigh`. O default é `xhigh`; qualquer valor inválido cai para esse default.
+
 `ravi tasks create` e `ravi tasks dispatch` aceitam overrides explícitos:
 
 ```bash
@@ -89,6 +91,7 @@ Precedência por campo:
 4. `session.modelOverride` / `session.thinkingLevel` de sessão humana existente
 5. `agent.model`
 6. config global
+7. `effort` default do runtime: `xhigh`
 
 Não use `ravi sessions set-model` como mecanismo interno de task. O runtime resolve model/effort/thinking no turno ligado à task por `taskBarrierTaskId`, sem mutar a sessão.
 

@@ -1,3 +1,7 @@
+import type { RuntimeEffort } from "./effort.js";
+
+export type { RuntimeEffort } from "./effort.js";
+
 export interface RuntimeUsage {
   inputTokens: number;
   outputTokens: number;
@@ -9,7 +13,6 @@ export type RuntimeBillingType = "api" | "subscription" | "unknown";
 
 export type RuntimeProviderId = string;
 export type RuntimeToolAccessMode = "restricted" | "unrestricted";
-export type RuntimeEffort = "low" | "medium" | "high" | "xhigh" | "max";
 export type RuntimeThinking = "off" | "normal" | "verbose";
 export type RuntimeToolAccessRequirement = "tool_and_executable" | "tool_surface";
 

@@ -24,8 +24,9 @@ describe("task runtime options", () => {
       configModel: "global-model",
     });
 
-    expect(resolved.options).toEqual({ model: "task-model", thinking: "verbose" });
+    expect(resolved.options).toEqual({ model: "task-model", effort: "xhigh", thinking: "verbose" });
     expect(resolved.sources.model).toBe("task_override");
+    expect(resolved.sources.effort).toBe("runtime_default");
     expect(resolved.sources.thinking).toBe("task_override");
   });
 
@@ -60,5 +61,19 @@ describe("task runtime options", () => {
     ).toBe("agent-model");
 
     expect(resolveTaskRuntimeOptions({ configModel: "global-model" }).options.model).toBe("global-model");
+  });
+
+  it("uses xhigh as the default effort and falls back to it for invalid effort values", () => {
+    const defaulted = resolveTaskRuntimeOptions({ configModel: "global-model" });
+    expect(defaulted.options.effort).toBe("xhigh");
+    expect(defaulted.sources.effort).toBe("runtime_default");
+
+    const invalid = resolveTaskRuntimeOptions({
+      task: { runtimeOverride: { effort: "invalid" as never } },
+      configModel: "global-model",
+    });
+
+    expect(invalid.options.effort).toBe("xhigh");
+    expect(invalid.sources.effort).toBe("task_override");
   });
 });

@@ -9,9 +9,16 @@ import type {
   TaskRuntimeResolution,
   TaskRuntimeThinking,
 } from "./types.js";
+import { DEFAULT_RUNTIME_EFFORT, RUNTIME_EFFORT_LEVELS, normalizeRuntimeEffort } from "../runtime/effort.js";
 
-export const TASK_RUNTIME_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export const TASK_RUNTIME_EFFORT_LEVELS = RUNTIME_EFFORT_LEVELS;
 export const TASK_RUNTIME_THINKING_LEVELS = ["off", "normal", "verbose"] as const;
+
+export interface TaskRuntimeOptionsInput {
+  model?: string | null;
+  effort?: string | null;
+  thinking?: string | null;
+}
 
 function normalizeTaskRuntimeString(value?: string | null): string | undefined {
   const normalized = value?.trim();
@@ -19,14 +26,7 @@ function normalizeTaskRuntimeString(value?: string | null): string | undefined {
 }
 
 export function normalizeTaskRuntimeEffort(value?: string | null): TaskRuntimeEffort | undefined {
-  const normalized = normalizeTaskRuntimeString(value)?.toLowerCase();
-  if (!normalized) {
-    return undefined;
-  }
-  if (!TASK_RUNTIME_EFFORT_LEVELS.includes(normalized as TaskRuntimeEffort)) {
-    throw new Error(`Invalid runtime effort: ${value}. Use ${TASK_RUNTIME_EFFORT_LEVELS.join("|")}.`);
-  }
-  return normalized as TaskRuntimeEffort;
+  return normalizeRuntimeEffort(value) as TaskRuntimeEffort | undefined;
 }
 
 export function normalizeTaskRuntimeThinking(value?: string | null): TaskRuntimeThinking | undefined {
@@ -40,9 +40,7 @@ export function normalizeTaskRuntimeThinking(value?: string | null): TaskRuntime
   return normalized as TaskRuntimeThinking;
 }
 
-export function normalizeTaskRuntimeOptions(
-  input?: Partial<TaskRuntimeOptions> | null,
-): TaskRuntimeOptions | undefined {
+export function normalizeTaskRuntimeOptions(input?: TaskRuntimeOptionsInput | null): TaskRuntimeOptions | undefined {
   if (!input) {
     return undefined;
   }
@@ -140,12 +138,12 @@ export function resolveTaskRuntimeOptions(input: {
   return {
     options: {
       ...(model.value ? { model: model.value } : {}),
-      ...(effort.value ? { effort: effort.value as TaskRuntimeEffort } : {}),
+      effort: (effort.value ?? DEFAULT_RUNTIME_EFFORT) as TaskRuntimeEffort,
       ...(thinking.value ? { thinking: thinking.value as TaskRuntimeThinking } : {}),
     },
     sources: {
       model: model.source,
-      effort: effort.source,
+      effort: effort.source ?? "runtime_default",
       thinking: thinking.source,
     },
     hasTaskRuntimeContext: Boolean(dispatchOverride || taskOverride || profileDefaults),

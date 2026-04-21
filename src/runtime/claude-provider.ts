@@ -20,6 +20,7 @@ import type {
   RuntimeStatus,
   SessionRuntimeProvider,
 } from "./types.js";
+import { toStrongestCompatibleRuntimeEffort } from "./effort.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
@@ -154,9 +155,10 @@ function buildClaudeQueryOptions(
   },
 ): Options {
   const thinking = resolveClaudeThinkingConfig(input.thinking);
+  const effort = toStrongestCompatibleRuntimeEffort(input.effort);
   return {
     model: input.model,
-    ...(input.effort ? { effort: input.effort as Options["effort"] } : {}),
+    effort: effort as Options["effort"],
     ...(thinking ? { thinking } : {}),
     cwd: input.cwd,
     ...(runtime.resumeSessionId ? { resume: runtime.resumeSessionId } : {}),

@@ -1,3 +1,5 @@
+import type { RuntimeEffort } from "../runtime/effort.js";
+
 export type TaskStatus = "open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed";
 
 export type TaskPriority = "low" | "normal" | "high" | "urgent";
@@ -22,7 +24,7 @@ export type TaskProfileArtifactKind = string;
 
 export type TaskProfileStateTransform = "identity" | "slug";
 
-export type TaskRuntimeEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type TaskRuntimeEffort = RuntimeEffort;
 
 export type TaskRuntimeThinking = "off" | "normal" | "verbose";
 
@@ -32,7 +34,8 @@ export type TaskRuntimeOptionsSource =
   | "profile_default"
   | "session_override"
   | "agent_default"
-  | "global_default";
+  | "global_default"
+  | "runtime_default";
 
 export interface TaskRuntimeOptions {
   model?: string;

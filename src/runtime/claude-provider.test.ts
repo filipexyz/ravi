@@ -261,7 +261,32 @@ describe("createClaudeRuntimeProvider", () => {
 
     expect(queryCalls).toHaveLength(1);
     expect(queryCalls[0]?.prompt).toBe("hello");
+    expect(queryCalls[0]?.options.effort).toBe("max");
     expect(queryCalls[0]?.options.pathToClaudeCodeExecutable).toBe("/opt/ravi/bin/native-runtime");
+  });
+
+  it("maps Ravi xhigh effort to the adapter strongest effort", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-effort" }];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        { effort: "xhigh" },
+      ),
+    );
+
+    await collectEvents(session.events);
+
+    expect(queryCalls).toHaveLength(1);
+    expect(queryCalls[0]?.options.effort).toBe("max");
   });
 
   it("updates active and subsequent query models without recreating the provider session", async () => {

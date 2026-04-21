@@ -25,7 +25,7 @@ type RuntimeStartRequest = {
     parent_tool_use_id: string | null;
   }>;
   model: string;
-  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  effort?: "low" | "medium" | "high" | "xhigh";
   thinking?: "off" | "normal" | "verbose";
   cwd: string;
   resume?: string;
@@ -232,12 +232,12 @@ function createDispatchedTaskForSession(
     taskDir?: string;
     taskRuntimeOverride?: {
       model?: string;
-      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      effort?: "low" | "medium" | "high" | "xhigh";
       thinking?: "off" | "normal" | "verbose";
     };
     dispatchRuntimeOverride?: {
       model?: string;
-      effort?: "low" | "medium" | "high" | "xhigh" | "max";
+      effort?: "low" | "medium" | "high" | "xhigh";
       thinking?: "off" | "normal" | "verbose";
     };
   } = {},

@@ -398,10 +398,11 @@ rl.on("line", (line) => {
     const completions = findEventsByType(events, "turn.complete");
 
     expect(calls[0]?.model).toBe("gpt-5.4");
+    expect(calls[0]?.effort).toBe("xhigh");
     expect(completions[0]?.execution?.model).toBe("gpt-5.4");
   });
 
-  it("normalizes unsupported max effort to the strongest Codex effort", async () => {
+  it("uses xhigh as the Codex effort when the requested effort is invalid", async () => {
     const { calls, transport } = createMockTransport([
       () => ({
         events: (async function* () {
@@ -413,7 +414,7 @@ rl.on("line", (line) => {
     ]);
 
     const provider = createCodexRuntimeProvider({ transport: transport as any, defaultModel: "gpt-5" });
-    const session = provider.startSession(makeStartRequest(["hello"], { effort: "max" }));
+    const session = provider.startSession(makeStartRequest(["hello"], { effort: "invalid" as never }));
 
     await collectEvents(session.events);
 
