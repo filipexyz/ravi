@@ -338,6 +338,8 @@ mock.module("./db.js", () => ({
 
 mock.module("./prompt-builder.js", () => ({
   buildSystemPrompt: () => "",
+  buildSystemPromptSections: () => [],
+  renderPromptSections: () => "",
   SILENT_TOKEN: "@@SILENT@@",
 }));
 
@@ -1108,7 +1110,7 @@ describe("RaviBot runtime guards", () => {
 
     expect(runtimeStartCalls).toHaveLength(2);
     expect(runtimeStartCalls[1]?.model).toBe("session-model");
-    expect(runtimeStartCalls[1]?.effort).toBeUndefined();
+    expect(runtimeStartCalls[1]?.effort).toBe("xhigh");
     expect(runtimeStartCalls[1]?.env?.RAVI_TASK_ID).toBeUndefined();
   });
 
@@ -1689,6 +1691,7 @@ describe("RaviBot runtime guards", () => {
       onTurnComplete: null,
       starting: false,
       compacting: false,
+      currentEffort: "xhigh",
       currentToolSafety: null,
       pendingAbort: false,
     });
@@ -1820,6 +1823,7 @@ describe("RaviBot streaming session lifecycle", () => {
       turnActive: false,
       onTurnComplete: null,
       compacting: false,
+      currentEffort: "xhigh",
       currentToolSafety: null,
       pendingAbort: false,
     });
@@ -1858,6 +1862,7 @@ describe("RaviBot streaming session lifecycle", () => {
       turnActive: false,
       onTurnComplete: null,
       compacting: false,
+      currentEffort: "xhigh",
       currentToolSafety: null,
       pendingAbort: false,
     });
@@ -1891,6 +1896,7 @@ describe("RaviBot streaming session lifecycle", () => {
       turnActive: false,
       onTurnComplete: null,
       compacting: false,
+      currentEffort: "xhigh",
       currentToolSafety: null,
       pendingAbort: false,
     };
@@ -1921,6 +1927,7 @@ describe("RaviBot streaming session lifecycle", () => {
       turnActive: false,
       onTurnComplete: null,
       compacting: false,
+      currentEffort: "xhigh",
       currentToolSafety: null,
       pendingAbort: false,
     };
