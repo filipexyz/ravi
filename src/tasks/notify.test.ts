@@ -9,7 +9,15 @@ const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
 
 mock.module("../nats.js", () => ({
+  closeNats: mock(async () => {}),
+  connectNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
   getNats: mock(() => ({})),
+  isExplicitConnect: mock(() => false),
+  publish: async (topic: string, data: Record<string, unknown>) => {
+    emittedTopics.push({ topic, data });
+  },
+  subscribe: async function* () {},
   nats: {
     emit: async (topic: string, data: Record<string, unknown>) => {
       emittedTopics.push({ topic, data });
@@ -17,18 +25,16 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-mock.module("../omni/session-stream.js", () => ({
-  publishSessionPrompt: async (sessionName: string, payload: Record<string, unknown>) => {
-    publishedPrompts.push({ sessionName, payload });
-  },
-}));
-
 const { blockTask, completeTask, emitTaskEvent } = await import("./service.js");
+const { setTaskSessionPromptPublisherForTests } = await import("./session-publisher.js");
 const { dbCreateTask, dbDeleteTask, dbDispatchTask } = await import("./task-db.js");
 const { getOrCreateSession } = await import("../router/sessions.js");
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-task-notify-test-");
+  setTaskSessionPromptPublisherForTests(async (sessionName: string, payload: Record<string, unknown>) => {
+    publishedPrompts.push({ sessionName, payload });
+  });
   getOrCreateSession("agent:main:creator-session", "main", "/tmp/ravi-main", { name: "creator-session" });
   getOrCreateSession("agent:main:ops-session", "main", "/tmp/ravi-main", { name: "ops-session" });
 });
@@ -36,6 +42,7 @@ beforeEach(async () => {
 afterEach(async () => {
   emittedTopics.length = 0;
   publishedPrompts.length = 0;
+  setTaskSessionPromptPublisherForTests();
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
     if (id) dbDeleteTask(id);
