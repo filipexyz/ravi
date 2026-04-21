@@ -152,6 +152,69 @@ describe("SessionCommands trace", () => {
     expect(output).toContain("Explanation:");
   });
 
+  it("prints the session system prompt without requiring a visible turn row", () => {
+    seedCliTrace();
+
+    const output = captureLogs(() => {
+      new SessionCommands().trace(
+        "cli-trace",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        false,
+        true,
+        false,
+        false,
+        undefined,
+        "1",
+        false,
+      );
+    });
+
+    expect(output).toContain("Session system prompt");
+    expect(output).toContain("systemPromptBlob=sha256:");
+    expect(output).toContain("CLI trace system prompt");
+    expect(output).not.toContain("turn.snapshot");
+  });
+
+  it("includes the session system prompt record in JSONL output", () => {
+    seedCliTrace();
+
+    const output = captureLogs(() => {
+      new SessionCommands().trace(
+        "cli-trace",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        false,
+        true,
+        false,
+        false,
+        undefined,
+        "1",
+        false,
+      );
+    });
+
+    const records = output
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { recordType: string; sha256?: string; contentText?: string });
+
+    expect(records.some((record) => record.recordType === "system_prompt" && record.sha256)).toBe(true);
+    expect(records.some((record) => record.recordType === "blob" && record.contentText?.includes("CLI trace"))).toBe(
+      true,
+    );
+  });
+
   it("prints structured JSONL records", () => {
     seedCliTrace();
 

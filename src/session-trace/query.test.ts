@@ -262,6 +262,22 @@ describe("querySessionTrace", () => {
     expect(trace.turns).toEqual([]);
   });
 
+  it("loads the latest session system prompt without requiring the turn in the visible timeline", () => {
+    const blobs = seedCompleteTrace();
+
+    const trace = querySessionTrace({
+      session: "trace-session",
+      limit: 2,
+      showSystemPrompt: true,
+    });
+
+    expect(trace.events.map((event) => event.eventType)).toEqual(["delivery.delivered", "turn.complete"]);
+    expect(trace.turns).toEqual([]);
+    expect(trace.systemPrompt?.sha256).toBe(blobs.systemPrompt.sha256);
+    expect(trace.systemPrompt?.turnId).toBe("turn-1");
+    expect(trace.blobsBySha256[blobs.systemPrompt.sha256]?.contentText).toBe("# Identity\nRavi system prompt");
+  });
+
   it("parses trace times from durations, epoch ms, and ISO timestamps", () => {
     const now = Date.UTC(2026, 3, 19, 12, 0, 0);
     expect(parseSessionTraceTime("2h", now)).toBe(now - 7_200_000);

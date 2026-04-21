@@ -140,10 +140,14 @@ Payload flags are explicit because prompts and request payloads can contain
 sensitive operational context:
 
 ```bash
+ravi sessions trace <name> --show-system-prompt
 ravi sessions trace <name> --turn <turn_id> --show-user-prompt
-ravi sessions trace <name> --turn <turn_id> --show-system-prompt
 ravi sessions trace <name> --turn <turn_id> --raw
 ```
+
+`--show-system-prompt` resolves the latest system prompt for the session; it
+does not require a visible `turn` row in the selected trace window. User prompt
+and raw request payloads remain turn/request-scoped.
 
 When reading a trace, first check whether the sequence reached
 `adapter.request`. If it did, Ravi built the final provider request. If it did

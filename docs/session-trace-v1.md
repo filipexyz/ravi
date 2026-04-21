@@ -172,7 +172,7 @@ Default human output shows the hashes and a short user prompt preview. Use
 explicit flags to print larger payloads:
 
 ```bash
-ravi sessions trace <session> --turn <turn_id> --show-system-prompt
+ravi sessions trace <session> --show-system-prompt
 ravi sessions trace <session> --turn <turn_id> --show-user-prompt
 ravi sessions trace <session> --turn <turn_id> --raw
 ```
@@ -216,6 +216,11 @@ ravi sessions trace <session> --show-system-prompt
 ravi sessions trace <session> --show-user-prompt
 ```
 
+`--show-system-prompt` is session-scoped: it loads the latest system prompt for
+the session even when the selected timeline window or `--limit` does not include
+the originating turn row. User prompt and raw request payload inspection stays
+scoped to concrete turns/requests.
+
 Time values accept:
 
 - relative durations: `30m`, `2h`, `1d`
@@ -237,6 +242,11 @@ Runtime: provider=<provider> model=<model> cwd=<cwd>
 Route: <channel>/<account>/<chat>
 Window: since <timestamp>
 Rows: events=<n> turns=<n>
+
+Session system prompt
+  sha=sha256:<hash> turn=<turn-id> run=<run-id> provider=<provider> model=<model> cwd=<worktree> source=turn recorded=<timestamp>
+  systemPromptBlob=sha256:<hash> kind=system_prompt bytes=<n>
+      <full system prompt when --show-system-prompt is set>
 
 14:10:01.100 channel.message.received
   source=whatsapp/<account>/<chat> messageId=<source-message-id>
@@ -378,8 +388,8 @@ Use hashes first. Print full blobs only for a specific turn and only in a local
 operator context:
 
 ```bash
+ravi sessions trace <session> --show-system-prompt
 ravi sessions trace <session> --turn <turn_id> --show-user-prompt
-ravi sessions trace <session> --turn <turn_id> --show-system-prompt
 ravi sessions trace <session> --turn <turn_id> --raw
 ```
 

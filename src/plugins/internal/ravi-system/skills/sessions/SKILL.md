@@ -136,10 +136,14 @@ ravi sessions trace <name> --since 30m --limit 40
 ravi sessions trace <name> --json
 
 # Payloads grandes só quando necessário
+ravi sessions trace <name> --show-system-prompt
 ravi sessions trace <name> --turn <turn_id> --show-user-prompt
-ravi sessions trace <name> --turn <turn_id> --show-system-prompt
 ravi sessions trace <name> --turn <turn_id> --raw
 ```
+
+`--show-system-prompt` resolve o system prompt mais recente da sessão e não
+depende do `turn` estar visível no recorte/limit. User prompt e raw request
+continuam escopados a turn/request.
 
 Leitura rápida:
 

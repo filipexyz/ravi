@@ -100,6 +100,7 @@ export interface SessionTraceQueryResult {
   session: string | null;
   sessionKey: string | null;
   sessionName: string | null;
+  systemPrompt: SessionTraceSystemPromptSnapshot | null;
   filters: {
     since: number | null;
     until: number | null;
@@ -117,6 +118,20 @@ export interface SessionTraceQueryResult {
   events: SessionEventRecord[];
   turns: SessionTurnRecord[];
   blobsBySha256: Record<string, SessionTraceBlobRecord>;
+}
+
+export interface SessionTraceSystemPromptSnapshot {
+  sha256: string;
+  turnId: string | null;
+  runId: string | null;
+  sessionKey: string;
+  sessionName: string | null;
+  agentId: string | null;
+  provider: string | null;
+  model: string | null;
+  cwd: string | null;
+  recordedAt: number;
+  source: "turn" | "adapter.request";
 }
 
 const EVENT_GROUP_ALIASES: Record<string, string> = {
@@ -540,6 +555,106 @@ function queryBlobs(shas: Iterable<string>): Record<string, SessionTraceBlobReco
   return Object.fromEntries(rows.map((row) => [row.sha256, rowToSessionTraceBlob(row)]));
 }
 
+function rowToSystemPromptSnapshot(
+  row: SessionTurnRow,
+  source: SessionTraceSystemPromptSnapshot["source"] = "turn",
+): SessionTraceSystemPromptSnapshot | null {
+  if (!row.system_prompt_sha256) return null;
+  return {
+    sha256: row.system_prompt_sha256,
+    turnId: row.turn_id,
+    runId: row.run_id,
+    sessionKey: row.session_key,
+    sessionName: row.session_name,
+    agentId: row.agent_id,
+    provider: row.provider,
+    model: row.model,
+    cwd: row.cwd,
+    recordedAt: row.started_at,
+    source,
+  };
+}
+
+function getEventSystemPromptSha(event: SessionEventRecord): string | null {
+  return getJsonPathString(event.payloadJson, ["system_prompt_sha256"]);
+}
+
+function getLatestSystemPromptFromTimeline(
+  events: SessionEventRecord[],
+  turns: SessionTurnRecord[],
+): SessionTraceSystemPromptSnapshot | null {
+  const turnSnapshots = turns
+    .filter((turn) => Boolean(turn.systemPromptSha256))
+    .map((turn) => ({
+      key: `${String(turn.startedAt).padStart(16, "0")}:turn:${turn.turnId}`,
+      snapshot: {
+        sha256: turn.systemPromptSha256!,
+        turnId: turn.turnId,
+        runId: turn.runId,
+        sessionKey: turn.sessionKey,
+        sessionName: turn.sessionName,
+        agentId: turn.agentId,
+        provider: turn.provider,
+        model: turn.model,
+        cwd: turn.cwd,
+        recordedAt: turn.startedAt,
+        source: "turn" as const,
+      },
+    }));
+
+  const eventSnapshots = events
+    .filter((event) => event.eventType === "adapter.request")
+    .map((event) => {
+      const sha256 = getEventSystemPromptSha(event);
+      if (!sha256) return null;
+      return {
+        key: `${String(event.timestamp).padStart(16, "0")}:event:${String(event.id).padStart(8, "0")}`,
+        snapshot: {
+          sha256,
+          turnId: event.turnId,
+          runId: event.runId,
+          sessionKey: event.sessionKey,
+          sessionName: event.sessionName,
+          agentId: event.agentId,
+          provider: event.provider,
+          model: event.model,
+          cwd: getJsonPathString(event.payloadJson, ["cwd"]),
+          recordedAt: event.timestamp,
+          source: "adapter.request" as const,
+        },
+      };
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return [...turnSnapshots, ...eventSnapshots].sort((a, b) => b.key.localeCompare(a.key))[0]?.snapshot ?? null;
+}
+
+function queryLatestSystemPromptSnapshot(input: SessionTraceQueryInput): SessionTraceSystemPromptSnapshot | null {
+  const where: string[] = ["system_prompt_sha256 IS NOT NULL"];
+  const params: SqlParam[] = [];
+
+  addSessionFilter(where, params, input.session, input.sessionKey, input.sessionName);
+  addExactFilter(where, params, "turn_id", input.turnId);
+  addExactFilter(where, params, "run_id", input.runId);
+
+  if (typeof input.until === "number" && Number.isFinite(input.until)) {
+    where.push("started_at <= ?");
+    params.push(input.until);
+  }
+
+  const row = getDb()
+    .prepare(`
+      SELECT *
+      FROM session_turns
+      WHERE ${where.join(" AND ")}
+      ORDER BY started_at DESC, updated_at DESC, turn_id DESC
+      LIMIT 1
+    `)
+    .get(...params) as SessionTurnRow | undefined;
+
+  return row ? rowToSystemPromptSnapshot(row) : null;
+}
+
 export function parseSessionTraceTime(value: string | undefined, now = Date.now()): number | undefined {
   const text = compactText(value);
   if (!text) return undefined;
@@ -580,6 +695,13 @@ export function querySessionTrace(input: SessionTraceQueryInput): SessionTraceQu
   const queriedTurns = input.includeTurns === false ? [] : queryTurns(input, queriedEvents, only);
   const { events, turns } = applyTimelineLimit(queriedEvents, queriedTurns, limit);
   const requestedBlobs = new Set<string>();
+  const systemPrompt = input.showSystemPrompt
+    ? (getLatestSystemPromptFromTimeline(events, turns) ?? queryLatestSystemPromptSnapshot(input))
+    : null;
+
+  if (systemPrompt) {
+    requestedBlobs.add(systemPrompt.sha256);
+  }
 
   for (const turn of turns) {
     if (input.raw && turn.requestBlobSha256) {
@@ -606,6 +728,7 @@ export function querySessionTrace(input: SessionTraceQueryInput): SessionTraceQu
     session: input.session ?? input.sessionName ?? input.sessionKey ?? null,
     sessionKey: firstTurn?.sessionKey ?? firstEvent?.sessionKey ?? input.sessionKey ?? null,
     sessionName: firstTurn?.sessionName ?? firstEvent?.sessionName ?? input.sessionName ?? null,
+    systemPrompt,
     filters: {
       since: input.since ?? null,
       until: input.until ?? null,

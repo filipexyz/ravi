@@ -782,10 +782,17 @@ function traceTurnSortKey(turn: SessionTurnRecord): string {
   return `${String(turn.startedAt).padStart(16, "0")}:0:${turn.turnId}`;
 }
 
+interface TracePromptPrintOptions {
+  raw?: boolean;
+  showSystemPrompt?: boolean;
+  showUserPrompt?: boolean;
+  sessionSystemPromptSha?: string | null;
+}
+
 function buildTraceEventDetailLines(
   trace: SessionTraceQueryResult,
   event: SessionEventRecord,
-  options: { raw?: boolean; showSystemPrompt?: boolean; showUserPrompt?: boolean },
+  options: TracePromptPrintOptions,
 ): string[] {
   const lines: string[] = [];
   const ids = [
@@ -851,7 +858,7 @@ function buildTraceEventDetailLines(
       const requestBlob = getBlob(trace, requestBlobSha);
       if (requestBlob) lines.push(...formatBlobLines("requestBlob", requestBlob));
     }
-    if (options.showSystemPrompt) {
+    if (options.showSystemPrompt && systemPromptSha !== options.sessionSystemPromptSha) {
       const systemPrompt = getBlob(trace, systemPromptSha);
       if (systemPrompt) lines.push(...formatBlobLines("systemPromptBlob", systemPrompt));
     }
@@ -878,7 +885,7 @@ function buildTraceEventDetailLines(
 function buildTraceTurnDetailLines(
   trace: SessionTraceQueryResult,
   turn: SessionTurnRecord,
-  options: { raw?: boolean; showSystemPrompt?: boolean; showUserPrompt?: boolean },
+  options: TracePromptPrintOptions,
 ): string[] {
   const lines = [
     [
@@ -915,7 +922,7 @@ function buildTraceTurnDetailLines(
     const requestBlob = getBlob(trace, turn.requestBlobSha256);
     if (requestBlob) lines.push(...formatBlobLines("requestBlob", requestBlob));
   }
-  if (options.showSystemPrompt) {
+  if (options.showSystemPrompt && turn.systemPromptSha256 !== options.sessionSystemPromptSha) {
     const systemPrompt = getBlob(trace, turn.systemPromptSha256);
     if (systemPrompt) lines.push(...formatBlobLines("systemPromptBlob", systemPrompt));
   }
@@ -923,6 +930,31 @@ function buildTraceTurnDetailLines(
     const userPrompt = getBlob(trace, turn.userPromptSha256);
     if (userPrompt) lines.push(...formatBlobLines("userPromptBlob", userPrompt));
   }
+
+  return lines;
+}
+
+function buildSessionSystemPromptLines(trace: SessionTraceQueryResult): string[] {
+  const prompt = trace.systemPrompt;
+  if (!prompt) return [];
+
+  const lines = [
+    [
+      `sha=${formatTraceSha(prompt.sha256)}`,
+      prompt.turnId ? `turn=${prompt.turnId}` : null,
+      prompt.runId ? `run=${prompt.runId}` : null,
+      prompt.provider ? `provider=${prompt.provider}` : null,
+      prompt.model ? `model=${prompt.model}` : null,
+      prompt.cwd ? `cwd=${prompt.cwd}` : null,
+      `source=${prompt.source}`,
+      `recorded=${formatTraceDateTime(prompt.recordedAt)}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ];
+
+  const blob = getBlob(trace, prompt.sha256);
+  if (blob) lines.push(...formatBlobLines("systemPromptBlob", blob));
 
   return lines;
 }
@@ -952,6 +984,19 @@ export function printSessionTraceHuman(
   console.log(`Window: ${formatTraceWindow(trace)}`);
   console.log(`Rows: events=${trace.events.length} turns=${trace.turns.length}\n`);
 
+  if (options.showSystemPrompt && trace.systemPrompt) {
+    console.log("Session system prompt");
+    for (const line of buildSessionSystemPromptLines(trace)) {
+      console.log(`  ${line}`);
+    }
+    console.log();
+  }
+
+  const tracePrintOptions: TracePromptPrintOptions = {
+    ...options,
+    sessionSystemPromptSha: trace.systemPrompt?.sha256 ?? null,
+  };
+
   const adapterTurnIds = new Set(
     trace.events
       .filter((event) => event.eventType === "adapter.request")
@@ -972,7 +1017,7 @@ export function printSessionTraceHuman(
   for (const item of items) {
     if (item.event) {
       console.log(`${formatTraceTimestamp(item.event.timestamp)} ${item.event.eventType}`);
-      for (const line of buildTraceEventDetailLines(trace, item.event, options)) {
+      for (const line of buildTraceEventDetailLines(trace, item.event, tracePrintOptions)) {
         console.log(`  ${line}`);
       }
       console.log();
@@ -981,7 +1026,7 @@ export function printSessionTraceHuman(
 
     if (item.turn) {
       console.log(`${formatTraceTimestamp(item.turn.startedAt)} turn.snapshot`);
-      for (const line of buildTraceTurnDetailLines(trace, item.turn, options)) {
+      for (const line of buildTraceTurnDetailLines(trace, item.turn, tracePrintOptions)) {
         console.log(`  ${line}`);
       }
       console.log();
@@ -1008,6 +1053,7 @@ export function buildSessionTraceJsonlRecords(
       session: trace.session,
       sessionKey: trace.sessionKey,
       sessionName: trace.sessionName,
+      systemPrompt: trace.systemPrompt,
       filters: trace.filters,
       counts: {
         events: trace.events.length,
@@ -1015,6 +1061,7 @@ export function buildSessionTraceJsonlRecords(
         blobs: Object.keys(trace.blobsBySha256).length,
       },
     },
+    ...(trace.systemPrompt ? [{ recordType: "system_prompt", ...trace.systemPrompt }] : []),
     ...timeline.map((item) => item.record),
     ...Object.values(trace.blobsBySha256).map((blob) => ({ recordType: "blob", ...blob })),
   ];
