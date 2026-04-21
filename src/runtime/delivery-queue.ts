@@ -183,7 +183,10 @@ export async function* createRuntimeMessageGenerator({
       continue;
     }
 
-    const yieldedIds = new Set(deliverable.map((message) => message.pendingId).filter(Boolean));
+    const yieldedIds = new Set(
+      deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
+    );
+    session.currentTurnPendingIds = [...yieldedIds];
     const combined = deliverable.map((m) => m.message.content).join("\n\n");
     log.info("Generator: yielding", {
       sessionName,
@@ -231,12 +234,15 @@ export async function* createRuntimeMessageGenerator({
       });
       session.interrupted = false;
     } else {
-      session.pendingMessages = session.pendingMessages.filter((message) => !yieldedIds.has(message.pendingId));
+      session.pendingMessages = session.pendingMessages.filter(
+        (message) => !message.pendingId || !yieldedIds.has(message.pendingId),
+      );
       log.info("Generator: turn complete", {
         sessionName,
         cleared: deliverable.length,
         remaining: session.pendingMessages.length,
       });
     }
+    session.currentTurnPendingIds = undefined;
   }
 }

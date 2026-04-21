@@ -128,6 +128,7 @@ The event types currently recorded by the Session Trace v1 implementation are:
 | `turn.failed` | `runtime` | Turn failed and the error was recorded. |
 | `turn.interrupted` | `runtime` | Turn was interrupted, aborted, timed out, or recoverably stopped before normal completion. |
 | `session.abort` | `session` | Session abort was requested, deferred, or executed. |
+| `session.stalled` | `session` | Active runtime turn stopped producing provider events and was recovered without resetting session history. |
 | `session.timeout` | `session` | Runtime idle timeout fired. |
 | `session.model_changed` | `session` | Live model change was applied without full restart. |
 
@@ -317,6 +318,7 @@ Current finding codes:
 | `delivery-failed` | Gateway recorded failed delivery. | Read delivery error/payload and channel instance status/config. |
 | `delivery-dropped` | Gateway intentionally dropped the response. | Usually missing target or channel routing issue. |
 | `interruption-or-abort` | Interrupt, abort, or interrupted turn was observed. | Read `session.abort`, `dispatch.interrupt_requested`, and `turn.interrupted`. |
+| `runtime-stalled` | Active turn stopped receiving provider events and was recovered as a failed turn. | Check preceding `tool.end`, `runtime.status`, and the recovery payload. |
 | `timeout` | Session idle timeout or turn timeout state was observed. | Check `session.timeout`, turn `abortReason`, and prior tool/runtime rows. |
 | `resume-disabled-with-provider-session` | Resume was false despite an existing provider session id. | Inspect provider continuity, reset/delete/model/provider changes. |
 | `tool-start-without-end` | Tool started but no matching `tool.end` was recorded. | Check interruption, unsafe deferred abort, adapter stream loss. |
@@ -407,6 +409,8 @@ ravi sessions trace <session> --turn <turn_id> --raw
 - `response.emitted` but no `delivery.*`: gateway/outbound observation gap.
 - `delivery.failed` or `delivery.dropped`: channel delivery issue or missing
   target.
+- `session.stalled`: a failed tool or inactive provider stream was closed as a
+  recoverable failed turn; inspect the preceding `tool.end` and recovery prompt.
 - `turn.interrupted`, `session.abort`, or `session.timeout`: read `abortReason`,
   status, queue, and prior tool rows.
 
@@ -446,6 +450,8 @@ ravi sessions trace <session> --turn <turn_id> --explain
 Common reads:
 
 - `runtime.status status=compacting` before the gap suggests context compaction.
+- `session.stalled` means Ravi closed a silent runtime turn without resetting
+  session history.
 - `session.timeout` means the idle watchdog aborted the runtime.
 - `tool.start` without `tool.end` suggests interruption during tool execution or
   missing provider completion event.

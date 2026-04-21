@@ -358,6 +358,18 @@ describe("explainSessionTrace", () => {
       payloadJson: { emitId: "emit-other" },
       error: "channel rejected message",
     });
+    recordSessionEvent({
+      sessionKey: "agent:main:bad-trace",
+      sessionName: "bad-trace",
+      runId: "run-2",
+      turnId: "turn-2",
+      eventType: "session.stalled",
+      eventGroup: "session",
+      status: "stalled",
+      timestamp: 60,
+      createdAt: 60,
+      error: "Runtime turn stalled after failed tool",
+    });
 
     const explanation = explainSessionTrace(querySessionTrace({ session: "bad-trace" }));
     const codes = explanation.findings.map((finding) => finding.code);
@@ -366,6 +378,7 @@ describe("explainSessionTrace", () => {
     expect(codes).toContain("adapter-request-without-terminal-turn");
     expect(codes).toContain("response-without-delivery");
     expect(codes).toContain("delivery-failed");
+    expect(codes).toContain("runtime-stalled");
     expect(codes).toContain("resume-disabled-with-provider-session");
     expect(codes).toContain("tool-start-without-end");
   });

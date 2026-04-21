@@ -206,6 +206,20 @@ export function explainSessionTrace(trace: SessionTraceQueryResult): SessionTrac
   }
 
   for (const event of events) {
+    if (event.eventType === "session.stalled") {
+      addFinding(findings, {
+        severity: "error",
+        code: "runtime-stalled",
+        title: "Runtime stalled and recovered",
+        detail: event.error ?? event.preview ?? "The runtime stopped receiving provider events during an active turn.",
+        eventIds: [event.id],
+        turnId: event.turnId,
+        runId: event.runId,
+        timestamp: event.timestamp,
+        hint: "Inspect the preceding tool/runtime events. A stalled turn is closed as failed without resetting session history.",
+      });
+    }
+
     if (
       event.eventType === "turn.interrupted" ||
       event.eventType === "session.abort" ||

@@ -163,6 +163,7 @@ Common incident cues from `--explain`:
 | `response-without-delivery` | Ravi emitted a response, but the gateway did not record final delivery. |
 | `delivery-failed` / `delivery-dropped` | Outbound channel delivery failed or was intentionally dropped, often because of target/routing. |
 | `interruption-or-abort` | A turn was interrupted or an abort was requested. Read `abortReason` and nearby `dispatch.*` rows. |
+| `runtime-stalled` | Active runtime turn stopped receiving provider events and was recovered as a failed turn without resetting session history. |
 | `timeout` | Runtime idle timeout or turn timeout was observed. |
 | `resume-disabled-with-provider-session` | Resume was disabled even though a provider session id existed; inspect reset, delete, fork, provider switch, or model/runtime changes. |
 | `tool-start-without-end` | Tool began but no completion event was recorded. |
@@ -185,6 +186,7 @@ Classify the gap by the last reliable row:
 | `route.resolved` without `prompt.published` | session stream publish |
 | `prompt.published` without `adapter.request` | dispatch, task barrier, debounce, concurrency, or runtime startup |
 | `adapter.request` without terminal turn | provider/runtime after handoff |
+| `session.stalled` | silent runtime turn recovered as failed; inspect preceding tool/runtime rows |
 | `assistant.message` without `response.emitted` | silent/no-response behavior, suppression, or interruption |
 | `response.emitted` without `delivery.*` | gateway or outbound observation |
 | `delivery.failed` / `delivery.dropped` | final channel delivery |

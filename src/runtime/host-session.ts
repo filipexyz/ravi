@@ -1,6 +1,7 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
 import type {
+  RuntimeEventMetadata,
   RuntimeEffort,
   RuntimePromptMessage,
   RuntimeProviderId,
@@ -56,6 +57,13 @@ export interface RuntimeHostStreamingSession {
   currentToolId?: string;
   currentToolName?: string;
   toolStartTime?: number;
+  lastToolFailure?: {
+    at: number;
+    toolId?: string;
+    toolName?: string;
+    output?: unknown;
+    metadata?: RuntimeEventMetadata;
+  };
   /** Activity tracking */
   lastActivity: number;
   /** Whether the event loop is done (session ended) */
@@ -80,6 +88,8 @@ export interface RuntimeHostStreamingSession {
   agentMode?: string;
   /** Session trace run ID for this live runtime process. */
   traceRunId?: string;
+  /** Pending message ids yielded to the currently active provider turn. */
+  currentTurnPendingIds?: string[];
   /** Current Session Trace turn ID while a provider turn is active. */
   currentTraceTurnId?: string;
   currentTraceTurnStartedAt?: number;
@@ -87,6 +97,8 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Prevents duplicate recovery for the same stuck runtime process. */
+  stallRecoveryRequested?: boolean;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
