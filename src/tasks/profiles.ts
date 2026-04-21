@@ -36,6 +36,33 @@ const WORKSPACE_PROFILE_SEGMENTS = [".ravi", "task-profiles"] as const;
 const LEGACY_PROFILE_DRIVER_KEY = "driver";
 const LEGACY_TASK_DOCUMENT_TOP_LEVEL_KEY = "taskDoc" + "Mode";
 const LEGACY_TASK_DOCUMENT_SYNC_KEY = "taskDoc" + "First";
+const DEFAULT_TASK_PROFILE_CATALOG_CACHE_TTL_MS = 10_000;
+
+let taskProfileCatalogCache:
+  | {
+      key: string;
+      expiresAt: number;
+      catalog: Map<string, TaskProfileSnapshot>;
+    }
+  | undefined;
+
+function getTaskProfileCatalogCacheTtlMs(): number {
+  const rawValue = process.env.RAVI_TASK_PROFILE_CATALOG_CACHE_MS;
+  if (!rawValue) {
+    return DEFAULT_TASK_PROFILE_CATALOG_CACHE_TTL_MS;
+  }
+
+  const parsed = Number(rawValue);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : DEFAULT_TASK_PROFILE_CATALOG_CACHE_TTL_MS;
+}
+
+function getTaskProfileCatalogCacheKey(): string {
+  return [resolvePath(process.cwd()), getRaviStateDir()].join("\0");
+}
+
+export function invalidateTaskProfileCatalogCache(): void {
+  taskProfileCatalogCache = undefined;
+}
 
 function expandProfileHomePath(path: string): string {
   if (!path.startsWith("~")) {
@@ -559,6 +586,18 @@ function loadUserProfiles(): TaskProfileSnapshot[] {
 }
 
 function loadTaskProfileCatalog(): Map<string, TaskProfileSnapshot> {
+  const cacheTtlMs = getTaskProfileCatalogCacheTtlMs();
+  const cacheKey = getTaskProfileCatalogCacheKey();
+  const now = Date.now();
+  if (
+    cacheTtlMs > 0 &&
+    taskProfileCatalogCache &&
+    taskProfileCatalogCache.key === cacheKey &&
+    taskProfileCatalogCache.expiresAt > now
+  ) {
+    return taskProfileCatalogCache.catalog;
+  }
+
   const catalog = new Map<string, TaskProfileSnapshot>();
   const sources: Record<TaskProfileSourceKind, TaskProfileSnapshot[]> = {
     system: buildSystemProfiles(),
@@ -571,6 +610,14 @@ function loadTaskProfileCatalog(): Map<string, TaskProfileSnapshot> {
     for (const profile of sources[sourceKind]) {
       catalog.set(profile.id, profile);
     }
+  }
+
+  if (cacheTtlMs > 0) {
+    taskProfileCatalogCache = {
+      key: cacheKey,
+      expiresAt: now + cacheTtlMs,
+      catalog,
+    };
   }
 
   return catalog;
@@ -1829,6 +1876,7 @@ export function initTaskProfileScaffold(
   };
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  invalidateTaskProfileCatalogCache();
 
   return {
     sourceKind,

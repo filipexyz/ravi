@@ -31,6 +31,7 @@ const USER_PLUGINS_DIR = join(homedir(), "ravi", "plugins");
 
 /** Track if internal plugins have been extracted this session */
 let internalPluginsExtracted = false;
+let lastPluginDiscoveryLogKey: string | undefined;
 
 /**
  * Extract internal plugins to temp directory.
@@ -121,12 +122,20 @@ export function discoverPlugins(): PluginSpec[] {
   const all = [...internal, ...user];
 
   if (all.length > 0) {
-    log.info("Plugins discovered", {
+    const payload = {
       internal: internal.length,
       user: user.length,
       total: all.length,
       names: all.map((p) => p.path.split("/").pop()),
-    });
+    };
+    const discoveryLogKey = all.map((plugin) => plugin.path).join("\0");
+
+    if (discoveryLogKey === lastPluginDiscoveryLogKey) {
+      log.debug("Plugins discovered", payload);
+    } else {
+      log.info("Plugins discovered", payload);
+      lastPluginDiscoveryLogKey = discoveryLogKey;
+    }
   }
 
   return all;

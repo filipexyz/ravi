@@ -6,9 +6,13 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import systemProfilesRaw from "./profile-catalog/system-profiles.json" with { type: "json" };
 
 let pluginDescriptors: Array<{ path: string }> = [];
+let discoverPluginsCalls = 0;
 
 mock.module("../plugins/index.js", () => ({
-  discoverPlugins: () => pluginDescriptors,
+  discoverPlugins: () => {
+    discoverPluginsCalls += 1;
+    return pluginDescriptors;
+  },
 }));
 
 const {
@@ -16,6 +20,7 @@ const {
   dbDeleteTask,
   getTaskDetails,
   initTaskProfileScaffold,
+  invalidateTaskProfileCatalogCache,
   listTaskProfiles,
   previewTaskProfile,
   requireTaskProfileDefinition,
@@ -181,6 +186,8 @@ function writeTaskProfile(
 }
 
 afterEach(async () => {
+  invalidateTaskProfileCatalogCache();
+
   while (createdTaskIds.length > 0) {
     const taskId = createdTaskIds.pop();
     if (taskId) {
@@ -198,6 +205,7 @@ afterEach(async () => {
   }
 
   pluginDescriptors = [];
+  discoverPluginsCalls = 0;
   process.chdir(originalCwd);
 });
 
@@ -206,6 +214,34 @@ describe("task profile catalog", () => {
     expect(() => resolveTaskProfile("missing-profile")).toThrow(
       "Unknown task profile: missing-profile. Available profiles:",
     );
+  });
+
+  it("caches task profile catalog lookups within the process", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-cache-");
+    await createIsolatedRaviState("ravi-task-profiles-cache-state-");
+    process.chdir(workspaceDir);
+
+    expect(discoverPluginsCalls).toBe(0);
+
+    resolveTaskProfile("default");
+    resolveTaskProfile("default");
+
+    expect(discoverPluginsCalls).toBe(1);
+  });
+
+  it("invalidates the cached catalog after scaffolding a profile", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-cache-init-");
+    await createIsolatedRaviState("ravi-task-profiles-cache-init-state-");
+    process.chdir(workspaceDir);
+
+    expect(listTaskProfiles().some((profile) => profile.id === "cache-scaffold")).toBeFalse();
+
+    initTaskProfileScaffold("cache-scaffold", "runtime-only", {
+      sourceKind: "workspace",
+      cwd: workspaceDir,
+    });
+
+    expect(requireTaskProfileDefinition("cache-scaffold").sourceKind).toBe("workspace");
   });
 
   it("resolves precedence across system, plugin, workspace, and user sources", async () => {
