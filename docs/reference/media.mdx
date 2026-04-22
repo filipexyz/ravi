@@ -172,14 +172,19 @@ The transcribed text from the voice message
 
 ## Image Generation
 
-Generate images from text prompts using Google Gemini models.
+Generate images from text prompts using the configured image provider. Ravi supports Gemini and OpenAI image models.
+There is no automatic provider fallback: if the selected provider fails, the command fails. Retry explicitly with another `--provider` if needed.
 
 ### Environment Variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key |
-| `GEMINI_IMAGE_MODEL` | No | Override model selection (ignores `--mode`) |
+| `GEMINI_API_KEY` | Gemini only | Google Gemini API key |
+| `GEMINI_IMAGE_MODEL` | No | Override Gemini model selection |
+| `OPENAI_API_KEY` | OpenAI only | OpenAI API key |
+| `OPENAI_IMAGE_MODEL` | No | Override OpenAI model selection |
+| `RAVI_IMAGE_PROVIDER` | No | Global env default provider (`gemini` or `openai`) |
+| `RAVI_IMAGE_MODEL` | No | Global env default model |
 
 ### Models
 
@@ -188,11 +193,16 @@ Generate images from text prompts using Google Gemini models.
 | `fast` (default) | `gemini-3.1-flash-image-preview` | Fast generation, good for iteration |
 | `quality` | `gemini-3-pro-image-preview` | Higher detail, slower |
 
+OpenAI can be selected with `--provider openai --model gpt-image-2` or via defaults.
+
 ### CLI Usage
 
 ```bash
 # Basic generation
 ravi image generate "a purple cat floating in space"
+
+# OpenAI Image2
+ravi image generate "a diagram of Ravi image generation" --provider openai --model gpt-image-2
 
 # Quality mode (slower, more detail)
 ravi image generate "product photo of sneakers" --mode quality
@@ -217,13 +227,27 @@ ravi image generate "product mockup" -o /tmp/mockups
 
 | Flag | Description | Default |
 |---|---|---|
+| `--provider <provider>` | `gemini` or `openai` | Session/instance/global/env default |
+| `--model <model>` | Provider model override | Provider default |
 | `--mode <type>` | `fast` (Flash) or `quality` (Pro) | `fast` |
 | `--source <path>` | Source image for editing | -- |
 | `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` | Auto |
 | `--size <size>` | `1K`, `2K`, `4K` | `1K` |
+| `--quality <quality>` | OpenAI quality: `low`, `medium`, `high`, `auto` | Mode/provider default |
+| `--format <format>` | OpenAI output: `png`, `jpeg`, `webp` | `png` |
+| `--compression <0-100>` | OpenAI jpeg/webp compression | Provider default |
+| `--background <mode>` | OpenAI background: `transparent`, `opaque`, `auto` | Provider default |
 | `-o, --output <dir>` | Output directory | `/tmp` |
 | `--send` | Send to the current chat | `false` |
 | `--caption <text>` | Caption when using `--send` | The prompt text |
+
+### Defaults
+
+Configure an instance default so agents in that instance do not need to pass provider/model flags:
+
+```bash
+ravi instances set main defaults '{"image_provider":"openai","image_model":"gpt-image-2","image_quality":"auto","image_format":"png"}'
+```
 
 ### Source Image Editing
 
@@ -233,7 +257,7 @@ Pass an existing image with `--source` to use it as a reference for editing. Sup
 ravi image generate "make this photo look like a watercolor painting" --source /tmp/photo.jpg
 ```
 
-The source image is sent to Gemini alongside the text prompt, allowing the model to transform, edit, or use the image as reference.
+The source image is sent to the selected provider alongside the text prompt, allowing the model to transform, edit, or use the image as reference.
 
 ### Output
 

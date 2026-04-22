@@ -463,7 +463,16 @@ function getOmniClient() {
   return createOmniClient({ baseUrl: conn.apiUrl, apiKey: conn.apiKey });
 }
 
-const SETTABLE_KEYS = ["agent", "dmPolicy", "groupPolicy", "dmScope", "instanceId", "channel", "enabled"] as const;
+const SETTABLE_KEYS = [
+  "agent",
+  "dmPolicy",
+  "groupPolicy",
+  "dmScope",
+  "instanceId",
+  "channel",
+  "enabled",
+  "defaults",
+] as const;
 type SettableKey = (typeof SETTABLE_KEYS)[number];
 
 const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy", "channel"] as const;
@@ -592,6 +601,9 @@ export class InstancesCommands {
     printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META);
     printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META);
     if (inst.dmScope) printInspectionField("DM Scope", inst.dmScope, CONFIG_DB_META);
+    if (inst.defaults && Object.keys(inst.defaults).length > 0) {
+      printInspectionField("Defaults", JSON.stringify(inst.defaults), CONFIG_DB_META);
+    }
     if (inst.instanceId) {
       printInspectionField("Connected", omniInfo.isConnected ?? "unknown", LIVE_OMNI_META);
       if (omniInfo.profileName) printInspectionField("Profile", omniInfo.profileName, LIVE_OMNI_META);
@@ -731,6 +743,20 @@ export class InstancesCommands {
       if (clear) fail("enabled cannot be cleared");
       jsonValue = parseEnabledValue(value);
       dbUpdateInstance(name, { enabled: jsonValue as boolean });
+    } else if (key === "defaults") {
+      if (clear) {
+        dbUpdateInstance(name, { defaults: null });
+      } else {
+        try {
+          jsonValue = JSON.parse(value);
+          if (typeof jsonValue !== "object" || jsonValue === null || Array.isArray(jsonValue)) {
+            fail(`defaults must be a JSON object, e.g. '{"image_provider":"openai","image_model":"gpt-image-2"}'`);
+          }
+        } catch {
+          fail(`defaults must be valid JSON object, e.g. '{"image_provider":"openai","image_model":"gpt-image-2"}'`);
+        }
+        dbUpdateInstance(name, { defaults: jsonValue as Record<string, unknown> });
+      }
     }
 
     const updated = dbGetInstance(name);

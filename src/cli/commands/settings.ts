@@ -61,6 +61,41 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       }
     },
   },
+  "image.provider": {
+    description: "Global default image provider (gemini or openai)",
+    validate: (value: string) => {
+      if (!["gemini", "openai"].includes(value)) {
+        throw new Error("Invalid value. Must be one of: gemini, openai");
+      }
+    },
+  },
+  "image.model": {
+    description: "Global default image model override",
+  },
+  "image.mode": {
+    description: "Global default image mode (fast or quality)",
+    validate: (value: string) => {
+      if (!["fast", "quality"].includes(value)) {
+        throw new Error("Invalid value. Must be one of: fast, quality");
+      }
+    },
+  },
+  "image.quality": {
+    description: "Global default OpenAI image quality (low, medium, high, auto)",
+    validate: (value: string) => {
+      if (!["low", "medium", "high", "auto"].includes(value)) {
+        throw new Error("Invalid value. Must be one of: low, medium, high, auto");
+      }
+    },
+  },
+  "image.format": {
+    description: "Global default OpenAI image output format (png, jpeg, webp)",
+    validate: (value: string) => {
+      if (!["png", "jpeg", "webp"].includes(value)) {
+        throw new Error("Invalid value. Must be one of: png, jpeg, webp");
+      }
+    },
+  },
   "whatsapp.groupPolicy": {
     description: `WhatsApp group policy (${GROUP_POLICIES.join(", ")})`,
     validate: (value: string) => {
@@ -105,6 +140,7 @@ function printJson(payload: unknown): void {
 function knownSettingDefault(key: string): string | null {
   if (key === "defaultAgent") return "main";
   if (key === "defaultDmScope") return "per-peer";
+  if (key === "image.mode") return "fast";
   return null;
 }
 

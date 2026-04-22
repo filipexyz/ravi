@@ -103,6 +103,7 @@ export const InstanceInputSchema = z.object({
   groupPolicy: GroupPolicySchema.default("open"),
   dmScope: DmScopeSchema.optional(),
   enabled: z.boolean().default(true),
+  defaults: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ============================================================================
@@ -167,6 +168,7 @@ interface InstanceRow {
   group_policy: string;
   dm_scope: string | null;
   enabled: number | null;
+  defaults: string | null;
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
@@ -197,6 +199,7 @@ export interface InstanceConfig {
   groupPolicy: "open" | "allowlist" | "closed";
   dmScope?: DmScope;
   enabled?: boolean;
+  defaults?: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -582,6 +585,7 @@ function getDb(): Database {
       group_policy TEXT NOT NULL DEFAULT 'open' CHECK(group_policy IN ('open','allowlist','closed')),
       dm_scope     TEXT CHECK(dm_scope IS NULL OR dm_scope IN ('main','per-peer','per-channel-peer','per-account-channel-peer')),
       enabled      INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      defaults     TEXT,
       created_at   INTEGER NOT NULL,
       updated_at   INTEGER NOT NULL
     );
@@ -1018,6 +1022,10 @@ function getDb(): Database {
     db.exec("ALTER TABLE instances ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1");
     log.info("Added enabled column to instances table");
   }
+  if (!instanceColumnsNow.some((c) => c.name === "defaults")) {
+    db.exec("ALTER TABLE instances ADD COLUMN defaults TEXT");
+    log.info("Added defaults column to instances table");
+  }
 
   const contextColumns = db.prepare("PRAGMA table_info(contexts)").all() as Array<{ name: string }>;
   if (contextColumns.length > 0 && !contextColumns.some((c) => c.name === "context_id")) {
@@ -1358,8 +1366,8 @@ function getStatements(): PreparedStatements {
     `),
     // Instances
     upsertInstance: database.prepare(`
-      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO instances (name, instance_id, channel, agent, dm_policy, group_policy, dm_scope, enabled, defaults, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(name) DO UPDATE SET
         instance_id  = excluded.instance_id,
         channel      = excluded.channel,
@@ -1368,6 +1376,7 @@ function getStatements(): PreparedStatements {
         group_policy = excluded.group_policy,
         dm_scope     = excluded.dm_scope,
         enabled      = excluded.enabled,
+        defaults     = excluded.defaults,
         updated_at   = excluded.updated_at
     `),
     getInstanceByName: database.prepare("SELECT * FROM instances WHERE name = ? AND deleted_at IS NULL"),
@@ -1383,6 +1392,7 @@ function getStatements(): PreparedStatements {
         group_policy = ?,
         dm_scope     = ?,
         enabled      = ?,
+        defaults     = ?,
         updated_at   = ?
       WHERE name = ?
     `),
@@ -1532,6 +1542,13 @@ function rowToInstance(row: InstanceRow): InstanceConfig {
   if (row.dm_scope) {
     const parsed = DmScopeSchema.safeParse(row.dm_scope);
     if (parsed.success) result.dmScope = parsed.data;
+  }
+  if (row.defaults) {
+    try {
+      result.defaults = JSON.parse(row.defaults);
+    } catch {
+      // Ignore invalid JSON so a bad defaults blob does not break instance listing.
+    }
   }
   if (row.deleted_at) result.deletedAt = row.deleted_at;
   return result;
@@ -2027,6 +2044,7 @@ export function dbUpsertInstance(input: z.input<typeof InstanceInputSchema>): In
     validated.groupPolicy,
     validated.dmScope ?? null,
     validated.enabled ? 1 : 0,
+    validated.defaults ? JSON.stringify(validated.defaults) : null,
     now,
     now,
   );
@@ -2054,7 +2072,9 @@ export function dbListInstances(): InstanceConfig[] {
 
 export function dbUpdateInstance(
   name: string,
-  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt">>,
+  updates: Partial<Omit<InstanceConfig, "name" | "createdAt" | "updatedAt" | "defaults">> & {
+    defaults?: Record<string, unknown> | null;
+  },
 ): InstanceConfig {
   const s = getStatements();
   const row = s.getInstanceByName.get(name) as InstanceRow | undefined;
@@ -2074,6 +2094,7 @@ export function dbUpdateInstance(
     updates.groupPolicy ?? row.group_policy,
     updates.dmScope !== undefined ? (updates.dmScope ?? null) : row.dm_scope,
     updates.enabled !== undefined ? (updates.enabled ? 1 : 0) : (row.enabled ?? 1),
+    updates.defaults !== undefined ? (updates.defaults ? JSON.stringify(updates.defaults) : null) : row.defaults,
     now,
     name,
   );

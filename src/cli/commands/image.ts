@@ -1,5 +1,5 @@
 /**
- * Image Commands — Generate images via Gemini Nano Banana 2
+ * Image Commands — provider-agnostic image generation.
  */
 
 import "reflect-metadata";
@@ -7,8 +7,23 @@ import { resolve, basename } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
 import { nats } from "../../nats.js";
-import { generateImage } from "../../image/generator.js";
+import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
+import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
+
+function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = defaults?.[key];
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function parseCompression(value?: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || String(parsed) !== value.trim() || parsed < 0 || parsed > 100) {
+    fail("Invalid compression. Must be an integer between 0 and 100.");
+  }
+  return parsed;
+}
 
 @Group({
   name: "image",
@@ -18,12 +33,16 @@ import { getAgent } from "../../router/config.js";
 export class ImageCommands {
   @Command({
     name: "generate",
-    description: "Generate an image from a text prompt using Gemini Nano Banana 2",
+    description: "Generate an image from a text prompt",
   })
   async generate(
     @Arg("prompt", { description: "Text prompt describing the image to generate" })
     prompt: string,
-    @Option({ flags: "--mode <type>", description: "Model: fast (3.1 Flash) or quality (3 Pro). Default: fast" })
+    @Option({ flags: "--provider <provider>", description: "Image provider: gemini or openai" })
+    provider?: string,
+    @Option({ flags: "--model <model>", description: "Provider image model override" })
+    model?: string,
+    @Option({ flags: "--mode <type>", description: "Legacy quality mode: fast or quality. Default: fast" })
     mode?: string,
     @Option({ flags: "--source <path>", description: "Source image path for editing/reference" })
     source?: string,
@@ -33,6 +52,14 @@ export class ImageCommands {
     aspect?: string,
     @Option({ flags: "--size <size>", description: "Image size: 1K, 2K, 4K (default: 1K)" })
     size?: string,
+    @Option({ flags: "--quality <quality>", description: "OpenAI quality: low, medium, high, auto" })
+    quality?: string,
+    @Option({ flags: "--format <format>", description: "OpenAI output format: png, jpeg, webp" })
+    format?: string,
+    @Option({ flags: "--compression <0-100>", description: "OpenAI jpeg/webp output compression" })
+    compression?: string,
+    @Option({ flags: "--background <mode>", description: "OpenAI background: transparent, opaque, auto" })
+    background?: string,
     @Option({ flags: "--send", description: "Auto-send generated image to the current chat" })
     send?: boolean,
     @Option({ flags: "--caption <text>", description: "Caption when sending (used with --send)" })
@@ -40,23 +67,96 @@ export class ImageCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    // Resolve agent defaults (CLI flags take precedence)
-    const agentId = getContext()?.agentId;
+    // Resolve defaults: explicit flag > agent > instance > global setting > env.
+    // There is intentionally no implicit provider fallback: if the selected
+    // provider fails, the command fails. Operators can retry with --provider.
+    const ctx = getContext();
+    const agentId = ctx?.agentId;
     const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
+    const accountId = ctx?.source?.accountId;
+    const instance = accountId ? (dbGetInstance(accountId) ?? dbGetInstanceByInstanceId(accountId)) : undefined;
+    const instanceDefaults = instance?.defaults;
 
-    const modeVal = mode ?? (defaults?.image_mode as string) ?? "fast";
-    const resolvedMode = modeVal === "quality" ? "quality" : "fast";
-    const resolvedAspect = aspect ?? (defaults?.image_aspect as string);
-    const resolvedSize = size ?? (defaults?.image_size as string);
+    const resolvedProvider =
+      provider ??
+      stringDefault(defaults, "image_provider") ??
+      stringDefault(instanceDefaults, "image_provider") ??
+      dbGetSetting("image.provider") ??
+      process.env.RAVI_IMAGE_PROVIDER;
+    const normalizedProvider = normalizeImageProvider(resolvedProvider);
+    if (!normalizedProvider) {
+      fail(
+        "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
+      );
+    }
+
+    const resolvedModel =
+      model ??
+      stringDefault(defaults, "image_model") ??
+      stringDefault(instanceDefaults, "image_model") ??
+      dbGetSetting("image.model") ??
+      process.env.RAVI_IMAGE_MODEL;
+
+    const modeVal =
+      mode ??
+      stringDefault(defaults, "image_mode") ??
+      stringDefault(instanceDefaults, "image_mode") ??
+      dbGetSetting("image.mode") ??
+      "fast";
+    const resolvedMode: ImageMode = modeVal === "quality" ? "quality" : "fast";
+    const resolvedAspect =
+      aspect ??
+      stringDefault(defaults, "image_aspect") ??
+      stringDefault(instanceDefaults, "image_aspect") ??
+      dbGetSetting("image.aspect") ??
+      undefined;
+    const resolvedSize =
+      size ??
+      stringDefault(defaults, "image_size") ??
+      stringDefault(instanceDefaults, "image_size") ??
+      dbGetSetting("image.size") ??
+      undefined;
+    const resolvedQuality =
+      quality ??
+      stringDefault(defaults, "image_quality") ??
+      stringDefault(instanceDefaults, "image_quality") ??
+      dbGetSetting("image.quality") ??
+      undefined;
+    const resolvedFormat =
+      format ??
+      stringDefault(defaults, "image_format") ??
+      stringDefault(instanceDefaults, "image_format") ??
+      dbGetSetting("image.format") ??
+      undefined;
+    const compressionDefault =
+      compression ??
+      stringDefault(defaults, "image_compression") ??
+      stringDefault(instanceDefaults, "image_compression") ??
+      dbGetSetting("image.compression") ??
+      undefined;
+    const resolvedBackground =
+      background ??
+      stringDefault(defaults, "image_background") ??
+      stringDefault(instanceDefaults, "image_background") ??
+      dbGetSetting("image.background") ??
+      undefined;
 
     if (!asJson) {
-      console.log(`Generating image (${resolvedMode})...`);
+      console.log(
+        `Generating image (${normalizedProvider}${resolvedModel ? `/${resolvedModel}` : ""}, ${resolvedMode})...`,
+      );
     }
 
     const results = await generateImage(prompt, {
+      provider: normalizedProvider,
+      model: resolvedModel,
       mode: resolvedMode,
       aspect: resolvedAspect,
       size: resolvedSize,
+      quality: resolvedQuality,
+      format: resolvedFormat,
+      compression: parseCompression(compressionDefault),
+      background: resolvedBackground,
       source: source ? resolve(source) : undefined,
       outputDir: output ? resolve(output) : undefined,
     });
@@ -67,12 +167,24 @@ export class ImageCommands {
         filePath: string;
         mimeType: string;
         prompt: string;
+        provider: string;
+        model: string;
+        quality?: string;
+        size?: string;
+        outputFormat?: string;
+        usage?: unknown;
         sendCommand: string;
       }>;
       options: {
+        provider: string;
+        model?: string;
         mode: "fast" | "quality";
         aspect?: string;
         size?: string;
+        quality?: string;
+        format?: string;
+        compression?: number;
+        background?: string;
         source?: string;
         outputDir?: string;
       };
@@ -90,12 +202,24 @@ export class ImageCommands {
         filePath: img.filePath,
         mimeType: img.mimeType,
         prompt: img.prompt,
+        provider: img.provider,
+        model: img.model,
+        ...(img.quality ? { quality: img.quality } : {}),
+        ...(img.size ? { size: img.size } : {}),
+        ...(img.outputFormat ? { outputFormat: img.outputFormat } : {}),
+        ...(img.usage ? { usage: img.usage } : {}),
         sendCommand: `ravi media send "${img.filePath}"`,
       })),
       options: {
+        provider: normalizedProvider,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
         mode: resolvedMode,
         ...(resolvedAspect ? { aspect: resolvedAspect } : {}),
         ...(resolvedSize ? { size: resolvedSize } : {}),
+        ...(resolvedQuality ? { quality: resolvedQuality } : {}),
+        ...(resolvedFormat ? { format: resolvedFormat } : {}),
+        ...(compressionDefault ? { compression: parseCompression(compressionDefault) } : {}),
+        ...(resolvedBackground ? { background: resolvedBackground } : {}),
         ...(source ? { source: resolve(source) } : {}),
         ...(output ? { outputDir: resolve(output) } : {}),
       },
@@ -110,7 +234,9 @@ export class ImageCommands {
 
       console.log(`\nPrompt: ${prompt}`);
       if (source) console.log(`Source: ${source}`);
-      console.log(`Mode: ${resolvedMode} | Aspect: ${resolvedAspect ?? "auto"} | Size: ${resolvedSize ?? "1K"}`);
+      console.log(
+        `Provider: ${normalizedProvider} | Model: ${results[0]?.model ?? resolvedModel ?? "(default)"} | Mode: ${resolvedMode} | Aspect: ${resolvedAspect ?? "auto"} | Size: ${resolvedSize ?? "auto"}`,
+      );
     }
 
     if (send && results.length > 0) {

@@ -168,6 +168,9 @@ export interface RouterConfig {
   ignoredOmniInstanceIds?: string[];
 }
 
+/** Generic key-value defaults for instance-scoped tools and channel extensions. */
+export type InstanceDefaults = Record<string, unknown>;
+
 // ============================================================================
 // Session Key Parameters
 // ============================================================================
