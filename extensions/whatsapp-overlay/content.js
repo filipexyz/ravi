@@ -65,18 +65,18 @@ if (!taskDrawerStateApi) {
 const { resolveTaskDetailDrawerState, syncTaskDetailDrawerState } =
   taskDrawerStateApi;
 const SELECTOR_PROBE_DEFS = [
-  ["app-root-main", "main"],
+  ["app-root-main", "div#main, main"],
   ["app-root-role-application", "[role='application']"],
   ["chat-list-testid", "[data-testid='chat-list']"],
   ["chat-grid", "div[role='grid']"],
   ["selected-row", "[aria-selected='true']"],
   ["conversation-panel-body", "[data-testid='conversation-panel-body']"],
   ["message-list", "[aria-label='Message list']"],
-  ["main-header-title", "main header [title]"],
-  ["main-header-auto", "main header span[dir='auto']"],
+  ["main-header-title", "div#main header [title], main header [title]"],
+  ["main-header-auto", "div#main header span[dir='auto'], main header span[dir='auto']"],
   ["composer-footer", "footer [contenteditable='true']"],
   ["composer-textbox", "div[contenteditable='true'][role='textbox']"],
-  ["drawer-aside", "main aside"],
+  ["drawer-aside", "div#main aside, main aside"],
   ["modal-dialog", "[role='dialog']"],
   ["message-container", "[data-testid='msg-container']"],
   ["message-data-id", "div[data-id]"],
@@ -162,6 +162,7 @@ let lastTaskHierarchyState = {
   nodes: new Map(),
   parentByTaskId: new Map(),
 };
+let shellKeydownListenerAttached = false;
 
 boot();
 
@@ -549,10 +550,10 @@ function detectChatTitle() {
   }
 
   const candidates = [
-    document.querySelector("main header [title]"),
+    queryConversationPane("header [title]"),
     document.querySelector("header [title]"),
-    document.querySelector("main header span[dir='auto']"),
-    document.querySelector("main header h1"),
+    queryConversationPane("header span[dir='auto']"),
+    queryConversationPane("header h1"),
   ];
   const ignoredTitles = new Set([
     "dados do perfil",
@@ -589,7 +590,7 @@ function detectViewState() {
   const modal = document.querySelector("[role='dialog']");
   const drawer = detectDrawer();
   const chatList = detectChatList();
-  const main = document.querySelector("main");
+  const main = getConversationPane();
   const timeline = detectTimelineContainer();
   const { nodes: messageAnchors } = detectMessageAnchors();
   const focus = document.activeElement;
@@ -666,7 +667,7 @@ function buildComponentMatches(input) {
       createComponentMatch(
         "app-root",
         "app-shell",
-        "main",
+        input.main.id === "main" ? "div#main" : "main",
         100,
         ["visible", "workspace-root"],
         {
@@ -741,8 +742,11 @@ function buildComponentMatches(input) {
         "conversation-header",
         "conversation-pane",
         detectWinningSelector(input.conversationHeader, [
+          "div#main header [title]",
           "main header [title]",
+          "div#main header span[dir='auto']",
           "main header span[dir='auto']",
+          "div#main header h1",
           "main header h1",
         ]),
         88,
@@ -760,8 +764,11 @@ function buildComponentMatches(input) {
         "message-anchor",
         "conversation-pane",
         detectWinningSelector(input.messageAnchors[0], [
+          "div#main [data-testid='msg-container']",
           "main [data-testid='msg-container']",
+          "div#main div[data-id]",
           "main div[data-id]",
+          "div#main [data-testid^='msg-']",
           "main [data-testid^='msg-']",
         ]),
         input.messageAnchors.length > 1 ? 90 : 60,
@@ -795,6 +802,7 @@ function buildComponentMatches(input) {
         "drawer",
         "right-drawer",
         detectWinningSelector(input.drawer, [
+          "div#main aside",
           "main aside",
           "[data-animate-drawer='true']",
           "div[role='button'][aria-label='Close']",
@@ -925,9 +933,9 @@ function truncateAttr(value) {
 
 function detectConversationHeader() {
   return (
-    document.querySelector("main header [title]") ||
-    document.querySelector("main header span[dir='auto']") ||
-    document.querySelector("main header h1")
+    queryConversationPane("header [title]") ||
+    queryConversationPane("header span[dir='auto']") ||
+    queryConversationPane("header h1")
   );
 }
 
@@ -949,7 +957,7 @@ function detectChatList() {
 
 function detectDrawer() {
   return (
-    document.querySelector("main aside") ||
+    queryConversationPane("aside") ||
     document.querySelector("[data-animate-drawer='true']") ||
     document.querySelector("div[role='button'][aria-label='Close']")
   );
@@ -1240,10 +1248,10 @@ function detectChatIdCandidate() {
   }
 
   const nodes = [
-    document.querySelector("main header"),
+    queryConversationPane("header"),
     document.querySelector("[aria-selected='true']"),
-    document.querySelector("main [data-testid='conversation-panel-body']"),
-    document.querySelector("main"),
+    queryConversationPane("[data-testid='conversation-panel-body']"),
+    getConversationPane(),
   ];
 
   for (const node of nodes) {
@@ -1268,7 +1276,7 @@ function extractChatIdCandidates(node, options = {}) {
   };
 
   if (
-    node !== document.querySelector("main") &&
+    node !== getConversationPane() &&
     node.outerHTML.length <= 20_000
   ) {
     addSnippet(node.outerHTML);
@@ -1326,14 +1334,14 @@ function detectTimelineContainer() {
   const candidates = [
     [
       "conversation-panel-body",
-      document.querySelector("main [data-testid='conversation-panel-body']"),
+      queryConversationPane("[data-testid='conversation-panel-body']"),
     ],
     [
       "message-list",
-      document.querySelector("main [aria-label='Message list']"),
+      queryConversationPane("[aria-label='Message list']"),
     ],
-    ["application", document.querySelector("main [role='application']")],
-    ["main", document.querySelector("main")],
+    ["application", queryConversationPane("[role='application']")],
+    ["conversation-pane", getConversationPane()],
   ];
 
   for (const [selector, node] of candidates) {
@@ -1347,19 +1355,17 @@ function detectTimelineInsertionPoint() {
   const candidates = [
     [
       "conversation-panel-body>div",
-      document.querySelector(
-        "main [data-testid='conversation-panel-body'] > div",
-      ),
+      queryConversationPane("[data-testid='conversation-panel-body'] > div"),
     ],
     [
       "conversation-panel-body",
-      document.querySelector("main [data-testid='conversation-panel-body']"),
+      queryConversationPane("[data-testid='conversation-panel-body']"),
     ],
     [
       "message-list",
-      document.querySelector("main [aria-label='Message list']"),
+      queryConversationPane("[aria-label='Message list']"),
     ],
-    ["main", document.querySelector("main")],
+    ["conversation-pane", getConversationPane()],
   ];
 
   for (const [selector, node] of candidates) {
@@ -1371,10 +1377,13 @@ function detectTimelineInsertionPoint() {
 
 function detectMessageAnchors() {
   const selectors = [
+    "div#main [data-testid='msg-container']",
     "main [data-testid='msg-container']",
     "[data-testid='msg-container']",
+    "div#main div[data-id]",
     "main div[data-id]",
     "div[data-id]",
+    "div#main [data-testid^='msg-']",
     "main [data-testid^='msg-']",
     "[data-testid^='msg-']",
   ];
@@ -2581,7 +2590,9 @@ function handlePageChatEvent(event) {
 }
 
 function ensureShell() {
-  if (document.getElementById(ROOT_ID)) return;
+  const existingRoot = document.getElementById(ROOT_ID);
+  if (existingRoot?.querySelector?.(`#${DRAWER_ID}`)) return;
+  existingRoot?.remove();
 
   const root = document.createElement("div");
   root.id = ROOT_ID;
@@ -2608,17 +2619,20 @@ function ensureShell() {
   `;
   document.body.appendChild(root);
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
+  if (!shellKeydownListenerAttached) {
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
 
-    if (openMessageChip) {
-      closeMessagePopover();
-    }
+      if (openMessageChip) {
+        closeMessagePopover();
+      }
 
-    if (taskDetailDrawerOpen) {
-      closeTaskDetailDrawer();
-    }
-  });
+      if (taskDetailDrawerOpen) {
+        closeTaskDetailDrawer();
+      }
+    });
+    shellKeydownListenerAttached = true;
+  }
 
   const toggle = document.getElementById("ravi-wa-v3-toggle");
   toggle?.addEventListener("click", () => {
@@ -2630,10 +2644,11 @@ function ensureShell() {
 }
 
 function syncLayoutChrome() {
+  ensureShell();
   const root = document.getElementById(ROOT_ID);
   const drawer = document.getElementById(DRAWER_ID);
-  const sidePane = document.getElementById("side");
-  const mainPane = document.getElementById("main");
+  const sidePane = getWhatsAppPane("side");
+  const mainPane = getWhatsAppPane("main");
   const host = sidePane && mainPane ? findLayoutHost(sidePane, mainPane) : null;
   if (!root || !drawer || !sidePane || !mainPane || !host) return;
   const sideBranch = findDirectChildBranch(host, sidePane);
@@ -2678,6 +2693,20 @@ function syncLayoutChrome() {
   currentLayoutSideBranch = sideBranch;
   currentLayoutMainBranch = mainBranch;
   syncWorkspaceLauncher();
+}
+
+function getWhatsAppPane(id) {
+  const node = document.querySelector(`div#${id}`);
+  return node instanceof HTMLElement ? node : null;
+}
+
+function getConversationPane() {
+  const node = getWhatsAppPane("main") || document.querySelector("main");
+  return node instanceof Element ? node : null;
+}
+
+function queryConversationPane(selector) {
+  return getConversationPane()?.querySelector(selector) || null;
 }
 
 function findLayoutHost(sidePane, mainPane) {
@@ -2799,6 +2828,8 @@ function ensureMessagePopover() {
 }
 
 function render(snapshot = latestSnapshot, context = detectChatContext()) {
+  ensureShell();
+  syncLayoutChrome();
   const body = document.getElementById("ravi-wa-overlay-body");
   const panelTitle = document.getElementById("ravi-wa-overlay-panel-title");
   const panelSubtitle = document.getElementById(
@@ -4417,7 +4448,7 @@ function isNearScrollBottom(element, threshold = 56) {
 // ── DOM host management ─────────────────────────────────────────
 
 function ensureSessionWorkspaceMainHost() {
-  const mainPane = document.getElementById("main");
+  const mainPane = getWhatsAppPane("main");
   if (!(mainPane instanceof HTMLElement)) return null;
 
   if (

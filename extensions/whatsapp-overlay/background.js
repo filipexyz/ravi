@@ -1,4 +1,5 @@
 const BRIDGE_BASE = "http://127.0.0.1:4210";
+const BRIDGE_TIMEOUT_MS = 2500;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "ravi:get-snapshot") {
@@ -129,7 +130,7 @@ async function fetchSnapshot(payload = {}) {
   if (payload.title) params.set("title", payload.title);
   if (payload.session) params.set("session", payload.session);
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/snapshot?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/snapshot?${params.toString()}`);
   return response.json();
 }
 
@@ -137,7 +138,7 @@ async function fetchSessionWorkspace(payload = {}) {
   const params = new URLSearchParams();
   if (payload.session) params.set("session", payload.session);
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/workspace?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/workspace?${params.toString()}`);
   return response.json();
 }
 
@@ -152,7 +153,7 @@ async function fetchTasks(payload = {}) {
   if (payload.timeZone) params.set("timeZone", payload.timeZone);
   if (payload.todayKey) params.set("todayKey", payload.todayKey);
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
   return response.json();
 }
 
@@ -160,12 +161,12 @@ async function fetchInsights(payload = {}) {
   const params = new URLSearchParams();
   if (payload.limit) params.set("limit", String(payload.limit));
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/insights?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/insights?${params.toString()}`);
   return response.json();
 }
 
 async function postTaskDispatch(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks/dispatch`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks/dispatch`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -174,7 +175,7 @@ async function postTaskDispatch(payload = {}) {
 }
 
 async function postAction(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/action`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/action`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -183,7 +184,7 @@ async function postAction(payload = {}) {
 }
 
 async function postSessionPrompt(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/prompt`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/prompt`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -192,7 +193,7 @@ async function postSessionPrompt(payload = {}) {
 }
 
 async function publishViewState(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/current`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/current`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -201,7 +202,7 @@ async function publishViewState(payload = {}) {
 }
 
 async function resolveChatList(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/chat-list/resolve`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/chat-list/resolve`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -210,12 +211,12 @@ async function resolveChatList(payload = {}) {
 }
 
 async function fetchV3Placeholders() {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/placeholders`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/placeholders`);
   return response.json();
 }
 
 async function postV3Command(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/command`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/command`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -224,7 +225,7 @@ async function postV3Command(payload = {}) {
 }
 
 async function fetchMessageMeta(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/message-meta`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/message-meta`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -239,12 +240,12 @@ async function fetchOmniPanel(payload = {}) {
   if (payload.session) params.set("session", payload.session);
   if (payload.instance) params.set("instance", payload.instance);
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/panel?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/panel?${params.toString()}`);
   return response.json();
 }
 
 async function postBind(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/bind`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/bind`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -253,7 +254,7 @@ async function postBind(payload = {}) {
 }
 
 async function postOmniRoute(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/route`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/route`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -265,15 +266,28 @@ async function fetchNextDomCommand(payload = {}) {
   const params = new URLSearchParams();
   if (payload.clientId) params.set("clientId", payload.clientId);
 
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/command/next?${params.toString()}`);
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/command/next?${params.toString()}`);
   return response.json();
 }
 
 async function postDomCommandResult(payload = {}) {
-  const response = await fetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/result`, {
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/result`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
   return response.json();
+}
+
+async function bridgeFetch(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
