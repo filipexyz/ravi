@@ -32,6 +32,9 @@ export class TypingPresenceHeartbeat {
     const previous = this.sessions.get(sessionName);
     if (previous) {
       this.timers.clearInterval(previous.timer);
+      if (!this.sameTarget(previous.target, target)) {
+        await this.safeSend(sessionName, previous.target, false);
+      }
     }
 
     await this.safeSend(sessionName, target, true);
@@ -68,6 +71,10 @@ export class TypingPresenceHeartbeat {
 
   has(sessionName: string): boolean {
     return this.sessions.has(sessionName);
+  }
+
+  private sameTarget(left: TypingPresenceTarget, right: TypingPresenceTarget): boolean {
+    return left.instanceId === right.instanceId && left.to === right.to;
   }
 
   private async safeSend(sessionName: string, target: TypingPresenceTarget, active: boolean): Promise<void> {

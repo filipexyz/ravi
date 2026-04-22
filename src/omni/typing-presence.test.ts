@@ -61,6 +61,7 @@ describe("TypingPresenceHeartbeat", () => {
     expect(handles[0]?.cleared).toBe(true);
     expect(calls).toEqual([
       { to: "first@g.us", active: true },
+      { to: "first@g.us", active: false },
       { to: "second@g.us", active: true },
       { to: "second@g.us", active: true },
     ]);

@@ -30,6 +30,7 @@ import type { StickerSendEvent } from "./stickers/send.js";
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
 const POST_DELIVERY_RENEW_DELAY_MS = 1_000;
+const INTERRUPTED_PRESENCE_GRACE_MS = 15_000;
 
 /**
  * Normalize a chatId to a valid WhatsApp JID for the omni API.
@@ -57,6 +58,8 @@ export interface GatewayOptions {
   emitEvent?: typeof nats.emit;
 }
 
+type PresenceTarget = { channel: string; accountId: string; chatId: string; threadId?: string };
+
 export class Gateway {
   private running = false;
   private omniSender: OmniSender;
@@ -67,6 +70,7 @@ export class Gateway {
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
+  private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: GatewayOptions) {
     this.omniSender = options.omniSender;
@@ -99,30 +103,49 @@ export class Gateway {
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
     this.clearPostDeliveryRenewals();
+    this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
   }
 
-  private async sendTypingIfChanged(
-    sessionName: string,
-    target: { channel: string; accountId: string; chatId: string },
-    active: boolean,
-  ): Promise<void> {
+  private async sendTypingIfChanged(sessionName: string, target: PresenceTarget, active: boolean): Promise<void> {
     if (!this.typingTracker.shouldEmit(sessionName, active)) return;
     await this.sendTyping(target, active);
   }
 
-  private async sendTyping(
-    target: { channel: string; accountId: string; chatId: string },
-    active: boolean,
-  ): Promise<void> {
+  private async sendTyping(target: PresenceTarget, active: boolean): Promise<void> {
     const iid = configStore.resolveInstanceId(target.accountId);
     if (iid) {
       await this.omniSender.sendTyping(iid, normalizeOutboundJid(target.chatId), active);
     }
   }
 
-  private async forceRenewTyping(sessionName: string, target: { channel: string; accountId: string; chatId: string }) {
-    const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
+  private presenceTargetKey(target: PresenceTarget | undefined): string | undefined {
+    if (!target) return undefined;
+    return [target.channel, target.accountId, normalizeOutboundJid(target.chatId), target.threadId ?? ""].join(":");
+  }
+
+  private targetsMatch(left: PresenceTarget | undefined, right: PresenceTarget | undefined): boolean {
+    const leftKey = this.presenceTargetKey(left);
+    const rightKey = this.presenceTargetKey(right);
+    return !!leftKey && leftKey === rightKey;
+  }
+
+  private async renewActiveTargetIfCurrent(sessionName: string, expectedTarget: PresenceTarget): Promise<boolean> {
+    const activeTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    if (!activeTarget) return false;
+    if (!this.targetsMatch(activeTarget, expectedTarget)) {
+      log.warn("Presence active target mismatch; using event target", {
+        sessionName,
+        activeTarget: this.presenceTargetKey(activeTarget),
+        expectedTarget: this.presenceTargetKey(expectedTarget),
+      });
+      return false;
+    }
+    return this.omniConsumer.renewActiveTarget(sessionName);
+  }
+
+  private async forceRenewTyping(sessionName: string, target: PresenceTarget) {
+    const renewed = await this.renewActiveTargetIfCurrent(sessionName, target);
     if (!renewed) {
       await this.sendTyping(target, true);
     }
@@ -143,10 +166,54 @@ export class Gateway {
     this.postDeliveryRenewals.delete(sessionName);
   }
 
-  private schedulePostDeliveryPresenceRenewal(
-    sessionName: string,
-    target: { channel: string; accountId: string; chatId: string },
-  ): void {
+  private clearInterruptedPresenceStops(): void {
+    for (const timer of this.interruptedPresenceStops.values()) {
+      clearTimeout(timer);
+    }
+    this.interruptedPresenceStops.clear();
+  }
+
+  private clearInterruptedPresenceStop(sessionName: string): void {
+    const timer = this.interruptedPresenceStops.get(sessionName);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.interruptedPresenceStops.delete(sessionName);
+  }
+
+  private scheduleInterruptedPresenceStop(sessionName: string, target: PresenceTarget | undefined): void {
+    this.clearInterruptedPresenceStop(sessionName);
+    const timer = setTimeout(() => {
+      this.interruptedPresenceStops.delete(sessionName);
+      if (!this.running) return;
+      this.stopPresenceForSession(sessionName, target).catch((error) => {
+        log.debug("Interrupted presence cleanup failed", { sessionName, error });
+      });
+    }, INTERRUPTED_PRESENCE_GRACE_MS);
+    timer.unref?.();
+    this.interruptedPresenceStops.set(sessionName, timer);
+  }
+
+  private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
+    this.activeRuntimeSessions.delete(sessionName);
+    this.presenceRenewedAt.delete(sessionName);
+    this.clearPostDeliveryRenewal(sessionName);
+    this.clearInterruptedPresenceStop(sessionName);
+
+    const localTarget = this.omniConsumer.getActiveTarget(sessionName) as PresenceTarget | undefined;
+    if (localTarget) {
+      this.omniConsumer.clearActiveTarget(sessionName);
+      if (target && !this.targetsMatch(localTarget, target)) {
+        await this.sendTyping(target, false);
+      }
+      return;
+    }
+
+    if (target) {
+      await this.sendTypingIfChanged(sessionName, target, false);
+    }
+  }
+
+  private schedulePostDeliveryPresenceRenewal(sessionName: string, target: PresenceTarget): void {
     if (!this.activeRuntimeSessions.has(sessionName)) return;
     this.clearPostDeliveryRenewal(sessionName);
     const timer = setTimeout(() => {
@@ -160,15 +227,14 @@ export class Gateway {
     this.postDeliveryRenewals.set(sessionName, timer);
   }
 
-  private async renewTypingForRuntimeActivity(
-    sessionName: string,
-    data: { _source?: { channel: string; accountId: string; chatId: string } },
-  ): Promise<void> {
+  private async renewTypingForRuntimeActivity(sessionName: string, data: { _source?: PresenceTarget }): Promise<void> {
     const now = Date.now();
     const lastRenewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
     if (now - lastRenewedAt < PRESENCE_RENEW_THROTTLE_MS) return;
 
-    const renewed = await this.omniConsumer.renewActiveTarget(sessionName);
+    const renewed = data._source
+      ? await this.renewActiveTargetIfCurrent(sessionName, data._source)
+      : await this.omniConsumer.renewActiveTarget(sessionName);
     if (!renewed && data._source) {
       await this.sendTyping(data._source, true);
     }
@@ -372,7 +438,7 @@ export class Gateway {
         const data = event.data as {
           type?: string;
           status?: string;
-          _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
+          _source?: PresenceTarget & { sourceMessageId?: string };
         };
 
         const eventType = event.topic.endsWith(".stream") ? "stream.chunk" : data.type;
@@ -386,7 +452,7 @@ export class Gateway {
     data: {
       type?: string;
       status?: string;
-      _source?: { channel: string; accountId: string; chatId: string; sourceMessageId?: string };
+      _source?: PresenceTarget & { sourceMessageId?: string };
     },
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
@@ -395,27 +461,19 @@ export class Gateway {
       } else {
         await this.omniConsumer.renewActiveTarget(sessionName);
       }
+      this.scheduleInterruptedPresenceStop(sessionName, data._source);
       return;
     }
 
     if (this.isTerminalRuntimeEvent(data.type)) {
-      this.activeRuntimeSessions.delete(sessionName);
-      this.presenceRenewedAt.delete(sessionName);
-      this.clearPostDeliveryRenewal(sessionName);
-      const localTarget = this.omniConsumer.getActiveTarget(sessionName);
-      if (localTarget) {
-        this.omniConsumer.clearActiveTarget(sessionName);
-      } else if (data._source) {
-        // Cross-daemon fallback: the daemon that sees the terminal event may
-        // not be the same daemon that received the inbound message.
-        await this.sendTypingIfChanged(sessionName, data._source, false);
-      }
+      await this.stopPresenceForSession(sessionName, data._source);
       return;
     }
 
-    if (this.isPresenceActivityEvent(data.type, data.status)) {
-      this.activeRuntimeSessions.add(sessionName);
-    }
+    if (!this.isPresenceActivityEvent(data.type, data.status)) return;
+
+    this.clearInterruptedPresenceStop(sessionName);
+    this.activeRuntimeSessions.add(sessionName);
     await this.renewTypingForRuntimeActivity(sessionName, data);
   }
 

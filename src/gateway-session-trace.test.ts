@@ -111,6 +111,15 @@ function makeResponse(overrides: Partial<ResponseMessage> = {}): ResponseMessage
   };
 }
 
+function makeOtherTarget(): NonNullable<ResponseMessage["target"]> {
+  return {
+    channel: "whatsapp-baileys",
+    accountId: "main",
+    chatId: "120363000000000000@g.us",
+    sourceMessageId: "inbound-other",
+  };
+}
+
 describe("Gateway session trace instrumentation", () => {
   it("records response.emitted and delivery.delivered for successful channel delivery", async () => {
     const { sessionKey, sessionName } = seedSession();
@@ -142,11 +151,12 @@ describe("Gateway session trace instrumentation", () => {
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
     const sendTyping = mock(async () => {});
-    const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { getActiveTarget: () => target, renewActiveTarget, sendTyping });
 
-    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
     renewActiveTarget.mockClear();
-    await handleResponse(gateway, sessionName, makeResponse());
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(renewActiveTarget).not.toHaveBeenCalled();
     await wait(1_050);
@@ -159,19 +169,51 @@ describe("Gateway session trace instrumentation", () => {
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => false);
     const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
     const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
 
-    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
     renewActiveTarget.mockClear();
     sendTyping.mockClear();
-    await handleResponse(gateway, sessionName, makeResponse());
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
 
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
     await wait(1_050);
-    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).toHaveBeenCalledWith(
       "11111111-1111-1111-1111-111111111111",
       "5511999999999@s.whatsapp.net",
+      true,
+    );
+  });
+
+  it("does not renew a stale active target after a delivered non-final response", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const renewActiveTarget = mock(async () => true);
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, {
+      getActiveTarget: () => makeOtherTarget(),
+      renewActiveTarget,
+      sendTyping,
+    });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+    await handleResponse(gateway, sessionName, makeResponse({ target }));
+
+    await wait(1_050);
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
       true,
     );
   });
@@ -181,8 +223,8 @@ describe("Gateway session trace instrumentation", () => {
     const send = mock(async () => ({ messageId: "outbound-1" }));
     const renewActiveTarget = mock(async () => true);
     const sendTyping = mock(async () => {});
-    const target = makeResponse().target;
-    const gateway = makeGateway(send, { renewActiveTarget, sendTyping });
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { getActiveTarget: () => target, renewActiveTarget, sendTyping });
 
     await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
     renewActiveTarget.mockClear();
@@ -199,16 +241,18 @@ describe("Gateway session trace instrumentation", () => {
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
     const clearActiveTarget = mock(() => {});
+    const target = makeResponse().target!;
     const gateway = makeGateway(
       mock(async () => ({ messageId: "outbound-1" })),
       {
         sendTyping,
+        getActiveTarget: () => target,
         renewActiveTarget,
         clearActiveTarget,
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.interrupted", _source: target });
 
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(clearActiveTarget).not.toHaveBeenCalled();
@@ -236,22 +280,73 @@ describe("Gateway session trace instrumentation", () => {
     );
   });
 
-  it("renews active presence on runtime activity before the final response", async () => {
+  it("does not renew presence from idle runtime status", async () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
+    const target = makeResponse().target!;
     const gateway = makeGateway(
       mock(async () => ({ messageId: "outbound-1" })),
       {
         sendTyping,
+        getActiveTarget: () => target,
         renewActiveTarget,
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "status", status: "idle", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("renews active presence on runtime activity before the final response", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
 
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
     expect(sendTyping).not.toHaveBeenCalled();
+  });
+
+  it("uses the runtime event source instead of a stale active target", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => makeOtherTarget(),
+        renewActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "tool.started", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      true,
+    );
+    expect(sendTyping).not.toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "120363000000000000@g.us",
+      true,
+    );
   });
 
   it("forces presence renewal from streamed activity when delivery runs outside the active consumer", async () => {
@@ -279,16 +374,18 @@ describe("Gateway session trace instrumentation", () => {
     const { sessionName } = seedSession();
     const sendTyping = mock(async () => {});
     const renewActiveTarget = mock(async () => true);
+    const target = makeResponse().target!;
     const gateway = makeGateway(
       mock(async () => ({ messageId: "outbound-1" })),
       {
         sendTyping,
+        getActiveTarget: () => target,
         renewActiveTarget,
       },
     );
 
-    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: makeResponse().target });
-    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: makeResponse().target });
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
 
     expect(renewActiveTarget).toHaveBeenCalledTimes(1);
   });
@@ -296,7 +393,7 @@ describe("Gateway session trace instrumentation", () => {
   it("stops presence on completed turns", async () => {
     const { sessionName } = seedSession();
     const clearActiveTarget = mock(() => {});
-    const target = makeResponse().target;
+    const target = makeResponse().target!;
     const gateway = makeGateway(
       mock(async () => ({ messageId: "outbound-1" })),
       {
