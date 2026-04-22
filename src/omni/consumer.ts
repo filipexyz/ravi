@@ -20,7 +20,7 @@ const unregisteredCooldowns = new Map<string, number>();
 import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
-import { dbSaveMessageMeta } from "../router/router-db.js";
+import { dbGetMessageMeta, dbSaveMessageMeta } from "../router/router-db.js";
 import { recordChannelMessageReceivedTrace, recordRouteResolvedTrace } from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
 import type { MessageContext, MessageTarget } from "../runtime/message-types.js";
@@ -739,9 +739,28 @@ export class OmniConsumer {
     // Extract reply/quoted message context (works across all channels)
     const replyContext = this.extractReplyContext(payload.replyToId, rawPayload);
 
-    // If reply references media, try to find the saved attachment
+    // If reply references media, recover durable metadata from the quoted message.
     let replyMediaPath: string | undefined;
-    if (replyContext?.quotedId && replyContext.quotedMediaType) {
+    if (replyContext?.quotedId) {
+      const replyMeta = dbGetMessageMeta(replyContext.quotedId);
+      const transcript = replyMeta?.transcription?.trim();
+      if (replyMeta?.mediaType && !replyContext.quotedMediaType) {
+        replyContext.quotedMediaType = replyMeta.mediaType;
+      }
+      if (transcript) {
+        const mediaType = replyMeta?.mediaType ?? replyContext.quotedMediaType;
+        replyContext.quotedText =
+          mediaType === "audio" || mediaType === "voice"
+            ? `[Audio]\nTranscript:\n${transcript}`
+            : `${replyContext.quotedText ?? `[${mediaType ?? "media"}]`}\nTranscript:\n${transcript}`;
+      }
+      if (replyMeta?.mediaPath) {
+        replyMediaPath = replyMeta.mediaPath;
+      }
+    }
+
+    // If reply references media but metadata has no stored path, try to find the saved attachment.
+    if (replyContext?.quotedId && replyContext.quotedMediaType && !replyMediaPath) {
       replyMediaPath = await this.findAttachmentByMessageId(agentCwd, replyContext.quotedId);
       log.debug("Reply media lookup", {
         quotedId: replyContext.quotedId,

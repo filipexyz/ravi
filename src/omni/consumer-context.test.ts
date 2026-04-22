@@ -2,6 +2,17 @@ import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:tes
 import { logger } from "../utils/logger.js";
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
+const messageMetaById = new Map<
+  string,
+  {
+    messageId: string;
+    chatId: string;
+    transcription?: string;
+    mediaPath?: string;
+    mediaType?: string;
+    createdAt: number;
+  }
+>();
 
 mock.module("../nats.js", () => ({
   getNats: () => {
@@ -67,6 +78,14 @@ mock.module("../contacts.js", () => ({
 
 mock.module("../router/router-db.js", () => ({
   dbSaveMessageMeta: mock(() => {}),
+  dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? null),
+  getDb: mock(() => ({
+    prepare: () => ({
+      get: () => null,
+      all: () => [],
+      run: () => ({}),
+    }),
+  })),
 }));
 
 mock.module("../session-trace/channel-trace.js", () => ({
@@ -104,6 +123,7 @@ afterAll(() => {
 describe("OmniConsumer channel context", () => {
   beforeEach(() => {
     promptCalls.length = 0;
+    messageMetaById.clear();
   });
 
   it("publishes group and sender metadata from the omni message payload", async () => {
@@ -171,5 +191,120 @@ describe("OmniConsumer channel context", () => {
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
     });
+  });
+
+  it("includes stored audio transcription when replying to a quoted WhatsApp audio", async () => {
+    messageMetaById.set("quoted-audio-1", {
+      messageId: "quoted-audio-1",
+      chatId: "120363424772797713@g.us",
+      transcription: "transcrição completa do áudio citado",
+      mediaType: "audio",
+      createdAt: Date.now(),
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-quoted-audio",
+      type: "message.received",
+      payload: {
+        externalId: "reply-1",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "ouviu?",
+        },
+        replyToId: "quoted-audio-1",
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+          message: {
+            extendedTextMessage: {
+              text: "ouviu?",
+              contextInfo: {
+                stanzaId: "quoted-audio-1",
+                participant: "5511947879044@s.whatsapp.net",
+                quotedMessage: {
+                  audioMessage: {
+                    mimetype: "audio/ogg; codecs=opus",
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("[Replying to Luis mid:quoted-audio-1]");
+    expect(prompt.prompt).toContain("[Audio]\nTranscript:\ntranscrição completa do áudio citado");
+    expect(prompt.prompt).not.toContain("\n[audio]\n");
+  });
+
+  it("uses stored transcription when only normalized replyToId is available", async () => {
+    messageMetaById.set("quoted-audio-2", {
+      messageId: "quoted-audio-2",
+      chatId: "120363424772797713@g.us",
+      transcription: "histórico recuperado pelo metadata db",
+      mediaType: "audio",
+      createdAt: Date.now(),
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-reply-id-only",
+      type: "message.received",
+      payload: {
+        externalId: "reply-2",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "sim",
+        },
+        replyToId: "quoted-audio-2",
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("[Replying to unknown mid:quoted-audio-2]");
+    expect(prompt.prompt).toContain("[Audio]\nTranscript:\nhistórico recuperado pelo metadata db");
   });
 });
