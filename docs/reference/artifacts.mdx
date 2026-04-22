@@ -1,0 +1,42 @@
+# Ravi Artifacts
+
+`ravi artifacts` is Ravi's generic artifact ledger.
+
+It stores durable outputs and their context so agents can inspect, reuse, edit, and explain artifacts later.
+
+## What It Stores
+
+Each artifact can carry:
+
+- identity: `id`, `kind`, `title`, `summary`, `status`, `tags`
+- file data: original path, blob-store copy, MIME type, size, `sha256`
+- generation context: provider, model, prompt, command, duration, tokens, and known cost when explicitly available
+- Ravi context: session, agent, task, run, turn, channel, account, chat, message
+- structured data: metadata, metrics, lineage, input, output
+- relationships: links to tasks, sessions, messages, projects, or arbitrary targets
+- audit events: created, updated, attached, archived
+
+## Commands
+
+```bash
+ravi artifacts create image --path /tmp/image.png --provider openai --model gpt-image-2
+ravi artifacts list --kind image
+ravi artifacts show art_xxx --json
+ravi artifacts update art_xxx --metadata '{"approved":true}'
+ravi artifacts attach art_xxx task task-123 --relation evidence
+ravi artifacts archive art_xxx
+```
+
+All commands support typed `--json` output where applicable.
+
+## Image Integration
+
+`ravi image generate` automatically creates one `kind=image` artifact per generated image.
+
+The image artifact records the generated file, blob copy, hash, provider/model, prompt, duration, usage/tokens when returned by the provider, and current Ravi session/channel context when available.
+
+## Provider Rule
+
+There is no automatic provider fallback.
+
+If the selected provider fails, the command fails. To try another provider, retry explicitly with another `--provider`.

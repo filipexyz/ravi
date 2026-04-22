@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { createHash } from "node:crypto";
 import { resolve, basename } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
@@ -10,6 +11,7 @@ import { nats } from "../../nats.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
+import { createArtifact } from "../../artifacts/store.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = defaults?.[key];
@@ -23,6 +25,16 @@ function parseCompression(value?: string): number | undefined {
     fail("Invalid compression. Must be an integer between 0 and 100.");
   }
   return parsed;
+}
+
+function numericUsageField(usage: unknown, key: string): number | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const value = (usage as Record<string, unknown>)[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function sha256Text(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
 }
 
 @Group({
@@ -147,6 +159,7 @@ export class ImageCommands {
       );
     }
 
+    const startedAt = Date.now();
     const results = await generateImage(prompt, {
       provider: normalizedProvider,
       model: resolvedModel,
@@ -159,6 +172,75 @@ export class ImageCommands {
       background: resolvedBackground,
       source: source ? resolve(source) : undefined,
       outputDir: output ? resolve(output) : undefined,
+    });
+    const durationMs = Date.now() - startedAt;
+
+    const artifacts = results.map((img) => {
+      const inputTokens = numericUsageField(img.usage, "input_tokens");
+      const outputTokens = numericUsageField(img.usage, "output_tokens");
+      const totalTokens = numericUsageField(img.usage, "total_tokens");
+      return createArtifact({
+        kind: "image",
+        title: prompt.slice(0, 120),
+        summary: `Imagem gerada por ${img.provider}/${img.model}`,
+        filePath: img.filePath,
+        mimeType: img.mimeType,
+        provider: img.provider,
+        model: img.model,
+        prompt,
+        command: "ravi image generate",
+        ...(ctx?.sessionKey ? { sessionKey: ctx.sessionKey } : {}),
+        ...(ctx?.sessionName ? { sessionName: ctx.sessionName } : {}),
+        ...(ctx?.agentId ? { agentId: ctx.agentId } : {}),
+        ...(ctx?.source?.channel ? { channel: ctx.source.channel } : {}),
+        ...(ctx?.source?.accountId ? { accountId: ctx.source.accountId } : {}),
+        ...(ctx?.source?.chatId ? { chatId: ctx.source.chatId } : {}),
+        durationMs,
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(outputTokens !== undefined ? { outputTokens } : {}),
+        ...(totalTokens !== undefined ? { totalTokens } : {}),
+        metadata: {
+          quality: img.quality ?? resolvedQuality ?? null,
+          size: img.size ?? resolvedSize ?? null,
+          outputFormat: img.outputFormat ?? resolvedFormat ?? null,
+          sourcePath: source ? resolve(source) : null,
+          usage: img.usage ?? null,
+        },
+        metrics: {
+          durationMs,
+          inputTokens: inputTokens ?? null,
+          outputTokens: outputTokens ?? null,
+          totalTokens: totalTokens ?? null,
+        },
+        lineage: {
+          source: "ravi image generate",
+          provider: img.provider,
+          model: img.model,
+          promptSha256: sha256Text(prompt),
+        },
+        input: {
+          prompt,
+          source: source ? resolve(source) : null,
+          options: {
+            provider: normalizedProvider,
+            model: resolvedModel ?? img.model,
+            mode: resolvedMode,
+            aspect: resolvedAspect ?? null,
+            size: resolvedSize ?? null,
+            quality: resolvedQuality ?? null,
+            format: resolvedFormat ?? null,
+            background: resolvedBackground ?? null,
+          },
+        },
+        output: {
+          filePath: img.filePath,
+          mimeType: img.mimeType,
+          provider: img.provider,
+          model: img.model,
+          usage: img.usage ?? null,
+        },
+        tags: ["generated", "image", img.provider],
+      });
     });
 
     const payload: {
@@ -173,6 +255,7 @@ export class ImageCommands {
         size?: string;
         outputFormat?: string;
         usage?: unknown;
+        artifactId: string;
         sendCommand: string;
       }>;
       options: {
@@ -198,7 +281,7 @@ export class ImageCommands {
       }>;
     } = {
       success: true,
-      images: results.map((img) => ({
+      images: results.map((img, index) => ({
         filePath: img.filePath,
         mimeType: img.mimeType,
         prompt: img.prompt,
@@ -208,6 +291,7 @@ export class ImageCommands {
         ...(img.size ? { size: img.size } : {}),
         ...(img.outputFormat ? { outputFormat: img.outputFormat } : {}),
         ...(img.usage ? { usage: img.usage } : {}),
+        artifactId: artifacts[index]?.id ?? "",
         sendCommand: `ravi media send "${img.filePath}"`,
       })),
       options: {
@@ -229,6 +313,8 @@ export class ImageCommands {
     if (!asJson) {
       for (const img of results) {
         console.log(`\n✓ Image saved: ${img.filePath}`);
+        const artifact = artifacts.find((item) => item.filePath === img.filePath);
+        if (artifact) console.log(`  Artifact: ${artifact.id}`);
         console.log(`  Send to chat: ravi media send "${img.filePath}"`);
       }
 

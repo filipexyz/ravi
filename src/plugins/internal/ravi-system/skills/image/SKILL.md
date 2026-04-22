@@ -83,6 +83,7 @@ ravi image generate "product mockup" -o /tmp/mockups
 O comando retorna o path da imagem gerada + o comando pra enviar:
 ```
 ✓ Image saved: /tmp/ravi-image-1234567890.png
+  Artifact: art_xxx
   Send to chat: ravi media send "/tmp/ravi-image-1234567890.png"
 ```
 
@@ -106,6 +107,23 @@ O comando retorna o path da imagem gerada + o comando pra enviar:
 - `OPENAI_API_KEY` — obrigatória para `--provider openai`
 - `OPENAI_IMAGE_MODEL` — override do modelo OpenAI
 - `RAVI_IMAGE_PROVIDER` / `RAVI_IMAGE_MODEL` — defaults globais por env
+
+## Artifacts
+
+Toda imagem gerada é registrada automaticamente em `ravi artifacts` com:
+
+- arquivo bruto copiado para o blob store local
+- `sha256`, tamanho e MIME
+- provider, model, prompt, duração e usage/tokens quando disponível
+- sessão, agent, canal e chat quando houver contexto Ravi
+- metadata, metrics, lineage, input e output estruturados
+
+Para inspecionar:
+
+```bash
+ravi artifacts list --kind image
+ravi artifacts show <artifact-id> --json
+```
 
 ### Default por instância
 ```bash

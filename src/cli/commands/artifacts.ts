@@ -1,0 +1,347 @@
+/**
+ * Artifacts Commands - generic Ravi artifact ledger.
+ */
+
+import "reflect-metadata";
+import { Arg, Command, Group, Option } from "../decorators.js";
+import { fail, getContext } from "../context.js";
+import {
+  archiveArtifact,
+  attachArtifact,
+  createArtifact,
+  getArtifactDetails,
+  listArtifacts,
+  updateArtifact,
+  type ArtifactRecord,
+} from "../../artifacts/store.js";
+
+function printJson(payload: unknown): void {
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function parseJsonObject(value: string | undefined, label: string): Record<string, unknown> | undefined {
+  if (!value?.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      fail(`${label} must be a JSON object.`);
+    }
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof Error && error.message.endsWith("must be a JSON object.")) throw error;
+    fail(`${label} must be valid JSON.`);
+  }
+}
+
+function parseJsonValue(value: string | undefined, label: string): unknown {
+  if (!value?.trim()) return undefined;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    fail(`${label} must be valid JSON.`);
+  }
+}
+
+function parseCsv(value: string | undefined): string[] | undefined {
+  if (!value?.trim()) return undefined;
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseNumber(value: string | undefined, label: string): number | undefined {
+  if (!value?.trim()) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) fail(`${label} must be a non-negative number.`);
+  return parsed;
+}
+
+function parseInteger(value: string | undefined, label: string): number | undefined {
+  const parsed = parseNumber(value, label);
+  if (parsed === undefined) return undefined;
+  if (!Number.isInteger(parsed)) fail(`${label} must be an integer.`);
+  return parsed;
+}
+
+function contextDefaults() {
+  const ctx = getContext();
+  return {
+    sessionKey: ctx?.sessionKey,
+    sessionName: ctx?.sessionName,
+    agentId: ctx?.agentId,
+    channel: ctx?.source?.channel,
+    accountId: ctx?.source?.accountId,
+    chatId: ctx?.source?.chatId,
+  };
+}
+
+function summarizeArtifact(artifact: ArtifactRecord): Record<string, unknown> {
+  return {
+    id: artifact.id,
+    kind: artifact.kind,
+    title: artifact.title ?? null,
+    status: artifact.status,
+    filePath: artifact.filePath ?? null,
+    blobPath: artifact.blobPath ?? null,
+    sha256: artifact.sha256 ?? null,
+    provider: artifact.provider ?? null,
+    model: artifact.model ?? null,
+    sessionName: artifact.sessionName ?? null,
+    taskId: artifact.taskId ?? null,
+    durationMs: artifact.durationMs ?? null,
+    costUsd: artifact.costUsd ?? null,
+    totalTokens: artifact.totalTokens ?? null,
+    tags: artifact.tags,
+    createdAt: artifact.createdAt,
+    updatedAt: artifact.updatedAt,
+    deletedAt: artifact.deletedAt ?? null,
+  };
+}
+
+@Group({
+  name: "artifacts",
+  description: "Generic artifact ledger and lineage tools",
+  scope: "open",
+})
+export class ArtifactsCommands {
+  @Command({ name: "create", description: "Create a generic Ravi artifact record" })
+  create(
+    @Arg("kind", { description: "Artifact kind, e.g. image, audio, report, trace" }) kind: string,
+    @Option({ flags: "--title <text>", description: "Human title" }) title?: string,
+    @Option({ flags: "--summary <text>", description: "Human summary" }) summary?: string,
+    @Option({ flags: "--path <path>", description: "Local file to ingest into artifact blob storage" })
+    filePath?: string,
+    @Option({ flags: "--uri <uri>", description: "External URI/reference" }) uri?: string,
+    @Option({ flags: "--mime <type>", description: "MIME type override" }) mimeType?: string,
+    @Option({ flags: "--provider <provider>", description: "Provider that produced the artifact" }) provider?: string,
+    @Option({ flags: "--model <model>", description: "Model that produced the artifact" }) model?: string,
+    @Option({ flags: "--prompt <text>", description: "Prompt or user instruction that generated the artifact" })
+    prompt?: string,
+    @Option({ flags: "--command <text>", description: "Command that produced the artifact" }) command?: string,
+    @Option({ flags: "--duration-ms <n>", description: "Generation duration in milliseconds" }) durationMs?: string,
+    @Option({ flags: "--cost-usd <n>", description: "Known cost in USD" }) costUsd?: string,
+    @Option({ flags: "--input-tokens <n>", description: "Input token count" }) inputTokens?: string,
+    @Option({ flags: "--output-tokens <n>", description: "Output token count" }) outputTokens?: string,
+    @Option({ flags: "--total-tokens <n>", description: "Total token count" }) totalTokens?: string,
+    @Option({ flags: "--metadata <json>", description: "Metadata JSON object" }) metadata?: string,
+    @Option({ flags: "--metrics <json>", description: "Metrics JSON object" }) metrics?: string,
+    @Option({ flags: "--lineage <json>", description: "Lineage JSON object" }) lineage?: string,
+    @Option({ flags: "--input <json>", description: "Raw/structured input JSON" }) input?: string,
+    @Option({ flags: "--output <json>", description: "Raw/structured output JSON" }) output?: string,
+    @Option({ flags: "--tags <csv>", description: "Comma-separated tags" }) tags?: string,
+    @Option({ flags: "--session <nameOrKey>", description: "Override session key/name" }) session?: string,
+    @Option({ flags: "--task <id>", description: "Task id" }) taskId?: string,
+    @Option({ flags: "--message <id>", description: "Channel message id" }) messageId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ctx = contextDefaults();
+    const artifact = createArtifact({
+      kind,
+      ...(title?.trim() ? { title } : {}),
+      ...(summary?.trim() ? { summary } : {}),
+      ...(filePath?.trim() ? { filePath } : {}),
+      ...(uri?.trim() ? { uri } : {}),
+      ...(mimeType?.trim() ? { mimeType } : {}),
+      ...(provider?.trim() ? { provider } : {}),
+      ...(model?.trim() ? { model } : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(command?.trim() ? { command } : {}),
+      ...(session?.trim() ? { sessionName: session } : {}),
+      ...(ctx.sessionKey && !session ? { sessionKey: ctx.sessionKey } : {}),
+      ...(ctx.sessionName && !session ? { sessionName: ctx.sessionName } : {}),
+      ...(ctx.agentId ? { agentId: ctx.agentId } : {}),
+      ...(taskId?.trim() ? { taskId } : {}),
+      ...(messageId?.trim() ? { messageId } : {}),
+      ...(ctx.channel ? { channel: ctx.channel } : {}),
+      ...(ctx.accountId ? { accountId: ctx.accountId } : {}),
+      ...(ctx.chatId ? { chatId: ctx.chatId } : {}),
+      ...(durationMs ? { durationMs: parseInteger(durationMs, "--duration-ms") } : {}),
+      ...(costUsd ? { costUsd: parseNumber(costUsd, "--cost-usd") } : {}),
+      ...(inputTokens ? { inputTokens: parseInteger(inputTokens, "--input-tokens") } : {}),
+      ...(outputTokens ? { outputTokens: parseInteger(outputTokens, "--output-tokens") } : {}),
+      ...(totalTokens ? { totalTokens: parseInteger(totalTokens, "--total-tokens") } : {}),
+      ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+      ...(metrics ? { metrics: parseJsonObject(metrics, "--metrics") } : {}),
+      ...(lineage ? { lineage: parseJsonObject(lineage, "--lineage") } : {}),
+      ...(input ? { input: parseJsonValue(input, "--input") } : {}),
+      ...(output ? { output: parseJsonValue(output, "--output") } : {}),
+      tags: parseCsv(tags) ?? [],
+    });
+
+    const payload = { success: true, artifact };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact created: ${artifact.id}`);
+      if (artifact.blobPath) console.log(`  Blob: ${artifact.blobPath}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "list", description: "List artifacts" })
+  list(
+    @Option({ flags: "--kind <kind>", description: "Filter by artifact kind" }) kind?: string,
+    @Option({ flags: "--session <nameOrKey>", description: "Filter by session key or name" }) session?: string,
+    @Option({ flags: "--task <id>", description: "Filter by task id" }) taskId?: string,
+    @Option({ flags: "--tag <tag>", description: "Filter by tag" }) tag?: string,
+    @Option({ flags: "--limit <n>", description: "Max artifacts to list (default: 50)" }) limit?: string,
+    @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const artifacts = listArtifacts({
+      ...(kind?.trim() ? { kind } : {}),
+      ...(session?.trim() ? { session } : {}),
+      ...(taskId?.trim() ? { taskId } : {}),
+      ...(tag?.trim() ? { tag } : {}),
+      ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+      includeDeleted: includeDeleted === true,
+    });
+    const payload = {
+      total: artifacts.length,
+      artifacts: artifacts.map(summarizeArtifact),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (artifacts.length === 0) {
+      console.log("No artifacts found.");
+    } else {
+      for (const artifact of artifacts) {
+        const label = artifact.title ?? artifact.summary ?? artifact.filePath ?? artifact.uri ?? artifact.kind;
+        console.log(`${artifact.id} — ${artifact.kind} — ${label}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "show", description: "Show artifact details, links and events" })
+  show(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const details = getArtifactDetails(id);
+    if (!details) fail(`Artifact not found: ${id}`);
+    const payload = { ...details };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      const artifact = details.artifact;
+      console.log(`${artifact.id} — ${artifact.kind}`);
+      if (artifact.title) console.log(artifact.title);
+      if (artifact.summary) console.log(artifact.summary);
+      if (artifact.filePath) console.log(`File: ${artifact.filePath}`);
+      if (artifact.blobPath) console.log(`Blob: ${artifact.blobPath}`);
+      console.log(`Status: ${artifact.status}`);
+      console.log(`Links: ${details.links.length} | Events: ${details.events.length}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "update", description: "Edit artifact metadata and high-level fields" })
+  update(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--title <text>", description: "Replace title" }) title?: string,
+    @Option({ flags: "--summary <text>", description: "Replace summary" }) summary?: string,
+    @Option({ flags: "--status <status>", description: "Replace status" }) status?: string,
+    @Option({ flags: "--path <path>", description: "Replace/ingest file path" }) filePath?: string,
+    @Option({ flags: "--uri <uri>", description: "Replace external URI/reference" }) uri?: string,
+    @Option({ flags: "--mime <type>", description: "Replace MIME type" }) mimeType?: string,
+    @Option({ flags: "--provider <provider>", description: "Replace provider" }) provider?: string,
+    @Option({ flags: "--model <model>", description: "Replace model" }) model?: string,
+    @Option({ flags: "--prompt <text>", description: "Replace prompt" }) prompt?: string,
+    @Option({ flags: "--command <text>", description: "Replace command" }) command?: string,
+    @Option({ flags: "--duration-ms <n>", description: "Replace duration in milliseconds" }) durationMs?: string,
+    @Option({ flags: "--cost-usd <n>", description: "Replace known cost in USD" }) costUsd?: string,
+    @Option({ flags: "--input-tokens <n>", description: "Replace input token count" }) inputTokens?: string,
+    @Option({ flags: "--output-tokens <n>", description: "Replace output token count" }) outputTokens?: string,
+    @Option({ flags: "--total-tokens <n>", description: "Replace total token count" }) totalTokens?: string,
+    @Option({ flags: "--session <nameOrKey>", description: "Replace session name/key reference" }) session?: string,
+    @Option({ flags: "--task <id>", description: "Replace task id" }) taskId?: string,
+    @Option({ flags: "--message <id>", description: "Replace channel message id" }) messageId?: string,
+    @Option({ flags: "--metadata <json>", description: "Merge metadata JSON object" }) metadata?: string,
+    @Option({ flags: "--metrics <json>", description: "Merge metrics JSON object" }) metrics?: string,
+    @Option({ flags: "--lineage <json>", description: "Merge lineage JSON object" }) lineage?: string,
+    @Option({ flags: "--input <json>", description: "Replace raw/structured input JSON" }) input?: string,
+    @Option({ flags: "--output <json>", description: "Replace raw/structured output JSON" }) output?: string,
+    @Option({ flags: "--tags <csv>", description: "Replace tags" }) tags?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const artifact = updateArtifact(
+      id,
+      {
+        ...(title?.trim() ? { title } : {}),
+        ...(summary?.trim() ? { summary } : {}),
+        ...(status?.trim() ? { status } : {}),
+        ...(filePath?.trim() ? { filePath } : {}),
+        ...(uri?.trim() ? { uri } : {}),
+        ...(mimeType?.trim() ? { mimeType } : {}),
+        ...(provider?.trim() ? { provider } : {}),
+        ...(model?.trim() ? { model } : {}),
+        ...(prompt !== undefined ? { prompt } : {}),
+        ...(command?.trim() ? { command } : {}),
+        ...(durationMs ? { durationMs: parseInteger(durationMs, "--duration-ms") } : {}),
+        ...(costUsd ? { costUsd: parseNumber(costUsd, "--cost-usd") } : {}),
+        ...(inputTokens ? { inputTokens: parseInteger(inputTokens, "--input-tokens") } : {}),
+        ...(outputTokens ? { outputTokens: parseInteger(outputTokens, "--output-tokens") } : {}),
+        ...(totalTokens ? { totalTokens: parseInteger(totalTokens, "--total-tokens") } : {}),
+        ...(session?.trim() ? { sessionName: session } : {}),
+        ...(taskId?.trim() ? { taskId } : {}),
+        ...(messageId?.trim() ? { messageId } : {}),
+        ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+        ...(metrics ? { metrics: parseJsonObject(metrics, "--metrics") } : {}),
+        ...(lineage ? { lineage: parseJsonObject(lineage, "--lineage") } : {}),
+        ...(input ? { input: parseJsonValue(input, "--input") } : {}),
+        ...(output ? { output: parseJsonValue(output, "--output") } : {}),
+        ...(tags ? { tags: parseCsv(tags) ?? [] } : {}),
+      },
+      { actor: contextDefaults().agentId, mergeMetadata: true, mergeMetrics: true, mergeLineage: true },
+    );
+    const payload = { success: true, artifact };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact updated: ${artifact.id}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "attach", description: "Attach an artifact to a task, session, message or any target" })
+  attach(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Arg("targetType", { description: "Target type, e.g. task, session, message, project" }) targetType: string,
+    @Arg("targetId", { description: "Target id" }) targetId: string,
+    @Option({ flags: "--relation <name>", description: "Relation name (default: related)" }) relation?: string,
+    @Option({ flags: "--metadata <json>", description: "Link metadata JSON object" }) metadata?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const link = attachArtifact(
+      id,
+      targetType,
+      targetId,
+      relation?.trim() || "related",
+      parseJsonObject(metadata, "--metadata"),
+    );
+    const payload = { success: true, link };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact attached: ${id} -> ${targetType}:${targetId}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "archive", description: "Soft-archive an artifact" })
+  archive(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const artifact = archiveArtifact(id, contextDefaults().agentId);
+    const payload = { success: true, artifact };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact archived: ${artifact.id}`);
+    }
+    return payload;
+  }
+}
