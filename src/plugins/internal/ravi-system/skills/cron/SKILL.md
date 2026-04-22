@@ -51,10 +51,13 @@ ravi cron add "Lembrete" --at "2025-02-01T15:00" --message "Lembrar de X" --dele
 
 Opções:
 - `--agent <id>` - Agent que executa
+- `--account <id>` - Conta/canal usado para entrega quando o job responde em chat
 - `--tz <timezone>` - Fuso horário (ex: America/Sao_Paulo)
 - `--isolated` - Roda em sessão isolada
 - `--delete-after` - Deleta após primeira execução
 - `--description <text>` - Descrição do job
+
+Depois de criar job que deve responder em um chat/sessão específica, sempre rode `ravi cron show <id>` e confira `agent`, `account`, `session`/`reply-session` antes de considerar pronto. Não confie no account herdado do contexto atual: se o cron entregar pelo account errado, o agent pode trabalhar e falhar no delivery com `chat not found`.
 
 ### Ativar/Desativar
 ```bash
@@ -67,7 +70,7 @@ ravi cron disable <id>
 ravi cron set <id> <key> <value>
 ```
 
-Keys: name, message, cron, every, tz, agent, description, session, delete-after
+Keys: name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after
 
 ### Executar manualmente
 ```bash
