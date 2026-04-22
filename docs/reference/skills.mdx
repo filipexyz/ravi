@@ -1,0 +1,67 @@
+# Skills
+
+`ravi skills` installs, lists and inspects Ravi skills.
+
+The default source is the official Ravi skill catalog generated from:
+
+```text
+src/plugins/internal/**/skills/*/SKILL.md
+```
+
+External sources are explicit and use `--source`. A source can be a GitHub shorthand, GitHub URL, git URL, or local path.
+
+## List Catalog Skills
+
+```bash
+ravi skills list
+ravi skills list --json
+```
+
+## List Installed Skills
+
+```bash
+ravi skills list --installed
+ravi skills list --installed --codex --json
+```
+
+## List Skills In A Source
+
+```bash
+ravi skills list --source vercel-labs/skills
+ravi skills list --source https://github.com/vercel-labs/skills/tree/main/skills/find-skills
+```
+
+## Show A Skill
+
+```bash
+ravi skills show image
+ravi skills show image --installed
+ravi skills show find-skills --source vercel-labs/skills
+```
+
+## Install
+
+```bash
+ravi skills install image
+ravi skills install --all
+ravi skills install find-skills --source vercel-labs/skills
+ravi skills install --source ./my-skills --all
+```
+
+If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all`.
+
+Installed operator skills live in:
+
+```text
+~/ravi/plugins/ravi-user-skills/skills/<skill>
+```
+
+After install, the CLI syncs materialized Codex skills automatically unless `--skip-codex-sync` is passed.
+
+## Sync
+
+```bash
+ravi skills sync
+```
+
+Use this when plugin skill files changed on disk and you want the materialized skills directory refreshed immediately.

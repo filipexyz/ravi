@@ -1,7 +1,10 @@
 ---
 name: skill-creator
 description: |
-  Guia para criar skills no Claude Code. Use quando o usuário quiser:
+  Guia para criar, instalar e inspecionar skills no Ravi. Use quando o usuário quiser:
+  - Instalar skills oficiais do catálogo do Ravi
+  - Instalar skills de um repositório ou path local
+  - Listar ou ver o conteúdo de skills pelo CLI
   - Criar uma nova skill
   - Entender como skills funcionam
   - Configurar frontmatter de skills
@@ -11,6 +14,69 @@ description: |
 # Skill Creator - Guia Completo
 
 Skills estendem as capacidades do Claude. São arquivos markdown com instruções que Claude segue quando a skill é invocada.
+
+## CLI do Ravi
+
+Use `ravi skills` para operar skills sem editar diretórios manualmente.
+
+### Fonte Primária
+
+A fonte primária do `ravi skills` é o catálogo oficial do Ravi:
+
+```text
+src/plugins/internal/**/skills/*/SKILL.md
+```
+
+Use fontes externas somente quando passar `--source`.
+
+### Listar catálogo
+
+```bash
+ravi skills list
+ravi skills list --json
+```
+
+### Listar instaladas
+
+```bash
+ravi skills list --installed
+ravi skills list --installed --codex --json
+```
+
+### Ver uma skill
+
+```bash
+ravi skills show image
+ravi skills show image --installed
+ravi skills show find-skills --source vercel-labs/skills
+```
+
+### Ver skills disponíveis em uma fonte
+
+```bash
+ravi skills list --source vercel-labs/skills
+ravi skills list --source https://github.com/vercel-labs/skills/tree/main/skills/find-skills
+```
+
+### Instalar
+
+```bash
+ravi skills install image
+ravi skills install --all
+ravi skills install find-skills --source vercel-labs/skills
+ravi skills install --source ./minhas-skills --all
+```
+
+Quando um catálogo/fonte contém várias skills, não instale implicitamente todas: passe um nome ou `--all`.
+
+O destino canônico de skills instaladas pelo operador é `~/ravi/plugins/ravi-user-skills/skills/<skill>`.
+Depois da instalação, o CLI sincroniza a materialização em `~/.codex/skills` quando aplicável.
+
+### Sincronizar
+
+```bash
+ravi skills sync
+```
 
 ## Estrutura de uma Skill
 

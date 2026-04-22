@@ -106,8 +106,8 @@
             "pages": ["reference/nats-events"]
           },
           {
-            "group": "Media",
-            "pages": ["reference/media"]
+            "group": "Tools",
+            "pages": ["reference/media", "reference/artifacts", "reference/skills"]
           }
         ]
       }
