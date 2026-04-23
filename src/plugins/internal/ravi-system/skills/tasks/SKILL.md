@@ -125,6 +125,46 @@ ravi tasks profiles init <profile-id> --preset <doc-first|brainstorm|runtime-onl
 
 `--preset` serve para scaffold. O runtime real é declarativo.
 
+## Templates do Profile
+
+Profiles controlam as surfaces humanas da task via `templates`.
+
+Templates atuais:
+
+- `create`: renderiza o output de `ravi tasks create`
+- `dispatch`: prompt enviado para a sessão trabalhadora
+- `resume`: prompt de retomada após restart
+- `dispatchSummary` e `dispatchEventMessage`: resumos de dispatch
+- `reportDoneMessage`, `reportBlockedMessage`, `reportFailedMessage`: mensagens de sync terminal
+
+Para profiles externos (`plugin`, `workspace`, `user`), templates podem ser inline ou arquivo:
+
+```json
+{
+  "templates": {
+    "create": { "path": "./create.md" },
+    "dispatch": { "path": "./dispatch.md" }
+  }
+}
+```
+
+`create` deve ser uma surface única, normalmente `create.md`. Use esse template para forçar briefing eficiente antes do dispatch: objetivo, contexto, escopo dentro/fora, critérios de aceite, dependências/riscos, validação e handoff.
+
+Scaffolds novos devem nascer em Markdown:
+
+```text
+create.md
+dispatch.md
+resume.md
+dispatch-summary.md
+dispatch-event.md
+report-done.md
+report-blocked.md
+report-failed.md
+```
+
+O loader aceita paths legados como `.txt`, mas não crie scaffold novo em `.txt`.
+
 ## Fluxo Canônico
 
 ```text
@@ -133,6 +173,7 @@ ravi tasks create --profile <id>
 -> valida inputs/templates/artifacts
 -> task nasce com snapshot + state + input pinados
 -> bootstrap do workspace
+-> renderiza templates.create para orientar briefing/readiness/next steps
 -> ravi tasks dispatch
 -> prompt/resumo/evento vêm do profile
 -> runtime model/effort/thinking vem da task/profile/dispatch quando definido
