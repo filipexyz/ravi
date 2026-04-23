@@ -1665,7 +1665,7 @@ async function getChatListResolveOmniChats(sessions: ReturnType<typeof getOverla
     return chatListResolveOmniCache.chats;
   }
 
-  const instances = await listOmniWhatsAppInstances();
+  const instances = await listOmniInstances();
   const preferredInstanceName = getChatListResolvePreferredInstanceName();
   const preferredInstance = findOmniInstanceByHint(instances, preferredInstanceName);
   const targetInstances = preferredInstance ? [preferredInstance] : instances;
@@ -2032,7 +2032,7 @@ async function buildOmniPanelSnapshot(query: {
   });
   const actor = buildOmniPanelActor(overlaySnapshot.session);
   const omniAgents = buildOmniPanelAgents(actor);
-  const instances = await listOmniWhatsAppInstances();
+  const instances = await listOmniInstances();
   const preferredHint = resolvePreferredOmniInstanceHint(query.instance, overlaySnapshot.session?.accountId ?? null);
   const authorizedInstances = instances.map((instance) => applyOmniInstanceAuth(instance, actor));
   const activeInstances = authorizedInstances.filter((instance) => instance.isActive);
@@ -2050,7 +2050,7 @@ async function buildOmniPanelSnapshot(query: {
       chats: [],
       groups: [],
       sessions: buildOmniPanelSessions(getOverlaySessions(), actor),
-      warnings: ["Nenhuma instância WhatsApp do Omni disponível."],
+      warnings: ["Nenhuma instância do Omni disponível."],
       generatedAt: Date.now(),
     };
   }
@@ -2172,7 +2172,7 @@ async function runOmniJsonUncached(args: string[], commandArgs: string[]): Promi
   });
 }
 
-async function listOmniWhatsAppInstances(): Promise<OmniPanelInstance[]> {
+async function listOmniInstances(): Promise<OmniPanelInstance[]> {
   let raw: unknown;
   try {
     raw = await runOmniJson(["instances", "list"]);
@@ -2180,9 +2180,7 @@ async function listOmniWhatsAppInstances(): Promise<OmniPanelInstance[]> {
     return [];
   }
   const records = Array.isArray(raw) ? (raw as OmniInstanceRecord[]) : [];
-  const whatsappInstances = records.filter((record) => normalizeLookupToken(record.channel).includes("whatsapp"));
-
-  const enriched = whatsappInstances.map(
+  const enriched = records.map(
     (record) =>
       ({
         id: record.id,
@@ -2528,9 +2526,8 @@ function toOmniPanelSessionSnapshot(session: SessionEntry): OverlaySessionSnapsh
   };
 }
 
-function isOmniRelevantSession(session: ReturnType<typeof getOverlaySessions>[number]): boolean {
-  const channel = normalizeLookupToken(session.lastChannel ?? session.channel);
-  return !channel || channel.includes("whatsapp");
+function isOmniRelevantSession(_session: ReturnType<typeof getOverlaySessions>[number]): boolean {
+  return true;
 }
 
 function resolvePreferredOmniInstanceHint(
@@ -2592,7 +2589,7 @@ function buildOmniWarnings(
 ): string[] {
   const warnings: string[] = [];
   if (!preferredInstance) {
-    warnings.push("Nenhuma instância WhatsApp do Omni disponível.");
+    warnings.push("Nenhuma instância do Omni disponível.");
     return warnings;
   }
 

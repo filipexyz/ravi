@@ -3865,7 +3865,7 @@ async function runOmniRouteAction(fn) {
 
 function renderOmniInstanceRows(items, preferredInstance) {
   if (!items.length) {
-    return `<p class="ravi-wa-empty">Nenhuma instância WhatsApp do Omni disponível.</p>`;
+    return `<p class="ravi-wa-empty">Nenhuma instância do Omni disponível.</p>`;
   }
 
   return `

@@ -1070,9 +1070,8 @@ function shouldReplaceTaskSessionCandidate(
   return next.updatedAt > current.updatedAt;
 }
 
-function isRelevantOverlaySession(session: SessionEntry): boolean {
-  const channel = normalizeLookupToken(session.lastChannel ?? session.channel);
-  return !channel || channel.includes("whatsapp");
+function isRelevantOverlaySession(_session: SessionEntry): boolean {
+  return true;
 }
 
 function isBusyOverlayActivity(activity: OverlayActivity | null | undefined): boolean {

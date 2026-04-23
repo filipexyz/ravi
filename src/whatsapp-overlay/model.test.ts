@@ -853,7 +853,7 @@ describe("whatsapp overlay model", () => {
     });
 
     expect(snapshot.session?.agentId).toBe("main");
-    expect(snapshot.recentSessions).toHaveLength(3);
+    expect(snapshot.recentSessions).toHaveLength(4);
     expect(snapshot.recentChats).toEqual(snapshot.recentSessions);
     expect(snapshot.recentSessions[0]).toMatchObject({
       sessionName: "dev-main",
@@ -867,6 +867,12 @@ describe("whatsapp overlay model", () => {
       channel: null,
     });
     expect(snapshot.recentSessions[2]).toMatchObject({
+      sessionName: "telegram-recent",
+      agentId: "tg",
+      chatId: "chat-1",
+      channel: "telegram",
+    });
+    expect(snapshot.recentSessions[3]).toMatchObject({
       sessionName: "sales-b",
       agentId: "ops",
       chatId: "5511999999999@s.whatsapp.net",
