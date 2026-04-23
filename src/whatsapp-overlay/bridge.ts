@@ -83,6 +83,7 @@ const HOT_SESSION_TASK_CACHE_TTL_MS = 1_000;
 const SESSION_LIVE_EVENT_LIMIT = 40;
 const SESSION_LIVE_MESSAGE_LIMIT = 24;
 const SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
+const RUNTIME_TRACKER_YIELD_EVERY = 50;
 
 function toTaskDocRef(task: { id: string; taskDir: string | null }) {
   return {
@@ -108,6 +109,10 @@ const domCommandResults = new Map<string, OverlayDomCommandResult>();
 const runtimeTrackerTasks = new Set<Promise<void>>();
 let chatListResolveOmniCache: { expiresAt: number; chats: OmniPanelChat[] } | null = null;
 let hotSessionTaskCache: { expiresAt: number; items: TaskStreamTaskEntity[] } | null = null;
+
+function yieldOverlayEventLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
 
 type ActionName = "abort" | "reset" | "set-thinking" | "rename";
 
@@ -257,15 +262,6 @@ type OmniInstanceRecord = {
   updatedAt?: string | null;
 };
 
-type OmniWhoamiRecord = {
-  instanceId?: string | null;
-  phone?: string | null;
-  profileName?: string | null;
-  ownerIdentifier?: string | null;
-  state?: string | null;
-  isConnected?: boolean;
-};
-
 type OmniChatRecord = {
   id: string;
   instanceId: string;
@@ -280,19 +276,6 @@ type OmniChatRecord = {
   lastMessageAt?: string | null;
   lastMessagePreview?: string | null;
   updatedAt?: string | null;
-};
-
-type OmniGroupRecord = {
-  externalId?: string | null;
-  name?: string | null;
-  description?: string | null;
-  memberCount?: number | null;
-  createdAt?: string | null;
-  isReadOnly?: boolean;
-  platformMetadata?: {
-    isCommunity?: boolean;
-    isCommunityAnnounce?: boolean;
-  } | null;
 };
 
 type OmniPanelInstance = {
@@ -418,18 +401,19 @@ class OverlayHttpResponseError extends Error {
   }
 }
 
-const OMNI_PANEL_CACHE_TTL_MS = 3_000;
+const OMNI_PANEL_CACHE_TTL_MS = 10_000;
+const OMNI_JSON_TIMEOUT_MS = Number(process.env.RAVI_WA_OVERLAY_OMNI_TIMEOUT_MS ?? 4_000);
 const omniPanelCache = new Map<string, { expiresAt: number; value: Promise<OmniPanelSnapshot> | OmniPanelSnapshot }>();
+const omniJsonInflight = new Map<string, Promise<unknown>>();
 const overlayV3Relay = createCliStreamRelay({
   command: "bun",
   args: ["src/cli/index.ts", "stream", "--scope", "overlay.whatsapp", "--heartbeat-ms", "1500"],
   cwd: REPO_ROOT,
   scope: "overlay.whatsapp",
+  startTimeoutMs: 15_000,
 });
 let overlayV3RelayBoot: Promise<void> | null = null;
 let overlayV3RelayEventsBound = false;
-
-void ensureOverlayV3Relay();
 
 void connectOverlayNats()
   .then(startRuntimeTracker)
@@ -607,12 +591,6 @@ function getOverlayV3RelayHealth(): OverlayV3RelayHealth {
 }
 
 async function handleV3Placeholders(url: URL): Promise<Response> {
-  try {
-    await ensureOverlayV3Relay();
-  } catch {
-    // keep serving degraded placeholder state even if the relay is down
-  }
-
   const payload = buildOverlayV3PlaceholderSnapshot({
     publishedState: latestPublishedState,
     relay: getOverlayV3RelayHealth(),
@@ -2083,7 +2061,7 @@ async function buildOmniPanelSnapshot(query: {
         : null;
 
   const chats = preferredInstance ? (chatsByInstance.get(preferredInstance.id) ?? []) : [];
-  const groups = preferredInstance ? await listOmniGroups(preferredInstance.name, actor) : [];
+  const groups: OmniPanelGroup[] = [];
   const warnings = buildOmniWarnings(preferredInstance, currentChat, query);
 
   return {
@@ -2104,71 +2082,102 @@ async function buildOmniPanelSnapshot(query: {
 
 async function runOmniJson(args: string[]): Promise<unknown> {
   const commandArgs = args.includes("--json") ? args : [...args, "--json"];
+  const cacheKey = JSON.stringify(commandArgs);
+  const existing = omniJsonInflight.get(cacheKey);
+  if (existing) return await existing;
+
+  const pending = runOmniJsonUncached(args, commandArgs).finally(() => {
+    omniJsonInflight.delete(cacheKey);
+  });
+  omniJsonInflight.set(cacheKey, pending);
+  return await pending;
+}
+
+async function runOmniJsonUncached(args: string[], commandArgs: string[]): Promise<unknown> {
   return await new Promise((resolve, reject) => {
     const proc = spawn("omni", commandArgs, {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let settled = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      proc.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        proc.kill("SIGKILL");
+      }, 1_000);
+      killTimer.unref?.();
+      reject(new Error(`omni ${args.join(" ")} timed out after ${OMNI_JSON_TIMEOUT_MS}ms`));
+    }, OMNI_JSON_TIMEOUT_MS);
+    timeout.unref?.();
+
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+      callback();
+    };
 
     proc.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
     proc.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
-    proc.on("error", reject);
+    proc.on("error", (error) => {
+      finish(() => reject(error));
+    });
     proc.on("close", (code) => {
-      const stdoutText = Buffer.concat(stdout).toString("utf8").trim();
-      const stderrText = Buffer.concat(stderr).toString("utf8").trim();
-      if (code !== 0) {
-        reject(new Error(stderrText || `omni ${args.join(" ")} failed`));
-        return;
-      }
-      if (!stdoutText) {
-        resolve(null);
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdoutText));
-      } catch (error) {
-        reject(error);
-      }
+      finish(() => {
+        const stdoutText = Buffer.concat(stdout).toString("utf8").trim();
+        const stderrText = Buffer.concat(stderr).toString("utf8").trim();
+        if (code !== 0) {
+          reject(new Error(stderrText || `omni ${args.join(" ")} failed`));
+          return;
+        }
+        if (!stdoutText) {
+          resolve(null);
+          return;
+        }
+        try {
+          resolve(JSON.parse(stdoutText));
+        } catch (error) {
+          reject(error);
+        }
+      });
     });
   });
 }
 
 async function listOmniWhatsAppInstances(): Promise<OmniPanelInstance[]> {
-  const raw = await runOmniJson(["instances", "list"]);
+  let raw: unknown;
+  try {
+    raw = await runOmniJson(["instances", "list"]);
+  } catch {
+    return [];
+  }
   const records = Array.isArray(raw) ? (raw as OmniInstanceRecord[]) : [];
   const whatsappInstances = records.filter((record) => normalizeLookupToken(record.channel).includes("whatsapp"));
 
-  const enriched = await Promise.all(
-    whatsappInstances.map(async (record) => {
-      const whoami = await getOmniWhoami(record.name);
-      return {
+  const enriched = whatsappInstances.map(
+    (record) =>
+      ({
         id: record.id,
         name: record.name,
         channel: cleanNullable(record.channel) ?? "whatsapp-baileys",
         isActive: record.isActive === true,
-        status: cleanNullable(whoami?.state) ?? (record.isActive ? "active" : "inactive"),
-        isConnected: whoami?.isConnected === true,
-        profileName: cleanNullable(whoami?.profileName) ?? cleanNullable(record.profileName),
-        phone: cleanNullable(whoami?.phone),
-        ownerIdentifier: cleanNullable(whoami?.ownerIdentifier) ?? cleanNullable(record.ownerIdentifier),
+        status: record.isActive ? "active" : "inactive",
+        isConnected: record.isActive === true,
+        profileName: cleanNullable(record.profileName),
+        phone: null,
+        ownerIdentifier: cleanNullable(record.ownerIdentifier),
         lastSeenAt: cleanNullable(record.lastSeenAt),
         updatedAt: cleanNullable(record.updatedAt),
-      } satisfies OmniPanelInstance;
-    }),
+      }) satisfies OmniPanelInstance,
   );
 
   return enriched.sort((a, b) => compareOmniInstances(a, b));
-}
-
-async function getOmniWhoami(instanceName: string): Promise<OmniWhoamiRecord | null> {
-  try {
-    const raw = await runOmniJson(["instances", "whoami", instanceName]);
-    if (!raw || Array.isArray(raw) || typeof raw !== "object") return null;
-    return raw as OmniWhoamiRecord;
-  } catch {
-    return null;
-  }
 }
 
 async function listOmniChats(
@@ -2181,19 +2190,6 @@ async function listOmniChats(
     const raw = await runOmniJson(["chats", "list", "--instance", instanceName, "--limit", String(limit)]);
     const records = Array.isArray(raw) ? (raw as OmniChatRecord[]) : [];
     return records.map((record) => toOmniPanelChat(record, instanceName, sessions, actor)).sort(compareOmniChats);
-  } catch {
-    return [];
-  }
-}
-
-async function listOmniGroups(instanceName: string, actor: OmniPanelActor | null = null): Promise<OmniPanelGroup[]> {
-  try {
-    const raw = await runOmniJson(["instances", "groups", instanceName]);
-    const records = Array.isArray(raw) ? (raw as OmniGroupRecord[]) : [];
-    return records
-      .map((record) => applyOmniGroupAuth(toOmniPanelGroup(record, instanceName), actor))
-      .sort(compareOmniGroups)
-      .slice(0, 12);
   } catch {
     return [];
   }
@@ -2224,27 +2220,6 @@ function buildOmniPanelAgents(actor: OmniPanelActor | null = null): OmniPanelAge
       ),
     )
     .sort((a, b) => a.id.localeCompare(b.id));
-}
-
-function toOmniPanelGroup(record: OmniGroupRecord, instanceName: string): OmniPanelGroup {
-  const target = buildOmniRouteDescriptor(
-    cleanNullable(record.externalId),
-    instanceName,
-    "group",
-    cleanNullable(record.name),
-  );
-  return {
-    instanceId: instanceName,
-    externalId: cleanNullable(record.externalId),
-    name: cleanNullable(record.name),
-    description: cleanNullable(record.description),
-    memberCount: typeof record.memberCount === "number" ? record.memberCount : null,
-    createdAt: cleanNullable(record.createdAt),
-    isReadOnly: record.isReadOnly === true,
-    isCommunity: record.platformMetadata?.isCommunity === true,
-    routePattern: target?.routePattern ?? null,
-    routeObjectId: target ? buildRouteObjectId(target.instanceName, target.routePattern) : null,
-  };
 }
 
 function buildOmniPanelActor(session: OverlaySessionSnapshot | null): OmniPanelActor | null {
@@ -2451,16 +2426,6 @@ function applyOmniChatAuth(chat: OmniPanelChat, actor: OmniPanelActor | null): O
     unreadCount: view.allowed ? chat.unreadCount : null,
     lastMessagePreview: view.allowed ? chat.lastMessagePreview : null,
     linkedSession: view.allowed ? chat.linkedSession : null,
-    auth: { visibility: view.allowed ? "full" : "opaque", view },
-  };
-}
-
-function applyOmniGroupAuth(group: OmniPanelGroup, actor: OmniPanelActor | null): OmniPanelGroup {
-  const view = checkRouteRead(actor, group.routeObjectId ?? null);
-  return {
-    ...group,
-    description: view.allowed ? group.description : null,
-    memberCount: view.allowed ? group.memberCount : null,
     auth: { visibility: view.allowed ? "full" : "opaque", view },
   };
 }
@@ -2681,14 +2646,6 @@ function compareOmniChats(a: OmniPanelChat, b: OmniPanelChat): number {
   );
 }
 
-function compareOmniGroups(a: OmniPanelGroup, b: OmniPanelGroup): number {
-  return (
-    (b.memberCount ?? 0) - (a.memberCount ?? 0) ||
-    compareIsoDateDesc(a.createdAt, b.createdAt) ||
-    (a.name ?? a.externalId ?? "").localeCompare(b.name ?? b.externalId ?? "")
-  );
-}
-
 function compareIsoDateDesc(a: string | null | undefined, b: string | null | undefined): number {
   const aTime = a ? Date.parse(a) : 0;
   const bTime = b ? Date.parse(b) : 0;
@@ -2803,7 +2760,12 @@ async function startRuntimeTracker(): Promise<void> {
 }
 
 async function trackSessionRuntime(): Promise<void> {
+  let processedEvents = 0;
   for await (const event of subscribe("ravi.session.>")) {
+    if (++processedEvents % RUNTIME_TRACKER_YIELD_EVERY === 0) {
+      await yieldOverlayEventLoop();
+    }
+
     const { topic, data } = event;
     const sessionName = topic.split(".")[2];
     if (!sessionName) continue;
@@ -2910,6 +2872,8 @@ async function trackSessionRuntime(): Promise<void> {
 
     if (topic.endsWith(".runtime") || topic.endsWith(".claude")) {
       const type = typeof data.type === "string" ? data.type : undefined;
+      if (type === "provider.raw") continue;
+
       const subtype = typeof data.subtype === "string" ? data.subtype : undefined;
       const status = typeof data.status === "string" ? data.status : undefined;
       const eventTimestamp = Date.now();
@@ -2981,7 +2945,7 @@ async function trackSessionRuntime(): Promise<void> {
           ...(metadata ? { metadata } : {}),
         });
         upsertLive(sessionName, "thinking", "tool finished");
-      } else if (type === "provider.raw" || type === "system" || type === "user") {
+      } else if (type === "system" || type === "user") {
         upsertLive(sessionName, "thinking", "working");
       } else if (type === "turn.interrupted") {
         const artifact = buildInterruptionArtifact(

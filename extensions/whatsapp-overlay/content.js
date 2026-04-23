@@ -147,6 +147,7 @@ let insightsInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
+const renderSignatures = new Map();
 const taskDetailPaneScrollTopByTaskId = new Map();
 const TASK_WORKSPACE_DEFAULT_SECTION_STATE = Object.freeze({
   instructions: true,
@@ -223,6 +224,31 @@ function requestRender(
   render(snapshot, context);
 }
 
+function shouldRenderSnapshot(key, payload, force = false) {
+  const signature = buildStableSignature(payload);
+  if (!force && renderSignatures.get(key) === signature) return false;
+  renderSignatures.set(key, signature);
+  return true;
+}
+
+function buildStableSignature(value) {
+  return JSON.stringify(stripVolatileFields(value));
+}
+
+function stripVolatileFields(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripVolatileFields(item));
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const out = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (key === "generatedAt" || key === "postedAt") continue;
+    out[key] = stripVolatileFields(nested);
+  }
+  return out;
+}
+
 function getWorkspaceScrollSelectors(workspace = activeWorkspace) {
   switch (workspace) {
     case "tasks":
@@ -282,7 +308,10 @@ async function refreshSnapshot() {
     });
     bridgeError = null;
     latestSnapshot = snapshot;
-    if (activeWorkspace === "ravi") {
+    if (
+      activeWorkspace === "ravi" &&
+      shouldRenderSnapshot("snapshot:ravi", snapshot)
+    ) {
       requestRender(snapshot, context);
     }
   } catch (error) {
@@ -314,7 +343,15 @@ async function refreshSessionWorkspace(force = false) {
     }
     bridgeError = null;
     latestSessionWorkspace = workspace;
-    requestRender();
+    if (
+      shouldRenderSnapshot(
+        `session-workspace:${requestedSessionKey}`,
+        workspace,
+        force,
+      )
+    ) {
+      requestRender();
+    }
   } catch (error) {
     handleRuntimeError(error);
   }
@@ -339,7 +376,10 @@ async function refreshOmniPanel(force = false) {
     if (panel?.ok) {
       latestOmniPanel = panel;
       bridgeError = null;
-      if (activeWorkspace === "omni") {
+      if (
+        activeWorkspace === "omni" &&
+        shouldRenderSnapshot("workspace:omni", panel, force)
+      ) {
         requestRender();
       }
     }
@@ -414,7 +454,10 @@ async function refreshTasks(force = false) {
       rememberTaskSelection(next?.selectedTask);
       syncTaskDetailDrawerSnapshot(next);
       bridgeError = null;
-      if (activeWorkspace === "tasks" || activeWorkspace === "ravi") {
+      if (
+        (activeWorkspace === "tasks" || activeWorkspace === "ravi") &&
+        shouldRenderSnapshot(`workspace:tasks:${activeWorkspace}`, next, force)
+      ) {
         requestRender();
       }
     }
@@ -440,7 +483,10 @@ async function refreshInsights(force = false) {
     if (next?.ok) {
       latestInsightsSnapshot = next;
       bridgeError = null;
-      if (activeWorkspace === "insights") {
+      if (
+        activeWorkspace === "insights" &&
+        shouldRenderSnapshot("workspace:insights", next, force)
+      ) {
         requestRender();
       }
     }
@@ -12368,7 +12414,33 @@ function buildPlaceholderDetail(placeholder) {
 
 function hasViewChanged(prev, next) {
   if (!prev) return true;
-  return JSON.stringify(prev) !== JSON.stringify(next);
+  return buildViewStateSignature(prev) !== buildViewStateSignature(next);
+}
+
+function buildViewStateSignature(view) {
+  if (!view) return "";
+  return JSON.stringify({
+    screen: view.screen || null,
+    title: view.title || null,
+    selectedChat: view.selectedChat || null,
+    chatIdCandidate: view.chatIdCandidate || null,
+    url: view.url || null,
+    hasConversationHeader: Boolean(view.hasConversationHeader),
+    hasComposer: Boolean(view.hasComposer),
+    hasChatList: Boolean(view.hasChatList),
+    hasDrawer: Boolean(view.hasDrawer),
+    hasModal: Boolean(view.hasModal),
+    components: view.components || [],
+    chatRows: (view.chatRows || []).map((row) => ({
+      id: row.id || null,
+      title: row.title || null,
+      chatIdCandidate: row.chatIdCandidate || null,
+      selected: row.selected === true,
+      unreadCount: row.unreadCount ?? null,
+      preview: row.preview || null,
+      timeLabel: row.timeLabel || null,
+    })),
+  });
 }
 
 function handleRuntimeError(error) {
