@@ -134,7 +134,7 @@ Delete the ravi consumer and restart the daemon. Ravi recreates consumers with `
 
 ```bash
 nats consumer rm MESSAGE ravi-messages --server nats://127.0.0.1:4222
-ravi daemon restart
+ravi daemon restart -m "recreate NATS consumers"
 ```
 
 This only reprocesses new messages arriving after restart.

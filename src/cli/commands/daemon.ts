@@ -8,12 +8,41 @@ import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statS
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
-import { hasContext, fail } from "../context.js";
+import { getContext, hasContext, fail } from "../context.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
 const RESTART_REASON_FILE = join(RAVI_DIR, "restart-reason.txt");
+
+function readRestartReason(): { reason?: string; sessionName?: string } | null {
+  if (!existsSync(RESTART_REASON_FILE)) return null;
+  try {
+    const raw = readFileSync(RESTART_REASON_FILE, "utf-8").trim();
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as { reason?: string; sessionName?: string };
+    } catch {
+      return { reason: raw };
+    }
+  } catch {
+    return null;
+  }
+}
+
+function writeRestartReason(
+  reason: string,
+  sessionName?: string,
+  options: { preserveExistingSession?: boolean } = {},
+): void {
+  mkdirSync(RAVI_DIR, { recursive: true });
+  const existingSession = options.preserveExistingSession ? readRestartReason()?.sessionName : undefined;
+  const targetSession = sessionName ?? existingSession;
+  writeFileSync(
+    RESTART_REASON_FILE,
+    JSON.stringify({ reason, ...(targetSession ? { sessionName: targetSession } : {}) }),
+  );
+}
 
 type SourceProjectRootLookupOptions = {
   configuredPath?: string | null;
@@ -328,54 +357,25 @@ export class DaemonCommands {
   restart(
     @Option({ flags: "-m, --message <msg>", description: "Restart reason to notify main agent" }) message?: string,
     @Option({ flags: "-b, --build", description: "Run build before restarting (dev mode)" }) build?: boolean,
-    @Option({ flags: "-f, --force", description: "Bypass safety checks (active tasks)" }) force?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requirePm2();
 
-    // Safety check: block restart if tasks are actively running
-    if (!force) {
-      try {
-        const { dbGetActiveTasksBlocking } = require("../../tasks/task-db.js");
-        const activeTasks = dbGetActiveTasksBlocking();
-        if (activeTasks.length > 0) {
-          const summary = activeTasks
-            .slice(0, 5)
-            .map(
-              (t: { id: string; title: string; status: string; assigneeAgentId?: string }) =>
-                `  - ${t.id} "${t.title}" (${t.status}, agent: ${t.assigneeAgentId || "none"})`,
-            )
-            .join("\n");
-          const extra = activeTasks.length > 5 ? `\n  ... e mais ${activeTasks.length - 5} tasks` : "";
-          fail(
-            `Restart bloqueado: ${activeTasks.length} task(s) em andamento.\n\n` +
-              `${summary}${extra}\n\n` +
-              `O restart mata todas as sessões ativas e interrompe o trabalho em andamento.\n` +
-              `Aguarde as tasks terminarem ou use --force para ignorar esta verificação.`,
-          );
-        }
-      } catch {
-        // If task DB is unavailable (e.g. outside daemon), skip check
-      }
+    if (!message) {
+      fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');
     }
 
     // When called inside daemon, spawn detached restart and return immediately
     if (hasContext()) {
       const target = this.requireRuntimeTarget({ build });
-      if (!message) {
-        fail('Flag -m é obrigatória quando chamado pelo Ravi. Use: ravi daemon restart -m "motivo"');
-      }
 
       // Save restart reason with session context
-      mkdirSync(RAVI_DIR, { recursive: true });
-      const sessionName = process.env.RAVI_SESSION_NAME;
-      const restartData = JSON.stringify({ reason: message, sessionName });
-      writeFileSync(RESTART_REASON_FILE, restartData);
+      const sessionName = getContext()?.sessionName ?? process.env.RAVI_SESSION_NAME;
+      writeRestartReason(message, sessionName);
 
       // Spawn detached process to do the actual restart
-      const args = [target.bundlePath, "daemon", "restart"];
+      const args = [target.bundlePath, "daemon", "restart", "-m", message];
       if (build) args.push("--build");
-      if (force) args.push("--force");
 
       const cleanEnv = { ...process.env };
       for (const key of Object.keys(cleanEnv)) {
@@ -395,12 +395,10 @@ export class DaemonCommands {
       if (asJson) {
         const payload = {
           action: "restart",
-          mode: "detached",
-          scheduled: true,
+          mode: "handoff",
           changed: true,
           message,
           build: Boolean(build),
-          force: Boolean(force),
           target,
           sessionName,
         };
@@ -408,7 +406,7 @@ export class DaemonCommands {
         return payload;
       }
 
-      console.log("Restart scheduled (detached)");
+      console.log("Daemon restart started");
       return;
     }
 
@@ -430,8 +428,7 @@ export class DaemonCommands {
             action: "restart",
             changed: false,
             build: buildResult,
-            force: Boolean(force),
-            message: message ?? null,
+            message,
             target,
             status: buildDaemonStatusJson(),
           };
@@ -441,11 +438,7 @@ export class DaemonCommands {
       }
     }
 
-    // Save restart reason if provided
-    if (message) {
-      mkdirSync(RAVI_DIR, { recursive: true });
-      writeFileSync(RESTART_REASON_FILE, message);
-    }
+    writeRestartReason(message, undefined, { preserveExistingSession: true });
 
     let pm2Status = 0;
     const previousRunning = isRaviRunning();
@@ -476,8 +469,7 @@ export class DaemonCommands {
           previousRunning,
           pm2Status,
           build: buildResult,
-          force: Boolean(force),
-          message: message ?? null,
+          message,
           target,
           status: buildDaemonStatusJson(),
         };
@@ -510,8 +502,7 @@ export class DaemonCommands {
           previousRunning,
           pm2Status: status,
           build: buildResult,
-          force: Boolean(force),
-          message: message ?? null,
+          message,
           target,
           status: buildDaemonStatusJson(),
         };
@@ -764,7 +755,7 @@ export class DaemonCommands {
     const projectRoot = this.requireSourceProjectRoot();
 
     console.log(`Dev mode - watching ${projectRoot}/src`);
-    console.log("Auto-rebuild on changes. Use 'ravi daemon restart' to apply.\n");
+    console.log("Auto-rebuild on changes. Use 'ravi daemon restart -m \"motivo\"' to apply.\n");
     console.log("Press Ctrl+C to stop\n");
 
     // Initial build
@@ -780,7 +771,7 @@ export class DaemonCommands {
       console.log("\nRebuilding...");
       try {
         execSync("bun run build", { stdio: "inherit", cwd: projectRoot });
-        console.log("Build completed - run 'ravi daemon restart' to apply");
+        console.log("Build completed - run 'ravi daemon restart -m \"motivo\"' to apply");
       } catch {
         console.error("Build failed");
       }

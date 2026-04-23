@@ -26,9 +26,8 @@ Manage the ravi daemon process via PM2.
 ```bash
 ravi daemon start                             # Start daemon via PM2
 ravi daemon stop                              # Stop daemon
-ravi daemon restart                           # Restart daemon
-ravi daemon restart -m "reason"               # Restart with reason (required when called by agent)
-ravi daemon restart --build                   # Build before restarting
+ravi daemon restart -m "reason"               # Restart daemon with required reason
+ravi daemon restart --build -m "reason"       # Build before restarting
 ravi daemon status                            # Show daemon + infra status (ravi, omni-nats, omni-api)
 ravi daemon logs                              # Show last 50 lines
 ravi daemon logs -f                           # Follow log output

@@ -31,7 +31,6 @@ ravi daemon stop
 
 ### Reiniciar
 ```bash
-ravi daemon restart
 ravi daemon restart --message "Motivo do restart"
 ```
 
