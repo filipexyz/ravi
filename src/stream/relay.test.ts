@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { createCliStreamRelay } from "./relay.js";
 
 const fixturePath = fileURLToPath(new URL("./fixtures/stream-relay-fixture.ts", import.meta.url));
+const silentFixturePath = fileURLToPath(new URL("./fixtures/stream-relay-silent-fixture.ts", import.meta.url));
 
 describe("cli stream relay", () => {
   const relay = createCliStreamRelay({
@@ -63,5 +64,23 @@ describe("cli stream relay", () => {
       message: "fixture failure",
       retryable: false,
     });
+  });
+
+  it("cleans up the child process when startup hello times out", async () => {
+    const timedOutRelay = createCliStreamRelay({
+      command: process.execPath,
+      args: [silentFixturePath],
+      scope: "overlay.whatsapp",
+      startTimeoutMs: 50,
+    });
+
+    await expect(timedOutRelay.start()).rejects.toThrow("Timed out waiting for stream hello after 50ms");
+
+    const health = timedOutRelay.health();
+    expect(health.status).toBe("broken");
+    expect(health.pid).toBeNull();
+    expect(health.lastError).toBe("Timed out waiting for stream hello after 50ms");
+
+    await timedOutRelay.stop();
   });
 });

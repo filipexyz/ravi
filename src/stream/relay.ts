@@ -148,6 +148,16 @@ export function createCliStreamRelay(options: CliStreamRelayOptions): CliStreamR
     writeInput(message);
   }
 
+  function cleanupChild(signal: NodeJS.Signals = "SIGTERM"): void {
+    lineReader?.close();
+    lineReader = null;
+    if (child) {
+      child.kill(signal);
+      child = null;
+    }
+    state.pid = null;
+  }
+
   function handleMessage(message: StreamOutputMessage): void {
     if ("cursor" in message && typeof message.cursor === "string") {
       state.lastCursor = message.cursor;
@@ -220,15 +230,16 @@ export function createCliStreamRelay(options: CliStreamRelayOptions): CliStreamR
     state.lastError = null;
     const helloReady = deferred<StreamHelloMessage>();
 
-    child = spawn(options.command, options.args, {
+    const spawnedChild = spawn(options.command, options.args, {
       cwd: options.cwd,
       env: options.env,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    child = spawnedChild;
 
-    state.pid = child.pid ?? null;
+    state.pid = spawnedChild.pid ?? null;
     lineReader = createInterface({
-      input: child.stdout,
+      input: spawnedChild.stdout,
       crlfDelay: Infinity,
     });
 
@@ -248,16 +259,22 @@ export function createCliStreamRelay(options: CliStreamRelayOptions): CliStreamR
       }
     });
 
-    child.stderr.on("data", (chunk: Buffer | string) => {
+    spawnedChild.stderr.on("data", (chunk: Buffer | string) => {
       const text = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
       state.lastError = text.trim() || state.lastError;
     });
 
-    child.on("exit", (code, signal) => {
+    spawnedChild.on("exit", (code, signal) => {
       const reason = `CLI stream exited (${code ?? "null"}${signal ? ` ${signal}` : ""})`;
+      if (child === spawnedChild) {
+        child = null;
+        state.pid = null;
+        lineReader?.close();
+        lineReader = null;
+      }
       if (state.status !== "stopped") {
         state.status = "broken";
-        state.lastError = reason;
+        state.lastError = state.lastError ?? reason;
       }
       rejectAll(new Error(reason));
     });
@@ -265,7 +282,12 @@ export function createCliStreamRelay(options: CliStreamRelayOptions): CliStreamR
     sendHello();
 
     const timer = setTimeout(() => {
-      helloReady.reject(new Error(`Timed out waiting for stream hello after ${startTimeoutMs}ms`));
+      const error = new Error(`Timed out waiting for stream hello after ${startTimeoutMs}ms`);
+      state.status = "broken";
+      state.lastError = error.message;
+      rejectAll(error);
+      cleanupChild();
+      helloReady.reject(error);
     }, startTimeoutMs);
     timer.unref?.();
 
@@ -281,13 +303,7 @@ export function createCliStreamRelay(options: CliStreamRelayOptions): CliStreamR
   async function stop(): Promise<void> {
     state.status = "stopped";
     rejectAll(new Error("CLI stream relay stopped"));
-    lineReader?.close();
-    lineReader = null;
-    if (child) {
-      child.kill("SIGTERM");
-      child = null;
-    }
-    state.pid = null;
+    cleanupChild();
   }
 
   async function sendCommand(name: string, args: Record<string, unknown> = {}): Promise<StreamAckMessage> {
