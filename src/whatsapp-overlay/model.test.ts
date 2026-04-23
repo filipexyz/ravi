@@ -463,6 +463,131 @@ describe("whatsapp overlay model", () => {
     });
   });
 
+  it("collapses Codex stream and final response for the same runtime item even when the text is revised", () => {
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [],
+      live: {
+        activity: "streaming",
+        messages: [
+          {
+            id: "live:assistant:item:msg_codex_1",
+            role: "assistant",
+            content:
+              "`fallbackText` é a versão segura e legível da mensagem quando o canal não suporta toda a UI rica. No CLI, isso vira regra operacional: render nativo dá; degradar para `fallbackText` rejeitar só quando a policy exigir.",
+            createdAt: Date.parse("2026-04-23T15:57:46Z"),
+            source: "live",
+            pending: true,
+            metadata: {
+              item: { id: "msg_codex_1", type: "agent_message" },
+            },
+          },
+        ],
+        events: [
+          {
+            kind: "stream",
+            label: "stream",
+            detail:
+              "`fallbackText` é a versão segura e legível da mensagem quando o canal não suporta toda a UI rica. No CLI, isso vira regra operacional: render nativo dá; degradar para `fallbackText` rejeitar só quando a policy exigir.",
+            timestamp: Date.parse("2026-04-23T15:57:46Z"),
+            metadata: {
+              item: { id: "msg_codex_1", type: "agent_message" },
+            },
+          },
+          {
+            kind: "response",
+            label: "response",
+            detail:
+              "`fallbackText` é a versão segura e legível da mensagem quando o canal não suporta toda a UI rica. No CLI, isso vira regra operacional: render nativo quando dá; degradar para `fallbackText` quando não dá; rejeitar só quando a policy exigir.",
+            timestamp: Date.parse("2026-04-23T15:57:48Z"),
+            metadata: {
+              item: { id: "msg_codex_1", type: "agent_message" },
+            },
+          },
+        ],
+      },
+    });
+
+    const assistantMessages = timeline.filter((item) => item.type === "message" && item.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0]).toMatchObject({
+      content:
+        "`fallbackText` é a versão segura e legível da mensagem quando o canal não suporta toda a UI rica. No CLI, isso vira regra operacional: render nativo quando dá; degradar para `fallbackText` quando não dá; rejeitar só quando a policy exigir.",
+      pending: true,
+      source: "live",
+    });
+  });
+
+  it("drops stale live assistant bubbles after the session settles to idle", () => {
+    const staleNow = Date.now() - 60_000;
+    const finalReply =
+      "Agora o escopo está corrigido: vou gerar um poster do `CLI proposto para rich content`, com a árvore de comandos dessa ideia nova e sem bloco explícito de `fallbackText`.";
+
+    const timeline = buildOverlaySessionWorkspaceTimeline({
+      messages: [
+        {
+          id: "history-final-1",
+          role: "assistant",
+          content: finalReply,
+          createdAt: staleNow - 500,
+        },
+      ],
+      live: {
+        activity: "idle",
+        updatedAt: staleNow,
+        messages: [
+          {
+            id: "live:assistant:item:msg_codex_idle_1",
+            role: "assistant",
+            content:
+              "Agora o escopo está corrigido: vou gerar um poster do `CLI proposto para rich content`, com a árvore de comandos dessa ideia nova e sem bloco explícito `fallbackText`.",
+            createdAt: staleNow - 800,
+            source: "live",
+            pending: true,
+            metadata: {
+              item: { id: "msg_codex_idle_1", type: "agent_message" },
+            },
+          },
+        ],
+        events: [
+          {
+            kind: "response",
+            label: "response",
+            detail:
+              "Agora o escopo está corrigido: vou gerar um poster do `CLI proposto para rich content`, com a árvore de comandos dessa ideia nova e sem bloco explícito `fallbackText`.",
+            timestamp: staleNow - 700,
+            metadata: {
+              item: { id: "msg_codex_idle_1", type: "agent_message" },
+            },
+          },
+          {
+            kind: "runtime",
+            label: "runtime graph",
+            detail: "item.completed item=msg_codex_idle_1",
+            timestamp: staleNow - 650,
+            metadata: {
+              item: { id: "msg_codex_idle_1", type: "agent_message" },
+            },
+          },
+        ],
+      },
+    });
+
+    const assistantMessages = timeline.filter((item) => item.type === "message" && item.role === "assistant");
+    expect(assistantMessages).toHaveLength(1);
+    expect(assistantMessages[0]).toMatchObject({
+      content: finalReply,
+      source: "history",
+      pending: false,
+    });
+
+    const runtimeEvents = timeline.filter((item) => item.type === "event");
+    expect(runtimeEvents).toHaveLength(1);
+    expect(runtimeEvents[0]).toMatchObject({
+      kind: "runtime",
+      detail: "item.completed item=msg_codex_idle_1",
+    });
+  });
+
   it("preserves compact tool metadata in the timeline artifact", () => {
     const timeline = buildOverlaySessionWorkspaceTimeline({
       messages: [],

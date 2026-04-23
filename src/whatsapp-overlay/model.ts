@@ -1,4 +1,5 @@
 import type { SessionEntry } from "../router/types.js";
+import { resolveOverlayAssistantMessageSlotKey } from "./live-assistant.js";
 
 export type OverlayActivity =
   | "idle"
@@ -406,6 +407,7 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
   messages: OverlaySessionWorkspaceMessage[];
   live?: OverlayLiveState;
 }): OverlaySessionWorkspaceTimelineItem[] {
+  const includeTransientLiveMessages = shouldIncludeTransientLiveMessages(args.live);
   const historyMessages = normalizeWorkspaceMessages(args.messages).map((message) => ({
     id: `message:${message.id}`,
     type: "message" as const,
@@ -420,24 +422,26 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
   const liveMessageItems: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }>[] = [];
   const liveDiscreteItems: Array<Extract<OverlaySessionWorkspaceTimelineItem, { type: "event" | "artifact" }>> = [];
 
-  const liveMessages = normalizeWorkspaceMessages(args.live?.messages ?? []);
-  for (const message of liveMessages) {
-    const item: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }> = {
-      id: `message:${message.id}`,
-      type: "message",
-      role: message.role,
-      content: message.content,
-      timestamp: message.createdAt,
-      source: message.source ?? "live",
-      pending: message.pending ?? false,
-      ...(message.metadata ? { metadata: message.metadata } : {}),
-    };
+  if (includeTransientLiveMessages) {
+    const liveMessages = normalizeWorkspaceMessages(args.live?.messages ?? []);
+    for (const message of liveMessages) {
+      const item: Extract<OverlaySessionWorkspaceTimelineItem, { type: "message" }> = {
+        id: `message:${message.id}`,
+        type: "message",
+        role: message.role,
+        content: message.content,
+        timestamp: message.createdAt,
+        source: message.source ?? "live",
+        pending: message.pending ?? false,
+        ...(message.metadata ? { metadata: message.metadata } : {}),
+      };
 
-    if (hasMatchingWorkspaceMessage(historyMessages, item)) {
-      continue;
+      if (hasMatchingWorkspaceMessage(historyMessages, item)) {
+        continue;
+      }
+
+      upsertLiveWorkspaceMessage(liveMessageItems, item);
     }
-
-    upsertLiveWorkspaceMessage(liveMessageItems, item);
   }
 
   const liveEvents = [...(Array.isArray(args.live?.events) ? args.live.events : [])].sort(
@@ -448,6 +452,10 @@ export function buildOverlaySessionWorkspaceTimeline(args: {
     if (!item) continue;
 
     if (item.type === "message") {
+      if (!includeTransientLiveMessages) {
+        continue;
+      }
+
       if (hasMatchingWorkspaceMessage(historyMessages, item)) {
         continue;
       }
@@ -799,11 +807,41 @@ function workspaceTimelineMessagesMatch(
     return false;
   }
 
+  const leftSlotKey = getWorkspaceMessageSlotKey(left.metadata);
+  const rightSlotKey = getWorkspaceMessageSlotKey(right.metadata);
+  if (leftSlotKey && rightSlotKey && leftSlotKey === rightSlotKey) {
+    return true;
+  }
+
   if (!workspaceMessagesAreTemporallyClose(left.timestamp, right.timestamp)) {
     return false;
   }
 
   return workspaceTextsOverlap(normalizeWorkspaceText(left.content), normalizeWorkspaceText(right.content));
+}
+
+function getWorkspaceMessageSlotKey(metadata?: OverlayRuntimeMetadata | null): string | null {
+  const slotKey = resolveOverlayAssistantMessageSlotKey(metadata);
+  return slotKey === "default" ? null : slotKey;
+}
+
+const IDLE_LIVE_MESSAGE_RETENTION_MS = 5_000;
+
+function shouldIncludeTransientLiveMessages(live?: OverlayLiveState): boolean {
+  if (!live) {
+    return false;
+  }
+
+  if (isBusyOverlayActivity(live.activity)) {
+    return true;
+  }
+
+  const updatedAt = parseOverlayTimestamp(live.updatedAt);
+  if (!updatedAt) {
+    return false;
+  }
+
+  return Date.now() - updatedAt <= IDLE_LIVE_MESSAGE_RETENTION_MS;
 }
 
 function workspaceMessagesAreTemporallyClose(left: number, right: number): boolean {

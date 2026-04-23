@@ -49,6 +49,7 @@ import {
   type OverlaySessionWorkspaceMessage,
   upsertOverlayChatArtifact,
 } from "./model.js";
+import { ensureOverlayAssistantMessageId, resolveOverlayAssistantMessageSlotKey } from "./live-assistant.js";
 import type { OverlayPublishedState } from "./state.js";
 import { getBindingForQuery, upsertBinding } from "./bindings.js";
 import type { OverlayDomCommandEnvelope, OverlayDomCommandRequest, OverlayDomCommandResult } from "./dom-control.js";
@@ -100,7 +101,7 @@ type SessionArtifactTurnState = {
   activeResponseEmitIds: string[];
   activeDeliveredMessageIds: string[];
   activePromptMessageIds: string[];
-  activeAssistantMessageId: string | null;
+  activeAssistantMessageIdsByKey: Record<string, string>;
   pendingArtifactId: string | null;
   pendingArtifactEmitId: string | null;
 };
@@ -2841,6 +2842,7 @@ async function trackSessionRuntime(): Promise<void> {
     if (topic.endsWith(".response")) {
       const eventTimestamp = Date.now();
       const emitId = cleanNullable(typeof data._emitId === "string" ? data._emitId : null);
+      const metadata = extractRuntimeMetadata(data);
       if (emitId) {
         rememberResponseEmitId(sessionName, emitId);
       }
@@ -2850,14 +2852,16 @@ async function trackSessionRuntime(): Promise<void> {
         label: "response",
         detail: formatLiveText(responseText),
         timestamp: eventTimestamp,
+        ...(metadata ? { metadata } : {}),
       });
       upsertLiveWorkspaceMessage(sessionName, {
-        id: ensureActiveAssistantMessageId(sessionName, eventTimestamp),
+        id: ensureActiveAssistantMessageId(sessionName, eventTimestamp, metadata),
         role: "assistant",
         content: formatLiveText(responseText),
         createdAt: eventTimestamp,
         source: "live",
         pending: true,
+        ...(metadata ? { metadata } : {}),
       });
       upsertLive(sessionName, "streaming", "response emitted", false);
       continue;
@@ -3201,7 +3205,7 @@ function getOrCreateArtifactTurnState(sessionName: string): SessionArtifactTurnS
     activeResponseEmitIds: [],
     activeDeliveredMessageIds: [],
     activePromptMessageIds: [],
-    activeAssistantMessageId: null,
+    activeAssistantMessageIdsByKey: {},
     pendingArtifactId: null,
     pendingArtifactEmitId: null,
   };
@@ -3283,21 +3287,22 @@ function resetActiveArtifactTurnState(sessionName: string): void {
   state.activeResponseEmitIds = [];
   state.activeDeliveredMessageIds = [];
   state.activePromptMessageIds = [];
-  state.activeAssistantMessageId = null;
+  state.activeAssistantMessageIdsByKey = {};
 }
 
-function ensureActiveAssistantMessageId(sessionName: string, timestamp: number): string {
+function ensureActiveAssistantMessageId(
+  sessionName: string,
+  timestamp: number,
+  metadata?: OverlayRuntimeMetadata,
+): string {
   const state = getOrCreateArtifactTurnState(sessionName);
-  if (!state.activeAssistantMessageId) {
-    state.activeAssistantMessageId = `live:assistant:${timestamp}`;
-  }
-  return state.activeAssistantMessageId;
+  return ensureOverlayAssistantMessageId(state.activeAssistantMessageIdsByKey, timestamp, metadata);
 }
 
 function clearActiveAssistantMessageId(sessionName: string): void {
   const state = artifactTurnStateBySessionName.get(sessionName);
   if (!state) return;
-  state.activeAssistantMessageId = null;
+  state.activeAssistantMessageIdsByKey = {};
 }
 
 function upsertLiveWorkspaceMessage(sessionName: string, message: OverlaySessionWorkspaceMessage): void {
@@ -3390,7 +3395,10 @@ function updateStreamEvent(sessionName: string, detail: string, metadata?: Overl
   const current = liveBySessionName.get(sessionName);
   const previous = Array.isArray(current?.events) ? [...current.events] : [];
   const timestamp = Date.now();
-  const existingIndex = previous.findIndex((event) => event.kind === "stream");
+  const slotKey = resolveOverlayAssistantMessageSlotKey(metadata);
+  const existingIndex = previous.findIndex(
+    (event) => event.kind === "stream" && resolveOverlayAssistantMessageSlotKey(event.metadata) === slotKey,
+  );
   const nextDetail = mergeStreamText(existingIndex >= 0 ? previous[existingIndex]?.detail : "", detail);
 
   if (existingIndex >= 0) {
@@ -3419,7 +3427,7 @@ function updateStreamEvent(sessionName: string, detail: string, metadata?: Overl
   });
 
   upsertLiveWorkspaceMessage(sessionName, {
-    id: ensureActiveAssistantMessageId(sessionName, timestamp),
+    id: ensureActiveAssistantMessageId(sessionName, timestamp, metadata),
     role: "assistant",
     content: nextDetail,
     createdAt: timestamp,
