@@ -156,9 +156,7 @@ export class OmniConsumer {
   private running = false;
   /** Active targets for typing heartbeat: sessionName → MessageTarget */
   private activeTargets = new Map<string, MessageTarget>();
-  private readonly typingPresence = new TypingPresenceHeartbeat((target, active) =>
-    this.sender.sendTyping(target.instanceId, target.to, active),
-  );
+  private readonly typingPresence: TypingPresenceHeartbeat;
   /** Stored JetStreamManager for use inside consume loops */
   private jsm: JetStreamManager | null = null;
   /** Startup timestamp (ms) — messages older than this are history sync, skip them */
@@ -174,8 +172,18 @@ export class OmniConsumer {
     private readonly options: {
       resolveGroupMetadata?: typeof resolveOmniGroupMetadata;
       formatGroupMembers?: typeof formatOmniGroupMembersForPrompt;
+      isRuntimeSessionActive?: (sessionName: string) => boolean;
     } = {},
-  ) {}
+  ) {
+    this.typingPresence = new TypingPresenceHeartbeat(
+      (target, active) => this.sender.sendTyping(target.instanceId, target.to, active),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      this.options.isRuntimeSessionActive,
+    );
+  }
 
   /**
    * Start the consumer.

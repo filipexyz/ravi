@@ -81,4 +81,57 @@ describe("TypingPresenceHeartbeat", () => {
     await expect(heartbeat.renew("missing")).resolves.toBe(false);
     expect(calls).toEqual([]);
   });
+
+  it("expires stale sessions instead of renewing forever", async () => {
+    const calls: Array<{ to: string; active: boolean }> = [];
+    const { handles, timers } = makeTimers();
+    let now = 0;
+    const heartbeat = new TypingPresenceHeartbeat(
+      async (target, active) => {
+        calls.push({ to: target.to, active });
+      },
+      20_000,
+      timers,
+      60_000,
+      { now: () => now },
+    );
+
+    await heartbeat.start("session-a", { instanceId: "main", to: "chat@g.us" });
+    now = 61_000;
+    handles[0]?.callback();
+
+    expect(calls).toEqual([
+      { to: "chat@g.us", active: true },
+      { to: "chat@g.us", active: false },
+    ]);
+    expect(handles[0]?.cleared).toBe(true);
+    expect(heartbeat.has("session-a")).toBe(false);
+  });
+
+  it("stops presence when the runtime session is no longer active", async () => {
+    const calls: Array<{ to: string; active: boolean }> = [];
+    const { handles, timers } = makeTimers();
+    let active = true;
+    const heartbeat = new TypingPresenceHeartbeat(
+      async (target, emittedActive) => {
+        calls.push({ to: target.to, active: emittedActive });
+      },
+      20_000,
+      timers,
+      60_000,
+      { now: () => 0 },
+      () => active,
+    );
+
+    await heartbeat.start("session-a", { instanceId: "main", to: "chat@g.us" });
+    active = false;
+    handles[0]?.callback();
+
+    expect(calls).toEqual([
+      { to: "chat@g.us", active: true },
+      { to: "chat@g.us", active: false },
+    ]);
+    expect(handles[0]?.cleared).toBe(true);
+    expect(heartbeat.has("session-a")).toBe(false);
+  });
 });

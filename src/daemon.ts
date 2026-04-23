@@ -199,7 +199,9 @@ export async function startDaemon() {
   // Step 6: Set up omni sender + consumer + gateway
   if (omniApiUrl && omniApiKey) {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
-    omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey);
+    omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey, {
+      isRuntimeSessionActive: (sessionName) => bot?.isRuntimeSessionActive(sessionName) ?? false,
+    });
 
     try {
       await omniConsumer.start();

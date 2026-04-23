@@ -129,6 +129,13 @@ export class RaviBot {
     return this.sessionDispatcher.abortSession(sessionName, provenance);
   }
 
+  public isRuntimeSessionActive(sessionName: string): boolean {
+    const session = this.streamingSessions.get(sessionName);
+    if (!session) return false;
+    if (session.done) return false;
+    return session.starting || session.turnActive || session.toolRunning || session.compacting;
+  }
+
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {
     await this.hostSubscriptions.handleRuntimeControlRequest(data);
   }
