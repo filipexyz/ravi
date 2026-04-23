@@ -1,4 +1,5 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
+import type { RuntimeEventMetadata } from "./types.js";
 
 /** Message context for structured prompts */
 export interface MessageContext {
@@ -69,6 +70,7 @@ export interface ResponseMessage {
   response?: string;
   error?: string;
   target?: MessageTarget;
+  metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */
   _emitId?: string;
   usage?: {

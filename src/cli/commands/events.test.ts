@@ -48,6 +48,44 @@ describe("formatData", () => {
     expect(text).toContain("user interrupted");
   });
 
+  it("formats native codex provider raw metadata", () => {
+    const text = formatData(
+      {
+        type: "provider.raw",
+        provider: "codex",
+        nativeEvent: "turn.completed",
+        model: "gpt-5.5",
+        modelProvider: "openai",
+        threadId: "thread_1234567890",
+        turnId: "turn_abcdef123456",
+      },
+      "ravi.session.dev.runtime",
+    );
+
+    expect(text).toContain("turn.completed");
+    expect(text).toContain("model=gpt-5.5");
+    expect(text).toContain("provider=openai");
+    expect(text).toContain("thread=thread_1…");
+    expect(text).toContain("turn=turn_abc…");
+  });
+
+  it("formats runtime turn completion execution model", () => {
+    const text = formatData(
+      {
+        type: "turn.complete",
+        execution: { model: "gpt-5.5", provider: "openai" },
+        usage: { inputTokens: 10, outputTokens: 4 },
+      },
+      "ravi.session.dev.runtime",
+    );
+
+    expect(text).toContain("turn.complete");
+    expect(text).toContain("model=gpt-5.5");
+    expect(text).toContain("provider=openai");
+    expect(text).toContain("in=10");
+    expect(text).toContain("out=4");
+  });
+
   it("formats channel message events compactly", () => {
     const text = formatData(
       {

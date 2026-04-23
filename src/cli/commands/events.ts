@@ -80,6 +80,27 @@ function truncate(str: string, max: number): string {
   return str.slice(0, max) + "…";
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function shortId(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.length > 12 ? `${value.slice(0, 8)}…` : value;
+}
+
+function formatDimParts(parts: (string | undefined)[]): string {
+  const compact = parts.filter((part): part is string => Boolean(part));
+  return compact.length > 0 ? ` ${c.dim}${compact.join(" ")}${c.reset}` : "";
+}
+
 export function formatData(data: Record<string, unknown>, topic: string): string {
   if (topic.startsWith("message.received.")) {
     const payload = data.payload as Record<string, unknown> | undefined;
@@ -148,10 +169,44 @@ export function formatData(data: Record<string, unknown>, topic: string): string
   // For provider runtime events, show normalized type
   if (topic.includes(".runtime") && data.type) {
     const type = data.type as string;
+    if (type === "provider.raw") {
+      const metadata = asRecord(data.metadata);
+      const rawEvent = asRecord(data.rawEvent);
+      const thread = asRecord(data.thread) ?? asRecord(metadata?.thread) ?? asRecord(rawEvent?.thread);
+      const turn = asRecord(data.turn) ?? asRecord(metadata?.turn) ?? asRecord(rawEvent?.turn);
+      const item = asRecord(data.item) ?? asRecord(metadata?.item) ?? asRecord(rawEvent?.item);
+      const nativeEvent = firstString(data.nativeEvent, metadata?.nativeEvent, rawEvent?.type) ?? "provider.raw";
+      const model = firstString(data.model, rawEvent?.model, rawEvent?.modelId, rawEvent?.model_id);
+      const modelProvider = firstString(data.modelProvider, rawEvent?.modelProvider, rawEvent?.model_provider);
+      const threadId = shortId(firstString(data.threadId, thread?.id, rawEvent?.thread_id, rawEvent?.threadId));
+      const turnId = shortId(firstString(data.turnId, turn?.id, rawEvent?.turn_id, rawEvent?.turnId));
+      const itemId = shortId(firstString(data.itemId, item?.id, rawEvent?.item_id, rawEvent?.itemId));
+      const detail = formatDimParts([
+        model ? `model=${model}` : undefined,
+        modelProvider ? `provider=${modelProvider}` : undefined,
+        threadId ? `thread=${threadId}` : undefined,
+        turnId ? `turn=${turnId}` : undefined,
+        itemId ? `item=${itemId}` : undefined,
+      ]);
+      return `${c.bold}${nativeEvent}${c.reset}${detail}`;
+    }
     if (type === "turn.complete") {
       const usage = (data as Record<string, unknown>).usage as Record<string, number> | undefined;
       const tokens = usage ? ` ${c.dim}in=${usage.inputTokens} out=${usage.outputTokens}${c.reset}` : "";
-      return `${c.bold}turn.complete${c.reset}${tokens}`;
+      const execution = asRecord(data.execution);
+      const rawEvent = asRecord(data.rawEvent);
+      const model = firstString(execution?.model, data.model, rawEvent?.model);
+      const modelProvider = firstString(
+        execution?.provider,
+        data.modelProvider,
+        rawEvent?.modelProvider,
+        rawEvent?.model_provider,
+      );
+      const runtime = formatDimParts([
+        model ? `model=${model}` : undefined,
+        modelProvider ? `provider=${modelProvider}` : undefined,
+      ]);
+      return `${c.bold}turn.complete${c.reset}${runtime}${tokens}`;
     }
     if (type === "turn.failed" || type === "turn.interrupted") {
       const error =

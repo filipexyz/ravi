@@ -75,6 +75,45 @@ function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Re
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+  }
+  return undefined;
+}
+
+function buildProviderRawRuntimeEvent(
+  provider: RuntimeProviderId,
+  rawEvent: Record<string, unknown>,
+  metadata?: RuntimeEventMetadata,
+): Record<string, unknown> {
+  const rawThread = asRecord(rawEvent.thread);
+  const rawTurn = asRecord(rawEvent.turn);
+  const rawItem = asRecord(rawEvent.item);
+  const nativeEvent = firstString(metadata?.nativeEvent, rawEvent.type);
+  const model = firstString(rawEvent.model, rawEvent.modelId, rawEvent.model_id);
+  const modelProvider = firstString(rawEvent.modelProvider, rawEvent.model_provider);
+  const threadId = firstString(metadata?.thread?.id, rawEvent.thread_id, rawEvent.threadId, rawThread?.id);
+  const turnId = firstString(metadata?.turn?.id, rawEvent.turn_id, rawEvent.turnId, rawTurn?.id);
+  const itemId = firstString(metadata?.item?.id, rawEvent.item_id, rawEvent.itemId, rawItem?.id);
+
+  return {
+    type: "provider.raw",
+    provider,
+    ...(nativeEvent ? { nativeEvent } : {}),
+    ...(model ? { model } : {}),
+    ...(modelProvider ? { modelProvider } : {}),
+    ...(threadId ? { threadId } : {}),
+    ...(turnId ? { turnId } : {}),
+    ...(itemId ? { itemId } : {}),
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
 function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<string, unknown> }): string | undefined {
   const parts: string[] = [];
   const rawEvent = event.rawEvent;
@@ -459,12 +498,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
-  const emitResponse = async (text: string) => {
+  const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const emitId = Math.random().toString(36).slice(2, 8);
     log.info("Emitting response", { sessionName, emitId, textLen: text.length });
     await nats.emit(`ravi.session.${sessionName}.response`, {
       response: text,
       target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
+      ...(metadata ? { metadata } : {}),
       _emitId: emitId,
       _instanceId: instanceId,
       _pid: process.pid,
@@ -520,7 +560,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type !== "turn.failed") {
         await emitRuntimeEvent(
           event.type === "provider.raw"
-            ? { type: "provider.raw", provider: runtimeSession.provider, metadata: event.metadata }
+            ? buildProviderRawRuntimeEvent(runtimeSession.provider, event.rawEvent, event.metadata)
             : { ...event, provider: runtimeSession.provider },
         );
       }
@@ -655,7 +695,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
             } else {
-              await emitResponse(messageText);
+              await emitResponse(messageText, event.metadata);
             }
           }
         }
