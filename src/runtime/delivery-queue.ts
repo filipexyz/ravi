@@ -198,6 +198,7 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
 
     if (traceTurnStart) {
