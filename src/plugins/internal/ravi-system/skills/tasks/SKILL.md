@@ -141,6 +141,25 @@ ravi tasks create --profile <id>
 -> show/watch expõem profile + workspace + artifacts
 ```
 
+## Delegação Complexa
+
+Para tasks complexas delegadas a outro agent, use `ultrathink`/`ultra-think`
+para escrever o contrato de delegação antes de criar ou despachar a task.
+Não use esse passo apenas como reflexão genérica.
+
+O contrato deve deixar explícito:
+
+- missão
+- contexto e decisões literais já tomadas
+- inputs e paths relevantes
+- outputs esperados
+- guardrails e limites
+- DAG/checkpoints quando houver etapas acopladas
+- critério de auditoria do resultado
+
+Depois da delegação, o agent originador deve auditar o resultado contra esse
+contrato antes de marcar a task como concluída.
+
 ## Como um Agent Deve Proceder
 
 1. ler o `profile` efetivo
