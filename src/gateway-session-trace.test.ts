@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { configStore } from "./config-store.js";
-import { Gateway } from "./gateway.js";
+import { Gateway, SILENT_TOKEN } from "./gateway.js";
 import { dbUpsertInstance } from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
@@ -15,6 +15,7 @@ const emitMock = mock(async (topic: string, payload: Record<string, unknown>) =>
 type RuntimePresenceEventData = {
   type?: string;
   status?: string;
+  nativeEvent?: string;
   _source?: NonNullable<ResponseMessage["target"]>;
 };
 
@@ -405,6 +406,82 @@ describe("Gateway session trace instrumentation", () => {
     await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
 
     expect(clearActiveTarget).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops presence immediately when the response is silent", async () => {
+    const { sessionName } = seedSession();
+    const send = mock(async () => ({ messageId: "outbound-1" }));
+    const sendTyping = mock(async () => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(send, { sendTyping });
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    sendTyping.mockClear();
+    await handleResponse(gateway, sessionName, makeResponse({ response: SILENT_TOKEN, target }));
+
+    expect(send).not.toHaveBeenCalled();
+    expect(sendTyping).toHaveBeenCalledWith(
+      "11111111-1111-1111-1111-111111111111",
+      "5511999999999@s.whatsapp.net",
+      false,
+    );
+    expect(emitted).toContainEqual([
+      `ravi.session.${sessionName}.delivery`,
+      expect.objectContaining({ status: "dropped", reason: "silent" }),
+    ]);
+  });
+
+  it("does not reactivate presence from late activity after a terminal runtime event", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(() => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: target });
+
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("allows a new turn to start presence after the previous turn reached terminal state", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(() => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.complete", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.started", _source: target });
+
+    expect(renewActiveTarget).toHaveBeenCalledTimes(1);
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });
 
   it("records delivery.dropped when a response has no target", async () => {

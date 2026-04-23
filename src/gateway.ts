@@ -69,6 +69,7 @@ export class Gateway {
   private typingTracker = new SessionTypingTracker();
   private presenceRenewedAt = new Map<string, number>();
   private activeRuntimeSessions = new Set<string>();
+  private terminalRuntimeSessions = new Set<string>();
   private postDeliveryRenewals = new Map<string, ReturnType<typeof setTimeout>>();
   private interruptedPresenceStops = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -102,6 +103,7 @@ export class Gateway {
     this.typingTracker = new SessionTypingTracker();
     this.presenceRenewedAt.clear();
     this.activeRuntimeSessions.clear();
+    this.terminalRuntimeSessions.clear();
     this.clearPostDeliveryRenewals();
     this.clearInterruptedPresenceStops();
     log.info("Gateway stopped");
@@ -145,6 +147,7 @@ export class Gateway {
   }
 
   private async forceRenewTyping(sessionName: string, target: PresenceTarget) {
+    if (this.terminalRuntimeSessions.has(sessionName)) return;
     const renewed = await this.renewActiveTargetIfCurrent(sessionName, target);
     if (!renewed) {
       await this.sendTyping(target, true);
@@ -195,6 +198,7 @@ export class Gateway {
 
   private async stopPresenceForSession(sessionName: string, target?: PresenceTarget): Promise<void> {
     this.activeRuntimeSessions.delete(sessionName);
+    this.terminalRuntimeSessions.add(sessionName);
     this.presenceRenewedAt.delete(sessionName);
     this.clearPostDeliveryRenewal(sessionName);
     this.clearInterruptedPresenceStop(sessionName);
@@ -215,10 +219,12 @@ export class Gateway {
 
   private schedulePostDeliveryPresenceRenewal(sessionName: string, target: PresenceTarget): void {
     if (!this.activeRuntimeSessions.has(sessionName)) return;
+    if (this.terminalRuntimeSessions.has(sessionName)) return;
     this.clearPostDeliveryRenewal(sessionName);
     const timer = setTimeout(() => {
       this.postDeliveryRenewals.delete(sessionName);
       if (!this.running || !this.activeRuntimeSessions.has(sessionName)) return;
+      if (this.terminalRuntimeSessions.has(sessionName)) return;
       this.forceRenewTyping(sessionName, target).catch((error) => {
         log.debug("Post-delivery presence renewal failed", { sessionName, error });
       });
@@ -228,6 +234,7 @@ export class Gateway {
   }
 
   private async renewTypingForRuntimeActivity(sessionName: string, data: { _source?: PresenceTarget }): Promise<void> {
+    if (this.terminalRuntimeSessions.has(sessionName)) return;
     const now = Date.now();
     const lastRenewedAt = this.presenceRenewedAt.get(sessionName) ?? 0;
     if (now - lastRenewedAt < PRESENCE_RENEW_THROTTLE_MS) return;
@@ -258,6 +265,12 @@ export class Gateway {
     if (!type || this.isTerminalRuntimeEvent(type)) return false;
     if (type === "status" && status === "idle") return false;
     return true;
+  }
+
+  private isPresenceStartEvent(type: string | undefined, nativeEvent?: string): boolean {
+    if (type === "turn.started" || type === "thread.started") return true;
+    if (nativeEvent === "turn.started" || nativeEvent === "thread.started") return true;
+    return false;
   }
 
   private recordResponseTrace(sessionName: string, response: ResponseMessage): void {
@@ -311,6 +324,7 @@ export class Gateway {
 
     if (text && text.trim() === SILENT_TOKEN) {
       log.debug("Silent response, not sending to channel", { sessionName });
+      await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
       return;
     }
@@ -438,6 +452,7 @@ export class Gateway {
         const data = event.data as {
           type?: string;
           status?: string;
+          nativeEvent?: string;
           _source?: PresenceTarget & { sourceMessageId?: string };
         };
 
@@ -452,10 +467,12 @@ export class Gateway {
     data: {
       type?: string;
       status?: string;
+      nativeEvent?: string;
       _source?: PresenceTarget & { sourceMessageId?: string };
     },
   ): Promise<void> {
     if (data.type === "turn.interrupted") {
+      if (this.terminalRuntimeSessions.has(sessionName)) return;
       if (data._source) {
         await this.forceRenewTyping(sessionName, data._source);
       } else {
@@ -471,6 +488,11 @@ export class Gateway {
     }
 
     if (!this.isPresenceActivityEvent(data.type, data.status)) return;
+
+    if (this.terminalRuntimeSessions.has(sessionName)) {
+      if (!this.isPresenceStartEvent(data.type, data.nativeEvent)) return;
+      this.terminalRuntimeSessions.delete(sessionName);
+    }
 
     this.clearInterruptedPresenceStop(sessionName);
     this.activeRuntimeSessions.add(sessionName);
