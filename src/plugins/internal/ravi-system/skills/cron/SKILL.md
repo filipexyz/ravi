@@ -59,6 +59,8 @@ Opções:
 
 Depois de criar job que deve responder em um chat/sessão específica, sempre rode `ravi cron show <id>` e confira `agent`, `account`, `session`/`reply-session` antes de considerar pronto. Não confie no account herdado do contexto atual: se o cron entregar pelo account errado, o agent pode trabalhar e falhar no delivery com `chat not found`.
 
+Para jobs de monitoramento, faça o prompt comparar o estado atual com a última checagem e responder só quando houver mudança material. Não transforme o mesmo bloqueio em alerta a cada tick: se a causa, impacto e próximo passo continuam iguais, o job deve registrar localmente ou ficar silencioso. Se a repetição do bloqueio indicar risco novo, como retry infinito ou consumo inútil de tentativas, reporte esse risco como decisão operacional necessária em vez de recontar o mesmo erro.
+
 ### Ativar/Desativar
 ```bash
 ravi cron enable <id>
