@@ -39,6 +39,19 @@ WhatsApp/Discord/Telegram/Matrix
   -> canal
 ```
 
+## Fronteira Ravi ↔ Omni
+
+O Ravi decide comportamento operacional; o Omni transporta mensagens e presença para o canal.
+
+Quando debugar sintomas que atravessam a fronteira:
+
+- prove primeiro a última linha confiável no Ravi: routing, session, runtime event, target e payload outbound
+- use logs do Omni para observar entrega/transporte, não para mover ownership automaticamente
+- não corrija Omni para compensar lifecycle, routing, presence, task ou session state quebrado no Ravi
+- só edite Omni ou outro repo externo quando a evidência apontar para contrato/adaptador de transporte e houver autorização explícita
+
+Se o usuário delimitar "o problema é no Ravi", mantenha o patch no Ravi e trate o outro repo como evidência externa.
+
 ## Fronteiras Core
 
 ### `daemon.ts`
