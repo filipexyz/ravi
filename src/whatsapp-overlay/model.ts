@@ -178,6 +178,19 @@ const OVERLAY_RECENT_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const OVERLAY_RECENT_SESSIONS_LIMIT = 12;
 const OVERLAY_TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
+const OVERLAY_SUMMARY_EVENT_LIMIT = 8;
+const OVERLAY_SUMMARY_MESSAGE_LIMIT = 3;
+const OVERLAY_SUMMARY_ARTIFACT_LIMIT = 8;
+const OVERLAY_FULL_EVENT_LIMIT = 40;
+const OVERLAY_FULL_MESSAGE_LIMIT = 24;
+const OVERLAY_FULL_ARTIFACT_LIMIT = 80;
+
+export type OverlaySnapshotLiveMode = "summary" | "full";
+
+export interface OverlaySnapshotOptions {
+  includeLegacyAliases?: boolean;
+  liveMode?: OverlaySnapshotLiveMode;
+}
 
 export interface OverlaySnapshot {
   ok: true;
@@ -195,12 +208,12 @@ export interface OverlaySnapshot {
    * Backward-compatible alias for callers still expecting the older chat-centric field.
    * Keep this until the cockpit UI is fully migrated.
    */
-  recentChats: OverlaySessionSnapshot[];
+  recentChats?: OverlaySessionSnapshot[];
   /**
    * Backward-compatible alias for callers still expecting the previous "hot" label.
    * Keep this until the cockpit UI is fully migrated.
    */
-  hotSessions: OverlaySessionSnapshot[];
+  hotSessions?: OverlaySessionSnapshot[];
   warnings: string[];
   generatedAt: number;
 }
@@ -224,18 +237,20 @@ export function buildOverlaySnapshot(args: {
   sessions: SessionEntry[];
   liveBySessionName?: Map<string, OverlayLiveState>;
   taskSessions?: OverlayTaskSessionCandidate[];
+  options?: OverlaySnapshotOptions;
 }): OverlaySnapshot {
+  const options = args.options ?? {};
   const resolved = resolveSessionForOverlay(args.query, args.sessions);
   const live = resolved.session?.name ? args.liveBySessionName?.get(resolved.session.name) : undefined;
-  const activeSessions = buildActiveSessions(args.sessions, args.liveBySessionName);
+  const activeSessions = buildActiveSessions(args.sessions, args.liveBySessionName, options.liveMode);
   const hiddenActiveSessionNames = buildHiddenActiveSessionNames(args.taskSessions ?? [], args.sessions);
   const visibleActiveSessions = activeSessions.filter((session) => !hiddenActiveSessionNames.has(session.sessionName));
   const visibleActiveSessionKeys = new Set(visibleActiveSessions.map((session) => session.sessionKey));
-  const recentSessions = buildRecentSessions(args.sessions, args.liveBySessionName).filter(
+  const recentSessions = buildRecentSessions(args.sessions, args.liveBySessionName, options.liveMode).filter(
     (session) => !visibleActiveSessionKeys.has(session.sessionKey),
   );
 
-  return {
+  const snapshot: OverlaySnapshot = {
     ok: true,
     query: {
       chatId: cleanNullable(args.query.chatId),
@@ -243,15 +258,20 @@ export function buildOverlaySnapshot(args: {
       session: cleanNullable(args.query.session),
     },
     resolved: Boolean(resolved.session),
-    session: resolved.session ? toOverlaySessionSnapshot(resolved.session, live) : null,
+    session: resolved.session ? toOverlaySessionSnapshot(resolved.session, live, options.liveMode) : null,
     candidates: resolved.candidates,
     activeSessions: visibleActiveSessions,
     recentSessions,
-    recentChats: recentSessions,
-    hotSessions: visibleActiveSessions,
     warnings: buildWarnings(args.query, resolved.session, resolved.candidates),
     generatedAt: Date.now(),
   };
+
+  if (options.includeLegacyAliases) {
+    snapshot.recentChats = recentSessions;
+    snapshot.hotSessions = visibleActiveSessions;
+  }
+
+  return snapshot;
 }
 
 export function buildOverlaySessionList(args: {
@@ -282,6 +302,47 @@ export function buildOverlayChatList(args: {
   liveBySessionName?: Map<string, OverlayLiveState>;
 }): OverlayChatListEntry[] {
   return buildOverlaySessionList(args);
+}
+
+export function compactOverlayLiveState(
+  live: OverlayLiveState,
+  mode: OverlaySnapshotLiveMode = "summary",
+): OverlayLiveState {
+  const eventLimit = mode === "full" ? OVERLAY_FULL_EVENT_LIMIT : OVERLAY_SUMMARY_EVENT_LIMIT;
+  const messageLimit = mode === "full" ? OVERLAY_FULL_MESSAGE_LIMIT : OVERLAY_SUMMARY_MESSAGE_LIMIT;
+  const artifactLimit = mode === "full" ? OVERLAY_FULL_ARTIFACT_LIMIT : OVERLAY_SUMMARY_ARTIFACT_LIMIT;
+  const includeFullDetail = mode === "full";
+
+  return {
+    activity: live.activity,
+    approvalPending: live.approvalPending,
+    summary: live.summary,
+    updatedAt: live.updatedAt,
+    busySince: live.busySince,
+    events: Array.isArray(live.events) ? live.events.slice(0, eventLimit) : undefined,
+    messages: Array.isArray(live.messages) ? live.messages.slice(-messageLimit) : undefined,
+    artifacts: Array.isArray(live.artifacts)
+      ? normalizeWorkspaceArtifacts(live.artifacts)
+          .slice(-artifactLimit)
+          .map((artifact) => compactOverlayArtifact(artifact, includeFullDetail))
+      : undefined,
+  };
+}
+
+function compactOverlayArtifact(artifact: OverlayChatArtifact, includeFullDetail: boolean): OverlayChatArtifact {
+  return {
+    ...artifact,
+    detail: truncateOverlayText(artifact.detail, 600),
+    description: truncateOverlayText(artifact.description, 600),
+    preview: truncateOverlayText(artifact.preview, 1_200),
+    fullDetail: includeFullDetail ? truncateOverlayText(artifact.fullDetail, 4_000) : undefined,
+  };
+}
+
+function truncateOverlayText(value: string | null | undefined, max: number): string | null | undefined {
+  if (typeof value !== "string") return value;
+  if (value.length <= max) return value;
+  return `${value.slice(0, max - 3)}...`;
 }
 
 export function upsertOverlayChatArtifact(
@@ -838,7 +899,11 @@ function toCandidate(session: SessionEntry, source: OverlayCandidate["source"]):
   };
 }
 
-function toOverlaySessionSnapshot(session: SessionEntry, live?: OverlayLiveState): OverlaySessionSnapshot {
+function toOverlaySessionSnapshot(
+  session: SessionEntry,
+  live?: OverlayLiveState,
+  liveMode: OverlaySnapshotLiveMode = "summary",
+): OverlaySessionSnapshot {
   return {
     sessionKey: session.sessionKey,
     sessionName: session.name ?? session.sessionKey,
@@ -863,13 +928,14 @@ function toOverlaySessionSnapshot(session: SessionEntry, live?: OverlayLiveState
     lastHeartbeatSentAt: session.lastHeartbeatSentAt ?? null,
     ephemeral: session.ephemeral === true,
     expiresAt: session.expiresAt ?? null,
-    live: live ?? defaultLiveState(session),
+    live: compactOverlayLiveState(live ?? defaultLiveState(session), liveMode),
   };
 }
 
 function buildActiveSessions(
   sessions: SessionEntry[],
   liveBySessionName?: Map<string, OverlayLiveState>,
+  liveMode: OverlaySnapshotLiveMode = "summary",
 ): OverlaySessionSnapshot[] {
   return sessions
     .filter(isRelevantOverlaySession)
@@ -879,12 +945,13 @@ function buildActiveSessions(
     }))
     .filter(({ live }) => isBusyOverlayActivity(live?.activity))
     .sort((left, right) => sortByCreatedAtAsc(left.session, right.session))
-    .map(({ session, live }) => toOverlaySessionSnapshot(session, live));
+    .map(({ session, live }) => toOverlaySessionSnapshot(session, live, liveMode));
 }
 
 function buildRecentSessions(
   sessions: SessionEntry[],
   liveBySessionName?: Map<string, OverlayLiveState>,
+  liveMode: OverlaySnapshotLiveMode = "summary",
 ): OverlaySessionSnapshot[] {
   const cutoff = Date.now() - OVERLAY_RECENT_SESSION_WINDOW_MS;
   return sessions
@@ -897,7 +964,7 @@ function buildRecentSessions(
     )
     .sort(sortByActivityAtDesc)
     .slice(0, OVERLAY_RECENT_SESSIONS_LIMIT)
-    .map(({ session, live }) => toOverlaySessionSnapshot(session, live));
+    .map(({ session, live }) => toOverlaySessionSnapshot(session, live, liveMode));
 }
 
 function buildHiddenActiveSessionNames(

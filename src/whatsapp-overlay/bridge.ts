@@ -35,6 +35,7 @@ import { canAccessSession, canModifySession, canViewAgent, type ScopeContext } f
 import {
   buildOverlaySessionWorkspaceTimeline,
   buildOverlaySnapshot,
+  compactOverlayLiveState,
   mergeOverlaySessionWorkspaceMessages,
   parseOverlayTimestamp,
   type OverlayActivity,
@@ -82,8 +83,10 @@ const CHAT_LIST_OMNI_CACHE_TTL_MS = 5_000;
 const HOT_SESSION_TASK_CACHE_TTL_MS = 1_000;
 const SESSION_LIVE_EVENT_LIMIT = 40;
 const SESSION_LIVE_MESSAGE_LIMIT = 24;
+const SESSION_LIVE_ARTIFACT_LIMIT = 80;
 const SESSION_LIVE_MESSAGE_MATCH_WINDOW_MS = 2 * 60 * 1000;
 const RUNTIME_TRACKER_YIELD_EVERY = 50;
+const OVERLAY_TASK_ITEMS_LIMIT = 64;
 
 function toTaskDocRef(task: { id: string; taskDir: string | null }) {
   return {
@@ -1083,9 +1086,11 @@ function buildOverlayTasksPayload(query: OverlayTasksQuery): OverlayTasksSnapsho
     ...(query.sessionName ? { sessionName: query.sessionName } : {}),
     eventsLimit: query.eventsLimit,
   });
-  const items = [...listSnapshot.items].sort((a, b) => b.updatedAt - a.updatedAt);
-  const activeItems = items.filter((item) => item.status !== "done" && item.status !== "failed");
-  let selectedTaskId = query.taskId ?? activeItems[0]?.id ?? items[0]?.id ?? null;
+  const allItems = [...listSnapshot.items].sort((a, b) => b.updatedAt - a.updatedAt);
+  const allActiveItems = allItems.filter((item) => item.status !== "done" && item.status !== "failed");
+  let selectedTaskId = query.taskId ?? allActiveItems[0]?.id ?? allItems[0]?.id ?? null;
+  const items = capOverlayTaskItems(allItems, selectedTaskId);
+  const activeItems = allActiveItems;
   let selectedTask: TaskStreamSelection | null = null;
 
   if (selectedTaskId) {
@@ -1097,7 +1102,7 @@ function buildOverlayTasksPayload(query: OverlayTasksQuery): OverlayTasksSnapsho
         }).selectedTask ?? null;
     } catch (error) {
       if (query.taskId && error instanceof Error && /task not found/i.test(error.message)) {
-        selectedTaskId = activeItems[0]?.id ?? items[0]?.id ?? null;
+        selectedTaskId = allActiveItems[0]?.id ?? allItems[0]?.id ?? null;
         selectedTask = selectedTaskId
           ? (buildTaskStreamSnapshot({
               taskId: selectedTaskId,
@@ -1150,12 +1155,29 @@ function buildOverlayTasksPayload(query: OverlayTasksQuery): OverlayTasksSnapsho
     items,
     activeItems,
     dailyActivity: buildOverlayTasksDailyActivity({
-      tasks: items,
+      tasks: allItems,
       timeZone: query.timeZone,
       todayKey: query.todayKey,
     }),
     selectedTask: selectedTaskWithDocument,
   };
+}
+
+function capOverlayTaskItems(items: TaskStreamTaskEntity[], selectedTaskId: string | null): TaskStreamTaskEntity[] {
+  if (items.length <= OVERLAY_TASK_ITEMS_LIMIT) return items;
+
+  const selected = selectedTaskId ? items.find((item) => item.id === selectedTaskId) : null;
+  const openItems = items.filter((item) => item.status !== "done" && item.status !== "failed");
+  const openIds = new Set(openItems.map((item) => item.id));
+  const budget = Math.max(
+    0,
+    OVERLAY_TASK_ITEMS_LIMIT - openItems.length - (selected && !openIds.has(selected.id) ? 1 : 0),
+  );
+  const recentClosed = items.filter((item) => !openIds.has(item.id) && item.id !== selected?.id).slice(0, budget);
+
+  return [selected && !openIds.has(selected.id) ? selected : null, ...openItems, ...recentClosed]
+    .filter((item): item is TaskStreamTaskEntity => Boolean(item))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 function buildOverlayInsightsReadModel(query: OverlayInsightsQuery): OverlayInsightsPayload {
@@ -2475,6 +2497,9 @@ function toOmniPanelChat(
 
 function toOmniPanelSessionSnapshot(session: SessionEntry): OverlaySessionSnapshot {
   const live = session.name ? liveBySessionName.get(session.name) : undefined;
+  const defaultLive = session.abortedLastRun
+    ? { activity: "blocked" as const, summary: "last run aborted", updatedAt: session.updatedAt }
+    : { activity: "idle" as const, updatedAt: session.updatedAt };
   return {
     sessionKey: session.sessionKey,
     sessionName: session.name ?? session.sessionKey,
@@ -2499,11 +2524,7 @@ function toOmniPanelSessionSnapshot(session: SessionEntry): OverlaySessionSnapsh
     lastHeartbeatSentAt: session.lastHeartbeatSentAt ?? null,
     ephemeral: session.ephemeral === true,
     expiresAt: session.expiresAt ?? null,
-    live:
-      live ??
-      (session.abortedLastRun
-        ? { activity: "blocked", summary: "last run aborted", updatedAt: session.updatedAt }
-        : { activity: "idle", updatedAt: session.updatedAt }),
+    live: compactOverlayLiveState(live ?? defaultLive),
   };
 }
 
@@ -3154,13 +3175,20 @@ function pushLiveEvent(sessionName: string, event: OverlaySessionEvent): void {
 
 function pushLiveArtifact(sessionName: string, artifact: OverlayChatArtifact): void {
   const current = liveBySessionName.get(sessionName);
+  const artifacts = capLiveArtifacts(upsertOverlayChatArtifact(current?.artifacts, artifact));
   liveBySessionName.set(sessionName, {
     ...current,
     activity: current?.activity ?? "unknown",
     updatedAt: artifact.updatedAt ?? artifact.createdAt,
     busySince: current?.busySince,
-    artifacts: upsertOverlayChatArtifact(current?.artifacts, artifact),
+    artifacts,
   });
+}
+
+function capLiveArtifacts(artifacts: OverlayChatArtifact[]): OverlayChatArtifact[] {
+  return [...artifacts]
+    .sort((left, right) => (left.updatedAt ?? left.createdAt) - (right.updatedAt ?? right.createdAt))
+    .slice(-SESSION_LIVE_ARTIFACT_LIMIT);
 }
 
 function findLiveArtifact(sessionName: string, artifactId: string): OverlayChatArtifact | null {

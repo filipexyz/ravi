@@ -1,6 +1,9 @@
-const SNAPSHOT_POLL_INTERVAL_MS = 700;
-const CHAT_LIST_RESOLVE_INTERVAL_MS = 1200;
-const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 1100;
+const SNAPSHOT_POLL_INTERVAL_MS = 2500;
+const SESSION_WORKSPACE_POLL_INTERVAL_MS = 2500;
+const VIEW_STATE_POLL_INTERVAL_MS = 1000;
+const CHAT_LIST_RESOLVE_INTERVAL_MS = 2500;
+const MESSAGE_CHIP_REFRESH_INTERVAL_MS = 2500;
+const DOM_COMMAND_POLL_INTERVAL_MS = 1500;
 const VIEW_STATE_REPUBLISH_MS = 2500;
 const HUMAN_CHAT_NAV_INTENT_TTL_MS = 4000;
 const ROOT_ID = "ravi-wa-overlay-root";
@@ -32,10 +35,10 @@ const ACTIVE_WORKSPACE_KEY_STORAGE = "ravi-wa-overlay-workspace";
 const WORKSPACE_SESSION_KEY_STORAGE = "ravi-wa-overlay-workspace-session";
 const OMNI_INSTANCE_KEY_STORAGE = "ravi-wa-overlay-instance";
 const V3_PLACEHOLDERS_KEY_STORAGE = "ravi-wa-overlay-v3-placeholders";
-const OMNI_POLL_INTERVAL_MS = 2600;
-const V3_PLACEHOLDER_POLL_INTERVAL_MS = 1800;
-const TASKS_POLL_INTERVAL_MS = 1800;
-const INSIGHTS_POLL_INTERVAL_MS = 3200;
+const OMNI_POLL_INTERVAL_MS = 6000;
+const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
+const TASKS_POLL_INTERVAL_MS = 5000;
+const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
 const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
@@ -179,9 +182,9 @@ function boot() {
   refreshAll();
   intervalIds.push(setInterval(refreshSnapshot, SNAPSHOT_POLL_INTERVAL_MS));
   intervalIds.push(
-    setInterval(refreshSessionWorkspace, SNAPSHOT_POLL_INTERVAL_MS),
+    setInterval(refreshSessionWorkspace, SESSION_WORKSPACE_POLL_INTERVAL_MS),
   );
-  intervalIds.push(setInterval(refreshViewState, 700));
+  intervalIds.push(setInterval(refreshViewState, VIEW_STATE_POLL_INTERVAL_MS));
   intervalIds.push(
     setInterval(refreshChatListOverlay, CHAT_LIST_RESOLVE_INTERVAL_MS),
   );
@@ -194,7 +197,7 @@ function boot() {
   );
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
-  intervalIds.push(setInterval(pollDomCommands, 700));
+  intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
   document.addEventListener("scroll", syncMessagePopoverPosition, true);

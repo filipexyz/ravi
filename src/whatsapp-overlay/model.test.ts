@@ -849,6 +849,7 @@ describe("whatsapp overlay model", () => {
     const snapshot = buildOverlaySnapshot({
       query: { title: "Ravi - Dev" },
       sessions,
+      options: { includeLegacyAliases: true },
     });
 
     expect(snapshot.session?.agentId).toBe("main");
@@ -975,6 +976,7 @@ describe("whatsapp overlay model", () => {
       query: { title: "Thinking" },
       sessions,
       liveBySessionName: live,
+      options: { includeLegacyAliases: true },
     });
 
     expect(snapshot.activeSessions).toHaveLength(1);
@@ -1187,6 +1189,7 @@ describe("whatsapp overlay model", () => {
           taskProfile: { sessionNameTemplate: "<task-id>-work" },
         },
       ],
+      options: { includeLegacyAliases: true },
     });
 
     expect(snapshot.activeSessions).toEqual([]);
@@ -1260,6 +1263,7 @@ describe("whatsapp overlay model", () => {
           taskProfile: { sessionNameTemplate: "<task-id>-work" },
         },
       ],
+      options: { includeLegacyAliases: true },
     });
 
     expect(snapshot.activeSessions).toEqual([]);
