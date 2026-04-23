@@ -6,6 +6,7 @@ dist/
 
 # Generated files
 src/cli/commands/index.ts
+src/plugins/internal-registry.ts
 
 # Environment
 .env

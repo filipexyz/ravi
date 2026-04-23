@@ -83,7 +83,7 @@ describe("skills manager", () => {
     expect(installedSkills.map((item) => item.name)).toEqual(["writer"]);
   });
 
-  it("lists and installs Ravi catalog skills from the embedded registry", () => {
+  it("lists and installs Ravi catalog skills from internal plugin files", () => {
     const root = createTempRoot();
     const home = join(root, "home");
     const catalogSkills = listCatalogSkills();

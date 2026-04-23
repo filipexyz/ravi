@@ -800,7 +800,7 @@ export class DaemonCommands {
           if (!filename || !filename.endsWith(".ts")) return;
 
           const normalizedPath = filename.replace(/\\/g, "/");
-          const ignoredFiles = ["cli/commands/index.ts", "plugins/internal-registry.ts"];
+          const ignoredFiles = ["cli/commands/index.ts"];
           if (ignoredFiles.some((f) => normalizedPath === f || normalizedPath.endsWith(`/${f}`))) {
             return;
           }

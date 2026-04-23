@@ -12,9 +12,12 @@ describe("Omni group metadata cache", () => {
     fetchCalls.length = 0;
     globalThis.fetch = mock(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
-      fetchCalls.push(url);
+      const isTargetOmniCall = url.startsWith("http://omni.local/");
+      if (isTargetOmniCall) {
+        fetchCalls.push(url);
+      }
 
-      if (url.includes("/api/v2/chats?")) {
+      if (isTargetOmniCall && url.includes("/api/v2/chats?")) {
         return Response.json({
           items: [
             {
@@ -35,7 +38,7 @@ describe("Omni group metadata cache", () => {
         });
       }
 
-      if (url.includes("/api/v2/chats/chat-uuid/participants")) {
+      if (isTargetOmniCall && url.includes("/api/v2/chats/chat-uuid/participants")) {
         return Response.json({
           items: [
             {

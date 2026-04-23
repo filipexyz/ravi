@@ -2,18 +2,17 @@
  * Plugin Discovery - Auto-discovers and loads Ravi plugins
  *
  * Two sources:
- * 1. Internal plugins - embedded in code, extracted to temp dir at runtime
+ * 1. Internal plugins - source files in dev, generated artifact in packaged builds
  * 2. User plugins (~/ravi/plugins/) - custom user plugins
  *
- * Plugins are Claude Code SDK plugins that extend agent capabilities
- * with skills, commands, agents, and hooks.
+ * Plugins extend agent capabilities with skills, commands, agents, and hooks.
  */
 
 import { readdirSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
-import { INTERNAL_PLUGINS } from "./internal-registry.js";
+import { loadInternalPlugins } from "./internal-loader.js";
 
 const log = logger.child("plugins");
 
@@ -40,7 +39,9 @@ let lastPluginDiscoveryLogKey: string | undefined;
 function extractInternalPlugins(): void {
   if (internalPluginsExtracted) return;
 
-  for (const plugin of INTERNAL_PLUGINS) {
+  const internalPlugins = loadInternalPlugins();
+
+  for (const plugin of internalPlugins) {
     const pluginDir = join(INTERNAL_PLUGINS_DIR, plugin.name);
 
     for (const file of plugin.files) {
@@ -59,7 +60,7 @@ function extractInternalPlugins(): void {
 
   internalPluginsExtracted = true;
   log.info("Internal plugins extracted", {
-    count: INTERNAL_PLUGINS.length,
+    count: internalPlugins.length,
     dir: INTERNAL_PLUGINS_DIR,
   });
 }
@@ -68,9 +69,10 @@ function extractInternalPlugins(): void {
  * Get internal plugins (embedded, extracted to temp).
  */
 function getInternalPlugins(): PluginSpec[] {
+  const internalPlugins = loadInternalPlugins();
   extractInternalPlugins();
 
-  return INTERNAL_PLUGINS.map((plugin) => ({
+  return internalPlugins.map((plugin) => ({
     type: "local" as const,
     path: join(INTERNAL_PLUGINS_DIR, plugin.name),
   }));

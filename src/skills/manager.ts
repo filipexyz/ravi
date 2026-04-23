@@ -13,7 +13,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
-import { INTERNAL_PLUGINS } from "../plugins/internal-registry.js";
+import { loadInternalPlugins } from "../plugins/internal-loader.js";
 
 const SKILL_FILE = "SKILL.md";
 const DEFAULT_USER_PLUGIN_NAME = "ravi-user-skills";
@@ -380,7 +380,7 @@ function listCodexSkills(homeDir = homedir()): RaviSkill[] {
 
 export function listCatalogSkills(): RaviSkill[] {
   const skills: RaviSkill[] = [];
-  for (const plugin of INTERNAL_PLUGINS) {
+  for (const plugin of loadInternalPlugins()) {
     for (const file of plugin.files) {
       const match = /^skills\/([^/]+)\/SKILL\.md$/.exec(file.path);
       if (!match) continue;

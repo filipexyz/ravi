@@ -254,10 +254,12 @@ Plugins internos ficam em `src/plugins/internal`.
 Build:
 
 ```bash
-bun run gen:plugins
+bun run build
 ```
 
-Isso atualiza `src/plugins/internal-registry.ts`.
+Em source/dev, o Ravi descobre `src/plugins/internal/**` direto do filesystem.
+No pacote publicado, o build gera `dist/bundle/internal-plugins.json` para manter as skills internas autocontidas.
+Não versionar registry gerado de skills no source.
 
 Skills nativas de runtime podem ser sincronizadas para ambientes de provider quando suportado.
 

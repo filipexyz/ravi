@@ -6,11 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": [
-      "src/**",
-      "!src/cli/commands/index.ts",
-      "!src/plugins/internal-registry.ts"
-    ]
+    "includes": ["src/**", "!src/cli/commands/index.ts"]
   },
   "formatter": {
     "enabled": true,
