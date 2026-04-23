@@ -57,6 +57,7 @@ function writeTaskProfile(
       thinking?: "off" | "normal" | "verbose";
     };
     templateTexts?: {
+      create?: string;
       dispatch?: string;
       resume?: string;
       dispatchSummary?: string;
@@ -75,6 +76,7 @@ function writeTaskProfile(
   mkdirSync(profileDir, { recursive: true });
 
   const templateTexts = {
+    create: options.templateTexts?.create ?? `Create {{task.title}} with ${profileId}`,
     dispatch: options.templateTexts?.dispatch ?? `Dispatch {{task.title}} with ${profileId}`,
     resume: options.templateTexts?.resume ?? `Resume {{task.id}} with ${profileId}`,
     dispatchSummary: options.templateTexts?.dispatchSummary ?? `Summary {{task.id}}`,
@@ -85,13 +87,14 @@ function writeTaskProfile(
   };
 
   if (templateMode === "path") {
+    writeFileSync(join(profileDir, "create.md"), `${templateTexts.create}\n`, "utf8");
     writeFileSync(join(profileDir, "dispatch.md"), `${templateTexts.dispatch}\n`, "utf8");
     writeFileSync(join(profileDir, "resume.md"), `${templateTexts.resume}\n`, "utf8");
-    writeFileSync(join(profileDir, "dispatch-summary.txt"), `${templateTexts.dispatchSummary}\n`, "utf8");
-    writeFileSync(join(profileDir, "dispatch-event.txt"), `${templateTexts.dispatchEventMessage}\n`, "utf8");
-    writeFileSync(join(profileDir, "report-done.txt"), `${templateTexts.reportDoneMessage}\n`, "utf8");
-    writeFileSync(join(profileDir, "report-blocked.txt"), `${templateTexts.reportBlockedMessage}\n`, "utf8");
-    writeFileSync(join(profileDir, "report-failed.txt"), `${templateTexts.reportFailedMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "dispatch-summary.md"), `${templateTexts.dispatchSummary}\n`, "utf8");
+    writeFileSync(join(profileDir, "dispatch-event.md"), `${templateTexts.dispatchEventMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-done.md"), `${templateTexts.reportDoneMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-blocked.md"), `${templateTexts.reportBlockedMessage}\n`, "utf8");
+    writeFileSync(join(profileDir, "report-failed.md"), `${templateTexts.reportFailedMessage}\n`, "utf8");
   }
 
   const manifest = {
@@ -121,7 +124,7 @@ function writeTaskProfile(
     })),
     completion: {
       summaryRequired: true,
-      summaryLabel: "Resumo",
+      summaryLabel: "Summary",
     },
     progress: {
       requireMessage: true,
@@ -170,13 +173,14 @@ function writeTaskProfile(
     templates:
       templateMode === "path"
         ? {
+            create: { path: "./create.md" },
             dispatch: { path: "./dispatch.md" },
             resume: { path: "./resume.md" },
-            dispatchSummary: { path: "./dispatch-summary.txt" },
-            dispatchEventMessage: { path: "./dispatch-event.txt" },
-            reportDoneMessage: { path: "./report-done.txt" },
-            reportBlockedMessage: { path: "./report-blocked.txt" },
-            reportFailedMessage: { path: "./report-failed.txt" },
+            dispatchSummary: { path: "./dispatch-summary.md" },
+            dispatchEventMessage: { path: "./dispatch-event.md" },
+            reportDoneMessage: { path: "./report-done.md" },
+            reportBlockedMessage: { path: "./report-blocked.md" },
+            reportFailedMessage: { path: "./report-failed.md" },
           }
         : templateTexts,
   };
@@ -442,15 +446,16 @@ describe("task profile catalog", () => {
     });
 
     expect(preview.rendered.dispatch).toContain("Catalog Preview");
+    expect(preview.rendered.create).toContain("Catalog Preview");
     expect(preview.rendered.dispatch).toContain("7");
     expect(preview.rendered.dispatch).toContain("mint");
     expect(preview.rendered.dispatch).toContain("TASK.md");
     expect(preview.rendered.dispatchSummary).toContain("TASK.md");
     expect(preview.rendered.dispatchEventMessage).toContain("task-preview-previewable-work");
-    expect(preview.rendered.reportDoneMessage).toContain("Done Task concluída:");
+    expect(preview.rendered.reportDoneMessage).toContain("Task done:");
     expect(preview.rendered.reportDoneMessage).toContain("task-preview-previewable-work");
-    expect(preview.rendered.reportBlockedMessage).toContain("Task bloqueada:");
-    expect(preview.rendered.reportFailedMessage).toContain("Task falhou:");
+    expect(preview.rendered.reportBlockedMessage).toContain("Task blocked:");
+    expect(preview.rendered.reportFailedMessage).toContain("Task failed:");
 
     const validation = validateTaskProfiles("bad-template");
     expect(validation).toHaveLength(1);

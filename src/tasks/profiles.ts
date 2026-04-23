@@ -18,6 +18,9 @@ import type {
   TaskProfileStateFieldDefinition,
   TaskProfileSourceKind,
   TaskProfileState,
+  TaskDependencyEdge,
+  TaskLaunchPlan,
+  TaskReadiness,
   TaskReportEvent,
   TaskRecord,
   TaskWorktreeConfig,
@@ -175,6 +178,7 @@ const TaskProfileManifestSchema = z.object({
   artifacts: z.array(TaskProfileArtifactDefinitionSchema).default([]),
   state: z.array(TaskProfileStateFieldDefinitionSchema).default([]),
   templates: z.object({
+    create: TaskProfileTemplateRefSchema.optional(),
     dispatch: TaskProfileTemplateRefSchema,
     resume: TaskProfileTemplateRefSchema,
     dispatchSummary: TaskProfileTemplateRefSchema,
@@ -211,6 +215,7 @@ export interface TaskProfilePreviewResult {
   task: TaskRecord;
   primaryArtifact: TaskProfileArtifactRef | null;
   rendered: {
+    create: string;
     dispatch: string;
     resume: string;
     dispatchSummary: string;
@@ -251,6 +256,38 @@ const DEFAULT_TASK_PROFILE_REPORT_TEMPLATES: Pick<
   reportBlockedMessage: "{{report.text}}",
   reportFailedMessage: "{{report.text}}",
 };
+
+const DEFAULT_TASK_PROFILE_CREATE_TEMPLATE = `## Task Created
+
+Task: {{task.id}}
+Title: {{task.title}}
+Status: {{task.status}}
+Readiness: {{readiness.label}}
+Priority: {{task.priority}}
+Profile: {{profile.id}}@{{profile.version}}
+Surface: {{profile.rendererHints.label}}
+Primary artifact: {{create.primaryArtifactLabel}} :: {{create.primaryArtifactPath}}
+
+## Write The Task Efficiently Before Dispatch
+
+Before dispatching, make the task brief explicit in the primary artifact. A good task must include:
+
+- Objective: the concrete outcome expected.
+- Context: the relevant background and source of truth.
+- Scope in: what must be done now.
+- Scope out: what must not be done in this cut.
+- Acceptance criteria: how the owner will know this is done.
+- Dependencies and risks: credentials, external systems, sequencing, manual validation.
+- Validation plan: commands, checks, smoke tests, or review gates.
+- Handoff: what the worker must report when done, blocked, or failed.
+
+## Original Instructions
+
+{{task.instructions}}
+
+## Next
+
+{{create.nextSteps}}`;
 
 function normalizeTaskProfileSyncPolicy(
   sync: TaskProfileManifest["sync"] | TaskProfileDefinition["sync"],
@@ -383,6 +420,7 @@ function normalizeTaskProfileTemplates(
   templates: Partial<TaskProfileDefinition["templates"]>,
 ): TaskProfileDefinition["templates"] {
   return {
+    create: normalizeTemplateString(templates.create ?? DEFAULT_TASK_PROFILE_CREATE_TEMPLATE),
     dispatch: normalizeTemplateString(templates.dispatch ?? ""),
     resume: normalizeTemplateString(templates.resume ?? ""),
     dispatchSummary: normalizeTemplateString(templates.dispatchSummary ?? ""),
@@ -421,6 +459,7 @@ function resolveManifestToProfile(manifest: TaskProfileManifest, source: Profile
     })),
     state: manifest.state.map((field) => ({ ...field })),
     templates: normalizeTaskProfileTemplates({
+      ...(manifest.templates.create ? { create: readTemplateRef(manifest.templates.create, source, "create") } : {}),
       dispatch: readTemplateRef(manifest.templates.dispatch, source, "dispatch"),
       resume: readTemplateRef(manifest.templates.resume, source, "resume"),
       dispatchSummary: readTemplateRef(manifest.templates.dispatchSummary, source, "dispatchSummary"),
@@ -1061,7 +1100,23 @@ function renderStrictTemplate(
     }
 
     const root = key.split(".")[0];
-    if (!["task", "profile", "session", "worktree", "artifacts", "profileState", "input", "report"].includes(root)) {
+    if (
+      ![
+        "task",
+        "profile",
+        "session",
+        "worktree",
+        "artifacts",
+        "profileState",
+        "input",
+        "report",
+        "create",
+        "readiness",
+        "dependencies",
+        "dependents",
+        "launchPlan",
+      ].includes(root)
+    ) {
       throw new Error(
         `Unknown placeholder root "${root}" in task profile ${metadata.profileId} template ${metadata.templateName}.`,
       );
@@ -1089,6 +1144,11 @@ function buildTemplateContext(
     sessionName?: string;
     input?: Record<string, string>;
     report?: Record<string, unknown>;
+    create?: Record<string, unknown>;
+    readiness?: TaskReadiness;
+    dependencies?: TaskDependencyEdge[];
+    dependents?: TaskDependencyEdge[];
+    launchPlan?: TaskLaunchPlan | null;
   },
 ): Record<string, unknown> {
   const profile = options.taskProfile ?? resolveTaskProfileForTask(task);
@@ -1156,6 +1216,17 @@ function buildTemplateContext(
     profileState,
     input: resolveProfileInputValues(profile, task.profileInput, options.input),
     ...(options.report ? { report: options.report } : {}),
+    ...(options.create ? { create: options.create } : {}),
+    ...(options.readiness ? { readiness: options.readiness } : {}),
+    dependencies: options.dependencies ?? [],
+    dependents: options.dependents ?? [],
+    launchPlan: options.launchPlan ?? {
+      taskId: task.id,
+      agentId: "-",
+      sessionName: "-",
+      createdAt: 0,
+      updatedAt: 0,
+    },
   };
 }
 
@@ -1193,6 +1264,134 @@ function renderProfileTemplate(
     profileId: profile.id,
     templateName,
   });
+}
+
+function formatCreateLaunchPlan(launchPlan?: TaskLaunchPlan | null): string {
+  return launchPlan ? `${launchPlan.agentId}/${launchPlan.sessionName}` : "-";
+}
+
+function buildTaskCreateNextSteps(input: {
+  task: TaskRecord;
+  profile: ResolvedTaskProfile;
+  primaryArtifact: TaskProfileArtifactRef | null;
+  readiness: TaskReadiness;
+  dependencies?: TaskDependencyEdge[];
+  launchPlan?: TaskLaunchPlan | null;
+}): string {
+  if (input.task.archivedAt) {
+    return [`1. Unarchive before doing more work:`, `   ravi tasks unarchive ${input.task.id}`].join("\n");
+  }
+
+  if (input.task.status === "done" || input.task.status === "failed") {
+    return "Task is terminal. Use `ravi tasks show` for history.";
+  }
+
+  if (input.task.status === "dispatched" || input.task.status === "in_progress" || input.task.status === "blocked") {
+    return [
+      `1. Watch progress: ravi tasks watch ${input.task.id}`,
+      `2. Sync progress: ravi tasks report ${input.task.id}`,
+      `3. Close explicitly: ravi tasks done|block|fail ${input.task.id}`,
+    ].join("\n");
+  }
+
+  if (input.readiness.state === "waiting") {
+    const pending = input.readiness.unsatisfiedDependencyIds.length
+      ? input.readiness.unsatisfiedDependencyIds.join(", ")
+      : "upstream dependencies";
+    const launchPlanLine = input.launchPlan
+      ? `3. Auto-dispatch is armed for ${formatCreateLaunchPlan(input.launchPlan)} when dependencies are satisfied.`
+      : `3. Dispatch only after dependencies are satisfied: ravi tasks dispatch ${input.task.id} --agent <agent>`;
+    return [
+      `1. Resolve pending dependencies: ${pending}`,
+      `2. Keep the task brief current while waiting.`,
+      launchPlanLine,
+    ].join("\n");
+  }
+
+  const openTarget = input.primaryArtifact?.path ?? `profile ${input.profile.id}`;
+  return [
+    `1. Open ${openTarget}`,
+    "2. Rewrite the brief until objective, scope, acceptance criteria, risks, and validation are explicit.",
+    `3. Dispatch only after the brief is ready: ravi tasks dispatch ${input.task.id} --agent <agent>`,
+  ].join("\n");
+}
+
+function buildTaskCreateTemplateModel(input: {
+  task: TaskRecord;
+  profile: ResolvedTaskProfile;
+  primaryArtifact: TaskProfileArtifactRef | null;
+  readiness: TaskReadiness;
+  dependencies?: TaskDependencyEdge[];
+  dependents?: TaskDependencyEdge[];
+  launchPlan?: TaskLaunchPlan | null;
+}): Record<string, unknown> {
+  return {
+    primaryArtifactLabel: input.primaryArtifact?.label ?? "-",
+    primaryArtifactPath: input.primaryArtifact?.path ?? "-",
+    dependencySummary: `${input.readiness.satisfiedDependencyCount}/${input.readiness.dependencyCount} dependencies satisfied`,
+    unsatisfiedDependencyIds: input.readiness.unsatisfiedDependencyIds.join(", "),
+    launchPlan: formatCreateLaunchPlan(input.launchPlan),
+    dispatchCommand: `ravi tasks dispatch ${input.task.id} --agent <agent>`,
+    nextSteps: buildTaskCreateNextSteps(input),
+    dependencyCount: input.dependencies?.length ?? 0,
+    dependentCount: input.dependents?.length ?? 0,
+  };
+}
+
+export function buildTaskCreateOutputForProfile(
+  task: TaskRecord,
+  options: {
+    effectiveCwd: string;
+    worktree?: TaskWorktreeConfig;
+    taskDocPath?: string | null;
+    taskProfile?: ResolvedTaskProfile;
+    primaryArtifact?: TaskProfileArtifactRef | null;
+    input?: Record<string, string>;
+    readiness: TaskReadiness;
+    dependencies?: TaskDependencyEdge[];
+    dependents?: TaskDependencyEdge[];
+    launchPlan?: TaskLaunchPlan | null;
+    agentId?: string;
+    sessionName?: string;
+  },
+): string {
+  const profile = options.taskProfile ?? resolveTaskProfileForTask(task);
+  const primaryArtifact =
+    options.primaryArtifact === undefined
+      ? resolveTaskProfilePrimaryArtifact(task, {
+          effectiveCwd: options.effectiveCwd,
+          ...(options.worktree ? { worktree: options.worktree } : {}),
+          ...(options.taskDocPath !== undefined ? { taskDocPath: options.taskDocPath } : {}),
+          taskProfile: profile,
+          ...(options.agentId ? { agentId: options.agentId } : {}),
+          ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+          ...(options.input ? { input: options.input } : {}),
+        })
+      : options.primaryArtifact;
+  const context = buildTemplateContext(task, {
+    effectiveCwd: options.effectiveCwd,
+    ...(options.worktree ? { worktree: options.worktree } : {}),
+    ...(options.taskDocPath !== undefined ? { taskDocPath: options.taskDocPath } : {}),
+    taskProfile: profile,
+    primaryArtifact,
+    ...(options.agentId ? { agentId: options.agentId } : {}),
+    ...(options.sessionName ? { sessionName: options.sessionName } : {}),
+    ...(options.input ? { input: options.input } : {}),
+    readiness: options.readiness,
+    dependencies: options.dependencies ?? [],
+    dependents: options.dependents ?? [],
+    launchPlan: options.launchPlan ?? null,
+    create: buildTaskCreateTemplateModel({
+      task,
+      profile,
+      primaryArtifact,
+      readiness: options.readiness,
+      dependencies: options.dependencies ?? [],
+      dependents: options.dependents ?? [],
+      launchPlan: options.launchPlan ?? null,
+    }),
+  });
+  return renderProfileTemplate(profile, "create", context);
 }
 
 export function buildTaskDispatchPromptForProfile(
@@ -1313,9 +1512,8 @@ function buildTaskReportTemplateModel(
     sourceSessionName: string;
   },
 ): Record<string, string> {
-  const headline =
-    reportEvent === "done" ? "Task concluída" : reportEvent === "blocked" ? "Task bloqueada" : "Task falhou";
-  const detailLabel = reportEvent === "done" ? "Resumo" : reportEvent === "blocked" ? "Blocker" : "Erro";
+  const headline = reportEvent === "done" ? "Task done" : reportEvent === "blocked" ? "Task blocked" : "Task failed";
+  const detailLabel = reportEvent === "done" ? "Summary" : reportEvent === "blocked" ? "Blocker" : "Error";
   const headerParts = [`${headline}: ${input.taskId}`];
   if (input.title?.trim()) {
     headerParts.push(input.title.trim());
@@ -1328,7 +1526,7 @@ function buildTaskReportTemplateModel(
     input.assigneeAgentId || input.assigneeSessionName
       ? `${input.assigneeAgentId ?? "-"}${input.assigneeSessionName ? `/${input.assigneeSessionName}` : ""}`
       : "";
-  const assigneeLine = assignee ? `Responsável: ${assignee}` : "";
+  const assigneeLine = assignee ? `Assignee: ${assignee}` : "";
 
   return {
     event: reportEvent,
@@ -1477,6 +1675,16 @@ export function previewTaskProfile(
   });
   const previewSessionName = options.sessionName ?? renderTaskSessionTemplate(profile.sessionNameTemplate, taskId);
   const previewAgentId = options.agentId ?? "dev";
+  const previewReadiness: TaskReadiness = {
+    state: "ready",
+    label: "ready to start",
+    canStart: true,
+    dependencyCount: 0,
+    satisfiedDependencyCount: 0,
+    unsatisfiedDependencyCount: 0,
+    unsatisfiedDependencyIds: [],
+    hasLaunchPlan: false,
+  };
   const donePreviewTask: TaskRecord = {
     ...taskWithState,
     status: "done",
@@ -1508,6 +1716,20 @@ export function previewTaskProfile(
     primaryArtifact,
     input: resolveProfileInputValues(profile, taskWithState.profileInput),
     rendered: {
+      create: buildTaskCreateOutputForProfile(taskWithState, {
+        effectiveCwd,
+        ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
+        ...(taskDocPath !== undefined ? { taskDocPath } : {}),
+        taskProfile: profile,
+        ...(primaryArtifact !== undefined ? { primaryArtifact } : {}),
+        agentId: previewAgentId,
+        sessionName: previewSessionName,
+        ...(options.input ? { input: options.input } : {}),
+        readiness: previewReadiness,
+        dependencies: [],
+        dependents: [],
+        launchPlan: null,
+      }),
       dispatch: buildTaskDispatchPromptForProfile(taskWithState, previewAgentId, previewSessionName, {
         effectiveCwd,
         ...(resolvedWorktree ? { worktree: resolvedWorktree } : {}),
@@ -1738,10 +1960,11 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
   switch (preset) {
     case "doc-first":
       return {
+        create: DEFAULT_TASK_PROFILE_CREATE_TEMPLATE,
         dispatch:
-          "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTASK.md: {{task.taskDocPath}}\nObjetivo:\n{{task.instructions}}",
+          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTASK.md: {{task.taskDocPath}}\nObjective:\n{{task.instructions}}",
         resume:
-          '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | TASK.md: {{task.taskDocPath}}',
+          '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | TASK.md: {{task.taskDocPath}}',
         dispatchSummary: "The target session was instructed to edit TASK.md first, then sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Edit {{task.taskDocPath}} first, then sync via ravi tasks report|done|block|fail {{task.id}}.",
@@ -1751,10 +1974,11 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
       };
     case "brainstorm":
       return {
+        create: DEFAULT_TASK_PROFILE_CREATE_TEMPLATE,
         dispatch:
-          "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nSlug: {{profileState.brainstorm.slug}}\nDraft: {{artifacts.primary.path}}\nObjetivo:\n{{task.instructions}}",
+          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nSlug: {{profileState.brainstorm.slug}}\nDraft: {{artifacts.primary.path}}\nObjective:\n{{task.instructions}}",
         resume:
-          '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | slug: {{profileState.brainstorm.slug}} | draft: {{artifacts.primary.path}}',
+          '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | slug: {{profileState.brainstorm.slug}} | draft: {{artifacts.primary.path}}',
         dispatchSummary:
           "The target session was instructed to load brainstorm, use the draft artifact as primary state, then sync through:",
         dispatchEventMessage:
@@ -1765,10 +1989,11 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
       };
     case "runtime-only":
       return {
+        create: DEFAULT_TASK_PROFILE_CREATE_TEMPLATE,
         dispatch:
-          "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nObjetivo:\n{{task.instructions}}",
+          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nObjective:\n{{task.instructions}}",
         resume:
-          '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}}',
+          '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}}',
         dispatchSummary: "The target session received the task without a task-document protocol. Sync through:",
         dispatchEventMessage:
           "Dispatched to {{session.agentId}}/{{session.name}}. Operate directly in the runtime substrate and sync via ravi tasks report|done|block|fail {{task.id}}.",
@@ -1778,10 +2003,11 @@ function buildScaffoldTemplateBundle(preset: TaskProfileScaffoldPreset): TaskPro
       };
     case "content":
       return {
+        create: DEFAULT_TASK_PROFILE_CREATE_TEMPLATE,
         dispatch:
-          "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTask dir: {{task.taskDir}}\nArtifact: {{artifacts.primary.path}}\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- trate {{task.taskDir}} como o workspace canônico do item\n- este profile nasce sem TASK.md e sem manifesto obrigatório\n- comece por {{artifacts.primary.path}} e só materialize `notes.md`, `sources/`, `assets/` e `exports/` se precisar\n- mantenha lifecycle/comentários/assignments no substrate via ravi tasks comment|report|done|block|fail {{task.id}}",
+          "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nProfile: {{profile.id}}/{{profile.version}}\nTask dir: {{task.taskDir}}\nArtifact: {{artifacts.primary.path}}\nObjective:\n{{task.instructions}}\n\nExecution instructions:\n- treat {{task.taskDir}} as the canonical workspace for this item\n- this profile starts without TASK.md and without a required manifest\n- start from {{artifacts.primary.path}} and only materialize `notes.md`, `sources/`, `assets/`, and `exports/` if needed\n- keep lifecycle/comments/assignments in the substrate via ravi tasks comment|report|done|block|fail {{task.id}}",
         resume:
-          '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | task dir: {{task.taskDir}} | artifact: {{artifacts.primary.path}}',
+          '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}} | task dir: {{task.taskDir}} | artifact: {{artifacts.primary.path}}',
         dispatchSummary:
           "The target session received a content workspace rooted at task_dir. Work from the primary artifact and sync through:",
         dispatchEventMessage:
@@ -1815,13 +2041,14 @@ export function initTaskProfileScaffold(
 
   mkdirSync(profileDir, { recursive: true });
   const templates = buildScaffoldTemplateBundle(preset);
+  writeFileSync(joinPath(profileDir, "create.md"), `${templates.create}\n`, "utf8");
   writeFileSync(joinPath(profileDir, "dispatch.md"), `${templates.dispatch}\n`, "utf8");
   writeFileSync(joinPath(profileDir, "resume.md"), `${templates.resume}\n`, "utf8");
-  writeFileSync(joinPath(profileDir, "dispatch-summary.txt"), `${templates.dispatchSummary}\n`, "utf8");
-  writeFileSync(joinPath(profileDir, "dispatch-event.txt"), `${templates.dispatchEventMessage}\n`, "utf8");
-  writeFileSync(joinPath(profileDir, "report-done.txt"), `${templates.reportDoneMessage}\n`, "utf8");
-  writeFileSync(joinPath(profileDir, "report-blocked.txt"), `${templates.reportBlockedMessage}\n`, "utf8");
-  writeFileSync(joinPath(profileDir, "report-failed.txt"), `${templates.reportFailedMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "dispatch-summary.md"), `${templates.dispatchSummary}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "dispatch-event.md"), `${templates.dispatchEventMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-done.md"), `${templates.reportDoneMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-blocked.md"), `${templates.reportBlockedMessage}\n`, "utf8");
+  writeFileSync(joinPath(profileDir, "report-failed.md"), `${templates.reportFailedMessage}\n`, "utf8");
 
   const manifest = {
     id: normalizedId,
@@ -1853,7 +2080,7 @@ export function initTaskProfileScaffold(
     inputs: [],
     completion: {
       summaryRequired: true,
-      summaryLabel: "Resumo",
+      summaryLabel: "Summary",
     },
     progress: {
       requireMessage: true,
@@ -1861,13 +2088,14 @@ export function initTaskProfileScaffold(
     artifacts: buildScaffoldArtifacts(preset),
     state: buildScaffoldState(preset),
     templates: {
+      create: { path: "./create.md" },
       dispatch: { path: "./dispatch.md" },
       resume: { path: "./resume.md" },
-      dispatchSummary: { path: "./dispatch-summary.txt" },
-      dispatchEventMessage: { path: "./dispatch-event.txt" },
-      reportDoneMessage: { path: "./report-done.txt" },
-      reportBlockedMessage: { path: "./report-blocked.txt" },
-      reportFailedMessage: { path: "./report-failed.txt" },
+      dispatchSummary: { path: "./dispatch-summary.md" },
+      dispatchEventMessage: { path: "./dispatch-event.md" },
+      reportDoneMessage: { path: "./report-done.md" },
+      reportBlockedMessage: { path: "./report-blocked.md" },
+      reportFailedMessage: { path: "./report-failed.md" },
     },
   };
 

@@ -60,7 +60,7 @@ describe.skip("task comments steering", () => {
         deliveryBarrier: "after_response",
       }),
     });
-    expect(String(publishCalls[0]?.payload.prompt)).toContain("Novo comentário na task");
+    expect(String(publishCalls[0]?.payload.prompt)).toContain("New comment on task");
     expect(String(publishCalls[0]?.payload.prompt)).toContain("ajusta a direção do patch antes de continuar");
   });
 

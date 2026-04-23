@@ -8,6 +8,7 @@ import {
   TASK_REPORT_EVENTS,
   archiveTask,
   buildTaskArtifactSummary,
+  buildTaskCreateOutputForProfile,
   buildTaskSessionLink,
   completeTask,
   commentTask,
@@ -555,7 +556,7 @@ function printNextSteps(task: TaskRecord): void {
   if (task.archivedAt) {
     console.log(`  ravi tasks unarchive ${task.id}`);
     if (task.status === "done" || task.status === "failed") {
-      console.log("  task arquivada; use show para histórico.");
+      console.log("  task archived; use show for history.");
       return;
     }
   }
@@ -565,7 +566,7 @@ function printNextSteps(task: TaskRecord): void {
       console.log(`  ravi tasks show ${task.id}`);
       if (dependencySurface.dependencies.length > 0) {
         console.log(
-          `  upstreams pendentes: ${dependencySurface.dependencies
+          `  pending upstreams: ${dependencySurface.dependencies
             .filter((edge) => !edge.satisfied)
             .map((edge) => edge.relatedTaskId)
             .join(", ")}`,
@@ -582,19 +583,19 @@ function printNextSteps(task: TaskRecord): void {
     }
     const primaryArtifactPath = artifacts.primary ? formatArtifactDisplayPath(artifacts.primary) : null;
     if (primaryArtifactPath) {
-      console.log(`  1. abrir ${primaryArtifactPath}`);
+      console.log(`  1. open ${primaryArtifactPath}`);
     } else {
-      console.log(`  1. revisar o profile ${taskProfile.id} e o workspace da task`);
+      console.log(`  1. review profile ${taskProfile.id} and the task workspace`);
     }
     if (taskProfileUsesArtifactFirstSync(taskProfile) && artifacts.primary) {
-      console.log(`  2. trabalhar primeiro no artefato primário do profile (${artifacts.primary.label})`);
+      console.log(`  2. work in the profile primary artifact first (${artifacts.primary.label})`);
     } else if (artifacts.primary) {
-      console.log(`  2. trabalhar no artefato primário do profile (${artifacts.primary.label})`);
+      console.log(`  2. work in the profile primary artifact (${artifacts.primary.label})`);
     } else {
-      console.log("  2. refinar o processo/artefatos do profile antes de subir");
+      console.log("  2. refine the profile process/artifacts before dispatch");
     }
-    console.log(`  3. revisar com o dono da task`);
-    console.log(`  4. so depois despachar: ravi tasks dispatch ${task.id} --agent <agent>`);
+    console.log("  3. review with the task owner");
+    console.log(`  4. dispatch only after that: ravi tasks dispatch ${task.id} --agent <agent>`);
     return;
   }
 
@@ -607,7 +608,25 @@ function printNextSteps(task: TaskRecord): void {
     return;
   }
 
-  console.log("  task concluída; use list/show para histórico.");
+  console.log("  task terminal; use list/show for history.");
+}
+
+function printTaskCreateOutput(task: TaskRecord): void {
+  const taskProfile = resolveTaskProfileForTask(task);
+  const dependencySurface = getTaskDependencySurface(task);
+  const taskDocPath = taskProfileUsesTaskDocument(taskProfile) ? getTaskDocPath(task) : null;
+  const output = buildTaskCreateOutputForProfile(task, {
+    effectiveCwd: process.cwd(),
+    ...(taskDocPath !== null ? { taskDocPath } : {}),
+    taskProfile,
+    readiness: dependencySurface.readiness,
+    dependencies: dependencySurface.dependencies,
+    dependents: dependencySurface.dependents,
+    launchPlan: dependencySurface.launchPlan,
+    ...(task.assigneeAgentId ? { agentId: task.assigneeAgentId } : {}),
+    ...(task.assigneeSessionName ? { sessionName: task.assigneeSessionName } : {}),
+  });
+  console.log(`\n${output}`);
 }
 
 function formatWatchLine(payload: Record<string, unknown>, asJson?: boolean): string {
@@ -899,8 +918,7 @@ export class TaskCommands {
         ? "Created and dispatched"
         : "Created with launch plan";
     console.log(`\n✓ ${headline} task ${task.id}`);
-    printTaskSummary(task);
-    printNextSteps(task);
+    printTaskCreateOutput(task);
   }
 
   @Command({ name: "list", description: "List tasks" })

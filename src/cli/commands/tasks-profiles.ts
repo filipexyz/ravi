@@ -145,6 +145,7 @@ export class TaskProfileCommands {
       }
     }
     console.log("\nTemplates:");
+    console.log(`  create:              ${profile.templates.create.split("\n")[0]}`);
     console.log(`  dispatch:            ${profile.templates.dispatch.split("\n")[0]}`);
     console.log(`  resume:              ${profile.templates.resume.split("\n")[0]}`);
     console.log(`  dispatchSummary:     ${profile.templates.dispatchSummary}`);
@@ -205,6 +206,8 @@ export class TaskProfileCommands {
     if (preview.primaryArtifact) {
       console.log(`Primary artifact: ${preview.primaryArtifact.label} -> ${preview.primaryArtifact.path}`);
     }
+    console.log("\nCreate output:\n");
+    console.log(preview.rendered.create);
     console.log("\nDispatch prompt:\n");
     console.log(preview.rendered.dispatch);
     console.log("\nResume prompt:\n");

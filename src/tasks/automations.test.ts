@@ -68,7 +68,7 @@ function writeVideoProfileFixture(stateRoot: string): void {
         ],
         completion: {
           summaryRequired: true,
-          summaryLabel: "Resumo",
+          summaryLabel: "Summary",
         },
         progress: {
           requireMessage: true,
@@ -104,6 +104,7 @@ function writeVideoProfileFixture(stateRoot: string): void {
           },
         ],
         templates: {
+          create: "create {{task.id}}",
           dispatch: "dispatch {{task.id}}",
           resume: "resume {{task.id}}",
           dispatchSummary: "summary {{task.id}}",

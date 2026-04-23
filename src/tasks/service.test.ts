@@ -132,7 +132,7 @@ function buildTestProfile(
     inputs: [],
     completion: {
       summaryRequired: true,
-      summaryLabel: "Resumo",
+      summaryLabel: "Summary",
     },
     progress: {
       requireMessage: true,
@@ -179,14 +179,15 @@ function buildTestProfile(
           ]
         : [],
     templates: {
+      create: "create {{task.id}}",
       dispatch:
         normalizedId === "brainstorm"
-          ? "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nprofile efetivo: {{profile.id}}\nbrainstorm slug: {{profileState.brainstorm.slug}}\nartifact primário: {{artifacts.primary.path}}\n\nObjetivo:\n{{task.instructions}}\n\nInstruções de execução:\n- carregue a skill `brainstorm` antes de começar\n- trabalhe a partir de {{artifacts.primary.path}}"
-          : "[System] Execute: Você assumiu a task {{task.id}} no Ravi.\n\nTítulo: {{task.title}}\nprofile efetivo: {{profile.id}}\ncwd efetivo da sessão: {{session.cwd}}\nworktree contextual: {{worktree.label}}\n\nObjetivo:\n{{task.instructions}}",
+          ? "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\neffective profile: {{profile.id}}\nbrainstorm slug: {{profileState.brainstorm.slug}}\nprimary artifact: {{artifacts.primary.path}}\n\nObjective:\n{{task.instructions}}\n\nExecution instructions:\n- load the `brainstorm` skill before starting\n- work from {{artifacts.primary.path}}"
+          : "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\neffective profile: {{profile.id}}\neffective session cwd: {{session.cwd}}\ncontextual worktree: {{worktree.label}}\n\nObjective:\n{{task.instructions}}",
       resume:
         normalizedId === "brainstorm"
-          ? '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}} | slug: {{profileState.brainstorm.slug}} | artifact: {{artifacts.primary.path}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}'
-          : '[System] Daemon reiniciou. Continue a task {{task.id}} ("{{task.title}}") de onde parou.\nProgresso: {{task.progress}}% | profile: {{profile.id}}\nContexto operacional:\n- cwd efetivo da sessão: {{session.cwd}}\n- worktree contextual: {{worktree.label}}',
+          ? '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}} | slug: {{profileState.brainstorm.slug}} | artifact: {{artifacts.primary.path}}\nOperational context:\n- effective session cwd: {{session.cwd}}\n- contextual worktree: {{worktree.label}}'
+          : '[System] The daemon restarted. Continue task {{task.id}} ("{{task.title}}") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}}\nOperational context:\n- effective session cwd: {{session.cwd}}\n- contextual worktree: {{worktree.label}}',
       dispatchSummary: "summary {{task.id}}",
       dispatchEventMessage: "event {{task.id}}",
       reportDoneMessage: "{{report.text}}",
@@ -269,6 +270,7 @@ function writeRuntimeOnlyTaskDirProfile(workspaceDir: string, profileId: string)
         ],
         state: [],
         templates: {
+          create: "Create {{task.id}} using {{artifacts.primary.path}} for {{input.question}}",
           dispatch: "Dispatch {{task.id}} using {{artifacts.primary.path}} for {{input.question}}",
           resume: "Resume {{task.id}} using {{artifacts.primary.path}}",
           dispatchSummary: "Primary {{artifacts.primary.path}}",
@@ -1140,6 +1142,7 @@ describe("task substrate contract", () => {
     const profileSnapshot = buildTaskProfileSnapshot(
       buildTestProfile("default", {
         templates: {
+          create: "create {{task.id}}",
           dispatch: "dispatch {{task.id}}",
           resume: "resume {{task.id}}",
           dispatchSummary: "summary {{task.id}}",
@@ -1207,13 +1210,13 @@ describe("task substrate contract", () => {
 
     const prompts = publishSessionPromptMock.mock.calls.map((call) => call[1].prompt);
     expect(prompts).toContain(
-      `[System] Answer: [from: ${doneCreated.task.id}-work] DONE ${doneCreated.task.id} :: Resumo: entregue :: ${doneCreated.task.id}-work`,
+      `[System] Answer: [from: ${doneCreated.task.id}-work] DONE ${doneCreated.task.id} :: Summary: entregue :: ${doneCreated.task.id}-work`,
     );
     expect(prompts).toContain(
       `[System] Answer: [from: ${blockedCreated.task.id}-work] BLOCKED ${blockedCreated.task.id} :: Blocker: dependência externa :: ${blockedCreated.task.id}-work`,
     );
     expect(prompts).toContain(
-      `[System] Answer: [from: ${failedCreated.task.id}-work] FAILED ${failedCreated.task.id} :: Erro: stack trace :: ${failedCreated.task.id}-work`,
+      `[System] Answer: [from: ${failedCreated.task.id}-work] FAILED ${failedCreated.task.id} :: Error: stack trace :: ${failedCreated.task.id}-work`,
     );
   });
 
@@ -1251,7 +1254,7 @@ describe("task substrate contract", () => {
     await emitTaskEvent(result.task, result.event);
 
     expect(publishSessionPromptMock.mock.calls.at(-1)?.[1].prompt).toBe(
-      `[System] Answer: [from: ${created.task.id}-work] Task concluída: ${created.task.id} · Legacy snapshot report\nResumo: feito sem template novo`,
+      `[System] Answer: [from: ${created.task.id}-work] Task done: ${created.task.id} · Legacy snapshot report\nSummary: feito sem template novo`,
     );
   });
 
@@ -1366,8 +1369,8 @@ describe("task substrate contract", () => {
     expect(prompt).toContain("42%");
     expect(prompt).toContain("profile: default");
     expect(prompt).toContain(`/tmp/ravi-task-recovery/tasks/${created.task.id}/TASK.md`);
-    expect(prompt).toContain("cwd efetivo da sessão: /tmp/ravi-task-recovery");
-    expect(prompt).toContain("worktree contextual: agent default cwd");
+    expect(prompt).toContain("effective session cwd: /tmp/ravi-task-recovery");
+    expect(prompt).toContain("contextual worktree: agent default cwd");
   });
 
   it("resolves a stable brainstorm slug from the task title and centers dispatch on the draft artifact", () => {
@@ -1419,13 +1422,13 @@ describe("task substrate contract", () => {
       primaryArtifact,
     });
 
-    expect(prompt).toContain("profile efetivo: brainstorm");
+    expect(prompt).toContain("effective profile: brainstorm");
     expect(prompt).not.toContain("taskDocMode");
     expect(prompt).toContain("brainstorm slug: brainstorm-nucleo-api-v2");
-    expect(prompt).toContain("carregue a skill `brainstorm`");
+    expect(prompt).toContain("load the `brainstorm` skill");
     expect(prompt).toContain("/tmp/brainstorm-agent/.genie/brainstorms/brainstorm-nucleo-api-v2/DRAFT.md");
-    expect(prompt).not.toContain("carregue a skill `ravi-system-tasks-manager`");
-    expect(prompt).not.toContain("faça toda escrita primeiro no TASK.md");
+    expect(prompt).not.toContain("load the `ravi-system-tasks-manager` skill");
+    expect(prompt).not.toContain("write everything in TASK.md first");
   });
 
   it("builds a brainstorm resume prompt that points back to the persisted draft artifact", () => {
@@ -1471,8 +1474,8 @@ describe("task substrate contract", () => {
     expect(prompt).toContain("profile: brainstorm");
     expect(prompt).toContain("slug: legacy-brainstorm-slug");
     expect(prompt).toContain("/tmp/brainstorm-agent/.genie/brainstorms/legacy-brainstorm-slug/DRAFT.md");
-    expect(prompt).toContain("cwd efetivo da sessão: /tmp/brainstorm-agent");
-    expect(prompt).toContain("worktree contextual: /tmp/brainstorm-worktree");
+    expect(prompt).toContain("effective session cwd: /tmp/brainstorm-agent");
+    expect(prompt).toContain("contextual worktree: /tmp/brainstorm-worktree");
   });
 
   it("promotes brainstorm design artifacts on done while keeping the jar as supporting state", () => {
@@ -1664,13 +1667,13 @@ describe("task substrate contract", () => {
       sessionCwd: "/tmp/runtime-only",
       taskProfile: details.taskProfile!,
     });
-    expect(prompt).toContain("profile efetivo: task-doc-none");
+    expect(prompt).toContain("effective profile: task-doc-none");
     expect(prompt).not.toContain("taskDocMode");
-    expect(prompt).not.toContain("carregue a skill `ravi-system-tasks-manager`");
-    expect(prompt).not.toContain("faça toda escrita primeiro no TASK.md");
-    expect(prompt).not.toContain("trabalhe a partir de");
-    expect(prompt).toContain("cwd efetivo da sessão: /tmp/runtime-only");
-    expect(prompt).toContain("worktree contextual: agent default cwd");
+    expect(prompt).not.toContain("load the `ravi-system-tasks-manager` skill");
+    expect(prompt).not.toContain("write everything in TASK.md first");
+    expect(prompt).not.toContain("work from");
+    expect(prompt).toContain("effective session cwd: /tmp/runtime-only");
+    expect(prompt).toContain("contextual worktree: agent default cwd");
   });
 
   it("does not materialize TASK.md for runtime-only profiles that still bootstrap a task dir", async () => {
@@ -2031,7 +2034,7 @@ describe("task substrate contract", () => {
     });
     const doc = readFileSync(docPath, "utf8");
     expect(doc).toContain("### Task Done");
-    expect(doc).toContain("Resumo: ship complete");
+    expect(doc).toContain("Summary: ship complete");
   });
 
   it("syncs TASK.md when a task fails through the runtime", () => {
@@ -2054,7 +2057,7 @@ describe("task substrate contract", () => {
     });
     const doc = readFileSync(docPath, "utf8");
     expect(doc).toContain("### Task Failed");
-    expect(doc).toContain("Resumo: integration broke");
+    expect(doc).toContain("Summary: integration broke");
   });
 
   it("syncs TASK.md when a task is blocked through the runtime", () => {
@@ -2101,7 +2104,7 @@ describe("task substrate contract", () => {
     expect(typeof readTaskDocFrontmatter(result.task).archivedAt).toBe("number");
     const doc = readFileSync(docPath, "utf8");
     expect(doc).toContain("### Task Archived");
-    expect(doc).toContain("Motivo do archive: hidden from default list");
+    expect(doc).toContain("Archive reason: hidden from default list");
   });
 
   it("does not rewrite TASK.md on late terminal noop", async () => {

@@ -118,23 +118,24 @@ function buildMockResolvedProfile(profileId?: string | null): Record<string, unk
     inputs: [],
     completion: {
       summaryRequired: true,
-      summaryLabel: "Resumo",
+      summaryLabel: "Summary",
     },
     progress:
       normalizedId === "brainstorm"
         ? {
             requireMessage: true,
-            notes: "Sincronize progresso via runtime e mantenha o draft atualizado.",
+            notes: "Sync progress through the runtime and keep the draft updated.",
           }
         : normalizedId === "default"
           ? {
               requireMessage: true,
-              notes: "Use frontmatter.progress_note ou --message.",
+              notes: "Use frontmatter.progress_note or --message.",
             }
           : {
               requireMessage: true,
             },
     templates: {
+      create: "create {{task.id}}",
       dispatch: "dispatch {{task.id}}",
       resume: "resume {{task.id}}",
       dispatchSummary: "summary {{task.id}}",
@@ -1798,7 +1799,7 @@ describe("TaskCommands create", () => {
     };
     const commands = new TaskCommands();
 
-    await expect(commands.done("task-cli-1", undefined, true)).rejects.toThrow("Provide --summary (Resumo).");
+    await expect(commands.done("task-cli-1", undefined, true)).rejects.toThrow("Provide --summary (Summary).");
     expect(doneCalls).toHaveLength(0);
   });
 
@@ -2170,7 +2171,7 @@ describe("TaskCommands create", () => {
     expect(output).toContain("Source:     system :: system:brainstorm");
     expect(output).toContain("Inputs:     flavor=matcha");
     expect(output).toContain("Primary:    Brainstorm draft");
-    expect(output).toContain("2. trabalhar no artefato primário do profile (Brainstorm draft)");
+    expect(output).toContain("2. work in the profile primary artifact (Brainstorm draft)");
     expect(output).not.toContain("refinar o TASK.md via brainstorm/edicao antes de subir");
   });
 

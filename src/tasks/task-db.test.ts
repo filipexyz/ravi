@@ -537,6 +537,7 @@ describe("task-db", () => {
         completion: {},
         progress: {},
         templates: {
+          create: "create",
           dispatch: "dispatch",
           resume: "resume",
           dispatchSummary: "summary",

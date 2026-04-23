@@ -202,6 +202,7 @@ export interface TaskProfileProgressPolicy {
 }
 
 export interface TaskProfileTemplates {
+  create: string;
   dispatch: string;
   resume: string;
   dispatchSummary: string;

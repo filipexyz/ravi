@@ -783,19 +783,19 @@ function buildTaskDocSection(title: string, timestamp: number | undefined, lines
 
 function buildTaskCreatedDocSection(task: TaskRecord, event: TaskEvent): TaskDocSection {
   return buildTaskDocSection("Task Created", event.createdAt, [
-    `Status inicial: \`${task.status}\``,
-    `Prioridade: \`${task.priority}\``,
-    ...(task.parentTaskId ? [`Task pai: \`${task.parentTaskId}\``] : []),
-    "TASK.md inicializado pelo task runtime.",
+    `Initial status: \`${task.status}\``,
+    `Priority: \`${task.priority}\``,
+    ...(task.parentTaskId ? [`Parent task: \`${task.parentTaskId}\``] : []),
+    "TASK.md initialized by the task runtime.",
   ]);
 }
 
 function buildTaskMaterializedDocSection(task: TaskRecord): TaskDocSection {
   return buildTaskDocSection("Task Document Materialized", task.updatedAt, [
-    "TASK.md materializado a partir do estado atual do runtime.",
-    `Status atual: \`${task.status}\``,
-    `Progresso atual: \`${task.progress}%\``,
-    ...(task.parentTaskId ? [`Task pai: \`${task.parentTaskId}\``] : []),
+    "TASK.md materialized from the current runtime state.",
+    `Current status: \`${task.status}\``,
+    `Current progress: \`${task.progress}%\``,
+    ...(task.parentTaskId ? [`Parent task: \`${task.parentTaskId}\``] : []),
   ]);
 }
 
@@ -806,8 +806,8 @@ function buildTaskCommentDocSection(comment: TaskComment): TaskDocSection {
     .map((line) => line.trim())
     .filter(Boolean);
   return buildTaskDocSection("Comment", comment.createdAt, [
-    `Autor: \`${author}\``,
-    "Comentário:",
+    `Author: \`${author}\``,
+    "Comment:",
     ...(commentLines.length > 0 ? commentLines : [comment.body]),
   ]);
 }
@@ -822,17 +822,17 @@ function buildTaskCommentSteerPrompt(task: TaskRecord, comment: TaskComment): st
   const profile = resolveTaskProfileForTask(task);
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   const syncInstruction = taskProfileRequiresTaskDocument(profile)
-    ? "Se isso mudar teu plano, atualize primeiro o TASK.md e depois sincronize o runtime com ravi tasks report|block|done|fail."
-    : "Se isso mudar teu plano, atualize o artifact/contexto do profile e sincronize o runtime com ravi tasks report|block|done|fail.";
-  return `[System] Inform: Novo comentário na task ${task.id} (${task.title}).
+    ? "If this changes your plan, update TASK.md first and then sync the runtime with ravi tasks report|block|done|fail."
+    : "If this changes your plan, update the profile artifact/context and sync the runtime with ravi tasks report|block|done|fail.";
+  return `[System] Inform: New comment on task ${task.id} (${task.title}).
 
-Autor: ${author}
-Status atual: ${task.status}
-Progresso atual: ${task.progress}%
+Author: ${author}
+Current status: ${task.status}
+Current progress: ${task.progress}%
 Profile: ${profile.id}
 ${primaryArtifactLine ? `${primaryArtifactLine}\n` : ""}
 
-Comentário:
+Comment:
 ${comment.body}
 
 ${syncInstruction}`;
@@ -845,16 +845,16 @@ export function buildTaskCheckpointReminderPrompt(
   const profile = resolveTaskProfileForTask(task);
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   const syncInstruction = taskProfileRequiresTaskDocument(profile)
-    ? "Atualize primeiro o TASK.md e depois sincronize via ravi tasks report|block|done|fail."
-    : "Atualize o artifact/contexto do profile e depois sincronize via ravi tasks report|block|done|fail.";
+    ? "Update TASK.md first and then sync via ravi tasks report|block|done|fail."
+    : "Update the profile artifact/context and then sync via ravi tasks report|block|done|fail.";
 
-  return `[System] Inform: Checkpoint vencido na task ${task.id} (${task.title}).
+  return `[System] Inform: Checkpoint overdue on task ${task.id} (${task.title}).
 
-Status atual: ${task.status}
-Progresso atual: ${task.progress}%
+Current status: ${task.status}
+Current progress: ${task.progress}%
 Profile: ${profile.id}
-${primaryArtifactLine ? `Artifact primário: ${primaryArtifactLine}\n` : ""}Overdues: ${assignment.checkpointOverdueCount ?? 1}
-Próximo checkpoint: ${assignment.checkpointDueAt ? new Date(assignment.checkpointDueAt).toISOString() : "-"}
+${primaryArtifactLine ? `Primary artifact: ${primaryArtifactLine}\n` : ""}Overdues: ${assignment.checkpointOverdueCount ?? 1}
+Next checkpoint: ${assignment.checkpointDueAt ? new Date(assignment.checkpointDueAt).toISOString() : "-"}
 
 ${syncInstruction}`;
 }
@@ -885,7 +885,7 @@ function buildChildStateCallbackMessage(task: TaskRecord, event: TaskEvent): str
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   if (task.status === "blocked") {
     return [
-      `Task filha ${task.id} (${task.title}) entrou em blocked.`,
+      `Child task ${task.id} (${task.title}) became blocked.`,
       `Profile: ${profile.id}.`,
       `Assignee: ${task.assigneeAgentId ?? "-"}.`,
       `Session: ${task.assigneeSessionName ?? "-"}.`,
@@ -895,12 +895,12 @@ function buildChildStateCallbackMessage(task: TaskRecord, event: TaskEvent): str
   }
 
   return [
-    `Task filha ${task.id} (${task.title}) terminalizou com status ${task.status}.`,
+    `Child task ${task.id} (${task.title}) reached terminal status ${task.status}.`,
     `Profile: ${profile.id}.`,
     `Assignee: ${task.assigneeAgentId ?? "-"}.`,
     `Session: ${task.assigneeSessionName ?? "-"}.`,
     ...(primaryArtifactLine ? [`Artifact: ${primaryArtifactLine}.`] : []),
-    `Resumo: ${summary}.`,
+    `Summary: ${summary}.`,
   ].join(" ");
 }
 
@@ -910,13 +910,13 @@ function buildChildStateDocSection(task: TaskRecord, callbackEvent: TaskEvent): 
   const primaryArtifactLine = resolvePrimaryArtifactLine(task);
   const title =
     task.status === "blocked" ? "Child Task Blocked" : task.status === "done" ? "Child Task Done" : "Child Task Failed";
-  const statusLabel = task.status === "blocked" ? "Status atual" : "Status final";
-  const summaryLabel = task.status === "blocked" ? "Blocker" : "Resumo";
+  const statusLabel = task.status === "blocked" ? "Current status" : "Final status";
+  const summaryLabel = task.status === "blocked" ? "Blocker" : "Summary";
   return buildTaskDocSection(title, callbackEvent.createdAt, [
-    `Filha: \`${task.id}\` - ${task.title}`,
+    `Child: \`${task.id}\` - ${task.title}`,
     `Profile: \`${profile.id}\``,
     `${statusLabel}: \`${task.status}\``,
-    `Progresso: \`${task.progress}%\``,
+    `Progress: \`${task.progress}%\``,
     `Assignee: \`${task.assigneeAgentId ?? "-"}\``,
     `Session: \`${task.assigneeSessionName ?? "-"}\``,
     ...(primaryArtifactLine ? [`Artifact: \`${primaryArtifactLine}\``] : []),
@@ -939,15 +939,15 @@ function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): Ta
               : "Task Runtime Update";
 
   const lines = [
-    `Evento: \`${event.type}\``,
-    `Status atual: \`${task.status}\``,
-    `Progresso atual: \`${task.progress}%\``,
+    `Event: \`${event.type}\``,
+    `Current status: \`${task.status}\``,
+    `Current progress: \`${task.progress}%\``,
   ];
 
   if (task.summary) {
-    lines.push(`Resumo: ${task.summary}`);
+    lines.push(`Summary: ${task.summary}`);
   } else if (event.type === "task.failed" && event.message) {
-    lines.push(`Falha: ${event.message}`);
+    lines.push(`Failure: ${event.message}`);
   }
 
   if (task.blockerReason) {
@@ -957,12 +957,12 @@ function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): Ta
   }
 
   if (typeof task.archivedAt === "number") {
-    lines.push(`Arquivada em: \`${new Date(task.archivedAt).toISOString()}\``);
+    lines.push(`Archived at: \`${new Date(task.archivedAt).toISOString()}\``);
   }
   if (task.archiveReason) {
-    lines.push(`Motivo do archive: ${task.archiveReason}`);
+    lines.push(`Archive reason: ${task.archiveReason}`);
   } else if ((event.type === "task.archived" || event.type === "task.unarchived") && event.message) {
-    lines.push(`Mensagem: ${event.message}`);
+    lines.push(`Message: ${event.message}`);
   }
 
   if (
@@ -973,7 +973,7 @@ function buildTaskRuntimeStateDocSection(task: TaskRecord, event: TaskEvent): Ta
     event.type !== "task.archived" &&
     event.type !== "task.unarchived"
   ) {
-    lines.push(`Mensagem: ${event.message}`);
+    lines.push(`Message: ${event.message}`);
   }
 
   return buildTaskDocSection(title, event.createdAt, lines);

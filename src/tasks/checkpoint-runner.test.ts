@@ -121,7 +121,7 @@ describe.skip("task checkpoint runner", () => {
     }
 
     const prompt = String(publishCalls.find((call) => call.sessionName === `${created.task.id}-work`)?.payload.prompt);
-    expect(prompt).toContain("Artifact primário:");
+    expect(prompt).toContain("Primary artifact:");
     expect(prompt).toContain("draft.md");
     expect(prompt).not.toContain("TASK.md");
   });

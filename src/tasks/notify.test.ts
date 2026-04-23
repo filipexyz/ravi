@@ -85,8 +85,8 @@ describe("task completion notify", () => {
     expect(publishedPrompts[0]?.sessionName).toBe("creator-session");
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain(`[from: ${created.task.id}-work]`);
-    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain(`Task concluída: ${created.task.id}`);
-    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain("Responsável: dev");
+    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain(`Task done: ${created.task.id}`);
+    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain("Assignee: dev");
   });
 
   it("publishes blocked reports only when the explicit report events include blocked", async () => {
@@ -121,7 +121,7 @@ describe("task completion notify", () => {
 
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.sessionName).toBe("ops-session");
-    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain(`Task bloqueada: ${created.task.id}`);
+    expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain(`Task blocked: ${created.task.id}`);
     expect(String(publishedPrompts[0]?.payload.prompt ?? "")).toContain("Blocker: aguardando aprovacao externa");
   });
 });
