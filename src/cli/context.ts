@@ -29,6 +29,7 @@ export interface ToolContext {
     channel: string;
     accountId: string;
     chatId: string;
+    threadId?: string;
   };
   /** Arbitrary metadata */
   [key: string]: unknown;
@@ -83,12 +84,14 @@ export function getContext(): ToolContext | undefined {
         channel: source.channel,
         accountId: source.accountId,
         chatId: source.chatId,
+        ...(source.threadId ? { threadId: source.threadId } : {}),
       };
     } else if (env.RAVI_CHANNEL && env.RAVI_ACCOUNT_ID && env.RAVI_CHAT_ID) {
       ctx.source = {
         channel: env.RAVI_CHANNEL,
         accountId: env.RAVI_ACCOUNT_ID,
         chatId: env.RAVI_CHAT_ID,
+        ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
       };
     }
 
@@ -109,6 +112,7 @@ export function getContext(): ToolContext | undefined {
       channel: env.RAVI_CHANNEL,
       accountId: env.RAVI_ACCOUNT_ID,
       chatId: env.RAVI_CHAT_ID,
+      ...(env.RAVI_THREAD_ID ? { threadId: env.RAVI_THREAD_ID } : {}),
     };
   }
 

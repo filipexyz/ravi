@@ -5,10 +5,10 @@
 import "reflect-metadata";
 import { resolve, basename } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
-import { getContext, fail } from "../context.js";
-import { nats } from "../../nats.js";
+import { getContext } from "../context.js";
 import { generateAudio } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
+import { sendMediaWithOmniCli } from "../media-send.js";
 
 @Group({
   name: "audio",
@@ -87,13 +87,17 @@ export class AudioCommands {
         voiceNote: boolean;
       };
       sent?: {
-        topic: "ravi.media.send";
-        channel: string;
+        transport: "omni-send";
+        channel?: string;
         accountId: string;
+        instanceId: string;
         chatId: string;
+        threadId?: string;
         filename: string;
         caption: string;
         voiceNote: true;
+        messageId?: string;
+        status?: string;
       };
     } = {
       success: true,
@@ -123,37 +127,28 @@ export class AudioCommands {
     }
 
     if (send) {
-      const ctx = getContext()?.source;
-      const channel = ctx?.channel;
-      const accountId = ctx?.accountId;
-      const chatId = ctx?.chatId;
-
-      if (!channel || !accountId || !chatId) {
-        fail("No chat context available for --send. Use from a chat session or specify target via media send.");
-      }
-
-      await nats.emit("ravi.media.send", {
-        channel,
-        accountId,
-        chatId,
+      const delivered = await sendMediaWithOmniCli({
         filePath: result.filePath,
-        mimetype: result.mimeType,
+        caption: caption ?? text.slice(0, 100),
         type: "audio",
         filename: basename(result.filePath),
-        caption: caption ?? text.slice(0, 100),
         voiceNote: true,
       });
       payload.sent = {
-        topic: "ravi.media.send",
-        channel,
-        accountId,
-        chatId,
-        filename: basename(result.filePath),
+        transport: delivered.delivery.transport,
+        ...(delivered.target.channel ? { channel: delivered.target.channel } : {}),
+        accountId: delivered.target.accountId,
+        instanceId: delivered.target.instanceId,
+        chatId: delivered.target.chatId,
+        ...(delivered.target.threadId ? { threadId: delivered.target.threadId } : {}),
+        filename: delivered.filename,
         caption: caption ?? text.slice(0, 100),
         voiceNote: true,
+        ...(delivered.delivery.messageId ? { messageId: delivered.delivery.messageId } : {}),
+        ...(delivered.delivery.status ? { status: delivered.delivery.status } : {}),
       };
       if (!asJson) {
-        console.log(`✓ Sent to chat: ${basename(result.filePath)}`);
+        console.log(`✓ Sent to chat: ${delivered.filename}`);
       }
     }
 

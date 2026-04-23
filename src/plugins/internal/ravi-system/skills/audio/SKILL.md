@@ -75,6 +75,8 @@ O comando retorna o path do áudio gerado + o comando pra enviar:
   Send to chat: ravi media send "/tmp/ravi-audio-1234567890.mp3"
 ```
 
+Se usar `--send`, o Ravi entrega direto via `omni send` em vez de só publicar um evento interno. O retorno passa a refletir ack/erro real da entrega e preserva thread/topic quando existir no contexto.
+
 ## Fluxo recomendado
 
 1. Rode `ravi audio generate "texto"` — gera o MP3

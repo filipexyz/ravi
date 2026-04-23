@@ -87,6 +87,8 @@ O comando retorna o path da imagem gerada + o comando pra enviar:
   Send to chat: ravi media send "/tmp/ravi-image-1234567890.png"
 ```
 
+Se usar `--send`, o Ravi envia direto via `omni send` e só considera sucesso depois que o pedido de entrega foi aceito pelo Omni. Quando existir thread/topic no contexto, ela é preservada.
+
 ## Fluxo recomendado
 
 1. Rode `ravi image generate "prompt"` — gera a imagem

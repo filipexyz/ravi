@@ -86,6 +86,8 @@ Generating audio...
 Text: Hello, this is a test message
 ```
 
+When `--send` is used, Ravi now calls `omni send` directly and only reports success after the channel delivery request is accepted. The JSON output includes the resolved `instanceId`, optional `threadId`, and delivery metadata such as `messageId` when available.
+
 ## Audio Transcription
 
 Transcribe audio files to text using Groq (preferred) or OpenAI Whisper.
@@ -271,6 +273,8 @@ Prompt: a purple cat floating in space
 Mode: fast | Aspect: auto | Size: 1K
 ```
 
+When `--send` is used, Ravi delivers the generated image through `omni send` directly instead of queueing a background NATS event. Success now means the send request reached Omni successfully.
+
 ## Video Analysis
 
 Analyze videos from YouTube URLs or local files using Google Gemini. Extracts title, summary, topics, full transcript, and timestamped visual descriptions.
@@ -341,6 +345,7 @@ The output language matches the video's spoken language.
 ## Sending Media
 
 Send any media file (image, video, audio, document) through a connected channel.
+`ravi media send` is synchronous and uses `omni send` under the hood, so it returns a real delivery ack/error instead of only queueing `ravi.media.send`.
 
 ### CLI Usage
 
@@ -356,9 +361,14 @@ ravi media send "/tmp/recording.ogg" --ptt
 
 # Explicit target (when not in a chat context)
 ravi media send "/tmp/report.pdf" \
-  --channel whatsapp-baileys \
   --account default \
   --to "5511999999999@s.whatsapp.net"
+
+# Preserve forum/thread context explicitly
+ravi media send "/tmp/report.pdf" \
+  --account telegram-bot \
+  --to "chat_123" \
+  --thread-id "topic-55"
 ```
 
 ### Options
@@ -366,9 +376,10 @@ ravi media send "/tmp/report.pdf" \
 | Flag | Description |
 |---|---|
 | `--caption <text>` | Caption for the media |
-| `--channel <channel>` | Target channel type |
+| `--channel <channel>` | Optional channel hint for Ravi output/context |
 | `--to <chatId>` | Target chat ID |
-| `--account <id>` | Account ID |
+| `--account <id>` | Ravi account / instance alias |
+| `--thread-id <id>` | Thread/topic override for channels that support it |
 | `--ptt` | Send audio as voice note (PTT) |
 
 ### Supported File Types

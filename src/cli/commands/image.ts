@@ -7,11 +7,11 @@ import { createHash } from "node:crypto";
 import { resolve, basename } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { getContext, fail } from "../context.js";
-import { nats } from "../../nats.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
 import { createArtifact } from "../../artifacts/store.js";
+import { sendMediaWithOmniCli } from "../media-send.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = defaults?.[key];
@@ -272,12 +272,16 @@ export class ImageCommands {
         outputDir?: string;
       };
       sent: Array<{
-        topic: "ravi.media.send";
-        channel: string;
+        transport: "omni-send";
+        channel?: string;
         accountId: string;
+        instanceId: string;
         chatId: string;
+        threadId?: string;
         filename: string;
         caption: string;
+        messageId?: string;
+        status?: string;
       }>;
     } = {
       success: true,
@@ -326,36 +330,27 @@ export class ImageCommands {
     }
 
     if (send && results.length > 0) {
-      const ctx = getContext()?.source;
-      const channel = ctx?.channel;
-      const accountId = ctx?.accountId;
-      const chatId = ctx?.chatId;
-
-      if (!channel || !accountId || !chatId) {
-        fail("No chat context available for --send. Use from a chat session or specify target via media send.");
-      }
-
       for (const img of results) {
-        await nats.emit("ravi.media.send", {
-          channel,
-          accountId,
-          chatId,
+        const delivered = await sendMediaWithOmniCli({
           filePath: img.filePath,
-          mimetype: img.mimeType,
+          caption: caption ?? prompt,
           type: "image",
           filename: basename(img.filePath),
-          caption: caption ?? prompt,
         });
         payload.sent.push({
-          topic: "ravi.media.send",
-          channel,
-          accountId,
-          chatId,
-          filename: basename(img.filePath),
+          transport: delivered.delivery.transport,
+          ...(delivered.target.channel ? { channel: delivered.target.channel } : {}),
+          accountId: delivered.target.accountId,
+          instanceId: delivered.target.instanceId,
+          chatId: delivered.target.chatId,
+          ...(delivered.target.threadId ? { threadId: delivered.target.threadId } : {}),
+          filename: delivered.filename,
           caption: caption ?? prompt,
+          ...(delivered.delivery.messageId ? { messageId: delivered.delivery.messageId } : {}),
+          ...(delivered.delivery.status ? { status: delivered.delivery.status } : {}),
         });
         if (!asJson) {
-          console.log(`✓ Sent to chat: ${basename(img.filePath)}`);
+          console.log(`✓ Sent to chat: ${delivered.filename}`);
         }
       }
     }
