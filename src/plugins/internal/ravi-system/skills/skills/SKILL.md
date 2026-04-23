@@ -212,20 +212,25 @@ Resuma este PR...
 
 | Local | Caminho | Alcance |
 |-------|---------|---------|
-| Pessoal | `~/.claude/skills/` | Todos os projetos |
-| Projeto | `.claude/skills/` | Este projeto |
-| Plugin | `plugin/skills/` | Onde plugin está ativo |
+| Catálogo oficial Ravi | `src/plugins/internal/**/skills/<skill>/SKILL.md` | Skills mantidas no repo do Ravi |
+| Plugin de usuário | `~/ravi/plugins/ravi-user-skills/skills/<skill>/SKILL.md` | Skills instaladas/criadas pelo operador |
+| Plugin externo | `<plugin>/skills/<skill>/SKILL.md` | Skills distribuídas por plugin ou `--source` |
+| Cópia runtime Codex | `~/.codex/skills/<skill>/SKILL.md` | Materialização sincronizada; não é fonte primária |
+
+Não edite a cópia runtime em `~/.codex/skills` como fonte de verdade. Ela é
+derivada do catálogo oficial ou do plugin de usuário e pode ser sobrescrita por
+`ravi skills sync`.
 
 ## Criando uma Skill - Passo a Passo
 
-1. **Criar diretório:**
+1. **Criar diretório no plugin de usuário:**
 ```bash
-mkdir -p ~/.claude/skills/minha-skill
+mkdir -p ~/ravi/plugins/ravi-user-skills/skills/minha-skill
 ```
 
 2. **Criar SKILL.md:**
 ```bash
-cat > ~/.claude/skills/minha-skill/SKILL.md << 'EOF'
+cat > ~/ravi/plugins/ravi-user-skills/skills/minha-skill/SKILL.md << 'EOF'
 ---
 name: minha-skill
 description: Descrição clara do que faz e quando usar
@@ -236,8 +241,16 @@ EOF
 ```
 
 3. **Testar:**
+```bash
+ravi skills sync
+ravi skills show minha-skill --installed
 ```
-/minha-skill
+
+Para instalar de uma fonte externa, prefira o CLI:
+
+```bash
+ravi skills install minha-skill --source <repo-ou-path>
+```
 ```
 
 ## Dicas
