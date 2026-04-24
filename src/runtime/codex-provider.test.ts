@@ -1424,6 +1424,11 @@ const finishIfReady = () => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && !message.method) {
+    if (message.id === "tool_req") {
+      if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
+      if (!Array.isArray(message.result?.content_items)) throw new Error("tool response must use content_items");
+      if (message.result?.contentItems) throw new Error("tool response must not use contentItems");
+    }
     toolResponse = message.result;
     finishIfReady();
     return;
@@ -1508,7 +1513,7 @@ rl.on("line", (line) => {
     expect(toolCompleted[0]?.isError).toBe(false);
     expect(response).toEqual({
       success: true,
-      contentItems: [{ type: "inputText", text: "tool output" }],
+      content_items: [{ type: "inputText", text: "tool output" }],
     });
   });
 

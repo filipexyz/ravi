@@ -966,7 +966,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
 
       activeTurn?.queue.push(buildApprovalTraceEvent("approval.resolved", request, approvalResult));
-      await writeJsonRpc({ id, result: buildCodexApprovalResponse(method, params, approvalResult) });
+      await writeJsonRpc({ jsonrpc: "2.0", id, result: buildCodexApprovalResponse(method, params, approvalResult) });
       return;
     }
 
@@ -976,6 +976,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         return;
       default:
         await writeJsonRpc({
+          jsonrpc: "2.0",
           id,
           error: {
             code: -32601,
@@ -1009,8 +1010,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     const response = buildCodexDynamicToolCallResponse(result);
-    activeTurn?.queue.push(buildDynamicToolTraceEvent("item.completed", request, response));
-    await writeJsonRpc({ id, result: response });
+    activeTurn?.queue.push(
+      buildDynamicToolTraceEvent("item.completed", request, {
+        success: response.success,
+        contentItems: response.content_items,
+      }),
+    );
+    await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
   }
 
   const requestTurnInterrupt = async (turn: AppServerTurnState) => {
@@ -2366,11 +2372,11 @@ function buildDynamicToolCallItem(input: {
 
 function buildCodexDynamicToolCallResponse(result: RuntimeDynamicToolCallResult): {
   success: boolean;
-  contentItems: RuntimeDynamicToolCallContentItem[];
+  content_items: RuntimeDynamicToolCallContentItem[];
 } {
   const success = result.success === true;
   const contentItems = normalizeDynamicToolCallContentItems(result.contentItems, result.reason);
-  return { success, contentItems };
+  return { success, content_items: contentItems };
 }
 
 function normalizeDynamicToolCallContentItems(
