@@ -21,6 +21,8 @@ let db: Database | null = null;
 let dbPath: string | null = null;
 let stmts: ReturnType<typeof createStatements> | null = null;
 
+const IDENTITY_PROJECTION_BACKFILL_KEY = "identity_projection_backfill_v1";
+
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
   if (db !== null && dbPath === nextDbPath && stmts !== null) {
@@ -46,7 +48,7 @@ function ensureDb(): Database {
   migrateFromV1(database);
   ensureAllowedAgentsColumn(database);
   initializeIdentitySchema(database);
-  backfillIdentityModel(database);
+  ensureIdentityProjection(database);
 
   db = database;
   dbPath = nextDbPath;
@@ -299,6 +301,12 @@ function initializeIdentitySchema(database: Database): void {
       ON identity_link_events(platform_identity_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_identity_link_events_target
       ON identity_link_events(target_owner_type, target_owner_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS contacts_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -343,6 +351,114 @@ function parseJsonValue(value: string | null): unknown {
 
 function legacyIdentityIsGroup(platform: string, value: string): boolean {
   return platform === "whatsapp_group" || normalizePhone(value).startsWith("group:");
+}
+
+function isLegacyGroupOnlyContact(contact: Contact): boolean {
+  return (
+    contact.identities.length > 0 &&
+    contact.identities.every((identity) => legacyIdentityIsGroup(identity.platform, identity.value))
+  );
+}
+
+function legacyProjectionContactIds(database: Database): Set<string> {
+  const rows = database
+    .prepare(
+      `
+      SELECT c.id, ci.platform, ci.identity_value
+      FROM contacts_v2 c
+      LEFT JOIN contact_identities ci ON ci.contact_id = c.id
+    `,
+    )
+    .all() as Array<{ id: string; platform: string | null; identity_value: string | null }>;
+
+  const grouped = new Map<string, Array<{ platform: string; value: string }>>();
+  for (const row of rows) {
+    const entries = grouped.get(row.id) ?? [];
+    if (row.platform && row.identity_value) entries.push({ platform: row.platform, value: row.identity_value });
+    grouped.set(row.id, entries);
+  }
+
+  const expected = new Set<string>();
+  for (const [contactId, identities] of grouped) {
+    if (
+      identities.length === 0 ||
+      identities.some((identity) => !legacyIdentityIsGroup(identity.platform, identity.value))
+    ) {
+      expected.add(contactId);
+    }
+  }
+  return expected;
+}
+
+function identityProjectionSourceFingerprint(database: Database): string {
+  const contacts = database
+    .prepare("SELECT COUNT(*) AS count, COALESCE(MAX(updated_at), '') AS maxUpdatedAt FROM contacts_v2")
+    .get() as { count: number; maxUpdatedAt: string };
+  const identities = database
+    .prepare("SELECT COUNT(*) AS count, COALESCE(MAX(created_at), '') AS maxCreatedAt FROM contact_identities")
+    .get() as { count: number; maxCreatedAt: string };
+  return JSON.stringify({
+    contactsCount: contacts.count,
+    contactsMaxUpdatedAt: contacts.maxUpdatedAt,
+    identitiesCount: identities.count,
+    identitiesMaxCreatedAt: identities.maxCreatedAt,
+  });
+}
+
+function getStoredIdentityProjectionFingerprint(database: Database): string | null {
+  const row = database.prepare("SELECT value FROM contacts_meta WHERE key = ?").get(IDENTITY_PROJECTION_BACKFILL_KEY) as
+    | { value: string }
+    | undefined;
+  return row?.value ?? null;
+}
+
+function markIdentityProjectionCurrent(
+  database: Database,
+  fingerprint = identityProjectionSourceFingerprint(database),
+): void {
+  database
+    .prepare(
+      `
+      INSERT INTO contacts_meta (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `,
+    )
+    .run(IDENTITY_PROJECTION_BACKFILL_KEY, fingerprint);
+}
+
+function identityProjectionLooksComplete(database: Database): boolean {
+  const expectedIds = legacyProjectionContactIds(database);
+  if (expectedIds.size === 0) return true;
+
+  const canonicalRows = database.prepare("SELECT id FROM contacts").all() as Array<{ id: string }>;
+  const canonicalIds = new Set(canonicalRows.map((row) => row.id));
+  for (const contactId of expectedIds) {
+    if (!canonicalIds.has(contactId)) return false;
+  }
+
+  const policyRows = database.prepare("SELECT contact_id FROM contact_policies").all() as Array<{ contact_id: string }>;
+  const policyIds = new Set(policyRows.map((row) => row.contact_id));
+  for (const contactId of expectedIds) {
+    if (!policyIds.has(contactId)) return false;
+  }
+
+  return true;
+}
+
+function contactProjectionIsCurrent(database: Database, contact: Contact): boolean {
+  const canonical = database.prepare("SELECT updated_at FROM contacts WHERE id = ?").get(contact.id) as
+    | { updated_at: string | null }
+    | undefined;
+  if (!canonical) return false;
+
+  const policy = database.prepare("SELECT updated_at FROM contact_policies WHERE contact_id = ?").get(contact.id) as
+    | { updated_at: string | null }
+    | undefined;
+  if (!policy) return false;
+
+  const legacyUpdatedAt = contact.updated_at ?? "";
+  return (canonical.updated_at ?? "") >= legacyUpdatedAt && (policy.updated_at ?? "") >= legacyUpdatedAt;
 }
 
 function assertPersonOrOrgIdentity(value: string, operation: string): string {
@@ -634,6 +750,24 @@ function backfillIdentityModel(database: Database): void {
     }
   });
   txn();
+}
+
+function ensureIdentityProjection(database: Database): void {
+  const sourceFingerprint = identityProjectionSourceFingerprint(database);
+  if (getStoredIdentityProjectionFingerprint(database) === sourceFingerprint) return;
+
+  if (identityProjectionLooksComplete(database)) {
+    try {
+      markIdentityProjectionCurrent(database, sourceFingerprint);
+    } catch {
+      // A reader can safely continue with complete projections even if another
+      // process currently holds the write lock for this optimization marker.
+    }
+    return;
+  }
+
+  backfillIdentityModel(database);
+  markIdentityProjectionCurrent(database, sourceFingerprint);
 }
 
 // ============================================================================
@@ -999,7 +1133,11 @@ function getContactPolicyById(database: Database, contactId: string): ContactPol
   return row ? rowToContactPolicy(row) : null;
 }
 
-function getContactDetailsByCanonicalId(database: Database, contactId: string): ContactDetails | null {
+function getContactDetailsByCanonicalId(
+  database: Database,
+  contactId: string,
+  options: { includeDuplicateCandidates?: boolean } = {},
+): ContactDetails | null {
   const contact = getCanonicalContactById(database, contactId);
   if (!contact) return null;
 
@@ -1007,7 +1145,7 @@ function getContactDetailsByCanonicalId(database: Database, contactId: string): 
     contact,
     platformIdentities: getPlatformIdentitiesForOwner(database, contact.id),
     policy: getContactPolicyById(database, contact.id),
-    duplicateCandidates: getContactDuplicateCandidates(contact.id),
+    duplicateCandidates: options.includeDuplicateCandidates === false ? [] : getContactDuplicateCandidates(contact.id),
     legacyContact: getContactById(contact.id),
   };
 }
@@ -1044,54 +1182,94 @@ function normalizeIdentityComparisonValue(identity: PlatformIdentity): string | 
   return null;
 }
 
-function duplicateReasonsForContact(
-  subject: CanonicalContact,
-  subjectIdentities: PlatformIdentity[],
-  candidate: CanonicalContact,
-  candidateIdentities: PlatformIdentity[],
-): string[] {
-  const reasons: string[] = [];
-  if (subject.primaryPhone && candidate.primaryPhone && subject.primaryPhone === candidate.primaryPhone) {
-    reasons.push("same primary phone");
-  }
-  if (
-    subject.primaryEmail &&
-    candidate.primaryEmail &&
-    subject.primaryEmail.toLowerCase() === candidate.primaryEmail.toLowerCase()
-  ) {
-    reasons.push("same primary email");
-  }
+function buildDuplicateCandidates(database: Database): Map<string, DuplicateCandidate[]> {
+  const contacts = canonicalRows(database);
+  const contactsById = new Map(contacts.map((contact) => [contact.id, contact]));
+  const candidatesByContact = new Map<string, Map<string, Set<string>>>();
 
-  const subjectComparable = new Set(subjectIdentities.map(normalizeIdentityComparisonValue).filter(Boolean));
-  for (const identity of candidateIdentities) {
-    const comparable = normalizeIdentityComparisonValue(identity);
-    if (comparable && subjectComparable.has(comparable)) {
-      reasons.push(`same normalized ${identity.channel} identity`);
-      break;
+  const addCandidate = (leftId: string, rightId: string, reason: string) => {
+    if (leftId === rightId) return;
+    const leftCandidates = candidatesByContact.get(leftId) ?? new Map<string, Set<string>>();
+    const reasons = leftCandidates.get(rightId) ?? new Set<string>();
+    reasons.add(reason);
+    leftCandidates.set(rightId, reasons);
+    candidatesByContact.set(leftId, leftCandidates);
+  };
+
+  const addPair = (leftId: string, rightId: string, reason: string) => {
+    addCandidate(leftId, rightId, reason);
+    addCandidate(rightId, leftId, reason);
+  };
+
+  const addGroups = (groups: Map<string, string[]>, reason: string) => {
+    for (const ids of groups.values()) {
+      if (ids.length < 2) continue;
+      for (let i = 0; i < ids.length; i += 1) {
+        for (let j = i + 1; j < ids.length; j += 1) {
+          addPair(ids[i]!, ids[j]!, reason);
+        }
+      }
+    }
+  };
+
+  const phoneGroups = new Map<string, string[]>();
+  const emailGroups = new Map<string, string[]>();
+  for (const contact of contacts) {
+    if (contact.primaryPhone) {
+      const key = normalizePhone(contact.primaryPhone);
+      phoneGroups.set(key, [...(phoneGroups.get(key) ?? []), contact.id]);
+    }
+    if (contact.primaryEmail) {
+      const key = contact.primaryEmail.toLowerCase();
+      emailGroups.set(key, [...(emailGroups.get(key) ?? []), contact.id]);
     }
   }
-  return [...new Set(reasons)];
+  addGroups(phoneGroups, "same primary phone");
+  addGroups(emailGroups, "same primary email");
+
+  const identityGroups = new Map<string, { reason: string; ids: string[] }>();
+  const identityRows = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE owner_type = 'contact' AND owner_id IS NOT NULL
+    `,
+    )
+    .all() as PlatformIdentityRow[];
+  for (const row of identityRows) {
+    const identity = rowToPlatformIdentity(row);
+    const comparable = normalizeIdentityComparisonValue(identity);
+    if (!comparable || !identity.ownerId) continue;
+    const key = `${identity.channel}\x1f${comparable}`;
+    const group = identityGroups.get(key) ?? {
+      reason: `same normalized ${identity.channel} identity`,
+      ids: [],
+    };
+    group.ids.push(identity.ownerId);
+    identityGroups.set(key, group);
+  }
+  for (const group of identityGroups.values()) {
+    addGroups(new Map([[group.reason, [...new Set(group.ids)]]]), group.reason);
+  }
+
+  const result = new Map<string, DuplicateCandidate[]>();
+  for (const [contactId, candidates] of candidatesByContact) {
+    const duplicateCandidates = [...candidates.entries()]
+      .map<DuplicateCandidate | null>(([candidateId, reasons]) => {
+        const contact = contactsById.get(candidateId);
+        if (!contact) return null;
+        return { contact, reasons: [...reasons], confidence: "high" };
+      })
+      .filter((candidate): candidate is DuplicateCandidate => candidate !== null);
+    result.set(contactId, duplicateCandidates);
+  }
+  return result;
 }
 
 export function getContactDuplicateCandidates(contactId: string): DuplicateCandidate[] {
   const database = ensureDb();
-  const subject = getCanonicalContactById(database, contactId);
-  if (!subject) return [];
-
-  const subjectIdentities = getPlatformIdentitiesForOwner(database, contactId);
-  return canonicalRows(database)
-    .filter((candidate) => candidate.id !== contactId)
-    .map<DuplicateCandidate | null>((candidate) => {
-      const reasons = duplicateReasonsForContact(
-        subject,
-        subjectIdentities,
-        candidate,
-        getPlatformIdentitiesForOwner(database, candidate.id),
-      );
-      if (reasons.length === 0) return null;
-      return { contact: candidate, reasons, confidence: "high" };
-    })
-    .filter((candidate): candidate is DuplicateCandidate => candidate !== null);
+  if (!getCanonicalContactById(database, contactId)) return [];
+  return buildDuplicateCandidates(database).get(contactId) ?? [];
 }
 
 export function listDuplicateContacts(): Array<{
@@ -1099,25 +1277,38 @@ export function listDuplicateContacts(): Array<{
   duplicateCandidates: DuplicateCandidate[];
 }> {
   const database = ensureDb();
+  const candidates = buildDuplicateCandidates(database);
   return canonicalRows(database)
-    .map((contact) => ({ contact, duplicateCandidates: getContactDuplicateCandidates(contact.id) }))
+    .map((contact) => ({ contact, duplicateCandidates: candidates.get(contact.id) ?? [] }))
     .filter((entry) => entry.duplicateCandidates.length > 0);
 }
 
-export function getContactDetails(contactRef: string): ContactDetails | null {
+export function getContactDetails(
+  contactRef: string,
+  options: { includeDuplicateCandidates?: boolean } = {},
+): ContactDetails | null {
   const database = ensureDb();
   const legacyContact = resolveContact(contactRef);
   if (legacyContact) {
-    syncContactProjection(database, legacyContact.id);
-    return getContactDetailsByCanonicalId(database, legacyContact.id);
+    if (isLegacyGroupOnlyContact(legacyContact)) return null;
+    if (!contactProjectionIsCurrent(database, legacyContact)) {
+      syncContactProjection(database, legacyContact.id);
+      try {
+        markIdentityProjectionCurrent(database);
+      } catch {
+        // The projection itself is current; the meta marker is only a startup
+        // optimization and must not make read paths fail under concurrent CLI use.
+      }
+    }
+    return getContactDetailsByCanonicalId(database, legacyContact.id, options);
   }
 
-  const canonicalById = getContactDetailsByCanonicalId(database, contactRef);
+  const canonicalById = getContactDetailsByCanonicalId(database, contactRef, options);
   if (canonicalById) return canonicalById;
 
   const identity = findPlatformIdentityByRef(database, contactRef);
   if (identity?.owner_type === "contact" && identity.owner_id) {
-    return getContactDetailsByCanonicalId(database, identity.owner_id);
+    return getContactDetailsByCanonicalId(database, identity.owner_id, options);
   }
 
   return null;

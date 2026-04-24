@@ -149,14 +149,15 @@ function formatIdentityValue(platform: string, value: string): string {
   return value;
 }
 
-function serializeContact(contact: Contact) {
-  const details = getContactDetails(contact.id);
+function serializeContact(contact: Contact, options: { includeDuplicateCandidates?: boolean } = {}) {
+  const includeDuplicateCandidates = options.includeDuplicateCandidates === true;
+  const details = getContactDetails(contact.id, { includeDuplicateCandidates });
   return {
     ...contact,
     contact: details?.contact ?? null,
     platformIdentities: details?.platformIdentities ?? [],
     policy: details?.policy ?? null,
-    duplicateCandidates: details?.duplicateCandidates ?? [],
+    duplicateCandidates: includeDuplicateCandidates ? (details?.duplicateCandidates ?? []) : [],
     routeAgent: getRouteAgent(contact),
     sessionName: getSessionName(contact),
   };
@@ -237,7 +238,7 @@ export class ContactsCommands {
       printJson({
         filter: { status: filterStatus ?? null },
         counts: summarizeContacts(contacts),
-        contacts: contacts.map(serializeContact),
+        contacts: contacts.map((contact) => serializeContact(contact)),
       });
       return;
     }
@@ -289,7 +290,7 @@ export class ContactsCommands {
         total: contacts.length + accountPendingContacts.length,
         totalContacts: contacts.length + accountPendingContacts.length,
         totalChats: pendingChats.length,
-        pendingContacts: contacts.map(serializeContact),
+        pendingContacts: contacts.map((contact) => serializeContact(contact)),
         accountPendingContacts: accountPendingContacts.map((entry) => ({
           ...entry,
           type: entry.chatType,
@@ -772,7 +773,7 @@ export class ContactsCommands {
         query,
         byTag: Boolean(byTag),
         total: contacts.length,
-        contacts: contacts.map(serializeContact),
+        contacts: contacts.map((contact) => serializeContact(contact)),
       });
       return;
     }
