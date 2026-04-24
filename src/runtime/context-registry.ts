@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import {
   dbCreateContext,
   dbGetContextByKey,
+  dbGetContextByKeyReadOnly,
   dbTouchContext,
   dbRevokeContext,
   type ContextCapability,
@@ -65,13 +66,16 @@ export function snapshotAgentCapabilities(agentId: string): ContextCapability[] 
   );
 }
 
-export function resolveRuntimeContext(contextKey: string, options?: { touch?: boolean }): ContextRecord | null {
-  const record = dbGetContextByKey(contextKey);
+export function resolveRuntimeContext(
+  contextKey: string,
+  options?: { touch?: boolean; readOnly?: boolean },
+): ContextRecord | null {
+  const record = options?.readOnly ? dbGetContextByKeyReadOnly(contextKey) : dbGetContextByKey(contextKey);
   if (!record) return null;
   if (record.revokedAt && record.revokedAt <= Date.now()) return null;
   if (record.expiresAt && record.expiresAt <= Date.now()) return null;
 
-  if (options?.touch !== false) {
+  if (!options?.readOnly && options?.touch !== false) {
     const lastUsedAt = Date.now();
     dbTouchContext(record.contextId, lastUsedAt);
     record.lastUsedAt = lastUsedAt;
@@ -80,8 +84,11 @@ export function resolveRuntimeContext(contextKey: string, options?: { touch?: bo
   return record;
 }
 
-export function resolveRuntimeContextOrThrow(contextKey: string, options?: { touch?: boolean }): ContextRecord {
-  const record = dbGetContextByKey(contextKey);
+export function resolveRuntimeContextOrThrow(
+  contextKey: string,
+  options?: { touch?: boolean; readOnly?: boolean },
+): ContextRecord {
+  const record = options?.readOnly ? dbGetContextByKeyReadOnly(contextKey) : dbGetContextByKey(contextKey);
   if (!record) {
     throw new Error("Context not found");
   }
@@ -92,7 +99,7 @@ export function resolveRuntimeContextOrThrow(contextKey: string, options?: { tou
     throw new Error("Context expired");
   }
 
-  if (options?.touch !== false) {
+  if (!options?.readOnly && options?.touch !== false) {
     const lastUsedAt = Date.now();
     dbTouchContext(record.contextId, lastUsedAt);
     record.lastUsedAt = lastUsedAt;

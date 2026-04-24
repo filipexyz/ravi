@@ -278,7 +278,7 @@ export class ContextCommands {
     console.log(JSON.stringify(output));
   }
 
-  private requireResolvedContext() {
+  private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
     const inlineContext = getContext()?.context;
     if (inlineContext) {
       return inlineContext;
@@ -290,7 +290,10 @@ export class ContextCommands {
     }
 
     try {
-      return resolveRuntimeContextOrThrow(contextKey, { touch: true });
+      return resolveRuntimeContextOrThrow(contextKey, {
+        touch: options.touch ?? true,
+        readOnly: options.readOnly,
+      });
     } catch (err) {
       fail(`Failed to resolve context: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -311,7 +314,7 @@ export class ContextCommands {
     }
 
     try {
-      const context = this.requireResolvedContext();
+      const context = this.requireResolvedContext({ touch: false, readOnly: true });
       const toolInput = asRecord(payload.tool_input);
       const command = typeof toolInput?.command === "string" ? toolInput.command : null;
       if (!command) {

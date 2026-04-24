@@ -2193,6 +2193,25 @@ export function dbGetContextByKey(contextKey: string): ContextRecord | null {
   return row ? rowToContext(row) : null;
 }
 
+export function dbGetContextByKeyReadOnly(contextKey: string): ContextRecord | null {
+  const dbPath = resolveDbPath();
+  if (!existsSync(dbPath)) return null;
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    const row = db.prepare("SELECT * FROM contexts WHERE context_key = ?").get(contextKey) as ContextRow | undefined;
+    return row ? rowToContext(row) : null;
+  } catch (error) {
+    if (error instanceof Error && /no such table: contexts/i.test(error.message)) {
+      return null;
+    }
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
 export function dbListContexts(options: ListContextsOptions = {}): ContextRecord[] {
   const s = getStatements();
   const now = Date.now();

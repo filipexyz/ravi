@@ -119,6 +119,7 @@ let revokedContext:
       revokedAt?: number;
     }
   | undefined;
+let resolvedContextOptions: { touch?: boolean; readOnly?: boolean } | undefined;
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -139,7 +140,8 @@ mock.module("../context.js", () => ({
 mock.module("../../runtime/context-registry.js", () => ({
   ...actualRuntimeContextRegistryModule,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
-  resolveRuntimeContextOrThrow: () => {
+  resolveRuntimeContextOrThrow: (_contextKey: string, options?: { touch?: boolean; readOnly?: boolean }) => {
+    resolvedContextOptions = options;
     if (!resolvedContext) {
       throw new Error("Context not found");
     }
@@ -240,6 +242,7 @@ describe("ContextCommands", () => {
     fetchedContext = resolvedContext;
     listedContexts = [resolvedContext];
     revokedContext = undefined;
+    resolvedContextOptions = undefined;
     publishedAuditEvents = [];
   });
 
@@ -256,6 +259,7 @@ describe("ContextCommands", () => {
     fetchedContext = undefined;
     listedContexts = [];
     revokedContext = undefined;
+    resolvedContextOptions = undefined;
     publishedAuditEvents = [];
   });
 
@@ -652,6 +656,17 @@ describe("ContextCommands", () => {
       };
       fetchedContext = resolvedContext;
       listedContexts = [resolvedContext];
+    });
+
+    it("resolves context without touching the DB from the Bash hook path", () => {
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "ravi context whoami",
+        },
+      });
+
+      expect(result).toEqual({});
+      expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
     });
 
     it("publishes executable deny audit events for git status", () => {
