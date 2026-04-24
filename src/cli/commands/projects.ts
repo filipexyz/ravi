@@ -38,9 +38,10 @@ import type {
 import type { TaskEvent, TaskPriority, TaskRecord } from "../../tasks/types.js";
 import { getAgent } from "../../router/config.js";
 import { expandHome, getOrCreateSession, resolveSession } from "../../router/index.js";
+import { getSpec } from "../../specs/index.js";
 import { getWorkflowRunDetails } from "../../workflows/index.js";
 
-const VALID_LINK_ASSET_TYPES = new Set<ProjectLinkAssetType>(["workflow", "session", "agent", "resource"]);
+const VALID_LINK_ASSET_TYPES = new Set<ProjectLinkAssetType>(["workflow", "session", "agent", "resource", "spec"]);
 const VALID_RESOURCE_TYPES = new Set<ProjectResourceType>([
   "repo",
   "worktree",
@@ -99,7 +100,7 @@ function resolveActor(): { createdBy?: string; createdByAgentId?: string; create
 function requireAssetType(value: string): ProjectLinkAssetType {
   const normalized = value.trim().toLowerCase() as ProjectLinkAssetType;
   if (!VALID_LINK_ASSET_TYPES.has(normalized)) {
-    fail(`Invalid asset type: ${value}. Use workflow|session|agent|resource.`);
+    fail(`Invalid asset type: ${value}. Use workflow|session|agent|resource|spec.`);
   }
   return normalized;
 }
@@ -557,6 +558,14 @@ function describeLink(link: ProjectLink): string {
       const head = resource?.label ? `resource:${type} :: ${resource.label}` : `resource:${type}`;
       return `${head} :: ${resource?.locator ?? link.assetId}${roleSuffix}`;
     }
+    case "spec": {
+      try {
+        const spec = getSpec(link.assetId);
+        return `spec:${spec.id} :: ${spec.kind} :: ${spec.title}${roleSuffix}`;
+      } catch {
+        return `spec:${link.assetId}${roleSuffix}`;
+      }
+    }
   }
 }
 
@@ -750,6 +759,10 @@ function resolveLinkTarget(
     }
     case "resource":
       return resolveResourceLinkInput(normalizedTarget, resourceType, label, metadataJson);
+    case "spec": {
+      const spec = getSpec(normalizedTarget);
+      return { assetId: spec.id };
+    }
   }
 }
 
@@ -1012,9 +1025,9 @@ export class ProjectCommands {
     }
   }
 
-  @Command({ name: "link", description: "Link workflow/session/agent/resource context to a project" })
+  @Command({ name: "link", description: "Link workflow/session/agent/resource/spec context to a project" })
   link(
-    @Arg("assetType", { description: "workflow|session|agent|resource" }) assetTypeValue: string,
+    @Arg("assetType", { description: "workflow|session|agent|resource|spec" }) assetTypeValue: string,
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Arg("target", { description: "Asset id, session, agent, or locator" }) target: string,
     @Option({ flags: "--role <text>", description: "Optional role for this link" }) role?: string,

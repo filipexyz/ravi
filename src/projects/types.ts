@@ -22,7 +22,7 @@ import type {
 
 export type ProjectStatus = "active" | "paused" | "blocked" | "done" | "archived";
 
-export type ProjectLinkAssetType = "workflow" | "session" | "agent" | "resource";
+export type ProjectLinkAssetType = "workflow" | "session" | "agent" | "resource" | "spec";
 
 export type ProjectWorkflowLinkRole = "primary" | "support";
 

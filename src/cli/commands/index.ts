@@ -33,6 +33,7 @@ export * from "./sessions.js";
 export * from "./settings.js";
 export * from "./setup.js";
 export * from "./skills.js";
+export * from "./specs.js";
 export * from "./stickers.js";
 export * from "./tags.js";
 export * from "./tasks-automations.js";

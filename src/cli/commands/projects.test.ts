@@ -472,6 +472,33 @@ mock.module("../../workflows/index.js", () => ({
       : null,
 }));
 
+mock.module("../../specs/index.js", () => ({
+  getSpec: (id: string) => {
+    if (id !== "channels/presence/lifecycle") {
+      throw new Error(`Spec not found: ${id}`);
+    }
+    return {
+      id,
+      title: "Presence Lifecycle",
+      kind: "feature",
+      domain: "channels",
+      capability: "presence",
+      feature: "lifecycle",
+      capabilities: ["presence"],
+      tags: [],
+      appliesTo: [],
+      owners: [],
+      status: "active",
+      normative: true,
+      rootPath: "/workspace/.ravi/specs",
+      path: "/workspace/.ravi/specs/channels/presence/lifecycle/SPEC.md",
+      relativePath: "channels/presence/lifecycle/SPEC.md",
+      mtime: 1,
+      updatedAt: 1,
+    };
+  },
+}));
+
 mock.module("../../tasks/index.js", () => ({
   ...actualTasksIndexModule,
   emitTaskEvent: async (task: Record<string, unknown>, event: Record<string, unknown>) => {
@@ -806,6 +833,37 @@ describe("ProjectCommands", () => {
         }),
       }),
     ]);
+  });
+
+  it("links specs as project context", () => {
+    const commands = new ProjectCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      commands.link(
+        "spec",
+        "ops-cadence",
+        "channels/presence/lifecycle",
+        "context",
+        undefined,
+        undefined,
+        '{"context":true}',
+        true,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(linkProjectCalls.at(-1)).toEqual(
+      expect.objectContaining({
+        projectRef: "ops-cadence",
+        assetType: "spec",
+        assetId: "channels/presence/lifecycle",
+        role: "context",
+        metadata: { context: true },
+      }),
+    );
   });
 
   it("prints workflow runtime rollups in project status", () => {
