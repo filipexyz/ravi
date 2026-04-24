@@ -65,6 +65,11 @@ function seedCompleteTrace() {
     sourceChannel: "whatsapp",
     sourceAccountId: "main",
     sourceChatId: "chat-1",
+    canonicalChatId: "chat_canonical_1",
+    actorType: "contact",
+    contactId: "contact_1",
+    rawSenderId: "raw-sender-1",
+    normalizedSenderId: "sender-1",
     messageId: "msg-1",
     preview: "Please inspect the trace",
   });
@@ -242,6 +247,13 @@ describe("querySessionTrace", () => {
 
     const byMessage = querySessionTrace({ session: "trace-session", messageId: "msg-1" });
     expect(byMessage.events.map((event) => event.eventType)).toEqual(["channel.message.received", "prompt.published"]);
+    expect(byMessage.events[0]).toMatchObject({
+      canonicalChatId: "chat_canonical_1",
+      actorType: "contact",
+      contactId: "contact_1",
+      rawSenderId: "raw-sender-1",
+      normalizedSenderId: "sender-1",
+    });
 
     const byCorrelation = querySessionTrace({ session: "trace-session", correlationId: "corr-1" });
     expect(byCorrelation.events.map((event) => event.eventType)).toEqual(["prompt.published"]);
@@ -444,5 +456,36 @@ describe("explainSessionTrace", () => {
 
     expect(codes).not.toContain("tool-start-without-end");
     expect(codes).toContain("response-without-delivery");
+  });
+
+  it("matches response and delivery observations by canonical chat when raw targets differ", () => {
+    recordSessionEvent({
+      sessionKey: "agent:main:canonical-match",
+      sessionName: "canonical-match",
+      eventType: "response.emitted",
+      eventGroup: "response",
+      timestamp: 10,
+      createdAt: 10,
+      sourceChatId: "legacy-phone-chat",
+      canonicalChatId: "chat_1",
+      payloadJson: {},
+    });
+    recordSessionEvent({
+      sessionKey: "agent:main:canonical-match",
+      sessionName: "canonical-match",
+      eventType: "delivery.delivered",
+      eventGroup: "delivery",
+      timestamp: 20,
+      createdAt: 20,
+      sourceChatId: "platform-jid-chat",
+      canonicalChatId: "chat_1",
+      payloadJson: {},
+    });
+
+    const codes = explainSessionTrace(querySessionTrace({ session: "canonical-match" })).findings.map(
+      (finding) => finding.code,
+    );
+
+    expect(codes).not.toContain("response-without-delivery");
   });
 });

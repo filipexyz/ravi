@@ -117,6 +117,24 @@ export function summarizeRuntimeCapabilities(capabilities: RuntimeCapabilities):
   };
 }
 
+function sourceTraceFields(source: RuntimeMessageTarget | null | undefined) {
+  return {
+    sourceChannel: source?.channel,
+    sourceAccountId: source?.accountId,
+    sourceChatId: source?.chatId,
+    sourceThreadId: source?.threadId,
+    canonicalChatId: source?.canonicalChatId,
+    actorType: source?.actorType,
+    contactId: source?.contactId,
+    actorAgentId: source?.actorAgentId,
+    platformIdentityId: source?.platformIdentityId,
+    rawSenderId: source?.rawSenderId,
+    normalizedSenderId: source?.normalizedSenderId,
+    identityConfidence: source?.identityConfidence,
+    identityProvenance: source?.identityProvenance,
+  };
+}
+
 export function recordRuntimeTraceEvent(input: RuntimeTraceEventInput): void {
   safeTrace("record runtime trace event", () => {
     recordSessionEvent({
@@ -128,10 +146,7 @@ export function recordRuntimeTraceEvent(input: RuntimeTraceEventInput): void {
       eventType: input.eventType,
       eventGroup: input.eventGroup,
       status: input.status,
-      sourceChannel: input.source?.channel,
-      sourceAccountId: input.source?.accountId,
-      sourceChatId: input.source?.chatId,
-      sourceThreadId: input.source?.threadId,
+      ...sourceTraceFields(input.source),
       messageId: input.messageId ?? input.source?.sourceMessageId,
       provider: input.provider,
       model: input.model,
@@ -213,10 +228,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       eventType: "adapter.request",
       eventGroup: "adapter",
       status: "built",
-      sourceChannel: input.source?.channel,
-      sourceAccountId: input.source?.accountId,
-      sourceChatId: input.source?.chatId,
-      sourceThreadId: input.source?.threadId,
+      ...sourceTraceFields(input.source),
       messageId: input.source?.sourceMessageId,
       provider: input.provider,
       model: input.model,

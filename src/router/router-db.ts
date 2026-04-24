@@ -12,8 +12,10 @@ import { z } from "zod";
 import { join } from "node:path";
 import { mkdirSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
+import { createHash } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { normalizePhone } from "../utils/phone.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -26,6 +28,7 @@ const RAVI_DIR = join(homedir(), "ravi");
 const DEFAULT_RAVI_STATE_DIR = getRaviStateDir({});
 const DEFAULT_DB_PATH = join(DEFAULT_RAVI_STATE_DIR, "ravi.db");
 const LEGACY_DB_PATH = join(RAVI_DIR, "ravi.db");
+const IDENTITY_CHAT_BACKFILL_KEY = "identity_chat_backfill_v1";
 
 // ============================================================================
 // Schemas (safe to access at import time - no I/O)
@@ -190,6 +193,66 @@ interface ContextRow {
   revoked_at: number | null;
 }
 
+interface ChatRow {
+  id: string;
+  channel: string;
+  instance_id: string;
+  platform_chat_id: string;
+  normalized_chat_id: string;
+  chat_type: string;
+  title: string | null;
+  avatar_url: string | null;
+  metadata_json: string | null;
+  raw_provenance_json: string | null;
+  first_seen_at: number;
+  last_seen_at: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface ChatParticipantRow {
+  id: string;
+  chat_id: string;
+  platform_identity_id: string | null;
+  contact_id: string | null;
+  agent_id: string | null;
+  raw_platform_user_id: string | null;
+  normalized_platform_user_id: string | null;
+  role: string;
+  status: string;
+  source: string;
+  first_seen_at: number;
+  last_seen_at: number;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface SessionChatBindingRow {
+  session_key: string;
+  chat_id: string;
+  agent_id: string | null;
+  route_id: number | null;
+  binding_reason: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+interface SessionParticipantRow {
+  id: string;
+  session_key: string;
+  owner_type: string;
+  owner_id: string | null;
+  platform_identity_id: string | null;
+  role: string;
+  first_seen_at: number;
+  last_seen_at: number;
+  message_count: number;
+  metadata_json: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface InstanceConfig {
   name: string;
   instanceId?: string;
@@ -259,6 +322,113 @@ export interface ContextRecord {
   expiresAt?: number;
   lastUsedAt?: number;
   revokedAt?: number;
+}
+
+export type ChatType = "dm" | "group" | "room" | "thread" | "channel" | "unknown";
+export type ChatParticipantType = "contact" | "agent" | "raw";
+export type ChatParticipantRole = "member" | "admin" | "owner" | "agent" | "unknown" | (string & {});
+export type ChatParticipantStatus = "active" | "left" | "removed" | "unknown" | (string & {});
+export type ChatParticipantSource = "omni" | "inbound_message" | "manual" | "import" | "backfill" | (string & {});
+export type SessionParticipantOwnerType = "contact" | "agent" | "unknown";
+export type SessionParticipantRole = "human" | "agent" | "system" | "observer" | "unknown" | (string & {});
+
+export interface ChatRecord {
+  id: string;
+  channel: string;
+  instanceId: string;
+  platformChatId: string;
+  normalizedChatId: string;
+  chatType: ChatType;
+  title?: string;
+  avatarUrl?: string;
+  metadata?: Record<string, unknown>;
+  rawProvenance?: Record<string, unknown>;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UpsertChatInput {
+  channel: string;
+  instanceId?: string | null;
+  platformChatId: string;
+  normalizedChatId?: string | null;
+  chatType?: ChatType;
+  title?: string | null;
+  avatarUrl?: string | null;
+  metadata?: Record<string, unknown> | null;
+  rawProvenance?: Record<string, unknown> | null;
+  seenAt?: number;
+}
+
+export interface ChatParticipantRecord {
+  id: string;
+  chatId: string;
+  participantType: ChatParticipantType;
+  platformIdentityId?: string;
+  contactId?: string;
+  agentId?: string;
+  rawPlatformUserId?: string;
+  normalizedPlatformUserId?: string;
+  role: ChatParticipantRole;
+  status: ChatParticipantStatus;
+  source: ChatParticipantSource;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UpsertChatParticipantInput {
+  chatId: string;
+  platformIdentityId?: string | null;
+  contactId?: string | null;
+  agentId?: string | null;
+  rawPlatformUserId?: string | null;
+  normalizedPlatformUserId?: string | null;
+  role?: ChatParticipantRole | null;
+  status?: ChatParticipantStatus | null;
+  source?: ChatParticipantSource | null;
+  metadata?: Record<string, unknown> | null;
+  seenAt?: number;
+}
+
+export interface SessionChatBindingRecord {
+  sessionKey: string;
+  chatId: string;
+  agentId?: string;
+  routeId?: number;
+  bindingReason?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SessionParticipantRecord {
+  id: string;
+  sessionKey: string;
+  ownerType: SessionParticipantOwnerType;
+  ownerId?: string;
+  platformIdentityId?: string;
+  role: SessionParticipantRole;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  messageCount: number;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UpsertSessionParticipantInput {
+  sessionKey: string;
+  ownerType?: SessionParticipantOwnerType | null;
+  ownerId?: string | null;
+  platformIdentityId?: string | null;
+  role?: SessionParticipantRole | null;
+  metadata?: Record<string, unknown> | null;
+  incrementMessageCount?: boolean;
+  seenAt?: number;
 }
 
 export interface ListContextsOptions {
@@ -406,6 +576,93 @@ function getDb(): Database {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS chats (
+      id TEXT PRIMARY KEY,
+      channel TEXT NOT NULL,
+      instance_id TEXT NOT NULL DEFAULT '',
+      platform_chat_id TEXT NOT NULL,
+      normalized_chat_id TEXT NOT NULL,
+      chat_type TEXT NOT NULL DEFAULT 'unknown',
+      title TEXT,
+      avatar_url TEXT,
+      metadata_json TEXT,
+      raw_provenance_json TEXT,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(channel, instance_id, normalized_chat_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_participants (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      platform_identity_id TEXT,
+      contact_id TEXT,
+      agent_id TEXT,
+      raw_platform_user_id TEXT,
+      normalized_platform_user_id TEXT,
+      role TEXT NOT NULL DEFAULT 'unknown',
+      status TEXT NOT NULL DEFAULT 'active',
+      source TEXT NOT NULL DEFAULT 'unknown',
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_identity
+      ON chat_participants(chat_id, platform_identity_id)
+      WHERE platform_identity_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_contact
+      ON chat_participants(chat_id, contact_id)
+      WHERE contact_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_agent
+      ON chat_participants(chat_id, agent_id)
+      WHERE agent_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_participants_raw_identity
+      ON chat_participants(chat_id, normalized_platform_user_id)
+      WHERE platform_identity_id IS NULL AND contact_id IS NULL AND agent_id IS NULL AND normalized_platform_user_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS session_chat_bindings (
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      agent_id TEXT,
+      route_id INTEGER,
+      binding_reason TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (session_key, chat_id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_chat_bindings_session
+      ON session_chat_bindings(session_key);
+    CREATE INDEX IF NOT EXISTS idx_session_chat_bindings_chat
+      ON session_chat_bindings(chat_id);
+
+    CREATE TABLE IF NOT EXISTS session_participants (
+      id TEXT PRIMARY KEY,
+      session_key TEXT NOT NULL REFERENCES sessions(session_key) ON DELETE CASCADE,
+      owner_type TEXT NOT NULL DEFAULT 'unknown' CHECK(owner_type IN ('contact', 'agent', 'unknown')),
+      owner_id TEXT,
+      platform_identity_id TEXT,
+      role TEXT NOT NULL DEFAULT 'unknown',
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      message_count INTEGER NOT NULL DEFAULT 0,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_participants_owner
+      ON session_participants(session_key, owner_type, owner_id)
+      WHERE owner_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_session_participants_identity
+      ON session_participants(session_key, platform_identity_id)
+      WHERE platform_identity_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_session_participants_session
+      ON session_participants(session_key);
+
     CREATE INDEX IF NOT EXISTS idx_routes_priority ON routes(priority DESC);
     CREATE INDEX IF NOT EXISTS idx_routes_agent ON routes(agent_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
@@ -435,6 +692,15 @@ function getDb(): Database {
     CREATE TABLE IF NOT EXISTS message_metadata (
       message_id TEXT PRIMARY KEY,
       chat_id TEXT NOT NULL,
+      canonical_chat_id TEXT,
+      actor_type TEXT,
+      contact_id TEXT,
+      agent_id TEXT,
+      platform_identity_id TEXT,
+      raw_sender_id TEXT,
+      normalized_sender_id TEXT,
+      identity_confidence REAL,
+      identity_provenance_json TEXT,
       transcription TEXT,
       media_path TEXT,
       media_type TEXT,
@@ -479,6 +745,15 @@ function getDb(): Database {
       source_account_id TEXT,
       source_chat_id TEXT,
       source_thread_id TEXT,
+      canonical_chat_id TEXT,
+      actor_type TEXT,
+      contact_id TEXT,
+      actor_agent_id TEXT,
+      platform_identity_id TEXT,
+      raw_sender_id TEXT,
+      normalized_sender_id TEXT,
+      identity_confidence REAL,
+      identity_provenance_json TEXT,
       message_id TEXT,
       provider TEXT,
       model TEXT,
@@ -1114,7 +1389,16 @@ function getDb(): Database {
       ts         INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id, ts DESC);
+
+    CREATE TABLE IF NOT EXISTS router_meta (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `);
+
+  ensureIdentityChatMigrations(db);
+  backfillChatModelOnce(db);
 
   // Create default agent if none exist
   const count = db.prepare("SELECT COUNT(*) as count FROM agents").get() as { count: number };
@@ -1151,6 +1435,831 @@ function getDb(): Database {
 function getDbChanges(): number {
   const row = getDb().prepare("SELECT changes() AS c").get() as { c: number } | null;
   return row?.c ?? 0;
+}
+
+// ============================================================================
+// Identity/chats schema helpers
+// ============================================================================
+
+function semanticId(prefix: string, parts: Array<string | null | undefined>): string {
+  const hash = createHash("sha256")
+    .update(parts.map((part) => part ?? "").join("\x1f"))
+    .digest("hex")
+    .slice(0, 24);
+  return `${prefix}_${hash}`;
+}
+
+function tableHasColumn(database: Database, table: string, column: string): boolean {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return columns.some((c) => c.name === column);
+}
+
+function ensureColumn(database: Database, table: string, column: string, definition: string): void {
+  if (!tableHasColumn(database, table, column)) {
+    try {
+      database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      log.info("Added identity/chat schema column", { table, column });
+    } catch (error) {
+      if (isDuplicateColumnRace(error) && tableHasColumn(database, table, column)) {
+        log.debug("Identity/chat schema column already added by another process", { table, column });
+        return;
+      }
+      throw error;
+    }
+  }
+}
+
+function isDuplicateColumnRace(error: unknown): boolean {
+  return error instanceof Error && /duplicate column name/i.test(error.message);
+}
+
+function ensureIdentityChatMigrations(database: Database): void {
+  ensureColumn(database, "message_metadata", "canonical_chat_id", "TEXT");
+  ensureColumn(database, "message_metadata", "actor_type", "TEXT");
+  ensureColumn(database, "message_metadata", "contact_id", "TEXT");
+  ensureColumn(database, "message_metadata", "agent_id", "TEXT");
+  ensureColumn(database, "message_metadata", "platform_identity_id", "TEXT");
+  ensureColumn(database, "message_metadata", "raw_sender_id", "TEXT");
+  ensureColumn(database, "message_metadata", "normalized_sender_id", "TEXT");
+  ensureColumn(database, "message_metadata", "identity_confidence", "REAL");
+  ensureColumn(database, "message_metadata", "identity_provenance_json", "TEXT");
+
+  ensureColumn(database, "session_events", "canonical_chat_id", "TEXT");
+  ensureColumn(database, "session_events", "actor_type", "TEXT");
+  ensureColumn(database, "session_events", "contact_id", "TEXT");
+  ensureColumn(database, "session_events", "actor_agent_id", "TEXT");
+  ensureColumn(database, "session_events", "platform_identity_id", "TEXT");
+  ensureColumn(database, "session_events", "raw_sender_id", "TEXT");
+  ensureColumn(database, "session_events", "normalized_sender_id", "TEXT");
+  ensureColumn(database, "session_events", "identity_confidence", "REAL");
+  ensureColumn(database, "session_events", "identity_provenance_json", "TEXT");
+
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_message_metadata_canonical_chat ON message_metadata(canonical_chat_id)",
+  );
+  database.exec("CREATE INDEX IF NOT EXISTS idx_session_events_canonical_chat ON session_events(canonical_chat_id)");
+}
+
+function cleanJsonRecord(value: Record<string, unknown> | null | undefined): string | null {
+  if (!value || Object.keys(value).length === 0) return null;
+  return JSON.stringify(value);
+}
+
+function parseJsonRecord(value: string | null): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function mergeJsonRecords(
+  ...values: Array<Record<string, unknown> | null | undefined>
+): Record<string, unknown> | undefined {
+  const merged: Record<string, unknown> = {};
+  for (const value of values) {
+    if (!value) continue;
+    Object.assign(merged, value);
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function normalizeChannelId(channel: string | null | undefined): string {
+  const cleaned = channel
+    ?.trim()
+    .toLowerCase()
+    .replace(/-baileys$/, "");
+  return cleaned || "unknown";
+}
+
+function normalizeChatIdentity(channel: string, platformChatId: string, chatType?: ChatType): string {
+  const trimmed = platformChatId.trim();
+  if (!trimmed) return "unknown";
+  const threadSeparator = trimmed.indexOf("#");
+  if (threadSeparator !== -1) {
+    const baseChatId = trimmed.slice(0, threadSeparator);
+    const threadId = trimmed
+      .slice(threadSeparator + 1)
+      .trim()
+      .toLowerCase();
+    const baseType =
+      chatType === "thread" || chatType === "unknown" || !chatType ? inferChatType(baseChatId, undefined) : chatType;
+    const normalizedBase = normalizeChatIdentity(channel, baseChatId, baseType);
+    return threadId ? `${normalizedBase}#${threadId}` : normalizedBase;
+  }
+  if (channel === "whatsapp") {
+    const normalized = normalizePhone(trimmed);
+    if (chatType === "group" || normalized.startsWith("group:") || trimmed.endsWith("@g.us")) {
+      return normalized.startsWith("group:") ? normalized : `group:${normalized}`;
+    }
+    return normalized || trimmed.toLowerCase();
+  }
+  return trimmed.toLowerCase();
+}
+
+function inferChatType(platformChatId: string, explicit?: ChatType | null): ChatType {
+  if (explicit && explicit !== "unknown") return explicit;
+  if (platformChatId.includes("#")) return "thread";
+  if (platformChatId.endsWith("@g.us") || platformChatId.startsWith("group:")) return "group";
+  return "dm";
+}
+
+function rowToChat(row: ChatRow): ChatRecord {
+  return {
+    id: row.id,
+    channel: row.channel,
+    instanceId: row.instance_id,
+    platformChatId: row.platform_chat_id,
+    normalizedChatId: row.normalized_chat_id,
+    chatType: row.chat_type as ChatType,
+    title: row.title ?? undefined,
+    avatarUrl: row.avatar_url ?? undefined,
+    metadata: parseJsonRecord(row.metadata_json),
+    rawProvenance: parseJsonRecord(row.raw_provenance_json),
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToChatParticipant(row: ChatParticipantRow): ChatParticipantRecord {
+  return {
+    id: row.id,
+    chatId: row.chat_id,
+    participantType: inferChatParticipantType({
+      contactId: row.contact_id,
+      agentId: row.agent_id,
+    }),
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    rawPlatformUserId: row.raw_platform_user_id ?? undefined,
+    normalizedPlatformUserId: row.normalized_platform_user_id ?? undefined,
+    role: row.role,
+    status: row.status,
+    source: row.source,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToSessionChatBinding(row: SessionChatBindingRow): SessionChatBindingRecord {
+  return {
+    sessionKey: row.session_key,
+    chatId: row.chat_id,
+    agentId: row.agent_id ?? undefined,
+    routeId: row.route_id ?? undefined,
+    bindingReason: row.binding_reason ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToSessionParticipant(row: SessionParticipantRow): SessionParticipantRecord {
+  return {
+    id: row.id,
+    sessionKey: row.session_key,
+    ownerType: row.owner_type as SessionParticipantOwnerType,
+    ownerId: row.owner_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    role: row.role,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    messageCount: row.message_count,
+    metadata: parseJsonRecord(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function upsertChat(database: Database, input: UpsertChatInput): ChatRecord {
+  const now = input.seenAt ?? Date.now();
+  const channel = normalizeChannelId(input.channel);
+  const instanceId = input.instanceId?.trim() ?? "";
+  const chatType = inferChatType(input.platformChatId, input.chatType);
+  const normalizedChatId =
+    input.normalizedChatId?.trim() || normalizeChatIdentity(channel, input.platformChatId, chatType);
+  const id = semanticId("chat", [channel, instanceId, normalizedChatId]);
+
+  database
+    .prepare(
+      `
+      INSERT INTO chats (
+        id, channel, instance_id, platform_chat_id, normalized_chat_id, chat_type,
+        title, avatar_url, metadata_json, raw_provenance_json,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(channel, instance_id, normalized_chat_id) DO UPDATE SET
+        platform_chat_id = excluded.platform_chat_id,
+        chat_type = excluded.chat_type,
+        title = COALESCE(excluded.title, chats.title),
+        avatar_url = COALESCE(excluded.avatar_url, chats.avatar_url),
+        metadata_json = COALESCE(excluded.metadata_json, chats.metadata_json),
+        raw_provenance_json = COALESCE(excluded.raw_provenance_json, chats.raw_provenance_json),
+        last_seen_at = MAX(chats.last_seen_at, excluded.last_seen_at),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      id,
+      channel,
+      instanceId,
+      input.platformChatId,
+      normalizedChatId,
+      chatType,
+      input.title ?? null,
+      input.avatarUrl ?? null,
+      cleanJsonRecord(input.metadata),
+      cleanJsonRecord(input.rawProvenance),
+      now,
+      now,
+      now,
+      now,
+    );
+
+  const row = database
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
+    .get(channel, instanceId, normalizedChatId) as ChatRow;
+  return rowToChat(row);
+}
+
+function normalizedParticipantId(input: UpsertChatParticipantInput): string | null {
+  const explicit = input.normalizedPlatformUserId?.trim();
+  if (explicit) return explicit;
+  const raw = input.rawPlatformUserId?.trim();
+  if (!raw) return null;
+  return normalizePhone(raw) || raw.toLowerCase();
+}
+
+function inferChatParticipantType(input: { contactId?: string | null; agentId?: string | null }): ChatParticipantType {
+  if (input.agentId) return "agent";
+  if (input.contactId) return "contact";
+  return "raw";
+}
+
+function validateChatParticipantInput(input: UpsertChatParticipantInput): void {
+  if (input.contactId && input.agentId) {
+    throw new Error("Chat participant cannot be both contact and agent");
+  }
+}
+
+function chatParticipantSemanticParts(
+  input: UpsertChatParticipantInput,
+  normalized: string | null,
+): Array<string | null | undefined> {
+  if (input.agentId) return [input.chatId, "agent", input.agentId];
+  if (input.contactId) return [input.chatId, "contact", input.contactId];
+  if (input.platformIdentityId) return [input.chatId, "platform", input.platformIdentityId];
+  return [input.chatId, "raw", normalized];
+}
+
+interface ExistingChatParticipantMatches {
+  semantic?: string;
+  contact?: string;
+  agent?: string;
+  platform?: string;
+  raw?: string;
+  all: string[];
+}
+
+function pushChatParticipantMatch(
+  matches: ExistingChatParticipantMatches,
+  kind: keyof Omit<ExistingChatParticipantMatches, "all">,
+  id: string | undefined,
+): void {
+  if (!id) return;
+  matches[kind] ??= id;
+  if (!matches.all.includes(id)) {
+    matches.all.push(id);
+  }
+}
+
+function findExistingChatParticipantMatches(
+  database: Database,
+  input: UpsertChatParticipantInput,
+  normalized: string | null,
+  semanticParticipantId: string,
+): ExistingChatParticipantMatches {
+  const matches: ExistingChatParticipantMatches = { all: [] };
+  const byId = database.prepare("SELECT id FROM chat_participants WHERE id = ?").get(semanticParticipantId) as
+    | { id: string }
+    | undefined;
+  pushChatParticipantMatch(matches, "semantic", byId?.id);
+
+  if (input.contactId) {
+    const row = database
+      .prepare("SELECT id FROM chat_participants WHERE chat_id = ? AND contact_id = ?")
+      .get(input.chatId, input.contactId) as { id: string } | undefined;
+    pushChatParticipantMatch(matches, "contact", row?.id);
+  }
+
+  if (input.agentId) {
+    const row = database
+      .prepare("SELECT id FROM chat_participants WHERE chat_id = ? AND agent_id = ?")
+      .get(input.chatId, input.agentId) as { id: string } | undefined;
+    pushChatParticipantMatch(matches, "agent", row?.id);
+  }
+
+  if (input.platformIdentityId) {
+    const row = database
+      .prepare("SELECT id FROM chat_participants WHERE chat_id = ? AND platform_identity_id = ?")
+      .get(input.chatId, input.platformIdentityId) as { id: string } | undefined;
+    pushChatParticipantMatch(matches, "platform", row?.id);
+  }
+
+  if (normalized) {
+    const row = database
+      .prepare(
+        `
+        SELECT id
+        FROM chat_participants
+        WHERE chat_id = ?
+          AND normalized_platform_user_id = ?
+          AND platform_identity_id IS NULL
+          AND contact_id IS NULL
+          AND agent_id IS NULL
+      `,
+      )
+      .get(input.chatId, normalized) as { id: string } | undefined;
+    pushChatParticipantMatch(matches, "raw", row?.id);
+  }
+
+  return matches;
+}
+
+function listChatParticipantsByIds(database: Database, ids: string[]): ChatParticipantRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return database
+    .prepare(`SELECT * FROM chat_participants WHERE id IN (${placeholders})`)
+    .all(...ids) as ChatParticipantRow[];
+}
+
+function upsertChatParticipant(database: Database, input: UpsertChatParticipantInput): ChatParticipantRecord {
+  validateChatParticipantInput(input);
+  const now = input.seenAt ?? Date.now();
+  const normalized = normalizedParticipantId(input);
+  const semanticParticipantId = semanticId("cp", chatParticipantSemanticParts(input, normalized));
+  const matches = findExistingChatParticipantMatches(database, input, normalized, semanticParticipantId);
+  const id =
+    matches.semantic ?? matches.agent ?? matches.contact ?? matches.platform ?? matches.raw ?? semanticParticipantId;
+  const mergedRows = listChatParticipantsByIds(database, matches.all);
+  const duplicateIds = matches.all.filter((existingId) => existingId !== id);
+  const firstSeenAt = Math.min(now, ...mergedRows.map((row) => row.first_seen_at));
+  const lastSeenAt = Math.max(now, ...mergedRows.map((row) => row.last_seen_at));
+  const mergedMetadata = mergeJsonRecords(
+    ...mergedRows.map((row) => parseJsonRecord(row.metadata_json)),
+    input.metadata ?? undefined,
+  );
+
+  if (duplicateIds.length > 0) {
+    const placeholders = duplicateIds.map(() => "?").join(", ");
+    database.prepare(`DELETE FROM chat_participants WHERE id IN (${placeholders})`).run(...duplicateIds);
+  }
+
+  database
+    .prepare(
+      `
+      INSERT INTO chat_participants (
+        id, chat_id, platform_identity_id, contact_id, agent_id,
+        raw_platform_user_id, normalized_platform_user_id, role, status, source,
+        first_seen_at, last_seen_at, metadata_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        platform_identity_id = COALESCE(excluded.platform_identity_id, chat_participants.platform_identity_id),
+        contact_id = COALESCE(excluded.contact_id, chat_participants.contact_id),
+        agent_id = COALESCE(excluded.agent_id, chat_participants.agent_id),
+        raw_platform_user_id = COALESCE(excluded.raw_platform_user_id, chat_participants.raw_platform_user_id),
+        normalized_platform_user_id = COALESCE(excluded.normalized_platform_user_id, chat_participants.normalized_platform_user_id),
+        role = CASE WHEN excluded.role != 'unknown' THEN excluded.role ELSE chat_participants.role END,
+        status = excluded.status,
+        source = excluded.source,
+        first_seen_at = MIN(chat_participants.first_seen_at, excluded.first_seen_at),
+        last_seen_at = MAX(chat_participants.last_seen_at, excluded.last_seen_at),
+        metadata_json = COALESCE(excluded.metadata_json, chat_participants.metadata_json),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      id,
+      input.chatId,
+      input.platformIdentityId ?? null,
+      input.contactId ?? null,
+      input.agentId ?? null,
+      input.rawPlatformUserId ?? null,
+      normalized,
+      input.role ?? "unknown",
+      input.status ?? "active",
+      input.source ?? "unknown",
+      firstSeenAt,
+      lastSeenAt,
+      cleanJsonRecord(mergedMetadata),
+      now,
+      now,
+    );
+
+  const row = database.prepare("SELECT * FROM chat_participants WHERE id = ?").get(id) as ChatParticipantRow;
+  return rowToChatParticipant(row);
+}
+
+function bindSessionToChat(
+  database: Database,
+  input: {
+    sessionKey: string;
+    chatId: string;
+    agentId?: string | null;
+    routeId?: number | null;
+    bindingReason?: string | null;
+    seenAt?: number;
+  },
+): SessionChatBindingRecord {
+  const now = input.seenAt ?? Date.now();
+  database
+    .prepare(
+      `
+      INSERT INTO session_chat_bindings (
+        session_key, chat_id, agent_id, route_id, binding_reason, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_key) DO UPDATE SET
+        chat_id = excluded.chat_id,
+        agent_id = COALESCE(excluded.agent_id, session_chat_bindings.agent_id),
+        route_id = COALESCE(excluded.route_id, session_chat_bindings.route_id),
+        binding_reason = COALESCE(excluded.binding_reason, session_chat_bindings.binding_reason),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      input.sessionKey,
+      input.chatId,
+      input.agentId ?? null,
+      input.routeId ?? null,
+      input.bindingReason ?? null,
+      now,
+      now,
+    );
+
+  const row = database.prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(input.sessionKey) as
+    | SessionChatBindingRow
+    | undefined;
+  if (!row) throw new Error(`Session chat binding not found after upsert: ${input.sessionKey}`);
+  return rowToSessionChatBinding(row);
+}
+
+interface ExistingSessionParticipantMatches {
+  semantic?: string;
+  owner?: string;
+  platform?: string;
+  all: string[];
+}
+
+function pushSessionParticipantMatch(
+  matches: ExistingSessionParticipantMatches,
+  kind: keyof Omit<ExistingSessionParticipantMatches, "all">,
+  id: string | undefined,
+): void {
+  if (!id) return;
+  matches[kind] ??= id;
+  if (!matches.all.includes(id)) {
+    matches.all.push(id);
+  }
+}
+
+function findExistingSessionParticipantMatches(
+  database: Database,
+  input: UpsertSessionParticipantInput,
+  ownerType: SessionParticipantOwnerType,
+  semanticParticipantId: string,
+): ExistingSessionParticipantMatches {
+  const matches: ExistingSessionParticipantMatches = { all: [] };
+  const byId = database.prepare("SELECT id FROM session_participants WHERE id = ?").get(semanticParticipantId) as
+    | { id: string }
+    | undefined;
+  pushSessionParticipantMatch(matches, "semantic", byId?.id);
+
+  if (input.ownerId) {
+    const row = database
+      .prepare("SELECT id FROM session_participants WHERE session_key = ? AND owner_type = ? AND owner_id = ?")
+      .get(input.sessionKey, ownerType, input.ownerId) as { id: string } | undefined;
+    pushSessionParticipantMatch(matches, "owner", row?.id);
+  }
+
+  if (input.platformIdentityId) {
+    const row = database
+      .prepare("SELECT id FROM session_participants WHERE session_key = ? AND platform_identity_id = ?")
+      .get(input.sessionKey, input.platformIdentityId) as { id: string } | undefined;
+    pushSessionParticipantMatch(matches, "platform", row?.id);
+  }
+
+  return matches;
+}
+
+function listSessionParticipantsByIds(database: Database, ids: string[]): SessionParticipantRow[] {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return database
+    .prepare(`SELECT * FROM session_participants WHERE id IN (${placeholders})`)
+    .all(...ids) as SessionParticipantRow[];
+}
+
+function upsertSessionParticipant(database: Database, input: UpsertSessionParticipantInput): SessionParticipantRecord {
+  const now = input.seenAt ?? Date.now();
+  const ownerType = input.ownerType ?? (input.ownerId ? "contact" : "unknown");
+  const semanticParticipantId = semanticId("sp", [
+    input.sessionKey,
+    ownerType,
+    input.ownerId,
+    input.platformIdentityId,
+  ]);
+  const matches = findExistingSessionParticipantMatches(database, input, ownerType, semanticParticipantId);
+  const id = matches.semantic ?? matches.owner ?? matches.platform ?? semanticParticipantId;
+  const mergedRows = listSessionParticipantsByIds(database, matches.all);
+  const duplicateIds = matches.all.filter((existingId) => existingId !== id);
+  const increment = input.incrementMessageCount === false ? 0 : 1;
+  const firstSeenAt = Math.min(now, ...mergedRows.map((row) => row.first_seen_at));
+  const lastSeenAt = Math.max(now, ...mergedRows.map((row) => row.last_seen_at));
+  const messageCount = mergedRows.reduce((total, row) => total + row.message_count, 0) + increment;
+  const mergedMetadata = mergeJsonRecords(
+    ...mergedRows.map((row) => parseJsonRecord(row.metadata_json)),
+    input.metadata ?? undefined,
+  );
+
+  if (duplicateIds.length > 0) {
+    const placeholders = duplicateIds.map(() => "?").join(", ");
+    database.prepare(`DELETE FROM session_participants WHERE id IN (${placeholders})`).run(...duplicateIds);
+  }
+
+  database
+    .prepare(
+      `
+      INSERT INTO session_participants (
+        id, session_key, owner_type, owner_id, platform_identity_id, role,
+        first_seen_at, last_seen_at, message_count, metadata_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        owner_type = CASE WHEN excluded.owner_type != 'unknown' THEN excluded.owner_type ELSE session_participants.owner_type END,
+        owner_id = COALESCE(excluded.owner_id, session_participants.owner_id),
+        platform_identity_id = COALESCE(excluded.platform_identity_id, session_participants.platform_identity_id),
+        role = CASE WHEN excluded.role != 'unknown' THEN excluded.role ELSE session_participants.role END,
+        first_seen_at = MIN(session_participants.first_seen_at, excluded.first_seen_at),
+        last_seen_at = MAX(session_participants.last_seen_at, excluded.last_seen_at),
+        message_count = excluded.message_count,
+        metadata_json = COALESCE(excluded.metadata_json, session_participants.metadata_json),
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      id,
+      input.sessionKey,
+      ownerType,
+      input.ownerId ?? null,
+      input.platformIdentityId ?? null,
+      input.role ?? "unknown",
+      firstSeenAt,
+      lastSeenAt,
+      messageCount,
+      cleanJsonRecord(mergedMetadata),
+      now,
+      now,
+    );
+
+  const row = database.prepare("SELECT * FROM session_participants WHERE id = ?").get(id) as SessionParticipantRow;
+  return rowToSessionParticipant(row);
+}
+
+function backfillChatModel(database: Database): void {
+  const now = Date.now();
+  const txn = database.transaction(() => {
+    const groupRows = database.prepare("SELECT * FROM omni_group_metadata").all() as Array<{
+      account_id: string;
+      instance_id: string;
+      chat_id: string;
+      chat_uuid: string | null;
+      external_id: string | null;
+      channel: string | null;
+      name: string | null;
+      avatar_url: string | null;
+      participant_count: number | null;
+      participants_json: string | null;
+      platform_metadata_json: string | null;
+      fetched_at: number;
+    }>;
+
+    for (const row of groupRows) {
+      const chat = upsertChat(database, {
+        channel: row.channel ?? "whatsapp",
+        instanceId: row.instance_id,
+        platformChatId: row.chat_id,
+        chatType: "group",
+        title: row.name,
+        avatarUrl: row.avatar_url,
+        metadata: {
+          accountId: row.account_id,
+          chatUuid: row.chat_uuid,
+          externalId: row.external_id,
+          participantCount: row.participant_count,
+        },
+        rawProvenance: {
+          sourceTable: "omni_group_metadata",
+          accountId: row.account_id,
+          instanceId: row.instance_id,
+          chatId: row.chat_id,
+          chatUuid: row.chat_uuid,
+          externalId: row.external_id,
+          platformMetadata: parseJsonRecord(row.platform_metadata_json),
+        },
+        seenAt: row.fetched_at || now,
+      });
+
+      const participants = parseParticipantsJson(row.participants_json);
+      for (const participant of participants) {
+        upsertChatParticipant(database, {
+          chatId: chat.id,
+          rawPlatformUserId: participant.platformUserId,
+          normalizedPlatformUserId: normalizePhone(participant.platformUserId) || participant.platformUserId,
+          role: normalizeParticipantRole(participant.role),
+          status: "active",
+          source: "omni",
+          metadata: {
+            omniParticipantId: participant.id ?? null,
+            displayName: participant.displayName ?? null,
+          },
+          seenAt: row.fetched_at || now,
+        });
+      }
+    }
+
+    const sessionRows = database
+      .prepare(
+        `
+        SELECT session_key, agent_id, channel, account_id, group_id, last_channel, last_account_id,
+               last_to, last_thread_id, chat_type, display_name, subject, updated_at, created_at
+        FROM sessions
+        WHERE COALESCE(last_to, group_id) IS NOT NULL
+      `,
+      )
+      .all() as Array<{
+      session_key: string;
+      agent_id: string;
+      channel: string | null;
+      account_id: string | null;
+      group_id: string | null;
+      last_channel: string | null;
+      last_account_id: string | null;
+      last_to: string | null;
+      last_thread_id: string | null;
+      chat_type: string | null;
+      display_name: string | null;
+      subject: string | null;
+      updated_at: number;
+      created_at: number;
+    }>;
+
+    for (const row of sessionRows) {
+      const rawChatId = row.last_to ?? row.group_id;
+      if (!rawChatId) continue;
+      const chat = upsertChat(database, {
+        channel: row.last_channel ?? row.channel ?? "unknown",
+        instanceId: row.last_account_id ?? row.account_id ?? "",
+        platformChatId: rawChatId,
+        chatType: inferChatType(rawChatId, row.chat_type as ChatType | null),
+        title: row.display_name ?? row.subject,
+        rawProvenance: {
+          sourceTable: "sessions",
+          sessionKey: row.session_key,
+          groupId: row.group_id,
+          lastTo: row.last_to,
+          lastThreadId: row.last_thread_id,
+        },
+        seenAt: row.updated_at || row.created_at || now,
+      });
+      bindSessionToChat(database, {
+        sessionKey: row.session_key,
+        chatId: chat.id,
+        agentId: row.agent_id,
+        bindingReason: "legacy_session_backfill",
+        seenAt: row.updated_at || now,
+      });
+    }
+
+    const eventRows = database
+      .prepare(
+        `
+        SELECT DISTINCT source_channel, source_account_id, source_chat_id, source_thread_id
+        FROM session_events
+        WHERE source_chat_id IS NOT NULL
+      `,
+      )
+      .all() as Array<{
+      source_channel: string | null;
+      source_account_id: string | null;
+      source_chat_id: string;
+      source_thread_id: string | null;
+    }>;
+
+    for (const row of eventRows) {
+      upsertChat(database, {
+        channel: row.source_channel ?? "unknown",
+        instanceId: row.source_account_id ?? "",
+        platformChatId: row.source_thread_id ? `${row.source_chat_id}#${row.source_thread_id}` : row.source_chat_id,
+        chatType: row.source_thread_id ? "thread" : inferChatType(row.source_chat_id),
+        rawProvenance: {
+          sourceTable: "session_events",
+          sourceChatId: row.source_chat_id,
+          sourceThreadId: row.source_thread_id,
+        },
+        seenAt: now,
+      });
+    }
+
+    const messageRows = database
+      .prepare("SELECT DISTINCT chat_id FROM message_metadata WHERE chat_id IS NOT NULL")
+      .all() as Array<{ chat_id: string }>;
+    for (const row of messageRows) {
+      upsertChat(database, {
+        channel: "unknown",
+        instanceId: "",
+        platformChatId: row.chat_id,
+        chatType: inferChatType(row.chat_id),
+        rawProvenance: { sourceTable: "message_metadata", chatId: row.chat_id },
+        seenAt: now,
+      });
+    }
+  });
+
+  txn();
+}
+
+function backfillChatModelOnce(database: Database): void {
+  const existing = database.prepare("SELECT value FROM router_meta WHERE key = ?").get(IDENTITY_CHAT_BACKFILL_KEY) as
+    | { value: string }
+    | undefined;
+  if (existing?.value === "done") {
+    return;
+  }
+
+  backfillChatModel(database);
+  database
+    .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
+    .run(IDENTITY_CHAT_BACKFILL_KEY, "done", Date.now());
+}
+
+type ParsedBackfillParticipant = {
+  id: string | null;
+  platformUserId: string;
+  displayName: string | null;
+  role: string | null;
+};
+
+function parseParticipantsJson(raw: string | null): ParsedBackfillParticipant[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+        const record = item as Record<string, unknown>;
+        const platformUserId =
+          typeof record.platformUserId === "string"
+            ? record.platformUserId
+            : typeof record.userId === "string"
+              ? record.userId
+              : null;
+        if (!platformUserId) return null;
+        return {
+          id: typeof record.id === "string" ? record.id : null,
+          platformUserId,
+          displayName:
+            typeof record.displayName === "string"
+              ? record.displayName
+              : typeof record.name === "string"
+                ? record.name
+                : null,
+          role: typeof record.role === "string" ? record.role : null,
+        };
+      })
+      .filter((item): item is ParsedBackfillParticipant => item !== null);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeParticipantRole(role: string | null | undefined): ChatParticipantRole {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized === "admin" || normalized === "owner" || normalized === "member") return normalized;
+  return "unknown";
 }
 
 // ============================================================================
@@ -1323,9 +2432,22 @@ function getStatements(): PreparedStatements {
     touchMatrixAccount: database.prepare("UPDATE matrix_accounts SET last_used_at = ? WHERE username = ?"),
     // Message metadata
     upsertMessageMeta: database.prepare(`
-      INSERT INTO message_metadata (message_id, chat_id, transcription, media_path, media_type, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO message_metadata (
+        message_id, chat_id, canonical_chat_id, actor_type, contact_id, agent_id, platform_identity_id,
+        raw_sender_id, normalized_sender_id, identity_confidence, identity_provenance_json,
+        transcription, media_path, media_type, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(message_id) DO UPDATE SET
+        canonical_chat_id = COALESCE(excluded.canonical_chat_id, message_metadata.canonical_chat_id),
+        actor_type = COALESCE(excluded.actor_type, message_metadata.actor_type),
+        contact_id = COALESCE(excluded.contact_id, message_metadata.contact_id),
+        agent_id = COALESCE(excluded.agent_id, message_metadata.agent_id),
+        platform_identity_id = COALESCE(excluded.platform_identity_id, message_metadata.platform_identity_id),
+        raw_sender_id = COALESCE(excluded.raw_sender_id, message_metadata.raw_sender_id),
+        normalized_sender_id = COALESCE(excluded.normalized_sender_id, message_metadata.normalized_sender_id),
+        identity_confidence = COALESCE(excluded.identity_confidence, message_metadata.identity_confidence),
+        identity_provenance_json = COALESCE(excluded.identity_provenance_json, message_metadata.identity_provenance_json),
         transcription = COALESCE(excluded.transcription, message_metadata.transcription),
         media_path = COALESCE(excluded.media_path, message_metadata.media_path),
         media_type = COALESCE(excluded.media_type, message_metadata.media_type)
@@ -1596,6 +2718,81 @@ function rowToContext(row: ContextRow): ContextRecord {
   }
 
   return result;
+}
+
+export function dbUpsertChat(input: UpsertChatInput): ChatRecord {
+  return upsertChat(getDb(), input);
+}
+
+export function dbGetChat(id: string): ChatRecord | null {
+  const row = getDb().prepare("SELECT * FROM chats WHERE id = ?").get(id) as ChatRow | undefined;
+  return row ? rowToChat(row) : null;
+}
+
+export function dbFindChat(input: {
+  channel: string;
+  instanceId?: string | null;
+  platformChatId: string;
+  chatType?: ChatType;
+}): ChatRecord | null {
+  const channel = normalizeChannelId(input.channel);
+  const instanceId = input.instanceId?.trim() ?? "";
+  const normalizedChatId = normalizeChatIdentity(channel, input.platformChatId, input.chatType);
+  const row = getDb()
+    .prepare("SELECT * FROM chats WHERE channel = ? AND instance_id = ? AND normalized_chat_id = ?")
+    .get(channel, instanceId, normalizedChatId) as ChatRow | undefined;
+  return row ? rowToChat(row) : null;
+}
+
+export function dbUpsertChatParticipant(input: UpsertChatParticipantInput): ChatParticipantRecord {
+  return upsertChatParticipant(getDb(), input);
+}
+
+export function dbListChatParticipants(chatId: string): ChatParticipantRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM chat_participants WHERE chat_id = ? ORDER BY role, normalized_platform_user_id, id")
+    .all(chatId) as ChatParticipantRow[];
+  return rows.map(rowToChatParticipant);
+}
+
+export function dbBindSessionToChat(input: {
+  sessionKey: string;
+  chatId: string;
+  agentId?: string | null;
+  routeId?: number | null;
+  bindingReason?: string | null;
+  seenAt?: number;
+}): SessionChatBindingRecord {
+  return bindSessionToChat(getDb(), input);
+}
+
+export function dbGetSessionChatBinding(sessionKey: string): SessionChatBindingRecord | null {
+  const row = getDb().prepare("SELECT * FROM session_chat_bindings WHERE session_key = ?").get(sessionKey) as
+    | SessionChatBindingRow
+    | undefined;
+  return row ? rowToSessionChatBinding(row) : null;
+}
+
+export function dbListSessionChatBindings(chatId: string): SessionChatBindingRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM session_chat_bindings WHERE chat_id = ? ORDER BY updated_at DESC")
+    .all(chatId) as SessionChatBindingRow[];
+  return rows.map(rowToSessionChatBinding);
+}
+
+export function dbUpsertSessionParticipant(input: UpsertSessionParticipantInput): SessionParticipantRecord {
+  return upsertSessionParticipant(getDb(), input);
+}
+
+export function dbListSessionParticipants(sessionKey: string): SessionParticipantRecord[] {
+  const rows = getDb()
+    .prepare("SELECT * FROM session_participants WHERE session_key = ? ORDER BY last_seen_at DESC")
+    .all(sessionKey) as SessionParticipantRow[];
+  return rows.map(rowToSessionParticipant);
+}
+
+export function dbBackfillChatModel(): void {
+  backfillChatModel(getDb());
 }
 
 // ============================================================================
@@ -2458,6 +3655,15 @@ export function dbGetAgentMatrixAccount(agentId: string): MatrixAccount | null {
 export interface MessageMetadata {
   messageId: string;
   chatId: string;
+  canonicalChatId?: string;
+  actorType?: "contact" | "agent" | "system" | "unknown" | string;
+  contactId?: string;
+  agentId?: string;
+  platformIdentityId?: string;
+  rawSenderId?: string;
+  normalizedSenderId?: string;
+  identityConfidence?: number;
+  identityProvenance?: Record<string, unknown>;
   transcription?: string;
   mediaPath?: string;
   mediaType?: string;
@@ -2471,12 +3677,34 @@ export interface MessageMetadata {
 export function dbSaveMessageMeta(
   messageId: string,
   chatId: string,
-  opts: { transcription?: string; mediaPath?: string; mediaType?: string },
+  opts: {
+    canonicalChatId?: string;
+    actorType?: string;
+    contactId?: string;
+    agentId?: string;
+    platformIdentityId?: string;
+    rawSenderId?: string;
+    normalizedSenderId?: string;
+    identityConfidence?: number;
+    identityProvenance?: Record<string, unknown>;
+    transcription?: string;
+    mediaPath?: string;
+    mediaType?: string;
+  },
 ): void {
   const s = getStatements();
   s.upsertMessageMeta.run(
     messageId,
     chatId,
+    opts.canonicalChatId ?? null,
+    opts.actorType ?? null,
+    opts.contactId ?? null,
+    opts.agentId ?? null,
+    opts.platformIdentityId ?? null,
+    opts.rawSenderId ?? null,
+    opts.normalizedSenderId ?? null,
+    opts.identityConfidence ?? null,
+    cleanJsonRecord(opts.identityProvenance),
     opts.transcription ?? null,
     opts.mediaPath ?? null,
     opts.mediaType ?? null,
@@ -2492,6 +3720,15 @@ export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
   const row = s.getMessageMeta.get(messageId) as {
     message_id: string;
     chat_id: string;
+    canonical_chat_id: string | null;
+    actor_type: string | null;
+    contact_id: string | null;
+    agent_id: string | null;
+    platform_identity_id: string | null;
+    raw_sender_id: string | null;
+    normalized_sender_id: string | null;
+    identity_confidence: number | null;
+    identity_provenance_json: string | null;
     transcription: string | null;
     media_path: string | null;
     media_type: string | null;
@@ -2501,6 +3738,15 @@ export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
   return {
     messageId: row.message_id,
     chatId: row.chat_id,
+    canonicalChatId: row.canonical_chat_id ?? undefined,
+    actorType: row.actor_type ?? undefined,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    rawSenderId: row.raw_sender_id ?? undefined,
+    normalizedSenderId: row.normalized_sender_id ?? undefined,
+    identityConfidence: row.identity_confidence ?? undefined,
+    identityProvenance: parseJsonRecord(row.identity_provenance_json),
     transcription: row.transcription ?? undefined,
     mediaPath: row.media_path ?? undefined,
     mediaType: row.media_type ?? undefined,
@@ -2513,6 +3759,15 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
   const rows = s.listMessageMetaByChatId.all(chatId, limit) as Array<{
     message_id: string;
     chat_id: string;
+    canonical_chat_id: string | null;
+    actor_type: string | null;
+    contact_id: string | null;
+    agent_id: string | null;
+    platform_identity_id: string | null;
+    raw_sender_id: string | null;
+    normalized_sender_id: string | null;
+    identity_confidence: number | null;
+    identity_provenance_json: string | null;
     transcription: string | null;
     media_path: string | null;
     media_type: string | null;
@@ -2522,6 +3777,15 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
   return rows.reverse().map((row) => ({
     messageId: row.message_id,
     chatId: row.chat_id,
+    canonicalChatId: row.canonical_chat_id ?? undefined,
+    actorType: row.actor_type ?? undefined,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    rawSenderId: row.raw_sender_id ?? undefined,
+    normalizedSenderId: row.normalized_sender_id ?? undefined,
+    identityConfidence: row.identity_confidence ?? undefined,
+    identityProvenance: parseJsonRecord(row.identity_provenance_json),
     transcription: row.transcription ?? undefined,
     mediaPath: row.media_path ?? undefined,
     mediaType: row.media_type ?? undefined,

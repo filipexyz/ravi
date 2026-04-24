@@ -35,6 +35,15 @@ interface SessionEventRow {
   source_account_id: string | null;
   source_chat_id: string | null;
   source_thread_id: string | null;
+  canonical_chat_id: string | null;
+  actor_type: string | null;
+  contact_id: string | null;
+  actor_agent_id: string | null;
+  platform_identity_id: string | null;
+  raw_sender_id: string | null;
+  normalized_sender_id: string | null;
+  identity_confidence: number | null;
+  identity_provenance_json: string | null;
   message_id: string | null;
   provider: string | null;
   model: string | null;
@@ -304,6 +313,15 @@ function rowToSessionEvent(row: SessionEventRow): SessionEventRecord {
     sourceAccountId: row.source_account_id,
     sourceChatId: row.source_chat_id,
     sourceThreadId: row.source_thread_id,
+    canonicalChatId: row.canonical_chat_id,
+    actorType: row.actor_type,
+    contactId: row.contact_id,
+    actorAgentId: row.actor_agent_id,
+    platformIdentityId: row.platform_identity_id,
+    rawSenderId: row.raw_sender_id,
+    normalizedSenderId: row.normalized_sender_id,
+    identityConfidence: row.identity_confidence,
+    identityProvenance: parseJsonValue(row.identity_provenance_json),
     messageId: row.message_id,
     provider: row.provider,
     model: row.model,
@@ -366,6 +384,10 @@ export function recordSessionEvent(input: RecordSessionEventInput): SessionEvent
   const payload = hasOwn(input, "payloadJson") ? redactJson(input.payloadJson) : null;
   const preview = input.preview === undefined || input.preview === null ? null : redactText(input.preview).value;
   const error = input.error === undefined || input.error === null ? null : redactText(input.error).value;
+  const identityProvenance =
+    input.identityProvenance === undefined || input.identityProvenance === null
+      ? null
+      : redactJson(input.identityProvenance);
   const seq = input.seq ?? nextEventSeq(input);
   const timestamp = input.timestamp ?? now;
   const createdAt = input.createdAt ?? now;
@@ -376,8 +398,10 @@ export function recordSessionEvent(input: RecordSessionEventInput): SessionEvent
       INSERT INTO session_events (
         session_key, session_name, agent_id, run_id, turn_id, seq, event_type, event_group,
         status, timestamp, source_channel, source_account_id, source_chat_id, source_thread_id,
+        canonical_chat_id, actor_type, contact_id, actor_agent_id, platform_identity_id,
+        raw_sender_id, normalized_sender_id, identity_confidence, identity_provenance_json,
         message_id, provider, model, payload_json, preview, error, duration_ms, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     )
     .run(
@@ -395,6 +419,15 @@ export function recordSessionEvent(input: RecordSessionEventInput): SessionEvent
       nullableText(input.sourceAccountId),
       nullableText(input.sourceChatId),
       nullableText(input.sourceThreadId),
+      nullableText(input.canonicalChatId),
+      nullableText(input.actorType),
+      nullableText(input.contactId),
+      nullableText(input.actorAgentId),
+      nullableText(input.platformIdentityId),
+      nullableText(input.rawSenderId),
+      nullableText(input.normalizedSenderId),
+      input.identityConfidence ?? null,
+      identityProvenance ? stableStringifyJson(identityProvenance.value) : null,
       nullableText(input.messageId),
       nullableText(input.provider),
       nullableText(input.model),

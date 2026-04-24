@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { RuntimeSessionDispatcher, stashPromptForStartingSession } from "./session-dispatcher.js";
+import type { RuntimeUserMessage } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 
 function createDispatcher() {
@@ -133,6 +134,7 @@ describe("RuntimeSessionDispatcher debounce", () => {
       },
     };
     dispatcher.pendingStarts.push(pendingStart);
+    dispatcher.startingSessions.add("starting");
 
     dispatcher.shutdownAll();
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -140,7 +142,38 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(handlePromptImmediate).not.toHaveBeenCalled();
     expect(dispatcher.debounceStates.size).toBe(0);
     expect(dispatcher.pendingStarts).toHaveLength(0);
+    expect(dispatcher.startingSessions.size).toBe(0);
     expect(pendingStart.cancelled).toBe(true);
     expect(pendingResolved).toBe(true);
+  });
+
+  it("stashes prompts that arrive while a cold start is already in flight", () => {
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+
+    stashPromptForStartingSession(
+      "session",
+      {
+        prompt: "primeira",
+        deliveryBarrier: "after_tool",
+        taskBarrierTaskId: "task-1",
+      },
+      stashedMessages,
+    );
+    expect(stashedMessages.get("session")).toHaveLength(1);
+
+    const second = stashPromptForStartingSession(
+      "session",
+      {
+        prompt: "segunda",
+        deliveryBarrier: "after_response",
+      },
+      stashedMessages,
+    );
+
+    expect(second).toHaveLength(2);
+    expect(second.map((message) => message.message.content)).toEqual(["primeira", "segunda"]);
+    expect(second[0]?.deliveryBarrier).toBe("after_tool");
+    expect(second[0]?.taskBarrierTaskId).toBe("task-1");
+    expect(second[1]?.deliveryBarrier).toBe("after_response");
   });
 });

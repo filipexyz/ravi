@@ -23,6 +23,7 @@ type RouteRecord = {
 let routes: RouteRecord[] = [];
 let instanceNames = new Set<string>(["main"]);
 let contactStatuses = new Map<string, { status: string }>();
+let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
 let pendingEntries: Array<{
   accountId: string;
@@ -177,13 +178,21 @@ mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
   getContact: (pattern: string) => contactStatuses.get(pattern) ?? null,
   listAccountPending: (accountId?: string) =>
-    pendingEntries.filter((entry) => !accountId || entry.accountId === accountId),
+    pendingEntries
+      .filter((entry) => !accountId || entry.accountId === accountId)
+      .map((entry) => ({
+        ...entry,
+        pendingKind: entry.isGroup ? "chat" : "contact",
+        chatType: entry.isGroup ? "group" : "dm",
+      })),
   removeAccountPending: (accountId: string, phone: string) => {
     const before = pendingEntries.length;
     pendingEntries = pendingEntries.filter((entry) => !(entry.accountId === accountId && entry.phone === phone));
     return pendingEntries.length !== before;
   },
-  allowContact: () => {},
+  allowContact: (contact: string) => {
+    allowContactCalls.push(contact);
+  },
 }));
 
 mock.module("../../router/sessions.js", () => ({
@@ -228,6 +237,7 @@ describe("RoutesCommands", () => {
     routes = [];
     instanceNames = new Set(["main"]);
     contactStatuses = new Map();
+    allowContactCalls = [];
     liveWinner = null;
     pendingEntries = [];
   });
@@ -427,7 +437,35 @@ describe("RoutesCommands", () => {
     });
 
     expect(payload.total).toBe(1);
+    expect((payload.counts as Record<string, unknown>).chats).toBe(1);
+    expect((payload.counts as Record<string, unknown>).contacts).toBe(0);
     const pending = payload.pending as Array<Record<string, unknown>>;
+    const chats = payload.chats as Array<Record<string, unknown>>;
     expect(pending[0].type).toBe("group");
+    expect(chats[0].routePattern).toBe("group:123");
+  });
+
+  it("approves pending chats by creating a route without approving a contact", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "123@g.us",
+        name: "Launch",
+        chatId: "123@g.us",
+        isGroup: true,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesPendingCommands().approve("main", "123@g.us", "sales", true);
+    });
+
+    expect(payload.reviewKind).toBe("chat");
+    expect(payload.routePattern).toBe("group:123");
+    expect(payload.removedPending).toBe(true);
+    expect(allowContactCalls).toEqual([]);
+    expect(routes).toContainEqual(expect.objectContaining({ pattern: "group:123", agent: "sales" }));
   });
 });

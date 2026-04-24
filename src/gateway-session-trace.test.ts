@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { configStore } from "./config-store.js";
 import { Gateway, SILENT_TOKEN } from "./gateway.js";
-import { dbUpsertInstance } from "./router/router-db.js";
+import {
+  dbBindSessionToChat,
+  dbGetMessageMeta,
+  dbSaveMessageMeta,
+  dbUpsertChat,
+  dbUpsertInstance,
+} from "./router/router-db.js";
 import { getOrCreateSession, updateSessionName } from "./router/sessions.js";
 import { listSessionEvents } from "./session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
@@ -145,6 +151,48 @@ describe("Gateway session trace instrumentation", () => {
     expect(events[0]?.messageId).toBe("inbound-1");
     expect(events[1]?.messageId).toBe("inbound-1");
     expect(events[1]?.payloadJson).toMatchObject({ deliveryMessageId: "outbound-1", status: "delivered" });
+  });
+
+  it("enriches gateway traces from canonical chat binding and message actor metadata", async () => {
+    const { sessionKey, sessionName } = seedSession();
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "11111111-1111-1111-1111-111111111111",
+      platformChatId: "5511999999999@s.whatsapp.net",
+      chatType: "dm",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: "main",
+      bindingReason: "test_canonical_trace",
+    });
+    dbSaveMessageMeta("inbound-1", "5511999999999@s.whatsapp.net", {
+      canonicalChatId: chat.id,
+      actorType: "contact",
+      contactId: "contact_1",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      normalizedSenderId: "5511999999999",
+      identityProvenance: { source: "test" },
+    });
+    const gateway = makeGateway(mock(async () => ({ messageId: "outbound-1" })));
+
+    await handleResponse(gateway, sessionName, makeResponse());
+
+    const events = listSessionEvents(sessionKey);
+    expect(events.map((event) => event.eventType)).toEqual(["response.emitted", "delivery.delivered"]);
+    for (const event of events) {
+      expect(event.sourceChatId).toBe("5511999999999@s.whatsapp.net");
+      expect(event.canonicalChatId).toBe(chat.id);
+      expect(event.actorType).toBe("agent");
+      expect(event.actorAgentId).toBe("main");
+      expect(event.contactId).toBeNull();
+    }
+    expect(dbGetMessageMeta("outbound-1")).toMatchObject({
+      canonicalChatId: chat.id,
+      actorType: "agent",
+      agentId: "main",
+    });
   });
 
   it("renews active presence one second after a delivered non-final response", async () => {
@@ -454,6 +502,34 @@ describe("Gateway session trace instrumentation", () => {
 
     await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: target });
 
+    expect(renewActiveTarget).not.toHaveBeenCalled();
+    expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
+  });
+
+  it("treats turn.completed as terminal for presence lifecycle", async () => {
+    const { sessionName } = seedSession();
+    const sendTyping = mock(async () => {});
+    const renewActiveTarget = mock(async () => true);
+    const clearActiveTarget = mock(() => {});
+    const target = makeResponse().target!;
+    const gateway = makeGateway(
+      mock(async () => ({ messageId: "outbound-1" })),
+      {
+        sendTyping,
+        getActiveTarget: () => target,
+        renewActiveTarget,
+        clearActiveTarget,
+      },
+    );
+
+    await handleRuntimePresence(gateway, sessionName, { type: "assistant.message", _source: target });
+    await handleRuntimePresence(gateway, sessionName, { type: "turn.completed", _source: target });
+    renewActiveTarget.mockClear();
+    sendTyping.mockClear();
+
+    await handleRuntimePresence(gateway, sessionName, { type: "stream.chunk", _source: target });
+
+    expect(clearActiveTarget).toHaveBeenCalledTimes(1);
     expect(renewActiveTarget).not.toHaveBeenCalled();
     expect(sendTyping).not.toHaveBeenCalledWith(expect.any(String), expect.any(String), true);
   });

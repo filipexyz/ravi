@@ -1,4 +1,6 @@
 import type { AgentConfig, SessionEntry } from "../router/index.js";
+import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
+import { configStore } from "../config-store.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
@@ -54,6 +56,9 @@ export function resolveRuntimePromptSource(
   session: SessionEntry,
 ): RuntimeMessageTarget | undefined {
   let resolvedSource = prompt.source;
+  if (!resolvedSource) {
+    resolvedSource = resolveSourceFromSessionChatBinding(session);
+  }
   if (!resolvedSource && session.lastChannel && session.lastTo) {
     resolvedSource = {
       channel: session.lastChannel,
@@ -63,6 +68,31 @@ export function resolveRuntimePromptSource(
   }
 
   return resolvedSource?.channel === "tui" ? undefined : resolvedSource;
+}
+
+function splitCanonicalPlatformChat(platformChatId: string): { chatId: string; threadId?: string } {
+  const separator = platformChatId.indexOf("#");
+  if (separator === -1) return { chatId: platformChatId };
+  const chatId = platformChatId.slice(0, separator);
+  const threadId = platformChatId.slice(separator + 1);
+  return threadId ? { chatId, threadId } : { chatId };
+}
+
+function resolveSourceFromSessionChatBinding(session: SessionEntry): RuntimeMessageTarget | undefined {
+  const binding = dbGetSessionChatBinding(session.sessionKey);
+  if (!binding) return undefined;
+  const chat = dbGetChat(binding.chatId);
+  if (!chat) return undefined;
+  const accountId = configStore.resolveAccountName(chat.instanceId) ?? session.lastAccountId ?? chat.instanceId;
+  if (!accountId) return undefined;
+  const target = splitCanonicalPlatformChat(chat.platformChatId);
+  return {
+    channel: chat.channel,
+    accountId,
+    instanceId: chat.instanceId,
+    canonicalChatId: chat.id,
+    ...target,
+  };
 }
 
 export async function buildRuntimeStartRequest(

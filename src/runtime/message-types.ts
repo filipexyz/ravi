@@ -1,11 +1,25 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeEventMetadata } from "./types.js";
 
+export interface MessageActorMetadata {
+  /** Canonical chat id from the Ravi chat model. Raw chat ids remain in chatId as provenance. */
+  canonicalChatId?: string;
+  actorType?: "contact" | "agent" | "system" | "unknown" | (string & {});
+  contactId?: string;
+  actorAgentId?: string;
+  platformIdentityId?: string;
+  rawSenderId?: string;
+  normalizedSenderId?: string;
+  identityConfidence?: number;
+  identityProvenance?: Record<string, unknown>;
+}
+
 /** Message context for structured prompts */
-export interface MessageContext {
+export interface MessageContext extends MessageActorMetadata {
   channelId: string;
   channelName: string;
   accountId: string;
+  instanceId?: string;
   chatId: string;
   messageId: string;
   senderId: string;
@@ -32,9 +46,10 @@ export interface ChannelContext {
 }
 
 /** Message routing target */
-export interface MessageTarget {
+export interface MessageTarget extends MessageActorMetadata {
   channel: string;
   accountId: string;
+  instanceId?: string;
   chatId: string;
   /** Thread/topic ID for platforms that support it (Telegram topics, Slack threads, Discord threads) */
   threadId?: string;

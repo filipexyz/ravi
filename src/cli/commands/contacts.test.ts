@@ -12,6 +12,22 @@ let routeRecords: Array<{ pattern: string; agent: string }> = [];
 let allContacts: Array<Record<string, unknown>> = [];
 let pendingContacts: Array<Record<string, unknown>> = [];
 let accountPendingEntries: Array<Record<string, unknown>> = [];
+let mergeCall: { targetId: string; sourceId: string } | null = null;
+
+function findContactRecord(ref: string): Record<string, unknown> | null {
+  return (
+    contactRecord ??
+    allContacts.find(
+      (contact) =>
+        contact.id === ref ||
+        contact.phone === ref ||
+        ((contact.identities as Array<{ value?: string }> | undefined) ?? []).some(
+          (identity) => identity.value === ref,
+        ),
+    ) ??
+    null
+  );
+}
 
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
@@ -39,17 +55,63 @@ mock.module("../../nats.js", () => ({
 mock.module("../../contacts.js", () => ({
   ...actualContactsModule,
   getAllContacts: () => allContacts,
-  getContact: (ref: string) =>
-    contactRecord ??
-    allContacts.find(
-      (contact) =>
-        contact.id === ref ||
-        contact.phone === ref ||
-        ((contact.identities as Array<{ value?: string }> | undefined) ?? []).some(
-          (identity) => identity.value === ref,
-        ),
-    ) ??
-    null,
+  getContact: (ref: string) => findContactRecord(ref),
+  getContactDetails: (ref: string) => {
+    const contact = findContactRecord(ref);
+    if (!contact) return null;
+    return {
+      contact: {
+        id: contact.id,
+        kind: "person",
+        displayName: contact.name ?? null,
+        primaryPhone: contact.phone ?? null,
+        primaryEmail: contact.email ?? null,
+        avatarUrl: null,
+        metadata: { legacy: { sourceTable: "contacts_v2" } },
+        createdAt: contact.created_at,
+        updatedAt: contact.updated_at,
+      },
+      platformIdentities: [
+        {
+          id: "pi-phone",
+          ownerType: "contact",
+          ownerId: contact.id,
+          channel: "phone",
+          instanceId: "",
+          platformUserId: contact.phone,
+          normalizedPlatformUserId: contact.phone,
+          platformDisplayName: contact.name ?? null,
+          avatarUrl: null,
+          profileData: null,
+          isPrimary: true,
+          confidence: 1,
+          linkedBy: "initial",
+          linkReason: "legacy_backfill",
+          firstSeenAt: contact.created_at,
+          lastSeenAt: contact.updated_at,
+          createdAt: contact.created_at,
+          updatedAt: contact.updated_at,
+        },
+      ],
+      policy: {
+        contactId: contact.id,
+        status: contact.status,
+        replyMode: contact.reply_mode,
+        allowedAgents: contact.allowedAgents,
+        optOut: contact.opt_out,
+        tags: contact.tags,
+        notes: contact.notes,
+        source: contact.source,
+        lastInboundAt: contact.last_inbound_at,
+        lastOutboundAt: contact.last_outbound_at,
+        interactionCount: contact.interaction_count,
+        createdAt: contact.created_at,
+        updatedAt: contact.updated_at,
+      },
+      duplicateCandidates: [],
+      legacyContact: contact,
+    };
+  },
   getPendingContacts: () => pendingContacts,
   upsertContact: () => {},
   deleteContact: () => false,
@@ -66,11 +128,40 @@ mock.module("../../contacts.js", () => ({
   setOptOut: () => {},
   addContactIdentity: () => {},
   removeContactIdentity: () => {},
-  mergeContacts: () => ({}),
+  linkContactIdentity: () => {},
+  unlinkContactIdentity: () => null,
+  mergeContacts: (targetId: string, sourceId: string) => {
+    mergeCall = { targetId, sourceId };
+    return { merged: 2 };
+  },
+  setContactKind: () => {},
+  listDuplicateContacts: () => [],
   setGroupTag: () => {},
   removeGroupTag: () => {},
   listAccountPending: (account?: string) =>
-    accountPendingEntries.filter((entry) => !account || entry.accountId === account),
+    accountPendingEntries
+      .filter((entry) => !account || entry.accountId === account)
+      .map((entry) => ({
+        ...entry,
+        pendingKind: entry.isGroup ? "chat" : "contact",
+        chatType: entry.isGroup ? "group" : "dm",
+      })),
+  listAccountPendingContacts: (account?: string) =>
+    accountPendingEntries
+      .filter((entry) => (!account || entry.accountId === account) && !entry.isGroup)
+      .map((entry) => ({
+        ...entry,
+        pendingKind: "contact",
+        chatType: "dm",
+      })),
+  listAccountPendingChats: (account?: string) =>
+    accountPendingEntries
+      .filter((entry) => (!account || entry.accountId === account) && entry.isGroup)
+      .map((entry) => ({
+        ...entry,
+        pendingKind: "chat",
+        chatType: "group",
+      })),
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -142,6 +233,7 @@ describe("ContactsCommands info", () => {
     allContacts = [contactRecord];
     pendingContacts = [];
     accountPendingEntries = [];
+    mergeCall = null;
     sessionRecord = { name: "wa-support" };
     routeRecords = [{ pattern: "5511999999999", agent: "sales" }];
   });
@@ -165,8 +257,10 @@ describe("ContactsCommands info", () => {
     expect(payload.found).toBe(true);
     expect(payload.target).toBe("contact-1");
     expect((payload.contact as Record<string, unknown>).id).toBe("contact-1");
-    expect((payload.contact as Record<string, unknown>).routeAgent).toBe("sales");
-    expect((payload.contact as Record<string, unknown>).sessionName).toBe("wa-support");
+    expect((payload.legacyContact as Record<string, unknown>).id).toBe("contact-1");
+    expect(payload.routeAgent).toBe("sales");
+    expect(payload.sessionName).toBe("wa-support");
+    expect(payload.platformIdentities).toHaveLength(1);
   });
 
   it("prints contact lists with counts and enriched entities in --json mode", () => {
@@ -180,17 +274,26 @@ describe("ContactsCommands info", () => {
     expect(contacts[0].routeAgent).toBe("sales");
   });
 
-  it("prints global and account pending approvals in --json mode", () => {
+  it("splits pending contacts from pending chats in --json mode", () => {
     pendingContacts = [{ ...contactRecord!, status: "pending" }];
     accountPendingEntries = [
       {
         accountId: "main",
-        phone: "group:123",
-        name: "Launch Group",
-        chatId: "group:123",
-        isGroup: true,
+        phone: "5511888888888",
+        name: "Bob",
+        chatId: "5511888888888@s.whatsapp.net",
+        isGroup: false,
         createdAt: 1,
         updatedAt: 2,
+      },
+      {
+        accountId: "main",
+        phone: "group:123",
+        name: "Launch Group",
+        chatId: "123@g.us",
+        isGroup: true,
+        createdAt: 3,
+        updatedAt: 4,
       },
     ];
     contactRecord = null;
@@ -200,9 +303,48 @@ describe("ContactsCommands info", () => {
     });
 
     expect(payload.total).toBe(2);
+    expect(payload.totalContacts).toBe(2);
+    expect(payload.totalChats).toBe(1);
     expect(payload.pendingContacts).toHaveLength(1);
-    const accountPending = payload.accountPending as Array<Record<string, unknown>>;
-    expect(accountPending[0].type).toBe("group");
-    expect(accountPending[0].accountId).toBe("main");
+    expect(payload.accountPendingContacts).toHaveLength(1);
+    const pendingChats = payload.pendingChats as Array<Record<string, unknown>>;
+    expect(pendingChats[0].pendingKind).toBe("chat");
+    expect(pendingChats[0].type).toBe("group");
+  });
+
+  it("rejects group identities on contact approval", () => {
+    contactRecord = null;
+
+    expect(() => {
+      new ContactsCommands().approve("group:123");
+    }).toThrow("Groups/chats are not contacts");
+  });
+
+  it("merges contacts using source then target argument order", () => {
+    contactRecord = null;
+    allContacts = [
+      {
+        id: "source-contact",
+        phone: "5511111111111",
+        name: "Source",
+        status: "allowed",
+        identities: [{ platform: "phone", value: "5511111111111", isPrimary: true }],
+      },
+      {
+        id: "target-contact",
+        phone: "5522222222222",
+        name: "Target",
+        status: "allowed",
+        identities: [{ platform: "phone", value: "5522222222222", isPrimary: true }],
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new ContactsCommands().merge("source-contact", "target-contact", true);
+    });
+
+    expect(mergeCall).toEqual({ targetId: "target-contact", sourceId: "source-contact" });
+    expect(payload.source).toBe("source-contact");
+    expect(payload.target).toBe("target-contact");
   });
 });

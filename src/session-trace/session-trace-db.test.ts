@@ -102,6 +102,53 @@ describe("session trace db", () => {
     expect(listSessionEvents("agent:main:main")).toHaveLength(2);
   });
 
+  it("records canonical chat and actor metadata on session events", () => {
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      sourceChannel: "whatsapp",
+      sourceAccountId: "main",
+      sourceChatId: "5511999999999@s.whatsapp.net",
+      canonicalChatId: "chat_1",
+      actorType: "contact",
+      contactId: "contact_1",
+      platformIdentityId: "pi_1",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      normalizedSenderId: "5511999999999",
+      identityConfidence: 0.9,
+      identityProvenance: {
+        source: "test",
+        token: "secret-value",
+      },
+    });
+
+    expect(event.canonicalChatId).toBe("chat_1");
+    expect(event.actorType).toBe("contact");
+    expect(event.contactId).toBe("contact_1");
+    expect(event.platformIdentityId).toBe("pi_1");
+    expect(event.rawSenderId).toBe("5511999999999@s.whatsapp.net");
+    expect(event.normalizedSenderId).toBe("5511999999999");
+    expect(event.identityConfidence).toBe(0.9);
+    expect(event.identityProvenance).toEqual({
+      source: "test",
+      token: "[REDACTED]",
+    });
+  });
+
+  it("keeps absent identity provenance as null instead of stringifying undefined", () => {
+    const event = recordSessionEvent({
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      eventType: "runtime.start",
+      eventGroup: "runtime",
+      identityProvenance: undefined,
+    });
+
+    expect(event.identityProvenance).toBeNull();
+  });
+
   it("stores blobs content-addressed with INSERT OR IGNORE after redaction", () => {
     const first = recordSessionBlob({
       kind: "system_prompt",

@@ -268,7 +268,7 @@ When a message arrives, the agent is resolved in this order:
 When the same person exists as two separate contacts (e.g., one created from a phone number and another from a WhatsApp LID), you can merge them:
 
 ```bash
-ravi contacts merge <target-id> <source-id>
+ravi contacts merge <source-id> <target-id>
 ```
 
 This operation:
@@ -331,7 +331,7 @@ ravi contacts find lead --tag
 ```bash
 ravi contacts identity-add abc123 whatsapp_lid "lid:12345"
 ravi contacts identity-remove whatsapp_lid "lid:12345"
-ravi contacts merge <target-id> <source-id>
+ravi contacts merge <source-id> <target-id>
 ```
 
 ### Properties

@@ -17,6 +17,15 @@ interface SessionEventRow {
   source_account_id: string | null;
   source_chat_id: string | null;
   source_thread_id: string | null;
+  canonical_chat_id: string | null;
+  actor_type: string | null;
+  contact_id: string | null;
+  actor_agent_id: string | null;
+  platform_identity_id: string | null;
+  raw_sender_id: string | null;
+  normalized_sender_id: string | null;
+  identity_confidence: number | null;
+  identity_provenance_json: string | null;
   message_id: string | null;
   provider: string | null;
   model: string | null;
@@ -186,6 +195,15 @@ function rowToSessionEvent(row: SessionEventRow): SessionEventRecord {
     sourceAccountId: row.source_account_id,
     sourceChatId: row.source_chat_id,
     sourceThreadId: row.source_thread_id,
+    canonicalChatId: row.canonical_chat_id,
+    actorType: row.actor_type,
+    contactId: row.contact_id,
+    actorAgentId: row.actor_agent_id,
+    platformIdentityId: row.platform_identity_id,
+    rawSenderId: row.raw_sender_id,
+    normalizedSenderId: row.normalized_sender_id,
+    identityConfidence: row.identity_confidence,
+    identityProvenance: parseJsonValue(row.identity_provenance_json),
     messageId: row.message_id,
     provider: row.provider,
     model: row.model,

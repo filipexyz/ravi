@@ -19,11 +19,29 @@ const UNREGISTERED_COOLDOWN_MS = 5 * 60_000; // 5 min cooldown per instanceId
 const unregisteredCooldowns = new Map<string, number>();
 import { expandHome, resolveRoute } from "../router/index.js";
 import { configStore } from "../config-store.js";
-import { isContactAllowedForAgent, saveAccountPending, getContactName, getContact } from "../contacts.js";
-import { dbGetMessageMeta, dbSaveMessageMeta } from "../router/router-db.js";
-import { recordChannelMessageReceivedTrace, recordRouteResolvedTrace } from "../session-trace/channel-trace.js";
+import {
+  getContact,
+  getContactName,
+  isContactAllowedForAgent,
+  resolvePlatformIdentity,
+  saveAccountPending,
+  upsertAgentPlatformIdentity,
+} from "../contacts.js";
+import {
+  dbBindSessionToChat,
+  dbGetMessageMeta,
+  dbSaveMessageMeta,
+  dbUpsertChat,
+  dbUpsertChatParticipant,
+  dbUpsertSessionParticipant,
+} from "../router/router-db.js";
+import {
+  recordChannelMessageReceivedTrace,
+  recordRouteResolvedTrace,
+  type NormalizedSessionTraceSource,
+} from "../session-trace/channel-trace.js";
 import { logger } from "../utils/logger.js";
-import type { MessageContext, MessageTarget } from "../runtime/message-types.js";
+import type { MessageActorMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
@@ -33,6 +51,33 @@ import { readdir } from "node:fs/promises";
 
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
+
+function emitPendingReviewEvent(input: {
+  channel: string;
+  accountId: string;
+  senderId: string;
+  chatId: string;
+  isGroup: boolean;
+}): void {
+  const reviewKind = input.isGroup ? "chat" : "contact";
+  const payload = {
+    type: "account",
+    reviewKind,
+    channel: input.channel,
+    accountId: input.accountId,
+    senderId: input.senderId,
+    chatId: input.chatId,
+    isGroup: input.isGroup,
+  };
+  const topic = input.isGroup ? "ravi.chats.pending" : "ravi.contacts.pending";
+  nats.emit(topic, payload).catch((err) => log.warn("Failed to emit pending notification", { topic, error: err }));
+
+  if (input.isGroup) {
+    nats
+      .emit("ravi.contacts.pending", { ...payload, deprecated: true, replacementTopic: "ravi.chats.pending" })
+      .catch((err) => log.warn("Failed to emit legacy pending notification", { error: err }));
+  }
+}
 
 /** Durable consumer names */
 const MSG_CONSUMER = "ravi-messages";
@@ -498,6 +543,83 @@ export class OmniConsumer {
     // - Strip JID domain suffixes (@g.us, @s.whatsapp.net)
     const sessionChannel = channelType.replace(/-baileys$/, "");
     const sessionGroupId = isGroup ? chatJid.replace(/@.*$/, "") : undefined;
+    const canonicalChat = dbUpsertChat({
+      channel: sessionChannel,
+      instanceId,
+      platformChatId: threadId ? `${chatJid}#${threadId}` : chatJid,
+      chatType: threadId ? "thread" : isGroup ? "group" : isNonDmChannel ? "channel" : "dm",
+      title: rawPayloadString(rawPayload, "chatName") ?? null,
+      rawProvenance: {
+        source: "omni.message.received",
+        eventId: event.id,
+        subject,
+        accountId: effectiveAccountId,
+        instanceId,
+        chatId: chatJid,
+        threadId: threadId ?? null,
+      },
+      seenAt: msgTs,
+    });
+    const normalizedSenderId = resolvedSenderPhone || senderPhone;
+    const senderPlatformIdentity =
+      resolvePlatformIdentity({
+        channel: sessionChannel,
+        instanceId,
+        platformUserId: normalizedSenderId,
+      }) ??
+      (normalizedSenderId !== senderPhone
+        ? resolvePlatformIdentity({
+            channel: sessionChannel,
+            instanceId,
+            platformUserId: senderPhone,
+          })
+        : null);
+    const senderContact =
+      senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
+        ? getContact(senderPlatformIdentity.ownerId)
+        : (getContact(resolvedSenderPhone) ?? getContact(senderPhone));
+    const actorType = senderPlatformIdentity?.ownerType === "agent" ? "agent" : senderContact ? "contact" : "unknown";
+    const actorAgentId =
+      senderPlatformIdentity?.ownerType === "agent" ? (senderPlatformIdentity.ownerId ?? undefined) : undefined;
+    const sourceActorMetadata: MessageActorMetadata = {
+      canonicalChatId: canonicalChat.id,
+      actorType,
+      ...(actorAgentId ? { actorAgentId } : {}),
+      ...(actorType === "contact" && senderContact?.id ? { contactId: senderContact.id } : {}),
+      ...(senderPlatformIdentity?.id ? { platformIdentityId: senderPlatformIdentity.id } : {}),
+      rawSenderId: senderPhone,
+      normalizedSenderId,
+      ...(senderPlatformIdentity?.confidence ? { identityConfidence: senderPlatformIdentity.confidence } : {}),
+      identityProvenance: {
+        source: "omni.message.received",
+        eventId: event.id,
+        instanceId,
+        accountId: effectiveAccountId,
+        ...(senderPlatformIdentity?.id
+          ? {
+              platformIdentityId: senderPlatformIdentity.id,
+              ownerType: senderPlatformIdentity.ownerType,
+              ownerId: senderPlatformIdentity.ownerId,
+            }
+          : {}),
+      },
+    };
+    dbUpsertChatParticipant({
+      chatId: canonicalChat.id,
+      platformIdentityId: senderPlatformIdentity?.id ?? null,
+      contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
+      agentId: actorAgentId ?? null,
+      rawPlatformUserId: senderPhone,
+      normalizedPlatformUserId: normalizedSenderId,
+      role: actorType === "agent" ? "agent" : "member",
+      status: "active",
+      source: "inbound_message",
+      metadata: {
+        displayName: rawPayloadString(rawPayload, "pushName") ?? null,
+        resolvedSenderId: resolvedSenderPhone,
+      },
+      seenAt: msgTs,
+    });
 
     // Resolve route to get session key
     const resolved = resolveRoute(routerConfig, {
@@ -520,30 +642,61 @@ export class OmniConsumer {
         accountId: effectiveAccountId,
         channelType,
         routePhone,
+        canonicalChatId: canonicalChat.id,
+        reviewKind: isGroup ? "chat" : "contact",
         isNew,
       });
       if (isNew) {
-        nats
-          .emit("ravi.contacts.pending", {
-            type: "account",
-            channel: channelType,
-            accountId: effectiveAccountId,
-            senderId: senderPhone,
-            chatId: chatJid,
-            isGroup,
-          })
-          .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+        emitPendingReviewEvent({
+          channel: channelType,
+          accountId: effectiveAccountId,
+          senderId: senderPhone,
+          chatId: chatJid,
+          isGroup,
+        });
       }
       return;
     }
 
-    const traceSource = {
+    const traceSource: NormalizedSessionTraceSource = {
       channel: sessionChannel,
       accountId: effectiveAccountId,
+      instanceId,
       chatId: chatJid,
       threadId: threadId ?? null,
       messageId: payload.externalId ?? null,
+      canonicalChatId: sourceActorMetadata.canonicalChatId ?? null,
+      actorType: sourceActorMetadata.actorType ?? null,
+      contactId: sourceActorMetadata.contactId ?? null,
+      actorAgentId: sourceActorMetadata.actorAgentId ?? null,
+      platformIdentityId: sourceActorMetadata.platformIdentityId ?? null,
+      rawSenderId: sourceActorMetadata.rawSenderId ?? null,
+      normalizedSenderId: sourceActorMetadata.normalizedSenderId ?? null,
+      identityConfidence: sourceActorMetadata.identityConfidence ?? null,
+      identityProvenance: sourceActorMetadata.identityProvenance ?? null,
     };
+    const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
+    dbBindSessionToChat({
+      sessionKey: resolved.sessionKey,
+      chatId: canonicalChat.id,
+      agentId: resolved.agent.id,
+      routeId,
+      bindingReason: "inbound_route",
+      seenAt: msgTs,
+    });
+    dbUpsertSessionParticipant({
+      sessionKey: resolved.sessionKey,
+      ownerType: actorType === "agent" ? "agent" : senderContact ? "contact" : "unknown",
+      ownerId: actorType === "agent" ? (actorAgentId ?? null) : (senderContact?.id ?? null),
+      platformIdentityId: senderPlatformIdentity?.id ?? null,
+      role: actorType === "agent" ? "agent" : senderContact ? "human" : "unknown",
+      metadata: {
+        rawSenderId: senderPhone,
+        normalizedSenderId,
+        canonicalChatId: canonicalChat.id,
+      },
+      seenAt: msgTs,
+    });
 
     try {
       recordChannelMessageReceivedTrace({
@@ -562,6 +715,11 @@ export class OmniConsumer {
           isGroup,
           senderId: senderPhone,
           resolvedSenderPhone,
+          canonicalChatId: canonicalChat.id,
+          actorType,
+          contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
+          actorAgentId: actorAgentId ?? null,
+          platformIdentityId: senderPlatformIdentity?.id ?? null,
           chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },
@@ -639,19 +797,18 @@ export class OmniConsumer {
           log.info("Group not in allowlist, saved as pending", {
             chatJid,
             accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "chat",
             isNew,
           });
           if (isNew) {
-            nats
-              .emit("ravi.contacts.pending", {
-                type: "account",
-                channel: channelType,
-                accountId: effectiveAccountId,
-                senderId: senderPhone,
-                chatId: chatJid,
-                isGroup: true,
-              })
-              .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: true,
+            });
           }
           return;
         }
@@ -676,19 +833,18 @@ export class OmniConsumer {
           log.info("DM contact not approved (pairing policy), saved as pending", {
             senderPhone,
             accountId: effectiveAccountId,
+            canonicalChatId: canonicalChat.id,
+            reviewKind: "contact",
             isNew,
           });
           if (isNew) {
-            nats
-              .emit("ravi.contacts.pending", {
-                type: "account",
-                channel: channelType,
-                accountId: effectiveAccountId,
-                senderId: senderPhone,
-                chatId: chatJid,
-                isGroup: false,
-              })
-              .catch((err) => log.warn("Failed to emit pending notification", { error: err }));
+            emitPendingReviewEvent({
+              channel: channelType,
+              accountId: effectiveAccountId,
+              senderId: senderPhone,
+              chatId: chatJid,
+              isGroup: false,
+            });
           }
           return;
         }
@@ -736,11 +892,20 @@ export class OmniConsumer {
     const agentCwd = expandHome(agent.cwd);
     const mediaResult = await this.processMedia(payload, agentCwd);
 
-    if (payload.externalId && chatJid && (mediaResult?.transcript || mediaResult?.localPath)) {
+    if (payload.externalId && chatJid) {
       dbSaveMessageMeta(payload.externalId, chatJid, {
+        canonicalChatId: sourceActorMetadata.canonicalChatId,
+        actorType: sourceActorMetadata.actorType,
+        contactId: sourceActorMetadata.contactId,
+        agentId: sourceActorMetadata.actorAgentId,
+        platformIdentityId: sourceActorMetadata.platformIdentityId,
+        rawSenderId: sourceActorMetadata.rawSenderId,
+        normalizedSenderId: sourceActorMetadata.normalizedSenderId,
+        identityConfidence: sourceActorMetadata.identityConfidence,
+        identityProvenance: sourceActorMetadata.identityProvenance,
         transcription: mediaResult?.transcript,
         mediaPath: mediaResult?.localPath,
-        mediaType: payload.content.type,
+        mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
       });
     }
 
@@ -817,6 +982,7 @@ export class OmniConsumer {
             groupMembers,
             chatJid,
             event,
+            sourceActorMetadata,
           ),
         });
       } catch (err) {
@@ -846,9 +1012,11 @@ export class OmniConsumer {
     const source: MessageTarget = {
       channel: channelType,
       accountId: effectiveAccountId,
+      instanceId,
       chatId: chatJid,
       ...(threadId ? { threadId } : {}),
       ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
+      ...sourceActorMetadata,
     };
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
@@ -887,6 +1055,7 @@ export class OmniConsumer {
           groupMembers,
           chatJid,
           event,
+          sourceActorMetadata,
         ),
       });
     } catch (err) {
@@ -915,6 +1084,7 @@ export class OmniConsumer {
       log.debug("QR code relayed", { instanceId: payload.instanceId });
     } else if (eventType === "instance.connected") {
       const payload = event.payload as InstanceConnectedPayload;
+      this.registerAgentPlatformIdentity(payload);
       const relayTopic = `ravi.whatsapp.connected.${payload.instanceId}`;
       await nats.emit(relayTopic, {
         type: "connected",
@@ -927,6 +1097,43 @@ export class OmniConsumer {
         instanceId: payload.instanceId,
         channelType: payload.channelType,
         profileName: payload.profileName,
+      });
+    }
+  }
+
+  private registerAgentPlatformIdentity(payload: InstanceConnectedPayload): void {
+    const routerConfig = configStore.getConfig();
+    const accountId = routerConfig.instanceToAccount[payload.instanceId];
+    const agentId = accountId
+      ? (routerConfig.instances?.[accountId]?.agent ?? routerConfig.accountAgents?.[accountId])
+      : undefined;
+    if (!agentId || !payload.ownerIdentifier) return;
+
+    try {
+      upsertAgentPlatformIdentity({
+        agentId,
+        channel: payload.channelType,
+        instanceId: payload.instanceId,
+        platformUserId: payload.ownerIdentifier,
+        platformDisplayName: payload.profileName ?? null,
+        profileData: {
+          source: "omni.instance.connected",
+          instanceId: payload.instanceId,
+          channelType: payload.channelType,
+          accountId,
+          profileName: payload.profileName ?? null,
+          ownerIdentifier: payload.ownerIdentifier,
+        },
+        linkedBy: "auto",
+        linkReason: "omni_instance_connected",
+      });
+    } catch (error) {
+      log.warn("Failed to register agent platform identity", {
+        instanceId: payload.instanceId,
+        channelType: payload.channelType,
+        accountId,
+        agentId,
+        error,
       });
     }
   }
@@ -1344,6 +1551,7 @@ export class OmniConsumer {
     groupMembers: string[] | undefined,
     chatJid: string,
     event: OmniEvent,
+    actorMetadata?: MessageActorMetadata,
   ): MessageContext & { instanceId: string } {
     const groupId = isGroup ? stripJid(chatJid) : undefined;
 
@@ -1358,6 +1566,7 @@ export class OmniConsumer {
       senderName,
       senderPhone: resolvedSenderPhone,
       isGroup,
+      ...(actorMetadata ?? {}),
       ...(groupName ? { groupName } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),

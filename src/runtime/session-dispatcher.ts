@@ -68,6 +68,7 @@ export class RuntimeSessionDispatcher {
   readonly deferredAfterTaskStarts = new Map<string, RuntimeLaunchPrompt[]>();
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
+  readonly startingSessions = new Set<string>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -91,6 +92,11 @@ export class RuntimeSessionDispatcher {
     if (this.deferredAfterTaskStarts.size > 0) {
       log.info("Clearing deferred after-task starts", { count: this.deferredAfterTaskStarts.size });
       this.deferredAfterTaskStarts.clear();
+    }
+
+    if (this.startingSessions.size > 0) {
+      log.info("Clearing session cold starts", { count: this.startingSessions.size });
+      this.startingSessions.clear();
     }
 
     if (this.streamingSessions.size === 0) {
@@ -605,6 +611,39 @@ export class RuntimeSessionDispatcher {
       this.streamingSessions.delete(sessionName);
     }
 
+    if (!existing && this.startingSessions.has(sessionName)) {
+      log.info("Streaming: queueing during cold start", { sessionName });
+      if (sessionEntry) {
+        updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
+      }
+      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+        agentId: sessionEntry?.agentId ?? agent.id,
+        channel: prompt.source?.channel ?? prompt.context?.channelId,
+        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+      });
+      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      recordRuntimeTraceEvent({
+        sessionKey: sessionEntry?.sessionKey ?? sessionName,
+        sessionName,
+        agentId: agent.id,
+        provider: requestedProvider,
+        eventType: "dispatch.queued_busy",
+        eventGroup: "dispatch",
+        status: "queued",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        payloadJson: {
+          queueSize: queued.length,
+          reason: "cold_start_inflight",
+          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+          taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+        },
+      });
+      return;
+    }
+
     if (
       !existing &&
       getRuntimePromptDeliveryBarrier(prompt) === "after_task" &&
@@ -654,18 +693,23 @@ export class RuntimeSessionDispatcher {
   }
 
   async startStreamingSession(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
-    await startRuntimeSession({
-      sessionName,
-      prompt,
-      configModel: this.options.getConfigModel(),
-      instanceId: this.options.instanceId,
-      maxConcurrentSessions: this.options.maxConcurrentSessions,
-      streamingSessions: this.streamingSessions,
-      stashedMessages: this.stashedMessages,
-      pendingStarts: this.pendingStarts,
-      safeEmit: this.options.safeEmit,
-      drainPendingStarts: () => this.drainPendingStarts(),
-    });
+    this.startingSessions.add(sessionName);
+    try {
+      await startRuntimeSession({
+        sessionName,
+        prompt,
+        configModel: this.options.getConfigModel(),
+        instanceId: this.options.instanceId,
+        maxConcurrentSessions: this.options.maxConcurrentSessions,
+        streamingSessions: this.streamingSessions,
+        stashedMessages: this.stashedMessages,
+        pendingStarts: this.pendingStarts,
+        safeEmit: this.options.safeEmit,
+        drainPendingStarts: () => this.drainPendingStarts(),
+      });
+    } finally {
+      this.startingSessions.delete(sessionName);
+    }
   }
 
   drainPendingStarts(): void {
@@ -735,6 +779,17 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
 
 function getMessageTargetKey(target: RuntimeMessageTarget): string {
   return [target.channel, target.accountId, target.chatId, target.threadId ?? ""].join(":");
+}
+
+export function stashPromptForStartingSession(
+  sessionName: string,
+  prompt: RuntimeLaunchPrompt,
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): RuntimeUserMessage[] {
+  const queued = stashedMessages.get(sessionName) ?? [];
+  queued.push(createQueuedRuntimeUserMessage(prompt));
+  stashedMessages.set(sessionName, queued);
+  return queued;
 }
 
 function recordStreamingAbortTrace(

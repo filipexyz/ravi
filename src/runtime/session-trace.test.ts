@@ -40,6 +40,12 @@ const source: RuntimeMessageTarget = {
   channel: "whatsapp",
   accountId: "main",
   chatId: "5511999999999",
+  canonicalChatId: "chat_1",
+  actorType: "contact",
+  contactId: "contact_1",
+  rawSenderId: "5511999999999@s.whatsapp.net",
+  normalizedSenderId: "5511999999999",
+  identityProvenance: { source: "test" },
   sourceMessageId: "wamid-1",
 };
 
@@ -251,6 +257,14 @@ describe("runtime session trace instrumentation", () => {
     const events = listSessionEvents(SESSION_KEY);
     const adapterRequest = events.find((event) => event.eventType === "adapter.request");
     expect(adapterRequest?.messageId).toBe("wamid-1");
+    expect(adapterRequest).toMatchObject({
+      canonicalChatId: "chat_1",
+      actorType: "contact",
+      contactId: "contact_1",
+      rawSenderId: "5511999999999@s.whatsapp.net",
+      normalizedSenderId: "5511999999999",
+      identityProvenance: { source: "test" },
+    });
     expect(adapterRequest?.payloadJson).toMatchObject({
       run_id: "run-build-1",
       session_key: SESSION_KEY,
@@ -334,6 +348,12 @@ describe("runtime session trace instrumentation", () => {
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
     expect(turn?.inputTokens).toBe(10);
     expect(turn?.outputTokens).toBe(4);
+    expect(events[1]).toMatchObject({
+      eventType: "tool.start",
+      canonicalChatId: "chat_1",
+      actorType: "contact",
+      contactId: "contact_1",
+    });
     expect(streaming.currentTraceTurnId).toBeUndefined();
   });
 

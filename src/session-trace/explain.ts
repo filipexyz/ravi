@@ -172,6 +172,7 @@ export function explainSessionTrace(trace: SessionTraceQueryResult): SessionTrac
       const deliveryEmitId = getJsonString(candidate.payloadJson, ["emitId", "emit_id"]);
       if (emitId && deliveryEmitId) return emitId === deliveryEmitId;
       return (
+        (Boolean(response.canonicalChatId) && response.canonicalChatId === candidate.canonicalChatId) ||
         (Boolean(response.sourceChatId) && response.sourceChatId === candidate.sourceChatId) ||
         (Boolean(response.messageId) && response.messageId === candidate.messageId)
       );

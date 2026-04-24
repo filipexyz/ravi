@@ -731,6 +731,18 @@ function formatTraceSource(event: SessionEventRecord): string | null {
   return parts.length > 0 ? parts.join("/") : null;
 }
 
+function formatTraceCanonical(event: SessionEventRecord): string | null {
+  const parts = [
+    event.canonicalChatId ? `chat=${event.canonicalChatId}` : null,
+    event.actorType ? `actor=${event.actorType}` : null,
+    event.contactId ? `contact=${event.contactId}` : null,
+    event.actorAgentId ? `actorAgent=${event.actorAgentId}` : null,
+    event.platformIdentityId ? `platformIdentity=${event.platformIdentityId}` : null,
+    event.normalizedSenderId ? `sender=${event.normalizedSenderId}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
 function formatTraceWindow(trace: SessionTraceQueryResult): string {
   const since = trace.filters.since;
   const until = trace.filters.until;
@@ -813,6 +825,10 @@ function buildTraceEventDetailLines(
         .filter(Boolean)
         .join(" "),
     );
+  }
+  const canonical = formatTraceCanonical(event);
+  if (canonical) {
+    lines.push(canonical);
   }
 
   if (event.eventType === "adapter.request") {
@@ -977,11 +993,13 @@ export function printSessionTraceHuman(
   const model = firstTurn?.model ?? firstEvent?.model ?? "(unknown)";
   const cwd = firstTurn?.cwd ?? "(unknown)";
   const firstSource = trace.events.find((event) => formatTraceSource(event));
+  const firstCanonical = trace.events.find((event) => formatTraceCanonical(event));
 
   console.log(`\nSession trace: ${headerSession}`);
   console.log(`Agent: ${agent}`);
   console.log(`Runtime: provider=${provider} model=${model} cwd=${cwd}`);
   console.log(`Route: ${firstSource ? formatTraceSource(firstSource) : "(unknown)"}`);
+  if (firstCanonical) console.log(`Canonical: ${formatTraceCanonical(firstCanonical)}`);
   console.log(`Window: ${formatTraceWindow(trace)}`);
   console.log(`Rows: events=${trace.events.length} turns=${trace.turns.length}\n`);
 

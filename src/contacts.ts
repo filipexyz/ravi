@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { getRaviStateDir } from "./utils/paths.js";
 
 // Re-export normalize functions for backwards compatibility
@@ -44,6 +45,8 @@ function ensureDb(): Database {
   initializeSchema(database);
   migrateFromV1(database);
   ensureAllowedAgentsColumn(database);
+  initializeIdentitySchema(database);
+  backfillIdentityModel(database);
 
   db = database;
   dbPath = nextDbPath;
@@ -132,6 +135,10 @@ function migrateFromV1(database: Database): void {
 
   if (!oldTable) return;
 
+  const oldColumns = database.prepare("PRAGMA table_info(contacts)").all() as Array<{ name: string }>;
+  const looksLikeLegacyContacts = oldColumns.some((c) => c.name === "phone");
+  if (!looksLikeLegacyContacts) return;
+
   // Check if already migrated (contacts_legacy exists)
   const legacyTable = database
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='contacts_legacy'")
@@ -211,6 +218,425 @@ function ensureAllowedAgentsColumn(database: Database): void {
 }
 
 // ============================================================================
+// Identity graph schema: canonical contacts + platform identities
+// ============================================================================
+
+function initializeIdentitySchema(database: Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL DEFAULT 'person' CHECK(kind IN ('person', 'org')),
+      display_name TEXT,
+      primary_phone TEXT,
+      primary_email TEXT,
+      avatar_url TEXT,
+      metadata_json TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_identities (
+      id TEXT PRIMARY KEY,
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('contact', 'agent')),
+      owner_id TEXT,
+      channel TEXT NOT NULL,
+      instance_id TEXT NOT NULL DEFAULT '',
+      platform_user_id TEXT NOT NULL,
+      normalized_platform_user_id TEXT NOT NULL,
+      platform_display_name TEXT,
+      avatar_url TEXT,
+      profile_data_json TEXT,
+      is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0, 1)),
+      confidence REAL NOT NULL DEFAULT 1.0,
+      linked_by TEXT,
+      link_reason TEXT,
+      first_seen_at TEXT DEFAULT (datetime('now')),
+      last_seen_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_identities_unique
+      ON platform_identities(channel, instance_id, normalized_platform_user_id);
+    CREATE INDEX IF NOT EXISTS idx_platform_identities_owner
+      ON platform_identities(owner_type, owner_id);
+
+    CREATE TABLE IF NOT EXISTS contact_policies (
+      contact_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'allowed' CHECK(status IN ('allowed', 'pending', 'blocked', 'discovered')),
+      reply_mode TEXT NOT NULL DEFAULT 'auto' CHECK(reply_mode IN ('auto', 'mention')),
+      allowed_agents_json TEXT,
+      opt_out INTEGER NOT NULL DEFAULT 0 CHECK(opt_out IN (0, 1)),
+      tags_json TEXT,
+      notes_json TEXT,
+      source TEXT,
+      last_inbound_at TEXT,
+      last_outbound_at TEXT,
+      interaction_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS identity_link_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL CHECK(event_type IN ('link', 'unlink', 'merge', 'split', 'auto_link', 'candidate')),
+      source_owner_type TEXT,
+      source_owner_id TEXT,
+      target_owner_type TEXT,
+      target_owner_id TEXT,
+      platform_identity_id TEXT,
+      confidence REAL,
+      reason TEXT,
+      actor_type TEXT,
+      actor_id TEXT,
+      metadata_json TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_identity_link_events_identity
+      ON identity_link_events(platform_identity_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_identity_link_events_target
+      ON identity_link_events(target_owner_type, target_owner_id, created_at);
+  `);
+}
+
+function stableId(prefix: string, parts: Array<string | null | undefined>): string {
+  const hash = createHash("sha256")
+    .update(parts.map((part) => part ?? "").join("\x1f"))
+    .digest("hex")
+    .slice(0, 24);
+  return `${prefix}_${hash}`;
+}
+
+function parseJsonArray(value: string | null): unknown[] | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonValue(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function legacyIdentityIsGroup(platform: string, value: string): boolean {
+  return platform === "whatsapp_group" || normalizePhone(value).startsWith("group:");
+}
+
+function assertPersonOrOrgIdentity(value: string, operation: string): string {
+  const normalized = normalizePhone(value);
+  if (normalized.startsWith("group:")) {
+    throw new Error(`${operation} expects a person/org identity. Groups and chats belong to chat review.`);
+  }
+  return normalized;
+}
+
+function normalizeIdentityForChannel(channel: string, value: string): string {
+  const trimmed = value.trim();
+  if (channel === "phone" || channel === "whatsapp") return normalizePhone(trimmed);
+  if (channel === "email") return trimmed.toLowerCase();
+  return trimmed;
+}
+
+function normalizePlatformIdentityChannel(channel: string): string {
+  return channel
+    .trim()
+    .toLowerCase()
+    .replace(/-baileys$/, "");
+}
+
+function normalizeLegacyIdentityValue(platform: string, value: string): string {
+  if (platform === "email") return normalizeIdentityForChannel("email", value);
+  if (platform === "telegram" || platform === "matrix") return value.trim();
+  return normalizePhone(value);
+}
+
+function mapLegacyPlatform(platform: string, value: string): { channel: string; normalizedValue: string } | null {
+  if (legacyIdentityIsGroup(platform, value)) return null;
+
+  const channel =
+    platform === "phone"
+      ? "phone"
+      : platform === "whatsapp_lid"
+        ? "whatsapp"
+        : platform === "telegram"
+          ? "telegram"
+          : platform === "email"
+            ? "email"
+            : platform;
+
+  return {
+    channel,
+    normalizedValue: normalizeIdentityForChannel(channel, value),
+  };
+}
+
+function metadataJson(value: Record<string, unknown>): string {
+  return JSON.stringify(value);
+}
+
+function deleteContactProjection(database: Database, contactId: string): void {
+  database.prepare("DELETE FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?").run(contactId);
+  database.prepare("DELETE FROM contact_policies WHERE contact_id = ?").run(contactId);
+  database.prepare("DELETE FROM contacts WHERE id = ?").run(contactId);
+}
+
+function moveCanonicalPlatformIdentities(
+  database: Database,
+  sourceContactId: string,
+  targetContactId: string,
+): string[] {
+  const sourceRows = database
+    .prepare("SELECT * FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?")
+    .all(sourceContactId) as PlatformIdentityRow[];
+  const moved: string[] = [];
+
+  for (const row of sourceRows) {
+    const conflict = database
+      .prepare(
+        `
+        SELECT id FROM platform_identities
+        WHERE owner_type = 'contact'
+          AND owner_id = ?
+          AND channel = ?
+          AND instance_id = ?
+          AND normalized_platform_user_id = ?
+      `,
+      )
+      .get(targetContactId, row.channel, row.instance_id, row.normalized_platform_user_id) as
+      | { id: string }
+      | undefined;
+
+    if (conflict) {
+      database.prepare("DELETE FROM platform_identities WHERE id = ?").run(row.id);
+      continue;
+    }
+
+    database
+      .prepare("UPDATE platform_identities SET owner_id = ?, updated_at = datetime('now') WHERE id = ?")
+      .run(targetContactId, row.id);
+    moved.push(row.id);
+  }
+
+  return moved;
+}
+
+function syncContactProjection(database: Database, contactId: string): void {
+  const row = database.prepare("SELECT * FROM contacts_v2 WHERE id = ?").get(contactId) as ContactV2Row | undefined;
+  if (!row) {
+    deleteContactProjection(database, contactId);
+    return;
+  }
+
+  const identities = database
+    .prepare("SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at")
+    .all(contactId) as IdentityRow[];
+  const nonGroupIdentities = identities.filter(
+    (identity) => !legacyIdentityIsGroup(identity.platform, identity.identity_value),
+  );
+  const mappedIdentities = nonGroupIdentities
+    .map((identity) => ({ identity, mapped: mapLegacyPlatform(identity.platform, identity.identity_value) }))
+    .filter((entry): entry is { identity: IdentityRow; mapped: { channel: string; normalizedValue: string } } =>
+      Boolean(entry.mapped),
+    );
+
+  // Legacy group-only contacts remain in contacts_v2 for compatibility until
+  // chat/routing flows no longer need group-as-contact. They are intentionally
+  // not projected into canonical contacts.
+  if (nonGroupIdentities.length === 0 && identities.length > 0) {
+    deleteContactProjection(database, contactId);
+    return;
+  }
+
+  const primaryPhone =
+    mappedIdentities.find((entry) => entry.mapped.channel === "phone")?.mapped.normalizedValue ?? null;
+  const legacyNotes = parseJsonObject(row.notes);
+  const legacyTags = parseJsonArray(row.tags);
+  const metadata = {
+    legacy: {
+      sourceTable: "contacts_v2",
+      legacyIdentityPlatforms: identities.map((identity) => identity.platform),
+      groupOnlyCompatibility: identities.length > 0 && nonGroupIdentities.length === 0,
+    },
+  };
+
+  database
+    .prepare(
+      `
+      INSERT INTO contacts (
+        id, kind, display_name, primary_phone, primary_email, avatar_url, metadata_json, created_at, updated_at
+      )
+      VALUES (?, 'person', ?, ?, ?, NULL, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      ON CONFLICT(id) DO UPDATE SET
+        display_name = excluded.display_name,
+        primary_phone = excluded.primary_phone,
+        primary_email = excluded.primary_email,
+        metadata_json = excluded.metadata_json,
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(row.id, row.name, primaryPhone, row.email, metadataJson(metadata), row.created_at, row.updated_at);
+
+  database
+    .prepare(
+      `
+      INSERT INTO contact_policies (
+        contact_id, status, reply_mode, allowed_agents_json, opt_out, tags_json, notes_json,
+        source, last_inbound_at, last_outbound_at, interaction_count, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')))
+      ON CONFLICT(contact_id) DO UPDATE SET
+        status = excluded.status,
+        reply_mode = excluded.reply_mode,
+        allowed_agents_json = excluded.allowed_agents_json,
+        opt_out = excluded.opt_out,
+        tags_json = excluded.tags_json,
+        notes_json = excluded.notes_json,
+        source = excluded.source,
+        last_inbound_at = excluded.last_inbound_at,
+        last_outbound_at = excluded.last_outbound_at,
+        interaction_count = excluded.interaction_count,
+        updated_at = excluded.updated_at
+    `,
+    )
+    .run(
+      row.id,
+      row.status ?? "allowed",
+      row.reply_mode ?? "auto",
+      row.allowed_agents,
+      row.opt_out ?? 0,
+      legacyTags ? JSON.stringify(legacyTags) : row.tags,
+      legacyNotes ? JSON.stringify(legacyNotes) : row.notes,
+      row.source,
+      row.last_inbound_at,
+      row.last_outbound_at,
+      row.interaction_count ?? 0,
+      row.created_at,
+      row.updated_at,
+    );
+
+  const projectedIdentityKeys = new Set(
+    mappedIdentities.map((entry) => `${entry.mapped.channel}\x1f\x1f${entry.mapped.normalizedValue}`),
+  );
+  const existingCanonicalIdentities = database
+    .prepare(
+      "SELECT id, channel, instance_id, normalized_platform_user_id, linked_by, link_reason FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?",
+    )
+    .all(row.id) as Array<{
+    id: string;
+    channel: string;
+    instance_id: string;
+    normalized_platform_user_id: string;
+    linked_by: string | null;
+    link_reason: string | null;
+  }>;
+  for (const existing of existingCanonicalIdentities) {
+    const key = `${existing.channel}\x1f${existing.instance_id ?? ""}\x1f${existing.normalized_platform_user_id}`;
+    const projectionManaged = existing.linked_by === "initial" && existing.link_reason === "legacy_backfill";
+    if (!projectedIdentityKeys.has(key) && projectionManaged) {
+      database.prepare("DELETE FROM platform_identities WHERE id = ?").run(existing.id);
+    }
+  }
+
+  for (const { identity, mapped } of mappedIdentities) {
+    const platformIdentityId = stableId("pi", ["", mapped.channel, mapped.normalizedValue]);
+    const existing = findPlatformIdentityByChannelRef(database, {
+      channel: mapped.channel,
+      instanceId: "",
+      platformUserId: mapped.normalizedValue,
+    });
+    if (platformIdentityOwnershipConflict(existing, "contact", row.id)) {
+      continue;
+    }
+
+    database
+      .prepare(
+        `
+        INSERT INTO platform_identities (
+          id, owner_type, owner_id, channel, instance_id, platform_user_id, normalized_platform_user_id,
+          platform_display_name, profile_data_json, is_primary, confidence, linked_by, link_reason,
+          first_seen_at, last_seen_at, created_at, updated_at
+        )
+        VALUES (?, 'contact', ?, ?, '', ?, ?, ?, ?, ?, 1.0, 'initial', 'legacy_backfill', ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')), datetime('now'))
+        ON CONFLICT(channel, instance_id, normalized_platform_user_id) DO UPDATE SET
+          owner_type = excluded.owner_type,
+          owner_id = excluded.owner_id,
+          platform_user_id = excluded.platform_user_id,
+          platform_display_name = COALESCE(excluded.platform_display_name, platform_identities.platform_display_name),
+          profile_data_json = excluded.profile_data_json,
+          is_primary = MAX(platform_identities.is_primary, excluded.is_primary),
+          last_seen_at = excluded.last_seen_at,
+          updated_at = datetime('now')
+        WHERE platform_identities.owner_type IS NULL
+           OR (platform_identities.owner_type = 'contact' AND platform_identities.owner_id = excluded.owner_id)
+      `,
+      )
+      .run(
+        platformIdentityId,
+        row.id,
+        mapped.channel,
+        identity.identity_value,
+        mapped.normalizedValue,
+        row.name,
+        metadataJson({ legacyPlatform: identity.platform }),
+        identity.is_primary,
+        identity.created_at,
+        identity.created_at,
+        identity.created_at,
+      );
+
+    database
+      .prepare(
+        `
+        INSERT OR IGNORE INTO identity_link_events (
+          id, event_type, target_owner_type, target_owner_id, platform_identity_id,
+          confidence, reason, actor_type, metadata_json
+        )
+        VALUES (?, 'link', 'contact', ?, ?, 1.0, 'legacy_backfill', 'system', ?)
+      `,
+      )
+      .run(
+        stableId("ile", ["link", row.id, platformIdentityId, "legacy_backfill"]),
+        row.id,
+        platformIdentityId,
+        metadataJson({ sourceTable: "contact_identities", legacyPlatform: identity.platform }),
+      );
+  }
+}
+
+function backfillIdentityModel(database: Database): void {
+  const contactRows = database.prepare("SELECT id FROM contacts_v2").all() as Array<{ id: string }>;
+  const txn = database.transaction(() => {
+    for (const row of contactRows) {
+      syncContactProjection(database, row.id);
+    }
+  });
+  txn();
+}
+
+// ============================================================================
 // ID Generation
 // ============================================================================
 
@@ -231,6 +657,69 @@ export interface ContactIdentity {
   value: string;
   isPrimary: boolean;
   createdAt: string;
+}
+
+export interface CanonicalContact {
+  id: string;
+  kind: "person" | "org";
+  displayName: string | null;
+  primaryPhone: string | null;
+  primaryEmail: string | null;
+  avatarUrl: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PlatformIdentity {
+  id: string;
+  ownerType: "contact" | "agent" | null;
+  ownerId: string | null;
+  channel: string;
+  instanceId: string;
+  platformUserId: string;
+  normalizedPlatformUserId: string;
+  platformDisplayName: string | null;
+  avatarUrl: string | null;
+  profileData: unknown;
+  isPrimary: boolean;
+  confidence: number;
+  linkedBy: string | null;
+  linkReason: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactPolicy {
+  contactId: string;
+  status: ContactStatus;
+  replyMode: ReplyMode;
+  allowedAgents: string[] | null;
+  optOut: boolean;
+  tags: string[];
+  notes: Record<string, unknown>;
+  source: ContactSource | null;
+  lastInboundAt: string | null;
+  lastOutboundAt: string | null;
+  interactionCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DuplicateCandidate {
+  contact: CanonicalContact;
+  reasons: string[];
+  confidence: "high" | "medium" | "low";
+}
+
+export interface ContactDetails {
+  contact: CanonicalContact;
+  platformIdentities: PlatformIdentity[];
+  policy: ContactPolicy | null;
+  duplicateCandidates: DuplicateCandidate[];
+  legacyContact: Contact | null;
 }
 
 export interface Contact {
@@ -280,6 +769,55 @@ interface IdentityRow {
   identity_value: string;
   is_primary: number;
   created_at: string;
+}
+
+interface CanonicalContactRow {
+  id: string;
+  kind: "person" | "org";
+  display_name: string | null;
+  primary_phone: string | null;
+  primary_email: string | null;
+  avatar_url: string | null;
+  metadata_json: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface PlatformIdentityRow {
+  id: string;
+  owner_type: "contact" | "agent" | null;
+  owner_id: string | null;
+  channel: string;
+  instance_id: string;
+  platform_user_id: string;
+  normalized_platform_user_id: string;
+  platform_display_name: string | null;
+  avatar_url: string | null;
+  profile_data_json: string | null;
+  is_primary: number;
+  confidence: number;
+  linked_by: string | null;
+  link_reason: string | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ContactPolicyRow {
+  contact_id: string;
+  status: string;
+  reply_mode: string;
+  allowed_agents_json: string | null;
+  opt_out: number;
+  tags_json: string | null;
+  notes_json: string | null;
+  source: string | null;
+  last_inbound_at: string | null;
+  last_outbound_at: string | null;
+  interaction_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // ============================================================================
@@ -381,6 +919,413 @@ function rowToContact(row: ContactV2Row): Contact {
   };
 }
 
+function rowToCanonicalContact(row: CanonicalContactRow): CanonicalContact {
+  return {
+    id: row.id,
+    kind: row.kind,
+    displayName: row.display_name,
+    primaryPhone: row.primary_phone,
+    primaryEmail: row.primary_email,
+    avatarUrl: row.avatar_url,
+    metadata: parseJsonObject(row.metadata_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToPlatformIdentity(row: PlatformIdentityRow): PlatformIdentity {
+  return {
+    id: row.id,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    channel: row.channel,
+    instanceId: row.instance_id,
+    platformUserId: row.platform_user_id,
+    normalizedPlatformUserId: row.normalized_platform_user_id,
+    platformDisplayName: row.platform_display_name,
+    avatarUrl: row.avatar_url,
+    profileData: parseJsonValue(row.profile_data_json),
+    isPrimary: row.is_primary === 1,
+    confidence: row.confidence,
+    linkedBy: row.linked_by,
+    linkReason: row.link_reason,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToContactPolicy(row: ContactPolicyRow): ContactPolicy {
+  return {
+    contactId: row.contact_id,
+    status: (row.status ?? "allowed") as ContactStatus,
+    replyMode: (row.reply_mode ?? "auto") as ReplyMode,
+    allowedAgents: parseJsonArray(row.allowed_agents_json) as string[] | null,
+    optOut: row.opt_out === 1,
+    tags: (parseJsonArray(row.tags_json) as string[] | null) ?? [],
+    notes: parseJsonObject(row.notes_json) ?? {},
+    source: (row.source as ContactSource) ?? null,
+    lastInboundAt: row.last_inbound_at,
+    lastOutboundAt: row.last_outbound_at,
+    interactionCount: row.interaction_count ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function getCanonicalContactById(database: Database, contactId: string): CanonicalContact | null {
+  const row = database.prepare("SELECT * FROM contacts WHERE id = ?").get(contactId) as CanonicalContactRow | undefined;
+  return row ? rowToCanonicalContact(row) : null;
+}
+
+function getPlatformIdentitiesForOwner(database: Database, ownerId: string): PlatformIdentity[] {
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE owner_type = 'contact' AND owner_id = ?
+      ORDER BY is_primary DESC, channel, normalized_platform_user_id
+    `,
+    )
+    .all(ownerId) as PlatformIdentityRow[];
+  return rows.map(rowToPlatformIdentity);
+}
+
+function getContactPolicyById(database: Database, contactId: string): ContactPolicy | null {
+  const row = database.prepare("SELECT * FROM contact_policies WHERE contact_id = ?").get(contactId) as
+    | ContactPolicyRow
+    | undefined;
+  return row ? rowToContactPolicy(row) : null;
+}
+
+function getContactDetailsByCanonicalId(database: Database, contactId: string): ContactDetails | null {
+  const contact = getCanonicalContactById(database, contactId);
+  if (!contact) return null;
+
+  return {
+    contact,
+    platformIdentities: getPlatformIdentitiesForOwner(database, contact.id),
+    policy: getContactPolicyById(database, contact.id),
+    duplicateCandidates: getContactDuplicateCandidates(contact.id),
+    legacyContact: getContactById(contact.id),
+  };
+}
+
+function findPlatformIdentityByRef(database: Database, platformIdentityRef: string): PlatformIdentityRow | null {
+  const normalized = normalizePhone(platformIdentityRef);
+  const emailNormalized = platformIdentityRef.trim().toLowerCase();
+  const row = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE id = ?
+         OR normalized_platform_user_id = ? COLLATE NOCASE
+         OR normalized_platform_user_id = ? COLLATE NOCASE
+         OR platform_user_id = ? COLLATE NOCASE
+      LIMIT 1
+    `,
+    )
+    .get(platformIdentityRef, normalized, emailNormalized, platformIdentityRef) as PlatformIdentityRow | undefined;
+  return row ?? null;
+}
+
+function canonicalRows(database: Database): CanonicalContact[] {
+  return (database.prepare("SELECT * FROM contacts ORDER BY display_name, id").all() as CanonicalContactRow[]).map(
+    rowToCanonicalContact,
+  );
+}
+
+function normalizeIdentityComparisonValue(identity: PlatformIdentity): string | null {
+  if (identity.channel === "email") return identity.normalizedPlatformUserId.toLowerCase();
+  if (identity.channel === "phone" || /^\d+$/.test(identity.normalizedPlatformUserId)) {
+    return normalizePhone(identity.normalizedPlatformUserId);
+  }
+  return null;
+}
+
+function duplicateReasonsForContact(
+  subject: CanonicalContact,
+  subjectIdentities: PlatformIdentity[],
+  candidate: CanonicalContact,
+  candidateIdentities: PlatformIdentity[],
+): string[] {
+  const reasons: string[] = [];
+  if (subject.primaryPhone && candidate.primaryPhone && subject.primaryPhone === candidate.primaryPhone) {
+    reasons.push("same primary phone");
+  }
+  if (
+    subject.primaryEmail &&
+    candidate.primaryEmail &&
+    subject.primaryEmail.toLowerCase() === candidate.primaryEmail.toLowerCase()
+  ) {
+    reasons.push("same primary email");
+  }
+
+  const subjectComparable = new Set(subjectIdentities.map(normalizeIdentityComparisonValue).filter(Boolean));
+  for (const identity of candidateIdentities) {
+    const comparable = normalizeIdentityComparisonValue(identity);
+    if (comparable && subjectComparable.has(comparable)) {
+      reasons.push(`same normalized ${identity.channel} identity`);
+      break;
+    }
+  }
+  return [...new Set(reasons)];
+}
+
+export function getContactDuplicateCandidates(contactId: string): DuplicateCandidate[] {
+  const database = ensureDb();
+  const subject = getCanonicalContactById(database, contactId);
+  if (!subject) return [];
+
+  const subjectIdentities = getPlatformIdentitiesForOwner(database, contactId);
+  return canonicalRows(database)
+    .filter((candidate) => candidate.id !== contactId)
+    .map<DuplicateCandidate | null>((candidate) => {
+      const reasons = duplicateReasonsForContact(
+        subject,
+        subjectIdentities,
+        candidate,
+        getPlatformIdentitiesForOwner(database, candidate.id),
+      );
+      if (reasons.length === 0) return null;
+      return { contact: candidate, reasons, confidence: "high" };
+    })
+    .filter((candidate): candidate is DuplicateCandidate => candidate !== null);
+}
+
+export function listDuplicateContacts(): Array<{
+  contact: CanonicalContact;
+  duplicateCandidates: DuplicateCandidate[];
+}> {
+  const database = ensureDb();
+  return canonicalRows(database)
+    .map((contact) => ({ contact, duplicateCandidates: getContactDuplicateCandidates(contact.id) }))
+    .filter((entry) => entry.duplicateCandidates.length > 0);
+}
+
+export function getContactDetails(contactRef: string): ContactDetails | null {
+  const database = ensureDb();
+  const legacyContact = resolveContact(contactRef);
+  if (legacyContact) {
+    syncContactProjection(database, legacyContact.id);
+    return getContactDetailsByCanonicalId(database, legacyContact.id);
+  }
+
+  const canonicalById = getContactDetailsByCanonicalId(database, contactRef);
+  if (canonicalById) return canonicalById;
+
+  const identity = findPlatformIdentityByRef(database, contactRef);
+  if (identity?.owner_type === "contact" && identity.owner_id) {
+    return getContactDetailsByCanonicalId(database, identity.owner_id);
+  }
+
+  return null;
+}
+
+function findPlatformIdentityByChannelRef(
+  database: Database,
+  input: { channel: string; instanceId?: string | null; platformUserId: string },
+): PlatformIdentityRow | null {
+  const channel = normalizePlatformIdentityChannel(input.channel);
+  const instanceId = input.instanceId?.trim() ?? "";
+  const normalized = normalizeIdentityForChannel(channel, input.platformUserId);
+  const row = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE channel = ? AND instance_id = ? AND normalized_platform_user_id = ?
+      LIMIT 1
+    `,
+    )
+    .get(channel, instanceId, normalized) as PlatformIdentityRow | undefined;
+  return row ?? null;
+}
+
+function platformIdentityOwnershipConflict(
+  existing: PlatformIdentityRow | null,
+  ownerType: "contact" | "agent",
+  ownerId: string,
+): string | null {
+  if (!existing?.owner_type) return null;
+  if (existing.owner_type === ownerType && existing.owner_id === ownerId) return null;
+  return `Platform identity ${existing.id} is owned by ${existing.owner_type} ${existing.owner_id}`;
+}
+
+function assertPlatformIdentityCanBeOwnedBy(
+  existing: PlatformIdentityRow | null,
+  ownerType: "contact" | "agent",
+  ownerId: string,
+): void {
+  const conflict = platformIdentityOwnershipConflict(existing, ownerType, ownerId);
+  if (conflict) throw new Error(conflict);
+}
+
+export function resolvePlatformIdentity(input: {
+  channel: string;
+  instanceId?: string | null;
+  platformUserId: string;
+}): PlatformIdentity | null {
+  const row = findPlatformIdentityByChannelRef(ensureDb(), input);
+  return row ? rowToPlatformIdentity(row) : null;
+}
+
+export function getAgentPlatformIdentity(input: {
+  agentId: string;
+  channel?: string | null;
+  instanceId?: string | null;
+}): PlatformIdentity | null {
+  const database = ensureDb();
+  const clauses = ["owner_type = 'agent'", "owner_id = ?"];
+  const values: string[] = [input.agentId];
+  if (input.channel) {
+    clauses.push("channel = ?");
+    values.push(normalizePlatformIdentityChannel(input.channel));
+  }
+  if (input.instanceId !== undefined) {
+    clauses.push("instance_id = ?");
+    values.push(input.instanceId?.trim() ?? "");
+  }
+
+  const row = database
+    .prepare(
+      `
+      SELECT * FROM platform_identities
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY is_primary DESC, updated_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(...values) as PlatformIdentityRow | undefined;
+  return row ? rowToPlatformIdentity(row) : null;
+}
+
+export function upsertAgentPlatformIdentity(input: {
+  agentId: string;
+  channel: string;
+  instanceId?: string | null;
+  platformUserId: string;
+  platformDisplayName?: string | null;
+  avatarUrl?: string | null;
+  profileData?: unknown;
+  isPrimary?: boolean;
+  confidence?: number;
+  linkedBy?: string | null;
+  linkReason?: string | null;
+}): PlatformIdentity {
+  const database = ensureDb();
+  const agentId = input.agentId.trim();
+  if (!agentId) throw new Error("Agent id is required");
+  const channel = normalizePlatformIdentityChannel(input.channel);
+  if (!channel) throw new Error("Channel is required");
+  const instanceId = input.instanceId?.trim() ?? "";
+  const rawPlatformUserId = input.platformUserId.trim();
+  if (!rawPlatformUserId) throw new Error("Platform user id is required");
+  const normalizedPlatformUserId = normalizeIdentityForChannel(channel, rawPlatformUserId);
+  if (!normalizedPlatformUserId) throw new Error("Normalized platform user id is required");
+
+  const existing = findPlatformIdentityByChannelRef(database, {
+    channel,
+    instanceId,
+    platformUserId: rawPlatformUserId,
+  });
+  if (existing?.owner_type === "contact") {
+    throw new Error(`Platform identity ${existing.id} is owned by contact ${existing.owner_id}`);
+  }
+  if (existing?.owner_type === "agent" && existing.owner_id !== agentId) {
+    throw new Error(`Platform identity ${existing.id} is owned by agent ${existing.owner_id}`);
+  }
+
+  const platformIdentityId = stableId("pi", [instanceId, channel, normalizedPlatformUserId]);
+  const profileDataJson =
+    input.profileData === undefined
+      ? metadataJson({ source: "agent_platform_identity", rawPlatformUserId, instanceId })
+      : JSON.stringify(input.profileData);
+  const confidence = input.confidence ?? 1.0;
+  const linkedBy = input.linkedBy ?? "initial";
+  const linkReason = input.linkReason ?? "agent_channel_account";
+
+  database
+    .prepare(
+      `
+      INSERT INTO platform_identities (
+        id, owner_type, owner_id, channel, instance_id, platform_user_id, normalized_platform_user_id,
+        platform_display_name, avatar_url, profile_data_json, is_primary, confidence, linked_by, link_reason,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (?, 'agent', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'), datetime('now'))
+      ON CONFLICT(channel, instance_id, normalized_platform_user_id) DO UPDATE SET
+        owner_type = excluded.owner_type,
+        owner_id = excluded.owner_id,
+        platform_user_id = excluded.platform_user_id,
+        platform_display_name = COALESCE(excluded.platform_display_name, platform_identities.platform_display_name),
+        avatar_url = COALESCE(excluded.avatar_url, platform_identities.avatar_url),
+        profile_data_json = COALESCE(excluded.profile_data_json, platform_identities.profile_data_json),
+        is_primary = MAX(platform_identities.is_primary, excluded.is_primary),
+        confidence = excluded.confidence,
+        linked_by = excluded.linked_by,
+        link_reason = excluded.link_reason,
+        last_seen_at = datetime('now'),
+        updated_at = datetime('now')
+    `,
+    )
+    .run(
+      platformIdentityId,
+      agentId,
+      channel,
+      instanceId,
+      rawPlatformUserId,
+      normalizedPlatformUserId,
+      input.platformDisplayName ?? null,
+      input.avatarUrl ?? null,
+      profileDataJson,
+      input.isPrimary === false ? 0 : 1,
+      confidence,
+      linkedBy,
+      linkReason,
+    );
+
+  database
+    .prepare(
+      `
+      INSERT OR IGNORE INTO identity_link_events (
+        id, event_type, target_owner_type, target_owner_id, platform_identity_id,
+        confidence, reason, actor_type, metadata_json
+      )
+      VALUES (?, 'link', 'agent', ?, ?, ?, ?, 'system', ?)
+    `,
+    )
+    .run(
+      stableId("ile", ["link", "agent", agentId, platformIdentityId, linkReason]),
+      agentId,
+      platformIdentityId,
+      confidence,
+      linkReason,
+      metadataJson({ source: "agent_platform_identity", channel, instanceId }),
+    );
+
+  const row = findPlatformIdentityByChannelRef(database, {
+    channel,
+    instanceId,
+    platformUserId: rawPlatformUserId,
+  });
+  if (!row) throw new Error(`Platform identity not found after agent upsert: ${channel}:${normalizedPlatformUserId}`);
+  return rowToPlatformIdentity(row);
+}
+
+export function setContactKind(contactRef: string, kind: "person" | "org"): ContactDetails {
+  const database = ensureDb();
+  const legacyContact = resolveContact(contactRef);
+  if (!legacyContact) throw new Error(`Contact not found: ${contactRef}`);
+  syncContactProjection(database, legacyContact.id);
+  database
+    .prepare("UPDATE contacts SET kind = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(kind, legacyContact.id);
+  const details = getContactDetails(legacyContact.id);
+  if (!details) throw new Error(`Contact is not canonical: ${legacyContact.id}`);
+  return details;
+}
+
 /** Detect platform from a normalized identity value */
 function detectPlatform(identity: string): string {
   if (identity.startsWith("lid:")) return "whatsapp_lid";
@@ -478,7 +1423,7 @@ export function upsertContact(
 ): void {
   const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(phone);
+  const normalized = assertPersonOrOrgIdentity(phone, "upsertContact");
   const existing = resolveContact(normalized);
 
   if (existing) {
@@ -498,12 +1443,14 @@ export function upsertContact(
     fields.push("updated_at = datetime('now')");
     values.push(existing.id);
     database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    syncContactProjection(database, existing.id);
   } else {
     // Create new
     const id = generateId();
     const platform = detectPlatform(normalized);
     statements.insertContact.run(id, name ?? null, null, status, source ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
+    syncContactProjection(database, id);
   }
 }
 
@@ -513,7 +1460,7 @@ export function upsertContact(
 export function savePendingContact(phone: string, name?: string | null): boolean {
   const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(phone);
+  const normalized = assertPersonOrOrgIdentity(phone, "savePendingContact");
   const existing = resolveContact(normalized);
 
   if (existing) {
@@ -522,6 +1469,7 @@ export function savePendingContact(phone: string, name?: string | null): boolean
       database
         .prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
         .run(name, existing.id);
+      syncContactProjection(database, existing.id);
     }
     return false;
   } else {
@@ -530,6 +1478,7 @@ export function savePendingContact(phone: string, name?: string | null): boolean
     const platform = detectPlatform(normalized);
     statements.upsertPending.run(id, name ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
+    syncContactProjection(database, id);
     return true;
   }
 }
@@ -538,10 +1487,12 @@ export function savePendingContact(phone: string, name?: string | null): boolean
  * Delete a contact (by any identity or ID)
  */
 export function deleteContact(phone: string): boolean {
+  const database = ensureDb();
   const statements = getStatements();
   const contact = resolveContact(phone);
   if (!contact) return false;
   statements.deleteContact.run(contact.id);
+  deleteContactProjection(database, contact.id);
   return true;
 }
 
@@ -550,12 +1501,13 @@ export function deleteContact(phone: string): boolean {
  */
 export function setContactStatus(phone: string, status: ContactStatus): void {
   const statements = getStatements();
-  const normalized = normalizePhone(phone);
+  const normalized = assertPersonOrOrgIdentity(phone, "setContactStatus");
   const contact = resolveContact(normalized);
   if (!contact) {
     upsertContact(normalized, null, status);
   } else {
     statements.updateStatus.run(status, contact.id);
+    syncContactProjection(ensureDb(), contact.id);
   }
 }
 
@@ -582,6 +1534,7 @@ export function setContactReplyMode(phone: string, mode: ReplyMode): void {
   const contact = resolveContact(phone);
   if (contact) {
     statements.updateReplyMode.run(mode, contact.id);
+    syncContactProjection(ensureDb(), contact.id);
   }
 }
 
@@ -607,7 +1560,7 @@ export function getContactName(phone: string): string | null {
 export function saveDiscoveredContact(phone: string, name?: string | null): void {
   const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(phone);
+  const normalized = assertPersonOrOrgIdentity(phone, "saveDiscoveredContact");
   const existing = resolveContact(normalized);
 
   if (existing) {
@@ -616,6 +1569,7 @@ export function saveDiscoveredContact(phone: string, name?: string | null): void
       database
         .prepare("UPDATE contacts_v2 SET name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?")
         .run(name, existing.id);
+      syncContactProjection(database, existing.id);
     }
   } else {
     const id = generateId();
@@ -627,6 +1581,7 @@ export function saveDiscoveredContact(phone: string, name?: string | null): void
     `)
       .run(id, name ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
+    syncContactProjection(database, id);
   }
 }
 
@@ -644,7 +1599,7 @@ export function createContact(input: {
 }): Contact {
   const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(input.phone);
+  const normalized = assertPersonOrOrgIdentity(input.phone, "createContact");
   const existing = resolveContact(normalized);
   if (existing) {
     throw new Error(`Contact already exists: ${normalized}`);
@@ -669,6 +1624,7 @@ export function createContact(input: {
     );
 
   statements.insertIdentity.run(id, platform, normalized, 1);
+  syncContactProjection(database, id);
   return getContactById(id)!;
 }
 
@@ -742,6 +1698,7 @@ export function updateContact(
   values.push(contact.id);
 
   database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  syncContactProjection(database, contact.id);
   return getContactById(contact.id)!;
 }
 
@@ -776,6 +1733,7 @@ export function mergeContactNotes(phone: string, newNotes: Record<string, unknow
   database
     .prepare("UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(merged), contact.id);
+  syncContactProjection(database, contact.id);
 }
 
 /**
@@ -793,6 +1751,7 @@ export function addContactTag(phone: string, tag: string): void {
     database
       .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
       .run(JSON.stringify(tags), contact.id);
+    syncContactProjection(database, contact.id);
   }
 }
 
@@ -810,6 +1769,7 @@ export function removeContactTag(phone: string, tag: string): void {
   database
     .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(tags), contact.id);
+  syncContactProjection(database, contact.id);
 }
 
 /**
@@ -820,6 +1780,7 @@ export function recordInbound(phone: string): void {
   const contact = resolveContact(phone);
   if (contact) {
     statements.recordInbound.run(contact.id);
+    syncContactProjection(ensureDb(), contact.id);
   }
 }
 
@@ -831,6 +1792,7 @@ export function recordOutbound(phone: string): void {
   const contact = resolveContact(phone);
   if (contact) {
     statements.recordOutbound.run(contact.id);
+    syncContactProjection(ensureDb(), contact.id);
   }
 }
 
@@ -852,6 +1814,7 @@ export function setOptOut(phone: string, optOut: boolean): void {
     database
       .prepare("UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?")
       .run(optOut ? 1 : 0, contact.id);
+    syncContactProjection(database, contact.id);
   }
 }
 
@@ -870,8 +1833,13 @@ export function getContactIdentities(contactId: string): ContactIdentity[] {
  * Add an identity to an existing contact
  */
 export function addContactIdentity(contactId: string, platform: string, value: string, isPrimary = false): void {
+  const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(value);
+  if (legacyIdentityIsGroup(platform, value)) {
+    throw new Error("Group/chat identities belong to chats, not contacts");
+  }
+  const normalized = normalizeLegacyIdentityValue(platform, value);
+  const mapped = mapLegacyPlatform(platform, normalized);
 
   // Check if this identity already belongs to another contact
   const existing = statements.getIdentityByValue.get(normalized) as IdentityRow | undefined;
@@ -879,17 +1847,324 @@ export function addContactIdentity(contactId: string, platform: string, value: s
     if (existing.contact_id === contactId) return; // already linked
     throw new Error(`Identity ${normalized} already belongs to contact ${existing.contact_id}`);
   }
+  if (mapped) {
+    assertPlatformIdentityCanBeOwnedBy(
+      findPlatformIdentityByChannelRef(database, {
+        channel: mapped.channel,
+        instanceId: "",
+        platformUserId: mapped.normalizedValue,
+      }),
+      "contact",
+      contactId,
+    );
+  }
 
   statements.insertIdentity.run(contactId, platform, normalized, isPrimary ? 1 : 0);
+  syncContactProjection(database, contactId);
 }
 
 /**
  * Remove an identity from a contact
  */
 export function removeContactIdentity(platform: string, value: string): void {
+  const database = ensureDb();
   const statements = getStatements();
-  const normalized = normalizePhone(value);
+  const normalized = normalizeLegacyIdentityValue(platform, value);
+  const existing = statements.getIdentityByValue.get(normalized) as IdentityRow | undefined;
   statements.deleteIdentity.run(platform, normalized);
+  if (existing) {
+    const mapped = mapLegacyPlatform(platform, normalized);
+    if (mapped) {
+      database
+        .prepare(
+          `
+          DELETE FROM platform_identities
+          WHERE owner_type = 'contact'
+            AND owner_id = ?
+            AND channel = ?
+            AND normalized_platform_user_id = ?
+        `,
+        )
+        .run(existing.contact_id, mapped.channel, mapped.normalizedValue);
+    }
+    syncContactProjection(database, existing.contact_id);
+  }
+}
+
+function mapLinkInput(
+  channel: string,
+  value: string,
+): {
+  legacyPlatform: string;
+  legacyValue: string;
+  canonicalChannel: string;
+  normalizedValue: string;
+} {
+  const normalizedChannel = channel.trim().toLowerCase();
+  if (!normalizedChannel) throw new Error("Channel is required");
+
+  if (normalizedChannel === "whatsapp_group" || legacyIdentityIsGroup(normalizedChannel, value)) {
+    throw new Error("Group/chat identities belong to chats, not contacts");
+  }
+
+  if (normalizedChannel === "whatsapp") {
+    const normalized = normalizePhone(value);
+    if (normalized.startsWith("group:")) {
+      throw new Error("Group/chat identities belong to chats, not contacts");
+    }
+    if (normalized.startsWith("lid:")) {
+      return {
+        legacyPlatform: "whatsapp_lid",
+        legacyValue: normalized,
+        canonicalChannel: "whatsapp",
+        normalizedValue: normalized,
+      };
+    }
+    return {
+      legacyPlatform: "phone",
+      legacyValue: normalized,
+      canonicalChannel: "phone",
+      normalizedValue: normalized,
+    };
+  }
+
+  if (normalizedChannel === "phone") {
+    const normalized = normalizePhone(value);
+    return {
+      legacyPlatform: "phone",
+      legacyValue: normalized,
+      canonicalChannel: "phone",
+      normalizedValue: normalized,
+    };
+  }
+
+  if (normalizedChannel === "email") {
+    const normalized = normalizeIdentityForChannel("email", value);
+    return {
+      legacyPlatform: "email",
+      legacyValue: normalized,
+      canonicalChannel: "email",
+      normalizedValue: normalized,
+    };
+  }
+
+  return {
+    legacyPlatform: normalizedChannel,
+    legacyValue: value.trim(),
+    canonicalChannel: normalizedChannel,
+    normalizedValue: normalizeIdentityForChannel(normalizedChannel, value),
+  };
+}
+
+function upsertCanonicalPlatformIdentity(
+  database: Database,
+  contactId: string,
+  mapped: {
+    legacyPlatform: string;
+    canonicalChannel: string;
+    normalizedValue: string;
+  },
+  input: { platformUserId: string; instanceId?: string; reason?: string | null },
+): PlatformIdentityRow {
+  const instanceId = input.instanceId?.trim() ?? "";
+  const platformIdentityId = stableId("pi", [instanceId, mapped.canonicalChannel, mapped.normalizedValue]);
+  assertPlatformIdentityCanBeOwnedBy(
+    findPlatformIdentityByChannelRef(database, {
+      channel: mapped.canonicalChannel,
+      instanceId,
+      platformUserId: mapped.normalizedValue,
+    }),
+    "contact",
+    contactId,
+  );
+
+  database
+    .prepare(
+      `
+      INSERT INTO platform_identities (
+        id, owner_type, owner_id, channel, instance_id, platform_user_id, normalized_platform_user_id,
+        platform_display_name, profile_data_json, is_primary, confidence, linked_by, link_reason,
+        first_seen_at, last_seen_at, created_at, updated_at
+      )
+      VALUES (?, 'contact', ?, ?, ?, ?, ?, NULL, ?, 0, 1.0, 'manual', ?, datetime('now'), datetime('now'), datetime('now'), datetime('now'))
+      ON CONFLICT(channel, instance_id, normalized_platform_user_id) DO UPDATE SET
+        owner_type = excluded.owner_type,
+        owner_id = excluded.owner_id,
+        platform_user_id = excluded.platform_user_id,
+        profile_data_json = excluded.profile_data_json,
+        linked_by = 'manual',
+        link_reason = excluded.link_reason,
+        last_seen_at = datetime('now'),
+        updated_at = datetime('now')
+      WHERE platform_identities.owner_type IS NULL
+         OR (platform_identities.owner_type = 'contact' AND platform_identities.owner_id = excluded.owner_id)
+    `,
+    )
+    .run(
+      platformIdentityId,
+      contactId,
+      mapped.canonicalChannel,
+      instanceId,
+      input.platformUserId,
+      mapped.normalizedValue,
+      metadataJson({
+        source: "contacts_cli",
+        legacyPlatform: mapped.legacyPlatform,
+        rawPlatformUserId: input.platformUserId,
+        instanceId,
+      }),
+      input.reason ?? "manual",
+    );
+
+  const row = database
+    .prepare(
+      "SELECT * FROM platform_identities WHERE channel = ? AND instance_id = ? AND normalized_platform_user_id = ?",
+    )
+    .get(mapped.canonicalChannel, instanceId, mapped.normalizedValue) as PlatformIdentityRow | undefined;
+  if (!row)
+    throw new Error(`Platform identity not found after link: ${mapped.canonicalChannel}:${mapped.normalizedValue}`);
+  assertPlatformIdentityCanBeOwnedBy(row, "contact", contactId);
+  return row;
+}
+
+export function linkContactIdentity(
+  contactRef: string,
+  input: { channel: string; platformUserId: string; instanceId?: string; reason?: string | null },
+): ContactDetails {
+  const database = ensureDb();
+  const contact = resolveContact(contactRef);
+  if (!contact) throw new Error(`Contact not found: ${contactRef}`);
+
+  const mapped = mapLinkInput(input.channel, input.platformUserId);
+  const instanceId = input.instanceId?.trim() ?? "";
+  assertPlatformIdentityCanBeOwnedBy(
+    findPlatformIdentityByChannelRef(database, {
+      channel: mapped.canonicalChannel,
+      instanceId,
+      platformUserId: mapped.normalizedValue,
+    }),
+    "contact",
+    contact.id,
+  );
+  addContactIdentity(contact.id, mapped.legacyPlatform, mapped.legacyValue);
+  syncContactProjection(database, contact.id);
+
+  const current = upsertCanonicalPlatformIdentity(database, contact.id, mapped, input);
+  database
+    .prepare(
+      `
+      INSERT OR IGNORE INTO identity_link_events (
+        id, event_type, target_owner_type, target_owner_id, platform_identity_id,
+        confidence, reason, actor_type, metadata_json
+      )
+      VALUES (?, 'link', 'contact', ?, ?, 1.0, ?, 'system', ?)
+    `,
+    )
+    .run(
+      stableId("ile", ["link", contact.id, current.id, input.reason ?? "manual"]),
+      contact.id,
+      current.id,
+      input.reason ?? "manual",
+      metadataJson({ source: "contacts_cli", instanceId: current.instance_id }),
+    );
+
+  const details = getContactDetails(contact.id);
+  if (!details) throw new Error(`Contact is not canonical: ${contact.id}`);
+  return details;
+}
+
+export function unlinkContactIdentity(
+  platformIdentityRef: string,
+  reason?: string | null,
+  options?: { channel?: string | null; instanceId?: string | null },
+): ContactDetails | null {
+  const database = ensureDb();
+  const channel = options?.channel ? normalizePlatformIdentityChannel(options.channel) : null;
+  const instanceId = options?.instanceId?.trim();
+  const normalizedRef = platformIdentityRef.startsWith("pi_")
+    ? platformIdentityRef
+    : channel
+      ? normalizeIdentityForChannel(channel, platformIdentityRef)
+      : normalizePhone(platformIdentityRef);
+  const rows = platformIdentityRef.startsWith("pi_")
+    ? (database
+        .prepare("SELECT * FROM platform_identities WHERE id = ?")
+        .all(platformIdentityRef) as PlatformIdentityRow[])
+    : (database
+        .prepare(
+          `
+          SELECT * FROM platform_identities
+          WHERE (normalized_platform_user_id = ? COLLATE NOCASE OR platform_user_id = ? COLLATE NOCASE)
+            AND (? IS NULL OR channel = ?)
+            AND (? IS NULL OR instance_id = ?)
+          ORDER BY channel, instance_id, id
+        `,
+        )
+        .all(
+          normalizedRef,
+          platformIdentityRef,
+          channel,
+          channel,
+          instanceId ?? null,
+          instanceId ?? null,
+        ) as PlatformIdentityRow[]);
+
+  if (rows.length === 0) return null;
+  if (rows.length > 1) {
+    const candidates = rows
+      .map(
+        (candidate) =>
+          `${candidate.id} channel=${candidate.channel} instance=${candidate.instance_id || "-"} owner=${
+            candidate.owner_type ?? "unresolved"
+          }:${candidate.owner_id ?? "-"}`,
+      )
+      .join("; ");
+    throw new Error(
+      `Platform identity ref "${platformIdentityRef}" is ambiguous (${rows.length} matches). Use a platform identity id or pass channel/instance. Candidates: ${candidates}`,
+    );
+  }
+
+  const row = rows[0];
+  if (row.owner_type && row.owner_type !== "contact") {
+    throw new Error(`Platform identity ${row.id} is owned by ${row.owner_type}, not a contact`);
+  }
+
+  const contactId = row.owner_id;
+  if (contactId) {
+    const legacyPlatform =
+      row.channel === "whatsapp" && row.normalized_platform_user_id.startsWith("lid:") ? "whatsapp_lid" : row.channel;
+    database
+      .prepare("DELETE FROM contact_identities WHERE contact_id = ? AND identity_value = ? COLLATE NOCASE")
+      .run(contactId, row.normalized_platform_user_id);
+    database
+      .prepare(
+        "DELETE FROM contact_identities WHERE contact_id = ? AND platform = ? AND identity_value = ? COLLATE NOCASE",
+      )
+      .run(contactId, legacyPlatform, row.platform_user_id);
+  }
+
+  database.prepare("DELETE FROM platform_identities WHERE id = ?").run(row.id);
+  database
+    .prepare(
+      `
+      INSERT OR IGNORE INTO identity_link_events (
+        id, event_type, source_owner_type, source_owner_id, platform_identity_id,
+        confidence, reason, actor_type, metadata_json
+      )
+      VALUES (?, 'unlink', 'contact', ?, ?, 1.0, ?, 'system', ?)
+    `,
+    )
+    .run(
+      stableId("ile", ["unlink", contactId, row.id, reason ?? "manual"]),
+      contactId,
+      row.id,
+      reason ?? "manual",
+      metadataJson({ source: "contacts_cli", channel: row.channel }),
+    );
+
+  if (!contactId) return null;
+  syncContactProjection(database, contactId);
+  return getContactDetails(contactId);
 }
 
 /**
@@ -904,10 +2179,12 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
   if (!source) throw new Error(`Source contact not found: ${sourceId}`);
 
   const sourceIdentities = getIdentitiesForContact(sourceId);
+  let movedCanonicalIdentityIds: string[] = [];
 
   const txn = database.transaction(() => {
     // Move identities from source → target
     statements.moveIdentities.run(targetId, sourceId);
+    movedCanonicalIdentityIds = moveCanonicalPlatformIdentities(database, sourceId, targetId);
 
     // Merge best data: prefer target, fill blanks from source
     const updates: string[] = [];
@@ -941,6 +2218,25 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
 
     // Delete source contact
     statements.deleteContact.run(sourceId);
+    deleteContactProjection(database, sourceId);
+    syncContactProjection(database, targetId);
+
+    database
+      .prepare(
+        `
+        INSERT OR IGNORE INTO identity_link_events (
+          id, event_type, source_owner_type, source_owner_id, target_owner_type, target_owner_id,
+          confidence, reason, actor_type, metadata_json
+        )
+        VALUES (?, 'merge', 'contact', ?, 'contact', ?, 1.0, 'legacy_merge', 'system', ?)
+      `,
+      )
+      .run(
+        stableId("ile", ["merge", sourceId, targetId, String(Date.now())]),
+        sourceId,
+        targetId,
+        metadataJson({ movedIdentityCount: sourceIdentities.length, movedCanonicalIdentityIds }),
+      );
   });
 
   txn();
@@ -1033,6 +2329,7 @@ export function removeGroupTag(contactRef: string, groupRef: string): void {
       "UPDATE contacts_v2 SET notes = json_set(notes, '$.groupTags', json(?)), updated_at = datetime('now') WHERE id = ?",
     )
     .run(JSON.stringify(groupTags), contact.id);
+  syncContactProjection(database, contact.id);
 }
 
 /**
@@ -1069,13 +2366,22 @@ export interface AccountPendingEntry {
   name: string | null;
   chatId: string | null;
   isGroup: boolean;
+  pendingKind: "contact" | "chat";
+  chatType: "dm" | "group";
   createdAt: number;
   updatedAt: number;
 }
 
+export interface AccountPendingListOptions {
+  kind?: "contact" | "chat";
+}
+
 /**
- * Save a contact as pending for a specific account (no route matched).
+ * Save a contact/chat as pending for a specific account (no route matched).
  * Upserts — safe to call multiple times.
+ *
+ * Compatibility note: this still writes the legacy account_pending table, but
+ * callers must treat isGroup=true entries as chat/route review, not contacts.
  */
 export function saveAccountPending(
   accountId: string,
@@ -1094,6 +2400,7 @@ export function saveAccountPending(
     ON CONFLICT(account_id, phone) DO UPDATE SET
       name = COALESCE(excluded.name, account_pending.name),
       chat_id = COALESCE(excluded.chat_id, account_pending.chat_id),
+      is_group = excluded.is_group,
       updated_at = excluded.updated_at
   `)
     .run(accountId, phone, opts?.name ?? null, opts?.chatId ?? null, opts?.isGroup ? 1 : 0, now, now);
@@ -1101,9 +2408,9 @@ export function saveAccountPending(
 }
 
 /**
- * List pending contacts for an account (or all accounts).
+ * List pending account review entries for an account (or all accounts).
  */
-export function listAccountPending(accountId?: string): AccountPendingEntry[] {
+export function listAccountPending(accountId?: string, options?: AccountPendingListOptions): AccountPendingEntry[] {
   const database = ensureDb();
   const rows = accountId
     ? database.prepare("SELECT * FROM account_pending WHERE account_id = ? ORDER BY updated_at DESC").all(accountId)
@@ -1119,15 +2426,30 @@ export function listAccountPending(accountId?: string): AccountPendingEntry[] {
       created_at: number;
       updated_at: number;
     }>
-  ).map((r) => ({
-    accountId: r.account_id,
-    phone: r.phone,
-    name: r.name,
-    chatId: r.chat_id,
-    isGroup: r.is_group === 1,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-  }));
+  )
+    .map((r) => {
+      const isGroup = r.is_group === 1;
+      return {
+        accountId: r.account_id,
+        phone: r.phone,
+        name: r.name,
+        chatId: r.chat_id,
+        isGroup,
+        pendingKind: isGroup ? ("chat" as const) : ("contact" as const),
+        chatType: isGroup ? ("group" as const) : ("dm" as const),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    })
+    .filter((entry) => !options?.kind || entry.pendingKind === options.kind);
+}
+
+export function listAccountPendingContacts(accountId?: string): AccountPendingEntry[] {
+  return listAccountPending(accountId, { kind: "contact" });
+}
+
+export function listAccountPendingChats(accountId?: string): AccountPendingEntry[] {
+  return listAccountPending(accountId, { kind: "chat" });
 }
 
 /**

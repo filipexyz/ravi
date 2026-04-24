@@ -1,7 +1,23 @@
-import { afterAll, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { logger } from "../utils/logger.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+
+const actualRouterDbModule = await import("../router/router-db.js");
+const actualRouterSessionsModule = await import("../router/sessions.js");
+const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
+const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
+const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
+const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipant;
+const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
+const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
+const actualGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
+const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
+const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionParticipant>[0]> = [];
+const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [];
+const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
+const platformIdentityByUser = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<
   string,
   {
@@ -13,6 +29,7 @@ const messageMetaById = new Map<
     createdAt: number;
   }
 >();
+let stateDir: string | null = null;
 
 mock.module("../nats.js", () => ({
   getNats: () => {
@@ -54,7 +71,7 @@ mock.module("../config-store.js", () => ({
   configStore: {
     getConfig: () => ({
       instanceToAccount: { "instance-1": "main" },
-      instances: { main: { name: "main", enabled: true, groupPolicy: "open", dmPolicy: "open" } },
+      instances: { main: { name: "main", agent: "main", enabled: true, groupPolicy: "open", dmPolicy: "open" } },
       routes: [],
       agents: {},
       defaultAgent: "main",
@@ -68,6 +85,21 @@ mock.module("../config-store.js", () => ({
 mock.module("../contacts.js", () => ({
   isContactAllowedForAgent: () => true,
   saveAccountPending: () => false,
+  resolvePlatformIdentity: (input: { platformUserId: string }) =>
+    platformIdentityByUser.get(input.platformUserId) ?? null,
+  upsertAgentPlatformIdentity: mock((input: Record<string, unknown>) => {
+    agentPlatformIdentityCalls.push(input);
+    return {
+      id: "pi_agent_connected",
+      ownerType: "agent",
+      ownerId: input.agentId,
+      channel: input.channel,
+      instanceId: input.instanceId,
+      platformUserId: input.platformUserId,
+      normalizedPlatformUserId: input.platformUserId,
+      confidence: 1,
+    };
+  }),
   getContact: () => ({ status: "allowed" }),
   getContactName: (identity: string) => {
     if (identity === "group:120363424772797713") return "Ravi - Dev";
@@ -77,15 +109,24 @@ mock.module("../contacts.js", () => ({
 }));
 
 mock.module("../router/router-db.js", () => ({
-  dbSaveMessageMeta: mock(() => {}),
-  dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? null),
-  getDb: mock(() => ({
-    prepare: () => ({
-      get: () => null,
-      all: () => [],
-      run: () => ({}),
-    }),
-  })),
+  ...actualRouterDbModule,
+  dbSaveMessageMeta: mock((messageId: string, chatId: string, opts: Record<string, unknown>) => {
+    messageMetaSaveCalls.push([messageId, chatId, opts]);
+    return actualDbSaveMessageMeta(messageId, chatId, opts);
+  }),
+  dbGetMessageMeta: mock((messageId: string) => messageMetaById.get(messageId) ?? actualDbGetMessageMeta(messageId)),
+  dbUpsertChat: mock((input: Parameters<typeof actualDbUpsertChat>[0]) => actualDbUpsertChat(input)),
+  dbUpsertChatParticipant: mock((input: Parameters<typeof actualDbUpsertChatParticipant>[0]) => {
+    chatParticipantCalls.push(input);
+    return actualDbUpsertChatParticipant(input);
+  }),
+  dbBindSessionToChat: mock((input: Parameters<typeof actualDbBindSessionToChat>[0]) =>
+    actualDbBindSessionToChat(input),
+  ),
+  dbUpsertSessionParticipant: mock((input: Parameters<typeof actualDbUpsertSessionParticipant>[0]) => {
+    sessionParticipantCalls.push(input);
+    return actualDbUpsertSessionParticipant(input);
+  }),
 }));
 
 mock.module("../session-trace/channel-trace.js", () => ({
@@ -121,9 +162,21 @@ afterAll(() => {
 });
 
 describe("OmniConsumer channel context", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
+    actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", "/tmp/ravi-agent");
     promptCalls.length = 0;
+    chatParticipantCalls.length = 0;
+    sessionParticipantCalls.length = 0;
+    messageMetaSaveCalls.length = 0;
+    agentPlatformIdentityCalls.length = 0;
+    platformIdentityByUser.clear();
     messageMetaById.clear();
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
   });
 
   it("publishes group and sender metadata from the omni message payload", async () => {
@@ -190,6 +243,113 @@ describe("OmniConsumer channel context", () => {
       groupName: "ravi - dev",
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
+    });
+  });
+
+  it("resolves an agent-owned platform identity as an agent actor", async () => {
+    platformIdentityByUser.set("5511000000000", {
+      id: "pi_agent_sender",
+      ownerType: "agent",
+      ownerId: "dev",
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "5511000000000@s.whatsapp.net",
+      normalizedPlatformUserId: "5511000000000",
+      confidence: 1,
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-agent",
+      type: "message.received",
+      payload: {
+        externalId: "msg-agent",
+        chatId: "5511999999999@s.whatsapp.net",
+        from: "5511000000000@s.whatsapp.net",
+        content: {
+          type: "text",
+          text: "status",
+        },
+        rawPayload: {
+          pushName: "Ravi Dev",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0][1].context).toMatchObject({
+      actorType: "agent",
+      actorAgentId: "dev",
+      platformIdentityId: "pi_agent_sender",
+      rawSenderId: "5511000000000",
+      normalizedSenderId: "5511000000000",
+    });
+    expect(chatParticipantCalls[0]).toMatchObject({
+      agentId: "dev",
+      contactId: null,
+      platformIdentityId: "pi_agent_sender",
+      role: "agent",
+    });
+    expect(sessionParticipantCalls[0]).toMatchObject({
+      ownerType: "agent",
+      ownerId: "dev",
+      platformIdentityId: "pi_agent_sender",
+      role: "agent",
+    });
+    expect(messageMetaSaveCalls[0][2]).toMatchObject({
+      actorType: "agent",
+      agentId: "dev",
+      platformIdentityId: "pi_agent_sender",
+    });
+  });
+
+  it("registers a connected channel account as an agent platform identity", async () => {
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key");
+
+    await consumer["handleInstanceEvent"]("instance.connected.whatsapp-baileys.instance-1", {
+      id: "evt-connected",
+      type: "instance.connected",
+      payload: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        profileName: "Ravi Dev",
+        ownerIdentifier: "5511000000000@s.whatsapp.net",
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(agentPlatformIdentityCalls[0]).toMatchObject({
+      agentId: "main",
+      channel: "whatsapp-baileys",
+      instanceId: "instance-1",
+      platformUserId: "5511000000000@s.whatsapp.net",
+      platformDisplayName: "Ravi Dev",
+      linkedBy: "auto",
+      linkReason: "omni_instance_connected",
     });
   });
 

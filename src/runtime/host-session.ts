@@ -1,5 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
+import type { MessageActorMetadata } from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -9,9 +10,10 @@ import type {
   RuntimeThinking,
 } from "./types.js";
 
-export interface RuntimeMessageTarget {
+export interface RuntimeMessageTarget extends MessageActorMetadata {
   channel: string;
   accountId: string;
+  instanceId?: string;
   chatId: string;
   /** Thread/topic ID for platforms that support it (Telegram topics, Slack threads, Discord threads) */
   threadId?: string;

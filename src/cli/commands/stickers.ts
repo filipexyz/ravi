@@ -8,6 +8,8 @@ import { resolve } from "node:path";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
+import { configStore } from "../../config-store.js";
+import { dbGetChat, dbGetSessionChatBinding } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
 import type { SessionEntry } from "../../router/types.js";
 import {
@@ -47,6 +49,23 @@ function serializeSticker(sticker: StickerCatalogEntry): Record<string, unknown>
 }
 
 function targetFromSession(session: SessionEntry): StickerSendTarget | null {
+  const binding = dbGetSessionChatBinding(session.sessionKey);
+  const chat = binding ? dbGetChat(binding.chatId) : null;
+  if (chat) {
+    const accountId = configStore.resolveAccountName(chat.instanceId) ?? session.lastAccountId ?? chat.instanceId;
+    const separator = chat.platformChatId.indexOf("#");
+    const chatId = separator === -1 ? chat.platformChatId : chat.platformChatId.slice(0, separator);
+    const threadId = separator === -1 ? undefined : chat.platformChatId.slice(separator + 1);
+    if (accountId && chatId) {
+      return {
+        channel: chat.channel,
+        accountId,
+        chatId,
+        ...(threadId ? { threadId } : {}),
+      };
+    }
+  }
+
   if (session.lastChannel && session.lastAccountId && session.lastTo) {
     return {
       channel: session.lastChannel,

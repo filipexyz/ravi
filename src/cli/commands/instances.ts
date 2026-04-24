@@ -20,8 +20,8 @@
  * ravi instances routes set <name> <pattern> <key> <value>
  * ravi instances routes show <name> <pattern>
  * ravi instances pending list <name>
- * ravi instances pending approve <name> <contact>
- * ravi instances pending reject <name> <contact>
+ * ravi instances pending approve <name> <contact-or-chat> [--agent <id>]
+ * ravi instances pending reject <name> <contact-or-chat>
  */
 
 import "reflect-metadata";
@@ -69,6 +69,7 @@ import {
   listAccountPending,
   removeAccountPending,
   allowContact,
+  normalizePhone,
   type AccountPendingEntry,
 } from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
@@ -86,6 +87,29 @@ function printJson(payload: unknown): void {
 
 function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
+}
+
+function normalizePendingChatPattern(entry: Pick<AccountPendingEntry, "phone" | "chatId" | "isGroup">): string {
+  const raw = (entry.chatId || entry.phone || "").trim();
+  const normalized = normalizePhone(raw);
+  if (normalized.startsWith("group:")) return normalized;
+  if (entry.isGroup) {
+    const bareGroupId = (normalized || raw).replace(/^group:/, "").replace(/@.*$/, "");
+    if (/^\d+(?:-\d+)?$/.test(bareGroupId)) return `group:${bareGroupId}`;
+  }
+  return normalized || raw;
+}
+
+function findPendingReviewEntry(instanceName: string, ref: string): AccountPendingEntry | null {
+  const normalizedRef = normalizePhone(ref);
+  return (
+    listAccountPending(instanceName).find((entry) => {
+      if (entry.phone === ref || entry.chatId === ref) return true;
+      const entryPhone = normalizePhone(entry.phone);
+      const entryChat = entry.chatId ? normalizePhone(entry.chatId) : "";
+      return Boolean(normalizedRef && (entryPhone === normalizedRef || entryChat === normalizedRef));
+    }) ?? null
+  );
 }
 
 function parseEnabledValue(value: string): boolean {
@@ -1613,58 +1637,141 @@ export class InstancesRoutesCommands {
 
 @Group({
   name: "instances.pending",
-  description: "Manage pending contacts/groups for an instance",
+  description: "Manage pending contact and chat review for an instance",
   scope: "admin",
 })
 export class InstancesPendingCommands {
-  @Command({ name: "list", description: "List pending contacts/groups for an instance" })
+  @Command({ name: "list", description: "List pending contacts and chats for an instance" })
   list(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const pending = listAccountPending(name);
+    const pendingContacts = pending.filter((entry) => entry.pendingKind === "contact");
+    const pendingChats = pending.filter((entry) => entry.pendingKind === "chat");
 
     if (asJson) {
       printJson({
         instance: name,
         total: pending.length,
+        counts: {
+          contacts: pendingContacts.length,
+          chats: pendingChats.length,
+        },
+        contacts: pendingContacts.map((p) => ({
+          ...p,
+          type: p.chatType,
+        })),
+        chats: pendingChats.map((p) => ({
+          ...p,
+          type: p.chatType,
+          routePattern: normalizePendingChatPattern(p),
+        })),
         pending: pending.map((p) => ({
           ...p,
-          type: p.isGroup ? "group" : "dm",
+          type: p.chatType,
+          ...(p.pendingKind === "chat" ? { routePattern: normalizePendingChatPattern(p) } : {}),
         })),
       });
       return;
     }
 
     if (pending.length === 0) {
-      console.log(`No pending contacts for instance "${name}".`);
+      console.log(`No pending contacts or chats for instance "${name}".`);
       return;
     }
 
-    console.log(`\nPending for: ${name}\n`);
-    console.log("  ID                                       TYPE    NAME");
-    console.log("  ---------------------------------------  ------  --------------------");
-    for (const p of pending as AccountPendingEntry[]) {
-      const type = p.isGroup ? "group" : "dm";
-      console.log(`  ${p.phone.padEnd(39)}  ${type.padEnd(6)}  ${p.name ?? "-"}`);
+    if (pendingContacts.length > 0) {
+      console.log(`\nPending contacts for: ${name}\n`);
+      console.log("  ID                                       TYPE    NAME");
+      console.log("  ---------------------------------------  ------  --------------------");
+      for (const p of pendingContacts as AccountPendingEntry[]) {
+        console.log(`  ${p.phone.padEnd(39)}  ${p.chatType.padEnd(6)}  ${p.name ?? "-"}`);
+      }
+    }
+
+    if (pendingChats.length > 0) {
+      console.log(`\nPending chats for: ${name}\n`);
+      console.log("  ROUTE PATTERN                            TYPE    NAME");
+      console.log("  ---------------------------------------  ------  --------------------");
+      for (const p of pendingChats as AccountPendingEntry[]) {
+        const pattern = normalizePendingChatPattern(p);
+        console.log(`  ${pattern.padEnd(39)}  ${p.chatType.padEnd(6)}  ${p.name ?? "-"}`);
+      }
     }
     console.log(`\n  Total: ${pending.length}`);
-    console.log(`\n  Approve: ravi instances pending approve ${name} <phone>`);
+    console.log(`\n  Approve contact: ravi instances pending approve ${name} <phone>`);
+    console.log(`  Approve chat:    ravi instances pending approve ${name} <chat> --agent <agent>`);
   }
 
-  @Command({ name: "approve", description: "Approve a pending contact/group" })
+  @Command({ name: "approve", description: "Approve a pending contact or chat" })
   approve(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("contact", { description: "Contact ID or phone" }) contact: string,
+    @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,
+    @Option({ flags: "--agent <id>", description: "Agent to route an approved chat to" }) agent?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
+    const instance = dbGetInstance(name);
+    if (!instance) fail(`Instance not found: ${name}`);
+    const pending = findPendingReviewEntry(name, contact);
+    const normalizedContact = normalizePhone(contact);
+    const isChatApproval = pending?.pendingKind === "chat" || normalizedContact.startsWith("group:");
+
+    if (isChatApproval) {
+      const routeAgent = agent ?? instance.agent;
+      if (!routeAgent) {
+        fail("Approving a pending chat requires --agent because the instance has no default agent.");
+      }
+      if (!dbGetAgent(routeAgent)) {
+        fail(
+          `Agent not found: ${routeAgent}. Available: ${dbListAgents()
+            .map((a) => a.id)
+            .join(", ")}`,
+        );
+      }
+      const routePattern = pending ? normalizePendingChatPattern(pending) : normalizedContact;
+      let route = dbGetRoute(routePattern, name);
+      let routeCreated = false;
+      if (!route) {
+        dbCreateRoute({
+          pattern: routePattern,
+          accountId: name,
+          agent: routeAgent,
+          priority: 0,
+          channel: instance.channel,
+        });
+        route = dbGetRoute(routePattern, name);
+        if (!route) fail(`Created route could not be loaded: ${routePattern} (instance: ${name})`);
+        routeCreated = true;
+      }
+      const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
+      emitConfigChanged();
+      if (asJson) {
+        printJson({
+          status: "approved",
+          reviewKind: "chat",
+          instance: name,
+          chat: contact,
+          routePattern,
+          route,
+          routeCreated,
+          removedPending,
+          changedCount: routeCreated || removedPending ? 1 : 0,
+        });
+        return;
+      }
+      console.log(`✓ Chat approved: ${routePattern} → ${routeAgent} (instance: ${name})`);
+      if (removedPending) console.log(`✓ Removed from pending`);
+      return;
+    }
+
     allowContact(contact);
-    const removedPending = removeAccountPending(name, contact);
+    const removedPending = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
     if (asJson) {
       printJson({
         status: "approved",
+        reviewKind: "contact",
         instance: name,
         contact,
         removedPending,
@@ -1677,18 +1784,20 @@ export class InstancesPendingCommands {
     emitConfigChanged();
   }
 
-  @Command({ name: "reject", description: "Reject and remove a pending contact/group" })
+  @Command({ name: "reject", description: "Reject and remove a pending contact or chat" })
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
-    @Arg("contact", { description: "Contact ID or phone" }) contact: string,
+    @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
-    const removed = removeAccountPending(name, contact);
+    const pending = findPendingReviewEntry(name, contact);
+    const removed = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
     if (removed) {
       if (asJson) {
         printJson({
           status: "rejected",
+          reviewKind: pending?.pendingKind ?? "unknown",
           instance: name,
           contact,
           removedPending: true,

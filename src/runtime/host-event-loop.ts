@@ -251,12 +251,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
+    const source = Object.prototype.hasOwnProperty.call(input, "source") ? input.source : streaming.currentSource;
     recordRuntimeTraceEvent({
       sessionKey: session.sessionKey,
       sessionName,
       agentId: agent.id,
       runId,
       ...input,
+      source,
     });
   };
   const recordTerminalTraceOnce = (

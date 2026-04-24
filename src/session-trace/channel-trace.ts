@@ -1,14 +1,25 @@
 import type { MessageTarget, ResponseMessage } from "../runtime/message-types.js";
 import { getSessionByName } from "../router/index.js";
+import { dbFindChat, dbGetMessageMeta, dbGetSessionChatBinding, type ChatType } from "../router/router-db.js";
 import { recordSessionEvent } from "./session-trace-db.js";
 import type { SessionEventRecord } from "./types.js";
 
 export interface NormalizedSessionTraceSource {
   channel: string | null;
   accountId: string | null;
+  instanceId: string | null;
   chatId: string | null;
   threadId: string | null;
   messageId: string | null;
+  canonicalChatId: string | null;
+  actorType: string | null;
+  contactId: string | null;
+  actorAgentId: string | null;
+  platformIdentityId: string | null;
+  rawSenderId: string | null;
+  normalizedSenderId: string | null;
+  identityConfidence: number | null;
+  identityProvenance: unknown;
 }
 
 export interface RecordChannelMessageReceivedTraceInput {
@@ -61,6 +72,10 @@ function cleanNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function cleanRecord(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
 function normalizeSourceChannel(value: unknown): string | null {
   return cleanText(value)?.replace(/-baileys$/, "") ?? null;
 }
@@ -77,9 +92,19 @@ function sourceFromTarget(value: unknown): NormalizedSessionTraceSource {
   return {
     channel: normalizeSourceChannel(value.channel),
     accountId: cleanText(value.accountId),
+    instanceId: cleanText(value.instanceId),
     chatId: cleanText(value.chatId),
     threadId: cleanText(value.threadId),
     messageId: cleanText(value.sourceMessageId),
+    canonicalChatId: cleanText(value.canonicalChatId),
+    actorType: cleanText(value.actorType),
+    contactId: cleanText(value.contactId),
+    actorAgentId: cleanText(value.actorAgentId),
+    platformIdentityId: cleanText(value.platformIdentityId),
+    rawSenderId: cleanText(value.rawSenderId),
+    normalizedSenderId: cleanText(value.normalizedSenderId),
+    identityConfidence: cleanNumber(value.identityConfidence),
+    identityProvenance: cleanRecord(value.identityProvenance),
   };
 }
 
@@ -89,9 +114,19 @@ function sourceFromContext(value: unknown): NormalizedSessionTraceSource {
   return {
     channel: normalizeSourceChannel(value.channelId),
     accountId: cleanText(value.accountId),
+    instanceId: cleanText(value.instanceId),
     chatId: cleanText(value.chatId),
     threadId: cleanText(value.threadId),
     messageId: cleanText(value.messageId),
+    canonicalChatId: cleanText(value.canonicalChatId),
+    actorType: cleanText(value.actorType),
+    contactId: cleanText(value.contactId),
+    actorAgentId: cleanText(value.actorAgentId),
+    platformIdentityId: cleanText(value.platformIdentityId),
+    rawSenderId: cleanText(value.rawSenderId),
+    normalizedSenderId: cleanText(value.normalizedSenderId),
+    identityConfidence: cleanNumber(value.identityConfidence),
+    identityProvenance: cleanRecord(value.identityProvenance),
   };
 }
 
@@ -99,9 +134,59 @@ function emptySource(): NormalizedSessionTraceSource {
   return {
     channel: null,
     accountId: null,
+    instanceId: null,
     chatId: null,
     threadId: null,
     messageId: null,
+    canonicalChatId: null,
+    actorType: null,
+    contactId: null,
+    actorAgentId: null,
+    platformIdentityId: null,
+    rawSenderId: null,
+    normalizedSenderId: null,
+    identityConfidence: null,
+    identityProvenance: null,
+  };
+}
+
+function mergeSourceMetadata(
+  source: NormalizedSessionTraceSource,
+  context: NormalizedSessionTraceSource,
+): NormalizedSessionTraceSource {
+  return {
+    channel: source.channel ?? context.channel,
+    accountId: source.accountId ?? context.accountId,
+    instanceId: source.instanceId ?? context.instanceId,
+    chatId: source.chatId ?? context.chatId,
+    threadId: source.threadId ?? context.threadId,
+    messageId: source.messageId ?? context.messageId,
+    canonicalChatId: source.canonicalChatId ?? context.canonicalChatId,
+    actorType: source.actorType ?? context.actorType,
+    contactId: source.contactId ?? context.contactId,
+    actorAgentId: source.actorAgentId ?? context.actorAgentId,
+    platformIdentityId: source.platformIdentityId ?? context.platformIdentityId,
+    rawSenderId: source.rawSenderId ?? context.rawSenderId,
+    normalizedSenderId: source.normalizedSenderId ?? context.normalizedSenderId,
+    identityConfidence: source.identityConfidence ?? context.identityConfidence,
+    identityProvenance: source.identityProvenance ?? context.identityProvenance,
+  };
+}
+
+function withOutboundAgentActor(
+  source: NormalizedSessionTraceSource,
+  agentId: string | null | undefined,
+): NormalizedSessionTraceSource {
+  return {
+    ...source,
+    actorType: agentId ? "agent" : source.actorType,
+    contactId: null,
+    actorAgentId: agentId ?? source.actorAgentId,
+    platformIdentityId: null,
+    rawSenderId: null,
+    normalizedSenderId: null,
+    identityConfidence: null,
+    identityProvenance: agentId ? { source: "ravi.outbound", agentId } : source.identityProvenance,
   };
 }
 
@@ -113,12 +198,83 @@ export function normalizeSessionTraceSource(input: {
   const source = sourceFromTarget(input.target ?? input.source);
   const context = sourceFromContext(input.context);
 
+  return mergeSourceMetadata(source, context);
+}
+
+function inferSourceChatType(source: NormalizedSessionTraceSource): ChatType | undefined {
+  if (source.threadId) return "thread";
+  if (source.chatId?.endsWith("@g.us") || source.chatId?.startsWith("group:")) return "group";
+  return undefined;
+}
+
+function findCanonicalChatIdFromSource(source: NormalizedSessionTraceSource): string | null {
+  if (!source.channel || !source.chatId) return null;
+  const platformChatId = source.threadId ? `${source.chatId}#${source.threadId}` : source.chatId;
+  const instanceCandidates = Array.from(
+    new Set([source.instanceId, source.accountId, ""].filter((id): id is string => Boolean(id))),
+  );
+  for (const instanceId of instanceCandidates) {
+    const chat = dbFindChat({
+      channel: source.channel,
+      instanceId,
+      platformChatId,
+      chatType: inferSourceChatType(source),
+    });
+    if (chat) return chat.id;
+  }
+  return null;
+}
+
+function resolveCanonicalTraceSource(
+  sessionKey: string,
+  source: NormalizedSessionTraceSource,
+): NormalizedSessionTraceSource {
+  const messageMeta = source.messageId ? dbGetMessageMeta(source.messageId) : null;
+  const chatIdFromSource = findCanonicalChatIdFromSource(source);
+  const binding = dbGetSessionChatBinding(sessionKey);
+  // Legacy fallback removal condition: remove binding/raw lookup once all prompt/response/delivery sources
+  // carry canonicalChatId plus per-message actor metadata at emit time.
+  const canonicalChatId =
+    source.canonicalChatId ?? messageMeta?.canonicalChatId ?? chatIdFromSource ?? binding?.chatId ?? null;
+  const sourceIsAgentActor = source.actorType === "agent";
+
   return {
-    channel: source.channel ?? context.channel,
-    accountId: source.accountId ?? context.accountId,
-    chatId: source.chatId ?? context.chatId,
-    threadId: source.threadId ?? context.threadId,
-    messageId: source.messageId ?? context.messageId,
+    ...source,
+    canonicalChatId,
+    actorType: source.actorType ?? messageMeta?.actorType ?? null,
+    contactId: sourceIsAgentActor ? null : (source.contactId ?? messageMeta?.contactId ?? null),
+    actorAgentId: source.actorAgentId ?? messageMeta?.agentId ?? null,
+    platformIdentityId: sourceIsAgentActor
+      ? source.platformIdentityId
+      : (source.platformIdentityId ?? messageMeta?.platformIdentityId ?? null),
+    rawSenderId: sourceIsAgentActor ? source.rawSenderId : (source.rawSenderId ?? messageMeta?.rawSenderId ?? null),
+    normalizedSenderId: sourceIsAgentActor
+      ? source.normalizedSenderId
+      : (source.normalizedSenderId ?? messageMeta?.normalizedSenderId ?? null),
+    identityConfidence: sourceIsAgentActor
+      ? source.identityConfidence
+      : (source.identityConfidence ?? messageMeta?.identityConfidence ?? null),
+    identityProvenance: source.identityProvenance ?? messageMeta?.identityProvenance ?? null,
+  };
+}
+
+function eventSourceFields(sessionKey: string, source: NormalizedSessionTraceSource) {
+  const resolved = resolveCanonicalTraceSource(sessionKey, source);
+  return {
+    sourceChannel: resolved.channel,
+    sourceAccountId: resolved.accountId,
+    sourceChatId: resolved.chatId,
+    sourceThreadId: resolved.threadId,
+    canonicalChatId: resolved.canonicalChatId,
+    actorType: resolved.actorType,
+    contactId: resolved.contactId,
+    actorAgentId: resolved.actorAgentId,
+    platformIdentityId: resolved.platformIdentityId,
+    rawSenderId: resolved.rawSenderId,
+    normalizedSenderId: resolved.normalizedSenderId,
+    identityConfidence: resolved.identityConfidence,
+    identityProvenance: resolved.identityProvenance,
+    messageId: resolved.messageId,
   };
 }
 
@@ -134,6 +290,7 @@ function recordSourceEvent(input: {
   payloadJson?: unknown;
   preview?: string | null;
 }): SessionEventRecord {
+  const sourceFields = eventSourceFields(input.sessionKey, input.source);
   return recordSessionEvent({
     sessionKey: input.sessionKey,
     sessionName: input.sessionName,
@@ -142,11 +299,7 @@ function recordSourceEvent(input: {
     eventGroup: input.eventGroup,
     status: input.status,
     timestamp: input.timestamp,
-    sourceChannel: input.source.channel,
-    sourceAccountId: input.source.accountId,
-    sourceChatId: input.source.chatId,
-    sourceThreadId: input.source.threadId,
-    messageId: input.source.messageId,
+    ...sourceFields,
     payloadJson: input.payloadJson,
     preview: input.preview,
   });
@@ -190,6 +343,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
     source: payload.source,
     context: payload.context,
   });
+  const sourceFields = eventSourceFields(session.sessionKey, source);
   const prompt = cleanText(payload.prompt);
 
   return recordSessionEvent({
@@ -200,11 +354,7 @@ export function recordPromptPublishedTrace(input: RecordPromptPublishedTraceInpu
     eventGroup: "prompt",
     status: "published",
     timestamp: input.timestamp,
-    sourceChannel: source.channel,
-    sourceAccountId: source.accountId,
-    sourceChatId: source.chatId,
-    sourceThreadId: source.threadId,
-    messageId: source.messageId,
+    ...sourceFields,
     payloadJson: {
       deliveryBarrier: payload.deliveryBarrier,
       taskBarrierTaskId: payload.taskBarrierTaskId,
@@ -220,7 +370,11 @@ export function recordResponseEmittedTrace(input: RecordResponseEmittedTraceInpu
   const session = getSessionByName(input.sessionName);
   if (!session) return null;
 
-  const source = normalizeSessionTraceSource({ target: input.response.target });
+  const source = withOutboundAgentActor(
+    normalizeSessionTraceSource({ target: input.response.target }),
+    session.agentId,
+  );
+  const sourceFields = eventSourceFields(session.sessionKey, source);
   const responseText = input.response.error ? `Error: ${input.response.error}` : input.response.response;
 
   return recordSessionEvent({
@@ -231,11 +385,7 @@ export function recordResponseEmittedTrace(input: RecordResponseEmittedTraceInpu
     eventGroup: "response",
     status: "emitted",
     timestamp: input.timestamp,
-    sourceChannel: source.channel,
-    sourceAccountId: source.accountId,
-    sourceChatId: source.chatId,
-    sourceThreadId: source.threadId,
-    messageId: source.messageId,
+    ...sourceFields,
     payloadJson: {
       emitId: input.response._emitId,
       target: input.response.target,
@@ -255,7 +405,8 @@ export function recordDeliveryTrace(input: RecordDeliveryTraceInput): SessionEve
   const knownStatus = status === "delivered" || status === "failed" || status === "dropped";
   const eventType = knownStatus ? `delivery.${status}` : "delivery.observed";
   const target = input.delivery.target ?? input.response?.target;
-  const source = normalizeSessionTraceSource({ target });
+  const source = withOutboundAgentActor(normalizeSessionTraceSource({ target }), session.agentId);
+  const sourceFields = eventSourceFields(session.sessionKey, source);
   const outboundMessageId = cleanText(input.delivery.messageId);
   const durationMs = cleanNumber(input.delivery.durationMs);
   const reason = cleanText(input.delivery.reason);
@@ -269,11 +420,7 @@ export function recordDeliveryTrace(input: RecordDeliveryTraceInput): SessionEve
     eventGroup: "delivery",
     status,
     timestamp: input.timestamp,
-    sourceChannel: source.channel,
-    sourceAccountId: source.accountId,
-    sourceChatId: source.chatId,
-    sourceThreadId: source.threadId,
-    messageId: source.messageId,
+    ...sourceFields,
     durationMs,
     error,
     payloadJson: {

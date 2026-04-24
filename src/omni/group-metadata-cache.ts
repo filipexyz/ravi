@@ -1,4 +1,4 @@
-import { getDb } from "../router/router-db.js";
+import { dbUpsertChat, dbUpsertChatParticipant, getDb } from "../router/router-db.js";
 import { fetchWithTimeout } from "../utils/paths.js";
 import { logger } from "../utils/logger.js";
 
@@ -204,6 +204,57 @@ export function upsertOmniGroupMetadata(metadata: OmniGroupMetadata): void {
       now,
       now,
     );
+
+  const chat = dbUpsertChat({
+    channel: metadata.channel ?? "whatsapp",
+    instanceId: metadata.instanceId,
+    platformChatId: metadata.chatId,
+    chatType: "group",
+    title: metadata.name ?? null,
+    avatarUrl: metadata.avatarUrl ?? null,
+    metadata: {
+      accountId: metadata.accountId,
+      chatUuid: metadata.chatUuid ?? null,
+      externalId: metadata.externalId ?? metadata.chatId,
+      participantCount: metadata.participantCount ?? metadata.participants.length,
+    },
+    rawProvenance: {
+      source: "omni_group_metadata",
+      accountId: metadata.accountId,
+      instanceId: metadata.instanceId,
+      chatId: metadata.chatId,
+      chatUuid: metadata.chatUuid ?? null,
+      externalId: metadata.externalId ?? metadata.chatId,
+      platformMetadata: metadata.platformMetadata ?? null,
+    },
+    seenAt: metadata.fetchedAt,
+  });
+
+  for (const participant of metadata.participants) {
+    dbUpsertChatParticipant({
+      chatId: chat.id,
+      rawPlatformUserId: participant.platformUserId,
+      normalizedPlatformUserId: normalizeParticipantIdentity(participant.platformUserId),
+      role: normalizeParticipantRole(participant.role),
+      status: "active",
+      source: "omni",
+      metadata: {
+        omniParticipantId: participant.id ?? null,
+        displayName: participant.displayName ?? null,
+      },
+      seenAt: metadata.fetchedAt,
+    });
+  }
+}
+
+function normalizeParticipantIdentity(value: string): string {
+  return value.includes("@") ? value.slice(0, value.indexOf("@")) : value;
+}
+
+function normalizeParticipantRole(role: string | null | undefined): "member" | "admin" | "owner" | "unknown" {
+  const normalized = role?.trim().toLowerCase();
+  if (normalized === "member" || normalized === "admin" || normalized === "owner") return normalized;
+  return "unknown";
 }
 
 function apiUrl(baseUrl: string, path: string, query?: Record<string, string | number | undefined>): string {

@@ -6,8 +6,8 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { requestReply } from "../../utils/request-reply.js";
-import { upsertContact, findContactsByTag, getContact, searchContacts } from "../../contacts.js";
-import { dbCreateRoute, getFirstAccountName } from "../../router/router-db.js";
+import { findContactsByTag, getContact, searchContacts } from "../../contacts.js";
+import { dbCreateRoute, dbGetInstance, dbUpsertChat, getFirstAccountName } from "../../router/router-db.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
 import { buildSessionKey } from "../../router/session-key.js";
 import { getOrCreateSession, updateSessionSource, updateSessionName } from "../../router/sessions.js";
@@ -188,7 +188,7 @@ export class GroupCommands {
     @Arg("name", { description: "Group name/subject" }) name: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
-    @Option({ flags: "--agent <id>", description: "Agent to route this group to (auto-approves contact)" })
+    @Option({ flags: "--agent <id>", description: "Agent to route this group chat to" })
     agent?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
@@ -258,17 +258,28 @@ export class GroupCommands {
       }
     }
 
-    // Auto-approve contact and route to agent if specified
+    // Register chat and route to agent if specified.
     const groupId = result.id.replace(/@g\.us$/, "");
     const groupIdentity = `group:${groupId}`;
+    const routeAcct = resolveGroupAccount(account);
+    const instance = routeAcct ? dbGetInstance(routeAcct) : null;
 
-    // Always auto-approve groups we create ourselves
-    upsertContact(groupIdentity, result.subject, "allowed");
-    jsonPayload.contact = { status: "approved", identity: groupIdentity };
-    if (!asJson) console.log(`  Contact:      approved`);
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: instance?.instanceId ?? routeAcct,
+      platformChatId: result.id,
+      chatType: "group",
+      title: result.subject ?? null,
+      rawProvenance: {
+        source: "whatsapp.group.create",
+        accountId: routeAcct,
+        groupId: result.id,
+      },
+    });
+    jsonPayload.chat = { status: "registered", identity: groupIdentity, chat };
+    if (!asJson) console.log(`  Chat:         registered`);
 
     if (agent) {
-      const routeAcct = resolveGroupAccount(account);
       try {
         const route = dbCreateRoute({ pattern: `group:${groupId}`, agent, accountId: routeAcct, priority: 0 });
         jsonPayload.route = { status: "created", route };
