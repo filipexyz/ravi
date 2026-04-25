@@ -50,6 +50,16 @@ mock.module("../../contacts.js", () => ({
 
 mock.module("../../router/router-db.js", () => ({
   getFirstAccountName: () => "main",
+  dbGetInstance: () => ({ instanceId: "instance-main" }),
+  dbUpsertChat: () => ({
+    id: "chat-whatsapp-instance-main-group-120363",
+    channel: "whatsapp",
+    instanceId: "instance-main",
+    platformChatId: "120363@g.us",
+    normalizedChatId: "group:120363",
+    chatType: "group",
+    title: "Launch",
+  }),
   dbCreateRoute: () => ({
     id: 1,
     accountId: "main",
