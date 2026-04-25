@@ -234,6 +234,42 @@ describe("createClaudeRuntimeProvider", () => {
     expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
+  it("synthesizes a failed turn when the provider stream ends without a terminal result", async () => {
+    nextMessages = [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "partial answer" }],
+        },
+      },
+    ];
+
+    const provider = createClaudeRuntimeProvider();
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+      ),
+    );
+
+    const events = await collectEvents(session.events);
+    const failures = findEventsByType(events, "turn.failed");
+
+    expect(findEventsByType(events, "assistant.message").map((event) => event.text)).toEqual(["partial answer"]);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.error).toBe("Runtime provider stream ended without a terminal event");
+    expect(failures[0]?.rawEvent).toMatchObject({
+      type: "stream.ended",
+      reason: "missing_terminal_event",
+    });
+  });
+
   it("passes an explicit native executable path when configured", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-3" }];
 

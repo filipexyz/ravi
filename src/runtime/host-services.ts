@@ -53,7 +53,8 @@ function hasUnrestrictedToolSurface(agentId: string): boolean {
 }
 
 export function getRuntimeToolAccessMode(capabilities: RuntimeCapabilities, agentId: string): RuntimeToolAccessMode {
-  if (capabilities.toolAccessRequirement === "tool_surface") {
+  const accessRequirement = capabilities.tools?.accessRequirement ?? capabilities.toolAccessRequirement;
+  if (accessRequirement === "tool_surface") {
     return hasUnrestrictedToolSurface(agentId) ? "unrestricted" : "restricted";
   }
 

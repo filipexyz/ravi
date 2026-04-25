@@ -104,6 +104,14 @@ export function createSessionTraceTurnId(): string {
 
 export function summarizeRuntimeCapabilities(capabilities: RuntimeCapabilities): Record<string, unknown> {
   return {
+    runtimeControl: capabilities.runtimeControl,
+    dynamicTools: capabilities.dynamicTools,
+    execution: capabilities.execution,
+    sessionState: capabilities.sessionState,
+    usage: capabilities.usage,
+    tools: capabilities.tools,
+    systemPrompt: capabilities.systemPrompt,
+    terminalEvents: capabilities.terminalEvents,
     supportsSessionResume: capabilities.supportsSessionResume,
     supportsSessionFork: capabilities.supportsSessionFork,
     supportsPartialText: capabilities.supportsPartialText,

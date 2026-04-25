@@ -1,5 +1,6 @@
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createPiRuntimeProvider } from "./pi-provider.js";
 import type {
   RuntimeCompatibilityIssue,
   RuntimeCompatibilityRequest,
@@ -15,9 +16,10 @@ export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "claude";
 const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
   [DEFAULT_RUNTIME_PROVIDER_ID, createClaudeRuntimeProvider],
   ["codex", createCodexRuntimeProvider],
+  ["pi", createPiRuntimeProvider],
 ]);
 
-const builtInRuntimeProviderIds = new Set<RuntimeProviderId>([DEFAULT_RUNTIME_PROVIDER_ID, "codex"]);
+const builtInRuntimeProviderIds = new Set<RuntimeProviderId>([DEFAULT_RUNTIME_PROVIDER_ID, "codex", "pi"]);
 
 export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
   runtimeProviderFactories.set(providerId, factory);
@@ -66,7 +68,9 @@ export function getRuntimeCompatibilityIssues(
     });
   }
 
-  if (request.toolAccessMode === "restricted" && !capabilities.supportsToolHooks) {
+  const toolPermissionMode =
+    capabilities.tools?.permissionMode ?? (capabilities.supportsToolHooks ? "ravi-host" : "provider-native");
+  if (request.toolAccessMode === "restricted" && toolPermissionMode !== "ravi-host") {
     issues.push({
       code: "restricted_tool_access_unsupported",
       message:

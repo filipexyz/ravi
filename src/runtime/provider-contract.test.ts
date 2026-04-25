@@ -4,11 +4,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createPiRuntimeProvider } from "./pi-provider.js";
 import type { RuntimeCapabilities, RuntimeHostServices, RuntimePrepareSessionResult } from "./types.js";
 
 const ALLOWED_START_REQUEST_KEYS = ["approveRuntimeRequest", "dynamicTools", "handleRuntimeToolCall"] as const;
 
 const REQUIRED_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
+  "runtimeControl",
+  "dynamicTools",
+  "execution",
+  "sessionState",
+  "usage",
+  "tools",
+  "systemPrompt",
+  "terminalEvents",
+  "supportsSessionResume",
+  "supportsSessionFork",
+  "supportsPartialText",
+  "supportsToolHooks",
+  "supportsPlugins",
+  "supportsMcpServers",
+  "supportsRemoteSpawn",
+];
+
+const REQUIRED_BOOLEAN_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
   "supportsSessionResume",
   "supportsSessionFork",
   "supportsPartialText",
@@ -62,6 +81,7 @@ describe("runtime provider contract", () => {
   const builtInProviders = [
     { providerId: "claude", createProvider: createClaudeRuntimeProvider },
     { providerId: "codex", createProvider: createCodexRuntimeProvider },
+    { providerId: "pi", createProvider: createPiRuntimeProvider },
   ] as const;
 
   it("keeps built-in providers behind the shared runtime contract", () => {
@@ -73,13 +93,54 @@ describe("runtime provider contract", () => {
 
       const capabilities = provider.getCapabilities();
       for (const key of REQUIRED_CAPABILITY_KEYS) {
+        expect(capabilities[key]).toBeDefined();
+      }
+      for (const key of REQUIRED_BOOLEAN_CAPABILITY_KEYS) {
         expect(typeof capabilities[key]).toBe("boolean");
       }
+      expect(typeof capabilities.runtimeControl.supported).toBe("boolean");
+      expect(Array.isArray(capabilities.runtimeControl.operations)).toBe(true);
+      expect(["none", "host"]).toContain(capabilities.dynamicTools.mode);
+      expect(typeof capabilities.execution.mode).toBe("string");
+      expect(typeof capabilities.sessionState.mode).toBe("string");
+      expect(typeof capabilities.usage.semantics).toBe("string");
+      expect(typeof capabilities.tools.permissionMode).toBe("string");
+      expect(typeof capabilities.tools.accessRequirement).toBe("string");
+      expect(typeof capabilities.tools.supportsParallelCalls).toBe("boolean");
+      expect(typeof capabilities.systemPrompt.mode).toBe("string");
+      expect(typeof capabilities.terminalEvents.guarantee).toBe("string");
     }
   });
 
   it("keeps the current provider capability matrix explicit", () => {
     expect(createClaudeRuntimeProvider().getCapabilities()).toMatchObject({
+      runtimeControl: {
+        supported: false,
+        operations: [],
+      },
+      dynamicTools: {
+        mode: "none",
+      },
+      execution: {
+        mode: "sdk",
+      },
+      sessionState: {
+        mode: "provider-session-id",
+      },
+      usage: {
+        semantics: "terminal-event",
+      },
+      tools: {
+        permissionMode: "ravi-host",
+        accessRequirement: "tool_and_executable",
+        supportsParallelCalls: false,
+      },
+      systemPrompt: {
+        mode: "append",
+      },
+      terminalEvents: {
+        guarantee: "adapter",
+      },
       supportsSessionResume: true,
       supportsSessionFork: true,
       supportsPartialText: true,
@@ -92,6 +153,34 @@ describe("runtime provider contract", () => {
     });
 
     expect(createCodexRuntimeProvider().getCapabilities()).toMatchObject({
+      runtimeControl: {
+        supported: true,
+        operations: ["thread.list", "thread.read", "thread.rollback", "thread.fork", "turn.steer", "turn.interrupt"],
+      },
+      dynamicTools: {
+        mode: "host",
+      },
+      execution: {
+        mode: "subprocess-rpc",
+      },
+      sessionState: {
+        mode: "thread-id",
+        requiresCwdMatch: true,
+      },
+      usage: {
+        semantics: "terminal-event",
+      },
+      tools: {
+        permissionMode: "ravi-host",
+        accessRequirement: "tool_surface",
+        supportsParallelCalls: false,
+      },
+      systemPrompt: {
+        mode: "append",
+      },
+      terminalEvents: {
+        guarantee: "adapter",
+      },
       supportsSessionResume: true,
       supportsSessionFork: false,
       supportsPartialText: true,
@@ -101,6 +190,56 @@ describe("runtime provider contract", () => {
       supportsMcpServers: false,
       supportsRemoteSpawn: false,
       toolAccessRequirement: "tool_surface",
+    });
+
+    expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
+      runtimeControl: {
+        supported: true,
+        operations: [
+          "session.new",
+          "session.read",
+          "session.switch",
+          "session.compact",
+          "turn.steer",
+          "turn.follow_up",
+          "turn.interrupt",
+          "model.set",
+          "thinking.set",
+        ],
+      },
+      dynamicTools: {
+        mode: "none",
+      },
+      execution: {
+        mode: "subprocess-rpc",
+      },
+      sessionState: {
+        mode: "file-backed",
+        requiresCwdMatch: true,
+      },
+      usage: {
+        semantics: "terminal-event",
+      },
+      tools: {
+        permissionMode: "provider-native",
+        accessRequirement: "tool_and_executable",
+        supportsParallelCalls: false,
+      },
+      systemPrompt: {
+        mode: "append",
+      },
+      terminalEvents: {
+        guarantee: "adapter",
+      },
+      supportsSessionResume: true,
+      supportsSessionFork: false,
+      supportsPartialText: true,
+      supportsToolHooks: false,
+      supportsHostSessionHooks: false,
+      supportsPlugins: false,
+      supportsMcpServers: false,
+      supportsRemoteSpawn: false,
+      toolAccessRequirement: "tool_and_executable",
     });
   });
 

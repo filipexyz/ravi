@@ -21,6 +21,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toStrongestCompatibleRuntimeEffort } from "./effort.js";
+import { createRuntimeTerminalEventTracker } from "./terminality.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
@@ -35,6 +36,33 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
     id: "claude",
     getCapabilities() {
       return {
+        runtimeControl: {
+          supported: false,
+          operations: [],
+        },
+        dynamicTools: {
+          mode: "none",
+        },
+        execution: {
+          mode: "sdk",
+        },
+        sessionState: {
+          mode: "provider-session-id",
+        },
+        usage: {
+          semantics: "terminal-event",
+        },
+        tools: {
+          permissionMode: "ravi-host",
+          accessRequirement: "tool_and_executable",
+          supportsParallelCalls: false,
+        },
+        systemPrompt: {
+          mode: "append",
+        },
+        terminalEvents: {
+          guarantee: "adapter",
+        },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -125,20 +153,53 @@ async function* runClaudeTurns(
     });
     runtime.setActiveQuery(queryResult);
 
+    const terminalTracker = createRuntimeTerminalEventTracker();
     try {
       for await (const event of normalizeClaudeEvents(queryResult)) {
+        if (!terminalTracker.accept(event)) {
+          continue;
+        }
         if (event.type === "turn.complete") {
           resumeSessionId = event.providerSessionId ?? readRuntimeSessionId(event.session) ?? resumeSessionId;
           useForkSession = false;
         }
         yield event;
       }
+      if (!terminalTracker.terminalEmitted) {
+        const terminal = input.abortController.signal.aborted
+          ? terminalTracker.interrupt({
+              rawEvent: {
+                type: "stream.ended",
+                reason: "abort",
+              },
+            })
+          : terminalTracker.fail({
+              error: "Runtime provider stream ended without a terminal event",
+              recoverable: true,
+              rawEvent: {
+                type: "stream.ended",
+                reason: "missing_terminal_event",
+              },
+            });
+        if (terminal) {
+          yield terminal;
+        }
+      }
     } catch (error) {
-      yield {
-        type: "turn.failed",
-        error: error instanceof Error ? error.message : String(error),
-        recoverable: true,
-      };
+      const terminal = input.abortController.signal.aborted
+        ? terminalTracker.interrupt({
+            rawEvent: {
+              type: "stream.error",
+              reason: "abort",
+            },
+          })
+        : terminalTracker.fail({
+            error: error instanceof Error ? error.message : String(error),
+            recoverable: true,
+          });
+      if (terminal) {
+        yield terminal;
+      }
     } finally {
       runtime.setActiveQuery(null);
     }

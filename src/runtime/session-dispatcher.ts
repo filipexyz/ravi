@@ -165,6 +165,18 @@ export class RuntimeSessionDispatcher {
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
     recordStreamingAbortTrace(sessionName, session, abortReason, sessionEntry?.sessionKey, provenance);
+    this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.interrupted",
+        provider: session.queryHandle.provider,
+        reason: abortReason,
+        sessionName,
+        ...(session.currentSource ? { _source: session.currentSource } : {}),
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit explicit abort runtime event", { sessionName, error });
+      });
     shutdownRuntimeStreamingSession(session, abortReason);
     this.streamingSessions.delete(sessionName);
     return true;

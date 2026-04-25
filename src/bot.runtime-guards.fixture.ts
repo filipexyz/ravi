@@ -572,6 +572,18 @@ mock.module("./runtime/provider-registry.js", () => ({
     const capabilities =
       providerId === "codex"
         ? {
+            runtimeControl: { supported: true, operations: ["turn.steer", "turn.interrupt"] },
+            dynamicTools: { mode: "host" },
+            execution: { mode: "subprocess-rpc" },
+            sessionState: { mode: "thread-id", requiresCwdMatch: true },
+            usage: { semantics: "terminal-event" },
+            tools: {
+              permissionMode: "ravi-host",
+              accessRequirement: "tool_surface",
+              supportsParallelCalls: false,
+            },
+            systemPrompt: { mode: "append" },
+            terminalEvents: { guarantee: "adapter" },
             supportsSessionResume: true,
             supportsSessionFork: false,
             supportsPartialText: false,
@@ -582,6 +594,18 @@ mock.module("./runtime/provider-registry.js", () => ({
             supportsRemoteSpawn: false,
           }
         : {
+            runtimeControl: { supported: false, operations: [] },
+            dynamicTools: { mode: "none" },
+            execution: { mode: "sdk" },
+            sessionState: { mode: "provider-session-id" },
+            usage: { semantics: "terminal-event" },
+            tools: {
+              permissionMode: "ravi-host",
+              accessRequirement: "tool_and_executable",
+              supportsParallelCalls: false,
+            },
+            systemPrompt: { mode: "append" },
+            terminalEvents: { guarantee: "adapter" },
             supportsSessionResume: true,
             supportsSessionFork: true,
             supportsPartialText: true,
@@ -619,7 +643,12 @@ mock.module("./runtime/provider-registry.js", () => ({
   assertRuntimeCompatibility: (
     provider: {
       id: RuntimeProviderId;
-      getCapabilities(): { supportsToolHooks: boolean; supportsMcpServers: boolean; supportsRemoteSpawn: boolean };
+      getCapabilities(): {
+        supportsToolHooks: boolean;
+        supportsMcpServers: boolean;
+        supportsRemoteSpawn: boolean;
+        tools?: { permissionMode?: string };
+      };
     },
     request: {
       requiresMcpServers?: boolean;
@@ -634,7 +663,9 @@ mock.module("./runtime/provider-registry.js", () => ({
     if (request.requiresRemoteSpawn && !capabilities.supportsRemoteSpawn) {
       throw new Error(`Runtime provider '${provider.id}' does not support remote execution`);
     }
-    if (request.toolAccessMode === "restricted" && !capabilities.supportsToolHooks) {
+    const toolPermissionMode =
+      capabilities.tools?.permissionMode ?? (capabilities.supportsToolHooks ? "ravi-host" : "provider-native");
+    if (request.toolAccessMode === "restricted" && toolPermissionMode !== "ravi-host") {
       throw new Error(
         `Runtime provider '${provider.id}' requires full tool and executable access because Ravi permission hooks are unsupported`,
       );

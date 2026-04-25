@@ -26,6 +26,18 @@ const PROVIDER: RuntimeProviderId = "trace-provider";
 const MODEL = "trace-model";
 
 const capabilities: RuntimeCapabilities = {
+  runtimeControl: { supported: false, operations: [] },
+  dynamicTools: { mode: "none" },
+  execution: { mode: "sdk" },
+  sessionState: { mode: "provider-session-id" },
+  usage: { semantics: "terminal-event" },
+  tools: {
+    permissionMode: "ravi-host",
+    accessRequirement: "tool_and_executable",
+    supportsParallelCalls: false,
+  },
+  systemPrompt: { mode: "append" },
+  terminalEvents: { guarantee: "adapter" },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,

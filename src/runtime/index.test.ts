@@ -36,6 +36,18 @@ describe("runtime compatibility preflight", () => {
     const provider: RuntimeProvider = {
       id: "codex",
       getCapabilities: () => ({
+        runtimeControl: { supported: false, operations: [] },
+        dynamicTools: { mode: "none" },
+        execution: { mode: "sdk" },
+        sessionState: { mode: "provider-session-id" },
+        usage: { semantics: "terminal-event" },
+        tools: {
+          permissionMode: "provider-native",
+          accessRequirement: "tool_and_executable",
+          supportsParallelCalls: false,
+        },
+        systemPrompt: { mode: "append" },
+        terminalEvents: { guarantee: "adapter" },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -63,11 +75,31 @@ describe("runtime compatibility preflight", () => {
     ).not.toThrow();
   });
 
+  it("blocks restricted tool access for Pi until Ravi-hosted tool hooks exist", () => {
+    const issues = getRuntimeCompatibilityIssues(createRuntimeProvider("pi"), {
+      toolAccessMode: "restricted",
+    });
+
+    expect(issues.map((issue) => issue.code)).toEqual(["restricted_tool_access_unsupported"]);
+  });
+
   it("supports registering additional runtime providers without changing the factory switch", () => {
     try {
       registerRuntimeProvider("test-provider", () => ({
         id: "test-provider",
         getCapabilities: () => ({
+          runtimeControl: { supported: false, operations: [] },
+          dynamicTools: { mode: "none" },
+          execution: { mode: "sdk" },
+          sessionState: { mode: "provider-session-id" },
+          usage: { semantics: "terminal-event" },
+          tools: {
+            permissionMode: "ravi-host",
+            accessRequirement: "tool_and_executable",
+            supportsParallelCalls: false,
+          },
+          systemPrompt: { mode: "append" },
+          terminalEvents: { guarantee: "adapter" },
           supportsSessionResume: false,
           supportsSessionFork: false,
           supportsPartialText: false,

@@ -13,6 +13,7 @@ import type { RuntimeProviderId } from "./types.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
+import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -41,8 +42,16 @@ export interface RuntimeResumeDecision {
   requestedRuntimeProvider: RuntimeProviderId;
   supportsSessionResume: boolean;
   providerMatches: boolean;
+  sessionStateValid: boolean;
+  sessionStateInvalidReason?: RuntimeSessionStateInvalidReason;
   canResume: boolean;
-  reason: "resuming" | "missing_provider_session" | "provider_mismatch" | "provider_resume_unsupported" | "unknown";
+  reason:
+    | "resuming"
+    | "missing_provider_session"
+    | "provider_mismatch"
+    | "provider_resume_unsupported"
+    | "session_state_invalid"
+    | "unknown";
   staleCleared: boolean;
 }
 
@@ -78,8 +87,17 @@ export function resolveRuntimeSession(options: {
     session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
   const storedRuntimeProvider = resolveStoredRuntimeProvider(session, options.defaultRuntimeProviderId);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
+  const sessionStateValidation = validateRuntimeSessionState({
+    capabilities: runtimeCapabilities,
+    storedProviderSessionId,
+    storedRuntimeSessionParams,
+    sessionCwd: expandHome(session.agentCwd),
+  });
   const canResumeStoredSession =
-    !!storedProviderSessionId && providerMatches && runtimeCapabilities.supportsSessionResume;
+    !!storedProviderSessionId &&
+    providerMatches &&
+    runtimeCapabilities.supportsSessionResume &&
+    sessionStateValidation.valid;
   const resumeDecision: RuntimeResumeDecision = {
     hadStoredProviderSessionId: !!storedProviderSessionId,
     ...(storedProviderSessionId ? { storedProviderSessionAgeMs: Math.max(0, Date.now() - session.updatedAt) } : {}),
@@ -87,11 +105,14 @@ export function resolveRuntimeSession(options: {
     requestedRuntimeProvider: runtimeProviderId,
     supportsSessionResume: runtimeCapabilities.supportsSessionResume,
     providerMatches,
+    sessionStateValid: sessionStateValidation.valid,
+    ...(sessionStateValidation.reason ? { sessionStateInvalidReason: sessionStateValidation.reason } : {}),
     canResume: canResumeStoredSession,
     reason: resolveResumeDecisionReason({
       hasStoredProviderSessionId: !!storedProviderSessionId,
       providerMatches,
       supportsSessionResume: runtimeCapabilities.supportsSessionResume,
+      sessionStateValid: sessionStateValidation.valid,
       canResume: canResumeStoredSession,
     }),
     staleCleared: false,
@@ -139,11 +160,13 @@ function resolveResumeDecisionReason(input: {
   hasStoredProviderSessionId: boolean;
   providerMatches: boolean;
   supportsSessionResume: boolean;
+  sessionStateValid: boolean;
   canResume: boolean;
 }): RuntimeResumeDecision["reason"] {
   if (input.canResume) return "resuming";
   if (!input.hasStoredProviderSessionId) return "missing_provider_session";
   if (!input.providerMatches) return "provider_mismatch";
   if (!input.supportsSessionResume) return "provider_resume_unsupported";
+  if (!input.sessionStateValid) return "session_state_invalid";
   return "unknown";
 }

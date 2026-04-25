@@ -15,6 +15,13 @@ export type RuntimeProviderId = string;
 export type RuntimeToolAccessMode = "restricted" | "unrestricted";
 export type RuntimeThinking = "off" | "normal" | "verbose";
 export type RuntimeToolAccessRequirement = "tool_and_executable" | "tool_surface";
+export type RuntimeExecutionMode = "sdk" | "subprocess-rpc" | "subprocess-cli" | "embedded" | "external-service";
+export type RuntimeDynamicToolMode = "none" | "host";
+export type RuntimeSessionStateMode = "none" | "provider-session-id" | "thread-id" | "file-backed" | "external-store";
+export type RuntimeUsageSemantics = "terminal-event" | "streaming" | "unavailable";
+export type RuntimeToolPermissionMode = "ravi-host" | "provider-native" | "unrestricted";
+export type RuntimeSystemPromptMode = "append" | "override" | "provider-composed";
+export type RuntimeTerminalEventGuarantee = "provider" | "adapter" | "host-watchdog";
 
 export type RuntimeStatus = "queued" | "thinking" | "compacting" | "idle";
 
@@ -186,8 +193,17 @@ export type RuntimeControlOperation =
   | "thread.read"
   | "thread.rollback"
   | "thread.fork"
+  | "session.new"
+  | "session.read"
+  | "session.switch"
+  | "session.fork"
+  | "session.clone"
+  | "session.compact"
   | "turn.steer"
-  | "turn.interrupt";
+  | "turn.follow_up"
+  | "turn.interrupt"
+  | "model.set"
+  | "thinking.set";
 
 export interface RuntimeControlState {
   provider: RuntimeProviderId;
@@ -224,6 +240,42 @@ export interface RuntimeControlResult {
   data?: Record<string, unknown>;
   state?: RuntimeControlState;
   error?: string;
+}
+
+export interface RuntimeControlCapabilities {
+  supported: boolean;
+  operations: RuntimeControlOperation[];
+}
+
+export interface RuntimeDynamicToolCapabilities {
+  mode: RuntimeDynamicToolMode;
+}
+
+export interface RuntimeExecutionCapabilities {
+  mode: RuntimeExecutionMode;
+}
+
+export interface RuntimeSessionStateCapabilities {
+  mode: RuntimeSessionStateMode;
+  requiresCwdMatch?: boolean;
+}
+
+export interface RuntimeUsageCapabilities {
+  semantics: RuntimeUsageSemantics;
+}
+
+export interface RuntimeToolCapabilities {
+  permissionMode: RuntimeToolPermissionMode;
+  accessRequirement: RuntimeToolAccessRequirement;
+  supportsParallelCalls: boolean;
+}
+
+export interface RuntimeSystemPromptCapabilities {
+  mode: RuntimeSystemPromptMode;
+}
+
+export interface RuntimeTerminalEventCapabilities {
+  guarantee: RuntimeTerminalEventGuarantee;
 }
 
 export interface RuntimeHookMatcher {
@@ -403,6 +455,14 @@ export interface RuntimeSessionHandle {
 }
 
 export interface RuntimeCapabilities {
+  runtimeControl: RuntimeControlCapabilities;
+  dynamicTools: RuntimeDynamicToolCapabilities;
+  execution: RuntimeExecutionCapabilities;
+  sessionState: RuntimeSessionStateCapabilities;
+  usage: RuntimeUsageCapabilities;
+  tools: RuntimeToolCapabilities;
+  systemPrompt: RuntimeSystemPromptCapabilities;
+  terminalEvents: RuntimeTerminalEventCapabilities;
   supportsSessionResume: boolean;
   supportsSessionFork: boolean;
   supportsPartialText: boolean;

@@ -42,6 +42,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
+import { createRuntimeTerminalEventTracker } from "./terminality.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
@@ -160,6 +161,34 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     id: "codex",
     getCapabilities() {
       return {
+        runtimeControl: {
+          supported: true,
+          operations: CODEX_RUNTIME_CONTROL_OPERATIONS,
+        },
+        dynamicTools: {
+          mode: "host",
+        },
+        execution: {
+          mode: "subprocess-rpc",
+        },
+        sessionState: {
+          mode: "thread-id",
+          requiresCwdMatch: true,
+        },
+        usage: {
+          semantics: "terminal-event",
+        },
+        tools: {
+          permissionMode: "ravi-host",
+          accessRequirement: "tool_surface",
+          supportsParallelCalls: false,
+        },
+        systemPrompt: {
+          mode: "append",
+        },
+        terminalEvents: {
+          guarantee: "adapter",
+        },
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
@@ -505,7 +534,7 @@ async function* normalizeCodexEvents(
       };
       outerAbortSignal.addEventListener("abort", interruptOnAbort, { once: true });
 
-      let turnEnded = false;
+      const terminalTracker = createRuntimeTerminalEventTracker();
       let turnSessionId = previousSessionId;
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
@@ -660,26 +689,30 @@ async function* normalizeCodexEvents(
           }
 
           if (event.type === "turn.interrupted") {
-            yield { type: "turn.interrupted", rawEvent, metadata };
-            turnEnded = true;
+            const terminal: RuntimeEvent = { type: "turn.interrupted", rawEvent, metadata };
+            if (terminalTracker.accept(terminal)) {
+              yield terminal;
+            }
             break;
           }
 
           if (event.type === "turn.failed") {
-            yield {
+            const terminal: RuntimeEvent = {
               type: "turn.failed",
               error: extractCliFailureMessage(event) ?? lastErrorMessage ?? "Codex turn failed",
               recoverable: true,
               rawEvent,
               metadata,
             };
-            turnEnded = true;
+            if (terminalTracker.accept(terminal)) {
+              yield terminal;
+            }
             break;
           }
 
           if (event.type === "turn.completed") {
             previousSessionId = metadata.thread?.id ?? turnSessionId;
-            yield {
+            const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
               session: buildCodexSessionState(previousSessionId, input.cwd),
@@ -693,13 +726,15 @@ async function* normalizeCodexEvents(
               rawEvent,
               metadata,
             };
-            turnEnded = true;
+            if (terminalTracker.accept(terminal)) {
+              yield terminal;
+            }
             break;
           }
         }
 
         const result = await turn.result;
-        if (turnEnded) {
+        if (terminalTracker.terminalEmitted) {
           state.interrupted = false;
           continue;
         }
@@ -714,8 +749,11 @@ async function* normalizeCodexEvents(
             { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
             { threadId: turnSessionId, turnId: activeTurnId },
           );
-          yield { type: "status", status: "idle", metadata };
-          yield { type: "turn.interrupted", metadata };
+          const terminal = terminalTracker.interrupt({ metadata });
+          if (terminal) {
+            yield { type: "status", status: "idle", metadata };
+            yield terminal;
+          }
           continue;
         }
 
@@ -724,14 +762,16 @@ async function* normalizeCodexEvents(
           { type: "turn.failed", thread_id: turnSessionId, turn_id: activeTurnId },
           { threadId: turnSessionId, turnId: activeTurnId },
         );
-        yield {
-          type: "turn.failed",
+        const terminal = terminalTracker.fail({
           error:
             lastErrorMessage ??
             (stderrMessage || `Codex CLI exited without a terminal event (code ${result.exitCode ?? "unknown"})`),
           recoverable: true,
           metadata,
-        };
+        });
+        if (terminal) {
+          yield terminal;
+        }
       } catch (error) {
         if (outerAbortSignal.aborted && !state.interrupted) {
           break;
@@ -743,8 +783,11 @@ async function* normalizeCodexEvents(
             { type: "turn.interrupted", thread_id: turnSessionId, turn_id: activeTurnId },
             { threadId: turnSessionId, turnId: activeTurnId },
           );
-          yield { type: "status", status: "idle", metadata };
-          yield { type: "turn.interrupted", metadata };
+          const terminal = terminalTracker.interrupt({ metadata });
+          if (terminal) {
+            yield { type: "status", status: "idle", metadata };
+            yield terminal;
+          }
           continue;
         }
 
