@@ -23,6 +23,7 @@ import {
 import { DmScopeSchema } from "../../router/router-db.js";
 import { deleteSession, getSessionsByAgent, getMainSession, resolveSession } from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
   ensureAgentInstructionFiles,
@@ -100,6 +101,13 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
     isDefault: agent.id === defaultAgent,
     effectiveProvider: agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID,
   };
+}
+
+function validateAgentModelValue(providerId: string | undefined, model: string): void {
+  const result = validateRuntimeModelSelector(providerId ?? DEFAULT_RUNTIME_PROVIDER_ID, model);
+  if (!result.ok) {
+    fail(result.error ?? `Invalid model: ${model}`);
+  }
 }
 
 function buildDebugSessionSummary(session: {
@@ -523,6 +531,12 @@ export class AgentsCommands {
     }
 
     // Provider ids are intentionally open; runtime registration decides whether an id can execute.
+    if (key === "model") {
+      validateAgentModelValue(agent.provider, value);
+    }
+    if (key === "provider" && agent.model) {
+      validateAgentModelValue(value, agent.model);
+    }
 
     // Validate matrixAccount (will be validated in updateAgent, but give better error)
     if (key === "matrixAccount" && value !== "null" && value !== "") {

@@ -42,6 +42,29 @@ A provider MAY implement:
 - `setModel(model)`: live model switch.
 - `control(request)`: provider-native runtime controls such as thread read, fork, rollback, steer, or interrupt.
 
+The host dispatcher MAY route a concurrent human prompt through `control({ operation: "turn.steer" })` when the active handle supports runtime control and the delivery barrier is `after_tool`. If control fails or is unsupported, the host MUST fall back to the normal Ravi queue/interruption path without losing the prompt.
+
+Host-side debounce and provider-native steering are different layers:
+
+- Debounce is a pre-runtime UX batching decision controlled by agent/channel config.
+- Runtime `pendingMessages` is the host delivery queue used after a session handle exists.
+- Provider-native `turn.steer` is a control operation for injecting an additional prompt into an existing native run.
+
+Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST NOT disable debounce unless the agent/channel config says so.
+
+## Model Selectors
+
+Agent `model` values are provider-specific strings, but Ravi MUST still reject selectors that are structurally invalid before saving config. Validation belongs in the runtime model catalog/provider-local code, not scattered across unrelated CLIs.
+
+Minimum validation:
+
+- Reject empty model values.
+- Reject whitespace in model values.
+- Reject malformed `provider/model` selectors with an empty provider or model segment.
+- For Pi, reject known provider ids used alone as model selectors, such as `kimi-coding`; use `kimi-coding/kimi-for-coding` instead.
+
+Deep validation against a live provider catalog or credentials MAY be implemented as explicit preflight, but MUST NOT be required for every config write unless the provider can do it cheaply and deterministically.
+
 ## Canonical Events
 
 Providers MUST normalize native output into:
@@ -124,6 +147,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider that supports resume MUST return a `RuntimeSessionState` on `turn.complete`.
 - A provider that supports fork MUST define how parent provider state maps into the child session.
 - A provider that supports control MUST reject unsafe control operations while an active turn is running.
+- `turn.steer` means “inject this into the active native run”; `turn.follow_up` means “run this after the active native run would otherwise stop”. CLIs and UIs MUST expose both semantics distinctly.
 
 ## Validation
 

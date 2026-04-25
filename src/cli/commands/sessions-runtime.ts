@@ -169,6 +169,27 @@ export class SessionRuntimeCommands {
     return printRuntimeControlResult(result, asJson, "Steered active runtime turn.");
   }
 
+  @Command({ name: "follow-up", description: "Queue a follow-up after the active runtime turn" })
+  async followUp(
+    @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
+    @Arg("text", { description: "Follow-up text to run after the active turn" }) text: string,
+    @Option({ flags: "--thread <id>", description: "Expected runtime thread id" }) threadId?: string,
+    @Option({ flags: "--turn <id>", description: "Runtime turn id" }) turnId?: string,
+    @Option({ flags: "--expected-turn <id>", description: "Expected active runtime turn id" }) expectedTurnId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const session = resolveControlSession(nameOrKey, "modify");
+    const result = await requestRuntimeControl(session, {
+      operation: "turn.follow_up",
+      text,
+      threadId,
+      turnId,
+      expectedTurnId,
+    });
+
+    return printRuntimeControlResult(result, asJson, "Queued runtime follow-up.");
+  }
+
   @Command({ name: "interrupt", description: "Interrupt the active runtime turn" })
   async interrupt(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,

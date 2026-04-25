@@ -12,7 +12,7 @@ description: |
 
 # Agents Manager
 
-Agents são instâncias do Claude com configurações específicas (diretório, tools, permissões). Cada agent tem seu workspace, sessões independentes e pode atender canais/contatos diferentes.
+Agents são identidades operacionais do Ravi com configurações específicas: diretório, runtime provider, modelo, permissões, sessões e rotas. Cada agent tem seu workspace, sessões independentes e pode atender canais/contatos diferentes.
 
 **Importante:** Criar ou modificar agents **não requer restart** do daemon. Tudo atualiza em tempo real.
 
@@ -21,10 +21,47 @@ Agents são instâncias do Claude com configurações específicas (diretório, 
 ### 1. Criar o agent
 
 ```bash
-ravi agents create <id> <cwd>
+ravi agents create <id> <cwd> [--provider <provider>]
 ```
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
+
+## Runtimes Disponíveis
+
+`provider` define qual runtime executa as sessões do agent. `model` é interpretado pelo provider configurado.
+
+Providers built-in atuais:
+
+| Provider | Uso esperado | Modelo |
+|----------|--------------|--------|
+| `claude` | Runtime default e mais completo para agents com hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
+| `codex` | Runtime por subprocess/RPC com dynamic tools do Ravi e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `pi` | Runtime por Pi coding agent em RPC, bom para agentes rápidos/dev e providers externos. | Use `provider/model`, ex: `kimi-coding/kimi-for-coding` ou `openai/gpt-4.1-mini`. |
+
+Comandos comuns:
+
+```bash
+# Criar já usando runtime específico
+ravi agents create familia-sp ~/ravi/familia-sp --provider pi
+
+# Trocar runtime do agent
+ravi agents set familia-sp provider pi
+
+# Setar modelo do provider atual
+ravi agents set familia-sp model kimi-coding/kimi-for-coding
+
+# Voltar para outro runtime
+ravi agents set familia-sp provider codex
+ravi agents set familia-sp model gpt-5.5
+```
+
+Notas operacionais:
+
+- Mudar `provider` ou `model` não requer restart do daemon.
+- Sessões já ativas não mudam retroativamente no meio de um turno; a troca vale para o próximo start/turn compatível.
+- Provider ids são abertos em config, mas só providers registrados no daemon executam. Se salvar um provider inexistente, a falha aparece no start da sessão.
+- `pi` exige selector de modelo completo quando o valor também é um provider do Pi. `kimi-coding` sozinho é inválido; use `kimi-coding/<model-id>`.
+- `pi` usa ferramentas nativas do provider no MVP. Se o agent precisa executar tools/comandos, configure permissões coerentes antes de colocar em rota live.
 
 ### 2. Rotear mensagens pro agent
 
@@ -128,7 +165,8 @@ ravi agents set <id> <key> <value>
 Keys:
 - `name` — Nome do agent
 - `cwd` — Diretório de trabalho
-- `model` — Modelo (claude-opus-4-6, claude-sonnet-4-5-20250929, etc)
+- `provider` — Runtime provider (`claude`, `codex`, `pi`, ou outro provider registrado)
+- `model` — Modelo/selector interpretado pelo provider atual
 - `dmScope` — Escopo de sessão DM:
   - `main` — Todas as DMs numa sessão só
   - `per-peer` — Uma sessão por contato (default)

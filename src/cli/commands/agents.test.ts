@@ -6,6 +6,14 @@ const actualCliContextModule = await import("../context.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 
+type AgentLike = {
+  id: string;
+  cwd: string;
+  model?: string;
+  provider?: string;
+  remote?: string;
+};
+
 type SessionLike = {
   sessionKey: string;
   name?: string;
@@ -25,8 +33,9 @@ type SessionLike = {
   updatedAt: number;
 };
 
-let currentAgent: { id: string; cwd: string; remote?: string } | null = null;
-let allAgents: Array<{ id: string; cwd: string; remote?: string }> = [];
+let currentAgent: AgentLike | null = null;
+let allAgents: AgentLike[] = [];
+let updateAgentCalls: Array<{ id: string; partial: Record<string, unknown> }> = [];
 let resolvedSession: SessionLike | null = null;
 let mainSession: SessionLike | null = null;
 let sessionsByAgent: SessionLike[] = [];
@@ -82,7 +91,12 @@ mock.module("../../router/config.js", () => ({
   getAgent: (id: string) => (currentAgent?.id === id ? currentAgent : null),
   getAllAgents: () => allAgents,
   createAgent: () => {},
-  updateAgent: () => {},
+  updateAgent: (id: string, partial: Record<string, unknown>) => {
+    updateAgentCalls.push({ id, partial });
+    if (currentAgent?.id === id) {
+      currentAgent = { ...currentAgent, ...partial };
+    }
+  },
   deleteAgent: () => false,
   setAgentDebounce: () => {},
   checkAgentDirs: () => [],
@@ -137,10 +151,69 @@ mock.module("../../transcripts.js", () => ({
 
 const { AgentsCommands } = await import("./agents.js");
 
+describe("AgentsCommands set model validation", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", provider: "pi" };
+    allAgents = [];
+    updateAgentCalls = [];
+    resolvedSession = null;
+    mainSession = null;
+    sessionsByAgent = [];
+    transcriptPath = null;
+    instructionStates.clear();
+  });
+
+  it("rejects Pi provider ids used as model selectors", async () => {
+    const commands = new AgentsCommands();
+
+    await expect(commands.set("dev", "model", "kimi-coding", true)).rejects.toThrow(
+      "Invalid Pi model selector: 'kimi-coding' is a provider id",
+    );
+
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("rejects switching to Pi when the existing model selector is provider-only", async () => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", model: "kimi-coding" };
+    const commands = new AgentsCommands();
+
+    await expect(commands.set("dev", "provider", "pi", true)).rejects.toThrow(
+      "Invalid Pi model selector: 'kimi-coding' is a provider id",
+    );
+
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("accepts Pi provider/model selectors", async () => {
+    const commands = new AgentsCommands();
+    const logCalls: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      logCalls.push(args.map((arg) => String(arg)).join(" "));
+    };
+
+    try {
+      await commands.set("dev", "model", "kimi-coding/kimi-for-coding", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          model: "kimi-coding/kimi-for-coding",
+        },
+      },
+    ]);
+  });
+});
+
 describe("AgentsCommands debug --json", () => {
   beforeEach(() => {
     currentAgent = { id: "dev", cwd: "/tmp/dev" };
     allAgents = [];
+    updateAgentCalls = [];
     resolvedSession = null;
     mainSession = null;
     sessionsByAgent = [];
@@ -262,6 +335,7 @@ describe("AgentsCommands sync-instructions --json", () => {
       { id: "missing", cwd: "/tmp/missing" },
       { id: "divergent", cwd: "/tmp/divergent" },
     ];
+    updateAgentCalls = [];
     resolvedSession = null;
     mainSession = null;
     sessionsByAgent = [];

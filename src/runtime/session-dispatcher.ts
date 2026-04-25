@@ -1,11 +1,6 @@
 import { configStore } from "../config-store.js";
 import { saveMessage } from "../db.js";
-import {
-  DEFAULT_DELIVERY_BARRIER,
-  chooseMoreUrgentBarrier,
-  describeDeliveryBarrier,
-  type DeliveryBarrier,
-} from "../delivery-barriers.js";
+import { chooseMoreUrgentBarrier, describeDeliveryBarrier, type DeliveryBarrier } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSessionByName } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
@@ -476,12 +471,23 @@ export class RuntimeSessionDispatcher {
           existing.currentSource = prompt.source;
         }
 
+        const barrier = getRuntimePromptDeliveryBarrier(prompt);
+        const nativeSteer = await this.tryNativeRuntimeSteer(
+          sessionName,
+          existing,
+          prompt,
+          barrier,
+          sessionEntry?.sessionKey,
+        );
+        if (nativeSteer === "accepted") {
+          return;
+        }
+
         const userMsg: RuntimeUserMessage = {
           ...createQueuedRuntimeUserMessage(prompt),
         };
         existing.pendingMessages.push(userMsg);
 
-        const barrier = userMsg.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
         recordRuntimeTraceEvent({
           sessionKey: sessionEntry?.sessionKey ?? sessionName,
           sessionName,
@@ -736,6 +742,108 @@ export class RuntimeSessionDispatcher {
       next.resolve();
     }
   }
+
+  private async tryNativeRuntimeSteer(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    prompt: RuntimeLaunchPrompt,
+    barrier: DeliveryBarrier,
+    sessionKey = sessionName,
+  ): Promise<"accepted" | "fallback"> {
+    if (!canUseNativeRuntimeSteer(existing, barrier)) {
+      return "fallback";
+    }
+
+    const result = await existing.queryHandle
+      .control?.({
+        operation: "turn.steer",
+        text: prompt.prompt,
+      })
+      .catch((error) => ({
+        ok: false,
+        operation: "turn.steer" as const,
+        error: error instanceof Error ? error.message : String(error),
+        state: {
+          provider: existing.queryHandle.provider,
+          activeTurn: existing.turnActive,
+        },
+      }));
+
+    if (!result?.ok) {
+      recordRuntimeTraceEvent({
+        sessionKey,
+        sessionName,
+        agentId: existing.agentId,
+        runId: existing.traceRunId,
+        turnId: existing.currentTraceTurnId,
+        provider: existing.queryHandle.provider,
+        model: existing.currentModel,
+        eventType: "dispatch.native_steer",
+        eventGroup: "dispatch",
+        status: "failed",
+        source: prompt.source ?? existing.currentSource,
+        messageId: prompt.context?.messageId,
+        payloadJson: {
+          barrier: describeDeliveryBarrier(barrier),
+          error: result?.error ?? "runtime control did not return a result",
+        },
+      });
+      return "fallback";
+    }
+
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.native_steer",
+      eventGroup: "dispatch",
+      status: "accepted",
+      source: prompt.source ?? existing.currentSource,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        barrier: describeDeliveryBarrier(barrier),
+        operation: "turn.steer",
+      },
+    });
+
+    await this.options
+      .safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "runtime.control",
+        provider: existing.queryHandle.provider,
+        operation: "turn.steer",
+        ok: true,
+        state: result.state,
+        source: prompt.source,
+        timestamp: Date.now(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit native steer runtime control event", { sessionName, error });
+      });
+
+    return "accepted";
+  }
+}
+
+export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
+  const piPreTurnQueue =
+    session.queryHandle.provider === "pi" &&
+    !session.turnActive &&
+    !session.pushMessage &&
+    session.pendingMessages.length > 0 &&
+    !session.currentTurnPendingIds?.length;
+
+  return (
+    barrier === "after_tool" &&
+    Boolean(session.queryHandle.control) &&
+    (session.turnActive || piPreTurnQueue) &&
+    !session.done &&
+    !session.starting &&
+    !session.compacting
+  );
 }
 
 function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt[] {

@@ -164,6 +164,21 @@ Também persiste provider session state em `turn.complete`.
 
 O provider é adapter. O Ravi runtime é a fonte de verdade.
 
+Providers built-in registrados em `src/runtime/provider-registry.ts`:
+
+| Provider | Execução | Estado de sessão | Tool permissions | Controle runtime |
+|----------|----------|------------------|------------------|------------------|
+| `claude` | `sdk` | `provider-session-id` | `ravi-host` | sem `control` nativo |
+| `codex` | `subprocess-rpc` | `thread-id` | `ravi-host` | `runtimeControl` habilitado |
+| `pi` | `subprocess-rpc` | `file-backed` | `provider-native` | `runtimeControl` habilitado |
+
+Regras de uso:
+
+- Agent escolhe runtime por `agent.provider`; ausência usa o default do registry.
+- Agent escolhe modelo por `agent.model`; o formato é provider-specific.
+- Para `pi`, selectors que também são provider ids precisam vir como `provider/model`, por exemplo `kimi-coding/kimi-for-coding`.
+- Novo runtime entra no registry e declara capabilities; não espalhe branch por provider fora do adapter, registry, model validation ou compatibilidade explícita.
+
 Contrato canônico:
 
 - provider recebe `RuntimeStartRequest`

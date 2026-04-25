@@ -25,6 +25,16 @@
 4. Convert Pi events to Ravi runtime events.
 5. Emit exactly one terminal event for the accepted Ravi prompt.
 
+## Handle Multiple Incoming Chat Messages
+
+1. Keep Ravi agent/channel debounce behavior unchanged. Debounce happens before runtime dispatch.
+2. After a Pi session handle exists, do not route interactive `after_tool` messages through Ravi `pendingMessages` when Pi native steer is available.
+3. If the Pi turn is already active, call runtime control `turn.steer` immediately.
+4. If the first Pi prompt has not been yielded yet but the handle exists, accept `turn.steer` into the Pi provider's pre-start steer buffer.
+5. On Pi startup, send `set_steering_mode all` unless Pi already reports that mode.
+6. Flush buffered pre-start steers after queue-mode configuration and before the first `prompt`.
+7. Do not concatenate these steered messages in Ravi; Pi owns the queue drain semantics.
+
 ## Interrupt
 
 1. Send Pi `abort`.
@@ -39,6 +49,8 @@
 - Check whether a parallel tool batch left Ravi host state with one active stale tool.
 - Check stderr for process-level failures.
 - Check whether `get_state.isStreaming` disagrees with Ravi `turnActive`.
+- If repeated human messages were merged into one assistant context unexpectedly, check for `dispatch.push_existing` after a Pi handle already exists. Interactive `after_tool` prompts should usually show `dispatch.native_steer` instead.
+- If the issue happened immediately after cold start, check whether the second message arrived before the first `turn.started`. This is the pre-turn steer gap covered by the provider buffer.
 
 ## Rollout
 

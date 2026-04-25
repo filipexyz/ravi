@@ -9,6 +9,9 @@
 - `interrupt()` sends `abort` and emits `turn.interrupted`.
 - `setModel()` sends `set_model` and affects subsequent prompt metadata.
 - Resume validates cwd and session file before using Pi state.
+- Startup sends `set_steering_mode all` unless `get_state` already reports `steeringMode=all`.
+- A `turn.steer` accepted before provider startup is buffered and flushed to Pi before the first `prompt`.
+- Active-turn `turn.steer` sends Pi RPC `steer` and does not become Ravi host prompt concatenation.
 
 ## Event Mapping Tests
 
@@ -29,6 +32,7 @@
 - RPC stdout emits malformed JSON.
 - RPC response for `prompt` fails before acceptance.
 - Prompt is sent while Pi is streaming without explicit steer/follow-up.
+- Interactive `after_tool` prompt reaches Ravi `pendingMessages` after a live Pi handle exists when native steer should have been used.
 - Pi emits parallel tool starts before prior tool ends.
 - Pi emits tool update forever without terminal event.
 - Pi emits assistant message after interrupt.
@@ -38,6 +42,8 @@
 ## E2E Smoke
 
 - Text-only prompt completes and saves provider session state.
+- Cold-start burst: send two or more messages quickly; trace should show first `dispatch.cold_start`, then `dispatch.native_steer` for subsequent interactive messages once the Pi handle exists, without Ravi generator concatenating them into one pending prompt.
+- Active-turn burst: send multiple messages while Pi is responding; trace should show repeated `dispatch.native_steer`, and Pi should process them through native steering rather than one Ravi-concatenated prompt.
 - Tool-using prompt emits tool start/end and then completes.
 - Interrupt during text streaming ends as interrupted, not failed.
 - Model switch changes subsequent execution metadata.

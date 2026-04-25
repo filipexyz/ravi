@@ -23,7 +23,7 @@ class FakePiRpcTransport implements PiRpcTransport {
   readonly starts: PiRpcStartInput[] = [];
   readonly commands: PiRpcCommand[] = [];
 
-  responseFor?: (command: PiRpcCommand) => PiRpcResponse | undefined;
+  responseFor?: (command: PiRpcCommand) => PiRpcResponse | Promise<PiRpcResponse> | undefined;
   closed = false;
 
   async start(input: PiRpcStartInput): Promise<void> {
@@ -32,7 +32,7 @@ class FakePiRpcTransport implements PiRpcTransport {
 
   async send(command: PiRpcCommand): Promise<PiRpcResponse> {
     this.commands.push(command);
-    const response = this.responseFor?.(command);
+    const response = await this.responseFor?.(command);
     if (response) {
       return response;
     }
@@ -212,6 +212,7 @@ describe("Pi runtime provider", () => {
     expect(transport.commands.map((command) => command.type)).toEqual([
       "switch_session",
       "get_state",
+      "set_steering_mode",
       "prompt",
       "get_state",
     ]);
@@ -241,7 +242,7 @@ describe("Pi runtime provider", () => {
     expect(events.filter((event) => event.type === "turn.complete")).toHaveLength(0);
   });
 
-  it("routes runtime control commands to Pi RPC", async () => {
+  it("routes inactive runtime control commands to safe Pi RPC operations", async () => {
     const transport = new FakePiRpcTransport();
     const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle"));
 
@@ -257,13 +258,193 @@ describe("Pi runtime provider", () => {
         operation: "turn.steer",
         text: "muda o plano",
       }),
-    ).resolves.toMatchObject({ ok: true });
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        response: {
+          data: {
+            queued: true,
+            reason: "provider_starting",
+          },
+        },
+      },
+      state: {
+        activeTurn: false,
+      },
+    });
+    await expect(
+      handle.control?.({
+        operation: "turn.follow_up",
+        text: "continua depois",
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: "Pi turn.follow_up requires an active turn",
+      state: {
+        activeTurn: false,
+      },
+    });
 
     expect(transport.commands).toEqual([
       expect.objectContaining({ type: "set_model", provider: "openai", modelId: "gpt-5.5" }),
       expect.objectContaining({ type: "set_thinking_level", level: "xhigh" }),
-      expect.objectContaining({ type: "steer", message: "muda o plano" }),
     ]);
+  });
+
+  it("flushes pre-start steering through Pi before the first prompt instead of host prompt concatenation", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("primeira"));
+
+    await expect(
+      handle.control?.({
+        operation: "turn.steer",
+        text: "segunda",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      data: {
+        response: {
+          data: {
+            queued: true,
+          },
+        },
+      },
+    });
+
+    await collectRuntimeEvents(handle.events);
+
+    expect(transport.commands.map((command) => command.type)).toEqual([
+      "get_state",
+      "set_steering_mode",
+      "steer",
+      "prompt",
+      "get_state",
+    ]);
+    expect(transport.commands).toContainEqual(expect.objectContaining({ type: "steer", message: "segunda" }));
+    expect(transport.commands).toContainEqual(expect.objectContaining({ type: "prompt", message: "primeira" }));
+  });
+
+  it("routes active turn steering to Pi RPC", async () => {
+    const transport = new FakePiRpcTransport();
+    let releasePrompt: (() => void) | undefined;
+    const promptStarted = new Promise<void>((resolve) => {
+      transport.responseFor = (command) => {
+        if (command.type !== "prompt") {
+          return defaultResponse(command);
+        }
+        resolve();
+        return new Promise<PiRpcResponse>((finish) => {
+          releasePrompt = () => finish(defaultResponse(command));
+        });
+      };
+    });
+
+    const handle = createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle ativo"));
+    const eventsPromise = collectRuntimeEvents(handle.events);
+
+    await promptStarted;
+    await expect(
+      handle.control?.({
+        operation: "turn.steer",
+        text: "muda o plano",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      state: {
+        activeTurn: true,
+      },
+    });
+
+    releasePrompt?.();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+
+    await expect(eventsPromise).resolves.toContainEqual(expect.objectContaining({ type: "turn.complete" }));
+    expect(transport.commands).toContainEqual(expect.objectContaining({ type: "set_steering_mode", mode: "all" }));
+    expect(transport.commands).toContainEqual(expect.objectContaining({ type: "steer", message: "muda o plano" }));
+  });
+
+  it("does not reconfigure steering mode when Pi already drains steering messages together", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.responseFor = (command) => {
+      if (command.type === "get_state") {
+        return piResponse(command, { steeringMode: "all" });
+      }
+      return defaultResponse(command);
+    };
+    transport.pushEvent({ type: "agent_end", messages: [] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("sem reconfigurar")).events,
+    );
+
+    expect(transport.commands).not.toContainEqual(expect.objectContaining({ type: "set_steering_mode" }));
+  });
+
+  it("maps Pi queue updates to canonical queued/thinking status", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_start" });
+    transport.pushEvent({ type: "queue_update", steering: ["muda o plano"], followUp: [] });
+    transport.pushEvent({ type: "queue_update", steering: [], followUp: [] });
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("controle fila")).events,
+    );
+
+    expect(events).toContainEqual(expect.objectContaining({ type: "status", status: "queued" }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "status", status: "thinking" }));
+  });
+
+  it("sends channel prompts as regular Pi prompts", async () => {
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [] });
+
+    await collectRuntimeEvents(
+      createPiRuntimeProvider({ transport }).startSession(createStartRequest("segunda")).events,
+    );
+
+    const promptCommand = transport.commands.find((command) => command.type === "prompt");
+    expect(promptCommand).toMatchObject({
+      type: "prompt",
+      message: "segunda",
+    });
+    expect(promptCommand).not.toHaveProperty("streamingBehavior");
+  });
+
+  it("restarts a dead Pi RPC transport before sending a prompt", async () => {
+    const deadTransport = new FakePiRpcTransport();
+    deadTransport.responseFor = (command) => {
+      if (command.type === "prompt") {
+        throw new Error("Pi RPC transport is not connected");
+      }
+      return defaultResponse(command);
+    };
+
+    const liveTransport = new FakePiRpcTransport();
+    liveTransport.pushEvent({
+      type: "agent_end",
+      messages: [assistantMessage("recuperado")],
+    });
+
+    const transports = [deadTransport, liveTransport];
+    const events = await collectRuntimeEvents(
+      createPiRuntimeProvider({
+        transportFactory: () => transports.shift() ?? liveTransport,
+      }).startSession(createStartRequest("continua")).events,
+    );
+
+    expect(events.map((event) => event.type)).not.toContain("turn.failed");
+    expect(events.at(-1)).toMatchObject({ type: "turn.complete" });
+    expect(deadTransport.closed).toBe(true);
+    expect(liveTransport.starts).toHaveLength(1);
+    expect(liveTransport.commands).toContainEqual(
+      expect.objectContaining({
+        type: "prompt",
+        message: "continua",
+      }),
+    );
+    expect(liveTransport.commands.find((command) => command.type === "prompt")).not.toHaveProperty("streamingBehavior");
   });
 });
 

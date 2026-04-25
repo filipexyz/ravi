@@ -46,7 +46,9 @@ The MVP MUST use RPC JSONL. The SDK path MAY replace or complement RPC after the
 - Integration unit: `pi-coding-agent`.
 - Execution mode: subprocess RPC JSONL.
 - Process boundary: one Pi RPC process per Ravi runtime session handle.
-- Prompt submission: `prompt` for a new idle turn; `steer` or `follow_up` for active runs only through explicit runtime control.
+- Prompt submission: `prompt` for normal Ravi prompt delivery; `steer` for active runs and the pre-first-turn bootstrap gap through explicit runtime control; `follow_up` for active runs only.
+- Steering queue mode: Ravi MUST set Pi `steeringMode=all` at session bootstrap so multiple channel messages steered during one active turn are drained together by Pi instead of becoming one assistant turn per queued message. This is not Ravi debounce; every incoming message is still sent to Pi.
+- Host queue bypass: once a Ravi Pi session handle exists, interactive `after_tool` messages MUST prefer Pi native `steer` over Ravi `pendingMessages` whenever the Pi turn is active or the first prompt is still waiting to be yielded. This prevents Ravi's generator from concatenating pending human messages before Pi can apply its native steering queue.
 - Session state: Pi `sessionFile`, `sessionId`, `sessionName`, cwd, model provider/id, thinking level, agent dir, and integration mode stored in `RuntimeSessionState.params`.
 - Display id: `sessionName` when available, otherwise `sessionId`.
 - System prompt mode: append Ravi instructions to Pi's coding-agent prompt; do not replace Pi's base prompt in the MVP.
@@ -81,11 +83,12 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 
 ## RPC Commands Mapping
 
-- `prompt` starts a new user prompt when Pi is idle.
-- `steer` maps to Ravi `turn.steer` when Pi is streaming.
-- `follow_up` is not a default prompt delivery mechanism; use only when Ravi explicitly wants after-idle queuing.
+- `prompt` starts a normal Ravi-delivered user prompt.
+- `steer` maps to Ravi `turn.steer` when the Ravi provider handle has an active turn, or during the pre-first-turn bootstrap gap after the handle exists. If the transport has not connected yet, the provider buffers the steer and flushes it after `set_steering_mode all`, before the first `prompt`.
+- `follow_up` maps to Ravi `turn.follow_up` only when the Ravi provider handle has an active turn; it is not a default prompt delivery mechanism.
 - `abort` maps to `interrupt()`.
 - `get_state` reads session file/id/name, streaming state, model, thinking level, and queue state.
+- `set_steering_mode all` is sent during bootstrap unless `get_state` already reports `steeringMode=all`.
 - `set_model` backs `setModel` and must affect the next request even if no active request exists.
 - `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels.
 - `compact` is provider-native compaction and MUST emit `status: compacting` while active.
@@ -103,6 +106,7 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - Pi `tool_execution_start` -> `tool.started`.
 - Pi `tool_execution_update` -> `provider.raw` in the MVP.
 - Pi `tool_execution_end` -> `tool.completed`.
+- Pi `queue_update` -> `status: queued` while there are pending steering/follow-up messages, then `status: thinking` when the queue drains.
 - Pi `compaction_start` -> `status: compacting`.
 - Pi `compaction_end` -> `status: thinking` or `status: idle` depending on active state.
 - Pi `auto_retry_start` / `auto_retry_end` -> `provider.raw` and status metadata.
@@ -130,7 +134,11 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST not leak provider stderr to channel responses.
 - The provider MUST terminate the Pi subprocess when the Ravi session handle is interrupted or closed.
 - The provider MUST turn subprocess exit before terminal result into recoverable `turn.failed`.
-- The provider MUST reject overlapping prompt submission unless the operation is represented as `turn.steer` or follow-up control.
+- The provider MUST NOT translate normal Ravi prompt delivery into `steer` or `follow_up`, including queued channel prompts after an interrupt/requeue.
+- The provider MUST reject `turn.follow_up` when there is no active Ravi turn.
+- The provider MAY accept `turn.steer` before the first Ravi turn is active only to bridge the bootstrap gap where the host session already exists and the first prompt is still pending delivery.
+- The provider MUST reject overlapping prompt submission unless the operation is represented as explicit active-turn control.
+- When the host receives a normal human prompt while a provider turn is active and the delivery barrier is `after_tool`, the host MAY use canonical `turn.steer` instead of abort/requeue. This decision belongs in the host dispatcher/control layer, not inside Pi prompt submission.
 - The provider MUST not expose restricted Ravi agents until Pi tool permission hooks are bridged to Ravi host services.
 - The provider MUST not save Pi session file paths as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Pi session file.

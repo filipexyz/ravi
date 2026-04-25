@@ -71,6 +71,8 @@ interface PiRpcSessionState extends Record<string, unknown> {
   thinkingLevel?: unknown;
   isStreaming?: unknown;
   isCompacting?: unknown;
+  steeringMode?: unknown;
+  followUpMode?: unknown;
   sessionFile?: unknown;
   sessionId?: unknown;
   sessionName?: unknown;
@@ -130,6 +132,8 @@ interface PiSessionRuntimeState {
   interrupted: boolean;
   currentState?: PiRpcSessionState;
   started: boolean;
+  transport?: PiRpcTransport;
+  pendingSteers: string[];
 }
 
 interface CreatePiRpcSubprocessTransportOptions {
@@ -140,6 +144,7 @@ interface CreatePiRpcSubprocessTransportOptions {
 
 export interface CreatePiRuntimeProviderOptions extends CreatePiRpcSubprocessTransportOptions {
   transport?: PiRpcTransport;
+  transportFactory?: () => PiRpcTransport;
 }
 
 export interface PiRuntimeProvider extends SessionRuntimeProvider {
@@ -194,35 +199,52 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       return {};
     },
     startSession(input) {
-      const transport =
-        options.transport ??
-        createPiRpcSubprocessTransport({
-          command: options.command,
-          commandArgs: options.commandArgs,
-          responseTimeoutMs: options.responseTimeoutMs,
-        });
+      const createTransport =
+        options.transportFactory ??
+        (options.transport
+          ? () => options.transport!
+          : () =>
+              createPiRpcSubprocessTransport({
+                command: options.command,
+                commandArgs: options.commandArgs,
+                responseTimeoutMs: options.responseTimeoutMs,
+              }));
+      const canRestartTransport = Boolean(options.transportFactory) || !options.transport;
+      const initialTransport = createTransport();
       const state: PiSessionRuntimeState = {
         activeTurn: false,
         interrupted: false,
         started: false,
+        transport: initialTransport,
+        pendingSteers: [],
+      };
+
+      const requireTransport = () => {
+        if (!state.transport) {
+          throw new Error("Pi RPC transport is not connected");
+        }
+        return state.transport;
       };
 
       return {
         provider: "pi",
-        events: runPiTurns(input, transport, state),
+        events: runPiTurns(input, createTransport, state, { canRestartTransport }),
         interrupt: async () => {
           state.interrupted = true;
-          await safePiCommand(transport, { type: "abort" });
+          const transport = state.transport;
+          if (transport) {
+            await safePiCommand(transport, { type: "abort" });
+          }
         },
         setModel: async (model) => {
           const parsed = parsePiModelSelector(model);
-          await sendPiCommand(transport, {
+          await sendPiCommand(requireTransport(), {
             type: "set_model",
             provider: parsed.provider ?? defaultPiModelProvider(),
             modelId: parsed.modelId ?? model,
           });
         },
-        control: (request) => controlPiRuntime(transport, state, request),
+        control: (request) => controlPiRuntime(state, request),
       };
     },
   };
@@ -241,6 +263,7 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
   let stopStdoutReader: (() => void) | null = null;
   let closed = true;
   let intentionalClose = false;
+  let closeFailure: Error | null = null;
 
   const failPending = (error: unknown) => {
     for (const request of pending.values()) {
@@ -286,6 +309,8 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
       }
 
       const args = buildPiRpcProcessArgs(input, commandArgs);
+      stderr = "";
+      closeFailure = null;
       closed = false;
       intentionalClose = false;
       child = spawn(command, args, {
@@ -300,6 +325,7 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
       stopStdoutReader = attachStrictJsonlLineReader(child.stdout, handleLine);
       child.once("error", (error) => {
         closed = true;
+        closeFailure = error;
         queue.fail(error);
         failPending(error);
       });
@@ -316,17 +342,19 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
             ? null
             : new Error(`Pi RPC process exited with code ${code ?? "unknown"} signal ${signal ?? "none"}.${suffix}`);
         if (failure) {
+          closeFailure = failure;
           queue.fail(failure);
           failPending(failure);
         } else {
+          closeFailure = new Error("Pi RPC process closed");
           queue.end();
-          failPending(new Error("Pi RPC process closed"));
+          failPending(closeFailure);
         }
       });
     },
     send(commandBody) {
       if (!child || closed) {
-        return Promise.reject(new Error("Pi RPC transport is not connected"));
+        return Promise.reject(closeFailure ?? new Error("Pi RPC transport is not connected"));
       }
 
       const id = `pi-${nextRequestId++}`;
@@ -380,28 +408,49 @@ function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportO
 
 async function* runPiTurns(
   input: RuntimeStartRequest,
-  transport: PiRpcTransport,
+  createTransport: () => PiRpcTransport,
   state: PiSessionRuntimeState,
+  options: { canRestartTransport: boolean },
 ): AsyncGenerator<RuntimeEvent> {
   const modelSelector = parsePiModelSelector(input.model);
   const thinkingLevel = toPiThinkingLevel(input.effort, input.thinking);
   const abortSignal = input.abortController.signal;
+  const startInput: PiRpcStartInput = {
+    cwd: input.cwd,
+    env: input.env ?? process.env,
+    provider: modelSelector.provider,
+    model: modelSelector.modelId,
+    modelArg: modelSelector.modelArg,
+    thinkingLevel,
+    systemPromptAppend: input.systemPromptAppend,
+  };
+  let transport = state.transport ?? createTransport();
+  state.transport = transport;
+  let eventIterator = transport.events[Symbol.asyncIterator]();
+
+  const startTransport = async () => {
+    await transport.start(startInput);
+    state.started = true;
+    eventIterator = transport.events[Symbol.asyncIterator]();
+    await resumePiSessionIfNeeded(transport, input, state.currentState);
+    state.currentState = await readPiState(transport, state.currentState);
+    await configurePiQueueModes(transport, state);
+    await flushPendingPiSteers(transport, state);
+  };
+
+  const restartTransport = async (): Promise<boolean> => {
+    if (!options.canRestartTransport || abortSignal.aborted) {
+      return false;
+    }
+    await transport.close().catch(() => {});
+    transport = createTransport();
+    state.transport = transport;
+    await startTransport();
+    return true;
+  };
 
   try {
-    await transport.start({
-      cwd: input.cwd,
-      env: input.env ?? process.env,
-      provider: modelSelector.provider,
-      model: modelSelector.modelId,
-      modelArg: modelSelector.modelArg,
-      thinkingLevel,
-      systemPromptAppend: input.systemPromptAppend,
-    });
-    state.started = true;
-
-    const eventIterator = transport.events[Symbol.asyncIterator]();
-    await resumePiSessionIfNeeded(transport, input);
-    state.currentState = await readPiState(transport, state.currentState);
+    await startTransport();
     let turnIndex = 0;
 
     for await (const promptMessage of input.prompt) {
@@ -432,7 +481,15 @@ async function* runPiTurns(
       abortSignal.addEventListener("abort", abortListener, { once: true });
 
       try {
-        const promptResponse = await transport.send({ type: "prompt", message: prompt });
+        let promptResponse: PiRpcResponse;
+        try {
+          promptResponse = await sendPiPrompt(transport, prompt);
+        } catch (error) {
+          if (!isPiTransportDisconnectedError(error) || !(await restartTransport())) {
+            throw error;
+          }
+          promptResponse = await sendPiPrompt(transport, prompt);
+        }
         if (!promptResponse.success) {
           const terminal = terminalTracker.fail({
             error: promptResponse.error ?? "Pi prompt was rejected",
@@ -499,13 +556,18 @@ async function* runPiTurns(
           continue;
         }
 
+        const disconnected = isPiTransportDisconnectedError(error);
         const terminal = terminalTracker.fail({
           error: error instanceof Error ? error.message : String(error),
           recoverable: true,
-          metadata: buildPiEventMetadata({ type: "stream.error" }, context),
+          rawEvent: disconnected ? { type: "transport.disconnected" } : undefined,
+          metadata: buildPiEventMetadata({ type: disconnected ? "transport.disconnected" : "stream.error" }, context),
         });
         if (terminal) {
           yield terminal;
+        }
+        if (disconnected) {
+          return;
         }
       } finally {
         abortSignal.removeEventListener("abort", abortListener);
@@ -515,6 +577,9 @@ async function* runPiTurns(
     }
   } finally {
     await transport.close();
+    if (state.transport === transport) {
+      state.transport = undefined;
+    }
   }
 }
 
@@ -593,6 +658,11 @@ function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEv
         metadata,
       });
       break;
+    case "queue_update": {
+      const pendingCount = countPiQueuedMessages(event);
+      events.push({ type: "status", status: pendingCount > 0 ? "queued" : "thinking", rawEvent, metadata });
+      break;
+    }
     case "compaction_start":
       events.push({ type: "status", status: "compacting", rawEvent, metadata });
       break;
@@ -602,6 +672,13 @@ function normalizePiEvent(event: PiRpcEvent, context: PiEventContext): RuntimeEv
   }
 
   return events;
+}
+
+function countPiQueuedMessages(event: PiRpcEvent): number {
+  return (
+    (Array.isArray(event.steering) ? event.steering.length : 0) +
+    (Array.isArray(event.followUp) ? event.followUp.length : 0)
+  );
 }
 
 async function maybeBuildPiTerminalEvent(
@@ -660,7 +737,6 @@ async function maybeBuildPiTerminalEvent(
 }
 
 async function controlPiRuntime(
-  transport: PiRpcTransport,
   state: PiSessionRuntimeState,
   request: RuntimeControlRequest,
 ): Promise<RuntimeControlResult> {
@@ -670,6 +746,11 @@ async function controlPiRuntime(
     activeTurn: state.activeTurn,
     supportedOperations: PI_RUNTIME_CONTROL_OPERATIONS,
   });
+  const transport = state.transport;
+
+  if (!transport) {
+    return failControl(request, "Pi RPC transport is not connected", buildState());
+  }
 
   try {
     switch (request.operation) {
@@ -677,12 +758,32 @@ async function controlPiRuntime(
         state.interrupted = true;
         return okControl(request, await sendPiCommand(transport, { type: "abort" }), buildState());
       case "turn.steer":
+        if (!state.activeTurn && !state.started) {
+          state.pendingSteers.push(request.text ?? "");
+          return okControl(
+            request,
+            {
+              type: "response",
+              command: "steer",
+              success: true,
+              queued: true,
+              data: {
+                queued: true,
+                reason: "provider_starting",
+              },
+            },
+            buildState(),
+          );
+        }
         return okControl(
           request,
           await sendPiCommand(transport, { type: "steer", message: request.text ?? "" }),
           buildState(),
         );
       case "turn.follow_up":
+        if (!state.activeTurn) {
+          return failControl(request, "Pi turn.follow_up requires an active turn", buildState());
+        }
         return okControl(
           request,
           await sendPiCommand(transport, { type: "follow_up", message: request.text ?? "" }),
@@ -770,8 +871,13 @@ function failControl(request: RuntimeControlRequest, error: string, state: Runti
   };
 }
 
-async function resumePiSessionIfNeeded(transport: PiRpcTransport, input: RuntimeStartRequest): Promise<void> {
+async function resumePiSessionIfNeeded(
+  transport: PiRpcTransport,
+  input: RuntimeStartRequest,
+  currentState?: PiRpcSessionState,
+): Promise<void> {
   const sessionFile = firstString(
+    currentState?.sessionFile,
     input.resumeSession?.params?.sessionFile,
     input.resumeSession?.params?.filePath,
     input.resumeSession?.params?.path,
@@ -795,12 +901,52 @@ async function readPiState(
   }
 }
 
+async function configurePiQueueModes(transport: PiRpcTransport, state: PiSessionRuntimeState): Promise<void> {
+  // Pi defaults steering to one-at-a-time. Ravi channel prompts should not become
+  // serial assistant turns; they should be drained together at Pi's next steer poll.
+  if (state.currentState?.steeringMode === "all") {
+    return;
+  }
+  await sendPiCommand(transport, { type: "set_steering_mode", mode: "all" });
+  state.currentState = {
+    ...(state.currentState ?? {}),
+    steeringMode: "all",
+  };
+}
+
+async function flushPendingPiSteers(transport: PiRpcTransport, state: PiSessionRuntimeState): Promise<void> {
+  if (state.pendingSteers.length === 0) {
+    return;
+  }
+  const pending = state.pendingSteers.splice(0);
+  for (const message of pending) {
+    await sendPiCommand(transport, { type: "steer", message });
+  }
+}
+
 async function sendPiCommand(transport: PiRpcTransport, command: PiRpcCommand): Promise<PiRpcResponse> {
   const response = await transport.send(command);
   if (!response.success) {
     throw new Error(response.error ?? `Pi RPC command ${command.type} failed`);
   }
   return response;
+}
+
+function sendPiPrompt(transport: PiRpcTransport, prompt: string): Promise<PiRpcResponse> {
+  return transport.send({
+    type: "prompt",
+    message: prompt,
+  });
+}
+
+function isPiTransportDisconnectedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("Pi RPC transport is not connected") ||
+    message.includes("Pi RPC transport closed") ||
+    message.includes("Pi RPC process closed") ||
+    message.includes("Pi RPC process exited")
+  );
 }
 
 async function safePiCommand(transport: PiRpcTransport, command: PiRpcCommand): Promise<void> {

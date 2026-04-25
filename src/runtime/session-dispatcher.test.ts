@@ -1,7 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { RuntimeSessionDispatcher, stashPromptForStartingSession } from "./session-dispatcher.js";
+import {
+  RuntimeSessionDispatcher,
+  canUseNativeRuntimeSteer,
+  stashPromptForStartingSession,
+} from "./session-dispatcher.js";
 import type { RuntimeUserMessage } from "./host-session.js";
+import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 
 function createDispatcher() {
@@ -175,5 +180,78 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(second[0]?.deliveryBarrier).toBe("after_tool");
     expect(second[0]?.taskBarrierTaskId).toBe("task-1");
     expect(second[1]?.deliveryBarrier).toBe("after_response");
+  });
+});
+
+describe("RuntimeSessionDispatcher native runtime steer", () => {
+  function createStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      queryHandle: {
+        provider: "pi",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+        control: async () => ({ ok: true, operation: "turn.steer", state: { provider: "pi", activeTurn: true } }),
+      },
+      turnActive: true,
+      done: false,
+      starting: false,
+      compacting: false,
+      ...overrides,
+    } as RuntimeHostStreamingSession;
+  }
+
+  it("uses native steer for active Pi after-tool prompts when the provider exposes control", () => {
+    expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(true);
+    expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
+
+  it("allows Pi native steer during the pre-turn queue gap instead of falling back to host concatenation", () => {
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          turnActive: false,
+          pushMessage: null,
+          pendingMessages: [
+            { type: "user", message: { role: "user", content: "primeira" }, session_id: "", parent_tool_use_id: null },
+          ],
+        }),
+        "after_tool",
+      ),
+    ).toBe(true);
+
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          turnActive: false,
+          pushMessage: () => {},
+          pendingMessages: [
+            { type: "user", message: { role: "user", content: "primeira" }, session_id: "", parent_tool_use_id: null },
+          ],
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          turnActive: false,
+          pushMessage: null,
+          pendingMessages: [
+            { type: "user", message: { role: "user", content: "primeira" }, session_id: "", parent_tool_use_id: null },
+          ],
+          currentTurnPendingIds: ["pending-1"],
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
   });
 });

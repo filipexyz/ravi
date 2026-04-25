@@ -113,6 +113,38 @@ describe("SessionRuntimeCommands", () => {
     });
   });
 
+  it("maps follow-up to a runtime control request through NATS", async () => {
+    requestReplyResult = {
+      result: {
+        ok: true,
+        operation: "turn.follow_up",
+        data: { accepted: true },
+        state: { provider: "pi", activeTurn: true },
+      },
+    };
+    const commands = new SessionRuntimeCommands();
+
+    const { result, output } = await captureLogs(() =>
+      commands.followUp("dev-main", "faz isso depois", "thread_1", "turn_1", "turn_1", true),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(output).toContain('"operation": "turn.follow_up"');
+    expect(requestReplyCalls).toHaveLength(1);
+    expect(requestReplyCalls[0]?.topic).toBe("ravi.session.runtime.control");
+    expect(requestReplyCalls[0]?.data).toMatchObject({
+      sessionName: "dev-main",
+      sessionKey: "agent:dev:main",
+      request: {
+        operation: "turn.follow_up",
+        text: "faz isso depois",
+        threadId: "thread_1",
+        turnId: "turn_1",
+        expectedTurnId: "turn_1",
+      },
+    });
+  });
+
   it("maps list filters to thread.list without requiring modify access", async () => {
     scopeEnforced = true;
     canAccess = true;
