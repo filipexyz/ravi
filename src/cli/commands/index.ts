@@ -14,6 +14,7 @@ export * from "./context.js";
 export * from "./costs.js";
 export * from "./cron.js";
 export * from "./daemon.js";
+export * from "./devin.js";
 export * from "./doctor.js";
 export * from "./eval.js";
 export * from "./events.js";
