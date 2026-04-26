@@ -27,6 +27,7 @@ export type {
   CreateCallRunInput,
   CreateCallEventInput,
   CreateCallResultInput,
+  UpdateCallProfileInput,
   CallProviderAdapter,
   ProviderDialInput,
   ProviderDialResult,
@@ -56,6 +57,7 @@ export {
   createCallResult,
   getCallResult,
   getCallResultForRequest,
+  updateCallProfile,
   resetCallsSchemaFlag,
 } from "./calls-db.js";
 
@@ -63,11 +65,20 @@ export { evaluateCallRules } from "./rules.js";
 
 export {
   StubCallProvider,
+  ElevenLabsTwilioCallProvider,
   registerCallProvider,
   getCallProvider,
   hasRealProvider,
   resetProviders,
 } from "./provider.js";
+
+export type {
+  PostCallTranscriptionPayload,
+  CallInitiationFailurePayload,
+  CallWebhookPayload,
+} from "./webhook.js";
+
+export { handlePostCallWebhook } from "./webhook.js";
 
 import {
   createCallRequest,
@@ -168,7 +179,32 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
   }
 
   // 5. Attempt provider dial
-  const provider = getCallProvider(profile.provider);
+  let provider;
+  try {
+    provider = getCallProvider(profile.provider);
+  } catch (providerErr) {
+    const msg = providerErr instanceof Error ? providerErr.message : String(providerErr);
+    updateCallRequestStatus(request.id, "failed");
+    createCallEvent({
+      request_id: request.id,
+      event_type: "run.failed",
+      status: "failed",
+      message: msg,
+      source: "prox.calls.provider",
+    });
+    createCallResult({
+      request_id: request.id,
+      outcome: "failed_provider",
+      summary: msg,
+      next_action: "none",
+    });
+    return {
+      request: { ...request, status: "failed" as const },
+      blocked: false,
+      blockReason: null,
+    };
+  }
+
   const run = createCallRun({
     request_id: request.id,
     attempt_number: 1,

@@ -188,6 +188,7 @@ export interface CallResult {
 export interface CreateCallRequestInput {
   profile_id: string;
   target_person_id: string;
+  target_phone?: string | null;
   reason: string;
   priority?: CallRequestPriority;
   origin_session_name?: string | null;
@@ -197,6 +198,16 @@ export interface CreateCallRequestInput {
   deadline_at?: number | null;
   scheduled_for?: number | null;
   metadata_json?: Record<string, unknown> | null;
+}
+
+export interface UpdateCallProfileInput {
+  provider?: string;
+  provider_agent_id?: string;
+  twilio_number_id?: string;
+  language?: string;
+  prompt?: string;
+  voicemail_policy?: VoicemailPolicy;
+  enabled?: boolean;
 }
 
 export interface CreateCallRunInput {

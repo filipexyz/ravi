@@ -28,6 +28,7 @@ import type {
   CreateCallRunInput,
   CreateCallEventInput,
   CreateCallResultInput,
+  UpdateCallProfileInput,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -425,6 +426,55 @@ export function seedDefaultProfiles(): void {
   }
 }
 
+export function updateCallProfile(id: string, input: UpdateCallProfileInput): CallProfile | null {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = getCallProfile(id);
+  if (!existing) return null;
+
+  const now = Date.now();
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (input.provider !== undefined) {
+    fields.push("provider = ?");
+    values.push(input.provider);
+  }
+  if (input.provider_agent_id !== undefined) {
+    fields.push("provider_agent_id = ?");
+    values.push(input.provider_agent_id);
+  }
+  if (input.twilio_number_id !== undefined) {
+    fields.push("twilio_number_id = ?");
+    values.push(input.twilio_number_id);
+  }
+  if (input.language !== undefined) {
+    fields.push("language = ?");
+    values.push(input.language);
+  }
+  if (input.prompt !== undefined) {
+    fields.push("prompt = ?");
+    values.push(input.prompt);
+  }
+  if (input.voicemail_policy !== undefined) {
+    fields.push("voicemail_policy = ?");
+    values.push(input.voicemail_policy);
+  }
+  if (input.enabled !== undefined) {
+    fields.push("enabled = ?");
+    values.push(input.enabled ? 1 : 0);
+  }
+
+  if (fields.length === 0) return existing;
+
+  fields.push("updated_at = ?");
+  values.push(now);
+  values.push(id);
+
+  db.prepare(`UPDATE call_profiles SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getCallProfile(id);
+}
+
 // ---------------------------------------------------------------------------
 // Rules
 // ---------------------------------------------------------------------------
@@ -483,11 +533,12 @@ export function createCallRequest(input: CreateCallRequestInput): CallRequest {
 
   db.prepare(`
     INSERT INTO call_requests (id, status, profile_id, rules_id, target_person_id, target_contact_id, target_platform_identity_id, target_phone, origin_session_name, origin_agent_name, origin_channel, origin_message_id, reason, priority, deadline_at, scheduled_for, metadata_json, created_at, updated_at)
-    VALUES (?, 'pending', ?, NULL, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, 'pending', ?, NULL, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.profile_id,
     input.target_person_id,
+    input.target_phone ?? null,
     input.origin_session_name ?? null,
     input.origin_agent_name ?? null,
     input.origin_channel ?? null,
