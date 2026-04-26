@@ -18,6 +18,7 @@ import {
   initCallsDefaults,
   listCallProfiles,
   getCallProfile,
+  updateCallProfile,
   getCallRules,
   getCallRequest,
   listCallEvents,
@@ -29,10 +30,13 @@ import {
   submitCallRequest,
   resetCallsSchemaFlag,
   hasRealProvider,
+  resetProviders,
 } from "../../prox/calls/index.js";
 
 beforeEach(() => {
   resetCallsSchemaFlag();
+  resetProviders();
+  delete process.env.ELEVENLABS_API_KEY;
 });
 
 describe("prox calls storage integration", () => {
@@ -85,6 +89,8 @@ describe("prox calls storage integration", () => {
 describe("prox calls request flow", () => {
   it("request creates a persisted call_request before provider call", async () => {
     initCallsDefaults();
+    // Use stub provider explicitly for test
+    updateCallProfile("checkin", { provider: "stub" });
     const result = await submitCallRequest({
       profile_id: "checkin",
       target_person_id: "person_test_1",
@@ -107,6 +113,7 @@ describe("prox calls request flow", () => {
 
   it("request emits events timeline", async () => {
     initCallsDefaults();
+    updateCallProfile("followup", { provider: "stub" });
     const result = await submitCallRequest({
       profile_id: "followup",
       target_person_id: "person_test_2",
@@ -121,8 +128,9 @@ describe("prox calls request flow", () => {
     expect(eventTypes).toContain("rules.evaluated");
   });
 
-  it("request uses stub provider when no real provider configured", async () => {
+  it("request uses stub provider when profile explicitly uses stub", async () => {
     initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
     expect(hasRealProvider()).toBe(false);
 
     const result = await submitCallRequest({
@@ -135,11 +143,27 @@ describe("prox calls request flow", () => {
     // Stub provider completes immediately
     expect(["completed", "running"]).toContain(result.request.status);
   });
+
+  it("request with unregistered real provider creates durable failure", async () => {
+    initCallsDefaults();
+    // Ensure profile has a real provider name that is NOT registered
+    updateCallProfile("checkin", { provider: "elevenlabs_twilio" });
+    const result = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_test_provider_fail",
+      reason: "No provider test",
+    });
+
+    expect(result.request.status).toBe("failed");
+    const events = listCallEvents(result.request.id);
+    expect(events.some((e) => e.event_type === "run.failed")).toBe(true);
+  });
 });
 
 describe("prox calls show", () => {
   it("show returns request with runs and result", async () => {
     initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
       target_person_id: "person_test_4",
@@ -155,6 +179,7 @@ describe("prox calls show", () => {
 describe("prox calls events", () => {
   it("events command returns ordered timeline", async () => {
     initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
       target_person_id: "person_test_5",
@@ -193,6 +218,7 @@ describe("prox calls cancel", () => {
 
   it("cannot cancel a completed request", async () => {
     initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
       target_person_id: "person_cancel_2",
@@ -256,6 +282,7 @@ describe("terminal failures are durable", () => {
 describe("JSON output shapes", () => {
   it("request JSON includes all required fields", async () => {
     initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
       target_person_id: "person_json_1",
@@ -290,6 +317,7 @@ describe("JSON output shapes", () => {
 
   it("events JSON includes timeline with proper typing", async () => {
     initCallsDefaults();
+    updateCallProfile("followup", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "followup",
       target_person_id: "person_json_2",
@@ -314,5 +342,132 @@ describe("JSON output shapes", () => {
       expect(typeof e.event_type).toBe("string");
       expect(typeof e.created_at).toBe("number");
     }
+  });
+});
+
+describe("profile configure", () => {
+  it("updates provider settings on existing profile", () => {
+    initCallsDefaults();
+    const updated = updateCallProfile("checkin", {
+      provider: "elevenlabs_twilio",
+      provider_agent_id: "agent_abc123",
+      twilio_number_id: "pn_xyz789",
+    });
+
+    expect(updated).not.toBeNull();
+    expect(updated!.provider).toBe("elevenlabs_twilio");
+    expect(updated!.provider_agent_id).toBe("agent_abc123");
+    expect(updated!.twilio_number_id).toBe("pn_xyz789");
+    // Unchanged fields remain
+    expect(updated!.language).toBe("pt-BR");
+    expect(updated!.voicemail_policy).toBe("hangup");
+  });
+
+  it("returns null for nonexistent profile", () => {
+    initCallsDefaults();
+    const result = updateCallProfile("nonexistent_profile", { provider: "stub" });
+    expect(result).toBeNull();
+  });
+
+  it("persists changes across reads", () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider_agent_id: "agent_persist_test",
+      twilio_number_id: "pn_persist_test",
+    });
+
+    const profile = getCallProfile("checkin");
+    expect(profile!.provider_agent_id).toBe("agent_persist_test");
+    expect(profile!.twilio_number_id).toBe("pn_persist_test");
+  });
+
+  it("show --json exposes configured provider refs without secrets", () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs_twilio",
+      provider_agent_id: "agent_show_test",
+      twilio_number_id: "pn_show_test",
+    });
+
+    const profile = getCallProfile("checkin");
+    expect(profile).not.toBeNull();
+    const serialized = {
+      id: profile!.id,
+      provider: profile!.provider,
+      provider_agent_id: profile!.provider_agent_id,
+      twilio_number_id: profile!.twilio_number_id,
+    };
+    expect(serialized.provider_agent_id).toBe("agent_show_test");
+    expect(serialized.twilio_number_id).toBe("pn_show_test");
+    // No API keys in profile fields
+    expect(JSON.stringify(serialized)).not.toContain("api_key");
+    expect(JSON.stringify(serialized)).not.toContain("secret");
+  });
+});
+
+describe("request with --phone", () => {
+  beforeEach(() => {
+    resetProviders();
+    delete process.env.ELEVENLABS_API_KEY;
+  });
+
+  it("persists target_phone on the call request", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
+    const { request } = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_phone_1",
+      target_phone: "+5511999999999",
+      reason: "Phone test",
+    });
+
+    expect(request.target_phone).toBe("+5511999999999");
+    const persisted = getCallRequest(request.id);
+    expect(persisted!.target_phone).toBe("+5511999999999");
+  });
+
+  it("request without --phone has null target_phone", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", { provider: "stub" });
+    const { request } = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_phone_2",
+      reason: "No phone test",
+    });
+
+    expect(request.target_phone).toBeNull();
+  });
+});
+
+describe("missing config creates durable failure", () => {
+  it("live adapter with missing agent_id creates failed run/event/result", async () => {
+    initCallsDefaults();
+    // Configure profile with provider but no agent_id
+    updateCallProfile("checkin", {
+      provider: "elevenlabs_twilio",
+      provider_agent_id: "",
+      twilio_number_id: "pn_test",
+    });
+
+    // Register the adapter manually
+    resetProviders();
+    const { ElevenLabsTwilioCallProvider, registerCallProvider } = await import("../../prox/calls/provider.js");
+    registerCallProvider(new ElevenLabsTwilioCallProvider({ apiKey: "test-key" }));
+
+    const { request } = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_fail_config",
+      target_phone: "+5511999999999",
+      reason: "Config failure test",
+    });
+
+    // Should fail due to missing agent_id
+    expect(request.status).toBe("failed");
+
+    // Check durable failure artifacts
+    const events = listCallEvents(request.id);
+    const failEvent = events.find((e) => e.event_type === "run.failed");
+    expect(failEvent).toBeDefined();
+    expect(failEvent!.message).toContain("Missing provider_agent_id");
   });
 });
