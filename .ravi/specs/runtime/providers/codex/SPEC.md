@@ -89,4 +89,4 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Cwd mismatch on stored session state must disable resume to avoid attaching to the wrong native thread.
 - Model provider/model metadata may be absent and must not break terminal persistence.
 - Dynamic tools currently return mostly text through host services; richer content paths need explicit tests.
-- Runtime control is implemented by this provider but not represented in `RuntimeCapabilities`.
+- Runtime control/capability metadata regressions can break dispatcher decisions; `RuntimeCapabilities` coverage must stay aligned with provider behavior.
