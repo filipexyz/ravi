@@ -192,7 +192,7 @@ Leitura correta:
 
 ## Profiles Atuais
 
-O catálogo `system` deve expor apenas o contrato universal:
+O catálogo `system` deve expor apenas contratos universais de processo:
 
 ### `default`
 
@@ -207,6 +207,22 @@ Contrato:
 - workspace = task workspace canônico
 - artifact primário = `TASK.md`
 - protocolo = editar `TASK.md` primeiro
+
+### `devin`
+
+Uso:
+
+```bash
+ravi tasks create "implementar fluxo X" --instructions "..." --profile devin
+```
+
+Contrato:
+
+- workspace = task workspace canônico
+- artifact primário = `TASK.md`
+- protocolo = escrever briefing Devin-ready, criar sessão remota via `ravi devin sessions create`, monitorar com `show/messages/sync`, e sincronizar o estado da task no Ravi
+- inputs padrão = `advancedMode=create`, `maxAcu=20`, `repo=github.com:filipexyz/ravi`
+- boundary = Devin é executor externo; Ravi continua dono da task, provenance, artifacts e handoff
 
 Profiles de domínio como brainstorm, research, content, vídeo e runtime-only não pertencem ao catálogo built-in. Eles devem ser instalados como `plugin`, `workspace` ou `user`, ou gerados por `ravi tasks profiles init` quando fizer sentido.
 
