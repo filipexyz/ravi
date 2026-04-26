@@ -100,6 +100,11 @@ Não use `ravi sessions set-model` como mecanismo interno de task. O runtime res
 - `default`
   - workspace = task workspace
   - artifact primário = `TASK.md`
+- `devin`
+  - workspace = task workspace
+  - artifact primário = `TASK.md`
+  - protocolo = delegar via `ravi devin sessions create|show|messages|send|sync`
+  - uso = externalizar investigação/implementação longa mantendo o Ravi como dono da task
 
 Profiles de domínio (`brainstorm`, `content`, vídeo, runtime-only etc.) não são built-ins do sistema. Eles devem entrar como `plugin`, `workspace` ou `user`.
 
