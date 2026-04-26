@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { attachArtifact, createArtifact, getArtifactDetails, listArtifacts, updateArtifact } from "./store.js";
+import {
+  appendArtifactEvent,
+  attachArtifact,
+  createArtifact,
+  getArtifactDetails,
+  listArtifactEvents,
+  listArtifacts,
+  updateArtifact,
+} from "./store.js";
 
 let stateDir: string | null = null;
 
@@ -70,6 +78,42 @@ describe("artifact store", () => {
 
     const details = getArtifactDetails(artifact.id);
     expect(details?.links).toHaveLength(1);
-    expect(details?.events.map((event) => event.eventType)).toContain("artifact.attached");
+    expect(details?.events.map((event) => event.eventType)).toContain("attached");
+  });
+
+  it("stores ordered lifecycle events with status, message, source and payload", () => {
+    const artifact = createArtifact({
+      kind: "image",
+      title: "Async image",
+      status: "pending",
+    });
+
+    appendArtifactEvent(artifact.id, {
+      eventType: "started",
+      status: "running",
+      message: "Generation started",
+      source: "test",
+      payload: { provider: "openai" },
+      actor: "dev",
+    });
+    appendArtifactEvent(artifact.id, {
+      eventType: "completed",
+      status: "completed",
+      message: "Generation completed",
+      source: "test",
+      payload: { filePath: "/tmp/image.png" },
+      actor: "dev",
+    });
+
+    const events = listArtifactEvents(artifact.id);
+    expect(events.map((event) => event.eventType)).toEqual(["created", "started", "completed"]);
+    expect(events[1]).toMatchObject({
+      eventType: "started",
+      status: "running",
+      message: "Generation started",
+      source: "test",
+      actor: "dev",
+      payload: { provider: "openai" },
+    });
   });
 });
