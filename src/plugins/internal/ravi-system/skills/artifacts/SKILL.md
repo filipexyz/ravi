@@ -109,6 +109,8 @@ Archive é soft-delete: o artifact sai da listagem padrão, mas continua consult
 ## Integração Atual
 
 `ravi image generate` registra automaticamente artifacts `kind=image` usando lifecycle.
+`ravi image atlas split` registra um artifact `kind=image.atlas.split` para o
+manifest e um artifact `kind=image.crop` para cada crop derivado.
 
 O registro inclui:
 - path original e cópia no blob store local
@@ -119,6 +121,7 @@ O registro inclui:
 - tokens/usage quando o provider retorna
 - input/output estruturados
 - metadata e lineage básicos
+- provenance de atlas/crop: grid, posição, parent artifact e split artifact
 
 Para geração longa, prefira:
 
