@@ -72,6 +72,39 @@ ravi artifacts events art_xxx --json
 ravi image generate "product mockup" -o /tmp/mockups
 ```
 
+## Atlas / Contact Sheet
+
+Para reduzir custo e manter consistência visual, gere uma única imagem-atlas
+sem margem/gutter/padding/frame e corte localmente com grid bruto.
+
+### Split determinístico
+```bash
+ravi image atlas split /tmp/atlas.png \
+  --cols 3 \
+  --rows 2 \
+  --names ravi-dev,ravi-omni,ravi-app,ravi-genie,ravi-gtm,ravi-ideias \
+  --output /tmp/ravi-atlas \
+  --json
+```
+
+Default: `--mode raw`. Isso corta células exatas por `cols x rows`, sem trim,
+sem bbox visual, sem resize e sem padding. Use esse modo quando o prompt do
+atlas garantiu zero gutter/margem.
+
+### Enviar crops ao chat
+```bash
+ravi image atlas split /tmp/atlas.png --cols 3 --rows 2 --send
+```
+
+`--send` usa o contexto do chat atual ou alvo explícito com `--account` e `--to`.
+
+### Fallback com trim
+```bash
+ravi image atlas split /tmp/atlas.png --cols 3 --rows 2 --mode trim --size 512
+```
+
+`trim` é fallback para atlas imperfeito. Não use como default para atlas bem controlado.
+
 ## Opções
 
 | Flag | Descrição | Default |
@@ -149,11 +182,13 @@ handle vivo da execução.
 - provider, model, prompt, duração e usage/tokens quando disponível
 - sessão, agent, canal e chat quando houver contexto Ravi
 - metadata, metrics, lineage, input e output estruturados
+- atlas/crops derivados quando usar `ravi image atlas split`
 
 Para inspecionar:
 
 ```bash
 ravi artifacts list --kind image
+ravi artifacts list --kind image.crop
 ravi artifacts show <artifact-id> --json
 ravi artifacts events <artifact-id> --json
 ravi artifacts watch <artifact-id>

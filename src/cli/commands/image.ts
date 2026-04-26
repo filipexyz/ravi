@@ -13,11 +13,13 @@ import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
 import {
   appendArtifactEvent,
+  attachArtifact,
   createArtifact,
   getArtifact,
   updateArtifact,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
+import { splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -120,6 +122,49 @@ function contextArtifactFields(ctx: ToolContext | undefined): {
     ...(ctx?.source?.chatId ? { chatId: ctx.source.chatId } : {}),
     ...(ctx?.source?.threadId ? { threadId: ctx.source.threadId } : {}),
   };
+}
+
+function parsePositiveInteger(value: string | undefined, label: string, fallback: number): number {
+  if (!value?.trim()) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || String(parsed) !== value.trim() || parsed < 1) {
+    fail(`${label} must be a positive integer.`);
+  }
+  return parsed;
+}
+
+function parseNonNegativeInteger(value: string | undefined, label: string, fallback: number): number {
+  if (!value?.trim()) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || String(parsed) !== value.trim() || parsed < 0) {
+    fail(`${label} must be an integer >= 0.`);
+  }
+  return parsed;
+}
+
+function parseAtlasNames(value: string | undefined): string[] | undefined {
+  if (!value?.trim()) return undefined;
+  return value
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
+function parseAtlasMode(value: string | undefined): AtlasSplitMode {
+  if (!value?.trim()) return "raw";
+  if (value === "raw" || value === "trim") return value;
+  fail("--mode must be raw or trim.");
+}
+
+function parseAtlasFit(value: string | undefined): AtlasSplitFit {
+  if (!value?.trim()) return "contain";
+  if (value === "contain" || value === "cover") return value;
+  fail("--fit must be contain or cover.");
+}
+
+function renderCropCaption(template: string | undefined, name: string): string {
+  if (!template?.trim()) return name;
+  return template.replace(/\{name\}/g, name);
 }
 
 @Group({
@@ -704,6 +749,273 @@ export class ImageCommands {
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
+    }
+
+    return payload;
+  }
+}
+
+@Group({
+  name: "image.atlas",
+  description: "Image atlas/contact sheet tools",
+  scope: "open",
+})
+export class ImageAtlasCommands {
+  @Command({
+    name: "split",
+    description: "Split an image atlas/contact sheet into deterministic crop artifacts",
+  })
+  async split(
+    @Arg("input", { description: "Atlas/contact sheet image path" })
+    input: string,
+    @Option({ flags: "--cols <n>", description: "Grid columns (default: 3)" })
+    cols?: string,
+    @Option({ flags: "--rows <n>", description: "Grid rows (default: 2)" })
+    rows?: string,
+    @Option({ flags: "--names <csv>", description: "Comma-separated crop names, one per cell" })
+    names?: string,
+    @Option({ flags: "-o, --output <dir>", description: "Output directory for crops and manifest" })
+    output?: string,
+    @Option({ flags: "--mode <mode>", description: "Split mode: raw or trim. Default: raw" })
+    mode?: string,
+    @Option({ flags: "--size <px>", description: "Output square size for trim mode (default: 512)" })
+    size?: string,
+    @Option({ flags: "--fuzz <n>", description: "ImageMagick trim fuzz percentage for trim mode (default: 3)" })
+    fuzz?: string,
+    @Option({ flags: "--pad <px>", description: "Padding around trimmed crop for trim mode (default: 0)" })
+    pad?: string,
+    @Option({ flags: "--fit <mode>", description: "Trim mode square fit: contain or cover (default: contain)" })
+    fit?: string,
+    @Option({ flags: "--background <color>", description: "Trim mode padding background (default: auto)" })
+    background?: string,
+    @Option({ flags: "--parent-artifact <id>", description: "Atlas artifact id to use as provenance" })
+    parentArtifactId?: string,
+    @Option({ flags: "--send", description: "Send each crop to the current or explicit chat target" })
+    send?: boolean,
+    @Option({ flags: "--caption <template>", description: "Caption template for sent crops. Supports {name}" })
+    caption?: string,
+    @Option({ flags: "--account <id>", description: "Explicit Ravi/Omni account id for --send" })
+    accountId?: string,
+    @Option({ flags: "--to <chatId>", description: "Explicit chat id for --send" })
+    chatId?: string,
+    @Option({ flags: "--channel <channel>", description: "Explicit channel for --send" })
+    channel?: string,
+    @Option({ flags: "--thread-id <id>", description: "Explicit thread/topic id for --send" })
+    threadId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const ctx = getContext();
+    const artifactContext = contextArtifactFields(ctx);
+    const resolvedCols = parsePositiveInteger(cols, "--cols", 3);
+    const resolvedRows = parsePositiveInteger(rows, "--rows", 2);
+    const resolvedMode = parseAtlasMode(mode);
+    const outputDir = output ? resolve(output) : resolve(`/tmp/ravi-image-atlas-${Date.now()}`);
+    const parentArtifact = parentArtifactId ? getArtifact(parentArtifactId) : null;
+    if (parentArtifactId && !parentArtifact) fail(`Parent artifact not found: ${parentArtifactId}`);
+
+    const manifest = splitImageAtlas({
+      input,
+      outputDir,
+      cols: resolvedCols,
+      rows: resolvedRows,
+      names: parseAtlasNames(names),
+      mode: resolvedMode,
+      size: parsePositiveInteger(size, "--size", 512),
+      fuzz: Number(fuzz ?? "3"),
+      pad: parseNonNegativeInteger(pad, "--pad", 0),
+      fit: parseAtlasFit(fit),
+      background: background ?? "auto",
+    });
+
+    const splitArtifact = createArtifact({
+      kind: "image.atlas.split",
+      title: `Atlas split: ${manifest.source}`,
+      summary: `${manifest.results.length} crops from ${manifest.cols}x${manifest.rows} atlas`,
+      status: "completed",
+      filePath: manifest.manifestPath,
+      command: "ravi image atlas split",
+      ...artifactContext,
+      metadata: {
+        cols: manifest.cols,
+        rows: manifest.rows,
+        mode: manifest.mode,
+        rawCells: manifest.rawCells,
+        trim: manifest.trim,
+        outputDir: manifest.output,
+      },
+      lineage: {
+        source: "ravi image atlas split",
+        inputPath: manifest.input,
+        ...(parentArtifact ? { parentArtifactId: parentArtifact.id } : {}),
+      },
+      input: {
+        input: manifest.input,
+        cols: manifest.cols,
+        rows: manifest.rows,
+        names: manifest.results.map((cell) => cell.name),
+        mode: manifest.mode,
+      },
+      output: manifest,
+      tags: ["image", "atlas", "split", "manifest"],
+    });
+
+    if (parentArtifact) {
+      attachArtifact(splitArtifact.id, "artifact", parentArtifact.id, "derived-from", {
+        operation: "atlas.split",
+      });
+    }
+
+    appendArtifactEvent(splitArtifact.id, {
+      eventType: "split_completed",
+      status: "completed",
+      message: `Atlas split completed with ${manifest.results.length} crops`,
+      payload: { manifestPath: manifest.manifestPath, outputDir: manifest.output },
+      source: "ravi.image.atlas",
+      ...(ctx?.agentId ? { actor: ctx.agentId } : {}),
+    });
+
+    const cropArtifacts = manifest.results.map((cell) => {
+      const artifact = createArtifact({
+        kind: "image.crop",
+        title: cell.name,
+        summary: `Crop ${cell.index + 1} from ${manifest.source}`,
+        status: "completed",
+        filePath: cell.output,
+        command: "ravi image atlas split",
+        ...artifactContext,
+        metadata: {
+          name: cell.name,
+          index: cell.index,
+          row: cell.row,
+          col: cell.col,
+          grid: cell.grid,
+          outputSize: cell.outputSize,
+          atlas: {
+            width: manifest.width,
+            height: manifest.height,
+            cols: manifest.cols,
+            rows: manifest.rows,
+            mode: manifest.mode,
+          },
+        },
+        lineage: {
+          source: "ravi image atlas split",
+          inputPath: manifest.input,
+          splitArtifactId: splitArtifact.id,
+          ...(parentArtifact ? { parentArtifactId: parentArtifact.id } : {}),
+        },
+        input: {
+          source: manifest.input,
+          grid: cell.grid,
+          row: cell.row,
+          col: cell.col,
+        },
+        output: {
+          filePath: cell.output,
+          name: cell.name,
+          outputSize: cell.outputSize,
+        },
+        tags: ["image", "crop", "atlas", cell.name],
+      });
+      attachArtifact(artifact.id, "artifact", splitArtifact.id, "derived-from", {
+        operation: "atlas.split",
+        index: cell.index,
+      });
+      if (parentArtifact) {
+        attachArtifact(artifact.id, "artifact", parentArtifact.id, "derived-from", {
+          operation: "atlas.split",
+          index: cell.index,
+        });
+      }
+      appendArtifactEvent(artifact.id, {
+        eventType: "derived",
+        status: "completed",
+        message: `Derived crop ${cell.name} from atlas split ${splitArtifact.id}`,
+        payload: { splitArtifactId: splitArtifact.id, grid: cell.grid },
+        source: "ravi.image.atlas",
+        ...(ctx?.agentId ? { actor: ctx.agentId } : {}),
+      });
+      return artifact;
+    });
+
+    const sent: Array<Record<string, unknown>> = [];
+    if (send) {
+      for (const cell of manifest.results) {
+        const delivered = await sendMediaWithOmniCli({
+          filePath: cell.output,
+          caption: renderCropCaption(caption, cell.name),
+          type: "image",
+          filename: basename(cell.output),
+          target: {
+            ...(channel ? { channel } : {}),
+            ...(accountId ? { accountId } : {}),
+            ...(chatId ? { chatId } : {}),
+            ...(threadId ? { threadId } : {}),
+          },
+        });
+        const delivery = {
+          name: cell.name,
+          transport: delivered.delivery.transport,
+          ...(delivered.target.channel ? { channel: delivered.target.channel } : {}),
+          accountId: delivered.target.accountId,
+          instanceId: delivered.target.instanceId,
+          chatId: delivered.target.chatId,
+          ...(delivered.target.threadId ? { threadId: delivered.target.threadId } : {}),
+          filename: delivered.filename,
+          caption: renderCropCaption(caption, cell.name),
+          ...(delivered.delivery.messageId ? { messageId: delivered.delivery.messageId } : {}),
+          ...(delivered.delivery.status ? { status: delivered.delivery.status } : {}),
+        };
+        sent.push(delivery);
+        const artifact = cropArtifacts.find((item) => item.title === cell.name);
+        if (artifact) {
+          appendArtifactEvent(artifact.id, {
+            eventType: "sent",
+            status: "completed",
+            message: `Crop sent to ${delivered.target.chatId}`,
+            payload: delivery,
+            source: "ravi.image.atlas",
+            ...(ctx?.agentId ? { actor: ctx.agentId } : {}),
+          });
+        }
+      }
+      appendArtifactEvent(splitArtifact.id, {
+        eventType: "sent",
+        status: "completed",
+        message: `Sent ${sent.length} atlas crops`,
+        payload: { sent },
+        source: "ravi.image.atlas",
+        ...(ctx?.agentId ? { actor: ctx.agentId } : {}),
+      });
+    }
+
+    const payload = {
+      success: true,
+      artifactId: splitArtifact.id,
+      artifact_id: splitArtifact.id,
+      manifestPath: manifest.manifestPath,
+      outputDir: manifest.output,
+      parentArtifactId: parentArtifact?.id ?? null,
+      crops: manifest.results.map((cell, index) => ({
+        name: cell.name,
+        filePath: cell.output,
+        artifactId: cropArtifacts[index]?.id ?? null,
+        grid: cell.grid,
+        row: cell.row,
+        col: cell.col,
+      })),
+      sent,
+    };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`✓ Atlas split: ${splitArtifact.id}`);
+      console.log(`  Manifest: ${manifest.manifestPath}`);
+      console.log(`  Output: ${manifest.output}`);
+      console.log(`  Crops: ${manifest.results.length}`);
+      if (sent.length > 0) console.log(`  Sent: ${sent.length}`);
     }
 
     return payload;
