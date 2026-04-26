@@ -10,6 +10,7 @@ import { fail, getContext } from "../context.js";
 import {
   listCallProfiles,
   getCallProfile,
+  updateCallProfile,
   getCallRules,
   getCallRequest,
   listCallEvents,
@@ -23,6 +24,7 @@ import {
   type CallProfile,
   type CallEvent,
   type CallRules as CallRulesType,
+  type VoicemailPolicy,
 } from "../../prox/calls/index.js";
 
 function printJson(payload: unknown): void {
@@ -201,6 +203,60 @@ export class ProxCallsProfileCommands {
     console.log(`  Created:         ${formatTime(profile.created_at)}`);
     console.log();
   }
+
+  @Command({ name: "configure", description: "Configure a call profile's provider settings" })
+  configure(
+    @Arg("profile_id") profileId: string,
+    @Option({ flags: "--provider <name>", description: "Provider name (e.g. elevenlabs_twilio, stub)" })
+    provider?: string,
+    @Option({ flags: "--agent-id <id>", description: "ElevenLabs agent ID" }) agentId?: string,
+    @Option({ flags: "--twilio-number-id <id>", description: "Twilio phone number ID" }) twilioNumberId?: string,
+    @Option({ flags: "--language <lang>", description: "Language code (e.g. pt-BR, en-US)" }) language?: string,
+    @Option({ flags: "--prompt <text>", description: "Call prompt text" }) prompt?: string,
+    @Option({ flags: "--voicemail-policy <policy>", description: "Voicemail policy: leave_message, hangup, skip" })
+    voicemailPolicy?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+
+    if (!profileId) fail("profile_id is required");
+
+    const existing = getCallProfile(profileId);
+    if (!existing) {
+      fail(`Call profile not found: ${profileId}`);
+    }
+
+    const validVoicemailPolicies = new Set(["leave_message", "hangup", "skip"]);
+    if (voicemailPolicy && !validVoicemailPolicies.has(voicemailPolicy)) {
+      fail(`Invalid voicemail policy: ${voicemailPolicy}. Use leave_message|hangup|skip.`);
+    }
+
+    const updated = updateCallProfile(profileId, {
+      ...(provider !== undefined ? { provider } : {}),
+      ...(agentId !== undefined ? { provider_agent_id: agentId } : {}),
+      ...(twilioNumberId !== undefined ? { twilio_number_id: twilioNumberId } : {}),
+      ...(language !== undefined ? { language } : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(voicemailPolicy !== undefined ? { voicemail_policy: voicemailPolicy as VoicemailPolicy } : {}),
+    });
+
+    if (!updated) {
+      fail(`Failed to update profile: ${profileId}`);
+    }
+
+    if (asJson) {
+      printJson(serializeProfile(updated));
+      return;
+    }
+
+    console.log(`\nProfile ${profileId} updated.\n`);
+    console.log(`  Provider:        ${updated.provider}`);
+    console.log(`  Agent ID:        ${updated.provider_agent_id || "-"}`);
+    console.log(`  Twilio Number:   ${updated.twilio_number_id || "-"}`);
+    console.log(`  Language:        ${updated.language}`);
+    console.log(`  Voicemail:       ${updated.voicemail_policy}`);
+    console.log();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +310,11 @@ export class ProxCallsCommands {
     @Option({ flags: "--profile <profile_id>", description: "Call profile ID" }) profileId: string,
     @Option({ flags: "--person <person_id>", description: "Target person ID" }) personId: string,
     @Option({ flags: "--reason <text>", description: "Reason for the call" }) reason: string,
+    @Option({
+      flags: "--phone <e164>",
+      description: "Target phone number in E.164 format (temporary MVP, e.g. +5511999999999)",
+    })
+    phone?: string,
     @Option({ flags: "--priority <level>", description: "Priority level (low, normal, high, urgent)" })
     priority?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -275,6 +336,7 @@ export class ProxCallsCommands {
     const result = await submitCallRequest({
       profile_id: profileId,
       target_person_id: personId,
+      target_phone: phone ?? null,
       reason,
       priority: (priority as "low" | "normal" | "high" | "urgent") ?? "normal",
       origin_session_name: ctx?.sessionName ?? null,
