@@ -1,0 +1,360 @@
+---
+id: prox/calls
+title: "prox.city Calls"
+kind: capability
+domain: prox
+capability: calls
+capabilities:
+  - voice-follow-up
+  - call-rules
+  - provider-bridge
+  - result-routing
+tags:
+  - prox-city
+  - calls
+  - elevenlabs
+  - twilio
+  - outreach
+  - human-activation
+applies_to:
+  - src/prox
+  - src/cli/commands/prox.ts
+  - src/cli/commands/prox-calls.ts
+owners:
+  - ravi-dev
+status: draft
+normative: true
+---
+
+# prox.city Calls
+
+## Intent
+
+`prox calls` is Ravi's native capability for human voice follow-up inside the `prox.city` product layer.
+
+It exists so any Ravi session or agent can request a call to a person without knowing telephony details, provider APIs, phone numbers, voice prompts, or retry policy.
+
+Calls are not the product. Calls are an activation channel for people, context, and action.
+
+## Product Boundary
+
+- `prox calls` MUST live under `ravi prox calls`.
+- `prox calls` MUST NOT become a separate top-level product domain while the use case is human relationship activation.
+- `prox calls` MUST NOT expose provider details as the primary user-facing abstraction.
+- Any Ravi agent MAY request a call, but the request MUST pass through `prox calls` rules before dialing.
+- Provider adapters MUST NOT be called directly from random features, sessions, tasks, or agents.
+- A completed or failed call MUST route its result back to the originating session or agent when origin context is available.
+
+## Provider Boundary
+
+Ravi owns:
+
+- call intent;
+- person/contact/platform identity resolution;
+- origin session and agent lineage;
+- rules, quiet hours, cooldown, retry, snooze, and cancellation;
+- request/run/event/result storage;
+- result routing back to the originating session;
+- audit trail and artifacts.
+
+ElevenLabs owns:
+
+- voice agent configuration;
+- conversation behavior;
+- voice, language, and prompt;
+- transcript or provider-native conversation history;
+- structured extraction when configured.
+
+Twilio owns:
+
+- telephony transport;
+- phone number;
+- call delivery state;
+- low-level carrier failures.
+
+The first adapter SHOULD use the existing connected ElevenLabs and Twilio accounts. The normalized Ravi model MUST remain provider-shaped enough for this integration, but not provider-locked in the CLI.
+
+## Profile vs Rules
+
+`call_profile` and `call_rules` are different concepts and MUST stay separate.
+
+`call_profile` defines how the call behaves:
+
+- voice agent/provider reference;
+- speaking style and language;
+- purpose prompt;
+- extraction schema;
+- allowed questions;
+- voicemail behavior;
+- provider-specific settings;
+- default message framing.
+
+`call_rules` defines whether and when the call may happen:
+
+- quiet hours;
+- max attempts;
+- cooldown between attempts;
+- deadline/window;
+- priority handling;
+- snooze;
+- cancellation when the person replies on WhatsApp or another channel;
+- approval requirements;
+- spam limits.
+
+Changing the voice or prompt MUST NOT silently change the safety policy. Changing the policy MUST NOT silently change the voice behavior.
+
+## Entities
+
+### `call_profile`
+
+Reusable configuration for a type of call.
+
+Minimum fields:
+
+- `id`;
+- `name`;
+- `provider`;
+- `provider_agent_id`;
+- `twilio_number_id` or equivalent outbound number reference;
+- `language`;
+- `prompt`;
+- `extraction_schema_json`;
+- `voicemail_policy`;
+- `enabled`;
+- `created_at`;
+- `updated_at`.
+
+Initial examples:
+
+- `checkin`: short status check when a person is slow to respond.
+- `followup`: polite follow-up after an unanswered message.
+- `urgent-approval`: higher-priority call asking for an explicit approval or blocker.
+
+### `call_rules`
+
+Policy object applied before dialing.
+
+Minimum fields:
+
+- `id`;
+- `scope_type`;
+- `scope_id`;
+- `quiet_hours_json`;
+- `max_attempts`;
+- `cooldown_seconds`;
+- `snooze_until`;
+- `cancel_on_inbound_reply`;
+- `require_approval`;
+- `enabled`;
+- `created_at`;
+- `updated_at`.
+
+Rules MAY be scoped globally, by project, person, contact policy, agent, or profile. The MVP SHOULD start with global defaults plus optional per-request overrides.
+
+### `call_request`
+
+Logical request to call a person.
+
+Minimum fields:
+
+- `id`;
+- `status`;
+- `profile_id`;
+- `rules_id`;
+- `target_person_id`;
+- `target_contact_id`;
+- `target_platform_identity_id`;
+- `target_phone`;
+- `origin_session_name`;
+- `origin_agent_name`;
+- `origin_channel`;
+- `origin_message_id`;
+- `reason`;
+- `priority`;
+- `deadline_at`;
+- `scheduled_for`;
+- `metadata_json`;
+- `created_at`;
+- `updated_at`.
+
+Allowed statuses:
+
+- `pending`;
+- `scheduled`;
+- `running`;
+- `completed`;
+- `failed`;
+- `canceled`;
+- `snoozed`;
+- `blocked`.
+
+### `call_run`
+
+Concrete dialing attempt for a `call_request`.
+
+Minimum fields:
+
+- `id`;
+- `request_id`;
+- `status`;
+- `attempt_number`;
+- `provider`;
+- `provider_call_id`;
+- `twilio_call_sid`;
+- `started_at`;
+- `answered_at`;
+- `ended_at`;
+- `failure_reason`;
+- `metadata_json`.
+
+Allowed statuses:
+
+- `queued`;
+- `dialing`;
+- `ringing`;
+- `in_progress`;
+- `completed`;
+- `no_answer`;
+- `busy`;
+- `voicemail`;
+- `failed`;
+- `canceled`.
+
+### `call_event`
+
+Timeline event for a request or run.
+
+Minimum fields:
+
+- `id`;
+- `request_id`;
+- `run_id`;
+- `event_type`;
+- `status`;
+- `message`;
+- `payload_json`;
+- `source`;
+- `created_at`.
+
+### `call_result`
+
+Normalized output of a completed or terminal call.
+
+Minimum fields:
+
+- `id`;
+- `request_id`;
+- `run_id`;
+- `outcome`;
+- `summary`;
+- `transcript`;
+- `extraction_json`;
+- `next_action`;
+- `artifact_id`;
+- `created_at`.
+
+Initial outcomes:
+
+- `answered`;
+- `no_answer`;
+- `voicemail`;
+- `busy`;
+- `canceled_by_reply`;
+- `blocked_by_rules`;
+- `failed_provider`;
+- `failed_runtime`;
+
+## Lifecycle
+
+1. A Ravi session or agent creates a `call_request`.
+2. Ravi resolves the target person/contact/platform identity and phone.
+3. Ravi loads the requested `call_profile`.
+4. Ravi evaluates `call_rules`.
+5. If blocked, snoozed, or scheduled, Ravi persists that status and emits a `call_event`.
+6. If allowed, Ravi creates a `call_run`.
+7. The provider adapter starts the call through ElevenLabs/Twilio.
+8. Provider progress events are normalized into `call_event`.
+9. Transcript and extraction are persisted as `call_result`.
+10. Terminal status updates the `call_request`.
+11. Ravi routes a concise result back to the originating session or agent.
+
+## Cancellation
+
+- If `cancel_on_inbound_reply` is enabled and the target person replies before dialing, the request MUST move to `canceled`.
+- If the person replies while the call is scheduled but not started, the request MUST move to `canceled`.
+- If the person replies during an active call, Ravi MAY record the inbound reply but SHOULD NOT blindly terminate the provider call unless a profile-specific rule says so.
+- Manual cancellation MUST be available through CLI.
+
+## CLI Shape
+
+The MVP CLI SHOULD expose:
+
+```bash
+ravi prox calls profiles list [--json]
+ravi prox calls profiles show <profile_id> [--json]
+ravi prox calls rules show [--scope <scope>] [--json]
+ravi prox calls request --profile <profile_id> --person <person_id> --reason <text> [--priority <level>] [--json]
+ravi prox calls show <call_request_id> [--json]
+ravi prox calls events <call_request_id> [--json]
+ravi prox calls cancel <call_request_id> [--reason <text>] [--json]
+```
+
+The CLI MUST return ids and status in machine-readable form when `--json` is used.
+
+The request command SHOULD include an explicit hint that the originating session will be notified when the call reaches a terminal state.
+
+## Runtime Events
+
+`prox calls` SHOULD emit canonical events for observability:
+
+- `prox.call.request.created`;
+- `prox.call.request.scheduled`;
+- `prox.call.request.blocked`;
+- `prox.call.request.canceled`;
+- `prox.call.run.started`;
+- `prox.call.run.progress`;
+- `prox.call.run.completed`;
+- `prox.call.run.failed`;
+- `prox.call.result.created`.
+
+Events MUST NOT leak provider credentials or raw secrets.
+
+## Integration Points
+
+- Contacts provide person/contact/platform identity and phone resolution.
+- Sessions provide origin lineage and result delivery.
+- Artifacts MAY store transcript, audio, structured result, or provider payloads.
+- Projects MAY scope rules and approvals.
+- `ravi devin` MAY consume a call result later, but only after human-approved prox flow decides that execution should happen.
+
+## MVP
+
+The first implementation SHOULD be narrow:
+
+1. One working `checkin` profile.
+2. Global default rules with quiet hours, max attempts, cooldown, and cancel-on-reply.
+3. `request`, `show`, `events`, and `cancel` commands.
+4. ElevenLabs + Twilio adapter behind a Ravi provider boundary.
+5. Result routed back to the originating session.
+6. Provider failure persisted as `call_result` or terminal `call_event`, not only printed to stdout.
+
+## Non-Goals For MVP
+
+- full campaign/outreach automation;
+- payments;
+- public marketplace behavior;
+- generic voice provider framework beyond the first adapter;
+- inbound call center;
+- complex multi-person call orchestration;
+- replacing contact policies with call-specific policy.
+
+## Acceptance Criteria
+
+- A Ravi agent can request a call without knowing ElevenLabs or Twilio details.
+- A call request is persisted before any provider API call.
+- Rules can block or schedule a call before dialing.
+- A WhatsApp reply before dialing cancels the pending call when enabled.
+- Provider progress is visible through `ravi prox calls events`.
+- A terminal result is stored and routed back to the origin session.
+- Failures are durable and inspectable.
+- The CLI has stable JSON output for agents.
