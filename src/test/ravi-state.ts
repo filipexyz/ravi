@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { close as closeChatDb } from "../db.js";
 import { closeContacts } from "../contacts.js";
 import { closeSessionAdapterStore } from "../adapters/adapter-db.js";
+import { closeDevinDb } from "../devin/store.js";
 import { closeRouterDb } from "../router/router-db.js";
 import { closeSessionStore } from "../router/sessions.js";
 
@@ -70,6 +71,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
   await acquireRaviStateLock();
   closeChatDb();
   closeContacts();
+  closeDevinDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeRouterDb();
@@ -83,6 +85,7 @@ export async function createIsolatedRaviState(prefix = "ravi-test-"): Promise<st
 export async function cleanupIsolatedRaviState(stateDir?: string | null): Promise<void> {
   closeChatDb();
   closeContacts();
+  closeDevinDb();
   closeSessionAdapterStore();
   closeSessionStore();
   closeRouterDb();
