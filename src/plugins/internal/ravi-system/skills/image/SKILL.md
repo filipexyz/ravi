@@ -55,6 +55,18 @@ ravi image generate "landscape wallpaper" --aspect 16:9 --size 4K
 ravi image generate "coffee shop interior" --send
 ```
 
+### Gerar de forma assíncrona (padrão)
+```bash
+ravi image generate "large product campaign image" --provider openai --model gpt-image-2 --json
+```
+
+Retorna imediatamente um `artifact_id` para acompanhar:
+
+```bash
+ravi artifacts watch art_xxx
+ravi artifacts events art_xxx --json
+```
+
 ### Salvar em diretório específico
 ```bash
 ravi image generate "product mockup" -o /tmp/mockups
@@ -77,10 +89,23 @@ ravi image generate "product mockup" -o /tmp/mockups
 | `-o, --output <dir>` | Diretório de saída | `/tmp` |
 | `--send` | Envia pro chat automaticamente | `false` |
 | `--caption <text>` | Caption ao enviar (com `--send`) | prompt |
+| `--async` | Compatibilidade; async já é o default | `true` |
+| `--sync` | Espera o provider completar antes de retornar | `false` |
 
 ## Retorno
 
-O comando retorna o path da imagem gerada + o comando pra enviar:
+Por padrão, o comando retorna imediatamente o artifact handle:
+```json
+{
+  "artifact_id": "art_xxx",
+  "status": "pending",
+  "hint": "No polling needed: this artifact emits lifecycle events and will be sent to the origin chat when completed. Use watch/events only for manual inspection or debugging.",
+  "autoSend": true,
+  "watch": "ravi artifacts watch art_xxx"
+}
+```
+
+Com `--sync`, o comando espera o provider e retorna o path da imagem gerada + o comando pra enviar:
 ```
 ✓ Image saved: /tmp/ravi-image-1234567890.png
   Artifact: art_xxx
@@ -91,9 +116,12 @@ Se usar `--send`, o Ravi envia direto via `omni send` e só considera sucesso de
 
 ## Fluxo recomendado
 
-1. Rode `ravi image generate "prompt"` — gera a imagem
-2. Se precisa enviar pro chat, use `--send` ou copie o comando `ravi media send` do output
-3. Pra editar uma imagem: passe `--source` com o path da imagem original
+1. Rode `ravi image generate "prompt"` — cria o artifact e gera em background
+2. Se houver contexto de chat, a imagem é enviada automaticamente para o chat de origem quando completar
+3. Não faça polling por padrão: o artifact emite eventos e a sessão dona é avisada quando completar/falhar
+4. Use `ravi artifacts watch <artifact-id>` só para inspeção manual/debug
+5. Se precisa bloquear até terminar, use `--sync`
+6. Pra editar uma imagem: passe `--source` com o path da imagem original
 
 ## Limitações
 
@@ -112,7 +140,9 @@ Se usar `--send`, o Ravi envia direto via `omni send` e só considera sucesso de
 
 ## Artifacts
 
-Toda imagem gerada é registrada automaticamente em `ravi artifacts` com:
+Toda imagem gerada é registrada automaticamente em `ravi artifacts` com lifecycle.
+Em geração assíncrona, o artifact nasce antes da chamada ao provider e vira o
+handle vivo da execução.
 
 - arquivo bruto copiado para o blob store local
 - `sha256`, tamanho e MIME
@@ -125,6 +155,8 @@ Para inspecionar:
 ```bash
 ravi artifacts list --kind image
 ravi artifacts show <artifact-id> --json
+ravi artifacts events <artifact-id> --json
+ravi artifacts watch <artifact-id>
 ```
 
 ### Default por instância

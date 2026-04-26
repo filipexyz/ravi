@@ -7,11 +7,14 @@ import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   archiveArtifact,
+  appendArtifactEvent,
   attachArtifact,
   createArtifact,
   getArtifactDetails,
+  listArtifactEvents,
   listArtifacts,
   updateArtifact,
+  type ArtifactEvent,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
 
@@ -97,6 +100,24 @@ function summarizeArtifact(artifact: ArtifactRecord): Record<string, unknown> {
     updatedAt: artifact.updatedAt,
     deletedAt: artifact.deletedAt ?? null,
   };
+}
+
+function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
+  return {
+    id: event.id,
+    artifactId: event.artifactId,
+    eventType: event.eventType,
+    status: event.status ?? null,
+    message: event.message ?? null,
+    source: event.source ?? null,
+    actor: event.actor ?? null,
+    payload: event.payload ?? null,
+    createdAt: event.createdAt,
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 @Group({
@@ -343,5 +364,127 @@ export class ArtifactsCommands {
       console.log(`✓ Artifact archived: ${artifact.id}`);
     }
     return payload;
+  }
+
+  @Command({ name: "event", description: "Append an artifact lifecycle event" })
+  event(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Arg("eventType", { description: "Event type, e.g. started, completed, failed" }) eventType: string,
+    @Option({ flags: "--status <status>", description: "Lifecycle status for this event" }) status?: string,
+    @Option({ flags: "--message <text>", description: "Human-readable event message" }) message?: string,
+    @Option({ flags: "--source <source>", description: "Event source" }) source?: string,
+    @Option({ flags: "--payload <json>", description: "Structured event payload JSON object" }) payload?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ctx = contextDefaults();
+    const artifact = status?.trim() ? updateArtifact(id, { status }, { actor: ctx.agentId }) : undefined;
+    const event = appendArtifactEvent(id, {
+      eventType,
+      ...(status?.trim() ? { status } : {}),
+      ...(message?.trim() ? { message } : {}),
+      ...(source?.trim() ? { source } : {}),
+      ...(payload ? { payload: parseJsonObject(payload, "--payload") } : {}),
+      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+    });
+    const result = { success: true, event, ...(artifact ? { artifact } : {}) };
+    if (asJson) {
+      printJson(result);
+    } else {
+      console.log(`✓ Artifact event appended: ${event.eventType}`);
+    }
+    return result;
+  }
+
+  @Command({ name: "events", description: "List artifact lifecycle events" })
+  events(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const events = listArtifactEvents(id);
+      const payload = { artifactId: id, total: events.length, events: events.map(summarizeEvent) };
+      if (asJson) {
+        printJson(payload);
+      } else if (events.length === 0) {
+        console.log("No artifact events found.");
+      } else {
+        for (const event of events) {
+          console.log(
+            `${new Date(event.createdAt).toISOString()} ${event.eventType}${event.status ? ` [${event.status}]` : ""}${
+              event.message ? ` — ${event.message}` : ""
+            }`,
+          );
+        }
+      }
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "watch", description: "Watch artifact lifecycle until a terminal status" })
+  async watch(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--interval-ms <n>", description: "Polling interval in milliseconds (default: 1000)" })
+    intervalMs?: string,
+    @Option({ flags: "--timeout-ms <n>", description: "Timeout in milliseconds (default: 300000)" })
+    timeoutMs?: string,
+    @Option({ flags: "--json", description: "Print final JSON result" }) asJson?: boolean,
+  ) {
+    const interval = parseInteger(intervalMs ?? "1000", "--interval-ms") ?? 1000;
+    const timeout = parseInteger(timeoutMs ?? "300000", "--timeout-ms") ?? 300_000;
+    const terminal = new Set(["completed", "failed", "archived"]);
+    const startedAt = Date.now();
+    const printedEvents = new Set<number>();
+    let lastStatus: string | undefined;
+
+    for (;;) {
+      const details = getArtifactDetails(id);
+      if (!details) fail(`Artifact not found: ${id}`);
+      const events = [...details.events].reverse();
+      if (details.artifact.status !== lastStatus) {
+        lastStatus = details.artifact.status;
+        if (!asJson) {
+          console.log(`${new Date(details.artifact.updatedAt).toISOString()} status [${details.artifact.status}]`);
+        }
+      }
+
+      if (!asJson) {
+        for (const event of events) {
+          if (printedEvents.has(event.id)) continue;
+          printedEvents.add(event.id);
+          console.log(
+            `${new Date(event.createdAt).toISOString()} ${event.eventType}${event.status ? ` [${event.status}]` : ""}${
+              event.message ? ` — ${event.message}` : ""
+            }`,
+          );
+        }
+      }
+
+      if (terminal.has(details.artifact.status)) {
+        const payload = {
+          artifact: details.artifact,
+          events: events.map(summarizeEvent),
+          terminal: true,
+          elapsedMs: Date.now() - startedAt,
+        };
+        if (asJson) printJson(payload);
+        return payload;
+      }
+
+      if (Date.now() - startedAt > timeout) {
+        const payload = {
+          artifact: details.artifact,
+          events: events.map(summarizeEvent),
+          terminal: false,
+          elapsedMs: Date.now() - startedAt,
+        };
+        if (asJson) printJson(payload);
+        else console.log(`Timed out watching artifact ${id} at status ${details.artifact.status}`);
+        return payload;
+      }
+
+      await sleep(interval);
+    }
   }
 }
