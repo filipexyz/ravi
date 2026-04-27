@@ -10,6 +10,7 @@ process.env.RAVI_STATE_DIR = testDir;
 import {
   listCallProfiles,
   getCallProfile,
+  updateCallProfile,
   seedDefaultProfiles,
   seedDefaultRules,
   getCallRules,
@@ -67,7 +68,31 @@ describe("call_profiles", () => {
     expect(profile).not.toBeNull();
     expect(profile!.name).toBe("Check-in");
     expect(profile!.provider).toBe("elevenlabs");
+    expect(profile!.first_message).toBeNull();
+    expect(profile!.system_prompt_path).toBeNull();
+    expect(profile!.dynamic_variables_json).toEqual(
+      expect.objectContaining({
+        opening_line: "Oi, aqui é o Ravi.",
+        reason: "Motivo da chamada",
+      }),
+    );
     expect(profile!.enabled).toBe(true);
+  });
+
+  it("updates first message, system prompt path and dynamic placeholders", () => {
+    seedDefaultProfiles();
+    const updated = updateCallProfile("checkin", {
+      first_message: "Oi, aqui é o Ravi.",
+      prompt: "System prompt body",
+      system_prompt_path: "/tmp/ravi-call-prompt.md",
+      dynamic_variables_json: {
+        opening_line: "Oi, teste",
+      },
+    });
+    expect(updated?.first_message).toBe("Oi, aqui é o Ravi.");
+    expect(updated?.prompt).toBe("System prompt body");
+    expect(updated?.system_prompt_path).toBe("/tmp/ravi-call-prompt.md");
+    expect(updated?.dynamic_variables_json).toEqual({ opening_line: "Oi, teste" });
   });
 
   it("getCallProfile returns null for missing ID", () => {

@@ -28,6 +28,7 @@ import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
+import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -88,6 +89,7 @@ let gateway: ReturnType<typeof createGateway> | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
+let webhookHttpServer: WebhookHttpServerHandle | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -130,6 +132,10 @@ async function shutdown(signal: string) {
 
     if (sessionAdapterBus) {
       await sessionAdapterBus.stop();
+    }
+
+    if (webhookHttpServer) {
+      await webhookHttpServer.stop();
     }
 
     // Stop omni consumer
@@ -265,6 +271,13 @@ export async function startDaemon() {
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
   log.info("Session adapter bus started");
+
+  webhookHttpServer = startWebhookHttpServerFromEnv();
+  if (webhookHttpServer) {
+    log.info("Webhook HTTP server ready", { url: webhookHttpServer.url });
+  } else {
+    log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
+  }
 
   log.info("Daemon ready");
 

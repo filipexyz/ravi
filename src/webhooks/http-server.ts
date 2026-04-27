@@ -1,0 +1,217 @@
+/**
+ * Ravi Webhook HTTP Server
+ *
+ * Small daemon-owned HTTP surface for provider callbacks. This is intentionally
+ * narrow: it is not the overlay bridge and not a general public API.
+ */
+
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { handlePostCallWebhook, normalizeCallWebhookPayload, type CallWebhookPayload } from "../prox/calls/webhook.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("webhooks:http");
+
+export const ELEVENLABS_POST_CALL_WEBHOOK_PATH = "/webhooks/elevenlabs/post-call";
+const ELEVENLABS_POST_CALL_WEBHOOK_ALIASES = new Set([
+  ELEVENLABS_POST_CALL_WEBHOOK_PATH,
+  "/api/webhooks/elevenlabs/post-call",
+]);
+
+const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+interface ServeLike {
+  port: number;
+  hostname: string;
+  stop(force?: boolean): void;
+}
+
+declare const Bun: {
+  serve(options: { hostname: string; port: number; fetch(request: Request): Response | Promise<Response> }): ServeLike;
+};
+
+export interface WebhookHttpServerConfig {
+  host: string;
+  port: number;
+  elevenLabsWebhookSecret?: string;
+  allowUnsignedElevenLabs?: boolean;
+  maxBodyBytes?: number;
+}
+
+export interface WebhookHttpServerHandle {
+  host: string;
+  port: number;
+  url: string;
+  stop(): Promise<void>;
+}
+
+function jsonResponse(status: number, body: Record<string, unknown>): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+function parsePort(value: string | undefined): number | null {
+  if (!value?.trim()) return null;
+  const port = Number(value.trim());
+  if (!Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new Error(`Invalid Ravi HTTP port: ${value}`);
+  }
+  return port;
+}
+
+function boolEnv(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "yes";
+}
+
+function getSignature(request: Request): string | null {
+  return request.headers.get("elevenlabs-signature") ?? request.headers.get("ElevenLabs-Signature");
+}
+
+async function parseElevenLabsWebhookEvent(
+  rawBody: string,
+  signature: string | null,
+  config: WebhookHttpServerConfig,
+): Promise<unknown> {
+  const secret = config.elevenLabsWebhookSecret?.trim();
+  if (secret) {
+    const client = new ElevenLabsClient();
+    return client.webhooks.constructEvent(rawBody, signature ?? "", secret);
+  }
+
+  if (!config.allowUnsignedElevenLabs) {
+    throw Object.assign(new Error("ELEVENLABS_WEBHOOK_SECRET is not configured"), { status: 503 });
+  }
+
+  return JSON.parse(rawBody) as unknown;
+}
+
+function payloadSummary(payload: CallWebhookPayload): Record<string, unknown> {
+  return {
+    type: payload.type,
+    conversationId: "conversation_id" in payload ? payload.conversation_id : undefined,
+    callSid: "call_sid" in payload ? payload.call_sid : undefined,
+  };
+}
+
+async function handleElevenLabsPostCall(request: Request, config: WebhookHttpServerConfig): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
+  }
+
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  if (contentLength > maxBodyBytes) {
+    return jsonResponse(413, { ok: false, error: "body_too_large" });
+  }
+
+  let rawBody: string;
+  try {
+    rawBody = await request.text();
+  } catch (error) {
+    log.warn("Failed to read ElevenLabs webhook body", { error });
+    return jsonResponse(400, { ok: false, error: "invalid_body" });
+  }
+
+  if (new TextEncoder().encode(rawBody).length > maxBodyBytes) {
+    return jsonResponse(413, { ok: false, error: "body_too_large" });
+  }
+
+  let event: unknown;
+  try {
+    event = await parseElevenLabsWebhookEvent(rawBody, getSignature(request), config);
+  } catch (error) {
+    const status =
+      typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : 401;
+    log.warn("Rejected ElevenLabs webhook", { error, status });
+    return jsonResponse(status, {
+      ok: false,
+      error: status === 503 ? "webhook_secret_not_configured" : "invalid_signature",
+    });
+  }
+
+  let payload: CallWebhookPayload | null;
+  try {
+    payload = normalizeCallWebhookPayload(event);
+  } catch (error) {
+    log.warn("Failed to normalize ElevenLabs webhook", { error });
+    return jsonResponse(400, { ok: false, error: "invalid_payload" });
+  }
+
+  if (!payload) {
+    log.info("Ignoring unsupported ElevenLabs webhook event");
+    return jsonResponse(200, { ok: true, ignored: true });
+  }
+
+  try {
+    const result = handlePostCallWebhook(payload);
+    if (!result) {
+      log.warn("ElevenLabs webhook did not match any call run", payloadSummary(payload));
+      return jsonResponse(200, { ok: true, matched: false });
+    }
+
+    log.info("ElevenLabs webhook processed", {
+      requestId: result.request_id,
+      runId: result.run_id,
+      outcome: result.outcome,
+    });
+    return jsonResponse(200, { ok: true, matched: true, result });
+  } catch (error) {
+    log.error("Failed to process ElevenLabs webhook", { error, ...payloadSummary(payload) });
+    return jsonResponse(500, { ok: false, error: "processing_failed" });
+  }
+}
+
+function handleRequest(request: Request, config: WebhookHttpServerConfig): Promise<Response> | Response {
+  const url = new URL(request.url);
+
+  if (url.pathname === "/health" || url.pathname === "/webhooks/health") {
+    return jsonResponse(200, { ok: true, service: "ravi-webhooks" });
+  }
+
+  if (ELEVENLABS_POST_CALL_WEBHOOK_ALIASES.has(url.pathname)) {
+    return handleElevenLabsPostCall(request, config);
+  }
+
+  return jsonResponse(404, { ok: false, error: "not_found" });
+}
+
+export function startWebhookHttpServer(config: WebhookHttpServerConfig): WebhookHttpServerHandle {
+  const server = Bun.serve({
+    hostname: config.host,
+    port: config.port,
+    fetch: (request) => handleRequest(request, config),
+  }) as ServeLike;
+
+  const url = `http://${config.host}:${server.port}`;
+  log.info("Webhook HTTP server started", {
+    url,
+    elevenLabsPath: ELEVENLABS_POST_CALL_WEBHOOK_PATH,
+    signatureVerification: Boolean(config.elevenLabsWebhookSecret),
+    allowUnsignedElevenLabs: Boolean(config.allowUnsignedElevenLabs),
+  });
+
+  return {
+    host: config.host,
+    port: server.port,
+    url,
+    async stop() {
+      server.stop(true);
+      log.info("Webhook HTTP server stopped");
+    },
+  };
+}
+
+export function startWebhookHttpServerFromEnv(): WebhookHttpServerHandle | null {
+  const port = parsePort(process.env.RAVI_HTTP_PORT ?? process.env.RAVI_WEBHOOK_PORT);
+  if (port === null) return null;
+
+  return startWebhookHttpServer({
+    host: process.env.RAVI_HTTP_HOST?.trim() || process.env.RAVI_WEBHOOK_HOST?.trim() || "127.0.0.1",
+    port,
+    elevenLabsWebhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET?.trim() || undefined,
+    allowUnsignedElevenLabs: boolEnv(process.env.RAVI_ELEVENLABS_WEBHOOK_ALLOW_UNSIGNED),
+  });
+}

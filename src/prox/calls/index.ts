@@ -70,6 +70,7 @@ export {
   getCallProvider,
   hasRealProvider,
   resetProviders,
+  syncElevenLabsAgentProfile,
 } from "./provider.js";
 
 export type {
@@ -97,6 +98,7 @@ import {
 } from "./calls-db.js";
 import { evaluateCallRules } from "./rules.js";
 import { getCallProvider } from "./provider.js";
+import { notifyCallOrigin } from "./notify.js";
 import type { CallRequest, CreateCallRequestInput } from "./types.js";
 
 /**
@@ -193,12 +195,20 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
       message: msg,
       source: "prox.calls.provider",
     });
-    createCallResult({
+    const result = createCallResult({
       request_id: request.id,
       outcome: "failed_provider",
       summary: msg,
       next_action: "none",
     });
+    createCallEvent({
+      request_id: request.id,
+      event_type: "result.created",
+      status: "failed_provider",
+      message: msg,
+      source: "prox.calls",
+    });
+    notifyCallOrigin(request, result, "prox.calls.provider");
     return {
       request: { ...request, status: "failed" as const },
       blocked: false,
@@ -283,6 +293,9 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
         message: result.summary,
         source: "prox.calls",
       });
+      if (provider.name !== "stub") {
+        notifyCallOrigin(request, result, "prox.calls");
+      }
     }
 
     return {
@@ -309,7 +322,7 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
       source: `prox.calls.provider.${provider.name}`,
     });
 
-    createCallResult({
+    const result = createCallResult({
       request_id: request.id,
       run_id: run.id,
       outcome: "failed_runtime",
@@ -325,6 +338,9 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
       message: errorMessage,
       source: "prox.calls",
     });
+    if (provider.name !== "stub") {
+      notifyCallOrigin(request, result, "prox.calls");
+    }
 
     return {
       request: { ...request, status: "failed", rules_id: rules?.id ?? null },

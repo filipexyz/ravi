@@ -7,7 +7,10 @@
  */
 
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { CallProviderAdapter, ProviderDialInput, ProviderDialResult } from "./types.js";
+import type { CallProfile } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Stub adapter (dry-run / no-credentials mode)
@@ -40,6 +43,24 @@ export interface ElevenLabsTwilioConfig {
   apiKey: string;
 }
 
+function readRaviEnvApiKey(): string | undefined {
+  if (process.env.RAVI_CALLS_DISABLE_ENV_FILE === "1") return undefined;
+  const envPath = join(process.env.HOME ?? "", ".ravi/.env");
+  if (!existsSync(envPath)) return undefined;
+  const line = readFileSync(envPath, "utf8")
+    .split(/\r?\n/)
+    .find((item) => item.trim().startsWith("ELEVENLABS_API_KEY="));
+  if (!line) return undefined;
+  const value = line.split("=").slice(1).join("=").trim();
+  return value.replace(/^['"]|['"]$/g, "") || undefined;
+}
+
+function resolveElevenLabsApiKey(): string {
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim() || readRaviEnvApiKey();
+  if (!apiKey) throw new Error("ELEVENLABS_API_KEY is not configured.");
+  return apiKey;
+}
+
 /**
  * Validates that all required fields are present before attempting a live dial.
  * Returns a failure reason string or null if valid.
@@ -55,6 +76,22 @@ function validateDialInput(input: ProviderDialInput): string | null {
     return "Missing target phone number. Use --phone <e164> on the request command.";
   }
   return null;
+}
+
+function extractDynamicVariables(metadata: Record<string, unknown> | null): Record<string, string> {
+  const raw = metadata?.dynamic_variables ?? metadata?.dynamicVariables;
+  if (!isJsonRecord(raw)) return {};
+
+  const variables: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!key.trim()) continue;
+    if (typeof value === "string") {
+      variables[key] = value;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      variables[key] = String(value);
+    }
+  }
+  return variables;
 }
 
 export class ElevenLabsTwilioCallProvider implements CallProviderAdapter {
@@ -86,6 +123,7 @@ export class ElevenLabsTwilioCallProvider implements CallProviderAdapter {
         dynamicVariables: {
           person_name: input.request.target_person_id,
           reason: input.request.reason,
+          ...extractDynamicVariables(input.request.metadata_json),
         },
       },
     });
@@ -110,6 +148,143 @@ export class ElevenLabsTwilioCallProvider implements CallProviderAdapter {
   }
 }
 
+export interface SyncElevenLabsAgentProfileResult {
+  agentId: string;
+  firstMessageSynced: boolean;
+  systemPromptSynced: boolean;
+  dynamicVariablesSynced: boolean;
+}
+
+const ELEVENLABS_API_BASE_URL = "https://api.elevenlabs.io/v1";
+
+type JsonRecord = Record<string, unknown>;
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getJsonRecord(value: unknown): JsonRecord {
+  return isJsonRecord(value) ? value : {};
+}
+
+function describeElevenLabsError(status: number, body: unknown): string {
+  if (isJsonRecord(body)) {
+    const detail = body.detail ?? body.message ?? body.error;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (isJsonRecord(detail)) {
+      const detailMessage = detail.message ?? detail.reason;
+      if (typeof detailMessage === "string" && detailMessage.trim()) return detailMessage;
+    }
+  }
+  return `HTTP ${status}`;
+}
+
+async function requestElevenLabsJson(
+  apiKey: string,
+  path: string,
+  init: Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {},
+): Promise<JsonRecord> {
+  const response = await fetch(`${ELEVENLABS_API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      "xi-api-key": apiKey,
+      accept: "application/json",
+      ...(init.body ? { "content-type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+
+  const text = await response.text();
+  let body: unknown = null;
+  if (text.trim()) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(describeElevenLabsError(response.status, body));
+  }
+
+  return getJsonRecord(body);
+}
+
+async function fetchElevenLabsAgentRaw(apiKey: string, agentId: string): Promise<JsonRecord> {
+  return requestElevenLabsJson(apiKey, `/convai/agents/${encodeURIComponent(agentId)}`, {
+    method: "GET",
+  });
+}
+
+async function patchElevenLabsAgentRaw(apiKey: string, agentId: string, body: JsonRecord): Promise<void> {
+  await requestElevenLabsJson(apiKey, `/convai/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function syncElevenLabsAgentProfile(
+  profile: CallProfile,
+  options: {
+    firstMessage?: string | null;
+    systemPrompt?: string | null;
+    dynamicVariablePlaceholders?: Record<string, string> | null;
+  },
+): Promise<SyncElevenLabsAgentProfileResult | null> {
+  if (profile.provider !== "elevenlabs_twilio" && profile.provider !== "elevenlabs") return null;
+  if (!profile.provider_agent_id) return null;
+
+  const firstMessageSynced = options.firstMessage !== undefined;
+  const systemPromptSynced = options.systemPrompt !== undefined;
+  const dynamicVariablesSynced = options.dynamicVariablePlaceholders !== undefined;
+  if (!firstMessageSynced && !systemPromptSynced && !dynamicVariablesSynced) return null;
+
+  const apiKey = resolveElevenLabsApiKey();
+  const agent = await fetchElevenLabsAgentRaw(apiKey, profile.provider_agent_id);
+  const conversationConfig = {
+    ...getJsonRecord(agent.conversation_config),
+  };
+  const agentConfig = {
+    ...getJsonRecord(conversationConfig.agent),
+  };
+
+  if (firstMessageSynced) {
+    agentConfig.first_message = options.firstMessage ?? "";
+  }
+
+  if (systemPromptSynced) {
+    agentConfig.prompt = {
+      ...getJsonRecord(agentConfig.prompt),
+      prompt: options.systemPrompt ?? "",
+    };
+  }
+
+  if (dynamicVariablesSynced) {
+    const dynamicVariables = {
+      ...getJsonRecord(agentConfig.dynamic_variables),
+    };
+    dynamicVariables.dynamic_variable_placeholders = {
+      ...getJsonRecord(dynamicVariables.dynamic_variable_placeholders),
+      ...(options.dynamicVariablePlaceholders ?? {}),
+    };
+    agentConfig.dynamic_variables = dynamicVariables;
+  }
+
+  conversationConfig.agent = agentConfig;
+
+  await patchElevenLabsAgentRaw(apiKey, profile.provider_agent_id, {
+    conversation_config: conversationConfig,
+  });
+
+  return {
+    agentId: profile.provider_agent_id,
+    firstMessageSynced,
+    systemPromptSynced,
+    dynamicVariablesSynced,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Provider registry
 // ---------------------------------------------------------------------------
@@ -127,7 +302,7 @@ export function registerCallProvider(adapter: CallProviderAdapter): void {
  */
 function ensureElevenLabsAdapter(): void {
   if (adapters.has("elevenlabs_twilio")) return;
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim() || readRaviEnvApiKey();
   if (!apiKey) return;
   const adapter = new ElevenLabsTwilioCallProvider({ apiKey });
   adapters.set(adapter.name, adapter);

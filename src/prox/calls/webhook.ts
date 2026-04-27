@@ -6,8 +6,8 @@
  * receives the ElevenLabs post_call_transcription or call_initiation_failure
  * payloads.
  *
- * No HTTP server is created here — the caller is responsible for routing
- * the raw payload to handlePostCallWebhook(). See WEBHOOK_ROUTE_NOTE below.
+ * No HTTP server is created here — the daemon HTTP surface routes raw
+ * ElevenLabs payloads here after signature verification.
  */
 
 import { getDb } from "../../router/router-db.js";
@@ -19,6 +19,7 @@ import {
   createCallEvent,
   createCallResult,
 } from "./calls-db.js";
+import { notifyCallOrigin } from "./notify.js";
 import type { CallRunStatus, CallResultOutcome } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,132 @@ export interface CallInitiationFailurePayload {
 }
 
 export type CallWebhookPayload = PostCallTranscriptionPayload | CallInitiationFailurePayload;
+
+interface EnhancedWebhookEnvelope {
+  type?: unknown;
+  data?: unknown;
+  event_timestamp?: unknown;
+}
+
+interface EnhancedTranscriptItem {
+  role?: unknown;
+  message?: unknown;
+  time_in_call_secs?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getNestedRecord(root: Record<string, unknown>, ...keys: string[]): Record<string, unknown> | undefined {
+  let current: unknown = root;
+  for (const key of keys) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return isRecord(current) ? current : undefined;
+}
+
+function findCallSid(data: Record<string, unknown>): string | undefined {
+  return (
+    stringOrUndefined(data.call_sid) ??
+    stringOrUndefined(getNestedRecord(data, "metadata", "phone_call")?.call_sid) ??
+    stringOrUndefined(getNestedRecord(data, "metadata", "body")?.call_sid)
+  );
+}
+
+function formatWebhookTranscript(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (!Array.isArray(value)) return undefined;
+
+  const lines = value
+    .filter(isRecord)
+    .map((item: EnhancedTranscriptItem) => {
+      if (typeof item.message !== "string" || !item.message.trim()) return null;
+      const role = item.role === "agent" || item.role === "user" ? item.role : "unknown";
+      const time = typeof item.time_in_call_secs === "number" ? `${item.time_in_call_secs}s` : "-";
+      return `[${time}] ${role}: ${item.message.trim()}`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length ? lines.join("\n") : undefined;
+}
+
+function hasUserTranscriptMessage(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value
+        .filter(isRecord)
+        .some((item) => item.role === "user" && typeof item.message === "string" && item.message.trim())
+    : false;
+}
+
+function inferCallSuccessful(data: Record<string, unknown>): boolean {
+  const analysis = isRecord(data.analysis) ? data.analysis : undefined;
+  const explicit = analysis?.call_successful ?? data.call_successful;
+
+  if (explicit === true || explicit === "success" || explicit === "true") return true;
+  if (explicit === false || explicit === "failure" || explicit === "false") return false;
+
+  return hasUserTranscriptMessage(data.transcript);
+}
+
+/**
+ * Normalize both current ElevenLabs webhook envelopes (`{ type, data }`) and
+ * the older flat shape used by the first prox calls MVP into Ravi's internal
+ * call webhook payload.
+ */
+export function normalizeCallWebhookPayload(input: unknown): CallWebhookPayload | null {
+  if (!isRecord(input)) return null;
+
+  const envelope = input as EnhancedWebhookEnvelope;
+  const type = stringOrUndefined(envelope.type);
+  if (type !== "post_call_transcription" && type !== "call_initiation_failure") return null;
+
+  const data = isRecord(envelope.data) ? envelope.data : input;
+
+  if (type === "call_initiation_failure") {
+    return {
+      type,
+      conversation_id: stringOrUndefined(data.conversation_id),
+      call_sid: findCallSid(data),
+      error_message:
+        stringOrUndefined(data.error_message) ??
+        stringOrUndefined(data.failure_reason) ??
+        stringOrUndefined(getNestedRecord(data, "metadata", "body")?.error_reason),
+    };
+  }
+
+  const analysis = isRecord(data.analysis) ? data.analysis : undefined;
+  const metadata = isRecord(data.metadata) ? data.metadata : undefined;
+  const transcript = formatWebhookTranscript(data.transcript);
+  const summary =
+    stringOrUndefined(data.call_summary) ??
+    stringOrUndefined(analysis?.transcript_summary) ??
+    stringOrUndefined(analysis?.call_summary_title);
+
+  const conversationId = stringOrUndefined(data.conversation_id);
+  if (!conversationId) return null;
+
+  return {
+    type,
+    conversation_id: conversationId,
+    call_sid: findCallSid(data),
+    call_successful: inferCallSuccessful(data),
+    call_duration_secs: numberOrUndefined(data.call_duration_secs) ?? numberOrUndefined(metadata?.call_duration_secs),
+    ...(transcript ? { transcript } : {}),
+    ...(summary ? { call_summary: summary } : {}),
+    ...(analysis ? { call_analysis: analysis } : {}),
+    recording_url: stringOrUndefined(data.recording_url),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Handler
@@ -205,7 +332,7 @@ export function handlePostCallWebhook(payload: CallWebhookPayload): {
   });
 
   // Result
-  createCallResult({
+  const result = createCallResult({
     request_id: requestId,
     run_id: runId,
     outcome,
@@ -223,26 +350,7 @@ export function handlePostCallWebhook(payload: CallWebhookPayload): {
     message: callSummary,
     source: "prox.calls.webhook",
   });
+  notifyCallOrigin(request, result, "prox.calls.webhook");
 
   return { request_id: requestId, run_id: runId, outcome, summary: callSummary };
 }
-
-/**
- * WEBHOOK_ROUTE_NOTE:
- *
- * Ravi does not currently expose an HTTP server for external webhooks.
- * To receive ElevenLabs post-call webhooks in production:
- *
- * 1. Add an HTTP route (e.g. POST /api/webhooks/elevenlabs/post-call) in
- *    the daemon or a sidecar, parse the JSON body, and call
- *    handlePostCallWebhook(payload).
- *
- * 2. Configure the ElevenLabs agent's post-call webhook URL to point to
- *    the public URL of that route.
- *
- * 3. Until the HTTP route exists, terminal call state can be synced
- *    manually by calling handlePostCallWebhook() with the payload
- *    from the ElevenLabs conversation history API.
- *
- * File: src/prox/calls/webhook.ts
- */
