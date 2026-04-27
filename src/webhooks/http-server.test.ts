@@ -218,6 +218,148 @@ describe("Webhook HTTP server", () => {
     }
   });
 
+  it("serves end_call tool via canonical bridge route", async () => {
+    seedDefaultProfiles();
+    process.env.AGORA_APP_ID = "0".repeat(32);
+    process.env.AGORA_APP_CERTIFICATE = "1".repeat(32);
+    process.env.AGORA_CUSTOMER_ID = "customer-id";
+    process.env.AGORA_CUSTOMER_SECRET = "customer-secret";
+    process.env.RAVI_AGORA_TOOL_SECRET = "tool-secret";
+
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_canonical_bridge",
+      target_phone: "+5511999999999",
+      reason: "Canonical bridge test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "agora_sip",
+    });
+    updateCallRunStatus(run.id, "in_progress", {
+      provider_call_id: "agent_canonical_bridge",
+    });
+
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      allowUnsignedAgora: true,
+    });
+    const agoraCalls: Array<{ url: string }> = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url = String(input);
+      if (url.startsWith(server.url)) return originalFetch(input, init);
+      agoraCalls.push({ url });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    try {
+      // Test through canonical route
+      const callResponse = await fetch(`${server.url}/webhooks/prox/calls/tools?request_id=${request.id}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name: "end_call", arguments: { reason: "canonical" } },
+        }),
+      });
+      expect(callResponse.status).toBe(200);
+      expect(await callResponse.json()).toMatchObject({
+        result: { isError: false, content: [{ type: "text" }] },
+      });
+      expect(agoraCalls).toHaveLength(1);
+      expect(agoraCalls[0]?.url).toContain("/calls/agent_canonical_bridge/hangup");
+      expect(listCallEvents(request.id).some((event) => event.status === "hangup_requested")).toBe(true);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("Agora alias and canonical route share the same executor", async () => {
+    seedDefaultProfiles();
+    process.env.AGORA_APP_ID = "0".repeat(32);
+    process.env.AGORA_APP_CERTIFICATE = "1".repeat(32);
+    process.env.AGORA_CUSTOMER_ID = "customer-id";
+    process.env.AGORA_CUSTOMER_SECRET = "customer-secret";
+    process.env.RAVI_AGORA_TOOL_SECRET = "tool-secret";
+
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      allowUnsignedAgora: true,
+    });
+
+    try {
+      // Both routes should return the same initialize response
+      const canonicalInit = await fetch(`${server.url}/webhooks/prox/calls/tools?request_id=cr_test`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+      });
+
+      const agoraInit = await fetch(`${server.url}/webhooks/agora/tools?request_id=cr_test`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "initialize" }),
+      });
+
+      expect(canonicalInit.status).toBe(200);
+      expect(agoraInit.status).toBe(200);
+
+      const canonicalBody = (await canonicalInit.json()) as Record<string, unknown>;
+      const agoraBody = (await agoraInit.json()) as Record<string, unknown>;
+
+      // Both should have the same server info
+      expect((canonicalBody.result as Record<string, unknown>).serverInfo).toEqual(
+        (agoraBody.result as Record<string, unknown>).serverInfo,
+      );
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("rejects tool bridge requests without auth", async () => {
+    process.env.RAVI_AGORA_TOOL_SECRET = "tool-secret";
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+    });
+
+    try {
+      const response = await fetch(`${server.url}/webhooks/prox/calls/tools?request_id=cr_test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      });
+      expect(response.status).toBe(401);
+
+      // Same for Agora alias
+      const agoraResponse = await fetch(`${server.url}/webhooks/agora/tools?request_id=cr_test`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      });
+      expect(agoraResponse.status).toBe(401);
+    } finally {
+      await server.stop();
+    }
+  });
+
   it("serves Agora MCP end_call tool and hangs up through the Agora API", async () => {
     seedDefaultProfiles();
     process.env.AGORA_APP_ID = "0".repeat(32);
@@ -262,7 +404,7 @@ describe("Webhook HTTP server", () => {
         status: 200,
         headers: { "content-type": "application/json" },
       });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     try {
       const listResponse = await fetch(`${server.url}/webhooks/agora/tools?request_id=${request.id}`, {

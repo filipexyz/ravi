@@ -143,7 +143,11 @@ export type CallEventType =
   | "result.notified"
   | "result.notify_failed"
   | "rules.evaluated"
-  | "provider.error";
+  | "provider.error"
+  | "tool.started"
+  | "tool.completed"
+  | "tool.failed"
+  | "tool.blocked";
 
 export interface CallEvent {
   id: number;
@@ -256,6 +260,111 @@ export interface RulesEvaluationResult {
   rule: CallRules;
   reason: string;
   evaluated_at: number;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool
+// ---------------------------------------------------------------------------
+
+export type CallToolExecutorType = "native" | "bash" | "http" | "context";
+export type CallToolSideEffect =
+  | "read_only"
+  | "write_internal"
+  | "external_message"
+  | "external_call"
+  | "external_irreversible";
+
+export interface CallTool {
+  id: string;
+  name: string;
+  description: string;
+  input_schema_json: Record<string, unknown>;
+  output_schema_json: Record<string, unknown> | null;
+  executor_type: CallToolExecutorType;
+  executor_config_json: Record<string, unknown> | null;
+  side_effect: CallToolSideEffect;
+  timeout_ms: number;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_binding
+// ---------------------------------------------------------------------------
+
+export type CallToolBindingScopeType = "voice_agent" | "profile";
+
+export interface CallToolBinding {
+  id: string;
+  tool_id: string;
+  scope_type: CallToolBindingScopeType;
+  scope_id: string;
+  provider_tool_name: string;
+  enabled: boolean;
+  tool_prompt: string | null;
+  required: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_policy
+// ---------------------------------------------------------------------------
+
+export interface CallToolPolicy {
+  id: string;
+  tool_id: string;
+  scope_type: string;
+  scope_id: string;
+  allowed: boolean;
+  max_calls_per_run: number | null;
+  require_confirmation: boolean;
+  require_context_key: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_run
+// ---------------------------------------------------------------------------
+
+export type CallToolRunStatus = "pending" | "running" | "completed" | "failed" | "blocked" | "timeout";
+
+export interface CallToolRun {
+  id: string;
+  request_id: string;
+  run_id: string | null;
+  tool_id: string;
+  binding_id: string | null;
+  provider_tool_name: string;
+  input_json: Record<string, unknown> | null;
+  output_json: Record<string, unknown> | null;
+  status: CallToolRunStatus;
+  error_message: string | null;
+  started_at: number;
+  completed_at: number | null;
+  duration_ms: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Tool bridge types
+// ---------------------------------------------------------------------------
+
+export interface CallToolNormalizedResult {
+  ok: boolean;
+  message: string;
+  data?: Record<string, unknown>;
+  next_instruction?: string;
+}
+
+export interface CallToolExecutionContext {
+  tool: CallTool;
+  binding: CallToolBinding;
+  request: CallRequest;
+  run: CallRun | null;
+  profile: CallProfile;
+  input: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
