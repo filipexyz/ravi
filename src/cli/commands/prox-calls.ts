@@ -24,10 +24,30 @@ import {
   syncElevenLabsAgentProfile,
   cancelCallRequest,
   hasRealProvider,
+  listCallVoiceAgents,
+  getCallVoiceAgent,
+  createCallVoiceAgent,
+  updateCallVoiceAgent,
+  listCallTools,
+  getCallTool,
+  createCallTool,
+  updateCallTool,
+  listCallToolBindings,
+  getCallToolBinding,
+  createCallToolBinding,
+  deleteCallToolBinding,
+  evaluateCallToolPolicy,
+  listCallToolRuns,
   type CallRequest,
   type CallProfile,
   type CallEvent,
   type CallRules as CallRulesType,
+  type CallVoiceAgent,
+  type CallTool,
+  type CallToolBinding,
+  type CallToolRun,
+  type CallToolSideEffect,
+  type CallToolExecutorType,
   type VoicemailPolicy,
 } from "../../prox/calls/index.js";
 
@@ -699,5 +719,777 @@ export class ProxCallsCommands {
       console.log(`\n\x1b[31mError:\x1b[0m ${result.message}`);
     }
     console.log();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Serializers for new entities
+// ---------------------------------------------------------------------------
+
+function serializeVoiceAgent(agent: CallVoiceAgent) {
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    provider: agent.provider,
+    provider_agent_id: agent.provider_agent_id,
+    voice_id: agent.voice_id,
+    language: agent.language,
+    system_prompt: agent.system_prompt,
+    system_prompt_path: agent.system_prompt_path,
+    first_message_template: agent.first_message_template,
+    dynamic_variables_schema: agent.dynamic_variables_schema_json,
+    default_tools: agent.default_tools_json,
+    provider_config: agent.provider_config_json,
+    version: agent.version,
+    enabled: agent.enabled,
+    created_at: agent.created_at,
+    updated_at: agent.updated_at,
+  };
+}
+
+function serializeCallTool(tool: CallTool) {
+  return {
+    id: tool.id,
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.input_schema_json,
+    output_schema: tool.output_schema_json,
+    executor_type: tool.executor_type,
+    executor_config: tool.executor_config_json,
+    side_effect: tool.side_effect,
+    timeout_ms: tool.timeout_ms,
+    enabled: tool.enabled,
+    created_at: tool.created_at,
+    updated_at: tool.updated_at,
+  };
+}
+
+function serializeToolBinding(binding: CallToolBinding) {
+  return {
+    id: binding.id,
+    tool_id: binding.tool_id,
+    scope_type: binding.scope_type,
+    scope_id: binding.scope_id,
+    provider_tool_name: binding.provider_tool_name,
+    tool_prompt: binding.tool_prompt,
+    required: binding.required,
+    enabled: binding.enabled,
+    created_at: binding.created_at,
+    updated_at: binding.updated_at,
+  };
+}
+
+function serializeToolRun(run: CallToolRun) {
+  return {
+    id: run.id,
+    request_id: run.request_id,
+    run_id: run.run_id,
+    tool_id: run.tool_id,
+    binding_id: run.binding_id,
+    status: run.status,
+    input: run.input_json,
+    output: run.output_json,
+    message: run.error_message,
+    started_at: run.started_at,
+    ended_at: run.completed_at,
+    duration_ms: run.duration_ms,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Voice Agents subcommand group: ravi prox calls voice-agents
+// ---------------------------------------------------------------------------
+
+@Group({
+  name: "prox.calls.voice-agents",
+  description: "Manage call voice agents",
+  scope: "open",
+})
+export class ProxCallsVoiceAgentCommands {
+  @Command({ name: "list", description: "List voice agents" })
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    initCallsDefaults();
+    const agents = listCallVoiceAgents();
+
+    if (asJson) {
+      printJson({ total: agents.length, voice_agents: agents.map(serializeVoiceAgent) });
+      return;
+    }
+
+    if (agents.length === 0) {
+      console.log("\nNo voice agents found.\n");
+      return;
+    }
+
+    console.log(`\nVoice agents (${agents.length})\n`);
+    console.log("  ID                      NAME                    PROVIDER     LANGUAGE  V  ENABLED");
+    console.log("  -----------------------  ----------------------  -----------  --------  -  -------");
+    for (const a of agents) {
+      console.log(
+        `  ${a.id.padEnd(23)}  ${a.name.padEnd(22)}  ${a.provider.padEnd(11)}  ${a.language.padEnd(8)}  ${String(a.version).padEnd(1)}  ${a.enabled ? "yes" : "no"}`,
+      );
+    }
+    console.log();
+  }
+
+  @Command({ name: "show", description: "Show a voice agent by ID" })
+  show(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+    const agent = getCallVoiceAgent(voiceAgentId);
+    if (!agent) {
+      fail(`Voice agent not found: ${voiceAgentId}`);
+    }
+
+    if (asJson) {
+      printJson(serializeVoiceAgent(agent));
+      return;
+    }
+
+    console.log(`\nVoice Agent: ${agent.name}\n`);
+    console.log(`  ID:              ${agent.id}`);
+    console.log(`  Description:     ${agent.description || "-"}`);
+    console.log(`  Provider:        ${agent.provider}`);
+    console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
+    console.log(`  Voice ID:        ${agent.voice_id ?? "-"}`);
+    console.log(`  Language:        ${agent.language}`);
+    console.log(
+      `  System Prompt:   ${agent.system_prompt ? agent.system_prompt.slice(0, 80) + (agent.system_prompt.length > 80 ? "…" : "") : "-"}`,
+    );
+    console.log(`  Prompt Path:     ${agent.system_prompt_path ?? "-"}`);
+    console.log(`  First Message:   ${agent.first_message_template ?? "-"}`);
+    console.log(`  Default Tools:   ${agent.default_tools_json?.join(", ") ?? "-"}`);
+    console.log(`  Version:         ${agent.version}`);
+    console.log(`  Enabled:         ${agent.enabled ? "yes" : "no"}`);
+    console.log(`  Created:         ${formatTime(agent.created_at)}`);
+    console.log();
+  }
+
+  @Command({ name: "create", description: "Create a new voice agent" })
+  create(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Option({ flags: "--name <name>", description: "Voice agent display name" }) name: string,
+    @Option({ flags: "--provider <provider>", description: "Provider (e.g. elevenlabs, agora_sip)" }) provider: string,
+    @Option({ flags: "--system-prompt-path <path>", description: "Path to system prompt file" })
+    systemPromptPath?: string,
+    @Option({ flags: "--voice-id <id>", description: "Provider voice ID" }) voiceId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!voiceAgentId) fail("voice_agent_id is required");
+    if (!name) fail("--name is required");
+    if (!provider) fail("--provider is required");
+
+    initCallsDefaults();
+
+    const existing = getCallVoiceAgent(voiceAgentId);
+    if (existing) {
+      fail(`Voice agent already exists: ${voiceAgentId}`);
+    }
+
+    let systemPrompt: string | null = null;
+    let resolvedPath: string | null = null;
+    if (systemPromptPath) {
+      const loaded = loadSystemPromptPath(systemPromptPath);
+      systemPrompt = loaded.prompt;
+      resolvedPath = loaded.path;
+    }
+
+    const agent = createCallVoiceAgent({
+      id: voiceAgentId,
+      name,
+      provider,
+      system_prompt: systemPrompt,
+      system_prompt_path: resolvedPath,
+      voice_id: voiceId ?? null,
+    });
+
+    if (asJson) {
+      printJson(serializeVoiceAgent(agent));
+      return;
+    }
+
+    console.log(`\nVoice agent created: ${agent.id}`);
+    console.log(`  Name:     ${agent.name}`);
+    console.log(`  Provider: ${agent.provider}`);
+    console.log();
+  }
+
+  @Command({ name: "configure", description: "Configure a voice agent" })
+  configure(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Option({ flags: "--system-prompt-path <path>", description: "Path to system prompt file" })
+    systemPromptPath?: string,
+    @Option({ flags: "--first-message <text>", description: "First message template" }) firstMessage?: string,
+    @Option({ flags: "--voice-id <id>", description: "Provider voice ID" }) voiceId?: string,
+    @Option({ flags: "--provider-agent-id <id>", description: "Provider-side agent/pipeline ID" })
+    providerAgentId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!voiceAgentId) fail("voice_agent_id is required");
+    initCallsDefaults();
+
+    const existing = getCallVoiceAgent(voiceAgentId);
+    if (!existing) {
+      fail(`Voice agent not found: ${voiceAgentId}`);
+    }
+
+    let systemPrompt: string | undefined;
+    let resolvedPath: string | undefined;
+    if (systemPromptPath) {
+      const loaded = loadSystemPromptPath(systemPromptPath);
+      systemPrompt = loaded.prompt;
+      resolvedPath = loaded.path;
+    }
+
+    const updated = updateCallVoiceAgent(voiceAgentId, {
+      ...(systemPrompt !== undefined ? { system_prompt: systemPrompt } : {}),
+      ...(resolvedPath !== undefined ? { system_prompt_path: resolvedPath } : {}),
+      ...(firstMessage !== undefined ? { first_message_template: firstMessage } : {}),
+      ...(voiceId !== undefined ? { voice_id: voiceId } : {}),
+      ...(providerAgentId !== undefined ? { provider_agent_id: providerAgentId } : {}),
+    });
+
+    if (!updated) {
+      fail(`Failed to update voice agent: ${voiceAgentId}`);
+    }
+
+    if (asJson) {
+      printJson(serializeVoiceAgent(updated));
+      return;
+    }
+
+    console.log(`\nVoice agent ${voiceAgentId} updated (v${updated.version}).`);
+    console.log(`  Voice ID:        ${updated.voice_id ?? "-"}`);
+    console.log(`  Agent ID:        ${updated.provider_agent_id ?? "-"}`);
+    console.log(`  First Message:   ${updated.first_message_template ?? "-"}`);
+    console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
+    console.log();
+  }
+
+  @Command({ name: "bind-tool", description: "Bind a tool to a voice agent" })
+  bindTool(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--provider-tool-name <name>", description: "Provider-facing tool name" })
+    providerToolName?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!voiceAgentId) fail("voice_agent_id is required");
+    if (!toolId) fail("tool_id is required");
+    initCallsDefaults();
+
+    const agent = getCallVoiceAgent(voiceAgentId);
+    if (!agent) fail(`Voice agent not found: ${voiceAgentId}`);
+    const tool = getCallTool(toolId);
+    if (!tool) fail(`Tool not found: ${toolId}`);
+
+    const existing = getCallToolBinding(toolId, "voice_agent", voiceAgentId);
+    if (existing) fail(`Tool ${toolId} is already bound to voice agent ${voiceAgentId}`);
+
+    const binding = createCallToolBinding(toolId, "voice_agent", voiceAgentId, {
+      provider_tool_name: providerToolName,
+    });
+
+    if (asJson) {
+      printJson(serializeToolBinding(binding));
+      return;
+    }
+
+    console.log(`\nTool ${toolId} bound to voice agent ${voiceAgentId}.`);
+    console.log();
+  }
+
+  @Command({ name: "unbind-tool", description: "Unbind a tool from a voice agent" })
+  unbindTool(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!voiceAgentId) fail("voice_agent_id is required");
+    if (!toolId) fail("tool_id is required");
+    initCallsDefaults();
+
+    const removed = deleteCallToolBinding(toolId, "voice_agent", voiceAgentId);
+    if (!removed) fail(`No binding found for tool ${toolId} on voice agent ${voiceAgentId}`);
+
+    if (asJson) {
+      printJson({ success: true, voice_agent_id: voiceAgentId, tool_id: toolId });
+      return;
+    }
+
+    console.log(`\nTool ${toolId} unbound from voice agent ${voiceAgentId}.`);
+    console.log();
+  }
+
+  @Command({ name: "sync", description: "Sync voice agent to provider (dry-run by default)" })
+  sync(
+    @Arg("voice_agent_id") voiceAgentId: string,
+    @Option({ flags: "--provider", description: "Push changes to provider" }) pushProvider?: boolean,
+    @Option({ flags: "--dry-run", description: "Show intended changes without mutating" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!voiceAgentId) fail("voice_agent_id is required");
+    initCallsDefaults();
+
+    const agent = getCallVoiceAgent(voiceAgentId);
+    if (!agent) fail(`Voice agent not found: ${voiceAgentId}`);
+
+    const bindings = listCallToolBindings("voice_agent", voiceAgentId);
+    const tools = bindings.map((b) => getCallTool(b.tool_id)).filter((t): t is CallTool => t !== null);
+
+    const changes = {
+      voice_agent_id: voiceAgentId,
+      provider: agent.provider,
+      provider_agent_id: agent.provider_agent_id,
+      dry_run: dryRun !== false,
+      intended_changes: {
+        system_prompt: agent.system_prompt ? "set" : "unchanged",
+        first_message_template: agent.first_message_template ? "set" : "unchanged",
+        voice_id: agent.voice_id ?? "unchanged",
+        tools_count: tools.length,
+        tools: tools.map((t) => ({ id: t.id, name: t.name })),
+      },
+      provider_sync: dryRun === false && pushProvider ? "would_push" : "skipped",
+    };
+
+    if (asJson) {
+      printJson(changes);
+      return;
+    }
+
+    console.log(`\nSync for voice agent: ${voiceAgentId} (${dryRun !== false ? "DRY RUN" : "LIVE"})\n`);
+    console.log(`  Provider:        ${agent.provider}`);
+    console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
+    console.log(`  System Prompt:   ${changes.intended_changes.system_prompt}`);
+    console.log(`  First Message:   ${changes.intended_changes.first_message_template}`);
+    console.log(`  Voice ID:        ${changes.intended_changes.voice_id}`);
+    console.log(`  Tools (${tools.length}):`);
+    for (const t of tools) {
+      console.log(`    - ${t.id} (${t.name})`);
+    }
+    if (dryRun !== false) {
+      console.log(`\n  No changes made (dry-run). Use --no-dry-run to apply.`);
+    }
+    console.log();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tools subcommand group: ravi prox calls tools
+// ---------------------------------------------------------------------------
+
+const VALID_EXECUTORS = new Set(["native", "bash", "http", "context"]);
+const VALID_SIDE_EFFECTS = new Set([
+  "read_only",
+  "write_internal",
+  "external_message",
+  "external_call",
+  "external_irreversible",
+]);
+
+@Group({
+  name: "prox.calls.tools",
+  description: "Manage call tools and tool execution",
+  scope: "open",
+})
+export class ProxCallsToolCommands {
+  @Command({ name: "list", description: "List call tools" })
+  list(
+    @Option({ flags: "--profile <profile_id>", description: "Filter tools by profile binding" }) profileId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+    const tools = listCallTools(profileId);
+
+    if (asJson) {
+      printJson({ total: tools.length, tools: tools.map(serializeCallTool) });
+      return;
+    }
+
+    if (tools.length === 0) {
+      console.log("\nNo call tools found.\n");
+      return;
+    }
+
+    console.log(`\nCall tools (${tools.length})${profileId ? ` for profile ${profileId}` : ""}\n`);
+    console.log("  ID                       NAME                    EXECUTOR  SIDE-EFFECT           ENABLED");
+    console.log("  -------------------------  ----------------------  --------  --------------------  -------");
+    for (const t of tools) {
+      console.log(
+        `  ${t.id.padEnd(25)}  ${t.name.padEnd(22)}  ${t.executor_type.padEnd(8)}  ${t.side_effect.padEnd(20)}  ${t.enabled ? "yes" : "no"}`,
+      );
+    }
+    console.log();
+  }
+
+  @Command({ name: "show", description: "Show a call tool by ID" })
+  show(
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+    const tool = getCallTool(toolId);
+    if (!tool) fail(`Tool not found: ${toolId}`);
+
+    if (asJson) {
+      printJson(serializeCallTool(tool));
+      return;
+    }
+
+    console.log(`\nCall Tool: ${tool.name}\n`);
+    console.log(`  ID:           ${tool.id}`);
+    console.log(`  Description:  ${tool.description || "-"}`);
+    console.log(`  Executor:     ${tool.executor_type}`);
+    console.log(`  Side-Effect:  ${tool.side_effect}`);
+    console.log(`  Timeout:      ${tool.timeout_ms}ms`);
+    console.log(`  Enabled:      ${tool.enabled ? "yes" : "no"}`);
+    if (tool.input_schema_json) {
+      console.log(`  Input Schema: ${JSON.stringify(tool.input_schema_json).slice(0, 80)}…`);
+    }
+    console.log(`  Created:      ${formatTime(tool.created_at)}`);
+    console.log();
+  }
+
+  @Command({ name: "create", description: "Create a new call tool" })
+  create(
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--name <name>", description: "Tool display name" }) name: string,
+    @Option({ flags: "--description <text>", description: "Tool description for voice agents" }) description: string,
+    @Option({ flags: "--executor <type>", description: "Executor type: native|bash|http|context" }) executor: string,
+    @Option({
+      flags: "--side-effect <kind>",
+      description: "Side-effect class: read_only|write_internal|external_message|external_call|external_irreversible",
+    })
+    sideEffect: string,
+    @Option({ flags: "--input-schema <path>", description: "Path to JSON input schema file" }) inputSchemaPath?: string,
+    @Option({ flags: "--output-schema <path>", description: "Path to JSON output schema file" })
+    outputSchemaPath?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!toolId) fail("tool_id is required");
+    if (!name) fail("--name is required");
+    if (!description) fail("--description is required");
+    if (!executor) fail("--executor is required");
+    if (!sideEffect) fail("--side-effect is required");
+    if (!VALID_EXECUTORS.has(executor)) fail(`Invalid executor: ${executor}. Use native|bash|http|context.`);
+    if (!VALID_SIDE_EFFECTS.has(sideEffect))
+      fail(
+        `Invalid side-effect: ${sideEffect}. Use read_only|write_internal|external_message|external_call|external_irreversible.`,
+      );
+
+    initCallsDefaults();
+
+    const existing = getCallTool(toolId);
+    if (existing) fail(`Tool already exists: ${toolId}`);
+
+    let inputSchema: Record<string, unknown> | null = null;
+    let outputSchema: Record<string, unknown> | null = null;
+
+    if (inputSchemaPath) {
+      const resolved = resolve(process.cwd(), inputSchemaPath);
+      if (!existsSync(resolved)) fail(`Input schema file not found: ${resolved}`);
+      try {
+        inputSchema = JSON.parse(readFileSync(resolved, "utf8"));
+      } catch {
+        fail(`Invalid JSON in input schema: ${resolved}`);
+      }
+    }
+    if (outputSchemaPath) {
+      const resolved = resolve(process.cwd(), outputSchemaPath);
+      if (!existsSync(resolved)) fail(`Output schema file not found: ${resolved}`);
+      try {
+        outputSchema = JSON.parse(readFileSync(resolved, "utf8"));
+      } catch {
+        fail(`Invalid JSON in output schema: ${resolved}`);
+      }
+    }
+
+    const tool = createCallTool({
+      id: toolId,
+      name,
+      description,
+      executor_type: executor as CallToolExecutorType,
+      side_effect: sideEffect as CallToolSideEffect,
+      input_schema_json: inputSchema,
+      output_schema_json: outputSchema,
+    });
+
+    if (asJson) {
+      printJson(serializeCallTool(tool));
+      return;
+    }
+
+    console.log(`\nTool created: ${tool.id}`);
+    console.log(`  Name:        ${tool.name}`);
+    console.log(`  Executor:    ${tool.executor_type}`);
+    console.log(`  Side-Effect: ${tool.side_effect}`);
+    console.log();
+  }
+
+  @Command({ name: "configure", description: "Configure a call tool" })
+  configure(
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--timeout-ms <ms>", description: "Execution timeout in milliseconds" }) timeoutMs?: string,
+    @Option({ flags: "--enabled <value>", description: "Enable or disable (true|false)" }) enabled?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!toolId) fail("tool_id is required");
+    initCallsDefaults();
+
+    const existing = getCallTool(toolId);
+    if (!existing) fail(`Tool not found: ${toolId}`);
+
+    const updated = updateCallTool(toolId, {
+      ...(timeoutMs !== undefined ? { timeout_ms: parseInt(timeoutMs, 10) } : {}),
+      ...(enabled !== undefined ? { enabled: enabled === "true" } : {}),
+    });
+
+    if (!updated) fail(`Failed to update tool: ${toolId}`);
+
+    if (asJson) {
+      printJson(serializeCallTool(updated));
+      return;
+    }
+
+    console.log(`\nTool ${toolId} updated.`);
+    console.log(`  Timeout:  ${updated.timeout_ms}ms`);
+    console.log(`  Enabled:  ${updated.enabled ? "yes" : "no"}`);
+    console.log();
+  }
+
+  @Command({ name: "bind", description: "Bind a tool to a profile" })
+  bind(
+    @Arg("profile_id") profileId: string,
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--provider-tool-name <name>", description: "Provider-facing tool name" })
+    providerToolName?: string,
+    @Option({ flags: "--required", description: "Mark tool as required for the profile" }) required?: boolean,
+    @Option({ flags: "--tool-prompt <text>", description: "Profile-specific prompt for this tool" })
+    toolPrompt?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!profileId) fail("profile_id is required");
+    if (!toolId) fail("tool_id is required");
+    initCallsDefaults();
+
+    const profile = getCallProfile(profileId);
+    if (!profile) fail(`Profile not found: ${profileId}`);
+    const tool = getCallTool(toolId);
+    if (!tool) fail(`Tool not found: ${toolId}`);
+
+    const existing = getCallToolBinding(toolId, "profile", profileId);
+    if (existing) fail(`Tool ${toolId} is already bound to profile ${profileId}`);
+
+    const binding = createCallToolBinding(toolId, "profile", profileId, {
+      provider_tool_name: providerToolName,
+      tool_prompt: toolPrompt,
+      required,
+    });
+
+    if (asJson) {
+      printJson(serializeToolBinding(binding));
+      return;
+    }
+
+    console.log(`\nTool ${toolId} bound to profile ${profileId}.`);
+    console.log();
+  }
+
+  @Command({ name: "unbind", description: "Unbind a tool from a profile" })
+  unbind(
+    @Arg("profile_id") profileId: string,
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!profileId) fail("profile_id is required");
+    if (!toolId) fail("tool_id is required");
+    initCallsDefaults();
+
+    const removed = deleteCallToolBinding(toolId, "profile", profileId);
+    if (!removed) fail(`No binding found for tool ${toolId} on profile ${profileId}`);
+
+    if (asJson) {
+      printJson({ success: true, profile_id: profileId, tool_id: toolId });
+      return;
+    }
+
+    console.log(`\nTool ${toolId} unbound from profile ${profileId}.`);
+    console.log();
+  }
+
+  @Command({ name: "runs", description: "List tool runs for a call request" })
+  runs(
+    @Arg("call_request_id") callRequestId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+    const request = getCallRequest(callRequestId);
+    if (!request) fail(`Call request not found: ${callRequestId}`);
+
+    const runs = listCallToolRuns(callRequestId);
+
+    if (asJson) {
+      printJson({ request_id: callRequestId, total: runs.length, tool_runs: runs.map(serializeToolRun) });
+      return;
+    }
+
+    if (runs.length === 0) {
+      console.log(`\nNo tool runs for request ${callRequestId}.\n`);
+      return;
+    }
+
+    console.log(`\nTool runs for ${callRequestId} (${runs.length})\n`);
+    console.log("  ID                    TOOL                    STATUS      MESSAGE");
+    console.log("  --------------------  ----------------------  ----------  --------------------------------");
+    for (const r of runs) {
+      console.log(
+        `  ${r.id.padEnd(20)}  ${r.tool_id.padEnd(22)}  ${statusColor(r.status).padEnd(20)}  ${(r.error_message ?? "-").slice(0, 40)}`,
+      );
+    }
+    console.log();
+  }
+
+  @Command({ name: "run", description: "Execute a tool (dry-run validates without side effects)" })
+  run(
+    @Arg("tool_id") toolId: string,
+    @Option({ flags: "--input <json-or-path>", description: "Tool input as JSON string or path to JSON file" })
+    inputRaw: string,
+    @Option({ flags: "--profile <profile_id>", description: "Profile context for policy evaluation" })
+    profileId?: string,
+    @Option({ flags: "--dry-run", description: "Validate without executing" }) dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!toolId) fail("tool_id is required");
+    if (!inputRaw) fail("--input is required");
+    initCallsDefaults();
+
+    const tool = getCallTool(toolId);
+    if (!tool) fail(`Tool not found: ${toolId}`);
+    if (!tool.enabled) fail(`Tool is disabled: ${toolId}`);
+
+    // Parse input
+    let input: Record<string, unknown>;
+    try {
+      const resolved = resolve(process.cwd(), inputRaw);
+      if (existsSync(resolved)) {
+        input = JSON.parse(readFileSync(resolved, "utf8"));
+      } else {
+        input = JSON.parse(inputRaw);
+      }
+    } catch {
+      fail(`Invalid input: must be valid JSON string or path to JSON file.`);
+    }
+
+    // Validate input schema
+    if (tool.input_schema_json) {
+      const schema = tool.input_schema_json;
+      const requiredFields = (schema.required as string[] | undefined) ?? [];
+      const properties = (schema.properties as Record<string, unknown> | undefined) ?? {};
+
+      for (const field of requiredFields) {
+        if (!(field in input)) {
+          const result = {
+            ok: false,
+            error: "schema_validation_failed",
+            message: `Missing required field: ${field}`,
+            tool_id: toolId,
+            input,
+          };
+          if (asJson) {
+            printJson(result);
+            return;
+          }
+          fail(`Schema validation failed: missing required field '${field}'.`);
+        }
+      }
+
+      for (const key of Object.keys(input)) {
+        if (!(key in properties)) {
+          const result = {
+            ok: false,
+            error: "schema_validation_failed",
+            message: `Unknown field: ${key}`,
+            tool_id: toolId,
+            input,
+          };
+          if (asJson) {
+            printJson(result);
+            return;
+          }
+          fail(`Schema validation failed: unknown field '${key}'.`);
+        }
+      }
+    }
+
+    // Evaluate policy
+    const policyResult = evaluateCallToolPolicy(toolId, tool.side_effect, {
+      profile_id: profileId,
+    });
+
+    if (!policyResult.allowed) {
+      const blockedResult = {
+        ok: false,
+        error: "policy_blocked",
+        message: policyResult.reason,
+        tool_id: toolId,
+        side_effect: tool.side_effect,
+        dry_run: !!dryRun,
+      };
+
+      if (asJson) {
+        printJson(blockedResult);
+        return;
+      }
+      fail(`Policy blocked: ${policyResult.reason}`);
+    }
+
+    // Dry-run: validate only, no execution
+    if (dryRun) {
+      const dryRunResult = {
+        ok: true,
+        dry_run: true,
+        message: "Validation passed. Tool would execute with the given input.",
+        tool_id: toolId,
+        executor_type: tool.executor_type,
+        side_effect: tool.side_effect,
+        timeout_ms: tool.timeout_ms,
+        input,
+        policy: { allowed: true, reason: policyResult.reason },
+      };
+
+      if (asJson) {
+        printJson(dryRunResult);
+        return;
+      }
+
+      console.log(`\nDry-run validation passed for ${toolId}.`);
+      console.log(`  Executor:    ${tool.executor_type}`);
+      console.log(`  Side-Effect: ${tool.side_effect}`);
+      console.log(`  Timeout:     ${tool.timeout_ms}ms`);
+      console.log(`  Policy:      ${policyResult.reason}`);
+      console.log(`  Input:       ${JSON.stringify(input)}`);
+      console.log(`\n  No side effects. Use without --dry-run to execute.`);
+      console.log();
+      return;
+    }
+
+    // Live execution is blocked for now — native tools need runtime implementation
+    const liveBlockResult = {
+      ok: false,
+      error: "execution_not_implemented",
+      message: `Live execution of ${tool.executor_type} tools is not yet implemented. Use --dry-run to validate.`,
+      tool_id: toolId,
+      executor_type: tool.executor_type,
+      input,
+    };
+
+    if (asJson) {
+      printJson(liveBlockResult);
+      return;
+    }
+    fail(`Live execution of ${tool.executor_type} tools is not yet implemented. Use --dry-run to validate.`);
   }
 }

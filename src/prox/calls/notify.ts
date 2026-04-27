@@ -65,7 +65,10 @@ function spawnDetachedCli(args: string[]): number | undefined {
 
 function resolveRaviCliPath(): string | null {
   const explicit = process.env.RAVI_BIN?.trim();
-  if (explicit) return explicit;
+  if (explicit) {
+    if (explicit.includes("/") && !existsSync(explicit)) return null;
+    return explicit;
+  }
 
   const cwdBin = join(process.cwd(), "bin", "ravi");
   if (existsSync(cwdBin)) return cwdBin;
