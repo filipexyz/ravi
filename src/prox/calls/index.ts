@@ -79,6 +79,7 @@ export type {
 } from "./webhook.js";
 
 export { handlePostCallWebhook } from "./webhook.js";
+export { syncCallRequestFromElevenLabs } from "./sync.js";
 
 import {
   createCallRequest,

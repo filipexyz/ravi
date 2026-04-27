@@ -18,6 +18,7 @@ import {
   getCallResultForRequest,
   initCallsDefaults,
   submitCallRequest,
+  syncCallRequestFromElevenLabs,
   cancelCallRequest,
   hasRealProvider,
   type CallRequest,
@@ -486,6 +487,43 @@ export class ProxCallsCommands {
         `  ${formatTime(e.created_at).padEnd(14)}  ${e.event_type.padEnd(20)}  ${statusColor(e.status).padEnd(28)}  ${(e.message ?? "-").slice(0, 40)}`,
       );
     }
+    console.log();
+  }
+
+  @Command({ name: "transcript", description: "Show call transcript, syncing provider state when needed" })
+  async transcript(
+    @Arg("call_request_id") callRequestId: string,
+    @Option({ flags: "--sync", description: "Force provider sync before reading transcript" }) sync?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    initCallsDefaults();
+    let result = getCallResultForRequest(callRequestId);
+    if (sync || !result?.transcript) {
+      await syncCallRequestFromElevenLabs(callRequestId);
+      result = getCallResultForRequest(callRequestId);
+    }
+
+    const request = getCallRequest(callRequestId);
+    if (!request) fail(`Call request not found: ${callRequestId}`);
+    if (!result?.transcript) fail(`No transcript found for call request: ${callRequestId}`);
+
+    const payload = {
+      request_id: callRequestId,
+      outcome: result.outcome,
+      summary: result.summary,
+      transcript: result.transcript,
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return;
+    }
+
+    console.log(`\nTranscript for ${callRequestId}`);
+    console.log(`  Outcome: ${result.outcome}`);
+    if (result.summary) console.log(`  Summary: ${result.summary}`);
+    console.log();
+    console.log(result.transcript);
     console.log();
   }
 

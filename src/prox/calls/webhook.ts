@@ -97,10 +97,27 @@ function mapTerminalStatus(payload: CallWebhookPayload): { runStatus: CallRunSta
   if (summary.includes("voicemail")) {
     return { runStatus: "voicemail", outcome: "voicemail" };
   }
+  if (summary.includes("caixa postal")) {
+    return { runStatus: "voicemail", outcome: "voicemail" };
+  }
   if (summary.includes("busy")) {
     return { runStatus: "busy", outcome: "busy" };
   }
-  if (summary.includes("no answer") || summary.includes("no_answer")) {
+  if (summary.includes("ocupado")) {
+    return { runStatus: "busy", outcome: "busy" };
+  }
+  if (
+    summary.includes("no answer") ||
+    summary.includes("no_answer") ||
+    summary.includes("not available") ||
+    summary.includes("unavailable") ||
+    summary.includes("indispon") ||
+    summary.includes("celular estiver disponível") ||
+    summary.includes("celular está disponível") ||
+    summary.includes("fora de área") ||
+    summary.includes("fora de area") ||
+    summary.includes("recado")
+  ) {
     return { runStatus: "no_answer", outcome: "no_answer" };
   }
 
