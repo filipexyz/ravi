@@ -137,7 +137,7 @@ function evaluateToolPolicy(context: CallToolExecutionContext): PolicyVerdict {
     return { allowed: false, reason: "Tool is blocked by policy." };
   }
 
-  const unsafeSideEffects = new Set(["external_message", "external_irreversible"]);
+  const unsafeSideEffects = new Set(["external_message", "external_call", "external_irreversible"]);
   if (unsafeSideEffects.has(tool.side_effect)) {
     if (!policy || !policy.allowed) {
       return { allowed: false, reason: `Side-effect class '${tool.side_effect}' requires explicit policy allowance.` };

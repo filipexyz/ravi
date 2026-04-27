@@ -14,6 +14,7 @@ export type VoicemailPolicy = "leave_message" | "hangup" | "skip";
 export interface CallProfile {
   id: string;
   name: string;
+  voice_agent_id: string | null;
   provider: string;
   provider_agent_id: string;
   twilio_number_id: string;
@@ -263,6 +264,62 @@ export interface RulesEvaluationResult {
 }
 
 // ---------------------------------------------------------------------------
+// call_voice_agent
+// ---------------------------------------------------------------------------
+
+export interface CallVoiceAgent {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  provider_agent_id: string | null;
+  voice_id: string | null;
+  language: string;
+  system_prompt: string | null;
+  system_prompt_path: string | null;
+  first_message_template: string | null;
+  dynamic_variables_schema_json: Record<string, unknown> | null;
+  default_tools_json: string[] | null;
+  provider_config_json: Record<string, unknown> | null;
+  version: number;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCallVoiceAgentInput {
+  id: string;
+  name: string;
+  description?: string;
+  provider: string;
+  provider_agent_id?: string | null;
+  voice_id?: string | null;
+  language?: string;
+  system_prompt?: string | null;
+  system_prompt_path?: string | null;
+  first_message_template?: string | null;
+  dynamic_variables_schema_json?: Record<string, unknown> | null;
+  default_tools_json?: string[] | null;
+  provider_config_json?: Record<string, unknown> | null;
+}
+
+export interface UpdateCallVoiceAgentInput {
+  name?: string;
+  description?: string;
+  provider?: string;
+  provider_agent_id?: string | null;
+  voice_id?: string | null;
+  language?: string;
+  system_prompt?: string | null;
+  system_prompt_path?: string | null;
+  first_message_template?: string | null;
+  dynamic_variables_schema_json?: Record<string, unknown> | null;
+  default_tools_json?: string[] | null;
+  provider_config_json?: Record<string, unknown> | null;
+  enabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // call_tool
 // ---------------------------------------------------------------------------
 
@@ -287,6 +344,28 @@ export interface CallTool {
   enabled: boolean;
   created_at: number;
   updated_at: number;
+}
+
+export interface CreateCallToolInput {
+  id: string;
+  name: string;
+  description: string;
+  executor_type: CallToolExecutorType;
+  side_effect: CallToolSideEffect;
+  input_schema_json?: Record<string, unknown> | null;
+  output_schema_json?: Record<string, unknown> | null;
+  executor_config_json?: Record<string, unknown> | null;
+  timeout_ms?: number;
+}
+
+export interface UpdateCallToolInput {
+  name?: string;
+  description?: string;
+  input_schema_json?: Record<string, unknown> | null;
+  output_schema_json?: Record<string, unknown> | null;
+  executor_config_json?: Record<string, unknown> | null;
+  timeout_ms?: number;
+  enabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +424,18 @@ export interface CallToolRun {
   started_at: number;
   completed_at: number | null;
   duration_ms: number | null;
+}
+
+export interface CreateCallToolRunInput {
+  request_id: string;
+  run_id?: string | null;
+  tool_id: string;
+  binding_id?: string | null;
+  provider_tool_name?: string;
+  input_json?: Record<string, unknown> | null;
+  output_json?: Record<string, unknown> | null;
+  status?: CallToolRunStatus;
+  message?: string | null;
 }
 
 // ---------------------------------------------------------------------------

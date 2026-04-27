@@ -31,6 +31,22 @@ export type {
   CallProviderAdapter,
   ProviderDialInput,
   ProviderDialResult,
+  CallVoiceAgent,
+  CreateCallVoiceAgentInput,
+  UpdateCallVoiceAgentInput,
+  CallTool,
+  CallToolExecutorType,
+  CallToolSideEffect,
+  CreateCallToolInput,
+  UpdateCallToolInput,
+  CallToolBinding,
+  CallToolBindingScopeType,
+  CallToolPolicy,
+  CallToolRun,
+  CallToolRunStatus,
+  CreateCallToolRunInput,
+  CallToolNormalizedResult,
+  CallToolExecutionContext,
 } from "./types.js";
 
 export {
@@ -59,6 +75,32 @@ export {
   getCallResultForRequest,
   updateCallProfile,
   resetCallsSchemaFlag,
+  listCallVoiceAgents,
+  getCallVoiceAgent,
+  createCallVoiceAgent,
+  updateCallVoiceAgent,
+  seedDefaultVoiceAgents,
+  listCallTools,
+  getCallTool,
+  createCallTool,
+  updateCallTool,
+  upsertCallTool,
+  listCallToolBindings,
+  getCallToolBinding,
+  createCallToolBinding,
+  deleteCallToolBinding,
+  resolveCallToolBindingByProviderName,
+  getCallToolPolicy,
+  getEffectiveCallToolPolicy,
+  upsertCallToolPolicy,
+  evaluateCallToolPolicy,
+  createCallToolRun,
+  getCallToolRun,
+  listCallToolRuns,
+  countCallToolRunsForRun,
+  updateCallToolRunStatus,
+  seedDefaultCallTools,
+  seedCallToolBindingsForProfile,
 } from "./calls-db.js";
 
 export { evaluateCallRules } from "./rules.js";
@@ -105,6 +147,8 @@ import {
   createCallResult,
   seedDefaultProfiles,
   seedDefaultRules,
+  seedDefaultVoiceAgents,
+  seedDefaultCallTools,
 } from "./calls-db.js";
 import { evaluateCallRules } from "./rules.js";
 import { getCallProvider } from "./provider.js";
@@ -118,6 +162,8 @@ import type { CallRequest, CreateCallRequestInput } from "./types.js";
 export function initCallsDefaults(): void {
   seedDefaultProfiles();
   seedDefaultRules();
+  seedDefaultVoiceAgents();
+  seedDefaultCallTools();
 }
 
 /**

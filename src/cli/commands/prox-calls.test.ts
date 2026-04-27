@@ -32,6 +32,20 @@ import {
   resetCallsSchemaFlag,
   hasRealProvider,
   resetProviders,
+  listCallVoiceAgents,
+  getCallVoiceAgent,
+  createCallVoiceAgent,
+  updateCallVoiceAgent,
+  listCallTools,
+  getCallTool,
+  createCallTool,
+  updateCallTool,
+  listCallToolBindings,
+  createCallToolBinding,
+  deleteCallToolBinding,
+  evaluateCallToolPolicy,
+  createCallToolRun,
+  listCallToolRuns,
 } from "../../prox/calls/index.js";
 
 beforeEach(() => {
@@ -39,6 +53,12 @@ beforeEach(() => {
   resetProviders();
   process.env.RAVI_CALLS_DISABLE_ENV_FILE = "1";
   delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.AGORA_APP_ID;
+  delete process.env.AGORA_APP_CERTIFICATE;
+  delete process.env.AGORA_CUSTOMER_ID;
+  delete process.env.AGORA_CUSTOMER_SECRET;
+  delete process.env.AGORA_SIP_DOMAIN;
+  delete process.env.RAVI_AGORA_FROM_NUMBER;
 });
 
 function initCallsDefaultsForDialing(): void {
@@ -521,5 +541,392 @@ describe("missing config creates durable failure", () => {
     const failEvent = events.find((e) => e.event_type === "run.failed");
     expect(failEvent).toBeDefined();
     expect(failEvent!.message).toContain("Missing provider_agent_id");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Voice Agent tests
+// ---------------------------------------------------------------------------
+
+describe("voice agent seeds", () => {
+  it("initCallsDefaults seeds voice agents", () => {
+    initCallsDefaults();
+    const agents = listCallVoiceAgents();
+    expect(agents.length).toBe(4);
+  });
+
+  it("seeds expected voice agent ids", () => {
+    initCallsDefaults();
+    const ids = listCallVoiceAgents().map((a) => a.id);
+    expect(ids).toContain("ravi-followup");
+    expect(ids).toContain("ravi-interviewer");
+    expect(ids).toContain("ravi-urgent-approval");
+    expect(ids).toContain("ravi-intake");
+  });
+
+  it("voice agents have required fields", () => {
+    initCallsDefaults();
+    for (const agent of listCallVoiceAgents()) {
+      expect(agent.id).toBeTruthy();
+      expect(agent.name).toBeTruthy();
+      expect(agent.description).toBeTruthy();
+      expect(agent.provider).toBe("elevenlabs");
+      expect(agent.language).toBe("pt-BR");
+      expect(agent.system_prompt).toBeTruthy();
+      expect(agent.first_message_template).toBeTruthy();
+      expect(agent.version).toBe(1);
+      expect(agent.enabled).toBe(true);
+      expect(agent.dynamic_variables_schema_json).not.toBeNull();
+      expect(agent.default_tools_json).not.toBeNull();
+      expect(Array.isArray(agent.default_tools_json)).toBe(true);
+    }
+  });
+
+  it("voice agents list returns stable JSON", () => {
+    initCallsDefaults();
+    const agents = listCallVoiceAgents();
+    const json = agents.map((a) => ({
+      id: a.id,
+      name: a.name,
+      provider: a.provider,
+      language: a.language,
+      enabled: a.enabled,
+      version: a.version,
+    }));
+    expect(json).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "ravi-followup", name: "Ravi Follow-up" }),
+        expect.objectContaining({ id: "ravi-interviewer", name: "Ravi Interviewer" }),
+        expect.objectContaining({ id: "ravi-urgent-approval", name: "Ravi Urgent Approval" }),
+        expect.objectContaining({ id: "ravi-intake", name: "Ravi Intake" }),
+      ]),
+    );
+  });
+});
+
+describe("voice agent CRUD", () => {
+  it("show returns full voice agent details", () => {
+    initCallsDefaults();
+    const agent = getCallVoiceAgent("ravi-followup");
+    expect(agent).not.toBeNull();
+    expect(agent!.id).toBe("ravi-followup");
+    expect(agent!.name).toBe("Ravi Follow-up");
+    expect(agent!.system_prompt).toContain("follow-up");
+  });
+
+  it("create adds a new voice agent", () => {
+    initCallsDefaults();
+    const agent = createCallVoiceAgent({
+      id: "test-agent",
+      name: "Test Agent",
+      provider: "stub",
+      description: "A test voice agent",
+    });
+    expect(agent.id).toBe("test-agent");
+    expect(agent.name).toBe("Test Agent");
+    expect(agent.version).toBe(1);
+    expect(agent.enabled).toBe(true);
+  });
+
+  it("update bumps version on material changes", () => {
+    initCallsDefaults();
+    const updated = updateCallVoiceAgent("ravi-followup", {
+      system_prompt: "Updated prompt",
+    });
+    expect(updated).not.toBeNull();
+    expect(updated!.version).toBe(2);
+    expect(updated!.system_prompt).toBe("Updated prompt");
+  });
+
+  it("update does not bump version on non-material changes", () => {
+    initCallsDefaults();
+    const before = getCallVoiceAgent("ravi-followup")!;
+    const updated = updateCallVoiceAgent("ravi-followup", {
+      name: "New Name",
+    });
+    expect(updated).not.toBeNull();
+    expect(updated!.version).toBe(before.version);
+    expect(updated!.name).toBe("New Name");
+  });
+
+  it("returns null for nonexistent voice agent", () => {
+    initCallsDefaults();
+    const result = updateCallVoiceAgent("nonexistent", { name: "test" });
+    expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Call Tool tests
+// ---------------------------------------------------------------------------
+
+describe("call tool seeds", () => {
+  it("initCallsDefaults seeds call tools", () => {
+    initCallsDefaults();
+    const tools = listCallTools();
+    expect(tools.length).toBe(5);
+  });
+
+  it("seeds expected tool ids", () => {
+    initCallsDefaults();
+    const ids = listCallTools().map((t) => t.id);
+    expect(ids).toContain("call.end");
+    expect(ids).toContain("person.lookup");
+    expect(ids).toContain("prox.note.create");
+    expect(ids).toContain("prox.followup.schedule");
+    expect(ids).toContain("task.create");
+  });
+
+  it("tools have required fields", () => {
+    initCallsDefaults();
+    for (const tool of listCallTools()) {
+      expect(tool.id).toBeTruthy();
+      expect(tool.name).toBeTruthy();
+      expect(tool.description).toBeTruthy();
+      expect(["native", "bash", "http", "context"]).toContain(tool.executor_type);
+      expect(["read_only", "write_internal", "external_message", "external_call", "external_irreversible"]).toContain(
+        tool.side_effect,
+      );
+      expect(tool.timeout_ms).toBeGreaterThan(0);
+      expect(tool.enabled).toBe(true);
+      expect(tool.input_schema_json).not.toBeNull();
+    }
+  });
+
+  it("person.lookup is read_only", () => {
+    initCallsDefaults();
+    const tool = getCallTool("person.lookup");
+    expect(tool).not.toBeNull();
+    expect(tool!.side_effect).toBe("read_only");
+  });
+
+  it("call.end is external_call with explicit allow policy", () => {
+    initCallsDefaults();
+    const tool = getCallTool("call.end");
+    expect(tool).not.toBeNull();
+    expect(tool!.side_effect).toBe("external_call");
+  });
+});
+
+describe("call tool CRUD", () => {
+  it("create adds a new tool", () => {
+    initCallsDefaults();
+    const tool = createCallTool({
+      id: "test.tool",
+      name: "Test Tool",
+      description: "A test tool",
+      executor_type: "native",
+      side_effect: "read_only",
+    });
+    expect(tool.id).toBe("test.tool");
+    expect(tool.enabled).toBe(true);
+  });
+
+  it("update changes tool properties", () => {
+    initCallsDefaults();
+    const updated = updateCallTool("call.end", { timeout_ms: 3000 });
+    expect(updated).not.toBeNull();
+    expect(updated!.timeout_ms).toBe(3000);
+  });
+
+  it("configure enables/disables tool", () => {
+    initCallsDefaults();
+    const disabled = updateCallTool("call.end", { enabled: false });
+    expect(disabled!.enabled).toBe(false);
+    const enabled = updateCallTool("call.end", { enabled: true });
+    expect(enabled!.enabled).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tool binding tests
+// ---------------------------------------------------------------------------
+
+describe("tool bindings", () => {
+  it("bind tool to voice agent", () => {
+    initCallsDefaults();
+    const binding = createCallToolBinding("call.end", "voice_agent", "ravi-followup", {
+      provider_tool_name: "end_call",
+    });
+    expect(binding.tool_id).toBe("call.end");
+    expect(binding.scope_type).toBe("voice_agent");
+    expect(binding.scope_id).toBe("ravi-followup");
+    expect(binding.provider_tool_name).toBe("end_call");
+  });
+
+  it("bind tool to profile", () => {
+    initCallsDefaults();
+    const binding = createCallToolBinding("person.lookup", "profile", "checkin");
+    expect(binding.tool_id).toBe("person.lookup");
+    expect(binding.scope_type).toBe("profile");
+    expect(binding.scope_id).toBe("checkin");
+  });
+
+  it("list bindings by scope", () => {
+    initCallsDefaults();
+    createCallToolBinding("call.end", "voice_agent", "ravi-interviewer");
+    createCallToolBinding("person.lookup", "voice_agent", "ravi-interviewer");
+    const bindings = listCallToolBindings("voice_agent", "ravi-interviewer");
+    expect(bindings.length).toBe(2);
+  });
+
+  it("unbind tool", () => {
+    initCallsDefaults();
+    createCallToolBinding("call.end", "voice_agent", "ravi-intake");
+    const removed = deleteCallToolBinding("call.end", "voice_agent", "ravi-intake");
+    expect(removed).toBe(true);
+    const bindings = listCallToolBindings("voice_agent", "ravi-intake");
+    expect(bindings.length).toBe(0);
+  });
+
+  it("unbind returns false for nonexistent binding", () => {
+    initCallsDefaults();
+    const removed = deleteCallToolBinding("nonexistent", "voice_agent", "ravi-followup");
+    expect(removed).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Policy and dry-run validation tests
+// ---------------------------------------------------------------------------
+
+describe("tool policy evaluation", () => {
+  it("read_only tool is allowed by default", () => {
+    initCallsDefaults();
+    const result = evaluateCallToolPolicy("person.lookup", "read_only");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("call.end is allowed by explicit policy", () => {
+    initCallsDefaults();
+    const result = evaluateCallToolPolicy("call.end", "external_call");
+    expect(result.allowed).toBe(true);
+  });
+
+  it("external_message is blocked by default", () => {
+    initCallsDefaults();
+    const result = evaluateCallToolPolicy("some.tool", "external_message");
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("blocked");
+  });
+
+  it("external_call is blocked by default", () => {
+    initCallsDefaults();
+    const result = evaluateCallToolPolicy("some.tool", "external_call");
+    expect(result.allowed).toBe(false);
+  });
+
+  it("external_irreversible is blocked by default", () => {
+    initCallsDefaults();
+    const result = evaluateCallToolPolicy("some.tool", "external_irreversible");
+    expect(result.allowed).toBe(false);
+  });
+});
+
+describe("dry-run validation", () => {
+  it("schema validation fails on missing required field", () => {
+    initCallsDefaults();
+    const tool = getCallTool("person.lookup");
+    expect(tool).not.toBeNull();
+    const schema = tool!.input_schema_json!;
+    const requiredFields = (schema.required as string[]) ?? [];
+    expect(requiredFields).toContain("person_id");
+
+    // Simulate validation: input missing required field
+    const input = { fields: ["name"] };
+    const missing = requiredFields.filter((f: string) => !(f in input));
+    expect(missing.length).toBeGreaterThan(0);
+    expect(missing).toContain("person_id");
+  });
+
+  it("policy blocks create structured blocked result", () => {
+    initCallsDefaults();
+
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_policy_test",
+      reason: "Policy test",
+    });
+
+    const policyResult = evaluateCallToolPolicy("some.external.tool", "external_message");
+    expect(policyResult.allowed).toBe(false);
+
+    const toolRun = createCallToolRun({
+      request_id: request.id,
+      tool_id: "prox.followup.schedule",
+      status: "blocked",
+      message: policyResult.reason,
+      input_json: { person_id: "test", reason: "test" },
+    });
+
+    expect(toolRun.status).toBe("blocked");
+    expect(toolRun.error_message).toContain("blocked");
+    expect(toolRun.request_id).toBe(request.id);
+  });
+
+  it("tool runs are listed for a request", () => {
+    initCallsDefaults();
+
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_runs_test",
+      reason: "Runs list test",
+    });
+
+    createCallToolRun({
+      request_id: request.id,
+      tool_id: "call.end",
+      status: "completed",
+      message: "Call ended",
+      input_json: { reason: "done" },
+      output_json: { ok: true, message: "Call ended" },
+    });
+
+    createCallToolRun({
+      request_id: request.id,
+      tool_id: "person.lookup",
+      status: "completed",
+      message: "Lookup complete",
+      input_json: { person_id: "p1" },
+    });
+
+    const runs = listCallToolRuns(request.id);
+    expect(runs.length).toBe(2);
+    expect(runs[0].tool_id).toBe("call.end");
+    expect(runs[1].tool_id).toBe("person.lookup");
+  });
+});
+
+describe("safe command rendering for bash tools", () => {
+  it("bash executor config has required safety fields", () => {
+    initCallsDefaults();
+    // All seeded tools are native, but the schema supports bash
+    const tool = createCallTool({
+      id: "test.bash.tool",
+      name: "Test Bash Tool",
+      description: "A safe bash tool",
+      executor_type: "bash",
+      side_effect: "read_only",
+      executor_config_json: {
+        cwd: "/tmp",
+        command: "/usr/bin/echo",
+        argv_template: ["{{message}}"],
+        env_allowlist: [],
+        timeout_ms: 5000,
+        stdout_format: "text",
+        stdout_limit: 4096,
+        stderr_limit: 1024,
+        redact_fields: [],
+      },
+    });
+
+    expect(tool.executor_type).toBe("bash");
+    const config = tool.executor_config_json as Record<string, unknown>;
+    expect(config.cwd).toBe("/tmp");
+    expect(config.command).toBe("/usr/bin/echo");
+    expect(config.timeout_ms).toBe(5000);
+    expect(config.stdout_limit).toBe(4096);
+    expect(Array.isArray(config.argv_template)).toBe(true);
+    expect(Array.isArray(config.env_allowlist)).toBe(true);
   });
 });

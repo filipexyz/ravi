@@ -340,8 +340,16 @@ export function getCallProvider(name?: string): CallProviderAdapter {
     return adapters.get(name)!;
   }
 
-  // Explicit stub request or no name given
-  if (!name || name === "stub") {
+  if (name === "stub") {
+    if (!adapters.has("stub")) {
+      const stub = new StubCallProvider();
+      adapters.set(stub.name, stub);
+    }
+    return adapters.get("stub")!;
+  }
+
+  // No provider specified: prefer real provider if available, otherwise stub.
+  if (!name) {
     if (adapters.size > 0) {
       // Prefer a real adapter if one exists
       for (const [adapterName, adapter] of adapters) {

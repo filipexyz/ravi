@@ -29,14 +29,20 @@ import type {
   CreateCallEventInput,
   CreateCallResultInput,
   UpdateCallProfileInput,
+  CallVoiceAgent,
+  CreateCallVoiceAgentInput,
+  UpdateCallVoiceAgentInput,
   CallTool,
   CallToolExecutorType,
   CallToolSideEffect,
+  CreateCallToolInput,
+  UpdateCallToolInput,
   CallToolBinding,
   CallToolBindingScopeType,
   CallToolPolicy,
   CallToolRun,
   CallToolRunStatus,
+  CreateCallToolRunInput,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -46,6 +52,7 @@ import type {
 interface CallProfileRow {
   id: string;
   name: string;
+  voice_agent_id: string | null;
   provider: string;
   provider_agent_id: string;
   twilio_number_id: string;
@@ -138,6 +145,26 @@ interface CallResultRow {
   created_at: number;
 }
 
+interface CallVoiceAgentRow {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  provider_agent_id: string | null;
+  voice_id: string | null;
+  language: string;
+  system_prompt: string | null;
+  system_prompt_path: string | null;
+  first_message_template: string | null;
+  dynamic_variables_schema_json: string | null;
+  default_tools_json: string | null;
+  provider_config_json: string | null;
+  version: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
 interface CallToolRow {
   id: string;
   name: string;
@@ -210,6 +237,7 @@ function ensureCallsSchema(): void {
     CREATE TABLE IF NOT EXISTS call_profiles (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      voice_agent_id TEXT,
       provider TEXT NOT NULL DEFAULT 'elevenlabs',
       provider_agent_id TEXT NOT NULL DEFAULT '',
       twilio_number_id TEXT NOT NULL DEFAULT '',
@@ -315,6 +343,26 @@ function ensureCallsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_call_results_request ON call_results(request_id);
     CREATE INDEX IF NOT EXISTS idx_call_rules_scope ON call_rules(scope_type, scope_id);
 
+    CREATE TABLE IF NOT EXISTS call_voice_agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      provider TEXT NOT NULL DEFAULT 'elevenlabs',
+      provider_agent_id TEXT,
+      voice_id TEXT,
+      language TEXT NOT NULL DEFAULT 'pt-BR',
+      system_prompt TEXT,
+      system_prompt_path TEXT,
+      first_message_template TEXT,
+      dynamic_variables_schema_json TEXT,
+      default_tools_json TEXT,
+      provider_config_json TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS call_tools (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -377,6 +425,7 @@ function ensureCallsSchema(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_call_tool_bindings_scope ON call_tool_bindings(scope_type, scope_id, provider_tool_name);
+    CREATE INDEX IF NOT EXISTS idx_call_voice_agents_enabled ON call_voice_agents(enabled);
     CREATE INDEX IF NOT EXISTS idx_call_tool_policies_tool ON call_tool_policies(tool_id, scope_type, scope_id);
     CREATE INDEX IF NOT EXISTS idx_call_tool_runs_request ON call_tool_runs(request_id, started_at ASC);
     CREATE INDEX IF NOT EXISTS idx_call_tool_runs_run ON call_tool_runs(run_id, started_at ASC);
@@ -392,6 +441,9 @@ function ensureCallsSchema(): void {
   }
   if (!hasProfileColumn("dynamic_variables_json")) {
     db.exec("ALTER TABLE call_profiles ADD COLUMN dynamic_variables_json TEXT");
+  }
+  if (!hasProfileColumn("voice_agent_id")) {
+    db.exec("ALTER TABLE call_profiles ADD COLUMN voice_agent_id TEXT");
   }
 
   schemaReady = true;
@@ -424,6 +476,7 @@ function rowToProfile(row: CallProfileRow): CallProfile {
   return {
     id: row.id,
     name: row.name,
+    voice_agent_id: row.voice_agent_id ?? null,
     provider: row.provider,
     provider_agent_id: row.provider_agent_id,
     twilio_number_id: row.twilio_number_id,
@@ -929,6 +982,203 @@ export function getCallResultForRequest(requestId: string): CallResult | null {
 }
 
 // ---------------------------------------------------------------------------
+// Voice Agents
+// ---------------------------------------------------------------------------
+
+function rowToVoiceAgent(row: CallVoiceAgentRow): CallVoiceAgent {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    provider: row.provider,
+    provider_agent_id: row.provider_agent_id,
+    voice_id: row.voice_id,
+    language: row.language,
+    system_prompt: row.system_prompt,
+    system_prompt_path: row.system_prompt_path,
+    first_message_template: row.first_message_template,
+    dynamic_variables_schema_json: parseJson<Record<string, unknown>>(row.dynamic_variables_schema_json),
+    default_tools_json: parseJson<string[]>(row.default_tools_json),
+    provider_config_json: parseJson<Record<string, unknown>>(row.provider_config_json),
+    version: row.version,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function listCallVoiceAgents(): CallVoiceAgent[] {
+  ensureCallsSchema();
+  const rows = getDb()
+    .prepare("SELECT * FROM call_voice_agents WHERE enabled = 1 ORDER BY name ASC")
+    .all() as CallVoiceAgentRow[];
+  return rows.map(rowToVoiceAgent);
+}
+
+export function getCallVoiceAgent(id: string): CallVoiceAgent | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_voice_agents WHERE id = ?").get(id) as
+    | CallVoiceAgentRow
+    | undefined;
+  return row ? rowToVoiceAgent(row) : null;
+}
+
+export function createCallVoiceAgent(input: CreateCallVoiceAgentInput): CallVoiceAgent {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO call_voice_agents (id, name, description, provider, provider_agent_id, voice_id, language, system_prompt, system_prompt_path, first_message_template, dynamic_variables_schema_json, default_tools_json, provider_config_json, version, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+  `).run(
+    input.id,
+    input.name,
+    input.description ?? "",
+    input.provider,
+    input.provider_agent_id ?? null,
+    input.voice_id ?? null,
+    input.language ?? "pt-BR",
+    input.system_prompt ?? null,
+    input.system_prompt_path ?? null,
+    input.first_message_template ?? null,
+    toJson(input.dynamic_variables_schema_json ?? null),
+    toJson(input.default_tools_json ?? null),
+    toJson(input.provider_config_json ?? null),
+    now,
+    now,
+  );
+
+  return getCallVoiceAgent(input.id)!;
+}
+
+export function updateCallVoiceAgent(id: string, input: UpdateCallVoiceAgentInput): CallVoiceAgent | null {
+  ensureCallsSchema();
+  const existing = getCallVoiceAgent(id);
+  if (!existing) return null;
+
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  let bumpsVersion = false;
+  const addString = (column: string, value: string | null | undefined, material = false) => {
+    if (value === undefined) return;
+    fields.push(`${column} = ?`);
+    values.push(value);
+    if (material) bumpsVersion = true;
+  };
+  const addJson = (column: string, value: unknown | undefined, material = false) => {
+    if (value === undefined) return;
+    fields.push(`${column} = ?`);
+    values.push(toJson(value));
+    if (material) bumpsVersion = true;
+  };
+
+  addString("name", input.name);
+  addString("description", input.description);
+  addString("provider", input.provider, true);
+  addString("provider_agent_id", input.provider_agent_id, true);
+  addString("voice_id", input.voice_id, true);
+  addString("language", input.language, true);
+  addString("system_prompt", input.system_prompt, true);
+  addString("system_prompt_path", input.system_prompt_path, true);
+  addString("first_message_template", input.first_message_template, true);
+  addJson("dynamic_variables_schema_json", input.dynamic_variables_schema_json, true);
+  addJson("default_tools_json", input.default_tools_json, true);
+  addJson("provider_config_json", input.provider_config_json, true);
+
+  if (input.enabled !== undefined) {
+    fields.push("enabled = ?");
+    values.push(input.enabled ? 1 : 0);
+  }
+
+  if (fields.length === 0) return existing;
+
+  if (bumpsVersion) {
+    fields.push("version = version + 1");
+  }
+  fields.push("updated_at = ?");
+  values.push(Date.now(), id);
+
+  getDb().prepare(`UPDATE call_voice_agents SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getCallVoiceAgent(id);
+}
+
+export function seedDefaultVoiceAgents(): void {
+  ensureCallsSchema();
+
+  const dynamicVariablesSchema = {
+    type: "object",
+    properties: {
+      person_name: { type: "string", description: "Name of the person being called" },
+      reason: { type: "string", description: "Reason for the call" },
+      opening_line: { type: "string", description: "Custom opening line override" },
+      goal: { type: "string", description: "Call objective" },
+      context: { type: "string", description: "Additional context" },
+      expected_output: { type: "string", description: "Expected call outcome" },
+    },
+    required: ["person_name", "reason"],
+  };
+
+  const defaults: CreateCallVoiceAgentInput[] = [
+    {
+      id: "ravi-followup",
+      name: "Ravi Follow-up",
+      description: "Short, direct follow-up calls when someone has not responded to messages.",
+      provider: "elevenlabs",
+      system_prompt:
+        "You are Ravi, making a brief follow-up call. Be polite, direct, and concise. State the reason, collect the answer, and end the call when the objective is complete.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Estou ligando rapidamente para dar um retorno sobre {{reason}}.",
+      dynamic_variables_schema_json: dynamicVariablesSchema,
+      default_tools_json: ["call.end", "person.lookup", "prox.note.create"],
+    },
+    {
+      id: "ravi-interviewer",
+      name: "Ravi Interviewer",
+      description: "Structured interview calls that gather useful information.",
+      provider: "elevenlabs",
+      system_prompt:
+        "You are Ravi, conducting a structured interview call. Ask one question at a time, listen carefully, summarize key points, and end the call when the objective is complete.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Vou conduzir uma conversa rápida sobre {{reason}}. Pode ser agora?",
+      dynamic_variables_schema_json: dynamicVariablesSchema,
+      default_tools_json: ["call.end", "person.lookup", "prox.note.create", "task.create"],
+    },
+    {
+      id: "ravi-urgent-approval",
+      name: "Ravi Urgent Approval",
+      description: "Higher-priority calls asking for an explicit approval or blocker resolution.",
+      provider: "elevenlabs",
+      system_prompt:
+        "You are Ravi, calling to get an urgent approval or decision. State what needs approval, why it matters, and accept yes, no, or a request for more time.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Preciso de uma aprovação urgente sobre {{reason}}. Tem um minuto?",
+      dynamic_variables_schema_json: dynamicVariablesSchema,
+      default_tools_json: ["call.end", "person.lookup", "prox.note.create"],
+    },
+    {
+      id: "ravi-intake",
+      name: "Ravi Intake",
+      description: "prox.city intake calls for onboarding and initial data collection.",
+      provider: "elevenlabs",
+      system_prompt:
+        "You are Ravi, conducting an intake call for prox.city. Gather information methodically, confirm collected details, and end the call when the intake is complete.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi da prox.city. Vou fazer algumas perguntas para entender melhor o que você precisa. Pode ser?",
+      dynamic_variables_schema_json: dynamicVariablesSchema,
+      default_tools_json: ["call.end", "person.lookup", "prox.note.create", "prox.followup.schedule", "task.create"],
+    },
+  ];
+
+  for (const agent of defaults) {
+    if (!getCallVoiceAgent(agent.id)) {
+      createCallVoiceAgent(agent);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Call Tools
 // ---------------------------------------------------------------------------
 
@@ -955,8 +1205,22 @@ export function getCallTool(id: string): CallTool | null {
   return row ? rowToCallTool(row) : null;
 }
 
-export function listCallTools(): CallTool[] {
+export function listCallTools(profileId?: string): CallTool[] {
   ensureCallsSchema();
+  if (profileId) {
+    const rows = getDb()
+      .prepare(`
+        SELECT ct.* FROM call_tools ct
+        JOIN call_tool_bindings ctb ON ctb.tool_id = ct.id
+        WHERE ctb.scope_type = 'profile'
+          AND ctb.scope_id = ?
+          AND ctb.enabled = 1
+          AND ct.enabled = 1
+        ORDER BY ct.id ASC
+      `)
+      .all(profileId) as CallToolRow[];
+    return rows.map(rowToCallTool);
+  }
   const rows = getDb().prepare("SELECT * FROM call_tools WHERE enabled = 1 ORDER BY id ASC").all() as CallToolRow[];
   return rows.map(rowToCallTool);
 }
@@ -1004,6 +1268,69 @@ export function upsertCallTool(tool: {
   return getCallTool(tool.id)!;
 }
 
+export function createCallTool(input: CreateCallToolInput): CallTool {
+  if (getCallTool(input.id)) {
+    throw new Error(`Call tool already exists: ${input.id}`);
+  }
+  return upsertCallTool({
+    id: input.id,
+    name: input.name,
+    description: input.description,
+    input_schema_json: input.input_schema_json ?? {},
+    output_schema_json: input.output_schema_json ?? null,
+    executor_type: input.executor_type,
+    executor_config_json: input.executor_config_json ?? null,
+    side_effect: input.side_effect,
+    timeout_ms: input.timeout_ms ?? 10000,
+  });
+}
+
+export function updateCallTool(id: string, input: UpdateCallToolInput): CallTool | null {
+  ensureCallsSchema();
+  const existing = getCallTool(id);
+  if (!existing) return null;
+
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (input.name !== undefined) {
+    fields.push("name = ?");
+    values.push(input.name);
+  }
+  if (input.description !== undefined) {
+    fields.push("description = ?");
+    values.push(input.description);
+  }
+  if (input.input_schema_json !== undefined) {
+    fields.push("input_schema_json = ?");
+    values.push(toJson(input.input_schema_json ?? {}));
+  }
+  if (input.output_schema_json !== undefined) {
+    fields.push("output_schema_json = ?");
+    values.push(toJson(input.output_schema_json));
+  }
+  if (input.executor_config_json !== undefined) {
+    fields.push("executor_config_json = ?");
+    values.push(toJson(input.executor_config_json));
+  }
+  if (input.timeout_ms !== undefined) {
+    fields.push("timeout_ms = ?");
+    values.push(input.timeout_ms);
+  }
+  if (input.enabled !== undefined) {
+    fields.push("enabled = ?");
+    values.push(input.enabled ? 1 : 0);
+  }
+
+  if (fields.length === 0) return existing;
+
+  fields.push("updated_at = ?");
+  values.push(Date.now(), id);
+
+  getDb().prepare(`UPDATE call_tools SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getCallTool(id);
+}
+
 // ---------------------------------------------------------------------------
 // Call Tool Bindings
 // ---------------------------------------------------------------------------
@@ -1023,11 +1350,26 @@ function rowToCallToolBinding(row: CallToolBindingRow): CallToolBinding {
   };
 }
 
-export function getCallToolBinding(id: string): CallToolBinding | null {
+export function getCallToolBinding(id: string): CallToolBinding | null;
+export function getCallToolBinding(
+  toolId: string,
+  scopeType: CallToolBindingScopeType,
+  scopeId: string,
+): CallToolBinding | null;
+export function getCallToolBinding(
+  idOrToolId: string,
+  scopeType?: CallToolBindingScopeType,
+  scopeId?: string,
+): CallToolBinding | null {
   ensureCallsSchema();
-  const row = getDb().prepare("SELECT * FROM call_tool_bindings WHERE id = ?").get(id) as
-    | CallToolBindingRow
-    | undefined;
+  const row =
+    scopeType && scopeId
+      ? (getDb()
+          .prepare("SELECT * FROM call_tool_bindings WHERE tool_id = ? AND scope_type = ? AND scope_id = ? LIMIT 1")
+          .get(idOrToolId, scopeType, scopeId) as CallToolBindingRow | undefined)
+      : (getDb().prepare("SELECT * FROM call_tool_bindings WHERE id = ?").get(idOrToolId) as
+          | CallToolBindingRow
+          | undefined);
   return row ? rowToCallToolBinding(row) : null;
 }
 
@@ -1092,6 +1434,33 @@ export function upsertCallToolBinding(binding: {
   return getCallToolBinding(binding.id)!;
 }
 
+export function createCallToolBinding(
+  toolId: string,
+  scopeType: CallToolBindingScopeType,
+  scopeId: string,
+  options?: { provider_tool_name?: string | null; tool_prompt?: string | null; required?: boolean },
+): CallToolBinding {
+  const existing = getCallToolBinding(toolId, scopeType, scopeId);
+  if (existing) return existing;
+  return upsertCallToolBinding({
+    id: `bind_${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+    tool_id: toolId,
+    scope_type: scopeType,
+    scope_id: scopeId,
+    provider_tool_name: options?.provider_tool_name ?? toolId,
+    tool_prompt: options?.tool_prompt ?? null,
+    required: options?.required ?? false,
+  });
+}
+
+export function deleteCallToolBinding(toolId: string, scopeType: CallToolBindingScopeType, scopeId: string): boolean {
+  ensureCallsSchema();
+  const result = getDb()
+    .prepare("DELETE FROM call_tool_bindings WHERE tool_id = ? AND scope_type = ? AND scope_id = ?")
+    .run(toolId, scopeType, scopeId);
+  return result.changes > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Call Tool Policies
 // ---------------------------------------------------------------------------
@@ -1127,6 +1496,31 @@ export function getEffectiveCallToolPolicy(toolId: string): CallToolPolicy | nul
     )
     .get(toolId) as CallToolPolicyRow | undefined;
   return row ? rowToCallToolPolicy(row) : null;
+}
+
+export function evaluateCallToolPolicy(
+  toolId: string,
+  sideEffect: CallToolSideEffect,
+  _context?: { voice_agent_id?: string; profile_id?: string },
+): { allowed: boolean; reason: string; policy: CallToolPolicy | null } {
+  ensureCallsSchema();
+  const policy = getEffectiveCallToolPolicy(toolId);
+  if (policy) {
+    return {
+      allowed: policy.allowed,
+      reason: policy.allowed ? "Allowed by explicit policy" : "Blocked by explicit policy",
+      policy,
+    };
+  }
+  const unsafeSideEffects = new Set<CallToolSideEffect>([
+    "external_message",
+    "external_call",
+    "external_irreversible",
+  ]);
+  if (unsafeSideEffects.has(sideEffect)) {
+    return { allowed: false, reason: `Side-effect class '${sideEffect}' blocked by default policy`, policy: null };
+  }
+  return { allowed: true, reason: "Allowed by default policy", policy: null };
 }
 
 export function upsertCallToolPolicy(policy: {
@@ -1188,15 +1582,7 @@ function rowToCallToolRun(row: CallToolRunRow): CallToolRun {
   };
 }
 
-export function createCallToolRun(input: {
-  request_id: string;
-  run_id?: string | null;
-  tool_id: string;
-  binding_id?: string | null;
-  provider_tool_name: string;
-  input_json?: Record<string, unknown> | null;
-  status?: CallToolRunStatus;
-}): CallToolRun {
+export function createCallToolRun(input: CreateCallToolRunInput): CallToolRun {
   ensureCallsSchema();
   const db = getDb();
   const id = `trun_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
@@ -1210,11 +1596,17 @@ export function createCallToolRun(input: {
     input.run_id ?? null,
     input.tool_id,
     input.binding_id ?? null,
-    input.provider_tool_name,
+    input.provider_tool_name ?? input.tool_id,
     toJson(input.input_json ?? null),
     input.status ?? "pending",
     now,
   );
+  if (input.output_json !== undefined) {
+    db.prepare("UPDATE call_tool_runs SET output_json = ? WHERE id = ?").run(toJson(input.output_json), id);
+  }
+  if (input.message !== undefined && input.message !== null) {
+    db.prepare("UPDATE call_tool_runs SET error_message = ? WHERE id = ?").run(input.message, id);
+  }
   return getCallToolRun(id)!;
 }
 
@@ -1273,9 +1665,8 @@ export function updateCallToolRunStatus(
 export function seedDefaultCallTools(): void {
   ensureCallsSchema();
 
-  // Ensure call.end tool exists individually (idempotent per tool)
-  if (!getCallTool("call.end")) {
-    upsertCallTool({
+  const tools: Array<Parameters<typeof upsertCallTool>[0]> = [
+    {
       id: "call.end",
       name: "end_call",
       description: "End the current prox.city voice call after the objective is complete or the user asks to stop.",
@@ -1286,18 +1677,128 @@ export function seedDefaultCallTools(): void {
         },
         additionalProperties: false,
       },
+      output_schema_json: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+        },
+      },
       executor_type: "native",
       executor_config_json: { handler: "call.end" },
       side_effect: "external_call",
       timeout_ms: 5000,
-    });
+    },
+    {
+      id: "person.lookup",
+      name: "person_lookup",
+      description: "Look up safe context about the person being called.",
+      input_schema_json: {
+        type: "object",
+        properties: {
+          person_id: { type: "string", description: "Person identifier" },
+          fields: {
+            type: "array",
+            items: { type: "string" },
+            description: "Fields to return, such as name, tags, and last_interaction.",
+          },
+        },
+        required: ["person_id"],
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "person.lookup" },
+      side_effect: "read_only",
+      timeout_ms: 5000,
+    },
+    {
+      id: "prox.note.create",
+      name: "prox_note_create",
+      description: "Save an internal note or insight from the conversation.",
+      input_schema_json: {
+        type: "object",
+        properties: {
+          content: { type: "string", description: "Note content" },
+          tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+        },
+        required: ["content"],
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "prox.note.create" },
+      side_effect: "write_internal",
+      timeout_ms: 5000,
+    },
+    {
+      id: "prox.followup.schedule",
+      name: "prox_followup_schedule",
+      description: "Schedule a future follow-up call or message through prox rules.",
+      input_schema_json: {
+        type: "object",
+        properties: {
+          person_id: { type: "string", description: "Person to follow up with" },
+          reason: { type: "string", description: "Reason for follow-up" },
+          delay_minutes: { type: "number", description: "Minutes from now to schedule" },
+          channel: { type: "string", enum: ["call", "message"], description: "Follow-up channel" },
+        },
+        required: ["person_id", "reason"],
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "prox.followup.schedule" },
+      side_effect: "external_message",
+      timeout_ms: 5000,
+    },
+    {
+      id: "task.create",
+      name: "task_create",
+      description: "Create an internal Ravi task for another agent or runtime after the call.",
+      input_schema_json: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Task title" },
+          description: { type: "string", description: "Task description" },
+          assignee: { type: "string", description: "Agent or person to assign to" },
+          priority: { type: "string", enum: ["low", "normal", "high", "urgent"], description: "Task priority" },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "task.create" },
+      side_effect: "write_internal",
+      timeout_ms: 10000,
+    },
+  ];
+
+  for (const tool of tools) {
+    if (!getCallTool(tool.id)) {
+      upsertCallTool(tool);
+    }
   }
 
-  // Ensure call.end global policy exists individually
   if (!getCallToolPolicy("call.end", "global", "*")) {
     upsertCallToolPolicy({
       id: "policy-call-end-global",
       tool_id: "call.end",
+      scope_type: "global",
+      scope_id: "*",
+      allowed: true,
+    });
+  }
+  if (!getCallToolPolicy("person.lookup", "global", "*")) {
+    upsertCallToolPolicy({
+      id: "policy-person-lookup-global",
+      tool_id: "person.lookup",
+      scope_type: "global",
+      scope_id: "*",
+      allowed: true,
+    });
+  }
+  if (!getCallToolPolicy("prox.note.create", "global", "*")) {
+    upsertCallToolPolicy({
+      id: "policy-prox-note-create-global",
+      tool_id: "prox.note.create",
       scope_type: "global",
       scope_id: "*",
       allowed: true,
