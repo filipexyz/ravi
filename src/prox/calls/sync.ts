@@ -99,9 +99,6 @@ function hasCarrierOrVoicemailText(text: string): boolean {
 
 function inferCallSuccessful(conversation: ElevenLabsConversation, transcript: string | null): boolean {
   const explicit = conversation.analysis?.call_successful;
-  if (explicit === true || explicit === "success" || explicit === "true") return true;
-  if (explicit === false || explicit === "failure" || explicit === "false") return false;
-
   const joined = [
     transcript ?? "",
     conversation.analysis?.transcript_summary ?? "",
@@ -113,7 +110,10 @@ function inferCallSuccessful(conversation: ElevenLabsConversation, transcript: s
   const userMessages = conversation.transcript?.filter(
     (item) => item.role === "user" && typeof item.message === "string" && item.message.trim(),
   );
-  return Boolean(userMessages?.length);
+  if (userMessages?.length) return true;
+  if (explicit === true || explicit === "success" || explicit === "true") return true;
+  if (explicit === false || explicit === "failure" || explicit === "false") return false;
+  return false;
 }
 
 async function fetchConversation(

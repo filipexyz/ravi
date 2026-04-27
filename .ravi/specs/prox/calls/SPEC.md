@@ -324,6 +324,15 @@ Initial outcomes:
 - `failed_provider`;
 - `failed_runtime`;
 
+## Result Mapping
+
+Provider technical outcome and conversation evaluation MUST stay separate.
+
+- `call_initiation_failure`, transport errors, carrier unavailable messages, busy signals, voicemail, or no-answer evidence MAY produce non-answered outcomes.
+- A call with useful human transcript MUST be treated as `answered` even if provider analysis marks `call_successful` as `false`, `"failure"`, or equivalent.
+- Provider analysis fields such as `call_successful`, evaluation criteria, and extracted data describe whether the conversational objective succeeded. They MUST be stored in `extraction_json`, not blindly mapped to `failed_provider`.
+- `failed_provider` MUST mean provider/transport/runtime failure, not "the agent failed to answer well" or "the interview did not collect useful content".
+
 ## Lifecycle
 
 1. A Ravi session or agent creates a `call_request`.
