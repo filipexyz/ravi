@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 const testDir = join(tmpdir(), `ravi-provider-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
 process.env.RAVI_STATE_DIR = testDir;
+const originalFetch = globalThis.fetch;
 
 import {
   StubCallProvider,
@@ -14,6 +15,7 @@ import {
   getCallProvider,
   hasRealProvider,
   resetProviders,
+  syncElevenLabsAgentProfile,
 } from "./provider.js";
 import { resetCallsSchemaFlag } from "./calls-db.js";
 import type { ProviderDialInput, CallProfile, CallRequest, CallRun } from "./types.js";
@@ -27,7 +29,12 @@ afterAll(() => {
 beforeEach(() => {
   resetProviders();
   resetCallsSchemaFlag();
+  process.env.RAVI_CALLS_DISABLE_ENV_FILE = "1";
   delete process.env.ELEVENLABS_API_KEY;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 function makeDialInput(
@@ -42,6 +49,9 @@ function makeDialInput(
       twilio_number_id: "pn_xyz789",
       language: "pt-BR",
       prompt: "test prompt",
+      first_message: null,
+      system_prompt_path: null,
+      dynamic_variables_json: null,
       extraction_schema_json: null,
       voicemail_policy: "hangup",
       enabled: true,
@@ -204,5 +214,87 @@ describe("Explicit stub mode", () => {
   it("does not silently fall back to stub for elevenlabs provider", () => {
     // When profile.provider is 'elevenlabs' (or elevenlabs_twilio) but not registered
     expect(() => getCallProvider("elevenlabs")).toThrow("not registered");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ElevenLabs agent profile sync
+// ---------------------------------------------------------------------------
+
+describe("syncElevenLabsAgentProfile", () => {
+  it("patches raw conversation_config without SDK enum serialization", async () => {
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const calls: Array<{ url: string; method: string | undefined; body: unknown }> = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      calls.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body,
+      });
+
+      if (init?.method === "GET") {
+        return new Response(
+          JSON.stringify({
+            conversation_config: {
+              asr: {
+                provider: "scribe_v2_turbo",
+              },
+              agent: {
+                first_message: "old first message",
+                dynamic_variables: {
+                  dynamic_variable_placeholders: {
+                    person_name: "Person",
+                  },
+                },
+                prompt: {
+                  prompt: "old system prompt",
+                  llm: "preserved nested setting",
+                },
+              },
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      if (init?.method === "PATCH") {
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "unexpected request" }), { status: 500 });
+    }) as typeof fetch;
+
+    const result = await syncElevenLabsAgentProfile(makeDialInput().profile, {
+      firstMessage: "new first message",
+      systemPrompt: "new system prompt",
+      dynamicVariablePlaceholders: {
+        opening_line: "default opening",
+      },
+    });
+
+    expect(result).toEqual({
+      agentId: "agent_abc123",
+      firstMessageSynced: true,
+      systemPromptSynced: true,
+      dynamicVariablesSynced: true,
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.method).toBe("GET");
+    expect(calls[1]?.method).toBe("PATCH");
+
+    const patchBody = JSON.parse(String(calls[1]?.body));
+    expect(patchBody.conversation_config.asr.provider).toBe("scribe_v2_turbo");
+    expect(patchBody.conversation_config.agent.first_message).toBe("new first message");
+    expect(patchBody.conversation_config.agent.prompt.prompt).toBe("new system prompt");
+    expect(patchBody.conversation_config.agent.prompt.llm).toBe("preserved nested setting");
+    expect(patchBody.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders.person_name).toBe(
+      "Person",
+    );
+    expect(patchBody.conversation_config.agent.dynamic_variables.dynamic_variable_placeholders.opening_line).toBe(
+      "default opening",
+    );
   });
 });

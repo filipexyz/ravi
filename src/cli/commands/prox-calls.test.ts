@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { getDb } from "../../router/router-db.js";
 
 const testDir = join(tmpdir(), `ravi-prox-calls-cli-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
@@ -36,8 +37,16 @@ import {
 beforeEach(() => {
   resetCallsSchemaFlag();
   resetProviders();
+  process.env.RAVI_CALLS_DISABLE_ENV_FILE = "1";
   delete process.env.ELEVENLABS_API_KEY;
 });
+
+function initCallsDefaultsForDialing(): void {
+  initCallsDefaults();
+  getDb()
+    .prepare("UPDATE call_rules SET quiet_hours_json = NULL, cooldown_seconds = 0 WHERE id = 'rules-global-default'")
+    .run();
+}
 
 describe("prox calls storage integration", () => {
   it("initCallsDefaults seeds profiles and rules", () => {
@@ -88,7 +97,7 @@ describe("prox calls storage integration", () => {
 
 describe("prox calls request flow", () => {
   it("request creates a persisted call_request before provider call", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     // Use stub provider explicitly for test
     updateCallProfile("checkin", { provider: "stub" });
     const result = await submitCallRequest({
@@ -112,7 +121,7 @@ describe("prox calls request flow", () => {
   });
 
   it("request emits events timeline", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("followup", { provider: "stub" });
     const result = await submitCallRequest({
       profile_id: "followup",
@@ -129,7 +138,7 @@ describe("prox calls request flow", () => {
   });
 
   it("request uses stub provider when profile explicitly uses stub", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     expect(hasRealProvider()).toBe(false);
 
@@ -145,7 +154,7 @@ describe("prox calls request flow", () => {
   });
 
   it("request with unregistered real provider creates durable failure", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     // Ensure profile has a real provider name that is NOT registered
     updateCallProfile("checkin", { provider: "elevenlabs_twilio" });
     const result = await submitCallRequest({
@@ -162,7 +171,7 @@ describe("prox calls request flow", () => {
 
 describe("prox calls show", () => {
   it("show returns request with runs and result", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -178,7 +187,7 @@ describe("prox calls show", () => {
 
 describe("prox calls events", () => {
   it("events command returns ordered timeline", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -198,7 +207,7 @@ describe("prox calls events", () => {
 
 describe("prox calls cancel", () => {
   it("cancels a pending request", () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     const request = createCallRequest({
       profile_id: "checkin",
       target_person_id: "person_cancel_1",
@@ -217,7 +226,7 @@ describe("prox calls cancel", () => {
   });
 
   it("cannot cancel a completed request", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -236,7 +245,7 @@ describe("prox calls cancel", () => {
   });
 
   it("returns error for nonexistent request", () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     const result = cancelCallRequest("cr_nonexistent");
     expect(result.success).toBe(false);
     expect(result.message).toContain("not found");
@@ -245,7 +254,7 @@ describe("prox calls cancel", () => {
 
 describe("terminal failures are durable", () => {
   it("provider failure creates durable result and event", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     const request = createCallRequest({
       profile_id: "checkin",
       target_person_id: "person_fail_1",
@@ -281,7 +290,7 @@ describe("terminal failures are durable", () => {
 
 describe("JSON output shapes", () => {
   it("request JSON includes all required fields", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -316,7 +325,7 @@ describe("JSON output shapes", () => {
   });
 
   it("events JSON includes timeline with proper typing", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("followup", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "followup",
@@ -412,7 +421,7 @@ describe("request with --phone", () => {
   });
 
   it("persists target_phone on the call request", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -426,8 +435,51 @@ describe("request with --phone", () => {
     expect(persisted!.target_phone).toBe("+5511999999999");
   });
 
+  it("persists dynamic variables in request metadata", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { provider: "stub" });
+    const { request } = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_dynamic_1",
+      target_phone: "+5511999999999",
+      reason: "Dynamic variable test",
+      metadata_json: {
+        dynamic_variables: {
+          opening_line: "Oi, teste",
+          goal: "validar variaveis dinamicas",
+        },
+      },
+    });
+
+    const persisted = getCallRequest(request.id);
+    expect(persisted!.metadata_json).toEqual({
+      dynamic_variables: {
+        opening_line: "Oi, teste",
+        goal: "validar variaveis dinamicas",
+      },
+    });
+  });
+
+  it("persists notify_origin opt-out in request metadata", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { provider: "stub" });
+    const { request } = await submitCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_notify_opt_out",
+      target_phone: "+5511999999999",
+      reason: "Notify opt-out test",
+      origin_session_name: "agent:main:dm:no-notify",
+      metadata_json: {
+        notify_origin: false,
+      },
+    });
+
+    const persisted = getCallRequest(request.id);
+    expect(persisted!.metadata_json).toEqual({ notify_origin: false });
+  });
+
   it("request without --phone has null target_phone", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     updateCallProfile("checkin", { provider: "stub" });
     const { request } = await submitCallRequest({
       profile_id: "checkin",
@@ -441,7 +493,7 @@ describe("request with --phone", () => {
 
 describe("missing config creates durable failure", () => {
   it("live adapter with missing agent_id creates failed run/event/result", async () => {
-    initCallsDefaults();
+    initCallsDefaultsForDialing();
     // Configure profile with provider but no agent_id
     updateCallProfile("checkin", {
       provider: "elevenlabs_twilio",

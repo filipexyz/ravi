@@ -19,6 +19,9 @@ export interface CallProfile {
   twilio_number_id: string;
   language: string;
   prompt: string;
+  first_message: string | null;
+  system_prompt_path: string | null;
+  dynamic_variables_json: Record<string, string> | null;
   extraction_schema_json: Record<string, unknown> | null;
   voicemail_policy: VoicemailPolicy;
   enabled: boolean;
@@ -137,6 +140,8 @@ export type CallEventType =
   | "run.completed"
   | "run.failed"
   | "result.created"
+  | "result.notified"
+  | "result.notify_failed"
   | "rules.evaluated"
   | "provider.error";
 
@@ -206,6 +211,9 @@ export interface UpdateCallProfileInput {
   twilio_number_id?: string;
   language?: string;
   prompt?: string;
+  first_message?: string | null;
+  system_prompt_path?: string | null;
+  dynamic_variables_json?: Record<string, string> | null;
   voicemail_policy?: VoicemailPolicy;
   enabled?: boolean;
 }

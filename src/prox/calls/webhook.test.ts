@@ -29,6 +29,7 @@ afterAll(() => {
 
 beforeEach(() => {
   resetCallsSchemaFlag();
+  delete process.env.RAVI_CALLS_ORIGIN_NOTIFY_DRY_RUN;
 });
 
 describe("handlePostCallWebhook", () => {
@@ -96,6 +97,74 @@ describe("handlePostCallWebhook", () => {
     const events = listCallEvents(request.id);
     const webhookEvents = events.filter((e) => e.source === "prox.calls.webhook");
     expect(webhookEvents.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("notifies the origin session when a terminal result is created", () => {
+    process.env.RAVI_CALLS_ORIGIN_NOTIFY_DRY_RUN = "1";
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_notify_1",
+      target_phone: "+5511999999999",
+      reason: "Notify origin test",
+      origin_session_name: "agent:main:dm:notify-test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "elevenlabs_twilio",
+    });
+    updateCallRunStatus(run.id, "dialing", {
+      provider_call_id: "conv_notify123",
+    });
+
+    const result = handlePostCallWebhook({
+      type: "post_call_transcription",
+      conversation_id: "conv_notify123",
+      call_successful: true,
+      transcript: "user: funcionou",
+      call_summary: "Call completed and confirmed by user.",
+    });
+
+    expect(result).not.toBeNull();
+    const events = listCallEvents(request.id);
+    const notified = events.find((e) => e.event_type === "result.notified");
+    expect(notified).toBeDefined();
+    expect(notified!.message).toContain("dry run");
+    expect(notified!.payload_json?.target_session).toBe("agent:main:dm:notify-test");
+  });
+
+  it("does not notify origin when notify_origin is false", () => {
+    process.env.RAVI_CALLS_ORIGIN_NOTIFY_DRY_RUN = "1";
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_notify_2",
+      target_phone: "+5511999999999",
+      reason: "Skip notify origin test",
+      origin_session_name: "agent:main:dm:notify-test",
+      metadata_json: { notify_origin: false },
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "elevenlabs_twilio",
+    });
+    updateCallRunStatus(run.id, "dialing", {
+      provider_call_id: "conv_skip_notify123",
+    });
+
+    const result = handlePostCallWebhook({
+      type: "post_call_transcription",
+      conversation_id: "conv_skip_notify123",
+      call_successful: true,
+      transcript: "user: ok",
+      call_summary: "Call completed.",
+    });
+
+    expect(result).not.toBeNull();
+    const events = listCallEvents(request.id);
+    expect(events.some((e) => e.event_type === "result.notified")).toBe(false);
   });
 
   it("processes call_initiation_failure", () => {

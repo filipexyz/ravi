@@ -43,6 +43,9 @@ interface CallProfileRow {
   twilio_number_id: string;
   language: string;
   prompt: string;
+  first_message: string | null;
+  system_prompt_path: string | null;
+  dynamic_variables_json: string | null;
   extraction_schema_json: string | null;
   voicemail_policy: string;
   enabled: number;
@@ -147,6 +150,9 @@ function ensureCallsSchema(): void {
       twilio_number_id TEXT NOT NULL DEFAULT '',
       language TEXT NOT NULL DEFAULT 'pt-BR',
       prompt TEXT NOT NULL DEFAULT '',
+      first_message TEXT,
+      system_prompt_path TEXT,
+      dynamic_variables_json TEXT,
       extraction_schema_json TEXT,
       voicemail_policy TEXT NOT NULL DEFAULT 'hangup',
       enabled INTEGER NOT NULL DEFAULT 1,
@@ -244,6 +250,19 @@ function ensureCallsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_call_results_request ON call_results(request_id);
     CREATE INDEX IF NOT EXISTS idx_call_rules_scope ON call_rules(scope_type, scope_id);
   `);
+
+  const profileColumns = db.prepare("PRAGMA table_info(call_profiles)").all() as Array<{ name: string }>;
+  const hasProfileColumn = (name: string) => profileColumns.some((column) => column.name === name);
+  if (!hasProfileColumn("first_message")) {
+    db.exec("ALTER TABLE call_profiles ADD COLUMN first_message TEXT");
+  }
+  if (!hasProfileColumn("system_prompt_path")) {
+    db.exec("ALTER TABLE call_profiles ADD COLUMN system_prompt_path TEXT");
+  }
+  if (!hasProfileColumn("dynamic_variables_json")) {
+    db.exec("ALTER TABLE call_profiles ADD COLUMN dynamic_variables_json TEXT");
+  }
+
   schemaReady = true;
   schemaDbPath = currentDbPath;
 }
@@ -279,6 +298,9 @@ function rowToProfile(row: CallProfileRow): CallProfile {
     twilio_number_id: row.twilio_number_id,
     language: row.language,
     prompt: row.prompt,
+    first_message: row.first_message,
+    system_prompt_path: row.system_prompt_path,
+    dynamic_variables_json: parseJson<Record<string, string>>(row.dynamic_variables_json),
     extraction_schema_json: parseJson<Record<string, unknown>>(row.extraction_schema_json),
     voicemail_policy: row.voicemail_policy as VoicemailPolicy,
     enabled: row.enabled === 1,
@@ -417,12 +439,21 @@ export function seedDefaultProfiles(): void {
     },
   ];
 
+  const defaultDynamicVariables = {
+    person_name: "Luís",
+    reason: "Motivo da chamada",
+    opening_line: "Oi, aqui é o Ravi.",
+    goal: "Entender o que precisa ser feito.",
+    context: "",
+    expected_output: "Resumo objetivo do resultado da chamada.",
+  };
+
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO call_profiles (id, name, provider, provider_agent_id, twilio_number_id, language, prompt, voicemail_policy, enabled, created_at, updated_at)
-    VALUES (?, ?, 'elevenlabs', '', '', 'pt-BR', ?, 'hangup', 1, ?, ?)
+    INSERT OR IGNORE INTO call_profiles (id, name, provider, provider_agent_id, twilio_number_id, language, prompt, first_message, system_prompt_path, dynamic_variables_json, voicemail_policy, enabled, created_at, updated_at)
+    VALUES (?, ?, 'elevenlabs', '', '', 'pt-BR', ?, NULL, NULL, ?, 'hangup', 1, ?, ?)
   `);
   for (const p of profiles) {
-    stmt.run(p.id, p.name, p.prompt, now, now);
+    stmt.run(p.id, p.name, p.prompt, toJson(defaultDynamicVariables), now, now);
   }
 }
 
@@ -455,6 +486,18 @@ export function updateCallProfile(id: string, input: UpdateCallProfileInput): Ca
   if (input.prompt !== undefined) {
     fields.push("prompt = ?");
     values.push(input.prompt);
+  }
+  if (input.first_message !== undefined) {
+    fields.push("first_message = ?");
+    values.push(input.first_message);
+  }
+  if (input.system_prompt_path !== undefined) {
+    fields.push("system_prompt_path = ?");
+    values.push(input.system_prompt_path);
+  }
+  if (input.dynamic_variables_json !== undefined) {
+    fields.push("dynamic_variables_json = ?");
+    values.push(toJson(input.dynamic_variables_json));
   }
   if (input.voicemail_policy !== undefined) {
     fields.push("voicemail_policy = ?");

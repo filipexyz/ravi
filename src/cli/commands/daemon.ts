@@ -843,6 +843,11 @@ ANTHROPIC_API_KEY=
 # OPENAI_API_KEY=
 # RAVI_MODEL=sonnet
 # RAVI_LOG_LEVEL=info
+
+# Webhooks HTTP server (disabled unless RAVI_HTTP_PORT is set)
+# RAVI_HTTP_HOST=127.0.0.1
+# RAVI_HTTP_PORT=4211
+# ELEVENLABS_WEBHOOK_SECRET=
 `;
       writeFileSync(ENV_FILE, defaultEnv);
       if (!asJson) {

@@ -5,6 +5,8 @@
  */
 
 import "reflect-metadata";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
@@ -19,6 +21,7 @@ import {
   initCallsDefaults,
   submitCallRequest,
   syncCallRequestFromElevenLabs,
+  syncElevenLabsAgentProfile,
   cancelCallRequest,
   hasRealProvider,
   type CallRequest,
@@ -78,12 +81,52 @@ function serializeProfile(profile: CallProfile) {
     twilio_number_id: profile.twilio_number_id,
     language: profile.language,
     prompt: profile.prompt,
+    first_message: profile.first_message,
+    system_prompt_path: profile.system_prompt_path,
+    dynamic_variables: profile.dynamic_variables_json,
     extraction_schema: profile.extraction_schema_json,
     voicemail_policy: profile.voicemail_policy,
     enabled: profile.enabled,
     created_at: profile.created_at,
     updated_at: profile.updated_at,
   };
+}
+
+function loadSystemPromptPath(rawPath: string): { path: string; prompt: string } {
+  const resolved = resolve(process.cwd(), rawPath);
+  if (!existsSync(resolved)) {
+    fail(`System prompt file not found: ${resolved}`);
+  }
+  const prompt = readFileSync(resolved, "utf8").trim();
+  if (!prompt) {
+    fail(`System prompt file is empty: ${resolved}`);
+  }
+  return { path: resolved, prompt };
+}
+
+function optionList(value?: string | string[]): string[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+function parseDynamicVariableOptions(raw?: string | string[]): Record<string, string> | null {
+  const entries = optionList(raw);
+  if (entries.length === 0) return null;
+
+  const variables: Record<string, string> = {};
+  for (const entry of entries) {
+    const separator = entry.indexOf("=");
+    if (separator <= 0) {
+      fail(`Invalid dynamic variable: ${entry}. Use key=value.`);
+    }
+    const key = entry.slice(0, separator).trim();
+    const value = entry.slice(separator + 1);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      fail(`Invalid dynamic variable key: ${key}. Use letters, numbers and underscores, starting with a letter or _.`);
+    }
+    variables[key] = value;
+  }
+  return variables;
 }
 
 function serializeRequest(request: CallRequest) {
@@ -198,6 +241,11 @@ export class ProxCallsProfileCommands {
     console.log(`  Agent ID:        ${profile.provider_agent_id || "-"}`);
     console.log(`  Twilio Number:   ${profile.twilio_number_id || "-"}`);
     console.log(`  Language:        ${profile.language}`);
+    console.log(`  First Message:   ${profile.first_message ?? "-"}`);
+    console.log(`  System Prompt:   ${profile.system_prompt_path ?? "-"}`);
+    console.log(
+      `  Dynamic Vars:    ${profile.dynamic_variables_json ? Object.keys(profile.dynamic_variables_json).join(", ") : "-"}`,
+    );
     console.log(`  Voicemail:       ${profile.voicemail_policy}`);
     console.log(`  Enabled:         ${profile.enabled ? "yes" : "no"}`);
     console.log(`  Prompt:          ${profile.prompt.slice(0, 80)}${profile.prompt.length > 80 ? "…" : ""}`);
@@ -206,7 +254,7 @@ export class ProxCallsProfileCommands {
   }
 
   @Command({ name: "configure", description: "Configure a call profile's provider settings" })
-  configure(
+  async configure(
     @Arg("profile_id") profileId: string,
     @Option({ flags: "--provider <name>", description: "Provider name (e.g. elevenlabs_twilio, stub)" })
     provider?: string,
@@ -214,6 +262,20 @@ export class ProxCallsProfileCommands {
     @Option({ flags: "--twilio-number-id <id>", description: "Twilio phone number ID" }) twilioNumberId?: string,
     @Option({ flags: "--language <lang>", description: "Language code (e.g. pt-BR, en-US)" }) language?: string,
     @Option({ flags: "--prompt <text>", description: "Call prompt text" }) prompt?: string,
+    @Option({ flags: "--first-message <text>", description: "ElevenLabs first message for this profile" })
+    firstMessage?: string,
+    @Option({ flags: "--system-prompt-path <path>", description: "Path to a system prompt file to sync to ElevenLabs" })
+    systemPromptPath?: string,
+    @Option({
+      flags: "--dynamic-placeholder <key=value...>",
+      description: "Declare/update provider dynamic variable placeholders for this profile",
+    })
+    dynamicPlaceholderOptions?: string[] | string,
+    @Option({
+      flags: "--skip-provider-sync",
+      description: "Persist profile changes without syncing provider agent config",
+    })
+    skipProviderSync?: boolean,
     @Option({ flags: "--voicemail-policy <policy>", description: "Voicemail policy: leave_message, hangup, skip" })
     voicemailPolicy?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -231,13 +293,29 @@ export class ProxCallsProfileCommands {
     if (voicemailPolicy && !validVoicemailPolicies.has(voicemailPolicy)) {
       fail(`Invalid voicemail policy: ${voicemailPolicy}. Use leave_message|hangup|skip.`);
     }
+    if (prompt !== undefined && systemPromptPath !== undefined) {
+      fail("Use either --prompt or --system-prompt-path, not both.");
+    }
+
+    const promptFile = systemPromptPath !== undefined ? loadSystemPromptPath(systemPromptPath) : null;
+    const nextPrompt = promptFile?.prompt ?? prompt;
+    const dynamicPlaceholders = parseDynamicVariableOptions(dynamicPlaceholderOptions);
+    const nextDynamicVariables = dynamicPlaceholders
+      ? {
+          ...(existing.dynamic_variables_json ?? {}),
+          ...dynamicPlaceholders,
+        }
+      : undefined;
 
     const updated = updateCallProfile(profileId, {
       ...(provider !== undefined ? { provider } : {}),
       ...(agentId !== undefined ? { provider_agent_id: agentId } : {}),
       ...(twilioNumberId !== undefined ? { twilio_number_id: twilioNumberId } : {}),
       ...(language !== undefined ? { language } : {}),
-      ...(prompt !== undefined ? { prompt } : {}),
+      ...(nextPrompt !== undefined ? { prompt: nextPrompt } : {}),
+      ...(firstMessage !== undefined ? { first_message: firstMessage } : {}),
+      ...(promptFile ? { system_prompt_path: promptFile.path } : {}),
+      ...(nextDynamicVariables !== undefined ? { dynamic_variables_json: nextDynamicVariables } : {}),
       ...(voicemailPolicy !== undefined ? { voicemail_policy: voicemailPolicy as VoicemailPolicy } : {}),
     });
 
@@ -245,8 +323,24 @@ export class ProxCallsProfileCommands {
       fail(`Failed to update profile: ${profileId}`);
     }
 
+    let providerSync: Awaited<ReturnType<typeof syncElevenLabsAgentProfile>> | null = null;
+    if (
+      !skipProviderSync &&
+      (firstMessage !== undefined || nextPrompt !== undefined || nextDynamicVariables !== undefined)
+    ) {
+      try {
+        providerSync = await syncElevenLabsAgentProfile(updated, {
+          ...(firstMessage !== undefined ? { firstMessage } : {}),
+          ...(nextPrompt !== undefined ? { systemPrompt: nextPrompt } : {}),
+          ...(nextDynamicVariables !== undefined ? { dynamicVariablePlaceholders: nextDynamicVariables } : {}),
+        });
+      } catch (error) {
+        fail(`Profile persisted, but provider sync failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
     if (asJson) {
-      printJson(serializeProfile(updated));
+      printJson({ profile: serializeProfile(updated), provider_sync: providerSync });
       return;
     }
 
@@ -255,7 +349,15 @@ export class ProxCallsProfileCommands {
     console.log(`  Agent ID:        ${updated.provider_agent_id || "-"}`);
     console.log(`  Twilio Number:   ${updated.twilio_number_id || "-"}`);
     console.log(`  Language:        ${updated.language}`);
+    console.log(`  First Message:   ${updated.first_message ?? "-"}`);
+    console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
+    console.log(
+      `  Dynamic Vars:    ${updated.dynamic_variables_json ? Object.keys(updated.dynamic_variables_json).join(", ") : "-"}`,
+    );
     console.log(`  Voicemail:       ${updated.voicemail_policy}`);
+    if (providerSync) {
+      console.log(`  Provider Sync:   ${providerSync.agentId}`);
+    }
     console.log();
   }
 }
@@ -318,6 +420,16 @@ export class ProxCallsCommands {
     phone?: string,
     @Option({ flags: "--priority <level>", description: "Priority level (low, normal, high, urgent)" })
     priority?: string,
+    @Option({
+      flags: "--var <key=value...>",
+      description: "Dynamic variable sent to the voice agent; accepts repeated key=value pairs",
+    })
+    dynamicVars?: string[] | string,
+    @Option({
+      flags: "--skip-origin-notify",
+      description: "Do not inform the originating session when the call reaches a terminal state",
+    })
+    skipOriginNotify?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!profileId) fail("--profile is required");
@@ -333,6 +445,17 @@ export class ProxCallsCommands {
 
     const ctx = getContext();
     const usingStub = !hasRealProvider();
+    const dynamicVariables = parseDynamicVariableOptions(dynamicVars);
+    const metadata: Record<string, unknown> = {};
+    if (dynamicVariables) {
+      metadata.dynamic_variables = dynamicVariables;
+    }
+    if (skipOriginNotify) {
+      metadata.notify_origin = false;
+    }
+    const notifyHint = skipOriginNotify
+      ? "Origin session notification is disabled for this request."
+      : "The originating session will be notified when the call reaches a terminal state.";
 
     const result = await submitCallRequest({
       profile_id: profileId,
@@ -344,6 +467,7 @@ export class ProxCallsCommands {
       origin_agent_name: ctx?.agentId ?? null,
       origin_channel: ctx?.source?.channel ?? null,
       origin_message_id: null,
+      metadata_json: Object.keys(metadata).length ? metadata : null,
     });
 
     if (asJson) {
@@ -352,7 +476,7 @@ export class ProxCallsCommands {
         blocked: result.blocked,
         block_reason: result.blockReason,
         provider_mode: usingStub ? "stub" : "live",
-        hint: "The originating session will be notified when the call reaches a terminal state.",
+        hint: notifyHint,
       });
       return;
     }
@@ -370,7 +494,7 @@ export class ProxCallsCommands {
       if (usingStub) {
         console.log(`  Provider:   \x1b[33mstub\x1b[0m (no real call placed — configure provider for live dialing)`);
       }
-      console.log(`\n  The originating session will be notified when the call reaches a terminal state.`);
+      console.log(`\n  ${notifyHint}`);
     }
     console.log();
   }
