@@ -256,13 +256,18 @@ export class ProxCallsProfileCommands {
   @Command({ name: "configure", description: "Configure a call profile's provider settings" })
   async configure(
     @Arg("profile_id") profileId: string,
-    @Option({ flags: "--provider <name>", description: "Provider name (e.g. elevenlabs_twilio, stub)" })
+    @Option({ flags: "--provider <name>", description: "Provider name (e.g. elevenlabs_twilio, agora_sip, stub)" })
     provider?: string,
-    @Option({ flags: "--agent-id <id>", description: "ElevenLabs agent ID" }) agentId?: string,
-    @Option({ flags: "--twilio-number-id <id>", description: "Twilio phone number ID" }) twilioNumberId?: string,
+    @Option({ flags: "--agent-id <id>", description: "Provider agent ID (ElevenLabs agent ID or Agora pipeline_id)" })
+    agentId?: string,
+    @Option({
+      flags: "--twilio-number-id <id>",
+      description: "Outbound number reference (ElevenLabs phone ID or Agora E.164 caller number)",
+    })
+    twilioNumberId?: string,
     @Option({ flags: "--language <lang>", description: "Language code (e.g. pt-BR, en-US)" }) language?: string,
     @Option({ flags: "--prompt <text>", description: "Call prompt text" }) prompt?: string,
-    @Option({ flags: "--first-message <text>", description: "ElevenLabs first message for this profile" })
+    @Option({ flags: "--first-message <text>", description: "Provider greeting/first message for this profile" })
     firstMessage?: string,
     @Option({ flags: "--system-prompt-path <path>", description: "Path to a system prompt file to sync to ElevenLabs" })
     systemPromptPath?: string,
@@ -430,6 +435,11 @@ export class ProxCallsCommands {
       description: "Do not inform the originating session when the call reaches a terminal state",
     })
     skipOriginNotify?: boolean,
+    @Option({
+      flags: "--force",
+      description: "Bypass call rules for an explicit operator-requested live call",
+    })
+    force?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!profileId) fail("--profile is required");
@@ -452,6 +462,10 @@ export class ProxCallsCommands {
     }
     if (skipOriginNotify) {
       metadata.notify_origin = false;
+    }
+    if (force) {
+      metadata.rules_override = true;
+      metadata.rules_override_reason = "Explicit operator-requested call";
     }
     const notifyHint = skipOriginNotify
       ? "Origin session notification is disabled for this request."
@@ -623,8 +637,18 @@ export class ProxCallsCommands {
     initCallsDefaults();
     let result = getCallResultForRequest(callRequestId);
     if (sync || !result?.transcript) {
-      await syncCallRequestFromElevenLabs(callRequestId);
-      result = getCallResultForRequest(callRequestId);
+      const request = getCallRequest(callRequestId);
+      if (!request) fail(`Call request not found: ${callRequestId}`);
+      const profile = getCallProfile(request.profile_id);
+      const canSyncElevenLabs = profile?.provider === "elevenlabs" || profile?.provider === "elevenlabs_twilio";
+      if (canSyncElevenLabs) {
+        await syncCallRequestFromElevenLabs(callRequestId);
+        result = getCallResultForRequest(callRequestId);
+      } else if (sync) {
+        fail(
+          `Manual transcript sync is not available for provider '${profile?.provider ?? "unknown"}'. Agora transcripts arrive through /webhooks/agora/convoai event 103.`,
+        );
+      }
     }
 
     const request = getCallRequest(callRequestId);

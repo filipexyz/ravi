@@ -6,16 +6,27 @@
  */
 
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import {
+  AGORA_MCP_TOOLS_PATH,
+  handleAgoraWebhook,
+  handleAgoraMcpToolRequest,
+  normalizeAgoraWebhookPayload,
+  verifyAgoraWebhookSignature,
+  type AgoraWebhookPayload,
+} from "../prox/calls/agora.js";
 import { handlePostCallWebhook, normalizeCallWebhookPayload, type CallWebhookPayload } from "../prox/calls/webhook.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("webhooks:http");
 
 export const ELEVENLABS_POST_CALL_WEBHOOK_PATH = "/webhooks/elevenlabs/post-call";
+export const AGORA_CONVOAI_WEBHOOK_PATH = "/webhooks/agora/convoai";
 const ELEVENLABS_POST_CALL_WEBHOOK_ALIASES = new Set([
   ELEVENLABS_POST_CALL_WEBHOOK_PATH,
   "/api/webhooks/elevenlabs/post-call",
 ]);
+const AGORA_CONVOAI_WEBHOOK_ALIASES = new Set([AGORA_CONVOAI_WEBHOOK_PATH, "/api/webhooks/agora/convoai"]);
+const AGORA_MCP_TOOLS_ALIASES = new Set([AGORA_MCP_TOOLS_PATH, "/api/webhooks/agora/tools"]);
 
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -34,6 +45,8 @@ export interface WebhookHttpServerConfig {
   port: number;
   elevenLabsWebhookSecret?: string;
   allowUnsignedElevenLabs?: boolean;
+  agoraWebhookSecret?: string;
+  allowUnsignedAgora?: boolean;
   maxBodyBytes?: number;
 }
 
@@ -70,6 +83,12 @@ function getSignature(request: Request): string | null {
   return request.headers.get("elevenlabs-signature") ?? request.headers.get("ElevenLabs-Signature");
 }
 
+function getAgoraSignature(request: Request, version: 1 | 2): string | null {
+  return version === 1
+    ? (request.headers.get("agora-signature") ?? request.headers.get("Agora-Signature"))
+    : (request.headers.get("agora-signature-v2") ?? request.headers.get("Agora-Signature-V2"));
+}
+
 async function parseElevenLabsWebhookEvent(
   rawBody: string,
   signature: string | null,
@@ -96,13 +115,16 @@ function payloadSummary(payload: CallWebhookPayload): Record<string, unknown> {
   };
 }
 
-async function handleElevenLabsPostCall(request: Request, config: WebhookHttpServerConfig): Promise<Response> {
-  if (request.method !== "POST") {
-    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
-  }
+function agoraPayloadSummary(payload: AgoraWebhookPayload): Record<string, unknown> {
+  return {
+    noticeId: payload.noticeId,
+    eventType: payload.eventType,
+    agentId: typeof payload.payload.agent_id === "string" ? payload.payload.agent_id : undefined,
+  };
+}
 
+async function readBoundedBody(request: Request, maxBodyBytes: number, label: string): Promise<string | Response> {
   const contentLength = Number(request.headers.get("content-length") ?? "0");
-  const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   if (contentLength > maxBodyBytes) {
     return jsonResponse(413, { ok: false, error: "body_too_large" });
   }
@@ -111,13 +133,26 @@ async function handleElevenLabsPostCall(request: Request, config: WebhookHttpSer
   try {
     rawBody = await request.text();
   } catch (error) {
-    log.warn("Failed to read ElevenLabs webhook body", { error });
+    log.warn(`Failed to read ${label} webhook body`, { error });
     return jsonResponse(400, { ok: false, error: "invalid_body" });
   }
 
   if (new TextEncoder().encode(rawBody).length > maxBodyBytes) {
     return jsonResponse(413, { ok: false, error: "body_too_large" });
   }
+
+  return rawBody;
+}
+
+async function handleElevenLabsPostCall(request: Request, config: WebhookHttpServerConfig): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
+  }
+
+  const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const raw = await readBoundedBody(request, maxBodyBytes, "ElevenLabs");
+  if (raw instanceof Response) return raw;
+  const rawBody = raw;
 
   let event: unknown;
   try {
@@ -164,6 +199,104 @@ async function handleElevenLabsPostCall(request: Request, config: WebhookHttpSer
   }
 }
 
+async function handleAgoraConvoAIWebhook(request: Request, config: WebhookHttpServerConfig): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
+  }
+
+  const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const raw = await readBoundedBody(request, maxBodyBytes, "Agora");
+  if (raw instanceof Response) return raw;
+  const rawBody = raw;
+
+  const secret = config.agoraWebhookSecret?.trim();
+  if (secret) {
+    const v2 = verifyAgoraWebhookSignature(rawBody, secret, getAgoraSignature(request, 2), 2);
+    const v1 = verifyAgoraWebhookSignature(rawBody, secret, getAgoraSignature(request, 1), 1);
+    if (!v2 && !v1) {
+      log.warn("Rejected Agora webhook: invalid signature");
+      return jsonResponse(401, { ok: false, error: "invalid_signature" });
+    }
+  } else if (!config.allowUnsignedAgora) {
+    return jsonResponse(503, { ok: false, error: "webhook_secret_not_configured" });
+  }
+
+  let event: unknown;
+  try {
+    event = JSON.parse(rawBody) as unknown;
+  } catch (error) {
+    log.warn("Failed to parse Agora webhook", { error });
+    return jsonResponse(400, { ok: false, error: "invalid_json" });
+  }
+
+  let payload: AgoraWebhookPayload | null;
+  try {
+    payload = normalizeAgoraWebhookPayload(event);
+  } catch (error) {
+    log.warn("Failed to normalize Agora webhook", { error });
+    return jsonResponse(400, { ok: false, error: "invalid_payload" });
+  }
+
+  if (!payload) {
+    log.info("Ignoring unsupported Agora webhook event");
+    return jsonResponse(200, { ok: true, ignored: true });
+  }
+
+  try {
+    const result = handleAgoraWebhook(payload);
+    if (!result) {
+      log.warn("Agora webhook did not match any call run", agoraPayloadSummary(payload));
+      return jsonResponse(200, { ok: true, matched: false });
+    }
+
+    log.info("Agora webhook processed", {
+      requestId: result.request_id,
+      runId: result.run_id,
+      outcome: result.outcome,
+      eventType: payload.eventType,
+    });
+    return jsonResponse(200, { ok: true, matched: true, result });
+  } catch (error) {
+    log.error("Failed to process Agora webhook", { error, ...agoraPayloadSummary(payload) });
+    return jsonResponse(500, { ok: false, error: "processing_failed" });
+  }
+}
+
+async function handleAgoraMcpTools(
+  request: Request,
+  config: WebhookHttpServerConfig,
+  requestId: string | null,
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonResponse(405, { ok: false, error: "method_not_allowed" });
+  }
+
+  const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const raw = await readBoundedBody(request, maxBodyBytes, "Agora MCP tools");
+  if (raw instanceof Response) return raw;
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(raw) as unknown;
+  } catch (error) {
+    log.warn("Failed to parse Agora MCP tool request", { error });
+    return jsonResponse(400, { ok: false, error: "invalid_json" });
+  }
+
+  try {
+    const result = await handleAgoraMcpToolRequest({
+      requestId,
+      authorization: request.headers.get("authorization"),
+      payload,
+    });
+    if (!result.body) return new Response(null, { status: result.status });
+    return jsonResponse(result.status, result.body);
+  } catch (error) {
+    log.error("Failed to process Agora MCP tool request", { error, requestId });
+    return jsonResponse(500, { ok: false, error: "processing_failed" });
+  }
+}
+
 function handleRequest(request: Request, config: WebhookHttpServerConfig): Promise<Response> | Response {
   const url = new URL(request.url);
 
@@ -173,6 +306,14 @@ function handleRequest(request: Request, config: WebhookHttpServerConfig): Promi
 
   if (ELEVENLABS_POST_CALL_WEBHOOK_ALIASES.has(url.pathname)) {
     return handleElevenLabsPostCall(request, config);
+  }
+
+  if (AGORA_CONVOAI_WEBHOOK_ALIASES.has(url.pathname)) {
+    return handleAgoraConvoAIWebhook(request, config);
+  }
+
+  if (AGORA_MCP_TOOLS_ALIASES.has(url.pathname)) {
+    return handleAgoraMcpTools(request, config, url.searchParams.get("request_id"));
   }
 
   return jsonResponse(404, { ok: false, error: "not_found" });
@@ -189,8 +330,12 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
   log.info("Webhook HTTP server started", {
     url,
     elevenLabsPath: ELEVENLABS_POST_CALL_WEBHOOK_PATH,
+    agoraPath: AGORA_CONVOAI_WEBHOOK_PATH,
+    agoraToolsPath: AGORA_MCP_TOOLS_PATH,
     signatureVerification: Boolean(config.elevenLabsWebhookSecret),
     allowUnsignedElevenLabs: Boolean(config.allowUnsignedElevenLabs),
+    agoraSignatureVerification: Boolean(config.agoraWebhookSecret),
+    allowUnsignedAgora: Boolean(config.allowUnsignedAgora),
   });
 
   return {
@@ -213,5 +358,7 @@ export function startWebhookHttpServerFromEnv(): WebhookHttpServerHandle | null 
     port,
     elevenLabsWebhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET?.trim() || undefined,
     allowUnsignedElevenLabs: boolEnv(process.env.RAVI_ELEVENLABS_WEBHOOK_ALLOW_UNSIGNED),
+    agoraWebhookSecret: process.env.AGORA_WEBHOOK_SECRET?.trim() || undefined,
+    allowUnsignedAgora: boolEnv(process.env.RAVI_AGORA_WEBHOOK_ALLOW_UNSIGNED),
   });
 }

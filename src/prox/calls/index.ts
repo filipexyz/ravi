@@ -64,6 +64,16 @@ export {
 export { evaluateCallRules } from "./rules.js";
 
 export {
+  AgoraSipCallProvider,
+  normalizeAgoraWebhookPayload,
+  handleAgoraWebhook,
+  resolveAgoraSipConfig,
+  verifyAgoraWebhookSignature,
+} from "./agora.js";
+
+export type { AgoraSipConfig, AgoraWebhookPayload } from "./agora.js";
+
+export {
   StubCallProvider,
   ElevenLabsTwilioCallProvider,
   registerCallProvider,
@@ -146,7 +156,15 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
   const rules = getCallRules();
   if (rules) {
     updateCallRequestRulesId(request.id, rules.id);
-    const evaluation = evaluateCallRules(rules, request.id, input.target_person_id);
+    const rulesOverride = input.metadata_json?.rules_override === true;
+    const evaluation = rulesOverride
+      ? {
+          verdict: "allow" as const,
+          rule: rules,
+          reason: String(input.metadata_json?.rules_override_reason ?? "Rules bypassed by explicit override"),
+          evaluated_at: Date.now(),
+        }
+      : evaluateCallRules(rules, request.id, input.target_person_id);
 
     createCallEvent({
       request_id: request.id,
@@ -156,6 +174,7 @@ export async function submitCallRequest(input: CreateCallRequestInput): Promise<
       payload_json: {
         verdict: evaluation.verdict,
         rule_id: rules.id,
+        rules_override: rulesOverride,
         evaluated_at: evaluation.evaluated_at,
       },
       source: "prox.calls.rules",
