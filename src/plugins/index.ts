@@ -8,7 +8,7 @@
  * Plugins extend agent capabilities with skills, commands, agents, and hooks.
  */
 
-import { readdirSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readdirSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "../utils/logger.js";
@@ -43,6 +43,7 @@ function extractInternalPlugins(): void {
 
   for (const plugin of internalPlugins) {
     const pluginDir = join(INTERNAL_PLUGINS_DIR, plugin.name);
+    rmSync(pluginDir, { recursive: true, force: true });
 
     for (const file of plugin.files) {
       const filePath = join(pluginDir, file.path);
