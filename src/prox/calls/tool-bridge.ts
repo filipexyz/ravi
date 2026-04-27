@@ -194,7 +194,7 @@ async function executeNativeCallEnd(context: CallToolExecutionContext): Promise<
       return { ok: false, message: "No provider call ID available for hangup." };
     }
 
-    const result = await hangupAgoraSipCall(config, run.provider_call_id, reason);
+    const result = await hangupAgoraSipCall(config, run.provider_call_id, reason, context.signal);
     if (!result.ok) {
       // Persist detailed provider failure in durable state for debugging
       createCallEvent({
@@ -246,11 +246,13 @@ interface ExecutionOutcome {
 
 async function executeWithTimeout(context: CallToolExecutionContext): Promise<ExecutionOutcome> {
   const timeoutMs = context.tool.timeout_ms || 5000;
+  const controller = new AbortController();
+  const contextWithSignal = { ...context, signal: controller.signal };
 
   const executionPromise = (async (): Promise<ExecutionOutcome> => {
     switch (context.tool.executor_type) {
       case "native":
-        return { result: await executeNativeTool(context), timedOut: false };
+        return { result: await executeNativeTool(contextWithSignal), timedOut: false };
       default:
         return {
           result: { ok: false, message: `Executor type '${context.tool.executor_type}' is not implemented.` },
@@ -261,6 +263,7 @@ async function executeWithTimeout(context: CallToolExecutionContext): Promise<Ex
 
   const timeoutPromise = new Promise<ExecutionOutcome>((resolve) => {
     setTimeout(() => {
+      controller.abort();
       resolve({
         result: { ok: false, message: `Tool execution timed out after ${timeoutMs}ms.` },
         timedOut: true,

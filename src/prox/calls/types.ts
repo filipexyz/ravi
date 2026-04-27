@@ -365,6 +365,7 @@ export interface CallToolExecutionContext {
   run: CallRun | null;
   profile: CallProfile;
   input: Record<string, unknown>;
+  signal?: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------

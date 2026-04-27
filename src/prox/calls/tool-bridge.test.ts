@@ -649,4 +649,87 @@ describe("tool-bridge: timeout status", () => {
     const events = listCallEvents(request.id);
     expect(events.some((e) => e.status === "timeout")).toBe(true);
   });
+
+  it("aborts provider fetch when timeout fires", async () => {
+    setupAgoraEnv();
+    const { request } = createTestCallWithRun();
+    seedDefaultCallTools();
+    seedCallToolBindingsForProfile("checkin");
+
+    upsertCallToolPolicy({
+      id: "policy-call-end-global",
+      tool_id: "call.end",
+      scope_type: "global",
+      scope_id: "*",
+      allowed: true,
+    });
+
+    // Override with 1ms timeout
+    upsertCallTool({
+      id: "call.end",
+      name: "end_call",
+      description: "End call (abort test)",
+      input_schema_json: {
+        type: "object",
+        properties: { reason: { type: "string" } },
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "call.end" },
+      side_effect: "external_call",
+      timeout_ms: 1,
+    });
+
+    // Track whether abort signal was received
+    let receivedSignal: AbortSignal | undefined;
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      receivedSignal = init?.signal ?? undefined;
+      // Delay so timeout fires first
+      await new Promise((r) => setTimeout(r, 200));
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await handleToolBridgeCall({
+      requestId: request.id,
+      providerToolName: "end_call",
+      arguments: { reason: "abort test" },
+    });
+
+    expect(result.status).toBe("timeout");
+    expect(receivedSignal).toBeDefined();
+    expect(receivedSignal?.aborted).toBe(true);
+  });
+});
+
+describe("tool-bridge: legacy Agora handler delegation", () => {
+  it("handleAgoraMcpToolRequest delegates to handleToolBridgeRequest", async () => {
+    setupAgoraEnv();
+
+    const { handleAgoraMcpToolRequest } = await import("./agora.js");
+
+    // Test that initialize works through the legacy handler
+    const initResult = await handleAgoraMcpToolRequest({
+      requestId: "any-request-id",
+      authorization: `Bearer ${process.env.RAVI_AGORA_TOOL_SECRET}`,
+      payload: { jsonrpc: "2.0", id: 1, method: "initialize" },
+    });
+
+    expect(initResult.status).toBe(200);
+    const body = initResult.body as Record<string, unknown>;
+    const resultObj = body.result as Record<string, unknown>;
+    const serverInfo = resultObj.serverInfo as Record<string, unknown>;
+    expect(serverInfo.name).toBe("ravi-prox-calls");
+
+    // Test that auth is enforced through the legacy handler
+    const authResult = await handleAgoraMcpToolRequest({
+      requestId: "any-request-id",
+      authorization: "Bearer wrong-token",
+      payload: { jsonrpc: "2.0", id: 1, method: "initialize" },
+    });
+
+    expect(authResult.status).toBe(401);
+  });
 });
