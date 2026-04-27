@@ -9,6 +9,7 @@ import {
   type CreateDevinSessionInput,
   type DevinClient,
   type DevinSession,
+  type DevinSessionInsights,
 } from "../../devin/client.js";
 import {
   getDevinSession,
@@ -106,6 +107,31 @@ function summarizeSession(session: DevinSessionRecord | DevinSession): Record<st
   };
 }
 
+function getInsightsAnalysis(insights: DevinSessionInsights): Record<string, unknown> | null {
+  return insights.analysis && typeof insights.analysis === "object" && !Array.isArray(insights.analysis)
+    ? insights.analysis
+    : null;
+}
+
+function summarizeInsights(insights: DevinSessionInsights | null): Record<string, unknown> | null {
+  if (!insights) return null;
+  const analysis = getInsightsAnalysis(insights);
+  const timeline = Array.isArray(analysis?.timeline) ? analysis.timeline : [];
+  return {
+    devinId: insights.session_id,
+    title: insights.title ?? null,
+    status: insights.status,
+    statusDetail: insights.status_detail ?? null,
+    url: insights.url,
+    numUserMessages: insights.num_user_messages ?? null,
+    numDevinMessages: insights.num_devin_messages ?? null,
+    sessionSize: insights.session_size ?? null,
+    analysisAvailable: analysis !== null,
+    timelineItems: timeline.length,
+    updatedAt: insights.updated_at,
+  };
+}
+
 function printSession(session: DevinSessionRecord | DevinSession): void {
   const summary = summarizeSession(session);
   console.log(`${summary.devinId} — ${summary.status}${summary.statusDetail ? `/${summary.statusDetail}` : ""}`);
@@ -114,6 +140,18 @@ function printSession(session: DevinSessionRecord | DevinSession): void {
   if (Array.isArray(summary.tags) && summary.tags.length > 0) console.log(`  Tags: ${summary.tags.join(", ")}`);
   if ("lastSyncedAt" in summary && summary.lastSyncedAt)
     console.log(`  Last sync: ${formatTime(summary.lastSyncedAt as number)}`);
+}
+
+function printInsights(insights: DevinSessionInsights): void {
+  const summary = summarizeInsights(insights);
+  if (!summary) return;
+  console.log(`${summary.devinId} — ${summary.status}${summary.statusDetail ? `/${summary.statusDetail}` : ""}`);
+  if (summary.title) console.log(`  Title: ${summary.title}`);
+  if (summary.url) console.log(`  URL: ${summary.url}`);
+  console.log(`  Messages: user=${summary.numUserMessages ?? "-"} devin=${summary.numDevinMessages ?? "-"}`);
+  console.log(`  Size: ${summary.sessionSize ?? "-"}`);
+  console.log(`  Analysis: ${summary.analysisAvailable ? "available" : "not available"}`);
+  if (summary.timelineItems) console.log(`  Timeline items: ${summary.timelineItems}`);
 }
 
 function contextDefaults(): {
@@ -170,12 +208,14 @@ async function syncDevinSession(
   options: {
     syncMessages?: boolean;
     syncAttachments?: boolean;
+    syncInsights?: boolean;
     createArtifacts?: boolean;
   } = {},
 ): Promise<{
   session: DevinSessionRecord;
   messages: StoredDevinMessage[];
   attachments: StoredDevinAttachment[];
+  insights: DevinSessionInsights | null;
   artifacts: string[];
 }> {
   const devinId = resolveDevinId(identifier);
@@ -189,6 +229,7 @@ async function syncDevinSession(
     options.syncAttachments === false
       ? listDevinAttachments(devinId)
       : upsertDevinAttachments(devinId, remoteAttachments);
+  const insights = options.syncInsights ? await client.getSessionInsights(devinId) : null;
   const artifactIds: string[] = [];
 
   if (options.createArtifacts) {
@@ -213,6 +254,7 @@ async function syncDevinSession(
         statusDetail: session.statusDetail ?? null,
         originType: session.originType ?? null,
         originId: session.originId ?? null,
+        insights: summarizeInsights(insights),
       },
       lineage: {
         source: "ravi devin sessions sync",
@@ -223,13 +265,14 @@ async function syncDevinSession(
         session,
         messages,
         attachments,
+        insights,
       },
       tags: ["devin", "session", ...session.tags],
     });
     artifactIds.push(artifact.id);
   }
 
-  return { session, messages, attachments, artifacts: artifactIds };
+  return { session, messages, attachments, insights, artifacts: artifactIds };
 }
 
 @Group({
@@ -491,19 +534,48 @@ export class DevinSessionCommands {
     return payload;
   }
 
+  @Command({ name: "insights", description: "Show Devin session insights/activity summary" })
+  async insights(
+    @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
+    @Option({ flags: "--generate", description: "Ask Devin to generate/update insights before reading" })
+    generate?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const client = createDevinClientFromEnv();
+    const devinId = resolveDevinId(identifier);
+    const insights = generate
+      ? await client.generateSessionInsights(devinId)
+      : await client.getSessionInsights(devinId);
+    const session = upsertDevinSession(insights, { lastSyncedAt: Date.now() });
+    const payload = {
+      session: summarizeSession(session),
+      summary: summarizeInsights(insights),
+      insights,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      printInsights(insights);
+    }
+    return payload;
+  }
+
   @Command({ name: "sync", description: "Sync session status, messages and attachments" })
   async sync(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
+    @Option({ flags: "--insights", description: "Fetch Devin session insights/activity summary" }) insights?: boolean,
     @Option({ flags: "--artifacts", description: "Register a sync artifact" }) artifacts?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await syncDevinSession(createDevinClientFromEnv(), identifier, {
+      syncInsights: insights === true,
       createArtifacts: artifacts === true,
     });
     const payload = {
       session: summarizeSession(result.session),
       messages: result.messages.length,
       attachments: result.attachments.length,
+      insights: summarizeInsights(result.insights),
       artifacts: result.artifacts,
     };
     if (asJson) {
@@ -513,6 +585,12 @@ export class DevinSessionCommands {
       printSession(result.session);
       console.log(`  Messages: ${result.messages.length}`);
       console.log(`  Attachments: ${result.attachments.length}`);
+      if (result.insights) {
+        const summary = summarizeInsights(result.insights);
+        console.log(
+          `  Insights: user=${summary?.numUserMessages ?? "-"} devin=${summary?.numDevinMessages ?? "-"} analysis=${summary?.analysisAvailable ? "available" : "not available"}`,
+        );
+      }
       if (result.artifacts.length) console.log(`  Artifacts: ${result.artifacts.join(", ")}`);
     }
     return payload;
