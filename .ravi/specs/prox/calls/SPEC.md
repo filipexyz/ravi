@@ -9,6 +9,8 @@ capabilities:
   - call-rules
   - provider-bridge
   - result-routing
+  - call-tooling
+  - voice-agents
 tags:
   - prox-city
   - calls
@@ -17,6 +19,8 @@ tags:
   - agora
   - outreach
   - human-activation
+  - tool-contracts
+  - voice-agents
 applies_to:
   - src/prox
   - src/cli/commands/prox.ts
@@ -162,6 +166,7 @@ For Agora, transcript sync is webhook-first. `ravi prox calls transcript` MUST r
 
 `call_profile` defines how the call behaves:
 
+- voice agent reference;
 - voice agent/provider reference;
 - speaking style and language;
 - first message / greeting template;
@@ -198,6 +203,7 @@ Minimum fields:
 
 - `id`;
 - `name`;
+- `voice_agent_id`;
 - `provider`;
 - `provider_agent_id`;
 - `twilio_number_id` or equivalent outbound number reference;
@@ -211,6 +217,41 @@ Minimum fields:
 - `enabled`;
 - `created_at`;
 - `updated_at`.
+
+`call_profile` is a use-case wrapper. It SHOULD reference a `call_voice_agent` for the speaking persona/runtime behavior, then add profile-specific framing such as call purpose, default dynamic variables, extraction schema, voicemail behavior, and provider overrides.
+
+### `call_voice_agent`
+
+Canonical Ravi-owned definition of the voice persona/runtime used during a prox call.
+
+`call_voice_agent` is not the same thing as a Ravi `agent`.
+
+- Ravi `agent`: operational session/runtime identity that can request work.
+- `call_voice_agent`: voice-facing persona/runtime that talks during a call.
+
+Minimum fields:
+
+- `id`;
+- `name`;
+- `description`;
+- `provider`;
+- `provider_agent_id`;
+- `voice_id`;
+- `language`;
+- `system_prompt`;
+- `system_prompt_path`;
+- `first_message_template`;
+- `dynamic_variables_schema_json`;
+- `default_tools_json`;
+- `provider_config_json`;
+- `version`;
+- `enabled`;
+- `created_at`;
+- `updated_at`.
+
+Voice agents are governed by the feature spec `prox/calls/voice-agents`.
+
+Provider adapters MUST resolve a `call_voice_agent` before exposing provider agent config or tools. A provider-side agent/pipeline MAY exist, but Ravi MUST keep a canonical local representation so behavior, tooling, prompts, versions, and audit do not drift invisibly in provider dashboards.
 
 Initial examples:
 
@@ -360,6 +401,19 @@ Minimum fields:
 - `artifact_id`;
 - `created_at`.
 
+### Call Tooling Entities
+
+Voice-agent tools are governed by the feature spec `prox/calls/tooling`.
+
+Every new function exposed to a prox call provider MUST follow that contract. At the capability level, calls MUST model:
+
+- `call_tool`: reusable typed function definition;
+- `call_tool_binding`: voice-agent/profile-scoped exposure of a tool;
+- `call_tool_policy`: execution policy and safety checks;
+- `call_tool_run`: concrete execution audit trail.
+
+Provider adapters MUST NOT add ad-hoc provider-only tools that bypass these entities.
+
 Initial outcomes:
 
 - `answered`;
@@ -409,11 +463,17 @@ The MVP CLI SHOULD expose:
 ravi prox calls profiles list [--json]
 ravi prox calls profiles show <profile_id> [--json]
 ravi prox calls profiles configure <profile_id> [--first-message <text>] [--system-prompt-path <path>] [--dynamic-placeholder key=value...] [--skip-provider-sync] [--json]
+ravi prox calls voice-agents list [--json]
+ravi prox calls voice-agents show <voice_agent_id> [--json]
+ravi prox calls voice-agents configure <voice_agent_id> [--system-prompt-path <path>] [--voice-id <id>] [--json]
 ravi prox calls rules show [--scope <scope>] [--json]
 ravi prox calls request --profile <profile_id> --person <person_id> --reason <text> [--var key=value...] [--priority <level>] [--skip-origin-notify] [--json]
 ravi prox calls show <call_request_id> [--json]
 ravi prox calls events <call_request_id> [--json]
 ravi prox calls cancel <call_request_id> [--reason <text>] [--json]
+ravi prox calls tools list [--profile <profile_id>] [--json]
+ravi prox calls tools show <tool_id> [--json]
+ravi prox calls tools run <tool_id> --input <json-or-path> [--profile <profile_id>] [--dry-run] [--json]
 ```
 
 The CLI MUST return ids and status in machine-readable form when `--json` is used.
@@ -425,6 +485,10 @@ The request command SHOULD include an explicit hint that the originating session
 When `profiles configure` changes `--first-message` or `--system-prompt-path` for an ElevenLabs/Twilio profile, it SHOULD sync the provider agent by default. `--skip-provider-sync` MAY persist only Ravi profile state.
 
 For routine calls, profiles SHOULD use generic provider-side templates and request-specific dynamic variables instead of rewriting provider prompt text for each call.
+
+All provider-exposed voice tools MUST follow `prox/calls/tooling`. Bash-backed tools MUST be predefined typed tools, not arbitrary shell access.
+
+All voice agents MUST follow `prox/calls/voice-agents`. Provider-side agents and Studio pipelines MUST NOT be the only source of truth for voice behavior.
 
 ## Runtime Events
 
@@ -439,6 +503,10 @@ For routine calls, profiles SHOULD use generic provider-side templates and reque
 - `prox.call.run.completed`;
 - `prox.call.run.failed`;
 - `prox.call.result.created`.
+- `prox.call.tool.started`;
+- `prox.call.tool.completed`;
+- `prox.call.tool.failed`;
+- `prox.call.tool.blocked`.
 
 Events MUST NOT leak provider credentials or raw secrets.
 
@@ -481,3 +549,5 @@ The first implementation SHOULD be narrow:
 - A terminal result is stored and routed back to the origin session.
 - Failures are durable and inspectable.
 - The CLI has stable JSON output for agents.
+- Any tool exposed to a voice agent follows the `prox/calls/tooling` contract.
+- Any voice persona exposed through prox calls follows the `prox/calls/voice-agents` contract.
