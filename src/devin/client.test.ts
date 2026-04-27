@@ -80,6 +80,79 @@ describe("DevinClient", () => {
     expect(afterValues).toEqual([null, "cursor-1"]);
   });
 
+  it("gets session insights from the organization scoped endpoint", async () => {
+    const requests: Array<{ url: string; method?: string }> = [];
+    const client = new DevinClient({
+      apiKey: "cog_test",
+      orgId: "org_123",
+      baseUrl: "https://api.example.test/v3",
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method });
+        return jsonResponse({
+          session_id: "devin-abc",
+          org_id: "org_123",
+          url: "https://app.devin.ai/sessions/abc",
+          status: "running",
+          status_detail: "working",
+          tags: ["ravi"],
+          pull_requests: [],
+          acus_consumed: 0,
+          created_at: 1,
+          updated_at: 2,
+          num_user_messages: 1,
+          num_devin_messages: 2,
+          session_size: "xs",
+          analysis: null,
+        });
+      },
+    });
+
+    const insights = await client.getSessionInsights("abc");
+
+    expect(insights.session_id).toBe("devin-abc");
+    expect(insights.num_user_messages).toBe(1);
+    expect(requests).toEqual([
+      {
+        url: "https://api.example.test/v3/organizations/org_123/sessions/devin-abc/insights",
+        method: "GET",
+      },
+    ]);
+    expect(requests[0]?.url).not.toContain("cog_test");
+  });
+
+  it("generates session insights from the organization scoped endpoint", async () => {
+    const requests: Array<{ url: string; method?: string }> = [];
+    const client = new DevinClient({
+      apiKey: "cog_test",
+      orgId: "org_123",
+      baseUrl: "https://api.example.test/v3",
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), method: init?.method });
+        return jsonResponse({
+          session_id: "devin-abc",
+          org_id: "org_123",
+          url: "https://app.devin.ai/sessions/abc",
+          status: "running",
+          tags: ["ravi"],
+          pull_requests: [],
+          acus_consumed: 0,
+          created_at: 1,
+          updated_at: 2,
+          analysis: { timeline: [] },
+        });
+      },
+    });
+
+    await client.generateSessionInsights("devin-abc");
+
+    expect(requests).toEqual([
+      {
+        url: "https://api.example.test/v3/organizations/org_123/sessions/devin-abc/insights/generate",
+        method: "POST",
+      },
+    ]);
+  });
+
   it("maps API errors to stable local codes", async () => {
     const client = new DevinClient({
       apiKey: "cog_test",

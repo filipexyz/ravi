@@ -51,6 +51,13 @@ export interface DevinSessionAttachment {
   content_type: string | null;
 }
 
+export interface DevinSessionInsights extends DevinSession {
+  analysis?: Record<string, unknown> | null;
+  num_devin_messages?: number | null;
+  num_user_messages?: number | null;
+  session_size?: string | null;
+}
+
 export interface DevinPage<T> {
   items: T[];
   end_cursor?: string | null;
@@ -288,6 +295,20 @@ export class DevinClient {
     return this.request<DevinSessionAttachment[]>(
       "GET",
       this.orgPath(`/sessions/${encodeURIComponent(toDevinApiId(devinId))}/attachments`),
+    );
+  }
+
+  async getSessionInsights(devinId: string): Promise<DevinSessionInsights> {
+    return this.request<DevinSessionInsights>(
+      "GET",
+      this.orgPath(`/sessions/${encodeURIComponent(toDevinApiId(devinId))}/insights`),
+    );
+  }
+
+  async generateSessionInsights(devinId: string): Promise<DevinSessionInsights> {
+    return this.request<DevinSessionInsights>(
+      "POST",
+      this.orgPath(`/sessions/${encodeURIComponent(toDevinApiId(devinId))}/insights/generate`),
     );
   }
 
