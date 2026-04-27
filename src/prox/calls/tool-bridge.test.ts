@@ -486,6 +486,7 @@ describe("tool-bridge: timeout/failure mapping", () => {
     });
 
     expect(result.normalized.ok).toBe(false);
+    expect(result.normalized.message).toBe("Failed to end the call. Please try again.");
     expect(result.status).toBe("failed");
     expect(result.toolRunId).toBeTruthy();
 
@@ -495,7 +496,10 @@ describe("tool-bridge: timeout/failure mapping", () => {
 
     const events = listCallEvents(request.id);
     expect(events.some((e) => e.event_type === "tool.failed")).toBe(true);
-    expect(events.some((e) => e.event_type === "provider.error")).toBe(true);
+    // Detailed provider error is persisted in durable state but NOT exposed to provider
+    const providerError = events.find((e) => e.event_type === "provider.error");
+    expect(providerError).toBeTruthy();
+    expect(providerError?.message).toContain("Agora error");
   });
 });
 
@@ -557,5 +561,92 @@ describe("tool-bridge: disabled tool", () => {
 
     // Tool is disabled so binding won't find enabled tool
     expect(result.normalized.ok).toBe(false);
+  });
+});
+
+describe("tool-bridge: seedDefaultCallTools with pre-existing unrelated tool", () => {
+  it("ensures call.end and its policy exist even when other tools are present", async () => {
+    // Insert an unrelated tool first (simulates partially populated DB)
+    upsertCallTool({
+      id: "test.fixture",
+      name: "fixture_tool",
+      description: "An unrelated fixture tool",
+      input_schema_json: { type: "object", properties: {} },
+      executor_type: "native",
+      side_effect: "read_only",
+      timeout_ms: 1000,
+    });
+
+    // Seed should still ensure call.end exists despite other tools being present
+    seedDefaultCallTools();
+
+    const { getCallTool, getCallToolPolicy } = await import("./calls-db.js");
+    const callEnd = getCallTool("call.end");
+    expect(callEnd).toBeTruthy();
+    expect(callEnd?.name).toBe("end_call");
+    expect(callEnd?.executor_type).toBe("native");
+
+    const policy = getCallToolPolicy("call.end", "global", "*");
+    expect(policy).toBeTruthy();
+    expect(policy?.allowed).toBe(true);
+  });
+});
+
+describe("tool-bridge: timeout status", () => {
+  it("persists explicit timeout status when execution times out", async () => {
+    setupAgoraEnv();
+    const { request } = createTestCallWithRun();
+    seedDefaultCallTools();
+    seedCallToolBindingsForProfile("checkin");
+
+    // Reset policy in case a prior test set max_calls_per_run
+    upsertCallToolPolicy({
+      id: "policy-call-end-global",
+      tool_id: "call.end",
+      scope_type: "global",
+      scope_id: "*",
+      allowed: true,
+    });
+
+    // Override call.end tool with a very short timeout (1ms)
+    upsertCallTool({
+      id: "call.end",
+      name: "end_call",
+      description: "End call (timeout test)",
+      input_schema_json: {
+        type: "object",
+        properties: { reason: { type: "string" } },
+        additionalProperties: false,
+      },
+      executor_type: "native",
+      executor_config_json: { handler: "call.end" },
+      side_effect: "external_call",
+      timeout_ms: 1,
+    });
+
+    // Mock fetch that delays longer than the timeout
+    globalThis.fetch = (async () => {
+      await new Promise((r) => setTimeout(r, 200));
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await handleToolBridgeCall({
+      requestId: request.id,
+      providerToolName: "end_call",
+      arguments: { reason: "timeout test" },
+    });
+
+    expect(result.normalized.ok).toBe(false);
+    expect(result.normalized.message).toContain("timed out");
+    expect(result.status).toBe("timeout");
+
+    const toolRun = getCallToolRun(result.toolRunId!);
+    expect(toolRun?.status).toBe("timeout");
+
+    const events = listCallEvents(request.id);
+    expect(events.some((e) => e.status === "timeout")).toBe(true);
   });
 });

@@ -196,6 +196,7 @@ async function executeNativeCallEnd(context: CallToolExecutionContext): Promise<
 
     const result = await hangupAgoraSipCall(config, run.provider_call_id, reason);
     if (!result.ok) {
+      // Persist detailed provider failure in durable state for debugging
       createCallEvent({
         request_id: request.id,
         run_id: run.id,
@@ -205,7 +206,8 @@ async function executeNativeCallEnd(context: CallToolExecutionContext): Promise<
         payload_json: { provider: "agora", agent_id: run.provider_call_id },
         source: "prox.calls.tool-bridge",
       });
-      return result;
+      // Return safe generic message to provider-facing output
+      return { ok: false, message: "Failed to end the call. Please try again." };
     }
 
     createCallEvent({
@@ -237,21 +239,32 @@ async function executeNativeTool(context: CallToolExecutionContext): Promise<Cal
 // Execution with timeout
 // ---------------------------------------------------------------------------
 
-async function executeWithTimeout(context: CallToolExecutionContext): Promise<CallToolNormalizedResult> {
+interface ExecutionOutcome {
+  result: CallToolNormalizedResult;
+  timedOut: boolean;
+}
+
+async function executeWithTimeout(context: CallToolExecutionContext): Promise<ExecutionOutcome> {
   const timeoutMs = context.tool.timeout_ms || 5000;
 
-  const executionPromise = (async (): Promise<CallToolNormalizedResult> => {
+  const executionPromise = (async (): Promise<ExecutionOutcome> => {
     switch (context.tool.executor_type) {
       case "native":
-        return executeNativeTool(context);
+        return { result: await executeNativeTool(context), timedOut: false };
       default:
-        return { ok: false, message: `Executor type '${context.tool.executor_type}' is not implemented.` };
+        return {
+          result: { ok: false, message: `Executor type '${context.tool.executor_type}' is not implemented.` },
+          timedOut: false,
+        };
     }
   })();
 
-  const timeoutPromise = new Promise<CallToolNormalizedResult>((resolve) => {
+  const timeoutPromise = new Promise<ExecutionOutcome>((resolve) => {
     setTimeout(() => {
-      resolve({ ok: false, message: `Tool execution timed out after ${timeoutMs}ms.` });
+      resolve({
+        result: { ok: false, message: `Tool execution timed out after ${timeoutMs}ms.` },
+        timedOut: true,
+      });
     }, timeoutMs);
   });
 
@@ -434,8 +447,9 @@ export async function handleToolBridgeCall(input: ToolBridgeCallInput): Promise<
   });
 
   try {
-    const result = await executeWithTimeout(context);
-    const status: CallToolRunStatus = result.ok ? "completed" : "failed";
+    const outcome = await executeWithTimeout(context);
+    const result = outcome.result;
+    const status: CallToolRunStatus = outcome.timedOut ? "timeout" : result.ok ? "completed" : "failed";
 
     updateCallToolRunStatus(toolRun.id, status, {
       output_json: { ok: result.ok, message: result.message, data: result.data },
@@ -445,8 +459,8 @@ export async function handleToolBridgeCall(input: ToolBridgeCallInput): Promise<
     createCallEvent({
       request_id: request.id,
       run_id: run?.id ?? null,
-      event_type: result.ok ? "tool.completed" : "tool.failed",
-      status: result.ok ? "completed" : "failed",
+      event_type: outcome.timedOut ? "tool.failed" : result.ok ? "tool.completed" : "tool.failed",
+      status,
       message: result.message,
       payload_json: { tool_id: tool.id, tool_run_id: toolRun.id },
       source: "prox.calls.tool-bridge",
@@ -455,9 +469,8 @@ export async function handleToolBridgeCall(input: ToolBridgeCallInput): Promise<
     return { normalized: result, toolRunId: toolRun.id, status };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const isTimeout = message.includes("timed out");
 
-    updateCallToolRunStatus(toolRun.id, isTimeout ? "timeout" : "failed", {
+    updateCallToolRunStatus(toolRun.id, "failed", {
       error_message: message,
     });
 
@@ -465,7 +478,7 @@ export async function handleToolBridgeCall(input: ToolBridgeCallInput): Promise<
       request_id: request.id,
       run_id: run?.id ?? null,
       event_type: "tool.failed",
-      status: isTimeout ? "timeout" : "failed",
+      status: "failed",
       message,
       payload_json: { tool_id: tool.id, tool_run_id: toolRun.id },
       source: "prox.calls.tool-bridge",
@@ -474,7 +487,7 @@ export async function handleToolBridgeCall(input: ToolBridgeCallInput): Promise<
     return {
       normalized: { ok: false, message },
       toolRunId: toolRun.id,
-      status: isTimeout ? "timeout" : "failed",
+      status: "failed",
     };
   }
 }
