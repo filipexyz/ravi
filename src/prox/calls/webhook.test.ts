@@ -8,6 +8,7 @@ mkdirSync(testDir, { recursive: true });
 process.env.RAVI_STATE_DIR = testDir;
 
 import { handlePostCallWebhook } from "./webhook.js";
+import { handleAgoraWebhook, normalizeAgoraWebhookPayload } from "./agora.js";
 import type { PostCallTranscriptionPayload, CallInitiationFailurePayload } from "./webhook.js";
 import {
   seedDefaultProfiles,
@@ -300,5 +301,88 @@ describe("handlePostCallWebhook", () => {
     const result = handlePostCallWebhook(payload);
     expect(result).not.toBeNull();
     expect(result!.summary).toBe("already terminal");
+  });
+});
+
+describe("handleAgoraWebhook", () => {
+  it("updates run progress from outbound call state events", () => {
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_agora_progress",
+      target_phone: "+5511999999999",
+      reason: "Agora progress test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "agora_sip",
+    });
+    updateCallRunStatus(run.id, "dialing", {
+      provider_call_id: "agent_agora_progress",
+    });
+
+    const payload = normalizeAgoraWebhookPayload({
+      noticeId: "notice-202",
+      productId: 17,
+      eventType: 202,
+      notifyMs: Date.now(),
+      payload: {
+        agent_id: "agent_agora_progress",
+        channel: "prox-call-test",
+        state: "ANSWERED",
+        report_ms: Date.now(),
+      },
+    });
+
+    expect(payload).not.toBeNull();
+    const result = handleAgoraWebhook(payload!);
+    expect(result).not.toBeNull();
+    expect(result!.outcome).toBeNull();
+    expect(getCallRun(run.id)?.status).toBe("in_progress");
+    expect(listCallEvents(request.id).some((e) => e.source === "prox.calls.webhook.agora")).toBe(true);
+  });
+
+  it("creates terminal result from agent history event", () => {
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_agora_history",
+      target_phone: "+5511999999999",
+      reason: "Agora history test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "agora_sip",
+    });
+    updateCallRunStatus(run.id, "in_progress", {
+      provider_call_id: "agent_agora_history",
+    });
+
+    const result = handleAgoraWebhook({
+      noticeId: "notice-103",
+      productId: 17,
+      eventType: 103,
+      payload: {
+        agent_id: "agent_agora_history",
+        channel: "prox-call-test",
+        contents: [
+          { role: "assistant", content: "Oi, aqui é o Ravi." },
+          { role: "user", content: "Funcionou." },
+        ],
+        labels: {
+          ravi_call_request_id: request.id,
+        },
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.outcome).toBe("answered");
+    expect(getCallRun(run.id)?.status).toBe("completed");
+    expect(getCallRequest(request.id)?.status).toBe("completed");
+    const callResult = getCallResultForRequest(request.id);
+    expect(callResult?.outcome).toBe("answered");
+    expect(callResult?.transcript).toContain("user: Funcionou.");
   });
 });

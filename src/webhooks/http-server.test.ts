@@ -1,4 +1,5 @@
-import { afterAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { createHmac } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,11 +7,13 @@ import { tmpdir } from "node:os";
 const testDir = join(tmpdir(), `ravi-webhook-http-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
 process.env.RAVI_STATE_DIR = testDir;
+const originalFetch = globalThis.fetch;
 
 import { startWebhookHttpServer } from "./http-server.js";
 import {
   createCallRequest,
   createCallRun,
+  listCallEvents,
   getCallResultForRequest,
   resetCallsSchemaFlag,
   seedDefaultProfiles,
@@ -25,6 +28,16 @@ afterAll(() => {
 
 beforeEach(() => {
   resetCallsSchemaFlag();
+  process.env.RAVI_CALLS_DISABLE_ENV_FILE = "1";
+  delete process.env.AGORA_APP_ID;
+  delete process.env.AGORA_APP_CERTIFICATE;
+  delete process.env.AGORA_CUSTOMER_ID;
+  delete process.env.AGORA_CUSTOMER_SECRET;
+  delete process.env.RAVI_AGORA_TOOL_SECRET;
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 describe("Webhook HTTP server", () => {
@@ -113,6 +126,200 @@ describe("Webhook HTTP server", () => {
 
       expect(response.status).toBe(503);
       expect(await response.json()).toMatchObject({ ok: false, error: "webhook_secret_not_configured" });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("processes Agora ConvoAI history webhooks", async () => {
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_http_agora",
+      target_phone: "+5511999999999",
+      reason: "Agora HTTP webhook test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "agora_sip",
+    });
+    updateCallRunStatus(run.id, "in_progress", {
+      provider_call_id: "agent_http_agora",
+    });
+
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      allowUnsignedAgora: true,
+    });
+
+    try {
+      const response = await fetch(`${server.url}/webhooks/agora/convoai`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          noticeId: "notice-http-agora",
+          productId: 17,
+          eventType: 103,
+          notifyMs: Date.now(),
+          payload: {
+            agent_id: "agent_http_agora",
+            channel: "prox-call-http",
+            contents: [
+              { role: "assistant", content: "Oi." },
+              { role: "user", content: "Funcionou via webhook." },
+            ],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ ok: true, matched: true });
+      const result = getCallResultForRequest(request.id);
+      expect(result?.outcome).toBe("answered");
+      expect(result?.transcript).toContain("Funcionou via webhook.");
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("verifies Agora webhook signatures when secret is configured", async () => {
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      agoraWebhookSecret: "agora-secret",
+    });
+    const rawBody = JSON.stringify({
+      noticeId: "notice-signed",
+      productId: 17,
+      eventType: 202,
+      payload: {
+        agent_id: "unknown",
+        state: "CALLING",
+      },
+    });
+    const signature = createHmac("sha256", "agora-secret").update(rawBody).digest("hex");
+
+    try {
+      const response = await fetch(`${server.url}/webhooks/agora/convoai`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "agora-signature-v2": signature,
+        },
+        body: rawBody,
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ ok: true, matched: false });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("serves Agora MCP end_call tool and hangs up through the Agora API", async () => {
+    seedDefaultProfiles();
+    process.env.AGORA_APP_ID = "0".repeat(32);
+    process.env.AGORA_APP_CERTIFICATE = "1".repeat(32);
+    process.env.AGORA_CUSTOMER_ID = "customer-id";
+    process.env.AGORA_CUSTOMER_SECRET = "customer-secret";
+    process.env.RAVI_AGORA_TOOL_SECRET = "tool-secret";
+
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_http_agora_tool",
+      target_phone: "+5511999999999",
+      reason: "Agora MCP tool test",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "agora_sip",
+    });
+    updateCallRunStatus(run.id, "in_progress", {
+      provider_call_id: "agent_http_agora_tool",
+    });
+
+    const server = startWebhookHttpServer({
+      host: "127.0.0.1",
+      port: 0,
+      allowUnsignedAgora: true,
+    });
+    const agoraCalls: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const url = String(input);
+      if (url.startsWith(server.url)) return originalFetch(input, init);
+      agoraCalls.push({
+        url,
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+        auth:
+          init?.headers instanceof Headers
+            ? init.headers.get("authorization")
+            : (init?.headers as Record<string, string>).authorization,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      const listResponse = await fetch(`${server.url}/webhooks/agora/tools?request_id=${request.id}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      });
+      expect(listResponse.status).toBe(200);
+      expect(await listResponse.json()).toMatchObject({
+        result: { tools: [{ name: "end_call" }] },
+      });
+
+      const callResponse = await fetch(`${server.url}/webhooks/agora/tools?request_id=${request.id}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/call",
+          params: { name: "end_call", arguments: { reason: "test complete" } },
+        }),
+      });
+      expect(callResponse.status).toBe(200);
+      expect(await callResponse.json()).toMatchObject({
+        result: { isError: false },
+      });
+
+      expect(agoraCalls).toHaveLength(1);
+      expect(agoraCalls[0]?.url).toContain("/calls/agent_http_agora_tool/hangup");
+      expect(agoraCalls[0]?.auth).toMatch(/^Basic /);
+      expect(agoraCalls[0]?.body).toEqual({ reason: "test complete" });
+      expect(listCallEvents(request.id).some((event) => event.status === "hangup_requested")).toBe(true);
+
+      const duplicateResponse = await fetch(`${server.url}/webhooks/agora/tools?request_id=${request.id}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer tool-secret",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 3,
+          method: "tools/call",
+          params: { name: "end_call", arguments: { reason: "duplicate" } },
+        }),
+      });
+      expect(duplicateResponse.status).toBe(200);
+      expect(await duplicateResponse.json()).toMatchObject({
+        result: { isError: false },
+      });
+      expect(agoraCalls).toHaveLength(1);
     } finally {
       await server.stop();
     }

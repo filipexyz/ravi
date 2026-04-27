@@ -9,6 +9,7 @@ process.env.RAVI_STATE_DIR = testDir;
 const originalFetch = globalThis.fetch;
 
 import {
+  AgoraSipCallProvider,
   StubCallProvider,
   ElevenLabsTwilioCallProvider,
   registerCallProvider,
@@ -31,6 +32,21 @@ beforeEach(() => {
   resetCallsSchemaFlag();
   process.env.RAVI_CALLS_DISABLE_ENV_FILE = "1";
   delete process.env.ELEVENLABS_API_KEY;
+  delete process.env.AGORA_APP_ID;
+  delete process.env.AGORA_APP_CERTIFICATE;
+  delete process.env.AGORA_CUSTOMER_ID;
+  delete process.env.AGORA_CUSTOMER_SECRET;
+  delete process.env.AGORA_AGENT_UID;
+  delete process.env.AGORA_SIP_UID;
+  delete process.env.AGORA_TTS_VENDOR;
+  delete process.env.AGORA_TTS_PARAMS_JSON;
+  delete process.env.AGORA_LLM_API_KEY;
+  delete process.env.AGORA_MCP_PUBLIC_BASE_URL;
+  delete process.env.RAVI_WEBHOOK_PUBLIC_BASE_URL;
+  delete process.env.RAVI_PUBLIC_BASE_URL;
+  delete process.env.RAVI_AGORA_TOOL_SECRET;
+  delete process.env.AGORA_MCP_TOOL_SECRET;
+  delete process.env.OPENAI_API_KEY;
 });
 
 afterEach(() => {
@@ -151,6 +167,189 @@ describe("ElevenLabsTwilioCallProvider config validation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// AgoraSipCallProvider — outbound call payload
+// ---------------------------------------------------------------------------
+
+describe("AgoraSipCallProvider", () => {
+  const appId = "0".repeat(32);
+  const appCertificate = "1".repeat(32);
+
+  it("fails when caller number is missing", async () => {
+    const provider = new AgoraSipCallProvider({ appId, appCertificate });
+    const input = makeDialInput({ profile: { provider: "agora_sip", twilio_number_id: "" } });
+    const result = await provider.dial(input);
+    expect(result.status).toBe("failed");
+    expect(result.failure_reason).toContain("Agora caller number");
+  });
+
+  it("starts an outbound call with full config when no pipeline_id is configured", async () => {
+    process.env.OPENAI_API_KEY = "openai-test-key";
+    process.env.AGORA_TTS_VENDOR = "microsoft";
+    process.env.AGORA_TTS_PARAMS_JSON = JSON.stringify({
+      key: "tts-test-key",
+      region: "eastus",
+      voice_name: "pt-BR-AntonioNeural",
+    });
+
+    const calls: Array<{ url: string; body: Record<string, unknown>; auth: string | null }> = [];
+    const provider = new AgoraSipCallProvider({
+      appId,
+      appCertificate,
+      fetchImpl: (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        calls.push({
+          url: String(input),
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+          auth:
+            init?.headers instanceof Headers
+              ? init.headers.get("authorization")
+              : (init?.headers as Record<string, string>).authorization,
+        });
+        return new Response(JSON.stringify({ agent_id: "agent_agora_123" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    });
+
+    const result = await provider.dial(
+      makeDialInput({
+        profile: {
+          provider: "agora_sip",
+          provider_agent_id: "",
+          twilio_number_id: "+551150289990",
+          first_message: "Oi, {{person_name}}.",
+        },
+        request: {
+          metadata_json: {
+            dynamic_variables: {
+              person_name: "Luís",
+              opening_line: "Oi, Luís. Aqui é o Ravi.",
+              goal: "Validar uma ligação Agora.",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      provider_call_id: "agent_agora_123",
+      status: "dialing",
+      failure_reason: null,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain(`/projects/${appId}/call`);
+    expect(calls[0]?.auth).toMatch(/^agora token=/);
+
+    const body = calls[0]!.body;
+    expect(body.name).toMatch(/^ravi-cr_test123-/);
+    expect(body.sip).toMatchObject({
+      to_number: "+5511999999999",
+      from_number: "+551150289990",
+      rtc_uid: "100",
+    });
+    expect(body.pipeline_id).toBeUndefined();
+
+    const properties = body.properties as Record<string, unknown>;
+    expect(properties.channel).toBe("prox-call-cr_test123");
+    expect(properties.agent_rtc_uid).toBe("1001");
+    expect(properties.remote_rtc_uids).toEqual(["100"]);
+    expect(properties.labels).toMatchObject({
+      ravi_call_request_id: "cr_test123",
+      ravi_call_run_id: "run_test123",
+      ravi_profile_id: "checkin",
+    });
+
+    const llm = properties.llm as Record<string, unknown>;
+    expect(llm.greeting_message).toBe("Oi, {{person_name}}.");
+    expect(llm.template_variables).toMatchObject({
+      person_name: "Luís",
+      opening_line: "Oi, Luís. Aqui é o Ravi.",
+      goal: "Validar uma ligação Agora.",
+    });
+  });
+
+  it("advertises the Ravi MCP end_call tool when public tool config is available", async () => {
+    process.env.OPENAI_API_KEY = "openai-test-key";
+    process.env.AGORA_TTS_VENDOR = "microsoft";
+    process.env.AGORA_TTS_PARAMS_JSON = JSON.stringify({
+      key: "tts-test-key",
+      region: "eastus",
+      voice_name: "pt-BR-AntonioNeural",
+    });
+    process.env.RAVI_WEBHOOK_PUBLIC_BASE_URL = "https://ravi.example.test/";
+    process.env.RAVI_AGORA_TOOL_SECRET = "tool-secret";
+
+    const calls: Array<Record<string, unknown>> = [];
+    const provider = new AgoraSipCallProvider({
+      appId,
+      appCertificate,
+      fetchImpl: (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ agent_id: "agent_agora_tools" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    });
+
+    await provider.dial(
+      makeDialInput({
+        profile: {
+          provider: "agora_sip",
+          provider_agent_id: "",
+          twilio_number_id: "+551150289990",
+        },
+      }),
+    );
+
+    const properties = calls[0]?.properties as Record<string, unknown>;
+    expect(properties.advanced_features).toMatchObject({ enable_tools: true });
+    const llm = properties.llm as Record<string, unknown>;
+    expect(llm.mcp_servers).toEqual([
+      {
+        name: "raviTools",
+        endpoint: "https://ravi.example.test/webhooks/agora/tools?request_id=cr_test123",
+        transport: "streamable_http",
+        headers: { Authorization: "Bearer tool-secret" },
+        allowed_tools: ["end_call"],
+        timeout_ms: 5000,
+      },
+    ]);
+  });
+
+  it("uses provider_agent_id as Agora pipeline_id when configured", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const provider = new AgoraSipCallProvider({
+      appId,
+      appCertificate,
+      fetchImpl: (async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ agent_id: "agent_pipeline_123" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }) as typeof fetch,
+    });
+
+    const result = await provider.dial(
+      makeDialInput({
+        profile: {
+          provider: "agora_sip",
+          provider_agent_id: "pipeline_abc",
+          twilio_number_id: "+551150289990",
+        },
+      }),
+    );
+
+    expect(result.status).toBe("dialing");
+    expect(calls[0]?.pipeline_id).toBe("pipeline_abc");
+    const properties = calls[0]?.properties as Record<string, unknown>;
+    expect(properties.llm).toBeUndefined();
+    expect(properties.remote_rtc_uids).toEqual(["100"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Provider registry
 // ---------------------------------------------------------------------------
 
@@ -174,6 +373,13 @@ describe("Provider registry", () => {
     const provider = getCallProvider("elevenlabs_twilio");
     expect(provider.name).toBe("elevenlabs_twilio");
     delete process.env.ELEVENLABS_API_KEY;
+  });
+
+  it("auto-registers agora_sip when Agora app credentials are set", () => {
+    process.env.AGORA_APP_ID = "0".repeat(32);
+    process.env.AGORA_APP_CERTIFICATE = "1".repeat(32);
+    const provider = getCallProvider("agora_sip");
+    expect(provider.name).toBe("agora_sip");
   });
 
   it("hasRealProvider returns false with no adapters", () => {

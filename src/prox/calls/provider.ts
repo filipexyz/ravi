@@ -9,8 +9,11 @@
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { AgoraSipCallProvider, resolveAgoraSipConfig } from "./agora.js";
 import type { CallProviderAdapter, ProviderDialInput, ProviderDialResult } from "./types.js";
 import type { CallProfile } from "./types.js";
+
+export { AgoraSipCallProvider, resolveAgoraSipConfig } from "./agora.js";
 
 // ---------------------------------------------------------------------------
 // Stub adapter (dry-run / no-credentials mode)
@@ -309,6 +312,18 @@ function ensureElevenLabsAdapter(): void {
 }
 
 /**
+ * Auto-register the Agora SIP adapter if AGORA_APP_ID and
+ * AGORA_APP_CERTIFICATE are configured.
+ */
+function ensureAgoraAdapter(): void {
+  if (adapters.has("agora_sip")) return;
+  const config = resolveAgoraSipConfig();
+  if (!config) return;
+  const adapter = new AgoraSipCallProvider(config);
+  adapters.set(adapter.name, adapter);
+}
+
+/**
  * Get a provider adapter by name.
  *
  * - If `name` matches a registered adapter, return it.
@@ -319,6 +334,7 @@ function ensureElevenLabsAdapter(): void {
  */
 export function getCallProvider(name?: string): CallProviderAdapter {
   ensureElevenLabsAdapter();
+  ensureAgoraAdapter();
 
   if (name && adapters.has(name)) {
     return adapters.get(name)!;
@@ -347,13 +363,14 @@ export function getCallProvider(name?: string): CallProviderAdapter {
 
   // Named a real provider that is not registered — fail explicitly
   throw new Error(
-    `Call provider "${name}" is not registered. Set ELEVENLABS_API_KEY in ~/.ravi/.env or use provider "stub" for dry-run.`,
+    `Call provider "${name}" is not registered. Configure provider credentials in ~/.ravi/.env or use provider "stub" for dry-run.`,
   );
 }
 
 /** Check if a real (non-stub) provider is configured. */
 export function hasRealProvider(): boolean {
   ensureElevenLabsAdapter();
+  ensureAgoraAdapter();
   for (const [name] of adapters) {
     if (name !== "stub") return true;
   }
