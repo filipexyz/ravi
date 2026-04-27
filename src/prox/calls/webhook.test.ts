@@ -234,6 +234,46 @@ describe("handlePostCallWebhook", () => {
     expect(updatedRun!.status).toBe("voicemail");
   });
 
+  it("treats conversation analysis failure with user transcript as answered", () => {
+    seedDefaultProfiles();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_wh_analysis_failure",
+      target_phone: "+5511999999999",
+      reason: "Analysis failure should still be answered",
+    });
+    const run = createCallRun({
+      request_id: request.id,
+      attempt_number: 1,
+      provider: "elevenlabs_twilio",
+    });
+    updateCallRunStatus(run.id, "dialing", {
+      provider_call_id: "conv_analysis_failure",
+    });
+
+    const result = handlePostCallWebhook({
+      type: "post_call_transcription",
+      conversation_id: "conv_analysis_failure",
+      call_successful: false,
+      transcript: [
+        "[0s] agent: Oi, aqui é o Ravi.",
+        "[10s] user: A voz vem do agente da ElevenLabs ou do código?",
+        "[30s] agent: Não sei responder.",
+      ].join("\n"),
+      call_summary: "The user asked a technical question and the agent did not answer correctly.",
+      call_analysis: {
+        call_successful: "failure",
+        transcript_summary: "The user asked a technical question and the agent did not answer correctly.",
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result!.outcome).toBe("answered");
+    expect(getCallRun(run.id)?.status).toBe("completed");
+    expect(getCallRequest(request.id)?.status).toBe("completed");
+    expect(getCallResultForRequest(request.id)?.outcome).toBe("answered");
+  });
+
   it("skips already-terminal runs", () => {
     seedDefaultProfiles();
     const request = createCallRequest({

@@ -113,14 +113,46 @@ function hasUserTranscriptMessage(value: unknown): boolean {
     : false;
 }
 
-function inferCallSuccessful(data: Record<string, unknown>): boolean {
+function hasUserTranscriptText(value: string | null | undefined): boolean {
+  return Boolean(value && /(?:^|\n)(?:\[[^\]]+\]\s*)?user\s*:/i.test(value));
+}
+
+function hasCarrierOrVoicemailText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    "celular estiver disponível",
+    "celular esta disponível",
+    "celular está disponível",
+    "indisponível",
+    "indisponivel",
+    "caixa postal",
+    "fora de área",
+    "fora de area",
+    "recado",
+    "voicemail",
+    "not available",
+    "unavailable",
+  ].some((marker) => normalized.includes(marker));
+}
+
+function inferCallAnswered(data: Record<string, unknown>, transcript: string | undefined): boolean {
   const analysis = isRecord(data.analysis) ? data.analysis : undefined;
   const explicit = analysis?.call_successful ?? data.call_successful;
+  const metadata = isRecord(data.metadata) ? data.metadata : undefined;
+  const joined = [
+    transcript ?? "",
+    stringOrUndefined(data.call_summary) ?? "",
+    stringOrUndefined(analysis?.transcript_summary) ?? "",
+    stringOrUndefined(analysis?.call_summary_title) ?? "",
+    stringOrUndefined(metadata?.termination_reason) ?? "",
+  ].join("\n");
 
+  if (hasCarrierOrVoicemailText(joined)) return false;
+  if (hasUserTranscriptMessage(data.transcript) || hasUserTranscriptText(transcript)) return true;
   if (explicit === true || explicit === "success" || explicit === "true") return true;
   if (explicit === false || explicit === "failure" || explicit === "false") return false;
 
-  return hasUserTranscriptMessage(data.transcript);
+  return false;
 }
 
 /**
@@ -164,7 +196,7 @@ export function normalizeCallWebhookPayload(input: unknown): CallWebhookPayload 
     type,
     conversation_id: conversationId,
     call_sid: findCallSid(data),
-    call_successful: inferCallSuccessful(data),
+    call_successful: inferCallAnswered(data, transcript),
     call_duration_secs: numberOrUndefined(data.call_duration_secs) ?? numberOrUndefined(metadata?.call_duration_secs),
     ...(transcript ? { transcript } : {}),
     ...(summary ? { call_summary: summary } : {}),
@@ -213,14 +245,12 @@ function mapTerminalStatus(payload: CallWebhookPayload): { runStatus: CallRunSta
     return { runStatus: "failed", outcome: "failed_provider" };
   }
 
-  // post_call_transcription
   const p = payload as PostCallTranscriptionPayload;
-  if (p.call_successful) {
-    return { runStatus: "completed", outcome: "answered" };
-  }
 
-  // Heuristics for non-successful terminal states
-  const summary = (p.call_summary ?? "").toLowerCase();
+  // `call_successful` in ElevenLabs analysis is conversational success, not
+  // technical delivery. Carrier/voicemail markers win first; otherwise any
+  // usable user transcript means the call was answered.
+  const summary = [p.call_summary ?? "", p.transcript ?? ""].join("\n").toLowerCase();
   if (summary.includes("voicemail")) {
     return { runStatus: "voicemail", outcome: "voicemail" };
   }
@@ -246,6 +276,9 @@ function mapTerminalStatus(payload: CallWebhookPayload): { runStatus: CallRunSta
     summary.includes("recado")
   ) {
     return { runStatus: "no_answer", outcome: "no_answer" };
+  }
+  if (p.call_successful || hasUserTranscriptText(p.transcript)) {
+    return { runStatus: "completed", outcome: "answered" };
   }
 
   return { runStatus: "failed", outcome: "failed_provider" };

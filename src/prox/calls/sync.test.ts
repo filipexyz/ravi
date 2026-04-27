@@ -92,6 +92,38 @@ describe("syncCallRequestFromElevenLabs", () => {
     expect(result?.transcript).toContain("user: Agora não.");
   });
 
+  it("maps analysis failure with user transcript to answered", async () => {
+    const { request, run } = makeRequestWithProviderRun("conv_analysis_failure");
+
+    const synced = await syncCallRequestFromElevenLabs(request.id, {
+      apiKey: "sk_test",
+      fetchImpl: async () =>
+        jsonResponse({
+          status: "done",
+          metadata: {
+            call_duration_secs: 94,
+            termination_reason: "end_call tool was called.",
+            phone_call: { call_sid: "CA_test" },
+          },
+          transcript: [
+            { role: "agent", time_in_call_secs: 0, message: "Oi, aqui é o Ravi." },
+            { role: "user", time_in_call_secs: 10, message: "A voz vem do agente ou do código?" },
+            { role: "agent", time_in_call_secs: 30, message: "Não sei responder." },
+          ],
+          analysis: {
+            transcript_summary: "The user asked a technical question and the agent did not answer correctly.",
+            call_summary_title: "Agent voice configuration",
+            call_successful: "failure",
+          },
+        }),
+    });
+
+    expect(synced.persisted?.outcome).toBe("answered");
+    expect(getCallRun(run.id)?.status).toBe("completed");
+    expect(getCallRequest(request.id)?.status).toBe("completed");
+    expect(getCallResultForRequest(request.id)?.outcome).toBe("answered");
+  });
+
   it("maps carrier unavailable messages to no_answer", async () => {
     const { request, run } = makeRequestWithProviderRun("conv_unavailable");
 
