@@ -29,6 +29,14 @@ import type {
   CreateCallEventInput,
   CreateCallResultInput,
   UpdateCallProfileInput,
+  CallTool,
+  CallToolExecutorType,
+  CallToolSideEffect,
+  CallToolBinding,
+  CallToolBindingScopeType,
+  CallToolPolicy,
+  CallToolRun,
+  CallToolRunStatus,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -128,6 +136,63 @@ interface CallResultRow {
   next_action: string;
   artifact_id: string | null;
   created_at: number;
+}
+
+interface CallToolRow {
+  id: string;
+  name: string;
+  description: string;
+  input_schema_json: string;
+  output_schema_json: string | null;
+  executor_type: string;
+  executor_config_json: string | null;
+  side_effect: string;
+  timeout_ms: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolBindingRow {
+  id: string;
+  tool_id: string;
+  scope_type: string;
+  scope_id: string;
+  provider_tool_name: string;
+  enabled: number;
+  tool_prompt: string | null;
+  required: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolPolicyRow {
+  id: string;
+  tool_id: string;
+  scope_type: string;
+  scope_id: string;
+  allowed: number;
+  max_calls_per_run: number | null;
+  require_confirmation: number;
+  require_context_key: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolRunRow {
+  id: string;
+  request_id: string;
+  run_id: string | null;
+  tool_id: string;
+  binding_id: string | null;
+  provider_tool_name: string;
+  input_json: string | null;
+  output_json: string | null;
+  status: string;
+  error_message: string | null;
+  started_at: number;
+  completed_at: number | null;
+  duration_ms: number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -249,6 +314,72 @@ function ensureCallsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_call_events_run ON call_events(run_id, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_call_results_request ON call_results(request_id);
     CREATE INDEX IF NOT EXISTS idx_call_rules_scope ON call_rules(scope_type, scope_id);
+
+    CREATE TABLE IF NOT EXISTS call_tools (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      input_schema_json TEXT NOT NULL DEFAULT '{}',
+      output_schema_json TEXT,
+      executor_type TEXT NOT NULL DEFAULT 'native',
+      executor_config_json TEXT,
+      side_effect TEXT NOT NULL DEFAULT 'read_only',
+      timeout_ms INTEGER NOT NULL DEFAULT 5000,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_bindings (
+      id TEXT PRIMARY KEY,
+      tool_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'profile',
+      scope_id TEXT NOT NULL,
+      provider_tool_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      tool_prompt TEXT,
+      required INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_policies (
+      id TEXT PRIMARY KEY,
+      tool_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT NOT NULL DEFAULT '*',
+      allowed INTEGER NOT NULL DEFAULT 1,
+      max_calls_per_run INTEGER,
+      require_confirmation INTEGER NOT NULL DEFAULT 0,
+      require_context_key INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_runs (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      run_id TEXT,
+      tool_id TEXT NOT NULL,
+      binding_id TEXT,
+      provider_tool_name TEXT NOT NULL,
+      input_json TEXT,
+      output_json TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      error_message TEXT,
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      duration_ms INTEGER,
+      FOREIGN KEY (request_id) REFERENCES call_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_call_tool_bindings_scope ON call_tool_bindings(scope_type, scope_id, provider_tool_name);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_policies_tool ON call_tool_policies(tool_id, scope_type, scope_id);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_runs_request ON call_tool_runs(request_id, started_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_runs_run ON call_tool_runs(run_id, started_at ASC);
   `);
 
   const profileColumns = db.prepare("PRAGMA table_info(call_profiles)").all() as Array<{ name: string }>;
@@ -795,6 +926,395 @@ export function getCallResultForRequest(requestId: string): CallResult | null {
     .prepare("SELECT * FROM call_results WHERE request_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
     .get(requestId) as CallResultRow | undefined;
   return row ? rowToResult(row) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Call Tools
+// ---------------------------------------------------------------------------
+
+function rowToCallTool(row: CallToolRow): CallTool {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    input_schema_json: parseJson<Record<string, unknown>>(row.input_schema_json) ?? {},
+    output_schema_json: parseJson<Record<string, unknown>>(row.output_schema_json),
+    executor_type: row.executor_type as CallToolExecutorType,
+    executor_config_json: parseJson<Record<string, unknown>>(row.executor_config_json),
+    side_effect: row.side_effect as CallToolSideEffect,
+    timeout_ms: row.timeout_ms,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function getCallTool(id: string): CallTool | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_tools WHERE id = ?").get(id) as CallToolRow | undefined;
+  return row ? rowToCallTool(row) : null;
+}
+
+export function listCallTools(): CallTool[] {
+  ensureCallsSchema();
+  const rows = getDb().prepare("SELECT * FROM call_tools WHERE enabled = 1 ORDER BY id ASC").all() as CallToolRow[];
+  return rows.map(rowToCallTool);
+}
+
+export function upsertCallTool(tool: {
+  id: string;
+  name: string;
+  description: string;
+  input_schema_json: Record<string, unknown>;
+  output_schema_json?: Record<string, unknown> | null;
+  executor_type: CallToolExecutorType;
+  executor_config_json?: Record<string, unknown> | null;
+  side_effect: CallToolSideEffect;
+  timeout_ms: number;
+}): CallTool {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO call_tools (id, name, description, input_schema_json, output_schema_json, executor_type, executor_config_json, side_effect, timeout_ms, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      description = excluded.description,
+      input_schema_json = excluded.input_schema_json,
+      output_schema_json = excluded.output_schema_json,
+      executor_type = excluded.executor_type,
+      executor_config_json = excluded.executor_config_json,
+      side_effect = excluded.side_effect,
+      timeout_ms = excluded.timeout_ms,
+      updated_at = excluded.updated_at
+  `).run(
+    tool.id,
+    tool.name,
+    tool.description,
+    toJson(tool.input_schema_json),
+    toJson(tool.output_schema_json ?? null),
+    tool.executor_type,
+    toJson(tool.executor_config_json ?? null),
+    tool.side_effect,
+    tool.timeout_ms,
+    now,
+    now,
+  );
+  return getCallTool(tool.id)!;
+}
+
+// ---------------------------------------------------------------------------
+// Call Tool Bindings
+// ---------------------------------------------------------------------------
+
+function rowToCallToolBinding(row: CallToolBindingRow): CallToolBinding {
+  return {
+    id: row.id,
+    tool_id: row.tool_id,
+    scope_type: row.scope_type as CallToolBindingScopeType,
+    scope_id: row.scope_id,
+    provider_tool_name: row.provider_tool_name,
+    enabled: row.enabled === 1,
+    tool_prompt: row.tool_prompt,
+    required: row.required === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function getCallToolBinding(id: string): CallToolBinding | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_tool_bindings WHERE id = ?").get(id) as
+    | CallToolBindingRow
+    | undefined;
+  return row ? rowToCallToolBinding(row) : null;
+}
+
+export function resolveCallToolBindingByProviderName(
+  providerToolName: string,
+  scopeType: CallToolBindingScopeType,
+  scopeId: string,
+): CallToolBinding | null {
+  ensureCallsSchema();
+  const row = getDb()
+    .prepare(
+      "SELECT * FROM call_tool_bindings WHERE provider_tool_name = ? AND scope_type = ? AND scope_id = ? AND enabled = 1 LIMIT 1",
+    )
+    .get(providerToolName, scopeType, scopeId) as CallToolBindingRow | undefined;
+  return row ? rowToCallToolBinding(row) : null;
+}
+
+export function listCallToolBindings(scopeType: CallToolBindingScopeType, scopeId: string): CallToolBinding[] {
+  ensureCallsSchema();
+  const rows = getDb()
+    .prepare(
+      "SELECT * FROM call_tool_bindings WHERE scope_type = ? AND scope_id = ? AND enabled = 1 ORDER BY provider_tool_name ASC",
+    )
+    .all(scopeType, scopeId) as CallToolBindingRow[];
+  return rows.map(rowToCallToolBinding);
+}
+
+export function upsertCallToolBinding(binding: {
+  id: string;
+  tool_id: string;
+  scope_type: CallToolBindingScopeType;
+  scope_id: string;
+  provider_tool_name: string;
+  tool_prompt?: string | null;
+  required?: boolean;
+}): CallToolBinding {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO call_tool_bindings (id, tool_id, scope_type, scope_id, provider_tool_name, enabled, tool_prompt, required, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      tool_id = excluded.tool_id,
+      scope_type = excluded.scope_type,
+      scope_id = excluded.scope_id,
+      provider_tool_name = excluded.provider_tool_name,
+      tool_prompt = excluded.tool_prompt,
+      required = excluded.required,
+      updated_at = excluded.updated_at
+  `).run(
+    binding.id,
+    binding.tool_id,
+    binding.scope_type,
+    binding.scope_id,
+    binding.provider_tool_name,
+    binding.tool_prompt ?? null,
+    binding.required ? 1 : 0,
+    now,
+    now,
+  );
+  return getCallToolBinding(binding.id)!;
+}
+
+// ---------------------------------------------------------------------------
+// Call Tool Policies
+// ---------------------------------------------------------------------------
+
+function rowToCallToolPolicy(row: CallToolPolicyRow): CallToolPolicy {
+  return {
+    id: row.id,
+    tool_id: row.tool_id,
+    scope_type: row.scope_type,
+    scope_id: row.scope_id,
+    allowed: row.allowed === 1,
+    max_calls_per_run: row.max_calls_per_run,
+    require_confirmation: row.require_confirmation === 1,
+    require_context_key: row.require_context_key === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function getCallToolPolicy(toolId: string, scopeType: string, scopeId: string): CallToolPolicy | null {
+  ensureCallsSchema();
+  const row = getDb()
+    .prepare("SELECT * FROM call_tool_policies WHERE tool_id = ? AND scope_type = ? AND scope_id = ? LIMIT 1")
+    .get(toolId, scopeType, scopeId) as CallToolPolicyRow | undefined;
+  return row ? rowToCallToolPolicy(row) : null;
+}
+
+export function getEffectiveCallToolPolicy(toolId: string): CallToolPolicy | null {
+  ensureCallsSchema();
+  const row = getDb()
+    .prepare(
+      "SELECT * FROM call_tool_policies WHERE tool_id = ? ORDER BY CASE scope_type WHEN 'global' THEN 1 ELSE 0 END DESC LIMIT 1",
+    )
+    .get(toolId) as CallToolPolicyRow | undefined;
+  return row ? rowToCallToolPolicy(row) : null;
+}
+
+export function upsertCallToolPolicy(policy: {
+  id: string;
+  tool_id: string;
+  scope_type: string;
+  scope_id: string;
+  allowed: boolean;
+  max_calls_per_run?: number | null;
+  require_confirmation?: boolean;
+  require_context_key?: boolean;
+}): CallToolPolicy {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO call_tool_policies (id, tool_id, scope_type, scope_id, allowed, max_calls_per_run, require_confirmation, require_context_key, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      allowed = excluded.allowed,
+      max_calls_per_run = excluded.max_calls_per_run,
+      require_confirmation = excluded.require_confirmation,
+      require_context_key = excluded.require_context_key,
+      updated_at = excluded.updated_at
+  `).run(
+    policy.id,
+    policy.tool_id,
+    policy.scope_type,
+    policy.scope_id,
+    policy.allowed ? 1 : 0,
+    policy.max_calls_per_run ?? null,
+    policy.require_confirmation ? 1 : 0,
+    policy.require_context_key ? 1 : 0,
+    now,
+    now,
+  );
+  return getCallToolPolicy(policy.tool_id, policy.scope_type, policy.scope_id)!;
+}
+
+// ---------------------------------------------------------------------------
+// Call Tool Runs
+// ---------------------------------------------------------------------------
+
+function rowToCallToolRun(row: CallToolRunRow): CallToolRun {
+  return {
+    id: row.id,
+    request_id: row.request_id,
+    run_id: row.run_id,
+    tool_id: row.tool_id,
+    binding_id: row.binding_id,
+    provider_tool_name: row.provider_tool_name,
+    input_json: parseJson<Record<string, unknown>>(row.input_json),
+    output_json: parseJson<Record<string, unknown>>(row.output_json),
+    status: row.status as CallToolRunStatus,
+    error_message: row.error_message,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    duration_ms: row.duration_ms,
+  };
+}
+
+export function createCallToolRun(input: {
+  request_id: string;
+  run_id?: string | null;
+  tool_id: string;
+  binding_id?: string | null;
+  provider_tool_name: string;
+  input_json?: Record<string, unknown> | null;
+  status?: CallToolRunStatus;
+}): CallToolRun {
+  ensureCallsSchema();
+  const db = getDb();
+  const id = `trun_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO call_tool_runs (id, request_id, run_id, tool_id, binding_id, provider_tool_name, input_json, status, started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    input.request_id,
+    input.run_id ?? null,
+    input.tool_id,
+    input.binding_id ?? null,
+    input.provider_tool_name,
+    toJson(input.input_json ?? null),
+    input.status ?? "pending",
+    now,
+  );
+  return getCallToolRun(id)!;
+}
+
+export function getCallToolRun(id: string): CallToolRun | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_tool_runs WHERE id = ?").get(id) as CallToolRunRow | undefined;
+  return row ? rowToCallToolRun(row) : null;
+}
+
+export function listCallToolRuns(requestId: string): CallToolRun[] {
+  ensureCallsSchema();
+  const rows = getDb()
+    .prepare("SELECT * FROM call_tool_runs WHERE request_id = ? ORDER BY started_at ASC")
+    .all(requestId) as CallToolRunRow[];
+  return rows.map(rowToCallToolRun);
+}
+
+export function countCallToolRunsForRun(runId: string, toolId: string): number {
+  ensureCallsSchema();
+  const row = getDb()
+    .prepare("SELECT COUNT(*) AS count FROM call_tool_runs WHERE run_id = ? AND tool_id = ?")
+    .get(runId, toolId) as { count: number };
+  return row.count;
+}
+
+export function updateCallToolRunStatus(
+  id: string,
+  status: CallToolRunStatus,
+  extra?: {
+    output_json?: Record<string, unknown> | null;
+    error_message?: string | null;
+  },
+): void {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+  const started = getCallToolRun(id)?.started_at ?? now;
+  db.prepare("UPDATE call_tool_runs SET status = ?, completed_at = ?, duration_ms = ? WHERE id = ?").run(
+    status,
+    now,
+    now - started,
+    id,
+  );
+  if (extra?.output_json !== undefined) {
+    db.prepare("UPDATE call_tool_runs SET output_json = ? WHERE id = ?").run(toJson(extra.output_json), id);
+  }
+  if (extra?.error_message !== undefined) {
+    db.prepare("UPDATE call_tool_runs SET error_message = ? WHERE id = ?").run(extra.error_message, id);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Default tool seeds
+// ---------------------------------------------------------------------------
+
+export function seedDefaultCallTools(): void {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = db.prepare("SELECT COUNT(*) AS count FROM call_tools").get() as { count: number };
+  if (existing.count > 0) return;
+
+  upsertCallTool({
+    id: "call.end",
+    name: "end_call",
+    description: "End the current prox.city voice call after the objective is complete or the user asks to stop.",
+    input_schema_json: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "Short reason for ending the call." },
+      },
+      additionalProperties: false,
+    },
+    executor_type: "native",
+    executor_config_json: { handler: "call.end" },
+    side_effect: "external_call",
+    timeout_ms: 5000,
+  });
+
+  upsertCallToolPolicy({
+    id: "policy-call-end-global",
+    tool_id: "call.end",
+    scope_type: "global",
+    scope_id: "*",
+    allowed: true,
+  });
+}
+
+export function seedCallToolBindingsForProfile(profileId: string): void {
+  ensureCallsSchema();
+  seedDefaultCallTools();
+  const bindingId = `bind-${profileId}-call-end`;
+  const existing = getCallToolBinding(bindingId);
+  if (existing) return;
+  upsertCallToolBinding({
+    id: bindingId,
+    tool_id: "call.end",
+    scope_type: "profile",
+    scope_id: profileId,
+    provider_tool_name: "end_call",
+  });
 }
 
 // ---------------------------------------------------------------------------

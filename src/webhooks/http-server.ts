@@ -9,11 +9,11 @@ import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import {
   AGORA_MCP_TOOLS_PATH,
   handleAgoraWebhook,
-  handleAgoraMcpToolRequest,
   normalizeAgoraWebhookPayload,
   verifyAgoraWebhookSignature,
   type AgoraWebhookPayload,
 } from "../prox/calls/agora.js";
+import { handleToolBridgeRequest } from "../prox/calls/tool-bridge.js";
 import { handlePostCallWebhook, normalizeCallWebhookPayload, type CallWebhookPayload } from "../prox/calls/webhook.js";
 import { logger } from "../utils/logger.js";
 
@@ -26,7 +26,9 @@ const ELEVENLABS_POST_CALL_WEBHOOK_ALIASES = new Set([
   "/api/webhooks/elevenlabs/post-call",
 ]);
 const AGORA_CONVOAI_WEBHOOK_ALIASES = new Set([AGORA_CONVOAI_WEBHOOK_PATH, "/api/webhooks/agora/convoai"]);
+export const PROX_CALLS_TOOLS_PATH = "/webhooks/prox/calls/tools";
 const AGORA_MCP_TOOLS_ALIASES = new Set([AGORA_MCP_TOOLS_PATH, "/api/webhooks/agora/tools"]);
+const ALL_TOOL_BRIDGE_PATHS = new Set([PROX_CALLS_TOOLS_PATH, ...AGORA_MCP_TOOLS_ALIASES]);
 
 const DEFAULT_MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -262,7 +264,7 @@ async function handleAgoraConvoAIWebhook(request: Request, config: WebhookHttpSe
   }
 }
 
-async function handleAgoraMcpTools(
+async function handleToolBridge(
   request: Request,
   config: WebhookHttpServerConfig,
   requestId: string | null,
@@ -272,19 +274,19 @@ async function handleAgoraMcpTools(
   }
 
   const maxBodyBytes = config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  const raw = await readBoundedBody(request, maxBodyBytes, "Agora MCP tools");
+  const raw = await readBoundedBody(request, maxBodyBytes, "tool bridge");
   if (raw instanceof Response) return raw;
 
   let payload: unknown;
   try {
     payload = JSON.parse(raw) as unknown;
   } catch (error) {
-    log.warn("Failed to parse Agora MCP tool request", { error });
+    log.warn("Failed to parse tool bridge request", { error });
     return jsonResponse(400, { ok: false, error: "invalid_json" });
   }
 
   try {
-    const result = await handleAgoraMcpToolRequest({
+    const result = await handleToolBridgeRequest({
       requestId,
       authorization: request.headers.get("authorization"),
       payload,
@@ -292,7 +294,7 @@ async function handleAgoraMcpTools(
     if (!result.body) return new Response(null, { status: result.status });
     return jsonResponse(result.status, result.body);
   } catch (error) {
-    log.error("Failed to process Agora MCP tool request", { error, requestId });
+    log.error("Failed to process tool bridge request", { error, requestId });
     return jsonResponse(500, { ok: false, error: "processing_failed" });
   }
 }
@@ -312,8 +314,8 @@ function handleRequest(request: Request, config: WebhookHttpServerConfig): Promi
     return handleAgoraConvoAIWebhook(request, config);
   }
 
-  if (AGORA_MCP_TOOLS_ALIASES.has(url.pathname)) {
-    return handleAgoraMcpTools(request, config, url.searchParams.get("request_id"));
+  if (ALL_TOOL_BRIDGE_PATHS.has(url.pathname)) {
+    return handleToolBridge(request, config, url.searchParams.get("request_id"));
   }
 
   return jsonResponse(404, { ok: false, error: "not_found" });
@@ -331,6 +333,7 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
     url,
     elevenLabsPath: ELEVENLABS_POST_CALL_WEBHOOK_PATH,
     agoraPath: AGORA_CONVOAI_WEBHOOK_PATH,
+    toolBridgePath: PROX_CALLS_TOOLS_PATH,
     agoraToolsPath: AGORA_MCP_TOOLS_PATH,
     signatureVerification: Boolean(config.elevenLabsWebhookSecret),
     allowUnsignedElevenLabs: Boolean(config.allowUnsignedElevenLabs),

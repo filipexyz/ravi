@@ -367,6 +367,32 @@ function isTerminalRunStatus(status: CallRunStatus): boolean {
   return ["completed", "no_answer", "busy", "voicemail", "failed", "canceled"].includes(status);
 }
 
+export async function hangupAgoraSipCall(
+  config: AgoraSipConfig,
+  agentId: string,
+  reason: string | null,
+): Promise<{ ok: boolean; message: string }> {
+  const response = await (config.fetchImpl ?? fetch)(
+    `${config.apiBaseUrl ?? AGORA_API_BASE_URL}/projects/${encodeURIComponent(config.appId)}/calls/${encodeURIComponent(agentId)}/hangup`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: authHeader(config, ""),
+      },
+      body: JSON.stringify({ reason: reason || "end_call_tool" }),
+    },
+  );
+  const text = await response.text();
+
+  if (!response.ok) {
+    return { ok: false, message: text.trim() || `Agora hangup failed with HTTP ${response.status}` };
+  }
+
+  return { ok: true, message: "Call hangup requested." };
+}
+
 async function hangupAgoraCallForRequest(
   requestId: string,
   reason: string | null,
@@ -388,35 +414,23 @@ async function hangupAgoraCallForRequest(
     return { ok: true, message: "Call hangup was already requested." };
   }
 
-  const response = await (config.fetchImpl ?? fetch)(
-    `${config.apiBaseUrl ?? AGORA_API_BASE_URL}/projects/${encodeURIComponent(config.appId)}/calls/${encodeURIComponent(match.agentId)}/hangup`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        authorization: authHeader(config, ""),
-      },
-      body: JSON.stringify({ reason: reason || "end_call_tool" }),
-    },
-  );
-  const text = await response.text();
+  const result = await hangupAgoraSipCall(config, match.agentId, reason);
 
-  if (!response.ok) {
+  if (!result.ok) {
     createCallEvent({
       request_id: request.id,
       run_id: run.id,
       event_type: "provider.error",
       status: "hangup_failed",
-      message: text.trim() || `Agora hangup failed with HTTP ${response.status}`,
+      message: result.message,
       payload_json: {
         provider: "agora",
         agent_id: match.agentId,
-        status: response.status,
+        status: "failed",
       },
       source: "prox.calls.agora.tool",
     });
-    return { ok: false, message: text.trim() || `Agora hangup failed with HTTP ${response.status}` };
+    return result;
   }
 
   createCallEvent({
