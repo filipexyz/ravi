@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
+import { configureSqliteConnection } from "../utils/sqlite.js";
 import { normalizePhone } from "../utils/phone.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
@@ -498,13 +499,7 @@ function getDb(): Database {
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  db.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately
-  db.exec("PRAGMA busy_timeout = 5000");
-
-  // Enable foreign keys before schema creation
-  db.exec("PRAGMA foreign_keys = ON");
+  configureSqliteConnection(db);
 
   // Initialize schema
   db.exec(`

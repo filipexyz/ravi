@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { getRaviStateDir } from "../utils/paths.js";
+import { configureSqliteConnection } from "../utils/sqlite.js";
 import { toDevinApiId, type DevinSession, type DevinSessionAttachment, type DevinSessionMessage } from "./client.js";
 
 let db: Database | null = null;
@@ -16,8 +17,7 @@ function getDevinDb(): Database {
   const path = getDevinDbPath();
   mkdirSync(dirname(path), { recursive: true });
   db = new Database(path);
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA foreign_keys = ON");
+  configureSqliteConnection(db);
   return db;
 }
 

@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
+import { configureSqliteConnection } from "./utils/sqlite.js";
 
 let db: Database | null = null;
 let dbPath: string | null = null;
@@ -28,9 +29,7 @@ function getDb(): Database {
   db = new Database(nextDbPath);
   dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA busy_timeout = 5000");
+  configureSqliteConnection(db, { foreignKeys: false });
 
   // Initialize schema
   db.exec(`

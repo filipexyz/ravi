@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { getRaviStateDir } from "./utils/paths.js";
+import { configureSqliteConnection } from "./utils/sqlite.js";
 
 // Re-export normalize functions for backwards compatibility
 export {
@@ -36,13 +37,7 @@ function ensureDb(): Database {
   mkdirSync(getRaviStateDir(), { recursive: true });
 
   const database = new Database(nextDbPath);
-
-  // WAL mode for concurrent read/write access (CLI + daemon)
-  database.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately
-  database.exec("PRAGMA busy_timeout = 5000");
-  // Enable foreign keys
-  database.exec("PRAGMA foreign_keys = ON");
+  configureSqliteConnection(database);
 
   initializeSchema(database);
   migrateFromV1(database);
