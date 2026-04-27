@@ -17,7 +17,6 @@ import {
   createCallResult,
   getCallRequest,
   getCallRun,
-  listCallEvents,
   updateCallRequestStatus,
   updateCallRunStatus,
 } from "./calls-db.js";
@@ -113,14 +112,6 @@ function authHeader(config: AgoraSipConfig, token: string): string {
     return `Basic ${Buffer.from(`${config.customerId}:${config.customerSecret}`).toString("base64")}`;
   }
   return `agora token=${token}`;
-}
-
-function safeCompareString(expectedValue: string, actualValue: string): boolean {
-  if (!expectedValue || !actualValue) return false;
-  const expected = Buffer.from(expectedValue);
-  const actual = Buffer.from(actualValue);
-  if (expected.length !== actual.length) return false;
-  return timingSafeEqual(expected, actual);
 }
 
 function validateE164(value: string | null | undefined, field: string): string | null {
@@ -308,69 +299,11 @@ function buildFullProperties(
   };
 }
 
-interface JsonRpcRequest {
-  jsonrpc?: unknown;
-  id?: unknown;
-  method?: unknown;
-  params?: unknown;
-}
-
-function jsonRpcResult(id: unknown, result: JsonRecord): JsonRecord {
-  return { jsonrpc: "2.0", id: id ?? null, result };
-}
-
-function jsonRpcError(id: unknown, code: number, message: string): JsonRecord {
-  return {
-    jsonrpc: "2.0",
-    id: id ?? null,
-    error: { code, message },
-  };
-}
-
-function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
-  return isRecord(value) && typeof value.method === "string";
-}
-
-function extractBearerToken(authorization: string | null | undefined): string | null {
-  const match = authorization?.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || null;
-}
-
-function findLatestAgoraRunByRequest(requestId: string): { runId: string; requestId: string; agentId: string } | null {
-  const row = getDb()
-    .prepare(
-      `
-      SELECT id, request_id, provider_call_id
-      FROM call_runs
-      WHERE request_id = ?
-        AND provider = 'agora_sip'
-        AND provider_call_id IS NOT NULL
-      ORDER BY COALESCE(answered_at, started_at, 0) DESC, attempt_number DESC
-      LIMIT 1
-      `,
-    )
-    .get(requestId) as { id: string; request_id: string; provider_call_id: string } | undefined;
-  return row ? { runId: row.id, requestId: row.request_id, agentId: row.provider_call_id } : null;
-}
-
-function hasHangupAlreadyRequested(requestId: string, runId: string): boolean {
-  return listCallEvents(requestId).some(
-    (event) =>
-      event.run_id === runId &&
-      event.source === "prox.calls.agora.tool" &&
-      event.event_type === "run.progress" &&
-      event.status === "hangup_requested",
-  );
-}
-
-function isTerminalRunStatus(status: CallRunStatus): boolean {
-  return ["completed", "no_answer", "busy", "voicemail", "failed", "canceled"].includes(status);
-}
-
 export async function hangupAgoraSipCall(
   config: AgoraSipConfig,
   agentId: string,
   reason: string | null,
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; message: string }> {
   const response = await (config.fetchImpl ?? fetch)(
     `${config.apiBaseUrl ?? AGORA_API_BASE_URL}/projects/${encodeURIComponent(config.appId)}/calls/${encodeURIComponent(agentId)}/hangup`,
@@ -382,6 +315,7 @@ export async function hangupAgoraSipCall(
         authorization: authHeader(config, ""),
       },
       body: JSON.stringify({ reason: reason || "end_call_tool" }),
+      signal,
     },
   );
   const text = await response.text();
@@ -393,142 +327,18 @@ export async function hangupAgoraSipCall(
   return { ok: true, message: "Call hangup requested." };
 }
 
-async function hangupAgoraCallForRequest(
-  requestId: string,
-  reason: string | null,
-): Promise<{ ok: boolean; message: string }> {
-  const config = resolveAgoraSipConfig();
-  if (!config) return { ok: false, message: "Agora credentials are not configured." };
-  if (!config.customerId || !config.customerSecret) {
-    return { ok: false, message: "AGORA_CUSTOMER_ID and AGORA_CUSTOMER_SECRET are required for API hangup." };
-  }
-
-  const match = findLatestAgoraRunByRequest(requestId);
-  if (!match) return { ok: false, message: `No active Agora run found for call request ${requestId}.` };
-
-  const request = getCallRequest(match.requestId);
-  const run = getCallRun(match.runId);
-  if (!request || !run) return { ok: false, message: `Call request ${requestId} is no longer available.` };
-
-  if (isTerminalRunStatus(run.status) || hasHangupAlreadyRequested(request.id, run.id)) {
-    return { ok: true, message: "Call hangup was already requested." };
-  }
-
-  const result = await hangupAgoraSipCall(config, match.agentId, reason);
-
-  if (!result.ok) {
-    createCallEvent({
-      request_id: request.id,
-      run_id: run.id,
-      event_type: "provider.error",
-      status: "hangup_failed",
-      message: result.message,
-      payload_json: {
-        provider: "agora",
-        agent_id: match.agentId,
-        status: "failed",
-      },
-      source: "prox.calls.agora.tool",
-    });
-    return result;
-  }
-
-  createCallEvent({
-    request_id: request.id,
-    run_id: run.id,
-    event_type: "run.progress",
-    status: "hangup_requested",
-    message: reason || "Agora hangup requested by end_call tool.",
-    payload_json: {
-      provider: "agora",
-      agent_id: match.agentId,
-    },
-    source: "prox.calls.agora.tool",
-  });
-
-  return { ok: true, message: "Call hangup requested." };
-}
-
-async function handleAgoraToolCall(requestId: string, rpc: JsonRpcRequest): Promise<JsonRecord> {
-  const params = isRecord(rpc.params) ? rpc.params : {};
-  const toolName = stringValue(params.name);
-  const args = isRecord(params.arguments) ? params.arguments : {};
-
-  if (toolName !== "end_call") {
-    return jsonRpcError(rpc.id, -32602, `Unsupported tool: ${toolName ?? "unknown"}`);
-  }
-
-  const hangup = await hangupAgoraCallForRequest(requestId, stringValue(args.reason) ?? null);
-  return jsonRpcResult(rpc.id, {
-    content: [{ type: "text", text: hangup.message }],
-    isError: !hangup.ok,
-  });
-}
-
+/**
+ * Legacy Agora MCP tool handler — delegates to the provider-neutral bridge.
+ * Kept as an exported symbol for backward compatibility; all logic now lives
+ * in tool-bridge.ts.
+ */
 export async function handleAgoraMcpToolRequest(input: {
   requestId: string | null;
   authorization: string | null;
   payload: unknown;
 }): Promise<{ status: number; body: JsonRecord | null }> {
-  const expectedSecret = agoraMcpToolSecret();
-  if (!expectedSecret) return { status: 503, body: { ok: false, error: "tool_secret_not_configured" } };
-
-  const actualSecret = extractBearerToken(input.authorization);
-  if (!actualSecret || !safeCompareString(expectedSecret, actualSecret)) {
-    return { status: 401, body: { ok: false, error: "invalid_token" } };
-  }
-
-  if (!input.requestId) return { status: 400, body: { ok: false, error: "missing_request_id" } };
-  if (Array.isArray(input.payload)) {
-    return { status: 400, body: { ok: false, error: "batch_not_supported" } };
-  }
-  if (!isJsonRpcRequest(input.payload)) {
-    return { status: 400, body: { ok: false, error: "invalid_json_rpc" } };
-  }
-
-  const rpc = input.payload;
-  const method = String(rpc.method);
-  if (!("id" in rpc) && method.startsWith("notifications/")) {
-    return { status: 202, body: null };
-  }
-
-  switch (method) {
-    case "initialize":
-      return {
-        status: 200,
-        body: jsonRpcResult(rpc.id, {
-          protocolVersion: "2024-11-05",
-          capabilities: { tools: {} },
-          serverInfo: { name: "ravi-prox-calls", version: "0.1.0" },
-        }),
-      };
-    case "ping":
-      return { status: 200, body: jsonRpcResult(rpc.id, {}) };
-    case "tools/list":
-      return {
-        status: 200,
-        body: jsonRpcResult(rpc.id, {
-          tools: [
-            {
-              name: "end_call",
-              description:
-                "End the current prox.city voice call after the objective is complete or the user asks to stop.",
-              inputSchema: {
-                type: "object",
-                properties: {
-                  reason: { type: "string", description: "Short reason for ending the call." },
-                },
-                additionalProperties: false,
-              },
-            },
-          ],
-        }),
-      };
-    case "tools/call":
-      return { status: 200, body: await handleAgoraToolCall(input.requestId, rpc) };
-    default:
-      return { status: 200, body: jsonRpcError(rpc.id, -32601, `Method not found: ${method}`) };
-  }
+  const { handleToolBridgeRequest } = await import("./tool-bridge.js");
+  return handleToolBridgeRequest(input);
 }
 
 function buildPipelineProperties(channel: string, agentUid: string, sipUid: string, token: string): JsonRecord {
