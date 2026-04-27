@@ -90,6 +90,9 @@ export interface CallRequest {
   deadline_at: number | null;
   scheduled_for: number | null;
   metadata_json: Record<string, unknown> | null;
+  voice_agent_id: string | null;
+  voice_agent_version: number | null;
+  voice_agent_snapshot_json: Record<string, unknown> | null;
   created_at: number;
   updated_at: number;
 }
@@ -123,6 +126,9 @@ export interface CallRun {
   ended_at: number | null;
   failure_reason: string | null;
   metadata_json: Record<string, unknown> | null;
+  voice_agent_id: string | null;
+  voice_agent_version: number | null;
+  voice_agent_snapshot_json: Record<string, unknown> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +209,9 @@ export interface CreateCallRequestInput {
   deadline_at?: number | null;
   scheduled_for?: number | null;
   metadata_json?: Record<string, unknown> | null;
+  voice_agent_id?: string | null;
+  voice_agent_version?: number | null;
+  voice_agent_snapshot_json?: Record<string, unknown> | null;
 }
 
 export interface UpdateCallProfileInput {
@@ -222,6 +231,9 @@ export interface CreateCallRunInput {
   request_id: string;
   attempt_number: number;
   provider: string;
+  voice_agent_id?: string | null;
+  voice_agent_version?: number | null;
+  voice_agent_snapshot_json?: Record<string, unknown> | null;
 }
 
 export interface CreateCallEventInput {
@@ -243,6 +255,241 @@ export interface CreateCallResultInput {
   extraction_json?: Record<string, unknown> | null;
   next_action?: CallResultNextAction;
   artifact_id?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// call_voice_agent
+// ---------------------------------------------------------------------------
+
+export interface CallVoiceAgent {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  provider_agent_id: string | null;
+  voice_id: string | null;
+  language: string;
+  system_prompt: string;
+  system_prompt_path: string | null;
+  first_message_template: string | null;
+  dynamic_variables_schema_json: Record<string, unknown> | null;
+  default_tools_json: string[] | null;
+  provider_config_json: Record<string, unknown> | null;
+  version: number;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCallVoiceAgentInput {
+  id: string;
+  name: string;
+  description?: string;
+  provider?: string;
+  provider_agent_id?: string | null;
+  voice_id?: string | null;
+  language?: string;
+  system_prompt?: string;
+  system_prompt_path?: string | null;
+  first_message_template?: string | null;
+  dynamic_variables_schema_json?: Record<string, unknown> | null;
+  default_tools_json?: string[] | null;
+  provider_config_json?: Record<string, unknown> | null;
+  enabled?: boolean;
+}
+
+export interface UpdateCallVoiceAgentInput {
+  name?: string;
+  description?: string;
+  provider?: string;
+  provider_agent_id?: string | null;
+  voice_id?: string | null;
+  language?: string;
+  system_prompt?: string;
+  system_prompt_path?: string | null;
+  first_message_template?: string | null;
+  dynamic_variables_schema_json?: Record<string, unknown> | null;
+  default_tools_json?: string[] | null;
+  provider_config_json?: Record<string, unknown> | null;
+  enabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool
+// ---------------------------------------------------------------------------
+
+export type CallToolExecutorType = "native" | "bash" | "http" | "context";
+
+export type CallToolSideEffectClass =
+  | "read_only"
+  | "write_internal"
+  | "external_message"
+  | "external_call"
+  | "external_irreversible";
+
+export interface CallTool {
+  id: string;
+  name: string;
+  description: string;
+  input_schema_json: Record<string, unknown> | null;
+  output_schema_json: Record<string, unknown> | null;
+  executor_type: CallToolExecutorType;
+  executor_config_json: Record<string, unknown> | null;
+  side_effect_class: CallToolSideEffectClass;
+  timeout_ms: number;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCallToolInput {
+  id: string;
+  name: string;
+  description?: string;
+  input_schema_json?: Record<string, unknown> | null;
+  output_schema_json?: Record<string, unknown> | null;
+  executor_type?: CallToolExecutorType;
+  executor_config_json?: Record<string, unknown> | null;
+  side_effect_class?: CallToolSideEffectClass;
+  timeout_ms?: number;
+  enabled?: boolean;
+}
+
+export interface UpdateCallToolInput {
+  name?: string;
+  description?: string;
+  input_schema_json?: Record<string, unknown> | null;
+  output_schema_json?: Record<string, unknown> | null;
+  executor_type?: CallToolExecutorType;
+  executor_config_json?: Record<string, unknown> | null;
+  side_effect_class?: CallToolSideEffectClass;
+  timeout_ms?: number;
+  enabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_binding
+// ---------------------------------------------------------------------------
+
+export type CallToolBindingScopeType = "voice_agent" | "profile";
+
+export interface CallToolBinding {
+  id: string;
+  tool_id: string;
+  scope_type: CallToolBindingScopeType;
+  scope_id: string;
+  provider_tool_name: string;
+  enabled: boolean;
+  tool_prompt: string | null;
+  required: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCallToolBindingInput {
+  tool_id: string;
+  scope_type: CallToolBindingScopeType;
+  scope_id: string;
+  provider_tool_name?: string;
+  enabled?: boolean;
+  tool_prompt?: string | null;
+  required?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_policy
+// ---------------------------------------------------------------------------
+
+export interface CallToolPolicy {
+  id: string;
+  tool_id: string | null;
+  voice_agent_id: string | null;
+  profile_id: string | null;
+  side_effect_class: CallToolSideEffectClass | null;
+  scope_type: string | null;
+  scope_id: string | null;
+  allow: boolean;
+  max_calls_per_run: number | null;
+  config_json: Record<string, unknown> | null;
+  enabled: boolean;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface CreateCallToolPolicyInput {
+  tool_id?: string | null;
+  voice_agent_id?: string | null;
+  profile_id?: string | null;
+  side_effect_class?: CallToolSideEffectClass | null;
+  scope_type?: string | null;
+  scope_id?: string | null;
+  allow?: boolean;
+  max_calls_per_run?: number | null;
+  config_json?: Record<string, unknown> | null;
+  enabled?: boolean;
+}
+
+export interface UpdateCallToolPolicyInput {
+  allow?: boolean;
+  max_calls_per_run?: number | null;
+  config_json?: Record<string, unknown> | null;
+  enabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// call_tool_run
+// ---------------------------------------------------------------------------
+
+export type CallToolRunStatus = "started" | "completed" | "failed" | "blocked" | "timed_out";
+
+export interface CallToolRun {
+  id: string;
+  request_id: string;
+  run_id: string | null;
+  tool_id: string;
+  binding_id: string | null;
+  provider_tool_name: string;
+  status: CallToolRunStatus;
+  input_json: Record<string, unknown> | null;
+  result_json: Record<string, unknown> | null;
+  error_json: Record<string, unknown> | null;
+  started_at: number;
+  completed_at: number | null;
+  source: string | null;
+  provider_metadata_json: Record<string, unknown> | null;
+  created_at: number;
+}
+
+export interface CreateCallToolRunInput {
+  request_id: string;
+  run_id?: string | null;
+  tool_id: string;
+  binding_id?: string | null;
+  provider_tool_name: string;
+  input_json?: Record<string, unknown> | null;
+  source?: string | null;
+  provider_metadata_json?: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Voice-agent snapshot references (for call_request / call_run audit)
+// ---------------------------------------------------------------------------
+
+export interface VoiceAgentSnapshotRef {
+  voice_agent_id: string | null;
+  voice_agent_version: number | null;
+  voice_agent_snapshot_json: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Effective tool resolution
+// ---------------------------------------------------------------------------
+
+export interface EffectiveTool {
+  tool: CallTool;
+  binding: CallToolBinding;
+  blocked: boolean;
+  block_reason: string | null;
 }
 
 // ---------------------------------------------------------------------------
