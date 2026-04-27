@@ -29,6 +29,20 @@ import type {
   CreateCallEventInput,
   CreateCallResultInput,
   UpdateCallProfileInput,
+  CallVoiceAgent,
+  CreateCallVoiceAgentInput,
+  UpdateCallVoiceAgentInput,
+  CallTool,
+  CallToolExecutor,
+  CallToolSideEffect,
+  CreateCallToolInput,
+  UpdateCallToolInput,
+  CallToolBinding,
+  CallToolBindingScopeType,
+  CallToolPolicy,
+  CallToolRun,
+  CallToolRunStatus,
+  CreateCallToolRunInput,
 } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -127,6 +141,82 @@ interface CallResultRow {
   extraction_json: string | null;
   next_action: string;
   artifact_id: string | null;
+  created_at: number;
+}
+
+interface CallVoiceAgentRow {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  provider_agent_id: string | null;
+  voice_id: string | null;
+  language: string;
+  system_prompt: string | null;
+  system_prompt_path: string | null;
+  first_message_template: string | null;
+  dynamic_variables_schema_json: string | null;
+  default_tools_json: string | null;
+  provider_config_json: string | null;
+  version: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolRow {
+  id: string;
+  name: string;
+  description: string;
+  input_schema_json: string | null;
+  output_schema_json: string | null;
+  executor: string;
+  executor_config_json: string | null;
+  side_effect: string;
+  timeout_ms: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolBindingRow {
+  id: string;
+  tool_id: string;
+  scope_type: string;
+  scope_id: string;
+  provider_tool_name: string | null;
+  tool_prompt: string | null;
+  required: number;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolPolicyRow {
+  id: string;
+  tool_id: string;
+  voice_agent_id: string | null;
+  profile_id: string | null;
+  side_effect: string;
+  action: string;
+  reason: string;
+  enabled: number;
+  created_at: number;
+  updated_at: number;
+}
+
+interface CallToolRunRow {
+  id: string;
+  request_id: string;
+  run_id: string | null;
+  tool_id: string;
+  binding_id: string | null;
+  status: string;
+  input_json: string | null;
+  output_json: string | null;
+  message: string | null;
+  started_at: number | null;
+  ended_at: number | null;
   created_at: number;
 }
 
@@ -249,6 +339,95 @@ function ensureCallsSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_call_events_run ON call_events(run_id, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_call_results_request ON call_results(request_id);
     CREATE INDEX IF NOT EXISTS idx_call_rules_scope ON call_rules(scope_type, scope_id);
+
+    CREATE TABLE IF NOT EXISTS call_voice_agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      provider TEXT NOT NULL DEFAULT 'elevenlabs',
+      provider_agent_id TEXT,
+      voice_id TEXT,
+      language TEXT NOT NULL DEFAULT 'pt-BR',
+      system_prompt TEXT,
+      system_prompt_path TEXT,
+      first_message_template TEXT,
+      dynamic_variables_schema_json TEXT,
+      default_tools_json TEXT,
+      provider_config_json TEXT,
+      version INTEGER NOT NULL DEFAULT 1,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tools (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      input_schema_json TEXT,
+      output_schema_json TEXT,
+      executor TEXT NOT NULL DEFAULT 'native',
+      executor_config_json TEXT,
+      side_effect TEXT NOT NULL DEFAULT 'read_only',
+      timeout_ms INTEGER NOT NULL DEFAULT 10000,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_bindings (
+      id TEXT PRIMARY KEY,
+      tool_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'profile',
+      scope_id TEXT NOT NULL,
+      provider_tool_name TEXT,
+      tool_prompt TEXT,
+      required INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_policies (
+      id TEXT PRIMARY KEY,
+      tool_id TEXT NOT NULL,
+      voice_agent_id TEXT,
+      profile_id TEXT,
+      side_effect TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'block',
+      reason TEXT NOT NULL DEFAULT '',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS call_tool_runs (
+      id TEXT PRIMARY KEY,
+      request_id TEXT NOT NULL,
+      run_id TEXT,
+      tool_id TEXT NOT NULL,
+      binding_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      input_json TEXT,
+      output_json TEXT,
+      message TEXT,
+      started_at INTEGER,
+      ended_at INTEGER,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (request_id) REFERENCES call_requests(id) ON DELETE CASCADE,
+      FOREIGN KEY (tool_id) REFERENCES call_tools(id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_call_voice_agents_enabled ON call_voice_agents(enabled);
+    CREATE INDEX IF NOT EXISTS idx_call_tools_enabled ON call_tools(enabled);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_bindings_scope ON call_tool_bindings(scope_type, scope_id);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_bindings_tool ON call_tool_bindings(tool_id);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_policies_tool ON call_tool_policies(tool_id);
+    CREATE INDEX IF NOT EXISTS idx_call_tool_runs_request ON call_tool_runs(request_id);
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_call_tool_bindings_unique ON call_tool_bindings(tool_id, scope_type, scope_id);
   `);
 
   const profileColumns = db.prepare("PRAGMA table_info(call_profiles)").all() as Array<{ name: string }>;
@@ -261,6 +440,9 @@ function ensureCallsSchema(): void {
   }
   if (!hasProfileColumn("dynamic_variables_json")) {
     db.exec("ALTER TABLE call_profiles ADD COLUMN dynamic_variables_json TEXT");
+  }
+  if (!hasProfileColumn("voice_agent_id")) {
+    db.exec("ALTER TABLE call_profiles ADD COLUMN voice_agent_id TEXT");
   }
 
   schemaReady = true;
@@ -392,6 +574,92 @@ function rowToResult(row: CallResultRow): CallResult {
     extraction_json: parseJson<Record<string, unknown>>(row.extraction_json),
     next_action: row.next_action as CallResultNextAction,
     artifact_id: row.artifact_id,
+    created_at: row.created_at,
+  };
+}
+
+function rowToVoiceAgent(row: CallVoiceAgentRow): CallVoiceAgent {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    provider: row.provider,
+    provider_agent_id: row.provider_agent_id,
+    voice_id: row.voice_id,
+    language: row.language,
+    system_prompt: row.system_prompt,
+    system_prompt_path: row.system_prompt_path,
+    first_message_template: row.first_message_template,
+    dynamic_variables_schema_json: parseJson<Record<string, unknown>>(row.dynamic_variables_schema_json),
+    default_tools_json: parseJson<string[]>(row.default_tools_json),
+    provider_config_json: parseJson<Record<string, unknown>>(row.provider_config_json),
+    version: row.version,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function rowToCallTool(row: CallToolRow): CallTool {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    input_schema_json: parseJson<Record<string, unknown>>(row.input_schema_json),
+    output_schema_json: parseJson<Record<string, unknown>>(row.output_schema_json),
+    executor: row.executor as CallToolExecutor,
+    executor_config_json: parseJson<Record<string, unknown>>(row.executor_config_json),
+    side_effect: row.side_effect as CallToolSideEffect,
+    timeout_ms: row.timeout_ms,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function rowToToolBinding(row: CallToolBindingRow): CallToolBinding {
+  return {
+    id: row.id,
+    tool_id: row.tool_id,
+    scope_type: row.scope_type as CallToolBindingScopeType,
+    scope_id: row.scope_id,
+    provider_tool_name: row.provider_tool_name,
+    tool_prompt: row.tool_prompt,
+    required: row.required === 1,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function rowToToolPolicy(row: CallToolPolicyRow): CallToolPolicy {
+  return {
+    id: row.id,
+    tool_id: row.tool_id,
+    voice_agent_id: row.voice_agent_id,
+    profile_id: row.profile_id,
+    side_effect: row.side_effect as CallToolSideEffect,
+    action: row.action as "allow" | "block" | "require_confirmation",
+    reason: row.reason,
+    enabled: row.enabled === 1,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function rowToToolRun(row: CallToolRunRow): CallToolRun {
+  return {
+    id: row.id,
+    request_id: row.request_id,
+    run_id: row.run_id,
+    tool_id: row.tool_id,
+    binding_id: row.binding_id,
+    status: row.status as CallToolRunStatus,
+    input_json: parseJson<Record<string, unknown>>(row.input_json),
+    output_json: parseJson<Record<string, unknown>>(row.output_json),
+    message: row.message,
+    started_at: row.started_at,
+    ended_at: row.ended_at,
     created_at: row.created_at,
   };
 }
@@ -795,6 +1063,710 @@ export function getCallResultForRequest(requestId: string): CallResult | null {
     .prepare("SELECT * FROM call_results WHERE request_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
     .get(requestId) as CallResultRow | undefined;
   return row ? rowToResult(row) : null;
+}
+
+// ---------------------------------------------------------------------------
+// Voice Agents
+// ---------------------------------------------------------------------------
+
+export function listCallVoiceAgents(): CallVoiceAgent[] {
+  ensureCallsSchema();
+  const rows = getDb().prepare("SELECT * FROM call_voice_agents ORDER BY name ASC").all() as CallVoiceAgentRow[];
+  return rows.map(rowToVoiceAgent);
+}
+
+export function getCallVoiceAgent(id: string): CallVoiceAgent | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_voice_agents WHERE id = ?").get(id) as CallVoiceAgentRow | undefined;
+  return row ? rowToVoiceAgent(row) : null;
+}
+
+export function createCallVoiceAgent(input: CreateCallVoiceAgentInput): CallVoiceAgent {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO call_voice_agents (id, name, description, provider, provider_agent_id, voice_id, language, system_prompt, system_prompt_path, first_message_template, dynamic_variables_schema_json, default_tools_json, provider_config_json, version, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+  `).run(
+    input.id,
+    input.name,
+    input.description ?? "",
+    input.provider,
+    input.provider_agent_id ?? null,
+    input.voice_id ?? null,
+    input.language ?? "pt-BR",
+    input.system_prompt ?? null,
+    input.system_prompt_path ?? null,
+    input.first_message_template ?? null,
+    toJson(input.dynamic_variables_schema_json),
+    toJson(input.default_tools_json),
+    toJson(input.provider_config_json),
+    now,
+    now,
+  );
+
+  return getCallVoiceAgent(input.id)!;
+}
+
+export function updateCallVoiceAgent(id: string, input: UpdateCallVoiceAgentInput): CallVoiceAgent | null {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = getCallVoiceAgent(id);
+  if (!existing) return null;
+
+  const now = Date.now();
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+  let bumpVersion = false;
+
+  if (input.name !== undefined) {
+    fields.push("name = ?");
+    values.push(input.name);
+  }
+  if (input.description !== undefined) {
+    fields.push("description = ?");
+    values.push(input.description);
+  }
+  if (input.provider !== undefined) {
+    fields.push("provider = ?");
+    values.push(input.provider);
+  }
+  if (input.provider_agent_id !== undefined) {
+    fields.push("provider_agent_id = ?");
+    values.push(input.provider_agent_id);
+  }
+  if (input.voice_id !== undefined) {
+    fields.push("voice_id = ?");
+    values.push(input.voice_id);
+    bumpVersion = true;
+  }
+  if (input.language !== undefined) {
+    fields.push("language = ?");
+    values.push(input.language);
+  }
+  if (input.system_prompt !== undefined) {
+    fields.push("system_prompt = ?");
+    values.push(input.system_prompt);
+    bumpVersion = true;
+  }
+  if (input.system_prompt_path !== undefined) {
+    fields.push("system_prompt_path = ?");
+    values.push(input.system_prompt_path);
+    bumpVersion = true;
+  }
+  if (input.first_message_template !== undefined) {
+    fields.push("first_message_template = ?");
+    values.push(input.first_message_template);
+    bumpVersion = true;
+  }
+  if (input.dynamic_variables_schema_json !== undefined) {
+    fields.push("dynamic_variables_schema_json = ?");
+    values.push(toJson(input.dynamic_variables_schema_json));
+    bumpVersion = true;
+  }
+  if (input.default_tools_json !== undefined) {
+    fields.push("default_tools_json = ?");
+    values.push(toJson(input.default_tools_json));
+    bumpVersion = true;
+  }
+  if (input.provider_config_json !== undefined) {
+    fields.push("provider_config_json = ?");
+    values.push(toJson(input.provider_config_json));
+    bumpVersion = true;
+  }
+  if (input.enabled !== undefined) {
+    fields.push("enabled = ?");
+    values.push(input.enabled ? 1 : 0);
+  }
+
+  if (fields.length === 0) return existing;
+
+  if (bumpVersion) {
+    fields.push("version = version + 1");
+  }
+  fields.push("updated_at = ?");
+  values.push(now);
+  values.push(id);
+
+  db.prepare(`UPDATE call_voice_agents SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getCallVoiceAgent(id);
+}
+
+export function seedDefaultVoiceAgents(): void {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = db.prepare("SELECT COUNT(*) AS count FROM call_voice_agents").get() as { count: number };
+  if (existing.count > 0) return;
+
+  const now = Date.now();
+  const agents: Array<{
+    id: string;
+    name: string;
+    description: string;
+    system_prompt: string;
+    first_message_template: string;
+    default_tools: string[];
+  }> = [
+    {
+      id: "ravi-followup",
+      name: "Ravi Follow-up",
+      description: "Short, direct follow-up calls when someone has not responded to messages.",
+      system_prompt:
+        "You are Ravi, a professional assistant making a brief follow-up call. Be polite, direct, and concise. State the reason for calling, ask if the person needs anything, and wrap up quickly. Do not pressure or repeat yourself. If the person is busy, offer to call back later.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Estou ligando rapidamente para dar um retorno sobre {{reason}}.",
+      default_tools: ["call.end", "person.lookup", "prox.note.create"],
+    },
+    {
+      id: "ravi-interviewer",
+      name: "Ravi Interviewer",
+      description: "Longer interview or assessment calls that gather structured information.",
+      system_prompt:
+        "You are Ravi, conducting a structured interview call. Ask questions one at a time, listen carefully, take notes, and confirm understanding before moving on. Be professional, patient, and thorough. Summarize key points before ending the call.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Vou conduzir uma conversa rápida sobre {{reason}}. Pode ser agora?",
+      default_tools: ["call.end", "person.lookup", "prox.note.create", "task.create"],
+    },
+    {
+      id: "ravi-urgent-approval",
+      name: "Ravi Urgent Approval",
+      description: "Higher-priority calls asking for an explicit yes/no approval or blocker resolution.",
+      system_prompt:
+        "You are Ravi, calling to get an urgent approval or decision. Be direct: state what needs approval, why it is urgent, and what happens if no decision is made. Accept yes, no, or a request for more time. Do not negotiate beyond the scope of the approval.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi. Preciso de uma aprovação urgente sobre {{reason}}. Tem um minuto?",
+      default_tools: ["call.end", "person.lookup", "prox.note.create"],
+    },
+    {
+      id: "ravi-intake",
+      name: "Ravi Intake",
+      description: "prox.city intake calls for onboarding and initial data collection.",
+      system_prompt:
+        "You are Ravi, conducting an intake call for prox.city. Gather the required information methodically: name confirmation, contact details, project scope, timeline, and any immediate needs. Be warm, professional, and efficient. Confirm all collected data before ending.",
+      first_message_template:
+        "Oi {{person_name}}, aqui é o Ravi da prox.city. Vou fazer algumas perguntas para entender melhor o que você precisa. Pode ser?",
+      default_tools: ["call.end", "person.lookup", "prox.note.create", "prox.followup.schedule", "task.create"],
+    },
+  ];
+
+  const dynamicVarsSchema = {
+    type: "object",
+    properties: {
+      person_name: { type: "string", description: "Name of the person being called" },
+      reason: { type: "string", description: "Reason for the call" },
+      opening_line: { type: "string", description: "Custom opening line override" },
+      goal: { type: "string", description: "Call objective" },
+      context: { type: "string", description: "Additional context" },
+      expected_output: { type: "string", description: "Expected call outcome" },
+    },
+    required: ["person_name", "reason"],
+  };
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO call_voice_agents (id, name, description, provider, language, system_prompt, first_message_template, dynamic_variables_schema_json, default_tools_json, version, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, 'elevenlabs', 'pt-BR', ?, ?, ?, ?, 1, 1, ?, ?)
+  `);
+  for (const a of agents) {
+    stmt.run(
+      a.id,
+      a.name,
+      a.description,
+      a.system_prompt,
+      a.first_message_template,
+      toJson(dynamicVarsSchema),
+      toJson(a.default_tools),
+      now,
+      now,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Call Tools
+// ---------------------------------------------------------------------------
+
+export function listCallTools(profileId?: string): CallTool[] {
+  ensureCallsSchema();
+  const db = getDb();
+  if (profileId) {
+    const rows = db
+      .prepare(`
+      SELECT ct.* FROM call_tools ct
+      JOIN call_tool_bindings ctb ON ctb.tool_id = ct.id
+      WHERE ctb.scope_type = 'profile' AND ctb.scope_id = ? AND ctb.enabled = 1 AND ct.enabled = 1
+      ORDER BY ct.name ASC
+    `)
+      .all(profileId) as CallToolRow[];
+    return rows.map(rowToCallTool);
+  }
+  const rows = db.prepare("SELECT * FROM call_tools ORDER BY name ASC").all() as CallToolRow[];
+  return rows.map(rowToCallTool);
+}
+
+export function getCallTool(id: string): CallTool | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_tools WHERE id = ?").get(id) as CallToolRow | undefined;
+  return row ? rowToCallTool(row) : null;
+}
+
+export function createCallTool(input: CreateCallToolInput): CallTool {
+  ensureCallsSchema();
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO call_tools (id, name, description, input_schema_json, output_schema_json, executor, executor_config_json, side_effect, timeout_ms, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(
+    input.id,
+    input.name,
+    input.description,
+    toJson(input.input_schema_json),
+    toJson(input.output_schema_json),
+    input.executor,
+    toJson(input.executor_config_json),
+    input.side_effect,
+    input.timeout_ms ?? 10000,
+    now,
+    now,
+  );
+
+  return getCallTool(input.id)!;
+}
+
+export function updateCallTool(id: string, input: UpdateCallToolInput): CallTool | null {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = getCallTool(id);
+  if (!existing) return null;
+
+  const now = Date.now();
+  const fields: string[] = [];
+  const values: (string | number | null)[] = [];
+
+  if (input.name !== undefined) {
+    fields.push("name = ?");
+    values.push(input.name);
+  }
+  if (input.description !== undefined) {
+    fields.push("description = ?");
+    values.push(input.description);
+  }
+  if (input.input_schema_json !== undefined) {
+    fields.push("input_schema_json = ?");
+    values.push(toJson(input.input_schema_json));
+  }
+  if (input.output_schema_json !== undefined) {
+    fields.push("output_schema_json = ?");
+    values.push(toJson(input.output_schema_json));
+  }
+  if (input.executor_config_json !== undefined) {
+    fields.push("executor_config_json = ?");
+    values.push(toJson(input.executor_config_json));
+  }
+  if (input.timeout_ms !== undefined) {
+    fields.push("timeout_ms = ?");
+    values.push(input.timeout_ms);
+  }
+  if (input.enabled !== undefined) {
+    fields.push("enabled = ?");
+    values.push(input.enabled ? 1 : 0);
+  }
+
+  if (fields.length === 0) return existing;
+
+  fields.push("updated_at = ?");
+  values.push(now);
+  values.push(id);
+
+  db.prepare(`UPDATE call_tools SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  return getCallTool(id);
+}
+
+export function seedDefaultCallTools(): void {
+  ensureCallsSchema();
+  const db = getDb();
+  const existing = db.prepare("SELECT COUNT(*) AS count FROM call_tools").get() as { count: number };
+  if (existing.count > 0) return;
+
+  const now = Date.now();
+
+  const tools: Array<{
+    id: string;
+    name: string;
+    description: string;
+    executor: string;
+    side_effect: string;
+    input_schema: Record<string, unknown>;
+    output_schema: Record<string, unknown>;
+    timeout_ms: number;
+  }> = [
+    {
+      id: "call.end",
+      name: "End Call",
+      description: "End the current call after the objective is complete or when the person asks to stop.",
+      executor: "native",
+      side_effect: "write_internal",
+      input_schema: {
+        type: "object",
+        properties: {
+          reason: { type: "string", description: "Why the call is ending" },
+        },
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+        },
+      },
+      timeout_ms: 5000,
+    },
+    {
+      id: "person.lookup",
+      name: "Person Lookup",
+      description: "Look up safe context about the person being called, such as name, recent interactions, and tags.",
+      executor: "native",
+      side_effect: "read_only",
+      input_schema: {
+        type: "object",
+        properties: {
+          person_id: { type: "string", description: "Person identifier" },
+          fields: {
+            type: "array",
+            items: { type: "string" },
+            description: "Fields to return (name, tags, last_interaction)",
+          },
+        },
+        required: ["person_id"],
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+          data: { type: "object" },
+        },
+      },
+      timeout_ms: 5000,
+    },
+    {
+      id: "prox.note.create",
+      name: "Create Note",
+      description: "Save an internal note or insight from the conversation. Notes are visible to Ravi operators only.",
+      executor: "native",
+      side_effect: "write_internal",
+      input_schema: {
+        type: "object",
+        properties: {
+          content: { type: "string", description: "Note content" },
+          tags: { type: "array", items: { type: "string" }, description: "Optional tags" },
+        },
+        required: ["content"],
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+        },
+      },
+      timeout_ms: 5000,
+    },
+    {
+      id: "prox.followup.schedule",
+      name: "Schedule Follow-up",
+      description: "Schedule a future follow-up call or message. Respects quiet hours and call rules.",
+      executor: "native",
+      side_effect: "write_internal",
+      input_schema: {
+        type: "object",
+        properties: {
+          person_id: { type: "string", description: "Person to follow up with" },
+          reason: { type: "string", description: "Reason for follow-up" },
+          delay_minutes: { type: "number", description: "Minutes from now to schedule" },
+          channel: { type: "string", enum: ["call", "message"], description: "Follow-up channel" },
+        },
+        required: ["person_id", "reason"],
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+        },
+      },
+      timeout_ms: 5000,
+    },
+    {
+      id: "task.create",
+      name: "Create Task",
+      description: "Create a task for another Ravi agent or runtime to handle after the call.",
+      executor: "native",
+      side_effect: "write_internal",
+      input_schema: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Task title" },
+          description: { type: "string", description: "Task description" },
+          assignee: { type: "string", description: "Agent or person to assign to" },
+          priority: { type: "string", enum: ["low", "normal", "high", "urgent"], description: "Task priority" },
+        },
+        required: ["title"],
+      },
+      output_schema: {
+        type: "object",
+        properties: {
+          ok: { type: "boolean" },
+          message: { type: "string" },
+          data: { type: "object", properties: { task_id: { type: "string" } } },
+        },
+      },
+      timeout_ms: 10000,
+    },
+  ];
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO call_tools (id, name, description, input_schema_json, output_schema_json, executor, side_effect, timeout_ms, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `);
+  for (const t of tools) {
+    stmt.run(
+      t.id,
+      t.name,
+      t.description,
+      toJson(t.input_schema),
+      toJson(t.output_schema),
+      t.executor,
+      t.side_effect,
+      t.timeout_ms,
+      now,
+      now,
+    );
+  }
+
+  // Seed default policies: block external side-effects by default
+  const policyStmt = db.prepare(`
+    INSERT OR IGNORE INTO call_tool_policies (id, tool_id, side_effect, action, reason, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+  `);
+  policyStmt.run(
+    "policy-block-external-message",
+    "prox.followup.schedule",
+    "external_message",
+    "block",
+    "External messages require explicit policy allowance",
+    now,
+    now,
+  );
+  policyStmt.run(
+    "policy-block-external-call",
+    "prox.followup.schedule",
+    "external_call",
+    "block",
+    "External calls require explicit policy allowance",
+    now,
+    now,
+  );
+  policyStmt.run(
+    "policy-block-external-irreversible",
+    "task.create",
+    "external_irreversible",
+    "block",
+    "Irreversible external actions require explicit policy allowance",
+    now,
+    now,
+  );
+  policyStmt.run(
+    "policy-allow-read-only",
+    "person.lookup",
+    "read_only",
+    "allow",
+    "Read-only safe lookup allowed by default",
+    now,
+    now,
+  );
+  policyStmt.run(
+    "policy-allow-call-end",
+    "call.end",
+    "write_internal",
+    "allow",
+    "Call end is always allowed",
+    now,
+    now,
+  );
+  policyStmt.run(
+    "policy-allow-note-create",
+    "prox.note.create",
+    "write_internal",
+    "allow",
+    "Internal note creation allowed by default",
+    now,
+    now,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tool Bindings
+// ---------------------------------------------------------------------------
+
+export function listCallToolBindings(scopeType: CallToolBindingScopeType, scopeId: string): CallToolBinding[] {
+  ensureCallsSchema();
+  const rows = getDb()
+    .prepare("SELECT * FROM call_tool_bindings WHERE scope_type = ? AND scope_id = ? ORDER BY tool_id ASC")
+    .all(scopeType, scopeId) as CallToolBindingRow[];
+  return rows.map(rowToToolBinding);
+}
+
+export function getCallToolBinding(
+  toolId: string,
+  scopeType: CallToolBindingScopeType,
+  scopeId: string,
+): CallToolBinding | null {
+  ensureCallsSchema();
+  const row = getDb()
+    .prepare("SELECT * FROM call_tool_bindings WHERE tool_id = ? AND scope_type = ? AND scope_id = ?")
+    .get(toolId, scopeType, scopeId) as CallToolBindingRow | undefined;
+  return row ? rowToToolBinding(row) : null;
+}
+
+export function createCallToolBinding(
+  toolId: string,
+  scopeType: CallToolBindingScopeType,
+  scopeId: string,
+  options?: { provider_tool_name?: string; tool_prompt?: string; required?: boolean },
+): CallToolBinding {
+  ensureCallsSchema();
+  const db = getDb();
+  const id = `bind_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO call_tool_bindings (id, tool_id, scope_type, scope_id, provider_tool_name, tool_prompt, required, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(
+    id,
+    toolId,
+    scopeType,
+    scopeId,
+    options?.provider_tool_name ?? null,
+    options?.tool_prompt ?? null,
+    options?.required ? 1 : 0,
+    now,
+    now,
+  );
+
+  return getCallToolBinding(toolId, scopeType, scopeId)!;
+}
+
+export function deleteCallToolBinding(toolId: string, scopeType: CallToolBindingScopeType, scopeId: string): boolean {
+  ensureCallsSchema();
+  const result = getDb()
+    .prepare("DELETE FROM call_tool_bindings WHERE tool_id = ? AND scope_type = ? AND scope_id = ?")
+    .run(toolId, scopeType, scopeId);
+  return result.changes > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Tool Policies
+// ---------------------------------------------------------------------------
+
+export function listCallToolPolicies(toolId?: string): CallToolPolicy[] {
+  ensureCallsSchema();
+  if (toolId) {
+    const rows = getDb()
+      .prepare("SELECT * FROM call_tool_policies WHERE tool_id = ? AND enabled = 1 ORDER BY tool_id ASC")
+      .all(toolId) as CallToolPolicyRow[];
+    return rows.map(rowToToolPolicy);
+  }
+  const rows = getDb()
+    .prepare("SELECT * FROM call_tool_policies WHERE enabled = 1 ORDER BY tool_id ASC")
+    .all() as CallToolPolicyRow[];
+  return rows.map(rowToToolPolicy);
+}
+
+export function evaluateCallToolPolicy(
+  toolId: string,
+  sideEffect: CallToolSideEffect,
+  context?: { voice_agent_id?: string; profile_id?: string },
+): { allowed: boolean; reason: string; policy: CallToolPolicy | null } {
+  ensureCallsSchema();
+  const db = getDb();
+
+  // Check specific policies first (most specific wins)
+  const conditions: string[] = ["tool_id = ?", "enabled = 1"];
+  const params: string[] = [toolId];
+
+  const rows = db
+    .prepare(`SELECT * FROM call_tool_policies WHERE ${conditions.join(" AND ")} ORDER BY rowid ASC`)
+    .all(...params) as CallToolPolicyRow[];
+
+  for (const row of rows) {
+    const policy = rowToToolPolicy(row);
+    // Match by voice_agent_id or profile_id if provided
+    if (policy.voice_agent_id && context?.voice_agent_id && policy.voice_agent_id !== context.voice_agent_id) continue;
+    if (policy.profile_id && context?.profile_id && policy.profile_id !== context.profile_id) continue;
+
+    if (policy.action === "block") {
+      return { allowed: false, reason: policy.reason, policy };
+    }
+    if (policy.action === "allow") {
+      return { allowed: true, reason: policy.reason, policy };
+    }
+  }
+
+  // Default: block external side effects, allow internal
+  if (sideEffect === "external_message" || sideEffect === "external_call" || sideEffect === "external_irreversible") {
+    return { allowed: false, reason: `Side-effect class '${sideEffect}' blocked by default policy`, policy: null };
+  }
+  return { allowed: true, reason: "Allowed by default policy", policy: null };
+}
+
+// ---------------------------------------------------------------------------
+// Tool Runs
+// ---------------------------------------------------------------------------
+
+export function createCallToolRun(input: CreateCallToolRunInput): CallToolRun {
+  ensureCallsSchema();
+  const db = getDb();
+  const id = `trun_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+  const now = Date.now();
+
+  db.prepare(`
+    INSERT INTO call_tool_runs (id, request_id, run_id, tool_id, binding_id, status, input_json, output_json, message, started_at, ended_at, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    input.request_id,
+    input.run_id ?? null,
+    input.tool_id,
+    input.binding_id ?? null,
+    input.status,
+    toJson(input.input_json),
+    toJson(input.output_json),
+    input.message ?? null,
+    input.status === "running" ? now : null,
+    ["completed", "failed", "blocked", "timed_out"].includes(input.status) ? now : null,
+    now,
+  );
+
+  return getCallToolRun(id)!;
+}
+
+export function getCallToolRun(id: string): CallToolRun | null {
+  ensureCallsSchema();
+  const row = getDb().prepare("SELECT * FROM call_tool_runs WHERE id = ?").get(id) as CallToolRunRow | undefined;
+  return row ? rowToToolRun(row) : null;
+}
+
+export function listCallToolRuns(requestId: string): CallToolRun[] {
+  ensureCallsSchema();
+  const rows = getDb()
+    .prepare("SELECT * FROM call_tool_runs WHERE request_id = ? ORDER BY created_at ASC")
+    .all(requestId) as CallToolRunRow[];
+  return rows.map(rowToToolRun);
 }
 
 // ---------------------------------------------------------------------------
