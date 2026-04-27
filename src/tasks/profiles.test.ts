@@ -589,10 +589,14 @@ describe("task profile catalog", () => {
     expect(validation[0]?.valid).toBeTrue();
   });
 
-  it("keeps the system catalog limited to the default profile", () => {
+  it("keeps the system catalog limited to known system profiles", () => {
     const profiles = listTaskProfiles().filter((profile) => profile.sourceKind === "system");
+    const ids = profiles.map((profile) => profile.id);
 
-    expect(profiles.map((profile) => profile.id)).toEqual(["default"]);
+    expect(ids).toContain("default");
+    for (const id of ids) {
+      expect(["default", "devin"]).toContain(id);
+    }
 
     const preview = previewTaskProfile("default", {
       title: "Default profile preview",

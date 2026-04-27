@@ -1272,34 +1272,37 @@ export function updateCallToolRunStatus(
 
 export function seedDefaultCallTools(): void {
   ensureCallsSchema();
-  const db = getDb();
-  const existing = db.prepare("SELECT COUNT(*) AS count FROM call_tools").get() as { count: number };
-  if (existing.count > 0) return;
 
-  upsertCallTool({
-    id: "call.end",
-    name: "end_call",
-    description: "End the current prox.city voice call after the objective is complete or the user asks to stop.",
-    input_schema_json: {
-      type: "object",
-      properties: {
-        reason: { type: "string", description: "Short reason for ending the call." },
+  // Ensure call.end tool exists individually (idempotent per tool)
+  if (!getCallTool("call.end")) {
+    upsertCallTool({
+      id: "call.end",
+      name: "end_call",
+      description: "End the current prox.city voice call after the objective is complete or the user asks to stop.",
+      input_schema_json: {
+        type: "object",
+        properties: {
+          reason: { type: "string", description: "Short reason for ending the call." },
+        },
+        additionalProperties: false,
       },
-      additionalProperties: false,
-    },
-    executor_type: "native",
-    executor_config_json: { handler: "call.end" },
-    side_effect: "external_call",
-    timeout_ms: 5000,
-  });
+      executor_type: "native",
+      executor_config_json: { handler: "call.end" },
+      side_effect: "external_call",
+      timeout_ms: 5000,
+    });
+  }
 
-  upsertCallToolPolicy({
-    id: "policy-call-end-global",
-    tool_id: "call.end",
-    scope_type: "global",
-    scope_id: "*",
-    allowed: true,
-  });
+  // Ensure call.end global policy exists individually
+  if (!getCallToolPolicy("call.end", "global", "*")) {
+    upsertCallToolPolicy({
+      id: "policy-call-end-global",
+      tool_id: "call.end",
+      scope_type: "global",
+      scope_id: "*",
+      allowed: true,
+    });
+  }
 }
 
 export function seedCallToolBindingsForProfile(profileId: string): void {
