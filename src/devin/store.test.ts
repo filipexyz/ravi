@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
+import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   getDevinDbPath,
@@ -90,5 +91,50 @@ describe("Devin store", () => {
     expect(listDevinMessages("devin-test")[0]?.message).toBe("first edited");
     expect(listDevinAttachments("devin-test")).toHaveLength(1);
     expect(listDevinAttachments("devin-test")[0]?.name).toBe("report.md");
+  });
+
+  it("configures WAL journal mode on the devin database", () => {
+    upsertDevinSession(fakeSession());
+    const checkDb = new Database(getDevinDbPath(), { readonly: true });
+    try {
+      const row = checkDb.prepare("PRAGMA journal_mode").get() as { journal_mode: string } | undefined;
+      expect(row?.journal_mode).toBe("wal");
+    } finally {
+      checkDb.close();
+    }
+  });
+
+  it("handles concurrent session upserts and message writes without lock errors", async () => {
+    upsertDevinSession(fakeSession());
+
+    const writers = Array.from({ length: 10 }, (_, i) =>
+      Promise.resolve().then(() => {
+        upsertDevinSession(fakeSession({ status: `status-${i}`, updated_at: 100 + i }));
+        upsertDevinMessages(
+          "devin-test",
+          Array.from({ length: 20 }, (_, j) => ({
+            event_id: `evt-${i}-${j}`,
+            created_at: Date.now(),
+            source: "devin",
+            message: `msg-${i}-${j}`,
+          })),
+        );
+      }),
+    );
+
+    const readers = Array.from({ length: 10 }, () =>
+      Promise.resolve().then(() => {
+        listDevinSessions();
+        listDevinMessages("devin-test");
+        listDevinAttachments("devin-test");
+      }),
+    );
+
+    await Promise.all([...writers, ...readers]);
+
+    const session = getDevinSession("devin-test");
+    expect(session).not.toBeNull();
+    const messages = listDevinMessages("devin-test");
+    expect(messages.length).toBeGreaterThan(0);
   });
 });
