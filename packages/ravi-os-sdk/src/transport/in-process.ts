@@ -1,17 +1,19 @@
 /**
  * In-process transport for `@ravi-os/sdk`.
  *
+ * MONOREPO-INTERNAL ONLY. This module is excluded from the published package
+ * (see `tsconfig.json` exclude + `package.json` exports). It imports `ravi.bot`
+ * internals via relative paths and only works inside this repo.
+ *
  * Reuses `dispatch()` from the gateway pipeline so callers running inside the
  * Ravi process get the same validation, scope checks, and audit guarantees
  * without any HTTP overhead.
  *
- * This transport imports `ravi.bot` internals — it is node-only by design.
- * Browser/edge consumers must use `createHttpTransport` instead.
+ * Browser/edge/external consumers must use `createHttpTransport` instead.
  *
- * Imports are relative (`../../../../src/...`) because the SDK currently lives
- * as a colocated package inside the `ravi.bot` repo. When the SDK is published
- * independently, in-process consumers will install `ravi.bot` as a peer dep
- * and these imports will switch to package-scoped paths via `exports`.
+ * Future publish path: convert `ravi.bot` into a peer dep with package-scoped
+ * exports for `dispatch`, `RegistrySnapshot`, `ScopeContext`, `ContextRecord`,
+ * then re-add `./transport/in-process` to the exports map.
  */
 
 import { dispatch } from "../../../../src/sdk/gateway/dispatcher.js";

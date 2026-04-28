@@ -29,16 +29,10 @@
     "./transport/http": {
       "types": "./dist/transport/http.d.ts",
       "default": "./dist/transport/http.js"
-    },
-    "./transport/in-process": {
-      "types": "./dist/transport/in-process.d.ts",
-      "node": "./dist/transport/in-process.js",
-      "default": null
     }
   },
   "files": [
     "dist/",
-    "src/",
     "README.md"
   ],
   "scripts": {
