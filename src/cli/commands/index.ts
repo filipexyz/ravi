@@ -40,7 +40,6 @@ export * from "./tasks-automations.js";
 export * from "./tasks-deps.js";
 export * from "./tasks-profiles.js";
 export * from "./tasks.js";
-export * from "./tmux.js";
 export * from "./tools.js";
 export * from "./transcribe.js";
 export * from "./triggers.js";

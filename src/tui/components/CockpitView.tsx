@@ -3,7 +3,6 @@
 export interface CockpitViewProps {
   title?: string;
   status?: CockpitStatusSnapshot;
-  lanes?: CockpitLanesSnapshot;
   actions?: CockpitActionsSnapshot;
   activity?: CockpitActivitySnapshot;
 }
@@ -15,15 +14,6 @@ export interface CockpitStatusSnapshot {
   activity?: string;
   alerts?: string[];
   session?: string;
-}
-
-export interface CockpitLanesSnapshot {
-  totalSessions?: number;
-  recentSessions?: number;
-  queuedSessions?: number;
-  blockedSessions?: number;
-  ephemeralSessions?: number;
-  focusSession?: string;
 }
 
 export interface CockpitActionsSnapshot {
@@ -75,7 +65,7 @@ function PlaceholderLine({
   );
 }
 
-export function CockpitView({ title = "Ravi Cockpit v0", status, lanes, actions, activity }: CockpitViewProps) {
+export function CockpitView({ title = "Ravi Cockpit v0", status, actions, activity }: CockpitViewProps) {
   return (
     <box flexDirection="column" width="100%" height="100%" padding={1}>
       <box flexDirection="column" width="100%" marginBottom={1}>
@@ -84,19 +74,13 @@ export function CockpitView({ title = "Ravi Cockpit v0", status, lanes, actions,
       </box>
 
       <box flexDirection="row" width="100%" height={11} marginBottom={1}>
-        <box width="33%" height="100%" paddingRight={1}>
+        <box width="50%" height="100%" paddingRight={1}>
           <CockpitPanel title="Status" accent="cyan">
             <StatusPanel status={status} />
           </CockpitPanel>
         </box>
 
-        <box width="34%" height="100%" paddingX={1}>
-          <CockpitPanel title="Lanes" accent="yellow">
-            <LanesPanel lanes={lanes} />
-          </CockpitPanel>
-        </box>
-
-        <box width="33%" height="100%" paddingLeft={1}>
+        <box width="50%" height="100%" paddingLeft={1}>
           <CockpitPanel title="Actions" accent="green">
             <ActionsPanel actions={actions} />
           </CockpitPanel>
@@ -142,43 +126,6 @@ function StatusPanel({ status }: { status?: CockpitStatusSnapshot }) {
         tone={status?.session ? "white" : "gray"}
       />
       <PlaceholderLine label="Alerts" value={alertsValue} tone={alerts.length > 0 ? "yellow" : "green"} />
-    </>
-  );
-}
-
-function LanesPanel({ lanes }: { lanes?: CockpitLanesSnapshot }) {
-  return (
-    <>
-      <PlaceholderLine
-        label="Sessions"
-        value={lanes?.totalSessions !== undefined ? String(lanes.totalSessions) : "[sessions placeholder]"}
-        tone={lanes?.totalSessions !== undefined ? "white" : "gray"}
-      />
-      <PlaceholderLine
-        label="Recent 15m"
-        value={lanes?.recentSessions !== undefined ? String(lanes.recentSessions) : "[recent placeholder]"}
-        tone={lanes?.recentSessions !== undefined ? "cyan" : "gray"}
-      />
-      <PlaceholderLine
-        label="Queued"
-        value={lanes?.queuedSessions !== undefined ? String(lanes.queuedSessions) : "[queue placeholder]"}
-        tone={lanes?.queuedSessions !== undefined ? "yellow" : "gray"}
-      />
-      <PlaceholderLine
-        label="Blocked"
-        value={lanes?.blockedSessions !== undefined ? String(lanes.blockedSessions) : "[blocked placeholder]"}
-        tone={lanes?.blockedSessions !== undefined ? "yellow" : "gray"}
-      />
-      <PlaceholderLine
-        label="Ephemeral"
-        value={lanes?.ephemeralSessions !== undefined ? String(lanes.ephemeralSessions) : "[ephemeral placeholder]"}
-        tone={lanes?.ephemeralSessions !== undefined ? "green" : "gray"}
-      />
-      <PlaceholderLine
-        label="Focus"
-        value={lanes?.focusSession ?? "[focus session placeholder]"}
-        tone={lanes?.focusSession ? "white" : "gray"}
-      />
     </>
   );
 }

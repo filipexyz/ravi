@@ -7,10 +7,8 @@ import {
   CockpitView,
   type CockpitActionsSnapshot,
   type CockpitActivitySnapshot,
-  type CockpitLanesSnapshot,
   type CockpitStatusSnapshot,
 } from "./components/CockpitView.js";
-import { CommandPalette } from "./components/CommandPalette.js";
 import { InputBar } from "./components/InputBar.js";
 import { ModelPicker } from "./components/ModelPicker.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -18,15 +16,13 @@ import { SLASH_COMMANDS } from "./components/SlashMenu.js";
 import { useRc505Bridge } from "./hooks/useRc505Bridge.js";
 import { useNats, type TimelineEntry } from "./hooks/useNats.js";
 import { resolveRuntimeDisplayLabel } from "./hooks/runtime-display.js";
-import { useSessions } from "./hooks/useSessions.js";
 import { applyAgentRuntimeSelection } from "./runtime-config.js";
 import { dbGetAgent } from "../router/router-db.js";
 import { loadConfig } from "../utils/config.js";
 import { publish } from "../nats.js";
 import { resetSession, resolveSession } from "../router/sessions.js";
 
-const initialSessionName = process.argv[2] || "main";
-const tmuxAgentId = process.env.RAVI_TMUX_AGENT || null;
+const sessionName = process.argv[2] || "main";
 type ActiveView = "chat" | "cockpit";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -73,12 +69,9 @@ function truncateCockpitLine(value: string, max = 56): string {
 
 export function App() {
   const renderer = useRenderer();
-  const [sessionName, setSessionName] = useState(initialSessionName);
   const [activeView, setActiveView] = useState<ActiveView>("chat");
-  const [paletteOpen, setPaletteOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const lastRcEventAtRef = useRef<number | null>(null);
-  const { sessions, refresh: refreshSessions } = useSessions({ agentId: tmuxAgentId });
   const rc505 = useRc505Bridge();
 
   // Auto-copy selected text to clipboard via OSC 52
@@ -114,7 +107,7 @@ export function App() {
   // Resolve current session/agent metadata directly from SQLite so the status
   // bar reflects live provider changes without waiting for the palette list.
   const currentSession = resolveSession(sessionName);
-  const agentId = currentSession?.agentId ?? tmuxAgentId ?? "unknown";
+  const agentId = currentSession?.agentId ?? "unknown";
   const agent = agentId === "unknown" ? null : dbGetAgent(agentId);
   const runtimeLabel = resolveRuntimeDisplayLabel({
     configuredProvider: agent?.provider ?? "claude",
@@ -142,19 +135,8 @@ export function App() {
     alerts,
     session: `${sessionName} (${agentId})`,
   };
-  const recentThresholdMs = 15 * 60 * 1000;
-  const now = Date.now();
-  const cockpitLanes: CockpitLanesSnapshot = {
-    totalSessions: sessions.length,
-    recentSessions: sessions.filter((session) => now - session.updatedAt <= recentThresholdMs).length,
-    queuedSessions: sessions.filter((session) => Boolean(session.queueMode)).length,
-    blockedSessions: sessions.filter((session) => session.abortedLastRun).length,
-    ephemeralSessions: sessions.filter((session) => session.ephemeral).length,
-    focusSession: sessionName,
-  };
   const cockpitActions: CockpitActionsSnapshot = {
     items: [
-      { id: "switch", label: "Switch", trigger: "Ctrl+K or /switch", enabled: true },
       { id: "reset", label: "Reset", trigger: "/reset", enabled: Boolean(currentSession?.sessionKey) },
       { id: "model", label: "Model", trigger: "/model", enabled: Boolean(currentSession && agent) },
     ],
@@ -170,12 +152,6 @@ export function App() {
   };
 
   useEffect(() => {
-    if (activeView === "cockpit") {
-      refreshSessions();
-    }
-  }, [activeView, refreshSessions]);
-
-  useEffect(() => {
     const lastEventAt = rc505.lastEvent?.receivedAt;
     if (!lastEventAt || lastRcEventAtRef.current === lastEventAt) {
       return;
@@ -184,31 +160,12 @@ export function App() {
     setActiveView("cockpit");
   }, [rc505.lastEvent?.receivedAt]);
 
-  // Toggle command palette with Ctrl+K
   useKeyboard((key) => {
     if (modelPickerOpen) return;
-    if (key.ctrl && key.name === "k") {
-      setPaletteOpen((prev) => {
-        if (!prev) {
-          refreshSessions();
-        }
-        return !prev;
-      });
-      return;
-    }
     if (key.ctrl && key.name === "o") {
       setActiveView((prev) => (prev === "chat" ? "cockpit" : "chat"));
     }
   });
-
-  const handleSelectSession = useCallback((name: string) => {
-    setSessionName(name);
-    setPaletteOpen(false);
-  }, []);
-
-  const handleClosePalette = useCallback(() => {
-    setPaletteOpen(false);
-  }, []);
 
   const handleAbort = useCallback(() => {
     if (!isWorking) return;
@@ -246,10 +203,6 @@ export function App() {
   const handleSlashCommand = useCallback(
     (cmd: string) => {
       switch (cmd) {
-        case "switch":
-          refreshSessions();
-          setPaletteOpen(true);
-          break;
         case "reset": {
           const sk = currentSession?.sessionKey;
           if (sk) {
@@ -295,13 +248,13 @@ export function App() {
           break;
       }
     },
-    [refreshSessions, clearMessages, pushMessage, currentSession, sessionName],
+    [clearMessages, pushMessage, currentSession, sessionName],
   );
 
   return (
     <box flexDirection="column" width="100%" height="100%">
       {activeView === "cockpit" ? (
-        <CockpitView status={cockpitStatus} lanes={cockpitLanes} actions={cockpitActions} activity={cockpitActivity} />
+        <CockpitView status={cockpitStatus} actions={cockpitActions} activity={cockpitActivity} />
       ) : (
         <ChatView messages={messages} />
       )}
@@ -326,7 +279,7 @@ export function App() {
             : "Type a message... (\\ for newline)"
         }
         isWorking={isWorking}
-        active={!paletteOpen && !modelPickerOpen}
+        active={!modelPickerOpen}
         extraOffset={isCompacting || isWorking ? 1 : 0}
       />
 
@@ -340,29 +293,6 @@ export function App() {
         isCompacting={isCompacting}
         totalTokens={totalTokens}
       />
-
-      {/* Session picker overlay */}
-      {paletteOpen && (
-        <>
-          <box
-            position="absolute"
-            top={0}
-            left={0}
-            width="100%"
-            height="100%"
-            backgroundColor="black"
-            shouldFill
-            opacity={0.5}
-            zIndex={99}
-          />
-          <CommandPalette
-            sessions={sessions}
-            currentSessionName={sessionName}
-            onSelect={handleSelectSession}
-            onClose={handleClosePalette}
-          />
-        </>
-      )}
 
       {modelPickerOpen && currentSession && agent && (
         <>
@@ -391,7 +321,6 @@ export function App() {
                     provider,
                     model,
                   });
-                  refreshSessions();
                   setModelPickerOpen(false);
                   pushMessage({
                     id: `system-${Date.now()}`,

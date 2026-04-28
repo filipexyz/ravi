@@ -10,32 +10,7 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
-mock.module("../../nats.js", () => ({
-  subscribe: mock(() => (async function* () {})()),
-}));
-
-mock.module("../../tmux/manager.js", () => ({
-  parseSessionNameFromPromptTopic: () => "main",
-  RaviTmuxManager: class {
-    async listManagedSessions() {
-      return [
-        {
-          tmuxSessionName: "ravi-dev",
-          windows: [
-            {
-              name: "main",
-              paneId: "%1",
-              paneDead: false,
-            },
-          ],
-        },
-      ];
-    }
-  },
-}));
-
 const { ServiceCommands } = await import("./service.js");
-const { TmuxCommands } = await import("./tmux.js");
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;
@@ -65,27 +40,5 @@ describe("diagnostics JSON output", () => {
       command: "bun",
       args: ["src/tui.tsx", "agent:main:main"],
     });
-  });
-
-  it("prints tmux sessions as typed JSON", async () => {
-    const { output, result } = await captureConsole(() => new TmuxCommands().list(true));
-    const payload = JSON.parse(output);
-
-    expect(payload).toEqual({
-      total: 1,
-      sessions: [
-        {
-          tmuxSessionName: "ravi-dev",
-          windows: [
-            {
-              name: "main",
-              paneId: "%1",
-              paneDead: false,
-            },
-          ],
-        },
-      ],
-    });
-    expect(result).toEqual(payload.sessions);
   });
 });

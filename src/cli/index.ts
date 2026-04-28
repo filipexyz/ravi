@@ -90,26 +90,19 @@ program
 // TUI - full-screen terminal interface
 program
   .command("tui")
-  .description("Open the tmux-backed terminal UI workspace")
-  .argument("[target]", "Agent ID or Ravi session name", "main")
-  .option("--direct", "Open the legacy single-window TUI without tmux")
-  .action(async (target: string, options: { direct?: boolean }) => {
+  .description("Open the terminal UI for a session")
+  .argument("[session]", "Session name or key", "main")
+  .action(async (session: string) => {
     await runWithCliAudit(
       {
         group: "_root",
         name: "tui",
         tool: "root_tui",
-        input: { target, ...options },
+        input: { session },
         closeLazyConnection: true,
       },
       async () => {
-        if (options.direct) {
-          await spawnDirectTui(target);
-          return;
-        }
-
-        const { launchTmuxTui } = await import("../tmux/tui-entry.js");
-        await launchTmuxTui(target);
+        await spawnDirectTui(session);
       },
     );
   });
