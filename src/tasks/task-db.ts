@@ -9,6 +9,7 @@ import {
 import { DEFAULT_TASK_PROFILE_ID, resolveTaskProfileForTask } from "./profiles.js";
 import {
   type TaskArchiveInput,
+  type TaskAutoResumeReason,
   TASK_REPORT_EVENTS,
   type TaskRuntimeOptions,
   type TaskProfileSnapshot,
@@ -1360,6 +1361,18 @@ export function dbMarkTaskAcceptedForSession(
     return null;
   }
 
+  if (binding.task.status === "blocked") {
+    const resumeResult = dbAutoResumeBlockedTask(binding.task.id, "agent_activity", { sessionName });
+    if (resumeResult.resumed) {
+      return {
+        task: resumeResult.task,
+        assignment: dbGetActiveAssignment(binding.task.id)!,
+        event: resumeResult.event,
+        transitioned: true,
+      };
+    }
+  }
+
   const db = getDb();
   const now = Date.now();
   const transitionedAssignment = ["assigned", "blocked"].includes(binding.assignment.status);
@@ -1909,6 +1922,58 @@ export function dbCompleteTask(
     progress: 100,
   });
   return { task: getTaskOrThrow(taskId), event };
+}
+
+export function dbAutoResumeBlockedTask(
+  taskId: string,
+  reason: TaskAutoResumeReason,
+  actor?: {
+    actor?: string;
+    agentId?: string;
+    sessionName?: string;
+  },
+): { task: TaskRecord; event: TaskEvent; resumed: true } | { task: TaskRecord; resumed: false } {
+  ensureTaskSchema();
+  const task = getTaskOrThrow(taskId);
+  if (task.status !== "blocked") {
+    return { task, resumed: false };
+  }
+
+  const db = getDb();
+  const now = Date.now();
+
+  db.prepare(`
+    UPDATE tasks
+    SET status = 'in_progress',
+        blocker_reason = NULL,
+        updated_at = ?
+    WHERE id = ? AND status = 'blocked'
+  `).run(now, taskId);
+
+  const activeAssignment = dbGetActiveAssignment(taskId);
+  const checkpointIntervalMs = resolveTaskCheckpointIntervalMs(
+    activeAssignment?.checkpointIntervalMs ?? task.checkpointIntervalMs,
+  );
+  const checkpointDueAt = computeTaskCheckpointDueAt(now, checkpointIntervalMs);
+
+  db.prepare(`
+    UPDATE task_assignments
+    SET status = CASE WHEN status = 'blocked' THEN 'accepted' ELSE status END,
+        accepted_at = COALESCE(accepted_at, ?),
+        checkpoint_due_at = CASE WHEN status = 'blocked' THEN ? ELSE checkpoint_due_at END,
+        checkpoint_overdue_count = CASE WHEN status = 'blocked' THEN 0 ELSE checkpoint_overdue_count END
+    WHERE task_id = ? AND status IN ('assigned', 'accepted', 'blocked')
+  `).run(now, checkpointDueAt, taskId);
+
+  const event = appendTaskEvent(taskId, "task.resumed", {
+    actor: actor?.actor,
+    agentId: actor?.agentId,
+    sessionName: actor?.sessionName,
+    message: `Auto-resumed: blocked → in_progress (reason: ${reason})`,
+    progress: task.progress,
+  });
+
+  return { task: getTaskOrThrow(taskId), event, resumed: true };
 }
 
 export function dbGetActiveTasksBlocking(): TaskRecord[] {

@@ -57,6 +57,8 @@ export const TASK_REPORT_EVENTS = ["blocked", "done", "failed"] as const;
 
 export type TaskReportEvent = (typeof TASK_REPORT_EVENTS)[number];
 
+export type TaskAutoResumeReason = "comment_steer" | "dispatch" | "agent_activity";
+
 export type TaskEventType =
   | "task.created"
   | "task.dispatched"
@@ -71,6 +73,7 @@ export type TaskEventType =
   | "task.archived"
   | "task.unarchived"
   | "task.blocked"
+  | "task.resumed"
   | "task.done"
   | "task.failed"
   | "task.child.blocked"
