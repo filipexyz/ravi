@@ -1,4 +1,4 @@
-import { serve } from "bun";
+import { file as bunFile, serve } from "bun";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -75,6 +75,13 @@ import {
 } from "../tasks/index.js";
 import { buildOverlayTaskDispatchState, type OverlayTaskDispatchState } from "./task-dispatch.js";
 import { buildOverlayInsightsPayload, type OverlayInsightsSnapshot } from "./insights.js";
+import {
+  buildOverlayArtifactsPayload,
+  normalizeArtifactsLimit,
+  normalizeLifecycle,
+  resolveArtifactBlob,
+  type OverlayArtifactsSnapshot,
+} from "./artifacts.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "../..");
@@ -192,6 +199,15 @@ type OverlayInsightsQuery = {
   limit: number;
 };
 
+type OverlayArtifactsQueryInput = {
+  limit: number;
+  lifecycle: string | null;
+  kind: string | null;
+  taskId: string | null;
+  sessionId: string | null;
+  agentId: string | null;
+};
+
 type OverlayTasksSnapshot = {
   ok: true;
   generatedAt: number;
@@ -216,6 +232,8 @@ type OverlayTasksSnapshot = {
 type OverlayInsightsPayload = OverlayInsightsSnapshot & {
   query: OverlayInsightsQuery;
 };
+
+type OverlayArtifactsPayload = OverlayArtifactsSnapshot;
 
 type OverlayTaskDocumentSummary = {
   taskDir: string | null;
@@ -470,6 +488,14 @@ const server = serve({
 
     if (url.pathname === "/api/whatsapp-overlay/insights" && req.method === "GET") {
       return handleInsights(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/artifacts" && req.method === "GET") {
+      return handleArtifacts(url);
+    }
+
+    if (url.pathname === "/api/whatsapp-overlay/artifact-blob" && (req.method === "GET" || req.method === "HEAD")) {
+      return handleArtifactBlob(url, req.method);
     }
 
     if (url.pathname === "/api/whatsapp-overlay/tasks/dispatch" && req.method === "POST") {
@@ -1194,6 +1220,19 @@ function buildOverlayInsightsReadModel(query: OverlayInsightsQuery): OverlayInsi
   };
 }
 
+function buildOverlayArtifactsReadModel(query: OverlayArtifactsQueryInput): OverlayArtifactsPayload {
+  return buildOverlayArtifactsPayload({
+    limit: query.limit,
+    lifecycle: normalizeLifecycle(query.lifecycle),
+    kind: query.kind,
+    taskId: query.taskId,
+    sessionId: query.sessionId,
+    agentId: query.agentId,
+    sessions: getOverlaySessions(),
+    liveBySessionName,
+  });
+}
+
 function handleTasks(url: URL): Response {
   try {
     const payload = buildOverlayTasksPayload({
@@ -1242,6 +1281,67 @@ function handleInsights(url: URL): Response {
       url,
     );
   }
+}
+
+function handleArtifacts(url: URL): Response {
+  try {
+    const payload = buildOverlayArtifactsReadModel({
+      limit: normalizeArtifactsLimit(url.searchParams.get("limit")),
+      lifecycle: url.searchParams.get("lifecycle"),
+      kind: cleanNullable(url.searchParams.get("kind")),
+      taskId: cleanNullable(url.searchParams.get("taskId")),
+      sessionId: cleanNullable(url.searchParams.get("sessionId")),
+      agentId: cleanNullable(url.searchParams.get("agentId")),
+    });
+    return withCors(Response.json(payload), url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return withCors(
+      Response.json(
+        {
+          ok: false,
+          error: message,
+        },
+        { status: 500 },
+      ),
+      url,
+    );
+  }
+}
+
+async function handleArtifactBlob(url: URL, method: string): Promise<Response> {
+  const id = cleanNullable(url.searchParams.get("id"));
+  if (!id) {
+    return withCors(Response.json({ ok: false, error: "Missing id", code: "missing_id" }, { status: 400 }), url);
+  }
+
+  let result;
+  try {
+    result = await resolveArtifactBlob({ artifactId: id });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return withCors(Response.json({ ok: false, error: message }, { status: 500 }), url);
+  }
+
+  if (!result.ok) {
+    return withCors(
+      Response.json({ ok: false, error: result.error, code: result.code }, { status: result.status }),
+      url,
+    );
+  }
+
+  const headers = {
+    "Content-Type": result.mimeType,
+    "Content-Length": String(result.sizeBytes),
+    "Cache-Control": "private, max-age=60",
+  };
+
+  if (method === "HEAD") {
+    return withCors(new Response(null, { headers }), url);
+  }
+
+  const file = bunFile(result.path);
+  return withCors(new Response(file, { headers }), url);
 }
 
 async function handleTaskDispatch(req: Request, url: URL): Promise<Response> {
