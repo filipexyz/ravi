@@ -35,6 +35,7 @@ import {
   dbAddTaskComment,
   dbAddTaskDependency,
   dbAppendTaskEvent,
+  dbAutoResumeBlockedTask,
   dbUnarchiveTask,
   dbCompleteTask,
   dbCreateTask,
@@ -2544,6 +2545,16 @@ export async function dispatchTask(
       `Task ${taskId} is waiting on ${dependencySurface.readiness.unsatisfiedDependencyCount} dependencies. Arm a launch plan instead of dispatching it early.`,
     );
   }
+  const resumeResult = dbAutoResumeBlockedTask(taskId, "dispatch", {
+    actor: input.assignedBy,
+    agentId: input.assignedByAgentId,
+    sessionName: input.assignedBySessionName,
+  });
+  const dispatchSourceTask = resumeResult.resumed ? resumeResult.task : existingTask;
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
+
   const resolvedInput = resolveDispatchTaskReportTarget(input);
   const {
     task: bootstrappedTask,
@@ -2554,7 +2565,7 @@ export async function dispatchTask(
     worktree,
     taskDocPath,
     primaryArtifact,
-  } = prepareTaskDispatchContext(existingTask, resolvedInput, { materializeSession: true });
+  } = prepareTaskDispatchContext(dispatchSourceTask, resolvedInput, { materializeSession: true });
 
   const { task, assignment, event } = dbDispatchTask(
     taskId,
@@ -2831,17 +2842,27 @@ export async function commentTask(
     initializeSection: buildTaskMaterializedDocSection(eventResult.task),
   });
 
+  const resumeResult = dbAutoResumeBlockedTask(taskId, "comment_steer", {
+    actor: input.author,
+    agentId: input.authorAgentId,
+    sessionName: input.authorSessionName,
+  });
+  const taskAfterResume = resumeResult.resumed ? resumeResult.task : updatedTask;
+  if (resumeResult.resumed) {
+    await emitTaskEvent(resumeResult.task, resumeResult.event);
+  }
+
   let steeredSessionName: string | undefined;
-  if (shouldSteerTaskComment(updatedTask) && updatedTask.assigneeSessionName) {
-    await publishTaskSessionPrompt(updatedTask.assigneeSessionName, {
-      prompt: buildTaskCommentSteerPrompt(updatedTask, comment),
+  if (shouldSteerTaskComment(taskAfterResume) && taskAfterResume.assigneeSessionName) {
+    await publishTaskSessionPrompt(taskAfterResume.assigneeSessionName, {
+      prompt: buildTaskCommentSteerPrompt(taskAfterResume, comment),
       deliveryBarrier: "after_response",
     });
-    steeredSessionName = updatedTask.assigneeSessionName;
+    steeredSessionName = taskAfterResume.assigneeSessionName;
   }
 
   return {
-    task: updatedTask,
+    task: taskAfterResume,
     comment,
     event: eventResult.event,
     ...(steeredSessionName ? { steeredSessionName } : {}),
