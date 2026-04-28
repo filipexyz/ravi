@@ -1017,9 +1017,7 @@ export function listCallVoiceAgents(): CallVoiceAgent[] {
 
 export function getCallVoiceAgent(id: string): CallVoiceAgent | null {
   ensureCallsSchema();
-  const row = getDb().prepare("SELECT * FROM call_voice_agents WHERE id = ?").get(id) as
-    | CallVoiceAgentRow
-    | undefined;
+  const row = getDb().prepare("SELECT * FROM call_voice_agents WHERE id = ?").get(id) as CallVoiceAgentRow | undefined;
   return row ? rowToVoiceAgent(row) : null;
 }
 
@@ -1100,7 +1098,9 @@ export function updateCallVoiceAgent(id: string, input: UpdateCallVoiceAgentInpu
   fields.push("updated_at = ?");
   values.push(Date.now(), id);
 
-  getDb().prepare(`UPDATE call_voice_agents SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE call_voice_agents SET ${fields.join(", ")} WHERE id = ?`)
+    .run(...values);
   return getCallVoiceAgent(id);
 }
 
@@ -1327,7 +1327,9 @@ export function updateCallTool(id: string, input: UpdateCallToolInput): CallTool
   fields.push("updated_at = ?");
   values.push(Date.now(), id);
 
-  getDb().prepare(`UPDATE call_tools SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+  getDb()
+    .prepare(`UPDATE call_tools SET ${fields.join(", ")} WHERE id = ?`)
+    .run(...values);
   return getCallTool(id);
 }
 
@@ -1512,11 +1514,7 @@ export function evaluateCallToolPolicy(
       policy,
     };
   }
-  const unsafeSideEffects = new Set<CallToolSideEffect>([
-    "external_message",
-    "external_call",
-    "external_irreversible",
-  ]);
+  const unsafeSideEffects = new Set<CallToolSideEffect>(["external_message", "external_call", "external_irreversible"]);
   if (unsafeSideEffects.has(sideEffect)) {
     return { allowed: false, reason: `Side-effect class '${sideEffect}' blocked by default policy`, policy: null };
   }
