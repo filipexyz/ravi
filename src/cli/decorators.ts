@@ -4,12 +4,15 @@
  * Provides declarative command definition similar to NestJS/oclif
  */
 
+import type { ZodTypeAny } from "zod";
+
 // Symbols for metadata storage
 const GROUP_KEY = Symbol("cli:group");
 const COMMANDS_KEY = Symbol("cli:commands");
 const ARGS_KEY = Symbol("cli:args");
 const OPTIONS_KEY = Symbol("cli:options");
 const SCOPE_KEY = Symbol("cli:scope");
+const RETURNS_KEY = Symbol("cli:returns");
 
 // Types
 
@@ -40,12 +43,15 @@ export interface ArgOptions {
   required?: boolean;
   description?: string;
   defaultValue?: unknown;
+  variadic?: boolean;
+  schema?: ZodTypeAny;
 }
 
 export interface OptionOptions {
   flags: string;
   description?: string;
   defaultValue?: unknown;
+  schema?: ZodTypeAny;
 }
 
 export interface ArgMetadata extends ArgOptions {
@@ -116,6 +122,18 @@ export function Option(options: OptionOptions) {
   };
 }
 
+/**
+ * @Returns decorator - declares the Zod schema for a command's return value.
+ * Used by the schema registry to expose typed return shapes to SDK consumers.
+ */
+export function Returns(schema: ZodTypeAny) {
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const map: Map<string, ZodTypeAny> = Reflect.getMetadata(RETURNS_KEY, target.constructor) || new Map();
+    map.set(propertyKey, schema);
+    Reflect.defineMetadata(RETURNS_KEY, map, target.constructor);
+  };
+}
+
 // Metadata getters
 export function getGroupMetadata(target: Function): GroupOptions | undefined {
   return Reflect.getMetadata(GROUP_KEY, target);
@@ -137,4 +155,8 @@ export function getOptionsMetadata(target: object, propertyKey: string): OptionM
 
 export function getScopeMetadata(target: Function): Map<string, ScopeType> {
   return Reflect.getMetadata(SCOPE_KEY, target) || new Map();
+}
+
+export function getReturnsMetadata(target: Function): Map<string, ZodTypeAny> {
+  return Reflect.getMetadata(RETURNS_KEY, target) || new Map();
 }

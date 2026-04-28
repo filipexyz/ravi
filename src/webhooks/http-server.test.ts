@@ -467,3 +467,45 @@ describe("Webhook HTTP server", () => {
     }
   });
 });
+
+describe("Webhook HTTP server — SDK gateway unification", () => {
+  it("mounts /api/v1/_meta/version on the same listener", async () => {
+    const server = startWebhookHttpServer({ host: "127.0.0.1", port: 0 });
+    try {
+      const res = await fetch(`${server.url}/api/v1/_meta/version`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { gateway: string; registryHash: string };
+      expect(typeof body.gateway).toBe("string");
+      expect(typeof body.registryHash).toBe("string");
+      expect(body.registryHash.length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("emits OpenAPI on demand at /api/v1/_meta/openapi.json", async () => {
+    const server = startWebhookHttpServer({ host: "127.0.0.1", port: 0 });
+    try {
+      const res = await fetch(`${server.url}/api/v1/_meta/openapi.json`);
+      expect(res.status).toBe(200);
+      const spec = (await res.json()) as { openapi: string; paths: Record<string, unknown> };
+      expect(spec.openapi).toBe("3.1.0");
+      expect(Object.keys(spec.paths).length).toBeGreaterThan(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("returns the webhook 404 envelope for /api/v1/* when the gateway is disabled", async () => {
+    const server = startWebhookHttpServer({ host: "127.0.0.1", port: 0, gateway: null });
+    try {
+      const res = await fetch(`${server.url}/api/v1/_meta/version`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { ok: boolean; error: string };
+      expect(body.ok).toBe(false);
+      expect(body.error).toBe("not_found");
+    } finally {
+      await server.stop();
+    }
+  });
+});

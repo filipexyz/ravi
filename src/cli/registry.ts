@@ -47,8 +47,29 @@ function resolveCommandPath(parent: CommanderCommand, segments: string[], descri
 /**
  * Register all command classes with Commander.
  * Supports nested groups via dot notation: "whatsapp.group" → ravi whatsapp group <cmd>
+ *
+ * Throws if two classes register the same `(groupPath, command)` pair so
+ * collisions are caught at startup instead of silently shadowed by commander.
  */
 export function registerCommands(program: CommanderCommand, classes: CommandClass[]): void {
+  const seen = new Map<string, { cls: CommandClass; method: string }>();
+  for (const cls of classes) {
+    const groupMeta = getGroupMetadata(cls);
+    if (!groupMeta) continue;
+    for (const cmd of getCommandsMetadata(cls)) {
+      const fullName = `${groupMeta.name}.${cmd.name}`;
+      const prev = seen.get(fullName);
+      if (prev) {
+        throw new Error(
+          `CLI registry collision: command "${fullName}" is registered by both ` +
+            `${prev.cls.name} (method ${prev.method}) and ${cls.name} (method ${cmd.method}). ` +
+            `Each (group, command) pair must be unique.`,
+        );
+      }
+      seen.set(fullName, { cls, method: cmd.method });
+    }
+  }
+
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
