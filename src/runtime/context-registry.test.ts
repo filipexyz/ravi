@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { clearRelations, grantRelation } from "../permissions/relations.js";
-import { dbCreateAgent, dbDeleteAgent, getDb } from "../router/router-db.js";
+import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/router-db.js";
 import {
   createRuntimeContext,
   issueRuntimeContext,
@@ -154,6 +154,77 @@ describe("runtime context registry", () => {
         capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
       }),
     ).toThrow("Capability not granted by parent context");
+  });
+
+  it("cascades revocation to descendants with a single shared revokedAt", () => {
+    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
+
+    const parent = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      ttlMs: 60 * 60 * 1000,
+    });
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "child-cli",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+    });
+
+    const grandchild = issueRuntimeContext({
+      parent: child,
+      cliName: "grandchild-cli",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+    });
+
+    const result = revokeRuntimeContext(parent.contextId, { reason: "regression-test" });
+    expect(result.cascaded).toHaveLength(2);
+    const cascadedIds = result.cascaded.map((ctx) => ctx.contextId).sort();
+    expect(cascadedIds).toEqual([child.contextId, grandchild.contextId].sort());
+
+    const refreshedParent = dbGetContext(parent.contextId);
+    const refreshedChild = dbGetContext(child.contextId);
+    const refreshedGrandchild = dbGetContext(grandchild.contextId);
+    expect(refreshedParent?.revokedAt).toBe(result.revokedAt);
+    expect(refreshedChild?.revokedAt).toBe(result.revokedAt);
+    expect(refreshedGrandchild?.revokedAt).toBe(result.revokedAt);
+
+    expect(resolveRuntimeContext(parent.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(grandchild.contextKey, { touch: false })).toBeNull();
+
+    expect(refreshedChild?.metadata?.revokedViaCascade).toBe(true);
+    expect(refreshedGrandchild?.metadata?.revokedViaCascade).toBe(true);
+    expect(refreshedChild?.metadata?.cascadeRootContextId).toBe(parent.contextId);
+    expect(refreshedGrandchild?.metadata?.cascadeRootContextId).toBe(parent.contextId);
+    expect(refreshedParent?.metadata?.revocationReason).toBe("regression-test");
+  });
+
+  it("supports --no-cascade narrow revoke that leaves descendants live", () => {
+    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
+
+    const parent = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+      ttlMs: 60 * 60 * 1000,
+    });
+
+    const child = issueRuntimeContext({
+      parent,
+      cliName: "child-cli",
+      capabilities: [{ permission: "execute", objectType: "group", objectId: "daemon" }],
+    });
+
+    const result = revokeRuntimeContext(parent.contextId, { cascade: false });
+    expect(result.cascaded).toHaveLength(0);
+
+    const refreshedParent = dbGetContext(parent.contextId);
+    const refreshedChild = dbGetContext(child.contextId);
+    expect(refreshedParent?.revokedAt).toBe(result.revokedAt);
+    expect(refreshedChild?.revokedAt).toBeUndefined();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).not.toBeNull();
   });
 
   it("allows existing parent contexts to issue new capabilities after live superadmin grant", () => {

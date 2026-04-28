@@ -5,11 +5,29 @@
 import "reflect-metadata";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
 import { Group, Command, Option } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
+import {
+  ADMIN_BOOTSTRAP_AGENT_ID,
+  ADMIN_BOOTSTRAP_KIND,
+  DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS,
+  createRuntimeContext,
+  listLiveAdminContexts,
+  resolveRuntimeContext,
+} from "../../runtime/context-registry.js";
+import { dbCreateAgent, dbGetAgent } from "../../router/router-db.js";
+import { grantRelation } from "../../permissions/relations.js";
+import {
+  CredentialsFileError,
+  emptyCredentialsFile,
+  getCredentialsPath,
+  readCredentialsFile,
+  upsertCredentialsEntry,
+  writeCredentialsFile,
+} from "../../runtime/credentials-store.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
@@ -875,6 +893,123 @@ ANTHROPIC_API_KEY=
     }
   }
 
+  @Command({
+    name: "init-admin-key",
+    description: "Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists.",
+  })
+  initAdminKey(
+    @Option({ flags: "--label <name>", description: "Label for the bootstrap context (default: hostname)" })
+    label?: string,
+    @Option({
+      flags: "--print-only",
+      description: "Print the rctx key without writing it to the credentials file",
+    })
+    printOnly = false,
+    @Option({
+      flags: "--no-store",
+      description: "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
+    })
+    store = true,
+    @Option({
+      flags: "--from-env",
+      description:
+        "Read RAVI_BOOTSTRAP_KEY from env. Imports it as the admin context key when the registry is empty; idempotent if it matches an existing live admin context; fails loud if it conflicts.",
+    })
+    fromEnv = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const persist = printOnly === false && store !== false;
+    const resolvedLabel = label?.trim() || hostname() || "admin";
+
+    const live = listLiveAdminContexts();
+
+    if (fromEnv) {
+      const envKey = process.env.RAVI_BOOTSTRAP_KEY?.trim();
+      if (!envKey) {
+        fail("--from-env was passed but RAVI_BOOTSTRAP_KEY is not set");
+      }
+      if (!envKey.startsWith("rctx_")) {
+        fail("RAVI_BOOTSTRAP_KEY must be an rctx_* runtime context key");
+      }
+
+      if (live.length > 0) {
+        const resolved = resolveRuntimeContext(envKey, { touch: false });
+        const matching = resolved ? live.find((ctx) => ctx.contextId === resolved.contextId) : undefined;
+        if (matching) {
+          if (asJson) {
+            const payload = {
+              action: "init-admin-key",
+              changed: false,
+              reason: "idempotent",
+              contextId: matching.contextId,
+            };
+            printJson(payload);
+            return payload;
+          }
+          console.log(`Admin context already configured: ${matching.contextId} (idempotent).`);
+          return;
+        }
+        fail(
+          `RAVI_BOOTSTRAP_KEY does not match any of the ${live.length} existing live admin context(s). ` +
+            "Revoke the existing admin contexts before importing a new one.",
+        );
+      }
+
+      const created = this.createBootstrapContext({
+        label: resolvedLabel,
+        contextKey: envKey,
+      });
+      const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
+      this.printBootstrapResult({
+        created,
+        persisted,
+        persist,
+        asJson,
+        importedFromEnv: true,
+      });
+      return;
+    }
+
+    if (live.length > 0) {
+      if (asJson) {
+        const payload = {
+          action: "init-admin-key",
+          changed: false,
+          reason: "admin_context_exists",
+          existing: live.map((ctx) => ({
+            contextId: ctx.contextId,
+            label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
+            kind: ctx.kind,
+            createdAt: ctx.createdAt,
+            expiresAt: ctx.expiresAt ?? null,
+          })),
+        };
+        printJson(payload);
+      } else {
+        console.error("Refusing to bootstrap: a live admin context already exists.\n");
+        for (const ctx of live) {
+          const label = typeof ctx.metadata?.label === "string" ? ctx.metadata.label : "-";
+          const expires = ctx.expiresAt ? new Date(ctx.expiresAt).toISOString() : "never";
+          console.error(`  - ${ctx.contextId}  kind=${ctx.kind}  label=${label}  expires=${expires}`);
+        }
+        console.error(
+          "\nRevoke them first via 'ravi context revoke <id>' if you really intend to rotate the bootstrap key.",
+        );
+      }
+      process.exit(2);
+    }
+
+    const created = this.createBootstrapContext({ label: resolvedLabel });
+    const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
+    this.printBootstrapResult({
+      created,
+      persisted,
+      persist,
+      asJson,
+      importedFromEnv: false,
+    });
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
   // Helpers
   // ──────────────────────────────────────────────────────────────────────────
@@ -939,6 +1074,103 @@ ANTHROPIC_API_KEY=
       } catch {
         /* ignore */
       }
+    }
+  }
+
+  private createBootstrapContext(input: { label: string; contextKey?: string }) {
+    if (!dbGetAgent(ADMIN_BOOTSTRAP_AGENT_ID)) {
+      dbCreateAgent({
+        id: ADMIN_BOOTSTRAP_AGENT_ID,
+        cwd: RAVI_DIR,
+      });
+    }
+
+    grantRelation("agent", ADMIN_BOOTSTRAP_AGENT_ID, "admin", "system", "*", "config:admin-bootstrap");
+
+    const issuedAt = Date.now();
+    const expiresAt = issuedAt + DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS;
+    const record = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: ADMIN_BOOTSTRAP_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "config:admin-bootstrap" }],
+      metadata: {
+        label: input.label,
+        host: hostname(),
+        bootstrap: true,
+      },
+      expiresAt,
+      contextKey: input.contextKey,
+    });
+
+    const entry = {
+      context_id: record.contextId,
+      agent_id: ADMIN_BOOTSTRAP_AGENT_ID,
+      label: input.label,
+      kind: ADMIN_BOOTSTRAP_KIND,
+      issued_at: record.createdAt,
+      expires_at: record.expiresAt ?? null,
+    };
+
+    return { record, contextKey: record.contextKey, entry, expiresAt };
+  }
+
+  private persistBootstrapCredential(
+    contextKey: string,
+    entry: ReturnType<DaemonCommands["createBootstrapContext"]>["entry"],
+  ) {
+    const path = getCredentialsPath();
+    let file;
+    try {
+      file = readCredentialsFile(path) ?? emptyCredentialsFile();
+    } catch (err) {
+      if (err instanceof CredentialsFileError && err.code === "permissions_too_loose") {
+        fail(err.message);
+      }
+      throw err;
+    }
+    const next = upsertCredentialsEntry(file, contextKey, entry, { setDefault: true });
+    writeCredentialsFile(next, path);
+    return { path };
+  }
+
+  private printBootstrapResult(input: {
+    created: ReturnType<DaemonCommands["createBootstrapContext"]>;
+    persisted: { path: string } | null;
+    persist: boolean;
+    asJson: boolean;
+    importedFromEnv: boolean;
+  }) {
+    const { created, persisted, persist, asJson, importedFromEnv } = input;
+    if (asJson) {
+      const payload = {
+        action: "init-admin-key",
+        changed: true,
+        importedFromEnv,
+        contextId: created.record.contextId,
+        contextKey: created.contextKey,
+        agentId: ADMIN_BOOTSTRAP_AGENT_ID,
+        kind: ADMIN_BOOTSTRAP_KIND,
+        label: created.entry.label,
+        expiresAt: created.expiresAt,
+        credentialsPath: persisted?.path ?? null,
+        persisted: persist,
+      };
+      printJson(payload);
+      return;
+    }
+
+    console.log("\nAdmin runtime context-key issued. Save this now — it will not be shown again.\n");
+    console.log(`  rctx: ${created.contextKey}`);
+    console.log(`  context_id: ${created.record.contextId}`);
+    console.log(`  agent: ${ADMIN_BOOTSTRAP_AGENT_ID}`);
+    console.log(`  kind: ${ADMIN_BOOTSTRAP_KIND}`);
+    console.log(`  label: ${created.entry.label}`);
+    console.log(`  expires: ${new Date(created.expiresAt).toISOString()}`);
+    if (persisted) {
+      console.log(`\nWritten to ${persisted.path} (mode 0600).`);
+      console.log("Set RAVI_CONTEXT_KEY in your env or rely on the credentials default to use this key.");
+    } else {
+      console.log("\nNot persisted (printed only). Save it somewhere safe.");
     }
   }
 }

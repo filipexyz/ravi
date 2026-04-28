@@ -3435,14 +3435,111 @@ export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void
   s.touchContext.run(lastUsedAt, contextId);
 }
 
-export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
-  const s = getStatements();
-  const existing = dbGetContext(contextId);
-  if (!existing) {
+export interface RevokeContextOptions {
+  revokedAt?: number;
+  cascade?: boolean;
+  reason?: string;
+}
+
+export interface RevokeContextResult {
+  context: ContextRecord;
+  cascaded: ContextRecord[];
+  revokedAt: number;
+}
+
+/**
+ * Revoke a context. By default cascades to all descendants (children whose
+ * `metadata.parentContextId` chains back to this context) within one
+ * transaction; the same `revokedAt` timestamp is applied to every record.
+ *
+ * Pass `cascade: false` only when rotating a parent without invalidating
+ * already-issued workers. The CLI surface should require an opt-in flag and
+ * emit a warning before calling this with cascade disabled.
+ */
+export function dbRevokeContextCascade(contextId: string, options: RevokeContextOptions = {}): RevokeContextResult {
+  const root = dbGetContext(contextId);
+  if (!root) {
     throw new Error(`Context not found: ${contextId}`);
   }
-  s.revokeContext.run(revokedAt, contextId);
-  return dbGetContext(contextId)!;
+  const revokedAt = options.revokedAt ?? Date.now();
+  const cascade = options.cascade !== false;
+  const s = getStatements();
+
+  const targets: ContextRecord[] = [root];
+  if (cascade) {
+    const allRows = s.listContexts.all() as ContextRow[];
+    const all = allRows.map((row) => rowToContext(row));
+    const childrenByParent = new Map<string, ContextRecord[]>();
+    for (const ctx of all) {
+      const parentId = typeof ctx.metadata?.parentContextId === "string" ? ctx.metadata.parentContextId : null;
+      if (!parentId) continue;
+      const list = childrenByParent.get(parentId) ?? [];
+      list.push(ctx);
+      childrenByParent.set(parentId, list);
+    }
+
+    const visited = new Set<string>([root.contextId]);
+    const queue: string[] = [root.contextId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = childrenByParent.get(current) ?? [];
+      for (const child of children) {
+        if (visited.has(child.contextId)) continue;
+        visited.add(child.contextId);
+        targets.push(child);
+        queue.push(child.contextId);
+      }
+    }
+  }
+
+  const db = getDb();
+  const reasonNote = options.reason?.trim();
+  const reasonKey = "revocationReason";
+  const cascadeKey = "cascadedFrom";
+  const cascadeFlagKey = "revokedViaCascade";
+  const cascadeRootKey = "cascadeRootContextId";
+
+  db.transaction(() => {
+    for (const target of targets) {
+      // Skip if already revoked at the same or earlier timestamp (idempotency).
+      if (target.revokedAt && target.revokedAt <= revokedAt) {
+        // Still update metadata if a reason or cascade flag should be set.
+      }
+      const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+      if (reasonNote) {
+        metadata[reasonKey] = reasonNote;
+      }
+      if (target.contextId !== root.contextId) {
+        metadata[cascadeFlagKey] = true;
+        metadata[cascadeRootKey] = root.contextId;
+        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+        if (!chain.includes(root.contextId)) {
+          chain.push(root.contextId);
+        }
+        metadata[cascadeKey] = chain;
+      }
+
+      db.prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`).run(
+        revokedAt,
+        JSON.stringify(metadata),
+        target.contextId,
+      );
+    }
+  })();
+
+  const finalRoot = dbGetContext(contextId)!;
+  const cascaded: ContextRecord[] = [];
+  for (const target of targets) {
+    if (target.contextId === root.contextId) continue;
+    const refreshed = dbGetContext(target.contextId);
+    if (refreshed) cascaded.push(refreshed);
+  }
+  return { context: finalRoot, cascaded, revokedAt };
+}
+
+export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
+  const result = dbRevokeContextCascade(contextId, { revokedAt, cascade: false });
+  return result.context;
 }
 
 export function dbUpdateContextCapabilities(contextId: string, capabilities: ContextCapability[]): ContextRecord {

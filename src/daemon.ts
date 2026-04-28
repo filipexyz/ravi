@@ -29,6 +29,7 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
+import { hasLiveAdminContext } from "./runtime/context-registry.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -275,6 +276,11 @@ export async function startDaemon() {
   webhookHttpServer = startWebhookHttpServerFromEnv();
   if (webhookHttpServer) {
     log.info("Webhook HTTP server ready", { url: webhookHttpServer.url });
+    if (!hasLiveAdminContext()) {
+      log.warn(
+        "No admin runtime context exists — gateway will reject all non-open requests until you run `ravi daemon init-admin-key`.",
+      );
+    }
   } else {
     log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
   }

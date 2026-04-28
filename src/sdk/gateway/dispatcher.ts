@@ -12,11 +12,10 @@
  * emits audits, which preserves the invariant "one request → one audit event"
  * and prevents drift between CLI and gateway tool naming.
  *
- * TODO(sdk/auth, draft): Bearer token forwarding is a no-op today. Once
- * `sdk/auth` lands, validate tokens here before scope enforcement and bind the
- * resolved principal to the per-request `ScopeContext`. Until then the gateway
- * trusts whatever ScopeContext the transport hands in (env-derived in prod;
- * empty/local-host in dev) and refuses to bind to non-loopback hosts.
+ * Context binding: when the gateway resolves a runtime context-key, it threads
+ * the resolved `ContextRecord` into the dispatcher so audit events carry the
+ * public `contextId`, the lineage's `parentContextId`, and the `agentId`. The
+ * raw context-key (`rctx_*`) never crosses this boundary.
  */
 
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
@@ -25,6 +24,7 @@ import { runWithContext, type ToolContext } from "../../cli/context.js";
 import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
+import type { ContextRecord } from "../../router/router-db.js";
 import {
   errorResponse,
   internalError,
@@ -40,6 +40,8 @@ export interface DispatchOptions {
   allowSuperadmin?: boolean;
   /** Override the audit emitter (tests). */
   emitAudit?: (event: AuditEvent) => Promise<void> | void;
+  /** Resolved runtime context record for audit lineage and contextId fields. */
+  contextRecord?: ContextRecord | null;
 }
 
 export interface AuditEvent {
@@ -49,6 +51,9 @@ export interface AuditEvent {
   input: Record<string, unknown>;
   isError: boolean;
   durationMs: number;
+  contextId: string | null;
+  parentContextId: string | null;
+  agentId: string | null;
 }
 
 export interface DispatchResult {
@@ -81,6 +86,7 @@ export async function dispatch(
   opts: DispatchOptions = {},
 ): Promise<DispatchResult> {
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
+  const lineage = extractLineage(opts.contextRecord);
 
   if (cmd.scope === "superadmin" && !opts.allowSuperadmin) {
     return {
@@ -133,28 +139,14 @@ export async function dispatch(
   } catch (err) {
     if (err instanceof ScopeDenied) {
       response = permissionDenied(err.message);
-      const audit: AuditEvent = {
-        group: cmd.groupSegments.join("_"),
-        name: cmd.command,
-        tool,
-        input: validation.inputForAudit,
-        isError: true,
-        durationMs: Date.now() - startedAt,
-      };
+      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
       await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit };
     }
     isError = true;
     const message = err instanceof Error ? err.message : String(err);
     response = internalError(message);
-    const audit: AuditEvent = {
-      group: cmd.groupSegments.join("_"),
-      name: cmd.command,
-      tool,
-      input: validation.inputForAudit,
-      isError,
-      durationMs: Date.now() - startedAt,
-    };
+    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
     await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit };
   }
@@ -163,30 +155,53 @@ export async function dispatch(
     const returnIssues = checkReturnShape(cmd.returns, returnValue);
     if (returnIssues) {
       response = returnShapeError(returnIssues);
-      const audit: AuditEvent = {
-        group: cmd.groupSegments.join("_"),
-        name: cmd.command,
-        tool,
-        input: validation.inputForAudit,
-        isError: true,
-        durationMs: Date.now() - startedAt,
-      };
+      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
       await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit };
     }
   }
 
   response = json(200, returnValue ?? {});
-  const audit: AuditEvent = {
+  const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
+  await emitDispatchAudit(audit, opts.emitAudit);
+  return { response, audit };
+}
+
+interface AuditLineage {
+  contextId: string | null;
+  parentContextId: string | null;
+  agentId: string | null;
+}
+
+function extractLineage(record: ContextRecord | null | undefined): AuditLineage {
+  if (!record) return { contextId: null, parentContextId: null, agentId: null };
+  const parentContextId = typeof record.metadata?.parentContextId === "string" ? record.metadata.parentContextId : null;
+  return {
+    contextId: record.contextId,
+    parentContextId,
+    agentId: record.agentId ?? null,
+  };
+}
+
+function buildAuditEvent(
+  cmd: CommandRegistryEntry,
+  tool: string,
+  input: Record<string, unknown>,
+  isError: boolean,
+  startedAt: number,
+  lineage: AuditLineage,
+): AuditEvent {
+  return {
     group: cmd.groupSegments.join("_"),
     name: cmd.command,
     tool,
-    input: validation.inputForAudit,
+    input,
     isError,
     durationMs: Date.now() - startedAt,
+    contextId: lineage.contextId,
+    parentContextId: lineage.parentContextId,
+    agentId: lineage.agentId,
   };
-  await emitDispatchAudit(audit, opts.emitAudit);
-  return { response, audit };
 }
 
 class ScopeDenied extends Error {}
@@ -349,6 +364,9 @@ async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["e
     isError: event.isError,
     status: "completed",
     durationMs: event.durationMs,
+    contextId: event.contextId,
+    parentContextId: event.parentContextId,
+    agentId: event.agentId,
     closeLazyConnection: false,
   });
 }

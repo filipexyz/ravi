@@ -164,18 +164,23 @@ mock.module("../../runtime/context-registry.js", () => ({
       createdAt: 3000,
       expiresAt: 4000,
     },
-  revokeRuntimeContext: (_contextId: string) =>
-    revokedContext ?? {
-      ...(fetchedContext ??
-        resolvedContext ?? {
-          contextId: "ctx_123",
-          contextKey: "rctx_123",
-          kind: "agent-runtime",
-          capabilities: [],
-          createdAt: 1000,
-        }),
-      revokedAt: 5000,
-    },
+  revokeRuntimeContext: (_contextId: string, _options?: unknown) => {
+    const root =
+      revokedContext ??
+      ({
+        ...(fetchedContext ??
+          resolvedContext ?? {
+            contextId: "ctx_123",
+            contextKey: "rctx_123",
+            kind: "agent-runtime",
+            capabilities: [],
+            createdAt: 1000,
+          }),
+        revokedAt: 5000,
+      } as Record<string, unknown>);
+    return { context: root, cascaded: [], revokedAt: 5000 };
+  },
+  getContextLineage: (_contextId: string) => null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -579,15 +584,19 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.revoke("ctx_123", true);
+      command.revoke("ctx_123", true, undefined, true);
     } finally {
       console.log = originalLog;
     }
 
     const payload = JSON.parse(lines[0] ?? "{}");
     expect(payload).toMatchObject({
-      contextId: "ctx_123",
-      status: "revoked",
+      context: {
+        contextId: "ctx_123",
+        status: "revoked",
+        revokedAt: 5000,
+      },
+      cascaded: [],
       revokedAt: 5000,
     });
   });

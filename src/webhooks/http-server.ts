@@ -346,6 +346,8 @@ async function handleRequest(
 }
 
 export function startWebhookHttpServer(config: WebhookHttpServerConfig): WebhookHttpServerHandle {
+  assertGatewayBindAuthorized(config.host);
+
   const gatewayCtx: GatewayHandlerContext | null =
     config.gateway === null ? null : createGatewayHandlerContext(config.gateway ?? {});
 
@@ -382,15 +384,36 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
   };
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+export function isLoopbackHost(host: string): boolean {
+  return LOOPBACK_HOSTS.has(host.trim().toLowerCase());
+}
+
+export function assertGatewayBindAuthorized(host: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (isLoopbackHost(host)) return;
+  const opt = env.RAVI_GATEWAY_NETWORK_AUTHORIZED?.trim();
+  if (opt === "1" || opt?.toLowerCase() === "true" || opt?.toLowerCase() === "yes") return;
+  log.error(
+    `Refusing to bind Ravi HTTP server to non-loopback host '${host}' without RAVI_GATEWAY_NETWORK_AUTHORIZED=1. ` +
+      "The SDK gateway requires this opt-in to expose itself to the network even when bearer auth is configured. " +
+      "Set RAVI_HTTP_HOST=127.0.0.1 to bind locally, or RAVI_GATEWAY_NETWORK_AUTHORIZED=1 to allow public binding.",
+  );
+  process.exit(2);
+}
+
 export function startWebhookHttpServerFromEnv(): WebhookHttpServerHandle | null {
   const port = parsePort(process.env.RAVI_HTTP_PORT ?? process.env.RAVI_WEBHOOK_PORT);
   if (port === null) return null;
 
   const gatewayDisabled = boolEnv(process.env.RAVI_SDK_GATEWAY_DISABLE);
   const allowSuperadmin = boolEnv(process.env.RAVI_SDK_GATEWAY_ALLOW_SUPERADMIN);
+  const host = process.env.RAVI_HTTP_HOST?.trim() || process.env.RAVI_WEBHOOK_HOST?.trim() || "127.0.0.1";
+
+  assertGatewayBindAuthorized(host);
 
   return startWebhookHttpServer({
-    host: process.env.RAVI_HTTP_HOST?.trim() || process.env.RAVI_WEBHOOK_HOST?.trim() || "127.0.0.1",
+    host,
     port,
     elevenLabsWebhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET?.trim() || undefined,
     allowUnsignedElevenLabs: boolEnv(process.env.RAVI_ELEVENLABS_WEBHOOK_ALLOW_UNSIGNED),
