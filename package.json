@@ -49,6 +49,8 @@
     "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test \"$f\" || exit 1; done",
     "test:live": "RAVI_LIVE_TESTS=1 bun test src/runtime/*.live.test.ts && RAVI_LIVE_TESTS=1 bun test src/bot.live.test.ts",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "docs:openapi": "bun src/cli/index.ts sdk openapi emit --out docs/openapi.json",
+    "predocs:dev": "bun run docs:openapi",
     "docs:dev": "cd docs && bunx mintlify dev",
     "docs:list": "bun scripts/docs-list.js",
     "docs:check-links": "bun scripts/docs-link-audit.mjs",

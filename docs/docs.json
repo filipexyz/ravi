@@ -110,6 +110,15 @@
             "pages": ["reference/media", "reference/artifacts", "reference/skills"]
           }
         ]
+      },
+      {
+        "tab": "API",
+        "groups": [
+          {
+            "group": "API reference",
+            "openapi": "openapi.json"
+          }
+        ]
       }
     ]
   }

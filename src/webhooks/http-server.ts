@@ -15,6 +15,13 @@ import {
 } from "../prox/calls/agora.js";
 import { handleToolBridgeRequest } from "../prox/calls/tool-bridge.js";
 import { handlePostCallWebhook, normalizeCallWebhookPayload, type CallWebhookPayload } from "../prox/calls/webhook.js";
+import {
+  API_PREFIX,
+  createGatewayHandlerContext,
+  handleGatewayRequest,
+  type GatewayConfig,
+  type GatewayHandlerContext,
+} from "../sdk/gateway/index.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("webhooks:http");
@@ -50,6 +57,14 @@ export interface WebhookHttpServerConfig {
   agoraWebhookSecret?: string;
   allowUnsignedAgora?: boolean;
   maxBodyBytes?: number;
+  /**
+   * SDK gateway mount config. The gateway shares the daemon's single
+   * `Bun.serve` and dispatches `/api/v1/*` requests. Pass `null` to disable
+   * the mount entirely (used by tests that only exercise webhook paths and do
+   * not want to load the CLI command graph). Pass `{}` (or omit) to mount
+   * with defaults.
+   */
+  gateway?: GatewayConfig | null;
 }
 
 export interface WebhookHttpServerHandle {
@@ -299,11 +314,20 @@ async function handleToolBridge(
   }
 }
 
-function handleRequest(request: Request, config: WebhookHttpServerConfig): Promise<Response> | Response {
+async function handleRequest(
+  request: Request,
+  config: WebhookHttpServerConfig,
+  gatewayCtx: GatewayHandlerContext | null,
+): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health" || url.pathname === "/webhooks/health") {
     return jsonResponse(200, { ok: true, service: "ravi-webhooks" });
+  }
+
+  if (gatewayCtx && (url.pathname.startsWith(`${API_PREFIX}/`) || url.pathname === API_PREFIX)) {
+    const response = await handleGatewayRequest(request, gatewayCtx);
+    if (response) return response;
   }
 
   if (ELEVENLABS_POST_CALL_WEBHOOK_ALIASES.has(url.pathname)) {
@@ -322,10 +346,13 @@ function handleRequest(request: Request, config: WebhookHttpServerConfig): Promi
 }
 
 export function startWebhookHttpServer(config: WebhookHttpServerConfig): WebhookHttpServerHandle {
+  const gatewayCtx: GatewayHandlerContext | null =
+    config.gateway === null ? null : createGatewayHandlerContext(config.gateway ?? {});
+
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
-    fetch: (request) => handleRequest(request, config),
+    fetch: (request) => handleRequest(request, config, gatewayCtx),
   }) as ServeLike;
 
   const url = `http://${config.host}:${server.port}`;
@@ -339,6 +366,9 @@ export function startWebhookHttpServer(config: WebhookHttpServerConfig): Webhook
     allowUnsignedElevenLabs: Boolean(config.allowUnsignedElevenLabs),
     agoraSignatureVerification: Boolean(config.agoraWebhookSecret),
     allowUnsignedAgora: Boolean(config.allowUnsignedAgora),
+    sdkGatewayMounted: Boolean(gatewayCtx),
+    sdkGatewayCommandCount: gatewayCtx?.table.byPath.size ?? 0,
+    sdkGatewayRegistryHash: gatewayCtx?.table.registryHash ?? null,
   });
 
   return {
@@ -356,6 +386,9 @@ export function startWebhookHttpServerFromEnv(): WebhookHttpServerHandle | null 
   const port = parsePort(process.env.RAVI_HTTP_PORT ?? process.env.RAVI_WEBHOOK_PORT);
   if (port === null) return null;
 
+  const gatewayDisabled = boolEnv(process.env.RAVI_SDK_GATEWAY_DISABLE);
+  const allowSuperadmin = boolEnv(process.env.RAVI_SDK_GATEWAY_ALLOW_SUPERADMIN);
+
   return startWebhookHttpServer({
     host: process.env.RAVI_HTTP_HOST?.trim() || process.env.RAVI_WEBHOOK_HOST?.trim() || "127.0.0.1",
     port,
@@ -363,5 +396,6 @@ export function startWebhookHttpServerFromEnv(): WebhookHttpServerHandle | null 
     allowUnsignedElevenLabs: boolEnv(process.env.RAVI_ELEVENLABS_WEBHOOK_ALLOW_UNSIGNED),
     agoraWebhookSecret: process.env.AGORA_WEBHOOK_SECRET?.trim() || undefined,
     allowUnsignedAgora: boolEnv(process.env.RAVI_AGORA_WEBHOOK_ALLOW_UNSIGNED),
+    gateway: gatewayDisabled ? null : { allowSuperadmin },
   });
 }

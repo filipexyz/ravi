@@ -29,6 +29,7 @@ export * from "./permissions.js";
 export * from "./projects.js";
 export * from "./prox-calls.js";
 export * from "./react.js";
+export * from "./sdk.js";
 export * from "./service.js";
 export * from "./sessions-runtime.js";
 export * from "./sessions.js";
