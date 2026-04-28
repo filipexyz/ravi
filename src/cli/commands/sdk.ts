@@ -6,7 +6,7 @@ import { Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { emitJson } from "../../sdk/openapi/index.js";
-import { emitAll, computeRegistryHash, type EmittedSdk } from "../../sdk/client-codegen/index.js";
+import { emitAll, computeRegistryHash, compareSdkSource, type EmittedSdk } from "../../sdk/client-codegen/index.js";
 
 function buildSpecJson(): string {
   return emitJson(getRegistry());
@@ -214,13 +214,12 @@ export class SdkClientCommands {
           });
           continue;
         }
-        if (stored !== sourceMap[file]) {
-          const storedSize = stored.length;
-          const liveSize = sourceMap[file].length;
+        const comparison = compareSdkSource(file, stored, sourceMap[file]);
+        if (!comparison.equal) {
           drift.push({
             file,
             path: target,
-            reason: `byte mismatch (stored=${storedSize}, live=${liveSize})`,
+            reason: comparison.reason ?? "byte mismatch",
           });
         }
       }

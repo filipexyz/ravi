@@ -14,7 +14,7 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
-import { computeRegistryHash, emitAll } from "./index.js";
+import { compareSdkSource, computeRegistryHash, emitAll } from "./index.js";
 
 @Group({ name: "artifacts", description: "Artifact ops", scope: "open" })
 class ArtifactsCommands {
@@ -138,6 +138,61 @@ describe("client-codegen :: emitAll", () => {
     expect(output.version).toContain('export const SDK_VERSION = "9.9.9";');
     expect(output.version).toContain('export const REGISTRY_HASH = "sha256:fixed";');
     expect(output.version).toContain('export const GIT_SHA = "fixed";');
+  });
+});
+
+describe("client-codegen :: compareSdkSource", () => {
+  function emitWith(overrides: Partial<typeof FIXED_VERSION>) {
+    const registry = buildRegistry([ArtifactsCommands, ContextCredentialsCommands]);
+    return emitAll(registry, { version: { ...FIXED_VERSION, ...overrides } });
+  }
+
+  it("treats version.ts as equal when only GIT_SHA changes", () => {
+    const a = emitWith({ gitSha: "aaaaaaaaaaaa" });
+    const b = emitWith({ gitSha: "bbbbbbbbbbbb" });
+    expect(a.version).not.toBe(b.version);
+    const result = compareSdkSource("version.ts", a.version, b.version);
+    expect(result.equal).toBe(true);
+  });
+
+  it("treats version.ts as drifted when REGISTRY_HASH changes", () => {
+    const a = emitWith({});
+    const b = emitWith({ registryHash: "sha256:other" });
+    const result = compareSdkSource("version.ts", a.version, b.version);
+    expect(result.equal).toBe(false);
+    expect(result.reason).toMatch(/ignoring GIT_SHA/);
+  });
+
+  it("treats version.ts as drifted when SDK_VERSION changes", () => {
+    const a = emitWith({});
+    const b = emitWith({ sdkVersion: "1.2.3" });
+    const result = compareSdkSource("version.ts", a.version, b.version);
+    expect(result.equal).toBe(false);
+  });
+
+  it("requires byte equality for client.ts / schemas.ts / types.ts", () => {
+    const a = emitWith({});
+    expect(compareSdkSource("client.ts", a.client, a.client).equal).toBe(true);
+    expect(compareSdkSource("schemas.ts", a.schemas, a.schemas).equal).toBe(true);
+    expect(compareSdkSource("types.ts", a.types, a.types).equal).toBe(true);
+
+    const mutatedClient = `${a.client}// drift\n`;
+    const clientResult = compareSdkSource("client.ts", mutatedClient, a.client);
+    expect(clientResult.equal).toBe(false);
+    expect(clientResult.reason).toMatch(/byte mismatch/);
+    expect(clientResult.reason).not.toMatch(/GIT_SHA/);
+
+    const mutatedSchemas = a.schemas.replace("export const", "export  const");
+    expect(compareSdkSource("schemas.ts", mutatedSchemas, a.schemas).equal).toBe(false);
+
+    const mutatedTypes = `// extra\n${a.types}`;
+    expect(compareSdkSource("types.ts", mutatedTypes, a.types).equal).toBe(false);
+  });
+
+  it("ignores GIT_SHA even when stored has the literal `unknown` placeholder", () => {
+    const a = emitWith({ gitSha: "unknown" });
+    const b = emitWith({ gitSha: "5e17fe5608f7" });
+    expect(compareSdkSource("version.ts", a.version, b.version).equal).toBe(true);
   });
 });
 

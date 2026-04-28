@@ -324,6 +324,49 @@ export function emitVersion(input: EmitVersionInput): string {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  drift comparator                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `version.ts` embeds three constants: `SDK_VERSION`, `REGISTRY_HASH` and
+ * `GIT_SHA`. The first two encode codegen identity. `GIT_SHA` is informational
+ * only (useful for runtime debug headers) and changes on every commit, which
+ * would otherwise make `ravi sdk client check` flap on each commit even when
+ * the generated SDK surface is byte-stable. Mask the value before comparison
+ * so drift detection reflects real registry/codegen changes.
+ */
+const GIT_SHA_LINE_RE = /^export const GIT_SHA = .*$/m;
+const GIT_SHA_MASK = 'export const GIT_SHA = "<masked-for-drift-check>";';
+
+export type GeneratedSdkFile = "client.ts" | "schemas.ts" | "types.ts" | "version.ts";
+
+export interface SdkSourceComparison {
+  equal: boolean;
+  reason?: string;
+}
+
+export function compareSdkSource(file: GeneratedSdkFile, stored: string, generated: string): SdkSourceComparison {
+  if (file === "version.ts") {
+    const a = maskGitSha(stored);
+    const b = maskGitSha(generated);
+    if (a === b) return { equal: true };
+    return {
+      equal: false,
+      reason: `byte mismatch ignoring GIT_SHA (stored=${stored.length}, live=${generated.length})`,
+    };
+  }
+  if (stored === generated) return { equal: true };
+  return {
+    equal: false,
+    reason: `byte mismatch (stored=${stored.length}, live=${generated.length})`,
+  };
+}
+
+function maskGitSha(source: string): string {
+  return source.replace(GIT_SHA_LINE_RE, GIT_SHA_MASK);
+}
+
+/* -------------------------------------------------------------------------- */
 /*  helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 

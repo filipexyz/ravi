@@ -12,8 +12,11 @@ export {
   emitSchemas,
   emitClient,
   emitVersion,
+  compareSdkSource,
   type EmittedSdk,
   type EmitOptions,
   type EmitVersionInput,
+  type GeneratedSdkFile,
+  type SdkSourceComparison,
 } from "./emit-files.js";
 export { computeRegistryHash } from "./registry-hash.js";
