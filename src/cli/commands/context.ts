@@ -6,9 +6,20 @@ import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeRuntimeContext,
+  getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
 import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import {
+  CredentialsFileError,
+  emptyCredentialsFile,
+  getCredentialsPath,
+  readCredentialsFile,
+  setDefaultCredentialsEntry,
+  upsertCredentialsEntry,
+  writeCredentialsFile,
+  type CredentialsFile,
+} from "../../runtime/credentials-store.js";
 import { canWithCapabilityContext } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
@@ -262,11 +273,44 @@ export class ContextCommands {
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
   revoke(
     @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
+    @Option({
+      flags: "--no-cascade",
+      description: "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
+    })
+    cascade = true,
+    @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
+    reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const context = revokeRuntimeContext(contextId);
-    const payload = this.serializeContextDetail(context);
-    this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Revoked Context"));
+    if (cascade === false) {
+      console.error(
+        "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
+      );
+    }
+    const result = revokeRuntimeContext(contextId, { cascade, reason });
+    const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
+    this.printPayload(payload, asJson, () =>
+      this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),
+    );
+  }
+
+  @Command({ name: "lineage", description: "Show ancestor chain and descendant tree for a runtime context" })
+  lineage(
+    @Arg("contextId", { description: "Context ID to inspect" }) contextId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const lineage = getContextLineage(contextId);
+    if (!lineage) {
+      fail(`Context not found: ${contextId}`);
+    }
+
+    const payload = {
+      context: this.serializeContextDetail(lineage.context),
+      ancestors: lineage.ancestors.map((c) => this.serializeContextSummary(c)),
+      descendants: lineage.descendants.map((c) => this.serializeContextSummary(c)),
+    };
+
+    this.printPayload(payload, asJson, () => this.printLineage(payload));
   }
 
   @Command({
@@ -495,6 +539,59 @@ export class ContextCommands {
     ].filter((value): value is string => Boolean(value));
   }
 
+  private serializeRevokeResult(
+    context: ContextRecord,
+    cascaded: ContextRecord[],
+    revokedAt: number,
+  ): { context: SerializedContextDetail; cascaded: SerializedContextSummary[]; revokedAt: number } {
+    return {
+      context: this.serializeContextDetail(context),
+      cascaded: cascaded.map((c) => this.serializeContextSummary(c)),
+      revokedAt,
+    };
+  }
+
+  private printRevokeResult(
+    context: SerializedContextDetail,
+    cascaded: SerializedContextSummary[],
+    revokedAt: number,
+  ): void {
+    this.printContextRecord(context, CONTEXT_DB_META, "Revoked Context");
+    console.log(`\n${formatInspectionSection(`  Cascaded (${cascaded.length})`, DERIVED_META)}`);
+    if (cascaded.length === 0) {
+      console.log("    (none)");
+    } else {
+      for (const ctx of cascaded) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+    printInspectionField("Revoked At", formatTimestamp(revokedAt), DERIVED_META);
+  }
+
+  private printLineage(payload: {
+    context: SerializedContextDetail;
+    ancestors: SerializedContextSummary[];
+    descendants: SerializedContextSummary[];
+  }): void {
+    this.printContextRecord(payload.context, CONTEXT_DB_META, "Context Lineage");
+    console.log(`\n${formatInspectionSection(`  Ancestors (${payload.ancestors.length})`, DERIVED_META)}`);
+    if (payload.ancestors.length === 0) {
+      console.log("    (root)");
+    } else {
+      for (const ctx of payload.ancestors) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+    console.log(`\n${formatInspectionSection(`  Descendants (${payload.descendants.length})`, DERIVED_META)}`);
+    if (payload.descendants.length === 0) {
+      console.log("    (none)");
+    } else {
+      for (const ctx of payload.descendants) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: status=${ctx.status} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+  }
+
   private serializeContextSummary(context: ContextRecord): SerializedContextSummary {
     const lineage = this.extractLineage(context);
     return {
@@ -542,6 +639,170 @@ export class ContextCommands {
     if (context.expiresAt && context.expiresAt <= Date.now()) return "expired";
     return "active";
   }
+}
+
+interface SerializedCredentialEntry {
+  contextKey: string;
+  contextId: string;
+  agentId: string | null;
+  label: string | null;
+  kind: string | null;
+  issuedAt: number;
+  expiresAt: number | null;
+  isDefault: boolean;
+}
+
+@Group({
+  name: "context.credentials",
+  description: "Manage the local runtime context credentials store (~/.ravi/credentials.json)",
+  scope: "open",
+})
+export class ContextCredentialsCommands {
+  @Command({ name: "list", description: "List entries in the local credentials store" })
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    const exists = file !== null;
+    const data = file ?? emptyCredentialsFile();
+    const entries = serializeCredentialsFile(data);
+    const payload = { path, exists, default: data.default ?? null, entries };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+
+    console.log(`\nCredentials: ${path}`);
+    if (!exists) {
+      console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
+      return;
+    }
+    console.log(`  default: ${data.default ?? "(none)"}`);
+    if (entries.length === 0) {
+      console.log("  (no entries)");
+      return;
+    }
+    for (const entry of entries) {
+      const marker = entry.isDefault ? "*" : " ";
+      console.log(
+        `  ${marker} ${entry.contextKey} :: ${entry.kind ?? "-"} :: agent=${entry.agentId ?? "-"} label=${entry.label ?? "-"}`,
+      );
+      console.log(
+        `      contextId=${entry.contextId} issued=${formatTimestamp(entry.issuedAt)} expires=${formatTimestamp(
+          entry.expiresAt,
+        )}`,
+      );
+    }
+  }
+
+  @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
+  add(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,
+    @Option({ flags: "--set-default", description: "Mark this entry as the default" }) setDefault = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    if (!contextKey.startsWith("rctx_")) {
+      fail(`Expected an rctx_* key, got "${contextKey.slice(0, 8)}..."`);
+    }
+    const record = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path) ?? emptyCredentialsFile();
+    const entry = {
+      context_id: record.contextId,
+      agent_id: record.agentId ?? "",
+      label: label ?? "",
+      kind: record.kind,
+      issued_at: record.createdAt,
+      expires_at: record.expiresAt ?? null,
+    };
+    const next = upsertCredentialsEntry(file, contextKey, entry, { setDefault });
+    writeCredentialsFile(next, path);
+    const payload = {
+      path,
+      default: next.default,
+      added: contextKey,
+    };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(`Stored ${contextKey} in ${payload.path}${next.default === contextKey ? " (default)" : ""}`);
+  }
+
+  @Command({ name: "set-default", description: "Mark a stored context-key as the default" })
+  setDefault(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    if (!file) {
+      fail(`No credentials file at ${path} — add an entry first with 'ravi context credentials add'`);
+    }
+    if (!(contextKey in file.contexts)) {
+      fail(`No credential entry for ${contextKey} — add it first with 'ravi context credentials add'`);
+    }
+    const next = setDefaultCredentialsEntry(file, contextKey);
+    writeCredentialsFile(next, path);
+    const payload = { path, default: next.default };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(`Default credential set to ${contextKey}`);
+  }
+
+  @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
+  remove(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    if (!file || !(contextKey in file.contexts)) {
+      fail(`No credential entry for ${contextKey} in ${path}`);
+    }
+    const contexts = { ...file.contexts };
+    delete contexts[contextKey];
+    const nextDefault = file.default && file.default !== contextKey ? file.default : null;
+    const next: CredentialsFile = { version: file.version, default: nextDefault, contexts };
+    writeCredentialsFile(next, path);
+    const payload = { path, default: next.default, removed: contextKey };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+    console.log(`Removed ${contextKey} from ${payload.path}`);
+  }
+
+  private loadCredentialsOrFail(path: string): CredentialsFile | null {
+    try {
+      return readCredentialsFile(path);
+    } catch (err) {
+      if (err instanceof CredentialsFileError) {
+        fail(err.message);
+      }
+      throw err;
+    }
+  }
+}
+
+function serializeCredentialsFile(data: CredentialsFile): SerializedCredentialEntry[] {
+  const entries: SerializedCredentialEntry[] = [];
+  for (const [contextKey, entry] of Object.entries(data.contexts ?? {})) {
+    entries.push({
+      contextKey,
+      contextId: entry.context_id,
+      agentId: entry.agent_id ?? null,
+      label: entry.label ?? null,
+      kind: entry.kind ?? null,
+      issuedAt: entry.issued_at,
+      expiresAt: entry.expires_at ?? null,
+      isDefault: data.default === contextKey,
+    });
+  }
+  return entries.sort((a, b) => b.issuedAt - a.issuedAt);
 }
 
 function formatTimestamp(value: number | null | undefined): string {

@@ -212,8 +212,12 @@ export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): Ope
         bearerAuth: {
           type: "http",
           scheme: "bearer",
-          bearerFormat: "JWT",
-          description: "Bearer token issued by the Ravi gateway. Required for non-`open` scopes.",
+          bearerFormat: "rctx",
+          description:
+            "Runtime context-key (`rctx_*`) issued by the Ravi gateway. " +
+            "Required for every non-`open` scope. Bootstrap the first key with " +
+            "`ravi daemon init-admin-key`; rotate, derive, and revoke via the " +
+            "`ravi context` family. Specs: `runtime/context-keys`, `sdk/auth`.",
         },
       },
     },

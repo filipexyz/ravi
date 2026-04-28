@@ -17,6 +17,12 @@ import {
 import { extractOptionName } from "./utils.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
 import { emitCliAuditEvent } from "./audit.js";
+import {
+  dispatchRemote,
+  getRemoteGatewayConfig,
+  resolveContextKeyForRemote,
+  type RemoteGatewayConfig,
+} from "./remote-gateway.js";
 
 type CommandClass = new () => object;
 
@@ -169,6 +175,20 @@ function registerCommand(
       }
     }
 
+    // Remote gateway mode: forward the invocation to the configured gateway
+    // instead of executing in-process. Local mode is unchanged.
+    const remoteConfig = getRemoteGatewayConfig();
+    if (remoteConfig) {
+      await dispatchRemoteCommand({
+        config: remoteConfig,
+        groupName,
+        command: cmdMeta.name,
+        groupSegments: groupName.split("_"),
+        input,
+      });
+      return;
+    }
+
     // Scope enforcement (before method execution)
     const scopeResult = enforceScopeCheck(scope, groupName, cmdMeta.name);
     if (!scopeResult.allowed) {
@@ -204,4 +224,58 @@ function registerCommand(
 
     if (isError) process.exit(1);
   });
+}
+
+interface DispatchRemoteCommandInput {
+  config: RemoteGatewayConfig;
+  groupName: string;
+  command: string;
+  groupSegments: string[];
+  input: Record<string, unknown>;
+}
+
+async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise<void> {
+  const contextKey = resolveContextKeyForRemote();
+  if (!contextKey) {
+    console.error(
+      `Remote gateway mode is enabled (RAVI_GATEWAY_URL=${input.config.url}) but no runtime context-key is available. ` +
+        "Set RAVI_CONTEXT_KEY or run 'ravi daemon init-admin-key' on the gateway host and 'ravi context credentials add <rctx>' locally.",
+    );
+    process.exit(1);
+  }
+
+  let result;
+  try {
+    result = await dispatchRemote({
+      groupSegments: input.groupSegments,
+      command: input.command,
+      body: input.input,
+      config: input.config,
+      contextKey,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Remote gateway request failed: ${message}`);
+    process.exit(1);
+  }
+
+  printRemoteResponse(result);
+  if (!result.ok) {
+    process.exit(1);
+  }
+}
+
+function printRemoteResponse(result: { body: string; contentType: string | null }): void {
+  if (result.body.length === 0) return;
+  const isJson = result.contentType?.includes("application/json") ?? false;
+  if (!isJson) {
+    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
+    return;
+  }
+  try {
+    const parsed = JSON.parse(result.body);
+    console.log(JSON.stringify(parsed, null, 2));
+  } catch {
+    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
+  }
 }

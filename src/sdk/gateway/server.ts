@@ -14,9 +14,10 @@ import { logger } from "../../utils/logger.js";
 import { getRegistry, type RegistrySnapshot } from "../../cli/registry-snapshot.js";
 import { emitJson } from "../openapi/emit.js";
 import { buildRouteTable, buildMetaPayload, type RouteTable, API_PREFIX } from "./route-table.js";
-import { resolveAuth, type GatewayAuthConfig } from "./auth.js";
+import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./auth.js";
 import { dispatch } from "./dispatcher.js";
-import { errorResponse, json, methodNotAllowed, notFound } from "./errors.js";
+import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
+import { hasLiveAdminContext } from "../../runtime/context-registry.js";
 
 const log = logger.child("sdk:gateway");
 
@@ -167,6 +168,19 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
     return methodNotAllowed(request.method, url.pathname);
   }
 
+  const isOpenRoute = cmd.scope === "open";
+  const resolved = resolveAuth(request, ctx.auth);
+  if (!isOpenRoute) {
+    if (!hasLiveAdminContext()) {
+      return unauthorized(
+        "no admin context configured; run 'ravi daemon init-admin-key' on the daemon host before issuing gateway requests",
+      );
+    }
+    if (!resolved.authenticated) {
+      return unauthorized(authFailureMessage(resolved.reason));
+    }
+  }
+
   const contentLength = Number(request.headers.get("content-length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > ctx.maxBodyBytes) {
     return errorResponse(413, "PayloadTooLarge", { limitBytes: ctx.maxBodyBytes });
@@ -193,11 +207,28 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
     }
   }
 
-  const resolved = resolveAuth(request, ctx.auth);
   const result = await dispatch(cmd, body, resolved.context, {
     allowSuperadmin: ctx.allowSuperadmin,
+    contextRecord: resolved.contextRecord,
   });
   return result.response;
+}
+
+function authFailureMessage(reason: AuthFailureReason): string {
+  switch (reason) {
+    case "missing":
+      return "missing Authorization header (expected 'Bearer rctx_*')";
+    case "malformed":
+      return "malformed Authorization header (expected 'Bearer rctx_*')";
+    case "unknown":
+      return "unknown context key";
+    case "revoked":
+      return "context has been revoked";
+    case "expired":
+      return "context has expired";
+    default:
+      return "authentication required";
+  }
 }
 
 function logged(request: Request, url: URL, status: number, startedAt: number, response: Response): Response {

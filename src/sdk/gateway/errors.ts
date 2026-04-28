@@ -42,6 +42,10 @@ export function permissionDenied(reason: string): Response {
   return errorResponse(403, "PermissionDenied", { reason });
 }
 
+export function unauthorized(reason: string): Response {
+  return errorResponse(401, "Unauthorized", { reason });
+}
+
 export function internalError(message: string): Response {
   return errorResponse(500, "InternalError", { message });
 }

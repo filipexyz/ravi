@@ -1,13 +1,16 @@
 import { randomBytes } from "node:crypto";
 import {
   dbCreateContext,
+  dbGetContext,
   dbGetContextByKey,
   dbGetContextByKeyReadOnly,
+  dbListContexts,
   dbTouchContext,
-  dbRevokeContext,
+  dbRevokeContextCascade,
   type ContextCapability,
   type ContextRecord,
   type ContextSource,
+  type RevokeContextResult,
 } from "../router/router-db.js";
 import { canWithCapabilityContext } from "../permissions/capability-context.js";
 import { listRelations } from "../permissions/relations.js";
@@ -15,6 +18,9 @@ import { listRelations } from "../permissions/relations.js";
 export const RAVI_CONTEXT_KEY_ENV = "RAVI_CONTEXT_KEY";
 export const DEFAULT_CONTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_DERIVED_CONTEXT_TTL_MS = 60 * 60 * 1000;
+export const DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+export const ADMIN_BOOTSTRAP_KIND = "admin-bootstrap";
+export const ADMIN_BOOTSTRAP_AGENT_ID = "bootstrap";
 
 export interface CreateRuntimeContextInput {
   kind?: string;
@@ -26,6 +32,10 @@ export interface CreateRuntimeContextInput {
   metadata?: Record<string, unknown>;
   ttlMs?: number;
   expiresAt?: number;
+  /** Override generated contextId. Used by the bootstrap CLI for --from-env imports. */
+  contextId?: string;
+  /** Override generated contextKey (rctx_*). Used by the bootstrap CLI for --from-env imports. */
+  contextKey?: string;
 }
 
 export interface IssueRuntimeContextInput {
@@ -41,8 +51,8 @@ export interface IssueRuntimeContextInput {
 export function createRuntimeContext(input: CreateRuntimeContextInput): ContextRecord {
   const now = Date.now();
   return dbCreateContext({
-    contextId: generateOpaqueToken("ctx"),
-    contextKey: generateOpaqueToken("rctx"),
+    contextId: input.contextId ?? generateOpaqueToken("ctx"),
+    contextKey: input.contextKey ?? generateOpaqueToken("rctx"),
     kind: input.kind ?? "runtime",
     agentId: input.agentId,
     sessionKey: input.sessionKey,
@@ -141,8 +151,94 @@ export function issueRuntimeContext(input: IssueRuntimeContextInput): ContextRec
   });
 }
 
-export function revokeRuntimeContext(contextId: string): ContextRecord {
-  return dbRevokeContext(contextId);
+export interface RevokeRuntimeContextOptions {
+  cascade?: boolean;
+  reason?: string;
+  revokedAt?: number;
+}
+
+export function revokeRuntimeContext(
+  contextId: string,
+  options: RevokeRuntimeContextOptions = {},
+): RevokeContextResult {
+  return dbRevokeContextCascade(contextId, {
+    revokedAt: options.revokedAt,
+    cascade: options.cascade,
+    reason: options.reason,
+  });
+}
+
+export interface ContextLineage {
+  context: ContextRecord;
+  ancestors: ContextRecord[];
+  descendants: ContextRecord[];
+}
+
+/**
+ * Resolve full ancestor chain (up to root) and descendant tree rooted at the
+ * given context. Used by `ravi context lineage`.
+ */
+export function getContextLineage(contextId: string): ContextLineage | null {
+  const target = dbGetContext(contextId);
+  if (!target) return null;
+
+  const ancestors: ContextRecord[] = [];
+  const seen = new Set<string>([target.contextId]);
+  let cursor: ContextRecord | null = target;
+  while (cursor) {
+    const parentId = typeof cursor.metadata?.parentContextId === "string" ? cursor.metadata.parentContextId : null;
+    if (!parentId || seen.has(parentId)) break;
+    const parent = dbGetContext(parentId);
+    if (!parent) break;
+    ancestors.push(parent);
+    seen.add(parent.contextId);
+    cursor = parent;
+  }
+
+  const all = dbListContexts({ includeInactive: true });
+  const childrenByParent = new Map<string, ContextRecord[]>();
+  for (const ctx of all) {
+    const parentId = typeof ctx.metadata?.parentContextId === "string" ? ctx.metadata.parentContextId : null;
+    if (!parentId) continue;
+    const list = childrenByParent.get(parentId) ?? [];
+    list.push(ctx);
+    childrenByParent.set(parentId, list);
+  }
+
+  const descendants: ContextRecord[] = [];
+  const visited = new Set<string>([target.contextId]);
+  const queue: string[] = [target.contextId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const child of childrenByParent.get(current) ?? []) {
+      if (visited.has(child.contextId)) continue;
+      visited.add(child.contextId);
+      descendants.push(child);
+      queue.push(child.contextId);
+    }
+  }
+
+  return { context: target, ancestors, descendants };
+}
+
+/**
+ * Lookup the live admin (`admin:system:*`) contexts. Used by the daemon to
+ * decide whether the bootstrap CLI must be run before any non-`open` request
+ * is accepted.
+ */
+export function listLiveAdminContexts(): ContextRecord[] {
+  const now = Date.now();
+  return dbListContexts({ includeInactive: false }).filter((ctx) => {
+    if (ctx.revokedAt && ctx.revokedAt <= now) return false;
+    if (ctx.expiresAt && ctx.expiresAt <= now) return false;
+    return ctx.capabilities.some(
+      (cap) => cap.permission === "admin" && cap.objectType === "system" && cap.objectId === "*",
+    );
+  });
+}
+
+export function hasLiveAdminContext(): boolean {
+  return listLiveAdminContexts().length > 0;
 }
 
 function dedupeCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
