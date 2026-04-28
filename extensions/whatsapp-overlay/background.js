@@ -1,5 +1,6 @@
 const BRIDGE_BASE = "http://127.0.0.1:4210";
 const BRIDGE_TIMEOUT_MS = 2500;
+const ARTIFACT_BLOB_TIMEOUT_MS = 8000;
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "ravi:get-snapshot") {
@@ -25,6 +26,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   if (message?.type === "ravi:get-insights") {
     fetchInsights(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:get-artifacts") {
+    fetchArtifacts(message.payload)
+      .then(sendResponse)
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
+  if (message?.type === "ravi:get-artifact-blob") {
+    fetchArtifactBlob(message.payload)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
@@ -165,6 +180,77 @@ async function fetchInsights(payload = {}) {
   return response.json();
 }
 
+async function fetchArtifacts(payload = {}) {
+  const params = new URLSearchParams();
+  if (payload.limit) params.set("limit", String(payload.limit));
+  if (payload.lifecycle) params.set("lifecycle", String(payload.lifecycle));
+  if (payload.kind) params.set("kind", String(payload.kind));
+  if (payload.taskId) params.set("taskId", String(payload.taskId));
+  if (payload.sessionId) params.set("sessionId", String(payload.sessionId));
+  if (payload.agentId) params.set("agentId", String(payload.agentId));
+
+  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/artifacts?${params.toString()}`);
+  return response.json();
+}
+
+async function fetchArtifactBlob(payload = {}) {
+  const artifactId = typeof payload?.artifactId === "string" ? payload.artifactId.trim() : "";
+  if (!artifactId) return { ok: false, status: 400, code: "missing_id", error: "Missing artifactId" };
+
+  const params = new URLSearchParams();
+  params.set("id", artifactId);
+
+  let response;
+  try {
+    response = await bridgeFetch(
+      `${BRIDGE_BASE}/api/whatsapp-overlay/artifact-blob?${params.toString()}`,
+      { timeoutMs: ARTIFACT_BLOB_TIMEOUT_MS },
+    );
+  } catch (error) {
+    return { ok: false, status: 0, code: "network", error: String(error) };
+  }
+
+  if (!response.ok) {
+    let parsed = null;
+    try {
+      parsed = await response.clone().json();
+    } catch {}
+    return {
+      ok: false,
+      status: response.status,
+      code: parsed?.code || `http_${response.status}`,
+      error: parsed?.error || response.statusText || `HTTP ${response.status}`,
+    };
+  }
+
+  const contentType = response.headers.get("content-type") || "application/octet-stream";
+  let buffer;
+  try {
+    buffer = await response.arrayBuffer();
+  } catch (error) {
+    return { ok: false, status: response.status, code: "decode_failed", error: String(error) };
+  }
+
+  return {
+    ok: true,
+    artifactId,
+    contentType,
+    sizeBytes: buffer.byteLength,
+    dataUri: `data:${contentType};base64,${arrayBufferToBase64(buffer)}`,
+  };
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
+
 async function postTaskDispatch(payload = {}) {
   const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks/dispatch`, {
     method: "POST",
@@ -280,12 +366,14 @@ async function postDomCommandResult(payload = {}) {
 }
 
 async function bridgeFetch(url, options = {}) {
+  const { timeoutMs, ...fetchOptions } = options;
+  const effectiveTimeoutMs = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : BRIDGE_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
   try {
     return await fetch(url, {
-      ...options,
-      signal: options.signal || controller.signal,
+      ...fetchOptions,
+      signal: fetchOptions.signal || controller.signal,
     });
   } finally {
     clearTimeout(timeout);
