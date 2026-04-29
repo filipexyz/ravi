@@ -114,7 +114,7 @@ export async function dispatch(
 
   try {
     returnValue = await runWithContext(
-      asToolContext(scopeContext),
+      asToolContext(scopeContext, opts.contextRecord ?? null),
       () =>
         new Promise<unknown>((resolve, reject) => {
           const scopeResult = enforceScopeCheck(cmd.scope, cmd.groupSegments.join("_"), cmd.command);
@@ -151,6 +151,24 @@ export async function dispatch(
     return { response, audit };
   }
 
+  if (cmd.binary) {
+    if (!(returnValue instanceof Response)) {
+      response = returnShapeError([
+        {
+          path: [],
+          code: "invalid_type",
+          message: `Command "${cmd.fullName}" is declared @Returns.binary() but handler returned ${describeReturnValue(returnValue)} instead of a Response.`,
+        },
+      ]);
+      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+      await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit };
+    }
+    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
+    await emitDispatchAudit(audit, opts.emitAudit);
+    return { response: returnValue, audit };
+  }
+
   if (cmd.returns) {
     const returnIssues = checkReturnShape(cmd.returns, returnValue);
     if (returnIssues) {
@@ -165,6 +183,13 @@ export async function dispatch(
   const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
   await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit };
+}
+
+function describeReturnValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  if (Array.isArray(value)) return "an array";
+  return typeof value;
 }
 
 interface AuditLineage {
@@ -343,11 +368,15 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
   return issues;
 }
 
-function asToolContext(scope: ScopeContext): ToolContext {
+function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
   const ctx: ToolContext = {};
   if (scope.agentId) ctx.agentId = scope.agentId;
   if (scope.sessionKey) ctx.sessionKey = scope.sessionKey;
   if (scope.sessionName) ctx.sessionName = scope.sessionName;
+  if (record) {
+    ctx.contextId = record.contextId;
+    ctx.context = record;
+  }
   return ctx;
 }
 

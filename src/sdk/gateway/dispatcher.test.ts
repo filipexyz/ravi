@@ -33,6 +33,21 @@ class GatewayDemoCommands {
   boom() {
     throw new Error("kaboom");
   }
+
+  @Command({ name: "blob", description: "Returns raw binary Response" })
+  @Returns.binary()
+  blob() {
+    return new Response(new Uint8Array([0xff, 0x00, 0x42]), {
+      status: 200,
+      headers: { "content-type": "application/octet-stream", "content-length": "3" },
+    });
+  }
+
+  @Command({ name: "wrong-blob", description: "Marked binary but returns plain object" })
+  @Returns.binary()
+  wrongBlob() {
+    return { not: "a response" };
+  }
 }
 
 @Group({ name: "secret", description: "Superadmin commands", scope: "superadmin" })
@@ -195,5 +210,43 @@ describe("dispatch — audit", () => {
     const audits = captureAudits();
     await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
     expect(audits.events).toHaveLength(0);
+  });
+});
+
+describe("dispatch — @Returns.binary() escape hatch", () => {
+  it("passes through a raw Response without JSON serialization", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(findCmd("demo.blob"), {}, {}, { emitAudit: audits.emit });
+
+    expect(result.response.status).toBe(200);
+    expect(result.response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(result.response.headers.get("content-length")).toBe("3");
+
+    const bytes = new Uint8Array(await result.response.arrayBuffer());
+    expect(Array.from(bytes)).toEqual([0xff, 0x00, 0x42]);
+
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.tool).toBe("demo_blob");
+    expect(audits.events[0]?.isError).toBe(false);
+  });
+
+  it("registers binary=true in the registry entry", () => {
+    const cmd = findCmd("demo.blob");
+    expect(cmd.binary).toBe(true);
+    expect(cmd.returns).toBeUndefined();
+  });
+
+  it("rejects handlers marked binary that return non-Response values", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(findCmd("demo.wrong-blob"), {}, {}, { emitAudit: audits.emit });
+
+    expect(result.response.status).toBe(500);
+    const body = (await result.response.json()) as { error: string; issues: { message: string }[] };
+    expect(body.error).toBe("ReturnShapeError");
+    expect(body.issues[0]?.message).toContain("@Returns.binary()");
+    expect(body.issues[0]?.message).toContain("instead of a Response");
+
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.isError).toBe(true);
   });
 });
