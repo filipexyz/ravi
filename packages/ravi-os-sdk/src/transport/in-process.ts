@@ -59,6 +59,24 @@ export function createInProcessTransport(config: InProcessTransportConfig): Tran
       });
 
       const status = result.response.status;
+
+      if (input.binary) {
+        if (status >= 200 && status < 300) {
+          return result.response as unknown as T;
+        }
+        const text = await safeText(result.response);
+        const parsed = parseJson(text);
+        if (parsed === null) {
+          throw new RaviInternalError(
+            `Ravi gateway returned status ${status} with no body`,
+            null,
+            status,
+            commandLabel,
+          );
+        }
+        throw buildErrorFromGateway(status, parsed, commandLabel);
+      }
+
       const text = await safeText(result.response);
       const parsed = parseJson(text);
 

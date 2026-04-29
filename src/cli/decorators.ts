@@ -13,6 +13,7 @@ const ARGS_KEY = Symbol("cli:args");
 const OPTIONS_KEY = Symbol("cli:options");
 const SCOPE_KEY = Symbol("cli:scope");
 const RETURNS_KEY = Symbol("cli:returns");
+const RETURNS_BINARY_KEY = Symbol("cli:returns:binary");
 
 // Types
 
@@ -125,6 +126,11 @@ export function Option(options: OptionOptions) {
 /**
  * @Returns decorator - declares the Zod schema for a command's return value.
  * Used by the schema registry to expose typed return shapes to SDK consumers.
+ *
+ * For commands that return binary payloads (e.g. file blobs) and cannot be
+ * encoded as JSON, use `@Returns.binary()` instead. The dispatcher will skip
+ * Zod return-shape validation and pass the handler's `Response` through
+ * unchanged. SDK codegen emits `Promise<Response>` for these methods.
  */
 export function Returns(schema: ZodTypeAny) {
   return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
@@ -133,6 +139,12 @@ export function Returns(schema: ZodTypeAny) {
     Reflect.defineMetadata(RETURNS_KEY, map, target.constructor);
   };
 }
+
+Returns.binary = () => (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+  const set: Set<string> = Reflect.getMetadata(RETURNS_BINARY_KEY, target.constructor) || new Set();
+  set.add(propertyKey);
+  Reflect.defineMetadata(RETURNS_BINARY_KEY, set, target.constructor);
+};
 
 // Metadata getters
 export function getGroupMetadata(target: Function): GroupOptions | undefined {
@@ -159,4 +171,8 @@ export function getScopeMetadata(target: Function): Map<string, ScopeType> {
 
 export function getReturnsMetadata(target: Function): Map<string, ZodTypeAny> {
   return Reflect.getMetadata(RETURNS_KEY, target) || new Map();
+}
+
+export function getReturnsBinaryMetadata(target: Function): Set<string> {
+  return Reflect.getMetadata(RETURNS_BINARY_KEY, target) || new Set();
 }

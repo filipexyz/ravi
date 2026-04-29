@@ -21,10 +21,8 @@ import {
 
 const DEFAULT_HEARTBEAT_MS = 5_000;
 const BASE_CAPABILITIES = ["snapshot.open", "ping"] as const;
-const OVERLAY_WHATSAPP_CAPABILITIES = [...BASE_CAPABILITIES, "placeholder.outline"] as const;
 
 const STREAM_SCOPE_TOPICS: Record<string, string[]> = {
-  "overlay.whatsapp": ["ravi.session.>", "ravi.route.>", "ravi.approval.>", "ravi._cli.cli.>"],
   events: [">"],
   [TASK_STREAM_SCOPE]: [...TASK_STREAM_TOPIC_PATTERNS],
 };
@@ -44,9 +42,6 @@ export function resolveTopicPatterns(scope: string, topicPatterns?: string[]): s
 }
 
 export function resolveStreamCapabilities(scope: string): string[] {
-  if (scope === "overlay.whatsapp") {
-    return [...OVERLAY_WHATSAPP_CAPABILITIES];
-  }
   if (scope === TASK_STREAM_SCOPE) {
     return [...TASK_STREAM_CAPABILITIES];
   }
@@ -149,7 +144,7 @@ export async function runCliStreamServer(options: StreamServerOptions): Promise<
     });
   };
 
-  const emitCommandEvent = (topic: string, body: Record<string, unknown>) => {
+  const _emitCommandEvent = (topic: string, body: Record<string, unknown>) => {
     seq += 1;
     writeOutput({
       v: STREAM_PROTOCOL_VERSION,
@@ -216,41 +211,6 @@ export async function runCliStreamServer(options: StreamServerOptions): Promise<
           actor: source,
         });
         emitAck(id, result);
-        return;
-      }
-      if (scope === "overlay.whatsapp" && body.name === "placeholder.outline") {
-        const componentId = typeof body.args.componentId === "string" ? body.args.componentId.trim() : "";
-        const selector = typeof body.args.selector === "string" ? body.args.selector.trim() : "";
-        if (!componentId) {
-          emitError({
-            commandId: id,
-            code: "invalid_command",
-            message: "placeholder.outline requires componentId",
-            retryable: false,
-          });
-          return;
-        }
-        if (!selector) {
-          emitError({
-            commandId: id,
-            code: "invalid_command",
-            message: "placeholder.outline requires selector",
-            retryable: false,
-          });
-          return;
-        }
-
-        emitCommandEvent("overlay.whatsapp.command.requested", {
-          commandId: id,
-          name: body.name,
-          args: body.args,
-        });
-        emitAck(id, {
-          accepted: true,
-          emitted: "overlay.whatsapp.command.requested",
-          command: body.name,
-          componentId,
-        });
         return;
       }
       if (body.name === "stream.resume") {

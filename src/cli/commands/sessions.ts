@@ -35,7 +35,12 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
-import { dbListContexts, dbListMessageMetaByChatId, type ContextRecord } from "../../router/router-db.js";
+import {
+  dbGetMessageMeta,
+  dbListContexts,
+  dbListMessageMetaByChatId,
+  type ContextRecord,
+} from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -44,8 +49,15 @@ import {
   countHistoryByChatIds,
   getRecentHistory,
   getRecentHistoryByChatIds,
+  getRecentProviderSessionHistory,
   type Message,
 } from "../../db.js";
+import {
+  buildOverlaySessionWorkspaceTimeline,
+  mergeOverlaySessionWorkspaceMessages,
+  parseOverlayTimestamp,
+  type OverlaySessionWorkspaceMessage,
+} from "../../whatsapp-overlay/model.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -142,6 +154,27 @@ function printNormalizedMessages(messages: NormalizedTranscriptMessage[]): void 
 function parseReadMessageCount(countStr: string | undefined): number {
   const count = Number.parseInt(countStr ?? "20", 10);
   return Number.isFinite(count) && count > 0 ? count : 20;
+}
+
+function extractExternalMessageId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parts = value.split("_").filter(Boolean);
+  if (parts.length >= 3 && (parts[0] === "true" || parts[0] === "false")) {
+    return parts[2] ?? null;
+  }
+  return value;
+}
+
+function findTranscriptInSessionHistory(sessionName: string, externalMessageId: string): string | null {
+  const history = getRecentHistory(sessionName, 200);
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message.role !== "user") continue;
+    if (!message.content.includes(`mid:${externalMessageId}`)) continue;
+    const match = message.content.match(/\[Audio\]\s*Transcript:\s*([\s\S]+)/i);
+    if (match?.[1]) return match[1].trim();
+  }
+  return null;
 }
 
 function buildMessageMetadataChatIdVariants(chatId: string | undefined): string[] {
@@ -2099,9 +2132,27 @@ export class SessionCommands {
     @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
     countStr?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--workspace",
+      description: "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
+    })
+    workspace?: boolean,
+    @Option({
+      flags: "--message-id <id>",
+      description: "Return metadata for a single message (transcription, mediaType) using session history as fallback",
+    })
+    messageId?: string,
   ) {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
+
+    if (messageId) {
+      return this.readMessageMeta(session, messageId);
+    }
+
+    if (workspace) {
+      return this.readWorkspace(session, countStr);
+    }
 
     const maxMessages = parseReadMessageCount(countStr);
     const sessionLabel = session.name ?? nameOrKey;
@@ -2257,6 +2308,102 @@ export class SessionCommands {
 
     console.log(`\n💬 ${sessionLabel} — last ${recent.length} of ${messages.length} provider transcript messages\n`);
     printNormalizedMessages(recent);
+  }
+
+  private readMessageMeta(session: SessionEntry, requestedMessageId: string): unknown {
+    const externalMessageId = extractExternalMessageId(requestedMessageId);
+    if (!externalMessageId) {
+      const payload = { ok: false, error: "Missing messageId" } as const;
+      printJson(payload);
+      return payload;
+    }
+
+    const stored = dbGetMessageMeta(externalMessageId);
+    if (stored?.transcription || stored?.mediaType) {
+      const payload = {
+        ok: true,
+        messageId: externalMessageId,
+        meta: {
+          transcription: stored.transcription ?? null,
+          mediaType: stored.mediaType ?? null,
+          createdAt: stored.createdAt,
+          source: "message-metadata" as const,
+        },
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    const sessionLabel = session.name ?? session.sessionKey;
+    const transcript = findTranscriptInSessionHistory(sessionLabel, externalMessageId);
+    if (transcript) {
+      const payload = {
+        ok: true,
+        messageId: externalMessageId,
+        meta: {
+          transcription: transcript,
+          mediaType: "audio" as const,
+          createdAt: Date.now(),
+          source: "session-history" as const,
+        },
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    const payload = { ok: true, messageId: externalMessageId, meta: null };
+    printJson(payload);
+    return payload;
+  }
+
+  private readWorkspace(session: SessionEntry, countStr: string | undefined): unknown {
+    const limit = parseReadMessageCount(countStr);
+    const sessionLabel = session.name ?? session.sessionKey;
+
+    const providerHistoryMessages: OverlaySessionWorkspaceMessage[] = getRecentProviderSessionHistory(
+      sessionLabel,
+      limit,
+    ).map((message) => ({
+      id: String(message.id),
+      role: message.role,
+      content: message.content,
+      createdAt: parseOverlayTimestamp(message.created_at),
+      source: "history" as const,
+    }));
+    const recentHistoryMessages: OverlaySessionWorkspaceMessage[] = getRecentHistory(sessionLabel, limit).map(
+      (message) => ({
+        id: String(message.id),
+        role: message.role,
+        content: message.content,
+        createdAt: parseOverlayTimestamp(message.created_at),
+        source: "history" as const,
+      }),
+    );
+
+    const messages = mergeOverlaySessionWorkspaceMessages(recentHistoryMessages, providerHistoryMessages);
+    const timeline = buildOverlaySessionWorkspaceTimeline({ messages });
+
+    const historySource =
+      providerHistoryMessages.length > 0
+        ? "merged-history"
+        : recentHistoryMessages.length > 0
+          ? "recent-history"
+          : "missing";
+
+    const payload = {
+      ok: true,
+      session: buildSessionJson(session),
+      transcript: {
+        available: messages.length > 0,
+        source: historySource,
+      },
+      messages,
+      timeline,
+      historySource,
+      generatedAt: Date.now(),
+    };
+    printJson(payload);
+    return payload;
   }
 
   @Command({

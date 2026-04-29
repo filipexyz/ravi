@@ -290,6 +290,21 @@ export const ArtifactsAttachInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `artifacts.blob`. */
+export const ArtifactsBlobInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.create`. */
 export const ArtifactsCreateInputSchema = {
   "additionalProperties": false,
@@ -452,6 +467,10 @@ export const ArtifactsEventsInputSchema = {
 export const ArtifactsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "agent": {
+      "description": "Filter rich projection by agent id",
+      "type": "string"
+    },
     "includeDeleted": {
       "description": "Include archived/deleted artifacts",
       "type": "boolean"
@@ -460,9 +479,17 @@ export const ArtifactsListInputSchema = {
       "description": "Filter by artifact kind",
       "type": "string"
     },
+    "lifecycle": {
+      "description": "Filter rich projection by lifecycle: active|archived|stale",
+      "type": "string"
+    },
     "limit": {
       "description": "Max artifacts to list (default: 50)",
       "type": "string"
+    },
+    "rich": {
+      "description": "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+      "type": "boolean"
     },
     "session": {
       "description": "Filter by session key or name",
@@ -2623,6 +2650,10 @@ export const InsightsListInputSchema = {
     "query": {
       "description": "Free-text search over summaries/details/comments",
       "type": "string"
+    },
+    "rich": {
+      "description": "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+      "type": "boolean"
     },
     "session": {
       "description": "Filter by linked session",
@@ -4817,9 +4848,17 @@ export const SessionsReadInputSchema = {
       "description": "Number of messages to show (default: 20)",
       "type": "string"
     },
+    "messageId": {
+      "description": "Return metadata for a single message (transcription, mediaType) using session history as fallback",
+      "type": "string"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"
+    },
+    "workspace": {
+      "description": "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -6074,6 +6113,10 @@ export const TasksDepsRmInputSchema = {
 export const TasksDispatchInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "actorSession": {
+      "description": "Attribute the dispatch to a specific session (overrides RAVI_TASK_ACTOR; useful when a UI dispatches on behalf of a session)",
+      "type": "string"
+    },
     "agent": {
       "description": "Agent ID to receive the task",
       "type": "string"

@@ -78,10 +78,14 @@ export function emitTypes(commands: CommandRegistryEntry[]): string {
     lines.push(`/** Input shape for \`${cmd.fullName}\`. */`);
     lines.push(`export type ${inputName} = ${jsonSchemaToTs(inputSchema, 0)};`);
     lines.push("");
-    lines.push(`/** Return shape for \`${cmd.fullName}\`.${returnSchema ? "" : " (no @Returns declared)"} */`);
-    if (returnSchema) {
+    if (cmd.binary) {
+      lines.push(`/** Return shape for \`${cmd.fullName}\`. (binary — raw HTTP Response) */`);
+      lines.push(`export type ${returnName} = Response;`);
+    } else if (returnSchema) {
+      lines.push(`/** Return shape for \`${cmd.fullName}\`. */`);
       lines.push(`export type ${returnName} = ${jsonSchemaToTs(returnSchema, 0)};`);
     } else {
+      lines.push(`/** Return shape for \`${cmd.fullName}\`. (no @Returns declared) */`);
       lines.push(`export type ${returnName} = unknown;`);
     }
     lines.push("");
@@ -285,6 +289,9 @@ function renderMethod(cmd: CommandRegistryEntry, indent: number, typeImports: Se
   lines.push(`${innerInner}groupSegments: ${groupSegmentsLiteral},`);
   lines.push(`${innerInner}command: ${commandLiteral},`);
   lines.push(`${innerInner}body: ${bodyLiteral},`);
+  if (cmd.binary) {
+    lines.push(`${innerInner}binary: true,`);
+  }
   lines.push(`${inner}});`);
   lines.push(`${pad}}`);
   return lines.join("\n");

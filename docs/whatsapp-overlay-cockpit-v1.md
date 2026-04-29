@@ -259,8 +259,8 @@ Only after navigation feels solid:
 
 Current code relevant to this direction:
 
-- overlay bridge:
-  `src/whatsapp-overlay/bridge.ts`
+- overlay extension service worker:
+  `extensions/whatsapp-overlay/background.js` (consumes the gateway via `@ravi-os/sdk`)
 - overlay model:
   `src/whatsapp-overlay/model.ts`
 - content script:

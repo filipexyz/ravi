@@ -3,7 +3,8 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { file as bunFile } from "bun";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   archiveArtifact,
@@ -17,6 +18,11 @@ import {
   type ArtifactEvent,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
+import {
+  buildOverlayArtifactsPayload,
+  normalizeLifecycle,
+  resolveArtifactBlob,
+} from "../../whatsapp-overlay/artifacts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -209,7 +215,37 @@ export class ArtifactsCommands {
     @Option({ flags: "--limit <n>", description: "Max artifacts to list (default: 50)" }) limit?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--rich",
+      description:
+        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+    })
+    rich?: boolean,
+    @Option({
+      flags: "--lifecycle <type>",
+      description: "Filter rich projection by lifecycle: active|archived|stale",
+    })
+    lifecycle?: string,
+    @Option({ flags: "--agent <id>", description: "Filter rich projection by agent id" })
+    agentId?: string,
   ) {
+    if (rich) {
+      const normalizedLifecycle = lifecycle?.trim() ? normalizeLifecycle(lifecycle.trim()) : null;
+      if (lifecycle?.trim() && !normalizedLifecycle) {
+        fail(`Invalid --lifecycle: ${lifecycle}. Use active|archived|stale.`);
+      }
+      const payload = buildOverlayArtifactsPayload({
+        ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+        ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
+        ...(kind?.trim() ? { kind: kind.trim() } : {}),
+        ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
+        ...(session?.trim() ? { sessionId: session.trim() } : {}),
+        ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+      });
+      printJson(payload);
+      return payload;
+    }
+
     const artifacts = listArtifacts({
       ...(kind?.trim() ? { kind } : {}),
       ...(session?.trim() ? { session } : {}),
@@ -486,5 +522,20 @@ export class ArtifactsCommands {
 
       await sleep(interval);
     }
+  }
+
+  @Command({ name: "blob", description: "Stream raw artifact bytes" })
+  @Returns.binary()
+  async blob(@Arg("id", { description: "Artifact id" }) id: string): Promise<Response> {
+    const result = await resolveArtifactBlob({ artifactId: id });
+    if (!result.ok) {
+      return Response.json({ ok: false, error: result.error, code: result.code }, { status: result.status });
+    }
+    const headers = {
+      "Content-Type": result.mimeType,
+      "Content-Length": String(result.sizeBytes),
+      "Cache-Control": "private, max-age=60",
+    };
+    return new Response(bunFile(result.path), { headers });
   }
 }

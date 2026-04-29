@@ -51,7 +51,7 @@ export function createHttpTransport(config: HttpTransportConfig): Transport {
 
       const headers: Record<string, string> = {
         "content-type": "application/json",
-        accept: "application/json",
+        accept: input.binary ? "application/octet-stream, */*" : "application/json",
         authorization: `Bearer ${config.contextKey}`,
         "x-ravi-sdk-version": SDK_VERSION,
         "x-ravi-registry-hash": REGISTRY_HASH,
@@ -79,6 +79,15 @@ export function createHttpTransport(config: HttpTransportConfig): Transport {
         );
       }
       if (timeoutHandle) clearTimeout(timeoutHandle);
+
+      if (input.binary) {
+        if (response.ok) {
+          return response as unknown as T;
+        }
+        const rawText = await safeText(response);
+        const parsed = parseJson(rawText);
+        throw buildErrorFromGateway(response.status, parsed, commandLabel);
+      }
 
       const rawText = await safeText(response);
       const parsed = parseJson(rawText);

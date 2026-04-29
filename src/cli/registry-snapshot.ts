@@ -17,6 +17,7 @@ import {
   getCommandsMetadata,
   getGroupMetadata,
   getOptionsMetadata,
+  getReturnsBinaryMetadata,
   getReturnsMetadata,
   getScopeMetadata,
   type ScopeType,
@@ -94,6 +95,12 @@ export interface CommandRegistryEntry {
   args: ArgRegistryEntry[];
   options: OptionRegistryEntry[];
   returns?: ZodTypeAny;
+  /**
+   * When true, the command returns a raw `Response` and bypasses JSON
+   * serialization in the gateway dispatcher. SDK codegen emits
+   * `Promise<Response>` for these methods. See `@Returns.binary()`.
+   */
+  binary?: boolean;
 }
 
 export interface RegistrySnapshot {
@@ -130,6 +137,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
     const instance = new cls();
     const scopeMap = getScopeMetadata(cls);
     const returnsMap = getReturnsMetadata(cls);
+    const binaryReturnsSet = getReturnsBinaryMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -182,6 +190,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         args,
         options,
         ...(returnsMap.get(cmdMeta.method) ? { returns: returnsMap.get(cmdMeta.method)! } : {}),
+        ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
       };
 
       const existing = commandsByFullName.get(fullName);

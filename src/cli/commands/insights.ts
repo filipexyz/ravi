@@ -8,6 +8,7 @@ import {
   dbListInsights,
   dbSearchInsights,
 } from "../../insights/index.js";
+import { buildOverlayInsightsPayload } from "../../whatsapp-overlay/insights.js";
 import {
   INSIGHT_CONFIDENCE,
   INSIGHT_IMPORTANCE,
@@ -198,10 +199,22 @@ export class InsightCommands {
     query?: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--rich",
+      description:
+        "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+    })
+    rich?: boolean,
   ) {
     const parsedLimit = Number.parseInt(limit ?? "20", 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
       fail(`Invalid --limit: ${limit}`);
+    }
+
+    if (rich) {
+      const payload = buildOverlayInsightsPayload({ limit: parsedLimit });
+      printJson(payload);
+      return payload;
     }
 
     const linkFilter = resolveLinkFilter({ taskId, sessionName, agentId, profileId });

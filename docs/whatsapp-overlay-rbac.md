@@ -4,7 +4,7 @@
 
 The WhatsApp Overlay does not act as implicit admin.
 
-The enforcement point is the local bridge in `src/whatsapp-overlay/bridge.ts`.
+The enforcement point is the Ravi gateway. The extension's context key (issued via `ravi context issue`) carries the capabilities; the gateway checks scope per command.
 
 The actor is always:
 
@@ -13,7 +13,7 @@ The actor is always:
 
 There is no approval flow in this first cut.
 
-If the actor does not have the required relations, the bridge fails closed.
+If the context key does not have the required relations, the gateway fails closed.
 
 ## Read Model
 
@@ -43,7 +43,7 @@ Current item types with auth:
 
 The content script does not decide access on its own.
 
-It materializes bridge decisions like this:
+It materializes gateway decisions like this:
 
 - `full` => render normal row
 - `opaque` => keep the row visible but dimmed
@@ -101,7 +101,7 @@ Requires:
 
 ## Error Contract
 
-When a write is denied, the bridge returns `403` with:
+When a write is denied, the gateway returns `403` with:
 
 ```json
 {
@@ -119,4 +119,4 @@ The UI should surface these relations directly instead of collapsing them into a
 
 - The actor is intentionally fixed to the current session, not a pinned session.
 - Read items remain visible when denied; they should not disappear.
-- This cut is bridge-enforced and UI-materialized, but still approval-free by design.
+- This cut is gateway-enforced and UI-materialized, but still approval-free by design.

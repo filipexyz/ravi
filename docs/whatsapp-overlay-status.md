@@ -53,33 +53,24 @@ The following are already validated in browser and terminal:
 - DOM control plane
   - CLI can inspect, inject, outline, and remove DOM on demand
 - v3 placeholder substrate
-  - relay-fed placeholder state is available in the bridge and terminal
-  - the browser now has a first placeholder layer for mapped anchors
-  - the first real action is live: clicking a placeholder outlines its mapped slot through `command -> ack/error`
-  - the first useful widget mutation is also live: `bind existing session` now goes through `/v3/command` as `chat.bindSession`
+  - extension reads view-state from `chrome.storage.local` and renders placeholders for mapped anchors
+  - widget mutation: `bind existing session` is persisted via `chat.bindSession` into `chrome.storage.local.ravi_overlay_bindings`
 
 ## Current Technical Shape
 
-Today the overlay runs in a hybrid state:
+The overlay consumes the Ravi gateway directly via `@ravi-os/sdk`. There is no local bridge.
 
 - `content.js`
   - DOM mapping, product rendering, and placeholder consumer
-  - plus the new center-pane session workspace renderer and composer
-  - plus the read-only task list/detail surface in the drawer
+  - center-pane session workspace renderer and composer
+  - read-only task list/detail surface in the drawer
 - `background.js`
-  - thin bridge proxy
-- `src/whatsapp-overlay/bridge.ts`
-  - read model + actions + live state reduction
-  - plus session-workspace read + prompt endpoints
-  - plus read-only task snapshot endpoint for the extension
-  - plus v3 placeholder endpoint and first v3 command endpoint backed by the local relay
-- `src/whatsapp-overlay/cli.ts`
-  - terminal inspection/control plane
-  - plus `placeholders`, `placeholders-outline`, and `bind` for the v3 mapping/control surface
-- `src/stream/*`
-  - new transport core already live underneath the placeholder slice
-
-This means the transport swap has started and now includes one real widget action plus one real widget state mutation, but product state still mostly rides the old bespoke bridge.
+  - service worker; routes UI requests to `@ravi-os/sdk` (HTTP transport against the active gateway from `chrome.storage.local.ravi_auth`)
+  - composes snapshots locally from `sessions.list` + `tasks.list` + `routes.list` + bindings
+- `lib/compositions.js`, `lib/storage.js`, `lib/dom-model.js`
+  - extension-side helpers replacing the former bridge composition layer
+- `lib/sdk/*`
+  - vendored `@ravi-os/sdk` client (HTTP transport) bundled with the extension
 
 ## Chosen Direction
 
