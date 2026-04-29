@@ -10,6 +10,7 @@ import {
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
 import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import { listSessions } from "../../router/sessions.js";
 import {
   CredentialsFileError,
   emptyCredentialsFile,
@@ -109,6 +110,12 @@ interface ContextIssuePayload {
   source: ContextRecord["source"] | null;
   metadata: Record<string, unknown> | null;
   env: Record<string, string>;
+}
+
+interface AgentRuntimeCleanupCandidate {
+  context: SerializedContextSummary;
+  lastSeenAt: number;
+  sessionExists: boolean;
 }
 
 @Group({
@@ -299,6 +306,79 @@ export class ContextCommands {
     this.printPayload(payload, asJson, () =>
       this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),
     );
+    return payload;
+  }
+
+  @Command({
+    name: "cleanup-agent-runtime",
+    description: "Dry-run or revoke stale agent-runtime contexts left by old turn-scoped issuance",
+  })
+  cleanupAgentRuntime(
+    @Option({
+      flags: "--older-than <duration>",
+      description: "Only include contexts whose last use or creation is older than this duration (default: 1h)",
+    })
+    olderThan = "1h",
+    @Option({ flags: "--agent <agentId>", description: "Filter by agent ID" }) agentId?: string,
+    @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
+    @Option({ flags: "--reason <text>", description: "Revocation reason for audit metadata" })
+    reason = "agent_runtime_cleanup",
+    @Option({ flags: "--revoke", description: "Actually revoke matching contexts; omitted means dry-run" })
+    revoke = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const olderThanMs = parseDurationMs(olderThan);
+    if (olderThanMs === undefined) {
+      fail(`Invalid duration: "${olderThan}". Expected 30m, 2h or 1d`);
+    }
+
+    const now = Date.now();
+    const cutoffAt = now - olderThanMs;
+    const sessionKeys = new Set(listSessions().map((session) => session.sessionKey));
+    const candidates = dbListContexts({
+      agentId,
+      sessionKey,
+      kind: "agent-runtime",
+      includeInactive: false,
+    })
+      .filter((context) => context.kind === "agent-runtime")
+      .filter((context) => (agentId ? context.agentId === agentId : true))
+      .filter((context) => (sessionKey ? context.sessionKey === sessionKey : true))
+      .filter((context) => (context.lastUsedAt ?? context.createdAt) <= cutoffAt)
+      .map((context): AgentRuntimeCleanupCandidate => {
+        const key = context.sessionKey ?? "";
+        return {
+          context: this.serializeContextSummary(context),
+          lastSeenAt: context.lastUsedAt ?? context.createdAt,
+          sessionExists: key ? sessionKeys.has(key) : false,
+        };
+      });
+
+    const revoked = revoke
+      ? candidates.map((candidate) => {
+          const result = revokeRuntimeContext(candidate.context.contextId, { reason });
+          return this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
+        })
+      : [];
+
+    const payload = {
+      dryRun: !revoke,
+      reason: revoke ? reason : null,
+      olderThan,
+      olderThanMs,
+      cutoffAt,
+      scanned: {
+        kind: "agent-runtime",
+        agentId: agentId ?? null,
+        sessionKey: sessionKey ?? null,
+      },
+      candidatesCount: candidates.length,
+      revokedCount: revoked.length,
+      candidates,
+      revoked,
+    };
+
+    this.printPayload(payload, asJson, () => this.printAgentRuntimeCleanup(payload));
     return payload;
   }
 
@@ -576,6 +656,39 @@ export class ContextCommands {
       }
     }
     printInspectionField("Revoked At", formatTimestamp(revokedAt), DERIVED_META);
+  }
+
+  private printAgentRuntimeCleanup(payload: {
+    dryRun: boolean;
+    olderThan: string;
+    cutoffAt: number;
+    candidatesCount: number;
+    revokedCount: number;
+    candidates: AgentRuntimeCleanupCandidate[];
+  }): void {
+    const mode = payload.dryRun ? "dry-run" : "revoked";
+    console.log(`\n${formatInspectionSection(`Agent Runtime Cleanup (${mode})`, CONTEXT_DB_META)}\n`);
+    printInspectionField("Older Than", payload.olderThan, DERIVED_META);
+    printInspectionField("Cutoff", formatTimestamp(payload.cutoffAt), DERIVED_META);
+    printInspectionField("Candidates", payload.candidatesCount, CONTEXT_DB_META);
+    printInspectionField("Revoked", payload.revokedCount, DERIVED_META);
+    if (payload.candidates.length === 0) {
+      console.log("\n  (none)");
+      return;
+    }
+    console.log();
+    for (const candidate of payload.candidates) {
+      const context = candidate.context;
+      console.log(
+        `- ${context.contextId} :: agent=${context.agentId ?? "-"} session=${context.sessionName ?? context.sessionKey ?? "-"}`,
+      );
+      console.log(
+        `  lastSeen=${formatTimestamp(candidate.lastSeenAt)} sessionExists=${candidate.sessionExists ? "yes" : "no"}`,
+      );
+    }
+    if (payload.dryRun) {
+      console.log("\nRun again with --revoke to revoke these contexts.");
+    }
   }
 
   private printLineage(payload: {

@@ -6,6 +6,7 @@ import {
   dbGetContextByKeyReadOnly,
   dbListContexts,
   dbTouchContext,
+  dbUpdateContextRuntimeState,
   dbRevokeContextCascade,
   type ContextCapability,
   type ContextRecord,
@@ -38,6 +39,12 @@ export interface CreateRuntimeContextInput {
   contextKey?: string;
 }
 
+export interface GetOrCreateAgentRuntimeContextInput
+  extends Omit<CreateRuntimeContextInput, "kind" | "agentId" | "sessionKey"> {
+  agentId: string;
+  sessionKey: string;
+}
+
 export interface IssueRuntimeContextInput {
   parent: ContextRecord;
   cliName: string;
@@ -63,6 +70,76 @@ export function createRuntimeContext(input: CreateRuntimeContextInput): ContextR
     createdAt: now,
     expiresAt: input.expiresAt ?? (input.ttlMs === 0 ? undefined : now + (input.ttlMs ?? DEFAULT_CONTEXT_TTL_MS)),
   });
+}
+
+export function getOrCreateAgentRuntimeContext(input: GetOrCreateAgentRuntimeContextInput): ContextRecord {
+  const now = Date.now();
+  const reusable = findLiveAgentRuntimeContext({
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    now,
+  });
+
+  if (reusable) {
+    return dbUpdateContextRuntimeState(
+      reusable.contextId,
+      {
+        sessionName: input.sessionName,
+        source: input.source,
+        metadata: input.metadata,
+      },
+      now,
+    );
+  }
+
+  return createRuntimeContext({
+    ...input,
+    kind: "agent-runtime",
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+  });
+}
+
+export function findLiveAgentRuntimeContext(input: {
+  agentId: string;
+  sessionKey: string;
+  now?: number;
+}): ContextRecord | null {
+  const now = input.now ?? Date.now();
+  const contexts = dbListContexts({
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    kind: "agent-runtime",
+    includeInactive: false,
+  }).filter((ctx) => isContextLive(ctx, now));
+
+  contexts.sort((a, b) => {
+    const aUsed = a.lastUsedAt ?? a.createdAt;
+    const bUsed = b.lastUsedAt ?? b.createdAt;
+    return bUsed - aUsed || b.createdAt - a.createdAt;
+  });
+
+  return contexts[0] ?? null;
+}
+
+export function revokeAgentRuntimeContextsForSession(
+  sessionKey: string,
+  options: RevokeRuntimeContextOptions = {},
+): RevokeContextResult[] {
+  const now = Date.now();
+  const contexts = dbListContexts({
+    sessionKey,
+    kind: "agent-runtime",
+    includeInactive: false,
+  }).filter((ctx) => isContextLive(ctx, now));
+
+  return contexts.map((ctx) =>
+    revokeRuntimeContext(ctx.contextId, {
+      cascade: options.cascade,
+      reason: options.reason ?? "session_context_reset",
+      revokedAt: options.revokedAt,
+    }),
+  );
 }
 
 export function snapshotAgentCapabilities(agentId: string): ContextCapability[] {
@@ -229,6 +306,7 @@ export function getContextLineage(contextId: string): ContextLineage | null {
 export function listLiveAdminContexts(): ContextRecord[] {
   const now = Date.now();
   return dbListContexts({ includeInactive: false }).filter((ctx) => {
+    if (ctx.kind !== ADMIN_BOOTSTRAP_KIND) return false;
     if (ctx.revokedAt && ctx.revokedAt <= now) return false;
     if (ctx.expiresAt && ctx.expiresAt <= now) return false;
     return ctx.capabilities.some(
@@ -251,6 +329,12 @@ function dedupeCapabilities(capabilities: ContextCapability[]): ContextCapabilit
     result.push(capability);
   }
   return result;
+}
+
+function isContextLive(ctx: ContextRecord, now = Date.now()): boolean {
+  if (ctx.revokedAt && ctx.revokedAt <= now) return false;
+  if (ctx.expiresAt && ctx.expiresAt <= now) return false;
+  return true;
 }
 
 function buildDerivedContextMetadata(

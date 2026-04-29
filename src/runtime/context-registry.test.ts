@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { clearRelations, grantRelation } from "../permissions/relations.js";
 import { dbCreateAgent, dbDeleteAgent, dbGetContext, getDb } from "../router/router-db.js";
+import { getOrCreateSession } from "../router/sessions.js";
 import {
+  ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
+  getOrCreateAgentRuntimeContext,
   issueRuntimeContext,
+  listLiveAdminContexts,
   resolveRuntimeContext,
   resolveRuntimeContextOrThrow,
+  revokeAgentRuntimeContextsForSession,
   revokeRuntimeContext,
   snapshotAgentCapabilities,
 } from "./context-registry.js";
@@ -15,8 +20,15 @@ const TEST_AGENT_ID = "test-context-agent";
 function cleanup(): void {
   const db = getDb();
   db.prepare("DELETE FROM contexts WHERE agent_id = ?").run(TEST_AGENT_ID);
+  db.prepare("DELETE FROM sessions WHERE agent_id = ?").run(TEST_AGENT_ID);
   clearRelations({ subjectType: "agent", subjectId: TEST_AGENT_ID });
   dbDeleteAgent(TEST_AGENT_ID);
+}
+
+function createTestSession(sessionKey: string): void {
+  getOrCreateSession(sessionKey, TEST_AGENT_ID, "/tmp/test-context-agent", {
+    name: sessionKey.replaceAll(":", "-"),
+  });
 }
 
 describe("runtime context registry", () => {
@@ -55,6 +67,106 @@ describe("runtime context registry", () => {
       accountId: "main",
       chatId: "5511999999999",
     });
+  });
+
+  it("reuses one live agent-runtime context per agent/session and keeps the original capability snapshot", () => {
+    const sessionKey = "agent:test-context-agent:main";
+    createTestSession(sessionKey);
+    grantRelation("agent", TEST_AGENT_ID, "execute", "group", "context", "manual");
+
+    const first = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-main",
+      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
+      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.4" },
+      source: { channel: "whatsapp", accountId: "main", chatId: "chat-1" },
+    });
+
+    grantRelation("agent", TEST_AGENT_ID, "admin", "system", "*", "manual");
+
+    const second = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-main-renamed",
+      capabilities: snapshotAgentCapabilities(TEST_AGENT_ID),
+      metadata: { runtimeProvider: "codex", runtimeModel: "gpt-5.5" },
+      source: { channel: "whatsapp", accountId: "main", chatId: "chat-2" },
+    });
+
+    expect(second.contextId).toBe(first.contextId);
+    expect(second.contextKey).toBe(first.contextKey);
+    expect(second.sessionName).toBe("test-main-renamed");
+    expect(second.source).toEqual({ channel: "whatsapp", accountId: "main", chatId: "chat-2" });
+    expect(second.metadata).toEqual({ runtimeProvider: "codex", runtimeModel: "gpt-5.5" });
+    expect(second.lastUsedAt).toBeGreaterThanOrEqual(first.createdAt);
+    expect(second.capabilities).toEqual([
+      { permission: "execute", objectType: "group", objectId: "context", source: "manual" },
+    ]);
+  });
+
+  it("creates a fresh agent-runtime context when the previous one is revoked or expired", () => {
+    const sessionKey = "agent:test-context-agent:revoked";
+    createTestSession(sessionKey);
+    createTestSession("agent:test-context-agent:expired");
+    const first = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-revoked",
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+    revokeRuntimeContext(first.contextId);
+
+    const afterRevoke = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-revoked",
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+    expect(afterRevoke.contextId).not.toBe(first.contextId);
+
+    const expired = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey: "agent:test-context-agent:expired",
+      sessionName: "test-expired",
+      capabilities: [],
+      expiresAt: Date.now() - 1,
+    });
+
+    const afterExpiry = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey: "agent:test-context-agent:expired",
+      sessionName: "test-expired",
+      capabilities: [],
+      ttlMs: 60_000,
+    });
+    expect(afterExpiry.contextId).not.toBe(expired.contextId);
+  });
+
+  it("revokes live agent-runtime contexts for a session", () => {
+    const sessionKey = "agent:test-context-agent:reset";
+    createTestSession(sessionKey);
+    const first = getOrCreateAgentRuntimeContext({
+      agentId: TEST_AGENT_ID,
+      sessionKey,
+      sessionName: "test-reset",
+      capabilities: [],
+    });
+    const child = issueRuntimeContext({
+      parent: first,
+      cliName: "child-cli",
+      capabilities: [],
+    });
+
+    const result = revokeAgentRuntimeContextsForSession(sessionKey, { reason: "session_reset_test" });
+    expect(result).toHaveLength(1);
+    expect(result[0]!.context.contextId).toBe(first.contextId);
+    expect(result[0]!.cascaded.map((ctx) => ctx.contextId)).toContain(child.contextId);
+    expect(resolveRuntimeContext(first.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
+    expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
   });
 
   it("snapshots agent relations as context capabilities", () => {
@@ -250,5 +362,25 @@ describe("runtime context registry", () => {
     });
 
     expect(child.capabilities).toEqual([{ permission: "execute", objectType: "group", objectId: "daemon" }]);
+  });
+
+  it("only treats bootstrap admin contexts as live admin contexts", () => {
+    createTestSession("agent:test-context-agent:admin");
+    createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: TEST_AGENT_ID,
+      sessionKey: "agent:test-context-agent:admin",
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      ttlMs: 60_000,
+    });
+
+    const bootstrap = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      ttlMs: 60_000,
+    });
+
+    expect(listLiveAdminContexts().map((context) => context.contextId)).toEqual([bootstrap.contextId]);
   });
 });

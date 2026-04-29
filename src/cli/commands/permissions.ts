@@ -81,7 +81,7 @@ export class PermissionsCommands {
 
     if (asJson) {
       const granted = listRelations(exactFilter)[0] ?? null;
-      printJson({
+      const payload = {
         status: "granted",
         target: relationTarget(subject, relation, object),
         changedCount: existedAsManual ? 0 : 1,
@@ -89,8 +89,21 @@ export class PermissionsCommands {
           ? serializeRelation(granted)
           : relationTuple(subjectType, subjectId, relation, objectType, objectId),
         warnings,
-      });
+      };
+      printJson(payload);
+      return payload;
     }
+
+    const granted = listRelations(exactFilter)[0] ?? null;
+    return {
+      status: "granted",
+      target: relationTarget(subject, relation, object),
+      changedCount: existedAsManual ? 0 : 1,
+      relation: granted
+        ? serializeRelation(granted)
+        : relationTuple(subjectType, subjectId, relation, objectType, objectId),
+      warnings,
+    };
   }
 
   @Command({ name: "revoke", description: "Revoke a relation" })
@@ -135,15 +148,17 @@ export class PermissionsCommands {
         }
       }
 
+      const payload = {
+        status: "revoked",
+        target: relationTarget(subject, relation, object),
+        changedCount: 1,
+        relation: "id" in relationBefore ? serializeRelation(relationBefore) : relationBefore,
+        remainingIndividualRelations: remaining.map(serializeRelation),
+      };
       if (asJson) {
-        printJson({
-          status: "revoked",
-          target: relationTarget(subject, relation, object),
-          changedCount: 1,
-          relation: "id" in relationBefore ? serializeRelation(relationBefore) : relationBefore,
-          remainingIndividualRelations: remaining.map(serializeRelation),
-        });
+        printJson(payload);
       }
+      return payload;
     } else {
       fail("Relation not found");
     }
@@ -202,17 +217,22 @@ export class PermissionsCommands {
     const relations = listRelations(Object.keys(filter).length > 0 ? filter : undefined);
 
     if (asJson) {
-      printJson({
+      const payload = {
         total: relations.length,
         filter,
         relations: relations.map(serializeRelation),
-      });
-      return;
+      };
+      printJson(payload);
+      return payload;
     }
 
     if (relations.length === 0) {
       console.log("No relations found.");
-      return;
+      return {
+        total: relations.length,
+        filter,
+        relations: relations.map(serializeRelation),
+      };
     }
 
     console.log(`\nRelations (${relations.length}):\n`);
@@ -231,22 +251,29 @@ export class PermissionsCommands {
       const src = r.source;
       console.log(`  ${sub}  ${rel}  ${obj}  ${src}`);
     }
+    return {
+      total: relations.length,
+      filter,
+      relations: relations.map(serializeRelation),
+    };
   }
 
   @Command({ name: "sync", description: "Re-sync relations from agent configs" })
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     syncRelationsFromConfig();
     const relations = listRelations({ source: "config" });
+    const payload = {
+      status: "synced",
+      target: { type: "permission-relations", source: "config" },
+      changedCount: relations.length,
+      relations: relations.map(serializeRelation),
+    };
     if (asJson) {
-      printJson({
-        status: "synced",
-        target: { type: "permission-relations", source: "config" },
-        changedCount: relations.length,
-        relations: relations.map(serializeRelation),
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Synced ${relations.length} config relations`);
+    return payload;
   }
 
   @Command({ name: "init", description: "Apply a permission template to an agent" })

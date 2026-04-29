@@ -542,17 +542,19 @@ export class GroupCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await groupRequest("leave", { groupId }, account);
+    const payload = {
+      status: "left",
+      accountId: resolveGroupAccount(account),
+      groupId,
+      result,
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "left",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        result,
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Left group: ${groupId}`);
+    return payload;
   }
 
   @Command({ name: "rename", description: "Rename a group" })
@@ -563,18 +565,20 @@ export class GroupCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await groupRequest("rename", { groupId, subject: name }, account);
+    const payload = {
+      status: "renamed",
+      accountId: resolveGroupAccount(account),
+      groupId,
+      subject: name,
+      result,
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "renamed",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        subject: name,
-        result,
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Group renamed to: ${name}`);
+    return payload;
   }
 
   @Command({ name: "description", description: "Update group description" })
@@ -585,18 +589,20 @@ export class GroupCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const result = await groupRequest("description", { groupId, description: text }, account);
+    const payload = {
+      status: "description_updated",
+      accountId: resolveGroupAccount(account),
+      groupId,
+      description: text,
+      result,
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "description_updated",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        description: text,
-        result,
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Description updated`);
+    return payload;
   }
 
   @Command({
@@ -615,17 +621,19 @@ export class GroupCommands {
     }
 
     const result = await groupRequest("settings", { groupId, setting }, account);
+    const payload = {
+      status: "setting_applied",
+      accountId: resolveGroupAccount(account),
+      groupId,
+      setting,
+      result,
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "setting_applied",
-        accountId: resolveGroupAccount(account),
-        groupId,
-        setting,
-        result,
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
     console.log(`✓ Setting applied: ${setting}`);
+    return payload;
   }
 }

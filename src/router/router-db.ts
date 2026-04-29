@@ -2321,6 +2321,7 @@ interface PreparedStatements {
   listContexts: Statement;
   touchContext: Statement;
   revokeContext: Statement;
+  updateContextRuntimeState: Statement;
   updateContextCapabilities: Statement;
   deleteContext: Statement;
 }
@@ -2531,6 +2532,14 @@ function getStatements(): PreparedStatements {
     listContexts: database.prepare("SELECT * FROM contexts ORDER BY created_at DESC"),
     touchContext: database.prepare("UPDATE contexts SET last_used_at = ? WHERE context_id = ?"),
     revokeContext: database.prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = ?"),
+    updateContextRuntimeState: database.prepare(`
+      UPDATE contexts SET
+        session_name = ?,
+        source_json = ?,
+        metadata_json = ?,
+        last_used_at = ?
+      WHERE context_id = ?
+    `),
     updateContextCapabilities: database.prepare(`
       UPDATE contexts SET
         capabilities_json = ?,
@@ -3433,6 +3442,31 @@ export function dbListContexts(options: ListContextsOptions = {}): ContextRecord
 export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void {
   const s = getStatements();
   s.touchContext.run(lastUsedAt, contextId);
+}
+
+export function dbUpdateContextRuntimeState(
+  contextId: string,
+  input: {
+    sessionName?: string;
+    source?: ContextSource;
+    metadata?: Record<string, unknown>;
+  },
+  lastUsedAt = Date.now(),
+): ContextRecord {
+  if (!dbGetContext(contextId)) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  const source = input.source === undefined ? undefined : ContextSourceSchema.parse(input.source);
+  const metadata = input.metadata === undefined ? undefined : z.record(z.string(), z.unknown()).parse(input.metadata);
+  const s = getStatements();
+  s.updateContextRuntimeState.run(
+    input.sessionName ?? null,
+    source ? JSON.stringify(source) : null,
+    metadata ? JSON.stringify(metadata) : null,
+    lastUsedAt,
+    contextId,
+  );
+  return dbGetContext(contextId)!;
 }
 
 export interface RevokeContextOptions {

@@ -6,6 +6,7 @@ import { getSessionByName } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
+import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
@@ -160,6 +161,11 @@ export class RuntimeSessionDispatcher {
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
     recordStreamingAbortTrace(sessionName, session, abortReason, sessionEntry?.sessionKey, provenance);
+    if (sessionEntry?.sessionKey) {
+      revokeAgentRuntimeContextsForSession(sessionEntry.sessionKey, {
+        reason: abortReason,
+      });
+    }
     this.options
       .safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: "turn.interrupted",

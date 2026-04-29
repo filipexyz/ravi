@@ -35,6 +35,7 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
+import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
   dbGetMessageMeta,
   dbListContexts,
@@ -354,6 +355,7 @@ async function emitSessionMutationAudit(
     before: SessionMutationAuditSnapshot;
     after?: SessionMutationAuditSnapshot | null;
     changed?: boolean;
+    revokedContexts?: number;
     durationMs?: number;
   },
 ): Promise<void> {
@@ -370,6 +372,7 @@ async function emitSessionMutationAudit(
       before: payload.before,
       ...(payload.after !== undefined ? { after: payload.after } : {}),
       ...(payload.changed !== undefined ? { changed: payload.changed } : {}),
+      ...(payload.revokedContexts !== undefined ? { revokedContexts: payload.revokedContexts } : {}),
       ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
     })
     .catch(() => {});
@@ -1651,12 +1654,16 @@ export class SessionCommands {
     }
 
     const changed = resetSession(s.sessionKey);
+    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+      reason: "cli_session_reset",
+    });
     const afterSession = resolveSession(s.sessionKey);
     await emitSessionMutationAudit("reset", "completed", {
       cliInvocation,
       before,
       after: afterSession ? buildSessionMutationAuditSnapshot(afterSession) : null,
       changed,
+      revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
     if (asJson) {
@@ -1667,12 +1674,16 @@ export class SessionCommands {
           completed: true,
           durationMs: Date.now() - startedAt,
         },
+        revokedContexts: revokedContexts.length,
       });
       printJson(payload);
       return payload;
     }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
+    if (revokedContexts.length > 0) {
+      console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+    }
   }
 
   @Command({ name: "delete", description: "Delete a session permanently" })
@@ -1717,12 +1728,16 @@ export class SessionCommands {
       /* session may not be active */
     }
 
+    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+      reason: "cli_session_delete",
+    });
     const changed = deleteSession(s.sessionKey);
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
       before,
       after: null,
       changed,
+      revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
     if (asJson) {
@@ -1732,11 +1747,15 @@ export class SessionCommands {
           completed: true,
           durationMs: Date.now() - startedAt,
         },
+        revokedContexts: revokedContexts.length,
       });
       printJson(payload);
       return payload;
     }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
+    if (revokedContexts.length > 0) {
+      console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+    }
   }
 
   // ===========================================================================
@@ -2931,7 +2950,14 @@ export class SessionCommands {
               console.log("Permission denied.\n");
             } else {
               resetSession(s.sessionKey);
-              console.log("Session reset.\n");
+              const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+                reason: "cli_interactive_session_reset",
+              });
+              console.log("Session reset.");
+              if (revokedContexts.length > 0) {
+                console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+              }
+              console.log();
             }
           }
           ask();

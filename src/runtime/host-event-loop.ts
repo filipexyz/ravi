@@ -16,6 +16,7 @@ import {
 } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
+import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeCapabilities, RuntimeEventMetadata, RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
 
@@ -789,6 +790,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               deferred: true,
             },
           });
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: streaming.internalAbortReason,
+          });
           streaming.abortController.abort();
           streamingSessions.delete(sessionName);
         }
@@ -881,6 +885,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Auto-reset session when prompt is too long (compact failed)
         if (streaming._promptTooLong) {
           log.warn("Auto-resetting session due to 'Prompt is too long'", { sessionName });
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: "prompt_too_long_reset",
+          });
           deleteSession(session.sessionKey);
           streaming._promptTooLong = false;
 

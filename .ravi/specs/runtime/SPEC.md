@@ -9,6 +9,7 @@ capabilities:
   - host-services
   - event-loop
   - session-continuity
+  - context-keys
   - traces
 tags:
   - runtime

@@ -3,7 +3,11 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { createRuntimeContext, snapshotAgentCapabilities } from "./runtime-context-store.js";
+import {
+  createRuntimeContext,
+  getOrCreateAgentRuntimeContext,
+  snapshotAgentCapabilities,
+} from "./runtime-context-store.js";
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 
 export interface RuntimeRequestContextOptions {
@@ -33,8 +37,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
-  const runtimeContext = createRuntimeContext({
-    kind: "agent-runtime",
+  const runtimeContext = getOrCreateAgentRuntimeContext({
     agentId: agent.id,
     sessionKey: dbSessionKey,
     sessionName,
