@@ -202,10 +202,11 @@ describe("openapi emit", () => {
 });
 
 describe("openapi emit (live registry)", () => {
-  it("matches paths.length to live registry.commands.length", () => {
+  it("matches paths.length to live registry.commands.length (excluding cliOnly)", () => {
     const reg = getRegistry();
     const spec = emit(reg);
-    expect(Object.keys(spec.paths).length).toBe(reg.commands.length);
+    const nonCliOnlyCommands = reg.commands.filter((cmd) => !cmd.cliOnly).length;
+    expect(Object.keys(spec.paths).length).toBe(nonCliOnlyCommands);
     expect(spec.openapi).toBe("3.1.0");
   });
 
