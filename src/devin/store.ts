@@ -17,6 +17,7 @@ function getDevinDb(): Database {
   mkdirSync(dirname(path), { recursive: true });
   db = new Database(path);
   db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000");
   db.exec("PRAGMA foreign_keys = ON");
   return db;
 }
@@ -409,8 +410,9 @@ export function listDevinSessions(options: ListDevinSessionRecordsOptions = {}):
 
 export function upsertDevinMessages(devinId: string, messages: DevinSessionMessage[]): StoredDevinMessage[] {
   ensureDevinSchema();
+  const database = getDevinDb();
   const syncedAt = Date.now();
-  const stmt = getDevinDb().prepare(
+  const stmt = database.prepare(
     `INSERT INTO devin_session_messages (devin_id, event_id, created_at, source, message, synced_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(devin_id, event_id) DO UPDATE SET
@@ -419,9 +421,12 @@ export function upsertDevinMessages(devinId: string, messages: DevinSessionMessa
        message = excluded.message,
        synced_at = excluded.synced_at`,
   );
-  for (const message of messages) {
-    stmt.run(devinId, message.event_id, message.created_at, message.source, message.message, syncedAt);
-  }
+  const insertAll = database.transaction(() => {
+    for (const message of messages) {
+      stmt.run(devinId, message.event_id, message.created_at, message.source, message.message, syncedAt);
+    }
+  });
+  insertAll();
   return listDevinMessages(devinId);
 }
 
@@ -438,8 +443,9 @@ export function upsertDevinAttachments(
   attachments: DevinSessionAttachment[],
 ): StoredDevinAttachment[] {
   ensureDevinSchema();
+  const database = getDevinDb();
   const syncedAt = Date.now();
-  const stmt = getDevinDb().prepare(
+  const stmt = database.prepare(
     `INSERT INTO devin_session_attachments (devin_id, attachment_id, name, source, url, content_type, synced_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(devin_id, attachment_id) DO UPDATE SET
@@ -449,17 +455,20 @@ export function upsertDevinAttachments(
        content_type = excluded.content_type,
        synced_at = excluded.synced_at`,
   );
-  for (const attachment of attachments) {
-    stmt.run(
-      devinId,
-      attachment.attachment_id,
-      attachment.name,
-      attachment.source,
-      attachment.url,
-      attachment.content_type ?? null,
-      syncedAt,
-    );
-  }
+  const insertAll = database.transaction(() => {
+    for (const attachment of attachments) {
+      stmt.run(
+        devinId,
+        attachment.attachment_id,
+        attachment.name,
+        attachment.source,
+        attachment.url,
+        attachment.content_type ?? null,
+        syncedAt,
+      );
+    }
+  });
+  insertAll();
   return listDevinAttachments(devinId);
 }
 
