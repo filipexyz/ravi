@@ -91,29 +91,25 @@ export class TmuxCommands {
   ) {
     const manager = new RaviTmuxManager();
     const result = await manager.openAgentWindow(agentId, sessionName);
+    const payload = {
+      success: true as const,
+      target: {
+        agentId,
+        ...(sessionName ? { sessionName } : {}),
+      },
+      tmux: result,
+    };
     if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`tmux session: ${result.tmuxSessionName}`);
+      console.log(`window:       ${result.windowName}`);
+      console.log(`pane:         ${result.paneTitle} (${result.paneId})`);
       console.log(
-        JSON.stringify(
-          {
-            success: true,
-            target: {
-              agentId,
-              ...(sessionName ? { sessionName } : {}),
-            },
-            tmux: result,
-          },
-          null,
-          2,
-        ),
+        `state:        ${result.createdSession ? "created-session" : result.createdWindow ? "created-window" : result.createdPane ? "created-pane" : result.respawnedPane ? "respawned-pane" : "already-running"}`,
       );
-      return result;
     }
-    console.log(`tmux session: ${result.tmuxSessionName}`);
-    console.log(`window:       ${result.windowName}`);
-    console.log(`pane:         ${result.paneTitle} (${result.paneId})`);
-    console.log(
-      `state:        ${result.createdSession ? "created-session" : result.createdWindow ? "created-window" : result.createdPane ? "created-pane" : result.respawnedPane ? "respawned-pane" : "already-running"}`,
-    );
+    return payload;
   }
 
   @Command({ name: "attach", description: "Attach or switch to an agent/session inside tmux" })
@@ -150,31 +146,23 @@ export class TmuxCommands {
   async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const manager = new RaviTmuxManager();
     const sessions = await manager.listManagedSessions();
+    const payload = {
+      total: sessions.length,
+      sessions,
+    };
 
     if (asJson) {
-      console.log(
-        JSON.stringify(
-          {
-            total: sessions.length,
-            sessions,
-          },
-          null,
-          2,
-        ),
-      );
-      return sessions;
-    }
-
-    if (sessions.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (sessions.length === 0) {
       console.log("No Ravi tmux sessions found.");
-      return;
-    }
-
-    for (const session of sessions) {
-      console.log(`\n${session.tmuxSessionName}`);
-      for (const window of session.windows) {
-        console.log(`  - ${window.name}${window.paneDead ? " (dead)" : ""}`);
+    } else {
+      for (const session of sessions) {
+        console.log(`\n${session.tmuxSessionName}`);
+        for (const window of session.windows) {
+          console.log(`  - ${window.name}${window.paneDead ? " (dead)" : ""}`);
+        }
       }
     }
+    return payload;
   }
 }

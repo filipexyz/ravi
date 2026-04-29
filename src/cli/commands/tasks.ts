@@ -902,52 +902,48 @@ export class TaskCommands {
       task = launchResult.task;
     }
 
-    if (normalizedTail.asJson) {
-      const dependencySurface = getTaskDependencySurface(task);
-      console.log(
-        JSON.stringify(
-          {
-            task,
-            taskProfile: resolveTaskProfileForTask(task),
-            event: created.event,
-            relatedEvents: created.relatedEvents,
-            parentTaskId: task.parentTaskId ?? null,
-            readiness: dependencySurface.readiness,
-            dependencies: dependencySurface.dependencies,
-            dependents: dependencySurface.dependents,
-            launchPlan: dependencySurface.launchPlan,
-            ...(launchResult
-              ? {
-                  action:
-                    launchResult.mode === "dispatched"
-                      ? {
-                          type: "dispatch",
-                          assignment: launchResult.assignment,
-                          event: launchResult.event,
-                          sessionName: launchResult.sessionName,
-                        }
-                      : {
-                          type: "launch_plan",
-                          launchPlan: launchResult.launchPlan,
-                          event: launchResult.event,
-                        },
-                }
-              : {}),
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+    const dependencySurface = getTaskDependencySurface(task);
+    const payload = {
+      task,
+      taskProfile: resolveTaskProfileForTask(task),
+      event: created.event,
+      relatedEvents: created.relatedEvents,
+      parentTaskId: task.parentTaskId ?? null,
+      readiness: dependencySurface.readiness,
+      dependencies: dependencySurface.dependencies,
+      dependents: dependencySurface.dependents,
+      launchPlan: dependencySurface.launchPlan,
+      ...(launchResult
+        ? {
+            action:
+              launchResult.mode === "dispatched"
+                ? {
+                    type: "dispatch" as const,
+                    assignment: launchResult.assignment,
+                    event: launchResult.event,
+                    sessionName: launchResult.sessionName,
+                  }
+                : {
+                    type: "launch_plan" as const,
+                    launchPlan: launchResult.launchPlan,
+                    event: launchResult.event,
+                  },
+          }
+        : {}),
+    };
 
-    const headline = !launchResult
-      ? "Created"
-      : launchResult.mode === "dispatched"
-        ? "Created and dispatched"
-        : "Created with launch plan";
-    console.log(`\n✓ ${headline} task ${task.id}`);
-    printTaskCreateOutput(task);
+    if (normalizedTail.asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      const headline = !launchResult
+        ? "Created"
+        : launchResult.mode === "dispatched"
+          ? "Created and dispatched"
+          : "Created with launch plan";
+      console.log(`\n✓ ${headline} task ${task.id}`);
+      printTaskCreateOutput(task);
+    }
+    return payload;
   }
 
   @Command({ name: "list", description: "List tasks" })
@@ -1004,32 +1000,28 @@ export class TaskCommands {
       };
     });
 
+    const payload = {
+      total: tasks.length,
+      archiveMode,
+      limit: lastLimit ?? null,
+      tasks: surfacedTasks.map((item) => ({
+        ...item.task,
+        project: item.project,
+        visualStatus: item.visualStatus,
+        runtime: resolveTaskRuntimeForRead(item.task, {
+          assignment: item.activeAssignment,
+          launchPlan: item.dependencySurface.launchPlan,
+        }),
+        readiness: item.dependencySurface.readiness,
+        dependencyCount: item.dependencySurface.readiness.dependencyCount,
+        unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
+        launchPlan: item.dependencySurface.launchPlan,
+      })),
+    };
+
     if (asJson) {
-      console.log(
-        JSON.stringify(
-          {
-            total: tasks.length,
-            archiveMode,
-            limit: lastLimit ?? null,
-            tasks: surfacedTasks.map((item) => ({
-              ...item.task,
-              project: item.project,
-              visualStatus: item.visualStatus,
-              runtime: resolveTaskRuntimeForRead(item.task, {
-                assignment: item.activeAssignment,
-                launchPlan: item.dependencySurface.launchPlan,
-              }),
-              readiness: item.dependencySurface.readiness,
-              dependencyCount: item.dependencySurface.readiness.dependencyCount,
-              unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
-              launchPlan: item.dependencySurface.launchPlan,
-            })),
-          },
-          null,
-          2,
-        ),
-      );
-      return;
+      console.log(JSON.stringify(payload, null, 2));
+      return payload;
     }
 
     if (tasks.length === 0) {
@@ -1037,7 +1029,7 @@ export class TaskCommands {
       console.log("Usage:");
       console.log('  ravi tasks create "Fix routing" --instructions "..."');
       console.log("  ravi tasks list --last all --all");
-      return;
+      return payload;
     }
 
     const limitSummary = typeof lastLimit === "number" ? `, last ${lastLimit}` : ", all";
@@ -1091,6 +1083,7 @@ export class TaskCommands {
     if (typeof lastLimit === "number") {
       console.log(`Showing the newest ${lastLimit} tasks by update time. Use --last all to remove the limit.\n`);
     }
+    return payload;
   }
 
   @Command({ name: "show", description: "Show task details and history" })
@@ -1113,35 +1106,31 @@ export class TaskCommands {
     const recentEvents = sliceLastEntries(details.events, historyLimit);
     const recentComments = sliceLastEntries(details.comments, historyLimit);
 
+    const payload = {
+      ...details,
+      project: details.project,
+      events: recentEvents,
+      comments: recentComments,
+      historyLimit: historyLimit ?? null,
+      taskSession: details.task ? buildTaskSessionLink(details.task) : null,
+      parentTask: details.parentTask ? buildTaskLineageNode(details.parentTask) : null,
+      childTasks: details.childTasks.map(buildTaskLineageNode),
+      taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
+      taskArtifacts,
+      primaryArtifact: taskArtifacts.primary,
+      runtime: resolveTaskRuntimeForRead(details.task, {
+        assignment: details.activeAssignment,
+        launchPlan: dependencySurface.launchPlan,
+      }),
+      readiness: dependencySurface.readiness,
+      dependencies: dependencySurface.dependencies,
+      dependents: dependencySurface.dependents,
+      launchPlan: dependencySurface.launchPlan,
+    };
+
     if (asJson) {
-      console.log(
-        JSON.stringify(
-          {
-            ...details,
-            project: details.project,
-            events: recentEvents,
-            comments: recentComments,
-            historyLimit: historyLimit ?? null,
-            taskSession: details.task ? buildTaskSessionLink(details.task) : null,
-            parentTask: details.parentTask ? buildTaskLineageNode(details.parentTask) : null,
-            childTasks: details.childTasks.map(buildTaskLineageNode),
-            taskDocument: details.task ? buildTaskDocumentSummary(details.task) : null,
-            taskArtifacts,
-            primaryArtifact: taskArtifacts.primary,
-            runtime: resolveTaskRuntimeForRead(details.task, {
-              assignment: details.activeAssignment,
-              launchPlan: dependencySurface.launchPlan,
-            }),
-            readiness: dependencySurface.readiness,
-            dependencies: dependencySurface.dependencies,
-            dependents: dependencySurface.dependents,
-            launchPlan: dependencySurface.launchPlan,
-          },
-          null,
-          2,
-        ),
-      );
-      return;
+      console.log(JSON.stringify(payload, null, 2));
+      return payload;
     }
 
     printTaskSummary(details.task, details.activeAssignment);
@@ -1339,6 +1328,7 @@ export class TaskCommands {
     }
 
     printNextSteps(details.task);
+    return payload;
   }
 
   @Command({ name: "comment", description: "Add a comment to a task and steer the assignee if it is active" })
@@ -1363,14 +1353,14 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✓ Comment added to ${taskId}`);
+      console.log(`  ${result.comment.body}`);
+      if (result.steeredSessionName) {
+        console.log(`  Steer: ${result.steeredSessionName}`);
+      }
     }
-
-    console.log(`✓ Comment added to ${taskId}`);
-    console.log(`  ${result.comment.body}`);
-    if (result.steeredSessionName) {
-      console.log(`  Steer: ${result.steeredSessionName}`);
-    }
+    return result;
   }
 
   @Command({ name: "archive", description: "Archive a task without changing its execution status" })
@@ -1393,11 +1383,11 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✓ Task ${taskId} ${result.wasNoop ? "already archived" : "archived"}`);
+      console.log(`  ${result.task.archiveReason ?? finalReason}`);
     }
-
-    console.log(`✓ Task ${taskId} ${result.wasNoop ? "already archived" : "archived"}`);
-    console.log(`  ${result.task.archiveReason ?? finalReason}`);
+    return result;
   }
 
   @Command({ name: "unarchive", description: "Restore an archived task to the default list" })
@@ -1411,10 +1401,10 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✓ Task ${taskId} ${result.wasNoop ? "already visible" : "unarchived"}`);
     }
-
-    console.log(`✓ Task ${taskId} ${result.wasNoop ? "already visible" : "unarchived"}`);
+    return result;
   }
 
   @Command({
@@ -1480,10 +1470,7 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-
-    if (result.mode === "launch_planned") {
+    } else if (result.mode === "launch_planned") {
       console.log(`\n✓ Launch plan armed for ${taskId}`);
       console.log(`  Agent:      ${result.launchPlan.agentId}`);
       console.log(`  Session:    ${result.launchPlan.sessionName}`);
@@ -1493,28 +1480,28 @@ export class TaskCommands {
       console.log(`  Readiness:  ${formatReadiness(result.readiness)}`);
       console.log(`  Missing:    ${result.readiness.unsatisfiedDependencyIds.join(", ")}`);
       console.log(`  Inspect:    ravi tasks show ${taskId}`);
-      return;
+    } else {
+      console.log(`\n✓ Dispatched ${taskId}`);
+      console.log(`  Agent:    ${result.task.assigneeAgentId}`);
+      console.log(`  Session:  ${result.sessionName}`);
+      console.log(`  Status:   ${formatTaskStatus(result.task.status)}`);
+      console.log(`  Checkpoint: ${formatCheckpointSummary(result.assignment)}`);
+      console.log(`  Report to: ${result.assignment.reportToSessionName ?? "-"}`);
+      console.log(`  Report on: ${formatTaskReportEvents(result.assignment.reportEvents)}`);
+      console.log(
+        `  Runtime:   ${formatRuntimeResolution(resolveTaskRuntimeForRead(result.task, { assignment: result.assignment }))}`,
+      );
+      console.log(`  Profile:  ${resolveTaskProfileForTask(result.task).id}`);
+      if (result.primaryArtifact) {
+        console.log(`  ${result.primaryArtifact.label}:  ${result.primaryArtifact.path}`);
+      }
+      console.log(`\n${result.dispatchSummary}`);
+      console.log(`  ravi tasks report ${taskId}`);
+      console.log(`  ravi tasks done ${taskId}`);
+      console.log(`  ravi tasks block ${taskId}`);
+      console.log(`  ravi tasks fail ${taskId}`);
     }
-
-    console.log(`\n✓ Dispatched ${taskId}`);
-    console.log(`  Agent:    ${result.task.assigneeAgentId}`);
-    console.log(`  Session:  ${result.sessionName}`);
-    console.log(`  Status:   ${formatTaskStatus(result.task.status)}`);
-    console.log(`  Checkpoint: ${formatCheckpointSummary(result.assignment)}`);
-    console.log(`  Report to: ${result.assignment.reportToSessionName ?? "-"}`);
-    console.log(`  Report on: ${formatTaskReportEvents(result.assignment.reportEvents)}`);
-    console.log(
-      `  Runtime:   ${formatRuntimeResolution(resolveTaskRuntimeForRead(result.task, { assignment: result.assignment }))}`,
-    );
-    console.log(`  Profile:  ${resolveTaskProfileForTask(result.task).id}`);
-    if (result.primaryArtifact) {
-      console.log(`  ${result.primaryArtifact.label}:  ${result.primaryArtifact.path}`);
-    }
-    console.log(`\n${result.dispatchSummary}`);
-    console.log(`  ravi tasks report ${taskId}`);
-    console.log(`  ravi tasks done ${taskId}`);
-    console.log(`  ravi tasks block ${taskId}`);
-    console.log(`  ravi tasks fail ${taskId}`);
+    return result;
   }
 
   @Command({ name: "report", description: "Report task progress from a CLI or agent session" })
@@ -1561,11 +1548,11 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✓ ${taskId} -> ${result.task.progress}% (${formatTaskStatus(result.task.status)})`);
+      console.log(`  ${result.event.message ?? finalMessage}`);
     }
-
-    console.log(`✓ ${taskId} -> ${result.task.progress}% (${formatTaskStatus(result.task.status)})`);
-    console.log(`  ${result.event.message ?? finalMessage}`);
+    return result;
   }
 
   @Command({ name: "done", description: "Mark a task as done" })
@@ -1600,12 +1587,12 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      const effectiveSummary = result.task.summary ?? finalSummary;
+      console.log(`✓ Task ${taskId} ${result.wasNoop ? "already done" : "done"}`);
+      console.log(`  ${effectiveSummary}`);
     }
-
-    const effectiveSummary = result.task.summary ?? finalSummary;
-    console.log(`✓ Task ${taskId} ${result.wasNoop ? "already done" : "done"}`);
-    console.log(`  ${effectiveSummary}`);
+    return result;
   }
 
   @Command({ name: "block", description: "Mark a task as blocked" })
@@ -1638,17 +1625,14 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-
-    if (result.wasNoop) {
+    } else if (result.wasNoop) {
       console.log(`✓ Task ${taskId} already done`);
       console.log(`  ${result.task.summary ?? "Block ignored because the task is already terminal."}`);
-      return;
+    } else {
+      console.log(`⚠️  Task ${taskId} blocked`);
+      console.log(`  ${finalReason}`);
     }
-
-    console.log(`⚠️  Task ${taskId} blocked`);
-    console.log(`  ${finalReason}`);
+    return result;
   }
 
   @Command({ name: "fail", description: "Mark a task as failed" })
@@ -1683,11 +1667,11 @@ export class TaskCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✗ Task ${taskId} failed`);
+      console.log(`  ${finalReason}`);
     }
-
-    console.log(`✗ Task ${taskId} failed`);
-    console.log(`  ${finalReason}`);
+    return result;
   }
 
   @Command({ name: "watch", description: "Watch task events live" })

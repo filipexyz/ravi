@@ -132,6 +132,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
+    return payload;
   }
 
   @Command({ name: "info", description: "Show full runtime context details without exposing the context key" })
@@ -146,6 +147,7 @@ export class ContextCommands {
 
     const payload = this.serializeContextDetail(context);
     this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Context"));
+    return payload;
   }
 
   @Command({ name: "whoami", description: "Resolve the current runtime context" })
@@ -153,6 +155,7 @@ export class ContextCommands {
     const context = this.requireResolvedContext();
     const payload = this.serializeContextDetail(context);
     this.printPayload(payload, asJson, () => this.printContextRecord(payload, RESOLVER_META, "Current Context"));
+    return payload;
   }
 
   @Command({ name: "capabilities", description: "List inherited capabilities for the current runtime context" })
@@ -168,6 +171,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printCapabilitiesPayload(payload));
+    return payload;
   }
 
   @Command({ name: "check", description: "Check whether the current runtime context allows an action" })
@@ -189,6 +193,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printCheckResult(payload));
+    return payload;
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
@@ -220,6 +225,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printAuthorizeResult(payload));
+    return payload;
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
@@ -268,6 +274,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printIssuedContext(payload));
+    return payload;
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
@@ -292,6 +299,7 @@ export class ContextCommands {
     this.printPayload(payload, asJson, () =>
       this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),
     );
+    return payload;
   }
 
   @Command({ name: "lineage", description: "Show ancestor chain and descendant tree for a runtime context" })
@@ -311,6 +319,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printLineage(payload));
+    return payload;
   }
 
   @Command({
@@ -320,6 +329,7 @@ export class ContextCommands {
   codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
     const output = this.handleCodexBashHook();
     console.log(JSON.stringify(output));
+    return output;
   }
 
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
@@ -669,30 +679,30 @@ export class ContextCredentialsCommands {
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-      return;
+    } else {
+      console.log(`\nCredentials: ${path}`);
+      if (!exists) {
+        console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
+      } else {
+        console.log(`  default: ${data.default ?? "(none)"}`);
+        if (entries.length === 0) {
+          console.log("  (no entries)");
+        } else {
+          for (const entry of entries) {
+            const marker = entry.isDefault ? "*" : " ";
+            console.log(
+              `  ${marker} ${entry.contextKey} :: ${entry.kind ?? "-"} :: agent=${entry.agentId ?? "-"} label=${entry.label ?? "-"}`,
+            );
+            console.log(
+              `      contextId=${entry.contextId} issued=${formatTimestamp(entry.issuedAt)} expires=${formatTimestamp(
+                entry.expiresAt,
+              )}`,
+            );
+          }
+        }
+      }
     }
-
-    console.log(`\nCredentials: ${path}`);
-    if (!exists) {
-      console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
-      return;
-    }
-    console.log(`  default: ${data.default ?? "(none)"}`);
-    if (entries.length === 0) {
-      console.log("  (no entries)");
-      return;
-    }
-    for (const entry of entries) {
-      const marker = entry.isDefault ? "*" : " ";
-      console.log(
-        `  ${marker} ${entry.contextKey} :: ${entry.kind ?? "-"} :: agent=${entry.agentId ?? "-"} label=${entry.label ?? "-"}`,
-      );
-      console.log(
-        `      contextId=${entry.contextId} issued=${formatTimestamp(entry.issuedAt)} expires=${formatTimestamp(
-          entry.expiresAt,
-        )}`,
-      );
-    }
+    return payload;
   }
 
   @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
@@ -725,9 +735,10 @@ export class ContextCredentialsCommands {
     };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-      return;
+    } else {
+      console.log(`Stored ${contextKey} in ${payload.path}${next.default === contextKey ? " (default)" : ""}`);
     }
-    console.log(`Stored ${contextKey} in ${payload.path}${next.default === contextKey ? " (default)" : ""}`);
+    return payload;
   }
 
   @Command({ name: "set-default", description: "Mark a stored context-key as the default" })
@@ -748,9 +759,10 @@ export class ContextCredentialsCommands {
     const payload = { path, default: next.default };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-      return;
+    } else {
+      console.log(`Default credential set to ${contextKey}`);
     }
-    console.log(`Default credential set to ${contextKey}`);
+    return payload;
   }
 
   @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
@@ -771,9 +783,10 @@ export class ContextCredentialsCommands {
     const payload = { path, default: next.default, removed: contextKey };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-      return;
+    } else {
+      console.log(`Removed ${contextKey} from ${payload.path}`);
     }
-    console.log(`Removed ${contextKey} from ${payload.path}`);
+    return payload;
   }
 
   private loadCredentialsOrFail(path: string): CredentialsFile | null {

@@ -217,26 +217,24 @@ export class ProxCallsProfileCommands {
   list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     initCallsDefaults();
     const profiles = listCallProfiles();
+    const payload = { total: profiles.length, profiles: profiles.map(serializeProfile) };
 
     if (asJson) {
-      printJson({ total: profiles.length, profiles: profiles.map(serializeProfile) });
-      return;
-    }
-
-    if (profiles.length === 0) {
+      printJson(payload);
+    } else if (profiles.length === 0) {
       console.log("\nNo call profiles found.\n");
-      return;
+    } else {
+      console.log(`\nCall profiles (${profiles.length})\n`);
+      console.log("  ID                  NAME                PROVIDER     LANGUAGE  VOICEMAIL");
+      console.log("  ------------------  ------------------  -----------  --------  ---------");
+      for (const p of profiles) {
+        console.log(
+          `  ${p.id.padEnd(18)}  ${p.name.padEnd(18)}  ${p.provider.padEnd(11)}  ${p.language.padEnd(8)}  ${p.voicemail_policy}`,
+        );
+      }
+      console.log();
     }
-
-    console.log(`\nCall profiles (${profiles.length})\n`);
-    console.log("  ID                  NAME                PROVIDER     LANGUAGE  VOICEMAIL");
-    console.log("  ------------------  ------------------  -----------  --------  ---------");
-    for (const p of profiles) {
-      console.log(
-        `  ${p.id.padEnd(18)}  ${p.name.padEnd(18)}  ${p.provider.padEnd(11)}  ${p.language.padEnd(8)}  ${p.voicemail_policy}`,
-      );
-    }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "show", description: "Show a call profile by ID" })
@@ -250,27 +248,29 @@ export class ProxCallsProfileCommands {
       fail(`Call profile not found: ${profileId}`);
     }
 
-    if (asJson) {
-      printJson(serializeProfile(profile));
-      return;
-    }
+    const payload = serializeProfile(profile);
 
-    console.log(`\nCall Profile: ${profile.name}\n`);
-    console.log(`  ID:              ${profile.id}`);
-    console.log(`  Provider:        ${profile.provider}`);
-    console.log(`  Agent ID:        ${profile.provider_agent_id || "-"}`);
-    console.log(`  Twilio Number:   ${profile.twilio_number_id || "-"}`);
-    console.log(`  Language:        ${profile.language}`);
-    console.log(`  First Message:   ${profile.first_message ?? "-"}`);
-    console.log(`  System Prompt:   ${profile.system_prompt_path ?? "-"}`);
-    console.log(
-      `  Dynamic Vars:    ${profile.dynamic_variables_json ? Object.keys(profile.dynamic_variables_json).join(", ") : "-"}`,
-    );
-    console.log(`  Voicemail:       ${profile.voicemail_policy}`);
-    console.log(`  Enabled:         ${profile.enabled ? "yes" : "no"}`);
-    console.log(`  Prompt:          ${profile.prompt.slice(0, 80)}${profile.prompt.length > 80 ? "…" : ""}`);
-    console.log(`  Created:         ${formatTime(profile.created_at)}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nCall Profile: ${profile.name}\n`);
+      console.log(`  ID:              ${profile.id}`);
+      console.log(`  Provider:        ${profile.provider}`);
+      console.log(`  Agent ID:        ${profile.provider_agent_id || "-"}`);
+      console.log(`  Twilio Number:   ${profile.twilio_number_id || "-"}`);
+      console.log(`  Language:        ${profile.language}`);
+      console.log(`  First Message:   ${profile.first_message ?? "-"}`);
+      console.log(`  System Prompt:   ${profile.system_prompt_path ?? "-"}`);
+      console.log(
+        `  Dynamic Vars:    ${profile.dynamic_variables_json ? Object.keys(profile.dynamic_variables_json).join(", ") : "-"}`,
+      );
+      console.log(`  Voicemail:       ${profile.voicemail_policy}`);
+      console.log(`  Enabled:         ${profile.enabled ? "yes" : "no"}`);
+      console.log(`  Prompt:          ${profile.prompt.slice(0, 80)}${profile.prompt.length > 80 ? "…" : ""}`);
+      console.log(`  Created:         ${formatTime(profile.created_at)}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "configure", description: "Configure a call profile's provider settings" })
@@ -364,26 +364,28 @@ export class ProxCallsProfileCommands {
       }
     }
 
-    if (asJson) {
-      printJson({ profile: serializeProfile(updated), provider_sync: providerSync });
-      return;
-    }
+    const payload = { profile: serializeProfile(updated), provider_sync: providerSync };
 
-    console.log(`\nProfile ${profileId} updated.\n`);
-    console.log(`  Provider:        ${updated.provider}`);
-    console.log(`  Agent ID:        ${updated.provider_agent_id || "-"}`);
-    console.log(`  Twilio Number:   ${updated.twilio_number_id || "-"}`);
-    console.log(`  Language:        ${updated.language}`);
-    console.log(`  First Message:   ${updated.first_message ?? "-"}`);
-    console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
-    console.log(
-      `  Dynamic Vars:    ${updated.dynamic_variables_json ? Object.keys(updated.dynamic_variables_json).join(", ") : "-"}`,
-    );
-    console.log(`  Voicemail:       ${updated.voicemail_policy}`);
-    if (providerSync) {
-      console.log(`  Provider Sync:   ${providerSync.agentId}`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nProfile ${profileId} updated.\n`);
+      console.log(`  Provider:        ${updated.provider}`);
+      console.log(`  Agent ID:        ${updated.provider_agent_id || "-"}`);
+      console.log(`  Twilio Number:   ${updated.twilio_number_id || "-"}`);
+      console.log(`  Language:        ${updated.language}`);
+      console.log(`  First Message:   ${updated.first_message ?? "-"}`);
+      console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
+      console.log(
+        `  Dynamic Vars:    ${updated.dynamic_variables_json ? Object.keys(updated.dynamic_variables_json).join(", ") : "-"}`,
+      );
+      console.log(`  Voicemail:       ${updated.voicemail_policy}`);
+      if (providerSync) {
+        console.log(`  Provider Sync:   ${providerSync.agentId}`);
+      }
+      console.log();
     }
-    console.log();
+    return payload;
   }
 }
 
@@ -406,31 +408,34 @@ export class ProxCallsCommands {
     initCallsDefaults();
     const rules = getCallRules(scope);
     if (!rules) {
+      const emptyPayload = { rules: null, message: "No active rules found" };
       if (asJson) {
-        printJson({ rules: null, message: "No active rules found" });
-        return;
+        printJson(emptyPayload);
+      } else {
+        console.log("\nNo active call rules found.\n");
       }
-      console.log("\nNo active call rules found.\n");
-      return;
+      return emptyPayload;
     }
+
+    const payload = serializeRules(rules);
 
     if (asJson) {
-      printJson(serializeRules(rules));
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\nCall Rules: ${rules.scope_type}/${rules.scope_id}\n`);
+      console.log(`  ID:                      ${rules.id}`);
+      console.log(`  Scope:                   ${rules.scope_type} / ${rules.scope_id}`);
+      const qh = rules.quiet_hours_json;
+      console.log(`  Quiet Hours:             ${qh ? `${qh.start}–${qh.end} (${qh.timezone})` : "-"}`);
+      console.log(`  Max Attempts:            ${rules.max_attempts}`);
+      console.log(`  Cooldown:                ${rules.cooldown_seconds}s`);
+      console.log(`  Snooze Until:            ${rules.snooze_until ? formatTime(rules.snooze_until) : "-"}`);
+      console.log(`  Cancel on Inbound Reply: ${rules.cancel_on_inbound_reply ? "yes" : "no"}`);
+      console.log(`  Require Approval:        ${rules.require_approval ? "yes" : "no"}`);
+      console.log(`  Enabled:                 ${rules.enabled ? "yes" : "no"}`);
+      console.log();
     }
-
-    console.log(`\nCall Rules: ${rules.scope_type}/${rules.scope_id}\n`);
-    console.log(`  ID:                      ${rules.id}`);
-    console.log(`  Scope:                   ${rules.scope_type} / ${rules.scope_id}`);
-    const qh = rules.quiet_hours_json;
-    console.log(`  Quiet Hours:             ${qh ? `${qh.start}–${qh.end} (${qh.timezone})` : "-"}`);
-    console.log(`  Max Attempts:            ${rules.max_attempts}`);
-    console.log(`  Cooldown:                ${rules.cooldown_seconds}s`);
-    console.log(`  Snooze Until:            ${rules.snooze_until ? formatTime(rules.snooze_until) : "-"}`);
-    console.log(`  Cancel on Inbound Reply: ${rules.cancel_on_inbound_reply ? "yes" : "no"}`);
-    console.log(`  Require Approval:        ${rules.require_approval ? "yes" : "no"}`);
-    console.log(`  Enabled:                 ${rules.enabled ? "yes" : "no"}`);
-    console.log();
+    return payload;
   }
 
   @Command({ name: "request", description: "Request a call to a person" })
@@ -504,33 +509,35 @@ export class ProxCallsCommands {
       metadata_json: Object.keys(metadata).length ? metadata : null,
     });
 
-    if (asJson) {
-      printJson({
-        request: serializeRequest(result.request),
-        blocked: result.blocked,
-        block_reason: result.blockReason,
-        provider_mode: usingStub ? "stub" : "live",
-        hint: notifyHint,
-      });
-      return;
-    }
+    const payload = {
+      request: serializeRequest(result.request),
+      blocked: result.blocked,
+      block_reason: result.blockReason,
+      provider_mode: (usingStub ? "stub" : "live") as "stub" | "live",
+      hint: notifyHint,
+    };
 
-    if (result.blocked) {
-      console.log(`\n\x1b[31mCall blocked:\x1b[0m ${result.blockReason}`);
-      console.log(`  Request ID: ${result.request.id}`);
-      console.log(`  Status:     ${statusColor(result.request.status)}`);
+    if (asJson) {
+      printJson(payload);
     } else {
-      console.log(`\nCall request created.`);
-      console.log(`  Request ID: ${result.request.id}`);
-      console.log(`  Status:     ${statusColor(result.request.status)}`);
-      console.log(`  Profile:    ${profileId}`);
-      console.log(`  Person:     ${personId}`);
-      if (usingStub) {
-        console.log(`  Provider:   \x1b[33mstub\x1b[0m (no real call placed — configure provider for live dialing)`);
+      if (result.blocked) {
+        console.log(`\n\x1b[31mCall blocked:\x1b[0m ${result.blockReason}`);
+        console.log(`  Request ID: ${result.request.id}`);
+        console.log(`  Status:     ${statusColor(result.request.status)}`);
+      } else {
+        console.log(`\nCall request created.`);
+        console.log(`  Request ID: ${result.request.id}`);
+        console.log(`  Status:     ${statusColor(result.request.status)}`);
+        console.log(`  Profile:    ${profileId}`);
+        console.log(`  Person:     ${personId}`);
+        if (usingStub) {
+          console.log(`  Provider:   \x1b[33mstub\x1b[0m (no real call placed — configure provider for live dialing)`);
+        }
+        console.log(`\n  ${notifyHint}`);
       }
-      console.log(`\n  ${notifyHint}`);
+      console.log();
     }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "show", description: "Show details of a call request" })
@@ -547,67 +554,71 @@ export class ProxCallsCommands {
     const runs = listCallRuns(request.id);
     const result = getCallResultForRequest(request.id);
 
+    const payload = {
+      request: serializeRequest(request),
+      runs: runs.map((r) => ({
+        id: r.id,
+        status: r.status,
+        attempt_number: r.attempt_number,
+        provider: r.provider,
+        provider_call_id: r.provider_call_id,
+        twilio_call_sid: r.twilio_call_sid,
+        started_at: r.started_at,
+        answered_at: r.answered_at,
+        ended_at: r.ended_at,
+        failure_reason: r.failure_reason,
+      })),
+      result: result
+        ? {
+            id: result.id,
+            outcome: result.outcome,
+            summary: result.summary,
+            transcript: result.transcript,
+            extraction: result.extraction_json,
+            next_action: result.next_action,
+            created_at: result.created_at,
+          }
+        : null,
+    };
+
     if (asJson) {
-      printJson({
-        request: serializeRequest(request),
-        runs: runs.map((r) => ({
-          id: r.id,
-          status: r.status,
-          attempt_number: r.attempt_number,
-          provider: r.provider,
-          provider_call_id: r.provider_call_id,
-          twilio_call_sid: r.twilio_call_sid,
-          started_at: r.started_at,
-          answered_at: r.answered_at,
-          ended_at: r.ended_at,
-          failure_reason: r.failure_reason,
-        })),
-        result: result
-          ? {
-              id: result.id,
-              outcome: result.outcome,
-              summary: result.summary,
-              transcript: result.transcript,
-              extraction: result.extraction_json,
-              next_action: result.next_action,
-              created_at: result.created_at,
-            }
-          : null,
-      });
-      return;
-    }
+      printJson(payload);
+    } else {
+      console.log(`\nCall Request: ${request.id}\n`);
+      console.log(`  Status:      ${statusColor(request.status)}`);
+      console.log(`  Profile:     ${request.profile_id}`);
+      console.log(`  Person:      ${request.target_person_id}`);
+      console.log(`  Reason:      ${request.reason}`);
+      console.log(`  Priority:    ${request.priority}`);
+      console.log(`  Rules:       ${request.rules_id ?? "-"}`);
+      console.log(`  Origin:      ${request.origin_session_name ?? "-"} / ${request.origin_agent_name ?? "-"}`);
+      console.log(`  Channel:     ${request.origin_channel ?? "-"}`);
+      console.log(`  Created:     ${formatTime(request.created_at)}`);
+      console.log(`  Updated:     ${formatTime(request.updated_at)}`);
 
-    console.log(`\nCall Request: ${request.id}\n`);
-    console.log(`  Status:      ${statusColor(request.status)}`);
-    console.log(`  Profile:     ${request.profile_id}`);
-    console.log(`  Person:      ${request.target_person_id}`);
-    console.log(`  Reason:      ${request.reason}`);
-    console.log(`  Priority:    ${request.priority}`);
-    console.log(`  Rules:       ${request.rules_id ?? "-"}`);
-    console.log(`  Origin:      ${request.origin_session_name ?? "-"} / ${request.origin_agent_name ?? "-"}`);
-    console.log(`  Channel:     ${request.origin_channel ?? "-"}`);
-    console.log(`  Created:     ${formatTime(request.created_at)}`);
-    console.log(`  Updated:     ${formatTime(request.updated_at)}`);
-
-    if (runs.length > 0) {
-      console.log(`\n  Runs (${runs.length}):`);
-      for (const run of runs) {
-        console.log(
-          `    #${run.attempt_number}  ${statusColor(run.status)}  ${run.provider}  started=${formatTime(run.started_at)}  ended=${formatTime(run.ended_at)}${run.failure_reason ? `  error=${run.failure_reason}` : ""}`,
-        );
+      if (runs.length > 0) {
+        console.log(`\n  Runs (${runs.length}):`);
+        for (const run of runs) {
+          console.log(
+            `    #${run.attempt_number}  ${statusColor(run.status)}  ${run.provider}  started=${formatTime(run.started_at)}  ended=${formatTime(run.ended_at)}${run.failure_reason ? `  error=${run.failure_reason}` : ""}`,
+          );
+        }
       }
-    }
 
-    if (result) {
-      console.log(`\n  Result:`);
-      console.log(`    Outcome:     ${statusColor(result.outcome)}`);
-      console.log(`    Summary:     ${result.summary ?? "-"}`);
-      console.log(`    Next Action: ${result.next_action}`);
-      if (result.transcript) {
-        console.log(`    Transcript:  ${result.transcript.slice(0, 100)}${result.transcript.length > 100 ? "…" : ""}`);
+      if (result) {
+        console.log(`\n  Result:`);
+        console.log(`    Outcome:     ${statusColor(result.outcome)}`);
+        console.log(`    Summary:     ${result.summary ?? "-"}`);
+        console.log(`    Next Action: ${result.next_action}`);
+        if (result.transcript) {
+          console.log(
+            `    Transcript:  ${result.transcript.slice(0, 100)}${result.transcript.length > 100 ? "…" : ""}`,
+          );
+        }
       }
+      console.log();
     }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "events", description: "Show event timeline for a call request" })
@@ -622,30 +633,28 @@ export class ProxCallsCommands {
     }
 
     const events = listCallEvents(request.id);
+    const payload = {
+      request_id: request.id,
+      total: events.length,
+      events: events.map(serializeEvent),
+    };
 
     if (asJson) {
-      printJson({
-        request_id: request.id,
-        total: events.length,
-        events: events.map(serializeEvent),
-      });
-      return;
-    }
-
-    if (events.length === 0) {
+      printJson(payload);
+    } else if (events.length === 0) {
       console.log(`\nNo events for request ${callRequestId}.\n`);
-      return;
+    } else {
+      console.log(`\nEvents for ${request.id} (${events.length})\n`);
+      console.log("  TIME            TYPE                  STATUS              MESSAGE");
+      console.log("  --------------  --------------------  ------------------  --------------------------------");
+      for (const e of events) {
+        console.log(
+          `  ${formatTime(e.created_at).padEnd(14)}  ${e.event_type.padEnd(20)}  ${statusColor(e.status).padEnd(28)}  ${(e.message ?? "-").slice(0, 40)}`,
+        );
+      }
+      console.log();
     }
-
-    console.log(`\nEvents for ${request.id} (${events.length})\n`);
-    console.log("  TIME            TYPE                  STATUS              MESSAGE");
-    console.log("  --------------  --------------------  ------------------  --------------------------------");
-    for (const e of events) {
-      console.log(
-        `  ${formatTime(e.created_at).padEnd(14)}  ${e.event_type.padEnd(20)}  ${statusColor(e.status).padEnd(28)}  ${(e.message ?? "-").slice(0, 40)}`,
-      );
-    }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "transcript", description: "Show call transcript, syncing provider state when needed" })
@@ -684,15 +693,15 @@ export class ProxCallsCommands {
 
     if (asJson) {
       printJson(payload);
-      return;
+    } else {
+      console.log(`\nTranscript for ${callRequestId}`);
+      console.log(`  Outcome: ${result.outcome}`);
+      if (result.summary) console.log(`  Summary: ${result.summary}`);
+      console.log();
+      console.log(result.transcript);
+      console.log();
     }
-
-    console.log(`\nTranscript for ${callRequestId}`);
-    console.log(`  Outcome: ${result.outcome}`);
-    if (result.summary) console.log(`  Summary: ${result.summary}`);
-    console.log();
-    console.log(result.transcript);
-    console.log();
+    return payload;
   }
 
   @Command({ name: "cancel", description: "Cancel a pending call request" })
@@ -703,22 +712,23 @@ export class ProxCallsCommands {
   ) {
     initCallsDefaults();
     const result = cancelCallRequest(callRequestId, reason);
+    const payload = {
+      success: result.success,
+      message: result.message,
+      request_id: callRequestId,
+    };
 
     if (asJson) {
-      printJson({
-        success: result.success,
-        message: result.message,
-        request_id: callRequestId,
-      });
-      return;
-    }
-
-    if (result.success) {
-      console.log(`\n${result.message}`);
+      printJson(payload);
     } else {
-      console.log(`\n\x1b[31mError:\x1b[0m ${result.message}`);
+      if (result.success) {
+        console.log(`\n${result.message}`);
+      } else {
+        console.log(`\n\x1b[31mError:\x1b[0m ${result.message}`);
+      }
+      console.log();
     }
-    console.log();
+    return payload;
   }
 }
 
@@ -811,26 +821,24 @@ export class ProxCallsVoiceAgentCommands {
   list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     initCallsDefaults();
     const agents = listCallVoiceAgents();
+    const payload = { total: agents.length, voice_agents: agents.map(serializeVoiceAgent) };
 
     if (asJson) {
-      printJson({ total: agents.length, voice_agents: agents.map(serializeVoiceAgent) });
-      return;
-    }
-
-    if (agents.length === 0) {
+      printJson(payload);
+    } else if (agents.length === 0) {
       console.log("\nNo voice agents found.\n");
-      return;
+    } else {
+      console.log(`\nVoice agents (${agents.length})\n`);
+      console.log("  ID                      NAME                    PROVIDER     LANGUAGE  V  ENABLED");
+      console.log("  -----------------------  ----------------------  -----------  --------  -  -------");
+      for (const a of agents) {
+        console.log(
+          `  ${a.id.padEnd(23)}  ${a.name.padEnd(22)}  ${a.provider.padEnd(11)}  ${a.language.padEnd(8)}  ${String(a.version).padEnd(1)}  ${a.enabled ? "yes" : "no"}`,
+        );
+      }
+      console.log();
     }
-
-    console.log(`\nVoice agents (${agents.length})\n`);
-    console.log("  ID                      NAME                    PROVIDER     LANGUAGE  V  ENABLED");
-    console.log("  -----------------------  ----------------------  -----------  --------  -  -------");
-    for (const a of agents) {
-      console.log(
-        `  ${a.id.padEnd(23)}  ${a.name.padEnd(22)}  ${a.provider.padEnd(11)}  ${a.language.padEnd(8)}  ${String(a.version).padEnd(1)}  ${a.enabled ? "yes" : "no"}`,
-      );
-    }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "show", description: "Show a voice agent by ID" })
@@ -844,28 +852,30 @@ export class ProxCallsVoiceAgentCommands {
       fail(`Voice agent not found: ${voiceAgentId}`);
     }
 
-    if (asJson) {
-      printJson(serializeVoiceAgent(agent));
-      return;
-    }
+    const payload = serializeVoiceAgent(agent);
 
-    console.log(`\nVoice Agent: ${agent.name}\n`);
-    console.log(`  ID:              ${agent.id}`);
-    console.log(`  Description:     ${agent.description || "-"}`);
-    console.log(`  Provider:        ${agent.provider}`);
-    console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
-    console.log(`  Voice ID:        ${agent.voice_id ?? "-"}`);
-    console.log(`  Language:        ${agent.language}`);
-    console.log(
-      `  System Prompt:   ${agent.system_prompt ? agent.system_prompt.slice(0, 80) + (agent.system_prompt.length > 80 ? "…" : "") : "-"}`,
-    );
-    console.log(`  Prompt Path:     ${agent.system_prompt_path ?? "-"}`);
-    console.log(`  First Message:   ${agent.first_message_template ?? "-"}`);
-    console.log(`  Default Tools:   ${agent.default_tools_json?.join(", ") ?? "-"}`);
-    console.log(`  Version:         ${agent.version}`);
-    console.log(`  Enabled:         ${agent.enabled ? "yes" : "no"}`);
-    console.log(`  Created:         ${formatTime(agent.created_at)}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nVoice Agent: ${agent.name}\n`);
+      console.log(`  ID:              ${agent.id}`);
+      console.log(`  Description:     ${agent.description || "-"}`);
+      console.log(`  Provider:        ${agent.provider}`);
+      console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
+      console.log(`  Voice ID:        ${agent.voice_id ?? "-"}`);
+      console.log(`  Language:        ${agent.language}`);
+      console.log(
+        `  System Prompt:   ${agent.system_prompt ? agent.system_prompt.slice(0, 80) + (agent.system_prompt.length > 80 ? "…" : "") : "-"}`,
+      );
+      console.log(`  Prompt Path:     ${agent.system_prompt_path ?? "-"}`);
+      console.log(`  First Message:   ${agent.first_message_template ?? "-"}`);
+      console.log(`  Default Tools:   ${agent.default_tools_json?.join(", ") ?? "-"}`);
+      console.log(`  Version:         ${agent.version}`);
+      console.log(`  Enabled:         ${agent.enabled ? "yes" : "no"}`);
+      console.log(`  Created:         ${formatTime(agent.created_at)}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "create", description: "Create a new voice agent" })
@@ -906,15 +916,17 @@ export class ProxCallsVoiceAgentCommands {
       voice_id: voiceId ?? null,
     });
 
-    if (asJson) {
-      printJson(serializeVoiceAgent(agent));
-      return;
-    }
+    const payload = serializeVoiceAgent(agent);
 
-    console.log(`\nVoice agent created: ${agent.id}`);
-    console.log(`  Name:     ${agent.name}`);
-    console.log(`  Provider: ${agent.provider}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nVoice agent created: ${agent.id}`);
+      console.log(`  Name:     ${agent.name}`);
+      console.log(`  Provider: ${agent.provider}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "configure", description: "Configure a voice agent" })
@@ -956,17 +968,19 @@ export class ProxCallsVoiceAgentCommands {
       fail(`Failed to update voice agent: ${voiceAgentId}`);
     }
 
-    if (asJson) {
-      printJson(serializeVoiceAgent(updated));
-      return;
-    }
+    const payload = serializeVoiceAgent(updated);
 
-    console.log(`\nVoice agent ${voiceAgentId} updated (v${updated.version}).`);
-    console.log(`  Voice ID:        ${updated.voice_id ?? "-"}`);
-    console.log(`  Agent ID:        ${updated.provider_agent_id ?? "-"}`);
-    console.log(`  First Message:   ${updated.first_message_template ?? "-"}`);
-    console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nVoice agent ${voiceAgentId} updated (v${updated.version}).`);
+      console.log(`  Voice ID:        ${updated.voice_id ?? "-"}`);
+      console.log(`  Agent ID:        ${updated.provider_agent_id ?? "-"}`);
+      console.log(`  First Message:   ${updated.first_message_template ?? "-"}`);
+      console.log(`  System Prompt:   ${updated.system_prompt_path ?? "-"}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "bind-tool", description: "Bind a tool to a voice agent" })
@@ -993,13 +1007,15 @@ export class ProxCallsVoiceAgentCommands {
       provider_tool_name: providerToolName,
     });
 
-    if (asJson) {
-      printJson(serializeToolBinding(binding));
-      return;
-    }
+    const payload = serializeToolBinding(binding);
 
-    console.log(`\nTool ${toolId} bound to voice agent ${voiceAgentId}.`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool ${toolId} bound to voice agent ${voiceAgentId}.`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "unbind-tool", description: "Unbind a tool from a voice agent" })
@@ -1015,13 +1031,15 @@ export class ProxCallsVoiceAgentCommands {
     const removed = deleteCallToolBinding(toolId, "voice_agent", voiceAgentId);
     if (!removed) fail(`No binding found for tool ${toolId} on voice agent ${voiceAgentId}`);
 
-    if (asJson) {
-      printJson({ success: true, voice_agent_id: voiceAgentId, tool_id: toolId });
-      return;
-    }
+    const payload = { success: true as const, voice_agent_id: voiceAgentId, tool_id: toolId };
 
-    console.log(`\nTool ${toolId} unbound from voice agent ${voiceAgentId}.`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool ${toolId} unbound from voice agent ${voiceAgentId}.`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "sync", description: "Sync voice agent to provider (dry-run by default)" })
@@ -1046,34 +1064,34 @@ export class ProxCallsVoiceAgentCommands {
       provider_agent_id: agent.provider_agent_id,
       dry_run: dryRun !== false,
       intended_changes: {
-        system_prompt: agent.system_prompt ? "set" : "unchanged",
-        first_message_template: agent.first_message_template ? "set" : "unchanged",
+        system_prompt: (agent.system_prompt ? "set" : "unchanged") as "set" | "unchanged",
+        first_message_template: (agent.first_message_template ? "set" : "unchanged") as "set" | "unchanged",
         voice_id: agent.voice_id ?? "unchanged",
         tools_count: tools.length,
         tools: tools.map((t) => ({ id: t.id, name: t.name })),
       },
-      provider_sync: dryRun === false && pushProvider ? "would_push" : "skipped",
+      provider_sync: (dryRun === false && pushProvider ? "would_push" : "skipped") as "would_push" | "skipped",
     };
 
     if (asJson) {
       printJson(changes);
-      return;
+    } else {
+      console.log(`\nSync for voice agent: ${voiceAgentId} (${dryRun !== false ? "DRY RUN" : "LIVE"})\n`);
+      console.log(`  Provider:        ${agent.provider}`);
+      console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
+      console.log(`  System Prompt:   ${changes.intended_changes.system_prompt}`);
+      console.log(`  First Message:   ${changes.intended_changes.first_message_template}`);
+      console.log(`  Voice ID:        ${changes.intended_changes.voice_id}`);
+      console.log(`  Tools (${tools.length}):`);
+      for (const t of tools) {
+        console.log(`    - ${t.id} (${t.name})`);
+      }
+      if (dryRun !== false) {
+        console.log(`\n  No changes made (dry-run). Use --no-dry-run to apply.`);
+      }
+      console.log();
     }
-
-    console.log(`\nSync for voice agent: ${voiceAgentId} (${dryRun !== false ? "DRY RUN" : "LIVE"})\n`);
-    console.log(`  Provider:        ${agent.provider}`);
-    console.log(`  Agent ID:        ${agent.provider_agent_id ?? "-"}`);
-    console.log(`  System Prompt:   ${changes.intended_changes.system_prompt}`);
-    console.log(`  First Message:   ${changes.intended_changes.first_message_template}`);
-    console.log(`  Voice ID:        ${changes.intended_changes.voice_id}`);
-    console.log(`  Tools (${tools.length}):`);
-    for (const t of tools) {
-      console.log(`    - ${t.id} (${t.name})`);
-    }
-    if (dryRun !== false) {
-      console.log(`\n  No changes made (dry-run). Use --no-dry-run to apply.`);
-    }
-    console.log();
+    return changes;
   }
 }
 
@@ -1103,26 +1121,24 @@ export class ProxCallsToolCommands {
   ) {
     initCallsDefaults();
     const tools = listCallTools(profileId);
+    const payload = { total: tools.length, tools: tools.map(serializeCallTool) };
 
     if (asJson) {
-      printJson({ total: tools.length, tools: tools.map(serializeCallTool) });
-      return;
-    }
-
-    if (tools.length === 0) {
+      printJson(payload);
+    } else if (tools.length === 0) {
       console.log("\nNo call tools found.\n");
-      return;
+    } else {
+      console.log(`\nCall tools (${tools.length})${profileId ? ` for profile ${profileId}` : ""}\n`);
+      console.log("  ID                       NAME                    EXECUTOR  SIDE-EFFECT           ENABLED");
+      console.log("  -------------------------  ----------------------  --------  --------------------  -------");
+      for (const t of tools) {
+        console.log(
+          `  ${t.id.padEnd(25)}  ${t.name.padEnd(22)}  ${t.executor_type.padEnd(8)}  ${t.side_effect.padEnd(20)}  ${t.enabled ? "yes" : "no"}`,
+        );
+      }
+      console.log();
     }
-
-    console.log(`\nCall tools (${tools.length})${profileId ? ` for profile ${profileId}` : ""}\n`);
-    console.log("  ID                       NAME                    EXECUTOR  SIDE-EFFECT           ENABLED");
-    console.log("  -------------------------  ----------------------  --------  --------------------  -------");
-    for (const t of tools) {
-      console.log(
-        `  ${t.id.padEnd(25)}  ${t.name.padEnd(22)}  ${t.executor_type.padEnd(8)}  ${t.side_effect.padEnd(20)}  ${t.enabled ? "yes" : "no"}`,
-      );
-    }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "show", description: "Show a call tool by ID" })
@@ -1134,23 +1150,25 @@ export class ProxCallsToolCommands {
     const tool = getCallTool(toolId);
     if (!tool) fail(`Tool not found: ${toolId}`);
 
-    if (asJson) {
-      printJson(serializeCallTool(tool));
-      return;
-    }
+    const payload = serializeCallTool(tool);
 
-    console.log(`\nCall Tool: ${tool.name}\n`);
-    console.log(`  ID:           ${tool.id}`);
-    console.log(`  Description:  ${tool.description || "-"}`);
-    console.log(`  Executor:     ${tool.executor_type}`);
-    console.log(`  Side-Effect:  ${tool.side_effect}`);
-    console.log(`  Timeout:      ${tool.timeout_ms}ms`);
-    console.log(`  Enabled:      ${tool.enabled ? "yes" : "no"}`);
-    if (tool.input_schema_json) {
-      console.log(`  Input Schema: ${JSON.stringify(tool.input_schema_json).slice(0, 80)}…`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nCall Tool: ${tool.name}\n`);
+      console.log(`  ID:           ${tool.id}`);
+      console.log(`  Description:  ${tool.description || "-"}`);
+      console.log(`  Executor:     ${tool.executor_type}`);
+      console.log(`  Side-Effect:  ${tool.side_effect}`);
+      console.log(`  Timeout:      ${tool.timeout_ms}ms`);
+      console.log(`  Enabled:      ${tool.enabled ? "yes" : "no"}`);
+      if (tool.input_schema_json) {
+        console.log(`  Input Schema: ${JSON.stringify(tool.input_schema_json).slice(0, 80)}…`);
+      }
+      console.log(`  Created:      ${formatTime(tool.created_at)}`);
+      console.log();
     }
-    console.log(`  Created:      ${formatTime(tool.created_at)}`);
-    console.log();
+    return payload;
   }
 
   @Command({ name: "create", description: "Create a new call tool" })
@@ -1217,16 +1235,18 @@ export class ProxCallsToolCommands {
       output_schema_json: outputSchema,
     });
 
-    if (asJson) {
-      printJson(serializeCallTool(tool));
-      return;
-    }
+    const payload = serializeCallTool(tool);
 
-    console.log(`\nTool created: ${tool.id}`);
-    console.log(`  Name:        ${tool.name}`);
-    console.log(`  Executor:    ${tool.executor_type}`);
-    console.log(`  Side-Effect: ${tool.side_effect}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool created: ${tool.id}`);
+      console.log(`  Name:        ${tool.name}`);
+      console.log(`  Executor:    ${tool.executor_type}`);
+      console.log(`  Side-Effect: ${tool.side_effect}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "configure", description: "Configure a call tool" })
@@ -1249,15 +1269,17 @@ export class ProxCallsToolCommands {
 
     if (!updated) fail(`Failed to update tool: ${toolId}`);
 
-    if (asJson) {
-      printJson(serializeCallTool(updated));
-      return;
-    }
+    const payload = serializeCallTool(updated);
 
-    console.log(`\nTool ${toolId} updated.`);
-    console.log(`  Timeout:  ${updated.timeout_ms}ms`);
-    console.log(`  Enabled:  ${updated.enabled ? "yes" : "no"}`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool ${toolId} updated.`);
+      console.log(`  Timeout:  ${updated.timeout_ms}ms`);
+      console.log(`  Enabled:  ${updated.enabled ? "yes" : "no"}`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "bind", description: "Bind a tool to a profile" })
@@ -1289,13 +1311,15 @@ export class ProxCallsToolCommands {
       required,
     });
 
-    if (asJson) {
-      printJson(serializeToolBinding(binding));
-      return;
-    }
+    const payload = serializeToolBinding(binding);
 
-    console.log(`\nTool ${toolId} bound to profile ${profileId}.`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool ${toolId} bound to profile ${profileId}.`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "unbind", description: "Unbind a tool from a profile" })
@@ -1311,13 +1335,15 @@ export class ProxCallsToolCommands {
     const removed = deleteCallToolBinding(toolId, "profile", profileId);
     if (!removed) fail(`No binding found for tool ${toolId} on profile ${profileId}`);
 
-    if (asJson) {
-      printJson({ success: true, profile_id: profileId, tool_id: toolId });
-      return;
-    }
+    const payload = { success: true as const, profile_id: profileId, tool_id: toolId };
 
-    console.log(`\nTool ${toolId} unbound from profile ${profileId}.`);
-    console.log();
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nTool ${toolId} unbound from profile ${profileId}.`);
+      console.log();
+    }
+    return payload;
   }
 
   @Command({ name: "runs", description: "List tool runs for a call request" })
@@ -1330,26 +1356,24 @@ export class ProxCallsToolCommands {
     if (!request) fail(`Call request not found: ${callRequestId}`);
 
     const runs = listCallToolRuns(callRequestId);
+    const payload = { request_id: callRequestId, total: runs.length, tool_runs: runs.map(serializeToolRun) };
 
     if (asJson) {
-      printJson({ request_id: callRequestId, total: runs.length, tool_runs: runs.map(serializeToolRun) });
-      return;
-    }
-
-    if (runs.length === 0) {
+      printJson(payload);
+    } else if (runs.length === 0) {
       console.log(`\nNo tool runs for request ${callRequestId}.\n`);
-      return;
+    } else {
+      console.log(`\nTool runs for ${callRequestId} (${runs.length})\n`);
+      console.log("  ID                    TOOL                    STATUS      MESSAGE");
+      console.log("  --------------------  ----------------------  ----------  --------------------------------");
+      for (const r of runs) {
+        console.log(
+          `  ${r.id.padEnd(20)}  ${r.tool_id.padEnd(22)}  ${statusColor(r.status).padEnd(20)}  ${(r.error_message ?? "-").slice(0, 40)}`,
+        );
+      }
+      console.log();
     }
-
-    console.log(`\nTool runs for ${callRequestId} (${runs.length})\n`);
-    console.log("  ID                    TOOL                    STATUS      MESSAGE");
-    console.log("  --------------------  ----------------------  ----------  --------------------------------");
-    for (const r of runs) {
-      console.log(
-        `  ${r.id.padEnd(20)}  ${r.tool_id.padEnd(22)}  ${statusColor(r.status).padEnd(20)}  ${(r.error_message ?? "-").slice(0, 40)}`,
-      );
-    }
-    console.log();
+    return payload;
   }
 
   @Command({ name: "run", description: "Execute a tool (dry-run validates without side effects)" })
@@ -1392,15 +1416,15 @@ export class ProxCallsToolCommands {
       for (const field of requiredFields) {
         if (!(field in input)) {
           const result = {
-            ok: false,
-            error: "schema_validation_failed",
+            ok: false as const,
+            error: "schema_validation_failed" as const,
             message: `Missing required field: ${field}`,
             tool_id: toolId,
             input,
           };
           if (asJson) {
             printJson(result);
-            return;
+            return result;
           }
           fail(`Schema validation failed: missing required field '${field}'.`);
         }
@@ -1409,15 +1433,15 @@ export class ProxCallsToolCommands {
       for (const key of Object.keys(input)) {
         if (!(key in properties)) {
           const result = {
-            ok: false,
-            error: "schema_validation_failed",
+            ok: false as const,
+            error: "schema_validation_failed" as const,
             message: `Unknown field: ${key}`,
             tool_id: toolId,
             input,
           };
           if (asJson) {
             printJson(result);
-            return;
+            return result;
           }
           fail(`Schema validation failed: unknown field '${key}'.`);
         }
@@ -1431,8 +1455,8 @@ export class ProxCallsToolCommands {
 
     if (!policyResult.allowed) {
       const blockedResult = {
-        ok: false,
-        error: "policy_blocked",
+        ok: false as const,
+        error: "policy_blocked" as const,
         message: policyResult.reason,
         tool_id: toolId,
         side_effect: tool.side_effect,
@@ -1441,7 +1465,7 @@ export class ProxCallsToolCommands {
 
       if (asJson) {
         printJson(blockedResult);
-        return;
+        return blockedResult;
       }
       fail(`Policy blocked: ${policyResult.reason}`);
     }
@@ -1449,8 +1473,8 @@ export class ProxCallsToolCommands {
     // Dry-run: validate only, no execution
     if (dryRun) {
       const dryRunResult = {
-        ok: true,
-        dry_run: true,
+        ok: true as const,
+        dry_run: true as const,
         message: "Validation passed. Tool would execute with the given input.",
         tool_id: toolId,
         executor_type: tool.executor_type,
@@ -1462,24 +1486,23 @@ export class ProxCallsToolCommands {
 
       if (asJson) {
         printJson(dryRunResult);
-        return;
+      } else {
+        console.log(`\nDry-run validation passed for ${toolId}.`);
+        console.log(`  Executor:    ${tool.executor_type}`);
+        console.log(`  Side-Effect: ${tool.side_effect}`);
+        console.log(`  Timeout:     ${tool.timeout_ms}ms`);
+        console.log(`  Policy:      ${policyResult.reason}`);
+        console.log(`  Input:       ${JSON.stringify(input)}`);
+        console.log(`\n  No side effects. Use without --dry-run to execute.`);
+        console.log();
       }
-
-      console.log(`\nDry-run validation passed for ${toolId}.`);
-      console.log(`  Executor:    ${tool.executor_type}`);
-      console.log(`  Side-Effect: ${tool.side_effect}`);
-      console.log(`  Timeout:     ${tool.timeout_ms}ms`);
-      console.log(`  Policy:      ${policyResult.reason}`);
-      console.log(`  Input:       ${JSON.stringify(input)}`);
-      console.log(`\n  No side effects. Use without --dry-run to execute.`);
-      console.log();
-      return;
+      return dryRunResult;
     }
 
     // Live execution is blocked for now — native tools need runtime implementation
     const liveBlockResult = {
-      ok: false,
-      error: "execution_not_implemented",
+      ok: false as const,
+      error: "execution_not_implemented" as const,
       message: `Live execution of ${tool.executor_type} tools is not yet implemented. Use --dry-run to validate.`,
       tool_id: toolId,
       executor_type: tool.executor_type,
@@ -1488,7 +1511,7 @@ export class ProxCallsToolCommands {
 
     if (asJson) {
       printJson(liveBlockResult);
-      return;
+      return liveBlockResult;
     }
     fail(`Live execution of ${tool.executor_type} tools is not yet implemented. Use --dry-run to validate.`);
   }

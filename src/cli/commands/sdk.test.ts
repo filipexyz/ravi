@@ -85,11 +85,18 @@ describe("SdkOpenApiCommands.emit", () => {
   });
 
   it("rejects --out and --stdout together", () => {
-    const console = captureConsole();
+    const capture = captureConsole();
+    const original = process.exit;
+    process.exit = (() => {
+      throw new Error("__exit_called__");
+    }) as typeof process.exit;
     try {
-      expect(() => new SdkOpenApiCommands().emit("foo.json", true)).toThrow(/Pick exactly one destination/);
+      expect(() => new SdkOpenApiCommands().emit("foo.json", true)).toThrow(
+        /Pick exactly one destination|__exit_called__/,
+      );
     } finally {
-      console.restore();
+      process.exit = original;
+      capture.restore();
     }
   });
 });
@@ -138,9 +145,14 @@ describe("SdkOpenApiCommands.check", () => {
 
   it("requires --against", () => {
     const capture = captureConsole();
+    const original = process.exit;
+    process.exit = (() => {
+      throw new Error("__exit_called__");
+    }) as typeof process.exit;
     try {
-      expect(() => new SdkOpenApiCommands().check()).toThrow(/--against/);
+      expect(() => new SdkOpenApiCommands().check()).toThrow(/--against|__exit_called__/);
     } finally {
+      process.exit = original;
       capture.restore();
     }
   });

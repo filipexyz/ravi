@@ -23,23 +23,18 @@ export class ServiceCommands {
         detached: true,
       });
       child.unref();
-      console.log(
-        JSON.stringify(
-          {
-            success: true,
-            service: "bot",
-            started: true,
-            detached: true,
-            pid: child.pid,
-            command,
-            args,
-            cwd: process.cwd(),
-          },
-          null,
-          2,
-        ),
-      );
-      return;
+      const payload = {
+        success: true as const,
+        service: "bot" as const,
+        started: true as const,
+        detached: true as const,
+        pid: child.pid ?? null,
+        command,
+        args,
+        cwd: process.cwd(),
+      };
+      console.log(JSON.stringify(payload, null, 2));
+      return payload;
     }
 
     console.log("Starting Ravi bot server...");
@@ -51,6 +46,16 @@ export class ServiceCommands {
       console.error(`Failed to start: ${err.message}`);
       process.exit(1);
     });
+    return {
+      success: true as const,
+      service: "bot" as const,
+      started: true as const,
+      detached: false as const,
+      pid: child.pid ?? null,
+      command,
+      args,
+      cwd: process.cwd(),
+    };
   }
 
   @Command({ name: "tui", description: "Start the TUI interface" })
@@ -66,23 +71,19 @@ export class ServiceCommands {
     if (session) args.push(session);
 
     if (asJson) {
-      console.log(
-        JSON.stringify(
-          {
-            success: false,
-            service: "tui",
-            started: false,
-            supported: false,
-            reason: "TUI uses inherited interactive stdio; JSON mode does not launch it to keep stdout valid JSON.",
-            command: "bun",
-            args,
-            cwd: process.cwd(),
-          },
-          null,
-          2,
-        ),
-      );
-      return;
+      const payload = {
+        success: false as const,
+        service: "tui" as const,
+        started: false as const,
+        supported: false as const,
+        reason:
+          "TUI uses inherited interactive stdio; JSON mode does not launch it to keep stdout valid JSON." as const,
+        command: "bun" as const,
+        args,
+        cwd: process.cwd(),
+      };
+      console.log(JSON.stringify(payload, null, 2));
+      return payload;
     }
 
     console.log(`Starting TUI${session ? ` with session: ${session}` : ""}...`);
@@ -94,6 +95,16 @@ export class ServiceCommands {
       console.error(`Failed to start TUI: ${err.message}`);
       process.exit(1);
     });
+    return {
+      success: true as const,
+      service: "tui" as const,
+      started: true as const,
+      supported: true as const,
+      pid: child.pid ?? null,
+      command: "bun" as const,
+      args,
+      cwd: process.cwd(),
+    };
   }
 
   @Command({ name: "wa", description: "Start WhatsApp gateway (deprecated — use daemon start)" })

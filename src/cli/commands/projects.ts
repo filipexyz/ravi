@@ -832,16 +832,16 @@ export class ProjectCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Initialized project ${result.details.project.slug}`);
+        if (result.workflows.length > 0) {
+          console.log(
+            `  Workflows: ${result.workflows.map((workflow) => `${workflow.workflowRunId} (${workflow.source === "template" ? workflow.templateId : "existing"})`).join(", ")}`,
+          );
+        }
+        printProject(result.details);
       }
-
-      console.log(`\n✓ Initialized project ${result.details.project.slug}`);
-      if (result.workflows.length > 0) {
-        console.log(
-          `  Workflows: ${result.workflows.map((workflow) => `${workflow.workflowRunId} (${workflow.source === "template" ? workflow.templateId : "existing"})`).join(", ")}`,
-        );
-      }
-      printProject(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -880,11 +880,11 @@ export class ProjectCommands {
 
       if (asJson) {
         console.log(JSON.stringify(details, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Created project ${details.project.slug}`);
+        printProject(details);
       }
-
-      console.log(`\n✓ Created project ${details.project.slug}`);
-      printProject(details);
+      return details;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -899,28 +899,26 @@ export class ProjectCommands {
       const projects = listProjects({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
       });
+      const payload = { total: projects.length, projects };
 
       if (asJson) {
-        console.log(JSON.stringify({ total: projects.length, projects }, null, 2));
-        return;
-      }
-
-      if (projects.length === 0) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else if (projects.length === 0) {
         console.log("\nNo projects found.\n");
-        return;
+      } else {
+        console.log(`\nProjects (${projects.length}):\n`);
+        for (const project of projects) {
+          const line = [
+            `${project.slug}`,
+            project.status,
+            `${project.linkCount} links`,
+            `signal ${formatTimestamp(project.lastSignalAt)}`,
+            `next ${compact(project.nextStep, 40)}`,
+          ].join(" :: ");
+          console.log(`- ${line}`);
+        }
       }
-
-      console.log(`\nProjects (${projects.length}):\n`);
-      for (const project of projects) {
-        const line = [
-          `${project.slug}`,
-          project.status,
-          `${project.linkCount} links`,
-          `signal ${formatTimestamp(project.lastSignalAt)}`,
-          `next ${compact(project.nextStep, 40)}`,
-        ].join(" :: ");
-        console.log(`- ${line}`);
-      }
+      return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -938,10 +936,10 @@ export class ProjectCommands {
 
     if (asJson) {
       console.log(JSON.stringify(details, null, 2));
-      return;
+    } else {
+      printProject(details);
     }
-
-    printProject(details);
+    return details;
   }
 
   @Command({ name: "status", description: "Show one project with workflow runtime rollup" })
@@ -956,10 +954,10 @@ export class ProjectCommands {
 
     if (asJson) {
       console.log(JSON.stringify(details, null, 2));
-      return;
+    } else {
+      printProjectStatus(details);
     }
-
-    printProjectStatus(details);
+    return details;
   }
 
   @Command({ name: "next", description: "List projects as an operational next-work surface" })
@@ -971,13 +969,14 @@ export class ProjectCommands {
       const entries = listProjectStatusEntries({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
       });
+      const payload = { total: entries.length, projects: entries };
 
       if (asJson) {
-        console.log(JSON.stringify({ total: entries.length, projects: entries }, null, 2));
-        return;
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        printProjectNext(entries);
       }
-
-      printProjectNext(entries);
+      return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1015,11 +1014,11 @@ export class ProjectCommands {
 
       if (asJson) {
         console.log(JSON.stringify(details, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Updated project ${details.project.slug}`);
+        printProject(details);
       }
-
-      console.log(`\n✓ Updated project ${details.project.slug}`);
-      printProject(details);
+      return details;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1051,14 +1050,16 @@ export class ProjectCommands {
 
       if (asJson) {
         console.log(JSON.stringify(details, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Linked ${assetType}:${resolved.assetId} -> ${details.project.slug}`);
+        const linked = details.links.find(
+          (entry) => entry.assetType === assetType && entry.assetId === resolved.assetId,
+        );
+        if (linked) {
+          console.log(`  ${describeLink(linked)}`);
+        }
       }
-
-      console.log(`\n✓ Linked ${assetType}:${resolved.assetId} -> ${details.project.slug}`);
-      const linked = details.links.find((entry) => entry.assetType === assetType && entry.assetId === resolved.assetId);
-      if (linked) {
-        console.log(`  ${describeLink(linked)}`);
-      }
+      return details;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1092,16 +1093,16 @@ export class ProjectWorkflowCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Started workflow ${result.run.run.id} for ${result.details.project.slug}`);
+        console.log(
+          `  Linked: ${result.workflow.role ?? "-"} :: ${result.workflow.workflowRunTitle ?? result.workflow.workflowRunId}`,
+        );
+        if (result.defaults.ownerAgentId) console.log(`  Owner:  ${result.defaults.ownerAgentId}`);
+        if (result.defaults.operatorSessionName) console.log(`  Session:${result.defaults.operatorSessionName}`);
+        printProjectStatus(result.details);
       }
-
-      console.log(`\n✓ Started workflow ${result.run.run.id} for ${result.details.project.slug}`);
-      console.log(
-        `  Linked: ${result.workflow.role ?? "-"} :: ${result.workflow.workflowRunTitle ?? result.workflow.workflowRunId}`,
-      );
-      if (result.defaults.ownerAgentId) console.log(`  Owner:  ${result.defaults.ownerAgentId}`);
-      if (result.defaults.operatorSessionName) console.log(`  Session:${result.defaults.operatorSessionName}`);
-      printProjectStatus(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1126,16 +1127,16 @@ export class ProjectWorkflowCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Attached workflow ${result.workflow.workflowRunId} to ${result.details.project.slug}`);
+        console.log(
+          `  Linked: ${result.workflow.role ?? "-"} :: ${result.workflow.workflowRunTitle ?? result.workflow.workflowRunId}`,
+        );
+        if (result.defaults.ownerAgentId) console.log(`  Owner:  ${result.defaults.ownerAgentId}`);
+        if (result.defaults.operatorSessionName) console.log(`  Session:${result.defaults.operatorSessionName}`);
+        printProjectStatus(result.details);
       }
-
-      console.log(`\n✓ Attached workflow ${result.workflow.workflowRunId} to ${result.details.project.slug}`);
-      console.log(
-        `  Linked: ${result.workflow.role ?? "-"} :: ${result.workflow.workflowRunTitle ?? result.workflow.workflowRunId}`,
-      );
-      if (result.defaults.ownerAgentId) console.log(`  Owner:  ${result.defaults.ownerAgentId}`);
-      if (result.defaults.operatorSessionName) console.log(`  Session:${result.defaults.operatorSessionName}`);
-      printProjectStatus(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1186,16 +1187,16 @@ export class ProjectTaskCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Created task ${result.createdTask.id} for ${result.details.project.slug}/${nodeKey}`);
+        console.log(`  Workflow:  ${result.workflow.workflowRunId}`);
+        console.log(
+          `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
+        );
+        printProjectTaskLaunch(result.launch);
+        printProjectStatus(result.details);
       }
-
-      console.log(`\n✓ Created task ${result.createdTask.id} for ${result.details.project.slug}/${nodeKey}`);
-      console.log(`  Workflow:  ${result.workflow.workflowRunId}`);
-      console.log(
-        `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
-      );
-      printProjectTaskLaunch(result.launch);
-      printProjectStatus(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1232,16 +1233,16 @@ export class ProjectTaskCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Attached task ${result.task.id} to ${result.details.project.slug}/${nodeKey}`);
+        console.log(`  Workflow:  ${result.workflow.workflowRunId}`);
+        console.log(
+          `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
+        );
+        printProjectTaskLaunch(result.launch);
+        printProjectStatus(result.details);
       }
-
-      console.log(`\n✓ Attached task ${result.task.id} to ${result.details.project.slug}/${nodeKey}`);
-      console.log(`  Workflow:  ${result.workflow.workflowRunId}`);
-      console.log(
-        `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
-      );
-      printProjectTaskLaunch(result.launch);
-      printProjectStatus(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1268,15 +1269,15 @@ export class ProjectTaskCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
+      } else {
+        console.log(`\n✓ Dispatched task ${result.task.id} from ${result.details.project.slug}`);
+        console.log(
+          `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
+        );
+        printProjectTaskLaunch(result.launch);
+        printProjectStatus(result.details);
       }
-
-      console.log(`\n✓ Dispatched task ${result.task.id} from ${result.details.project.slug}`);
-      console.log(
-        `  Defaults:  owner ${result.defaults.ownerAgentId ?? "-"} :: session ${result.defaults.operatorSessionName ?? "-"}`,
-      );
-      printProjectTaskLaunch(result.launch);
-      printProjectStatus(result.details);
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1311,16 +1312,17 @@ export class ProjectResourceCommands {
         ...resolveActor(),
       });
       const resource = getProjectResourceLink(details.project.id, resolved.assetId);
+      const payload = resource ?? details;
 
       if (asJson) {
-        console.log(JSON.stringify(resource ?? details, null, 2));
-        return;
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        console.log(`\n✓ Added resource:${resolved.resourceType} -> ${details.project.slug}`);
+        if (resource) {
+          console.log(`  ${describeLink(resource)}`);
+        }
       }
-
-      console.log(`\n✓ Added resource:${resolved.resourceType} -> ${details.project.slug}`);
-      if (resource) {
-        console.log(`  ${describeLink(resource)}`);
-      }
+      return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1337,21 +1339,19 @@ export class ProjectResourceCommands {
         projectRef,
         resourceType?.trim() ? requireResourceType(resourceType) : undefined,
       );
+      const payload = { total: resources.length, resources };
 
       if (asJson) {
-        console.log(JSON.stringify({ total: resources.length, resources }, null, 2));
-        return;
-      }
-
-      if (resources.length === 0) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else if (resources.length === 0) {
         console.log("\nNo resource links found.\n");
-        return;
+      } else {
+        console.log(`\nProject resources (${resources.length}):\n`);
+        for (const resource of resources) {
+          console.log(`- ${resource.id} :: ${describeLink(resource)}`);
+        }
       }
-
-      console.log(`\nProject resources (${resources.length}):\n`);
-      for (const resource of resources) {
-        console.log(`- ${resource.id} :: ${describeLink(resource)}`);
-      }
+      return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1371,10 +1371,10 @@ export class ProjectResourceCommands {
 
       if (asJson) {
         console.log(JSON.stringify(resource, null, 2));
-        return;
+      } else {
+        printProjectResource(resource);
       }
-
-      printProjectResource(resource);
+      return resource;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1434,15 +1434,17 @@ export class ProjectResourceCommands {
         }
       }
 
-      if (asJson) {
-        console.log(JSON.stringify({ total: imported.length, resources: imported }, null, 2));
-        return;
-      }
+      const payload = { total: imported.length, resources: imported };
 
-      console.log(`\n✓ Imported ${imported.length} resources into ${projectRef}\n`);
-      for (const resource of imported) {
-        console.log(`- ${describeLink(resource)}`);
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        console.log(`\n✓ Imported ${imported.length} resources into ${projectRef}\n`);
+        for (const resource of imported) {
+          console.log(`- ${describeLink(resource)}`);
+        }
       }
+      return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
@@ -1476,23 +1478,23 @@ export class ProjectFixtureCommands {
 
       if (asJson) {
         console.log(JSON.stringify(result, null, 2));
-        return;
-      }
+      } else {
+        console.log(`\n✓ Seeded ${result.total} canonical project fixtures\n`);
+        for (const fixture of result.fixtures) {
+          console.log(
+            `- ${fixture.projectSlug} :: ${fixture.projectStatus} :: runtime ${fixture.workflowStatus ?? "-"} :: ${fixture.workflowRunId}`,
+          );
+        }
 
-      console.log(`\n✓ Seeded ${result.total} canonical project fixtures\n`);
-      for (const fixture of result.fixtures) {
-        console.log(
-          `- ${fixture.projectSlug} :: ${fixture.projectStatus} :: runtime ${fixture.workflowStatus ?? "-"} :: ${fixture.workflowRunId}`,
-        );
-      }
-
-      console.log("\nProof:");
-      for (const fixture of result.fixtures) {
-        console.log(`- ${fixture.projectSlug}`);
-        for (const command of fixture.proofCommands.slice(0, 3)) {
-          console.log(`  ${command}`);
+        console.log("\nProof:");
+        for (const fixture of result.fixtures) {
+          console.log(`- ${fixture.projectSlug}`);
+          for (const command of fixture.proofCommands.slice(0, 3)) {
+            console.log(`  ${command}`);
+          }
         }
       }
+      return result;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }

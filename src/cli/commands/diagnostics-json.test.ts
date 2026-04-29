@@ -86,6 +86,6 @@ describe("diagnostics JSON output", () => {
         },
       ],
     });
-    expect(result).toEqual(payload.sessions);
+    expect(result).toEqual(payload);
   });
 });

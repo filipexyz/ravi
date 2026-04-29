@@ -234,19 +234,20 @@ export class ContactsCommands {
       });
     }
 
+    const payload = {
+      filter: { status: filterStatus ?? null },
+      counts: summarizeContacts(contacts),
+      contacts: contacts.map((contact) => serializeContact(contact)),
+    };
     if (asJson) {
-      printJson({
-        filter: { status: filterStatus ?? null },
-        counts: summarizeContacts(contacts),
-        contacts: contacts.map((contact) => serializeContact(contact)),
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     if (contacts.length === 0) {
       console.log("No contacts registered.");
       console.log("\nAdd a contact: ravi contacts add <phone> [name]");
-      return;
+      return payload;
     }
 
     console.log("\nContacts:\n");
@@ -270,6 +271,7 @@ export class ContactsCommands {
     console.log(
       `\n  Total: ${contacts.length} (${allowed} allowed, ${pending} pending, ${blocked} blocked, ${discovered} discovered)`,
     );
+    return payload;
   }
 
   @Scope("open")
@@ -284,30 +286,31 @@ export class ContactsCommands {
     const pendingChats = listAccountPendingChats(account);
     const legacyAccountPending = listAccountPending(account);
 
+    const payload = {
+      filter: { account: account ?? null },
+      total: contacts.length + accountPendingContacts.length,
+      totalContacts: contacts.length + accountPendingContacts.length,
+      totalChats: pendingChats.length,
+      pendingContacts: contacts.map((contact) => serializeContact(contact)),
+      accountPendingContacts: accountPendingContacts.map((entry) => ({
+        ...entry,
+        type: entry.chatType,
+        contact: serializeContactMaybe(getContact(entry.phone)),
+      })),
+      pendingChats: pendingChats.map((entry) => ({
+        ...entry,
+        type: entry.chatType,
+        contact: null,
+      })),
+      accountPending: legacyAccountPending.map((entry) => ({
+        ...entry,
+        type: entry.chatType,
+        contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
+      })),
+    };
     if (asJson) {
-      printJson({
-        filter: { account: account ?? null },
-        total: contacts.length + accountPendingContacts.length,
-        totalContacts: contacts.length + accountPendingContacts.length,
-        totalChats: pendingChats.length,
-        pendingContacts: contacts.map((contact) => serializeContact(contact)),
-        accountPendingContacts: accountPendingContacts.map((entry) => ({
-          ...entry,
-          type: entry.chatType,
-          contact: serializeContactMaybe(getContact(entry.phone)),
-        })),
-        pendingChats: pendingChats.map((entry) => ({
-          ...entry,
-          type: entry.chatType,
-          contact: null,
-        })),
-        accountPending: legacyAccountPending.map((entry) => ({
-          ...entry,
-          type: entry.chatType,
-          contact: entry.pendingKind === "contact" ? serializeContactMaybe(getContact(entry.phone)) : null,
-        })),
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     if (contacts.length > 0) {
@@ -363,6 +366,7 @@ export class ContactsCommands {
     if (contacts.length === 0 && accountPendingContacts.length === 0 && pendingChats.length === 0) {
       console.log("No pending contacts or chats.");
     }
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -394,22 +398,24 @@ export class ContactsCommands {
       setContactKind(contact.id, kind as "person" | "org");
     }
     const updated = contact ? getUpdatedContact(contact) : getContact(normalized);
+    const payload = {
+      status: "added" as const,
+      target: identity,
+      normalized,
+      kind: kind ?? "person",
+      contact: serializeContactMaybe(updated),
+      allowedAgents: parseAgentIds(agentIds),
+      changedCount: updated ? 1 : 0,
+    };
     if (asJson) {
-      printJson({
-        status: "added",
-        target: identity,
-        normalized,
-        kind: kind ?? "person",
-        contact: serializeContactMaybe(updated),
-        allowedAgents: parseAgentIds(agentIds),
-        changedCount: updated ? 1 : 0,
-      });
-      return;
+      printJson(payload);
+    } else {
+      const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
+      console.log(
+        `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`,
+      );
     }
-    const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
-    console.log(
-      `✓ Contact added: ${contact?.id ?? normalized}${name ? ` (${name})` : ""} — ${formatPhone(normalized)}${agentLabel}`,
-    );
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -443,21 +449,24 @@ export class ContactsCommands {
     emitConfigChanged();
 
     const updated = getUpdatedContact(contact);
+    const payload = {
+      status: "approved" as const,
+      target: contactRef,
+      contact: serializeContact(updated),
+      replyMode: replyMode ?? null,
+      allowedAgents: parseAgentIds(agentIds),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "approved",
-        target: contactRef,
-        contact: serializeContact(updated),
-        replyMode: replyMode ?? null,
-        allowedAgents: parseAgentIds(agentIds),
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      const modeInfo = replyMode ? ` (${replyMode})` : "";
+      const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
+      console.log(
+        `✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}${agentLabel}`,
+      );
     }
-
-    const modeInfo = replyMode ? ` (${replyMode})` : "";
-    const agentLabel = agentIds ? ` [agents: ${agentIds}]` : "";
-    console.log(`✓ Contact approved: ${contact.id}${contact.name ? ` (${contact.name})` : ""}${modeInfo}${agentLabel}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -467,19 +476,19 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const deleted = deleteContact(contactRef);
+    const payload = {
+      status: deleted ? ("removed" as const) : ("not_found" as const),
+      target: contactRef,
+      changedCount: deleted ? 1 : 0,
+    };
     if (asJson) {
-      printJson({
-        status: deleted ? "removed" : "not_found",
-        target: contactRef,
-        changedCount: deleted ? 1 : 0,
-      });
-      return;
-    }
-    if (deleted) {
+      printJson(payload);
+    } else if (deleted) {
       console.log(`✓ Contact removed: ${contactRef}`);
     } else {
       console.log(`Contact not found: ${contactRef}`);
     }
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -496,18 +505,19 @@ export class ContactsCommands {
     failIfChatContact(contactRef, contact);
     allowContact(contact.phone);
     const updated = getUpdatedContact(contact);
+    const payload = {
+      status: "allowed" as const,
+      target: contactRef,
+      contact: serializeContact(updated),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "allowed",
-        target: contactRef,
-        contact: serializeContact(updated),
-        changedCount: 1,
-      });
-      emitConfigChanged();
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Contact allowed: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     }
-    console.log(`✓ Contact allowed: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     emitConfigChanged();
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -524,18 +534,19 @@ export class ContactsCommands {
     failIfChatContact(contactRef, contact);
     blockContact(contact.phone);
     const updated = getUpdatedContact(contact);
+    const payload = {
+      status: "blocked" as const,
+      target: contactRef,
+      contact: serializeContact(updated),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "blocked",
-        target: contactRef,
-        contact: serializeContact(updated),
-        changedCount: 1,
-      });
-      emitConfigChanged();
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✗ Contact blocked: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     }
-    console.log(`✗ Contact blocked: ${contact.id} (${contact.name || formatPhone(contact.phone)})`);
     emitConfigChanged();
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -624,16 +635,18 @@ export class ContactsCommands {
       fail(`Unknown key: ${key}. Keys: agent, mode, email, name, tags, notes, opt-out, source, allowed-agents`);
     }
 
+    const payload = {
+      status: "updated" as const,
+      target: contactRef,
+      key,
+      value: jsonValue,
+      contact: serializeContact(getUpdatedContact(contact)),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "updated",
-        target: contactRef,
-        key,
-        value: jsonValue,
-        contact: serializeContact(getUpdatedContact(contact)),
-        changedCount: 1,
-      });
+      printJson(payload);
     }
+    return payload;
   }
 
   @Scope("open")
@@ -646,27 +659,29 @@ export class ContactsCommands {
     const contact = details?.legacyContact ?? getContact(contactRef);
 
     if (!contact && !details) {
+      const payload = { found: false as const, target: contactRef, contact: null };
       if (asJson) {
-        printJson({ found: false, target: contactRef, contact: null });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`\nContact not found: ${contactRef}`);
       }
-      console.log(`\nContact not found: ${contactRef}`);
-      return;
+      return payload;
     }
 
+    const payload = {
+      found: true as const,
+      target: contactRef,
+      contact: details?.contact ?? null,
+      platformIdentities: details?.platformIdentities ?? [],
+      policy: details?.policy ?? null,
+      duplicateCandidates: details?.duplicateCandidates ?? [],
+      legacyContact: contact ? serializeContact(contact) : null,
+      routeAgent: contact ? getRouteAgent(contact) : null,
+      sessionName: contact ? getSessionName(contact) : null,
+    };
     if (asJson) {
-      printJson({
-        found: true,
-        target: contactRef,
-        contact: details?.contact ?? null,
-        platformIdentities: details?.platformIdentities ?? [],
-        policy: details?.policy ?? null,
-        duplicateCandidates: details?.duplicateCandidates ?? [],
-        legacyContact: contact ? serializeContact(contact) : null,
-        routeAgent: contact ? getRouteAgent(contact) : null,
-        sessionName: contact ? getSessionName(contact) : null,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     if (!contact && details) {
@@ -688,10 +703,10 @@ export class ContactsCommands {
           : "(none)",
         { labelWidth: 15 },
       );
-      return;
+      return payload;
     }
 
-    if (!contact) return;
+    if (!contact) return payload;
     console.log(`\nContact: ${contact.id}`);
     printInspectionField("Name", contact.name || "-", CONTACT_DB_META, { labelWidth: 15 });
     printInspectionField("Email", contact.email || "-", CONTACT_DB_META, { labelWidth: 15 });
@@ -739,6 +754,7 @@ export class ContactsCommands {
         : "(none)",
       { labelWidth: 15 },
     );
+    return payload;
   }
 
   @Scope("open")
@@ -747,7 +763,7 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    this.get(contactRef, asJson);
+    return this.get(contactRef, asJson);
   }
 
   @Scope("open")
@@ -756,7 +772,7 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    this.get(contactRef, asJson);
+    return this.get(contactRef, asJson);
   }
 
   @Scope("open")
@@ -767,20 +783,21 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const contacts = byTag ? findContactsByTag(query) : searchContacts(query);
+    const payload = {
+      query,
+      byTag: Boolean(byTag),
+      total: contacts.length,
+      contacts: contacts.map((contact) => serializeContact(contact)),
+    };
 
     if (asJson) {
-      printJson({
-        query,
-        byTag: Boolean(byTag),
-        total: contacts.length,
-        contacts: contacts.map((contact) => serializeContact(contact)),
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     if (contacts.length === 0) {
       console.log(`No contacts found for: ${query}`);
-      return;
+      return payload;
     }
 
     console.log(`\nFound ${contacts.length} contact(s):\n`);
@@ -793,6 +810,7 @@ export class ContactsCommands {
       const identities = formatIdentitiesShort(contact, 40);
       console.log(`  ${icon}   ${id}  ${name}     ${identities}`);
     }
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -808,17 +826,19 @@ export class ContactsCommands {
     }
 
     addContactTag(contact.phone, tag);
+    const payload = {
+      status: "tag_added" as const,
+      target: contactRef,
+      tag,
+      contact: serializeContact(getUpdatedContact(contact)),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "tag_added",
-        target: contactRef,
-        tag,
-        contact: serializeContact(getUpdatedContact(contact)),
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Tag added: ${contact.id} +${tag}`);
     }
-    console.log(`✓ Tag added: ${contact.id} +${tag}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -834,17 +854,19 @@ export class ContactsCommands {
     }
 
     removeContactTag(contact.phone, tag);
+    const payload = {
+      status: "tag_removed" as const,
+      target: contactRef,
+      tag,
+      contact: serializeContact(getUpdatedContact(contact)),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "tag_removed",
-        target: contactRef,
-        tag,
-        contact: serializeContact(getUpdatedContact(contact)),
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Tag removed: ${contact.id} -${tag}`);
     }
-    console.log(`✓ Tag removed: ${contact.id} -${tag}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -865,19 +887,21 @@ export class ContactsCommands {
     }
 
     setGroupTag(contact.id, group.id, tag);
+    const payload = {
+      status: "group_tag_set" as const,
+      target: contactRef,
+      groupRef,
+      tag,
+      contact: serializeContact(getUpdatedContact(contact)),
+      group: serializeContact(getUpdatedContact(group)),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "group_tag_set",
-        target: contactRef,
-        groupRef,
-        tag,
-        contact: serializeContact(getUpdatedContact(contact)),
-        group: serializeContact(getUpdatedContact(group)),
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
     }
-    console.log(`✓ Group tag set: ${contact.name ?? contact.id} = "${tag}" in ${group.name ?? group.id}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -897,18 +921,20 @@ export class ContactsCommands {
     }
 
     removeGroupTag(contact.id, group.id);
+    const payload = {
+      status: "group_tag_removed" as const,
+      target: contactRef,
+      groupRef,
+      contact: serializeContact(getUpdatedContact(contact)),
+      group: serializeContact(getUpdatedContact(group)),
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "group_tag_removed",
-        target: contactRef,
-        groupRef,
-        contact: serializeContact(getUpdatedContact(contact)),
-        group: serializeContact(getUpdatedContact(group)),
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
     }
-    console.log(`✓ Group tag removed: ${contact.name ?? contact.id} in ${group.name ?? group.id}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -932,20 +958,22 @@ export class ContactsCommands {
         instanceId,
         reason: reason ?? null,
       });
+      const payload = {
+        status: "linked" as const,
+        target: contactRef,
+        identity: { channel, platformUserId, instanceId: instanceId ?? "" },
+        contact: details.contact,
+        platformIdentities: details.platformIdentities,
+        policy: details.policy,
+        duplicateCandidates: details.duplicateCandidates,
+        changedCount: 1,
+      };
       if (asJson) {
-        printJson({
-          status: "linked",
-          target: contactRef,
-          identity: { channel, platformUserId, instanceId: instanceId ?? "" },
-          contact: details.contact,
-          platformIdentities: details.platformIdentities,
-          policy: details.policy,
-          duplicateCandidates: details.duplicateCandidates,
-          changedCount: 1,
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Identity linked: ${details.contact.id} ${platformIcon(channel)} ${platformUserId}`);
       }
-      console.log(`✓ Identity linked: ${details.contact.id} ${platformIcon(channel)} ${platformUserId}`);
+      return payload;
     } catch (err: any) {
       fail(err.message);
     }
@@ -967,17 +995,21 @@ export class ContactsCommands {
 
     try {
       addContactIdentity(contact.id, platform, value);
+      const payload = {
+        status: "identity_added" as const,
+        target: contactRef,
+        identity: { platform, value },
+        contact: serializeContact(getUpdatedContact(contact)),
+        changedCount: 1,
+      };
       if (asJson) {
-        printJson({
-          status: "identity_added",
-          target: contactRef,
-          identity: { platform, value },
-          contact: serializeContact(getUpdatedContact(contact)),
-          changedCount: 1,
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(
+          `✓ Identity added: ${contact.id} ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`,
+        );
       }
-      console.log(`✓ Identity added: ${contact.id} ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`);
+      return payload;
     } catch (err: any) {
       fail(err.message);
     }
@@ -994,24 +1026,24 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const details = unlinkContactIdentity(platformIdentityRef, reason ?? null, { channel, instanceId });
+    const payload = {
+      status: details ? ("unlinked" as const) : ("not_found" as const),
+      platformIdentity: platformIdentityRef,
+      filter: { channel: channel ?? null, instanceId: instanceId ?? null },
+      contact: details?.contact ?? null,
+      platformIdentities: details?.platformIdentities ?? [],
+      policy: details?.policy ?? null,
+      duplicateCandidates: details?.duplicateCandidates ?? [],
+      changedCount: details ? 1 : 0,
+    };
     if (asJson) {
-      printJson({
-        status: details ? "unlinked" : "not_found",
-        platformIdentity: platformIdentityRef,
-        filter: { channel: channel ?? null, instanceId: instanceId ?? null },
-        contact: details?.contact ?? null,
-        platformIdentities: details?.platformIdentities ?? [],
-        policy: details?.policy ?? null,
-        duplicateCandidates: details?.duplicateCandidates ?? [],
-        changedCount: details ? 1 : 0,
-      });
-      return;
-    }
-    if (!details) {
+      printJson(payload);
+    } else if (!details) {
       console.log(`Platform identity not found: ${platformIdentityRef}`);
-      return;
+    } else {
+      console.log(`✓ Identity unlinked: ${platformIdentityRef}`);
     }
-    console.log(`✓ Identity unlinked: ${platformIdentityRef}`);
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -1023,33 +1055,36 @@ export class ContactsCommands {
   ) {
     const contact = getContact(value);
     removeContactIdentity(platform, value);
+    const payload = {
+      status: "identity_removed" as const,
+      identity: { platform, value },
+      contactId: contact?.id ?? null,
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "identity_removed",
-        identity: { platform, value },
-        contactId: contact?.id ?? null,
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`);
     }
-    console.log(`✓ Identity removed: ${platformIcon(platform)} ${formatIdentityValue(platform, value)}`);
+    return payload;
   }
 
   @Scope("open")
   @Command({ name: "duplicates", description: "Find likely duplicate contacts" })
   duplicates(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const duplicateContacts = listDuplicateContacts();
+    const payload = {
+      total: duplicateContacts.length,
+      duplicateContacts,
+    };
     if (asJson) {
-      printJson({
-        total: duplicateContacts.length,
-        duplicateContacts,
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     if (duplicateContacts.length === 0) {
       console.log("No duplicate contact candidates found.");
-      return;
+      return payload;
     }
 
     console.log(`\nDuplicate contact candidates (${duplicateContacts.length}):\n`);
@@ -1061,6 +1096,7 @@ export class ContactsCommands {
         );
       }
     }
+    return payload;
   }
 
   @Scope("writeContacts")
@@ -1077,21 +1113,22 @@ export class ContactsCommands {
 
     try {
       const result = mergeContacts(target.id, source.id);
+      const payload = {
+        status: "merged" as const,
+        target: targetRef,
+        source: sourceRef,
+        merged: result.merged,
+        targetContact: serializeContact(getUpdatedContact(target)),
+        sourceContact: serializeContact(source),
+        changedCount: result.merged,
+      };
       if (asJson) {
-        printJson({
-          status: "merged",
-          target: targetRef,
-          source: sourceRef,
-          merged: result.merged,
-          targetContact: serializeContact(getUpdatedContact(target)),
-          sourceContact: serializeContact(source),
-          changedCount: result.merged,
-        });
-        emitConfigChanged();
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Merged: ${source.id} → ${target.id} (${result.merged} identities moved)`);
       }
-      console.log(`✓ Merged: ${source.id} → ${target.id} (${result.merged} identities moved)`);
       emitConfigChanged();
+      return payload;
     } catch (err: any) {
       fail(err.message);
     }

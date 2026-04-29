@@ -116,40 +116,39 @@ export class TagCommands {
       ...(parseMetadata(metadataJson) ? { metadata: parseMetadata(metadataJson) } : {}),
     });
 
+    const payload = {
+      status: "created" as const,
+      target: { type: "tag" as const, slug: tag.slug },
+      changedCount: 1,
+      tag,
+    };
     if (asJson) {
-      printJson({
-        status: "created",
-        target: { type: "tag", slug: tag.slug },
-        changedCount: 1,
-        tag,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\n✓ Created tag ${tag.slug}`);
+      printTagDefinition(tag);
     }
-
-    console.log(`\n✓ Created tag ${tag.slug}`);
-    printTagDefinition(tag);
+    return payload;
   }
 
   @Command({ name: "list", description: "List tag definitions" })
   list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const tags = dbListTagDefinitions();
+    const payload = { total: tags.length, tags };
 
     if (asJson) {
-      console.log(JSON.stringify({ total: tags.length, tags }, null, 2));
-      return;
-    }
-
-    if (tags.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (tags.length === 0) {
       console.log("\nNo tags found.\n");
-      return;
+    } else {
+      console.log(`\nTags (${tags.length}):\n`);
+      for (const tag of tags) {
+        console.log(
+          `- ${tag.slug} :: ${tag.kind} :: ${tag.bindingCount} bindings${tag.description ? ` :: ${tag.description}` : ""}`,
+        );
+      }
     }
-
-    console.log(`\nTags (${tags.length}):\n`);
-    for (const tag of tags) {
-      console.log(
-        `- ${tag.slug} :: ${tag.kind} :: ${tag.bindingCount} bindings${tag.description ? ` :: ${tag.description}` : ""}`,
-      );
-    }
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one tag and its bindings" })
@@ -163,21 +162,22 @@ export class TagCommands {
       fail(`Tag not found: ${normalizedSlug}`);
     }
     const bindings = dbFindTagBindings({ slug: normalizedSlug });
+    const payload = { tag, bindings };
 
     if (asJson) {
-      console.log(JSON.stringify({ tag, bindings }, null, 2));
-      return;
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      printTagDefinition({ ...tag, bindingCount: bindings.length });
+      console.log("\nBindings:");
+      if (bindings.length === 0) {
+        console.log("  - none");
+      } else {
+        for (const binding of bindings) {
+          printBinding(binding);
+        }
+      }
     }
-
-    printTagDefinition({ ...tag, bindingCount: bindings.length });
-    console.log("\nBindings:");
-    if (bindings.length === 0) {
-      console.log("  - none");
-      return;
-    }
-    for (const binding of bindings) {
-      printBinding(binding);
-    }
+    return payload;
   }
 
   @Command({ name: "attach", description: "Attach a tag to an agent or session" })
@@ -197,25 +197,26 @@ export class TagCommands {
       createdBy: resolveTagActor(),
     });
 
+    const payload = {
+      status: "attached" as const,
+      target: {
+        type: "tag-binding" as const,
+        tagSlug: binding.tagSlug,
+        assetType: binding.assetType,
+        assetId: binding.assetId,
+      },
+      changedCount: 1,
+      binding,
+    };
     if (asJson) {
-      printJson({
-        status: "attached",
-        target: {
-          type: "tag-binding",
-          tagSlug: binding.tagSlug,
-          assetType: binding.assetType,
-          assetId: binding.assetId,
-        },
-        changedCount: 1,
-        binding,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\n✓ Attached ${binding.tagSlug} -> ${binding.assetType}:${binding.assetId}`);
+      if (binding.metadata) {
+        console.log(`Metadata: ${JSON.stringify(binding.metadata)}`);
+      }
     }
-
-    console.log(`\n✓ Attached ${binding.tagSlug} -> ${binding.assetType}:${binding.assetId}`);
-    if (binding.metadata) {
-      console.log(`Metadata: ${JSON.stringify(binding.metadata)}`);
-    }
+    return payload;
   }
 
   @Command({ name: "detach", description: "Detach a tag from an agent or session" })
@@ -237,21 +238,22 @@ export class TagCommands {
       fail(`Binding not found for ${normalizedSlug} -> ${target.assetType}:${target.assetId}`);
     }
 
+    const payload = {
+      status: "detached" as const,
+      target: {
+        type: "tag-binding" as const,
+        tagSlug: normalizedSlug,
+        assetType: target.assetType,
+        assetId: target.assetId,
+      },
+      changedCount: 1,
+    };
     if (asJson) {
-      printJson({
-        status: "detached",
-        target: {
-          type: "tag-binding",
-          tagSlug: normalizedSlug,
-          assetType: target.assetType,
-          assetId: target.assetId,
-        },
-        changedCount: 1,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\n✓ Detached ${normalizedSlug} from ${target.assetType}:${target.assetId}`);
     }
-
-    console.log(`\n✓ Detached ${normalizedSlug} from ${target.assetType}:${target.assetId}`);
+    return payload;
   }
 
   @Command({ name: "search", description: "Search bindings by tag or asset" })
@@ -267,19 +269,18 @@ export class TagCommands {
       ...(target ? { assetType: target.assetType, assetId: target.assetId } : {}),
     });
 
+    const payload = { total: bindings.length, bindings };
+
     if (asJson) {
-      console.log(JSON.stringify({ total: bindings.length, bindings }, null, 2));
-      return;
-    }
-
-    if (bindings.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (bindings.length === 0) {
       console.log("\nNo bindings found.\n");
-      return;
+    } else {
+      console.log(`\nBindings (${bindings.length}):\n`);
+      for (const binding of bindings) {
+        printBinding(binding);
+      }
     }
-
-    console.log(`\nBindings (${bindings.length}):\n`);
-    for (const binding of bindings) {
-      printBinding(binding);
-    }
+    return payload;
   }
 }

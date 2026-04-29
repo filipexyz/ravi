@@ -49,12 +49,11 @@ export class TriggersCommands {
       triggers = triggers.filter((t) => canAccessResource(scopeCtx, t.agentId));
     }
 
-    if (asJson) {
-      printJson({ total: triggers.length, triggers: triggers.map(serializeTrigger) });
-      return;
-    }
+    const payload = { total: triggers.length, triggers: triggers.map(serializeTrigger) };
 
-    if (triggers.length === 0) {
+    if (asJson) {
+      printJson(payload);
+    } else if (triggers.length === 0) {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
@@ -67,28 +66,28 @@ export class TriggersCommands {
       console.log("  ravi.*.response                Agent responses");
       console.log("  whatsapp.*.inbound             WhatsApp messages");
       console.log("  matrix.*.inbound               Matrix messages");
-      return;
+    } else {
+      console.log("\nEvent Triggers:\n");
+      console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
+      console.log("  --------  ------------------------  -------  ------------------------------  -----");
+
+      for (const t of triggers) {
+        const id = t.id.padEnd(8);
+        const name = t.name.slice(0, 24).padEnd(24);
+        const enabled = (t.enabled ? "yes" : "no").padEnd(7);
+        const topic = t.topic.slice(0, 30).padEnd(30);
+        const fires = String(t.fireCount);
+
+        console.log(`  ${id}  ${name}  ${enabled}  ${topic}  ${fires}`);
+      }
+
+      console.log(`\n  Total: ${triggers.length} triggers`);
+      console.log("\nUsage:");
+      console.log("  ravi triggers show <id>     # Show trigger details");
+      console.log("  ravi triggers test <id>     # Test trigger with fake event");
+      console.log("  ravi triggers rm <id>       # Delete trigger");
     }
-
-    console.log("\nEvent Triggers:\n");
-    console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
-    console.log("  --------  ------------------------  -------  ------------------------------  -----");
-
-    for (const t of triggers) {
-      const id = t.id.padEnd(8);
-      const name = t.name.slice(0, 24).padEnd(24);
-      const enabled = (t.enabled ? "yes" : "no").padEnd(7);
-      const topic = t.topic.slice(0, 30).padEnd(30);
-      const fires = String(t.fireCount);
-
-      console.log(`  ${id}  ${name}  ${enabled}  ${topic}  ${fires}`);
-    }
-
-    console.log(`\n  Total: ${triggers.length} triggers`);
-    console.log("\nUsage:");
-    console.log("  ravi triggers show <id>     # Show trigger details");
-    console.log("  ravi triggers test <id>     # Test trigger with fake event");
-    console.log("  ravi triggers rm <id>       # Delete trigger");
+    return payload;
   }
 
   @Command({ name: "show", description: "Show trigger details" })
@@ -101,41 +100,42 @@ export class TriggersCommands {
       fail(`Trigger not found: ${id}`);
     }
 
+    const payload = { trigger: serializeTrigger(trigger) };
     if (asJson) {
-      printJson({ trigger: serializeTrigger(trigger) });
-      return;
-    }
+      printJson(payload);
+    } else {
+      console.log(`\nTrigger: ${trigger.name}\n`);
+      console.log(`  ID:              ${trigger.id}`);
+      console.log(`  Agent:           ${trigger.agentId ?? "(default)"}`);
+      console.log(`  Account:         ${trigger.accountId ?? "(auto)"}`);
+      console.log(`  Enabled:         ${trigger.enabled ? "yes" : "no"}`);
+      console.log(`  Topic:           ${trigger.topic}`);
+      console.log(`  Session:         ${trigger.session}`);
+      if (trigger.replySession) {
+        console.log(`  Reply session:   ${trigger.replySession}`);
+      }
+      console.log(`  Cooldown:        ${formatDurationMs(trigger.cooldownMs)}`);
+      if (trigger.filter) {
+        console.log(`  Filter:          ${trigger.filter}`);
+      }
+      console.log("");
+      console.log(`  Message:`);
+      console.log(`    ${trigger.message.split("\n").join("\n    ")}`);
+      console.log("");
+      console.log(`  Fire count:      ${trigger.fireCount}`);
+      if (trigger.lastFiredAt) {
+        console.log(`  Last fired:      ${new Date(trigger.lastFiredAt).toLocaleString()}`);
+      }
+      console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
 
-    console.log(`\nTrigger: ${trigger.name}\n`);
-    console.log(`  ID:              ${trigger.id}`);
-    console.log(`  Agent:           ${trigger.agentId ?? "(default)"}`);
-    console.log(`  Account:         ${trigger.accountId ?? "(auto)"}`);
-    console.log(`  Enabled:         ${trigger.enabled ? "yes" : "no"}`);
-    console.log(`  Topic:           ${trigger.topic}`);
-    console.log(`  Session:         ${trigger.session}`);
-    if (trigger.replySession) {
-      console.log(`  Reply session:   ${trigger.replySession}`);
+      console.log("\nAvailable topics:");
+      console.log("  ravi.*.cli.{group}.{command}   CLI tool executions");
+      console.log("  ravi.*.tool                    SDK tool executions");
+      console.log("  ravi.*.response                Agent responses");
+      console.log("  whatsapp.*.inbound             WhatsApp messages");
+      console.log("  matrix.*.inbound               Matrix messages");
     }
-    console.log(`  Cooldown:        ${formatDurationMs(trigger.cooldownMs)}`);
-    if (trigger.filter) {
-      console.log(`  Filter:          ${trigger.filter}`);
-    }
-    console.log("");
-    console.log(`  Message:`);
-    console.log(`    ${trigger.message.split("\n").join("\n    ")}`);
-    console.log("");
-    console.log(`  Fire count:      ${trigger.fireCount}`);
-    if (trigger.lastFiredAt) {
-      console.log(`  Last fired:      ${new Date(trigger.lastFiredAt).toLocaleString()}`);
-    }
-    console.log(`  Created:         ${new Date(trigger.createdAt).toLocaleString()}`);
-
-    console.log("\nAvailable topics:");
-    console.log("  ravi.*.cli.{group}.{command}   CLI tool executions");
-    console.log("  ravi.*.tool                    SDK tool executions");
-    console.log("  ravi.*.response                Agent responses");
-    console.log("  whatsapp.*.inbound             WhatsApp messages");
-    console.log("  matrix.*.inbound               Matrix messages");
+    return payload;
   }
 
   @Command({ name: "add", description: "Add a new event trigger" })
@@ -240,21 +240,22 @@ export class TriggersCommands {
 
       await nats.emit("ravi.triggers.refresh", {});
 
+      const payload = {
+        status: "created" as const,
+        target: { type: "trigger" as const, id: trigger.id },
+        changedCount: 1,
+        trigger: serializeTrigger(trigger),
+      };
       if (asJson) {
-        printJson({
-          status: "created",
-          target: { type: "trigger", id: trigger.id },
-          changedCount: 1,
-          trigger: serializeTrigger(trigger),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`\n✓ Created trigger: ${trigger.id}`);
+        console.log(`  Name:       ${trigger.name}`);
+        console.log(`  Topic:      ${trigger.topic}`);
+        console.log(`  Cooldown:   ${formatDurationMs(trigger.cooldownMs)}`);
+        console.log(`  Session:    ${trigger.session}`);
       }
-
-      console.log(`\n✓ Created trigger: ${trigger.id}`);
-      console.log(`  Name:       ${trigger.name}`);
-      console.log(`  Topic:      ${trigger.topic}`);
-      console.log(`  Cooldown:   ${formatDurationMs(trigger.cooldownMs)}`);
-      console.log(`  Session:    ${trigger.session}`);
+      return payload;
     } catch (err) {
       fail(`Error creating trigger: ${err instanceof Error ? err.message : err}`);
     }
@@ -273,16 +274,18 @@ export class TriggersCommands {
     try {
       const updated = dbUpdateTrigger(id, { enabled: true });
       await nats.emit("ravi.triggers.refresh", {});
+      const payload = {
+        status: "enabled" as const,
+        target: { type: "trigger" as const, id },
+        changedCount: 1,
+        trigger: serializeTrigger(updated),
+      };
       if (asJson) {
-        printJson({
-          status: "enabled",
-          target: { type: "trigger", id },
-          changedCount: 1,
-          trigger: serializeTrigger(updated),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Enabled trigger: ${id} (${trigger.name})`);
       }
-      console.log(`✓ Enabled trigger: ${id} (${trigger.name})`);
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -301,16 +304,18 @@ export class TriggersCommands {
     try {
       const updated = dbUpdateTrigger(id, { enabled: false });
       await nats.emit("ravi.triggers.refresh", {});
+      const payload = {
+        status: "disabled" as const,
+        target: { type: "trigger" as const, id },
+        changedCount: 1,
+        trigger: serializeTrigger(updated),
+      };
       if (asJson) {
-        printJson({
-          status: "disabled",
-          target: { type: "trigger", id },
-          changedCount: 1,
-          trigger: serializeTrigger(updated),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Disabled trigger: ${id} (${trigger.name})`);
       }
-      console.log(`✓ Disabled trigger: ${id} (${trigger.name})`);
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -414,17 +419,19 @@ export class TriggersCommands {
       }
 
       await nats.emit("ravi.triggers.refresh", {});
+      const current = updated ?? dbGetTrigger(id);
+      const payload = {
+        status: "updated" as const,
+        target: { type: "trigger" as const, id },
+        changedCount: 1,
+        property: key,
+        value: normalizedValue,
+        trigger: current ? serializeTrigger(current) : null,
+      };
       if (asJson) {
-        const current = updated ?? dbGetTrigger(id);
-        printJson({
-          status: "updated",
-          target: { type: "trigger", id },
-          changedCount: 1,
-          property: key,
-          value: normalizedValue,
-          trigger: current ? serializeTrigger(current) : null,
-        });
+        printJson(payload);
       }
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -447,17 +454,19 @@ export class TriggersCommands {
 
     try {
       await nats.emit("ravi.triggers.test", { triggerId: id });
+      const payload = {
+        status: "test_emitted" as const,
+        target: { type: "trigger" as const, id },
+        changedCount: 0,
+        trigger: serializeTrigger(trigger),
+      };
       if (asJson) {
-        printJson({
-          status: "test_emitted",
-          target: { type: "trigger", id },
-          changedCount: 0,
-          trigger: serializeTrigger(trigger),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log("✓ Test event sent");
+        console.log("  Check daemon logs: ravi daemon logs -f");
       }
-      console.log("✓ Test event sent");
-      console.log("  Check daemon logs: ravi daemon logs -f");
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -480,16 +489,18 @@ export class TriggersCommands {
     try {
       dbDeleteTrigger(id);
       await nats.emit("ravi.triggers.refresh", {});
+      const payload = {
+        status: "deleted" as const,
+        target: { type: "trigger" as const, id },
+        changedCount: 1,
+        trigger: serializeTrigger(trigger),
+      };
       if (asJson) {
-        printJson({
-          status: "deleted",
-          target: { type: "trigger", id },
-          changedCount: 1,
-          trigger: serializeTrigger(trigger),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Deleted trigger: ${id} (${trigger.name})`);
       }
-      console.log(`✓ Deleted trigger: ${id} (${trigger.name})`);
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
