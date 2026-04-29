@@ -136,6 +136,14 @@ export type ArtifactsAttachInput = {
 /** Return shape for `artifacts.attach`. (no @Returns declared) */
 export type ArtifactsAttachReturn = unknown;
 
+/** Input shape for `artifacts.blob`. */
+export type ArtifactsBlobInput = {
+  id: string;
+};
+
+/** Return shape for `artifacts.blob`. (binary — raw HTTP Response) */
+export type ArtifactsBlobReturn = Response;
+
 /** Input shape for `artifacts.create`. */
 export type ArtifactsCreateInput = {
   command?: string;
@@ -190,9 +198,12 @@ export type ArtifactsEventsReturn = unknown;
 
 /** Input shape for `artifacts.list`. */
 export type ArtifactsListInput = {
+  agent?: string;
   includeDeleted?: boolean;
   kind?: string;
+  lifecycle?: string;
   limit?: string;
+  rich?: boolean;
   session?: string;
   tag?: string;
   task?: string;
@@ -1136,6 +1147,7 @@ export type InsightsListInput = {
   limit?: string;
   profile?: string;
   query?: string;
+  rich?: boolean;
   session?: string;
   task?: string;
 };
@@ -2102,7 +2114,9 @@ export type SessionsListReturn = unknown;
 /** Input shape for `sessions.read`. */
 export type SessionsReadInput = {
   count?: string;
+  messageId?: string;
   nameOrKey: string;
+  workspace?: boolean;
 };
 
 /** Return shape for `sessions.read`. (no @Returns declared) */
@@ -2635,6 +2649,7 @@ export type TasksDepsRmReturn = unknown;
 
 /** Input shape for `tasks.dispatch`. */
 export type TasksDispatchInput = {
+  actorSession?: string;
   agent?: string;
   checkpoint?: string;
   effort?: string;

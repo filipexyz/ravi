@@ -38,8 +38,6 @@
     "dev": "bun --watch src/index.ts",
     "tui": "bun src/tui/index.tsx",
     "rc505:debug": "swift src/tui/bridges/rc505-bridge.swift --debug-sources",
-    "wa:overlay:bridge": "bun src/whatsapp-overlay/bridge.ts",
-    "wa:overlay:cli": "bun src/whatsapp-overlay/cli.ts",
     "cli": "bun src/cli/index.ts",
     "reference:context": "bun src/reference/context-cli.ts",
     "typecheck": "bun tsc --noEmit",

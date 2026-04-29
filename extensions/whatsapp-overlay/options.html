@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ravi Overlay — Servers</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0e0f12;
+        --panel: #15171c;
+        --panel-2: #1d2026;
+        --border: #2a2e36;
+        --text: #e8eaef;
+        --muted: #9aa3b2;
+        --accent: #7aa2ff;
+        --danger: #ff6b6b;
+        --success: #5fd6a0;
+        --warning: #f7c879;
+      }
+      * { box-sizing: border-box; }
+      body {
+        font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 24px;
+        background: var(--bg);
+        color: var(--text);
+      }
+      header { margin-bottom: 16px; }
+      header h1 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+      header p { margin: 0; color: var(--muted); }
+      .section { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+      .section h2 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+      .servers { list-style: none; margin: 0; padding: 0; }
+      .servers li { padding: 12px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; background: var(--panel-2); }
+      .servers li.active { border-color: var(--accent); }
+      .server-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+      .server-name { font-weight: 600; font-size: 13px; }
+      .server-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+      .server-meta code { background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+      .server-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      button {
+        font: inherit;
+        padding: 6px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover { background: var(--border); }
+      button.primary { background: var(--accent); color: #000; border-color: var(--accent); }
+      button.primary:hover { filter: brightness(1.1); }
+      button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+      button.danger:hover { background: var(--danger); color: #000; }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+      input[type="text"], input[type="url"], input[type="password"] {
+        font: inherit;
+        padding: 6px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--border);
+        background: var(--bg);
+        color: var(--text);
+      }
+      input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+      .form-actions { display: flex; gap: 8px; margin-top: 8px; }
+      .empty { color: var(--muted); font-style: italic; padding: 12px; text-align: center; }
+      .toast { position: fixed; right: 16px; bottom: 16px; padding: 10px 14px; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text); box-shadow: 0 6px 24px rgba(0,0,0,0.4); transform: translateY(8px); opacity: 0; pointer-events: none; transition: all 0.2s; }
+      .toast.visible { transform: translateY(0); opacity: 1; }
+      .toast.ok { border-color: var(--success); }
+      .toast.err { border-color: var(--danger); }
+      .reveal-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); }
+      .reveal-toggle { font-size: 11px; color: var(--accent); background: none; border: none; padding: 0 0 0 6px; cursor: pointer; }
+      .reveal-toggle:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Ravi Overlay — Server configuration</h1>
+      <p>Manage the gateway servers the WhatsApp overlay can talk to. Run <code>ravi context issue --cli-name overlay-extension</code> on a daemon to mint a key, then add it here.</p>
+    </header>
+
+    <section class="section">
+      <h2>Servers</h2>
+      <ul id="servers" class="servers"></ul>
+      <p id="empty" class="empty" hidden>No servers configured yet.</p>
+    </section>
+
+    <section class="section">
+      <h2 id="form-title">Add server</h2>
+      <form id="server-form">
+        <div class="row">
+          <div class="field">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" placeholder="local" required />
+          </div>
+          <div class="field">
+            <label for="baseUrl">Gateway base URL</label>
+            <input type="url" id="baseUrl" name="baseUrl" placeholder="http://127.0.0.1:4399" required />
+          </div>
+        </div>
+        <div class="field">
+          <label for="contextKey">Context key (rctx_…)</label>
+          <input type="password" id="contextKey" name="contextKey" placeholder="rctx_…" required autocomplete="off" />
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="primary" id="save-btn">Save</button>
+          <button type="button" id="cancel-btn" hidden>Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

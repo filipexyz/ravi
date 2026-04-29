@@ -19,6 +19,13 @@ export interface TransportCallInput {
    * forward it without re-wrapping.
    */
   body: Record<string, unknown>;
+  /**
+   * When true, the dispatcher returns a raw `Response` (e.g. binary blob).
+   * Transports must skip JSON parsing for 2xx and yield the `Response` to the
+   * caller; error responses (>= 400) still parse JSON to surface gateway error
+   * bodies. Set by the generated client per `@Returns.binary()` command.
+   */
+  binary?: boolean;
 }
 
 export interface Transport {

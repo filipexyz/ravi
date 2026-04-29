@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { resolveSession } from "../../router/sessions.js";
 import { nats } from "../../nats.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import { resolveTaskCheckpointIntervalMs } from "../../tasks/checkpoint.js";
@@ -183,6 +184,34 @@ function parseReportEvents(value?: string): TaskReportEvent[] | undefined {
   }
 
   return [...new Set(parsed as TaskReportEvent[])];
+}
+
+function resolveDispatchActor(actorSessionName: string | undefined): {
+  actor: string;
+  agentId?: string;
+  sessionName?: string;
+} {
+  const trimmed = actorSessionName?.trim();
+  if (!trimmed) {
+    const ctx = getTaskActor();
+    return {
+      actor: ctx.actor ?? "cli",
+      ...(ctx.agentId ? { agentId: ctx.agentId } : {}),
+      ...(ctx.sessionName ? { sessionName: ctx.sessionName } : {}),
+    };
+  }
+
+  const session = resolveSession(trimmed);
+  if (!session) {
+    fail(`Actor session not found: ${trimmed}`);
+  }
+
+  const label = session.name ?? session.sessionKey;
+  return {
+    actor: label,
+    ...(session.agentId ? { agentId: session.agentId } : {}),
+    sessionName: label,
+  };
 }
 
 function parseRuntimeOverride(model?: string, effort?: string, thinking?: string): TaskRuntimeOptions | undefined {
@@ -1410,6 +1439,12 @@ export class TaskCommands {
     effort?: string,
     @Option({ flags: "--thinking <level>", description: "Runtime thinking: off|normal|verbose" })
     thinking?: string,
+    @Option({
+      flags: "--actor-session <name>",
+      description:
+        "Attribute the dispatch to a specific session (overrides RAVI_TASK_ACTOR; useful when a UI dispatches on behalf of a session)",
+    })
+    actorSessionName?: string,
   ) {
     if (!agentId?.trim()) {
       fail("--agent is required");
@@ -1426,7 +1461,7 @@ export class TaskCommands {
       fail(`Task not found: ${taskId}`);
     }
 
-    const actor = getTaskActor();
+    const actor = resolveDispatchActor(actorSessionName);
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
     const runtimeOverride = parseRuntimeOverride(model, effort, thinking);

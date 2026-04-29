@@ -1,236 +1,107 @@
-const BRIDGE_BASE = "http://127.0.0.1:4210";
-const BRIDGE_TIMEOUT_MS = 2500;
-const ARTIFACT_BLOB_TIMEOUT_MS = 8000;
+import { getClient, callBinary, NoActiveServerError } from "./lib/client.js";
+import { getViewState, setViewState, upsertBinding, findBinding } from "./lib/storage.js";
+import { buildOverlayV3PlaceholderSnapshot } from "./lib/dom-model.js";
+import {
+  buildSnapshot,
+  buildTasksSnapshot,
+  buildOmniPanelSnapshot,
+  executeOmniRoute,
+  resolveChatList as resolveChatListComposition,
+} from "./lib/compositions.js";
+
+const HANDLERS = {
+  "ravi:get-snapshot": fetchSnapshot,
+  "ravi:get-session-workspace": fetchSessionWorkspace,
+  "ravi:get-tasks": fetchTasks,
+  "ravi:get-insights": fetchInsights,
+  "ravi:get-artifacts": fetchArtifacts,
+  "ravi:get-artifact-blob": fetchArtifactBlob,
+  "ravi:dispatch-task": postTaskDispatch,
+  "ravi:session-prompt": postSessionPrompt,
+  "ravi:publish-view-state": publishViewState,
+  "ravi:get-v3-placeholders": fetchV3Placeholders,
+  "ravi:v3-command": postV3Command,
+  "ravi:chat-list-resolve": resolveChatList,
+  "ravi:get-message-meta": fetchMessageMeta,
+  "ravi:get-omni-panel": fetchOmniPanel,
+  "ravi:omni-route": postOmniRoute,
+  "ravi:session-action": postAction,
+  "ravi:dom-next-command": noopDomNext,
+  "ravi:dom-command-result": noopDomResult,
+};
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === "ravi:get-snapshot") {
-    fetchSnapshot(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-session-workspace") {
-    fetchSessionWorkspace(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-tasks") {
-    fetchTasks(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-insights") {
-    fetchInsights(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-artifacts") {
-    fetchArtifacts(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-artifact-blob") {
-    fetchArtifactBlob(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:dispatch-task") {
-    postTaskDispatch(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:session-prompt") {
-    postSessionPrompt(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:publish-view-state") {
-    publishViewState(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-v3-placeholders") {
-    fetchV3Placeholders()
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:v3-command") {
-    postV3Command(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:chat-list-resolve") {
-    resolveChatList(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-message-meta") {
-    fetchMessageMeta(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:get-omni-panel") {
-    fetchOmniPanel(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:bind-chat") {
-    postBind(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:omni-route") {
-    postOmniRoute(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:session-action") {
-    postAction(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:dom-next-command") {
-    fetchNextDomCommand(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  if (message?.type === "ravi:dom-command-result") {
-    postDomCommandResult(message.payload)
-      .then(sendResponse)
-      .catch((error) => sendResponse({ ok: false, error: String(error) }));
-    return true;
-  }
-
-  return undefined;
+  const handler = HANDLERS[message?.type];
+  if (!handler) return undefined;
+  Promise.resolve()
+    .then(() => handler(message.payload ?? {}))
+    .then(sendResponse)
+    .catch((error) => sendResponse(toErrorResponse(error)));
+  return true;
 });
 
-async function fetchSnapshot(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.chatId) params.set("chatId", payload.chatId);
-  if (payload.title) params.set("title", payload.title);
-  if (payload.session) params.set("session", payload.session);
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/snapshot?${params.toString()}`);
-  return response.json();
+function toErrorResponse(error) {
+  if (error instanceof NoActiveServerError) {
+    return { ok: false, error: error.message, code: "no_active_server" };
+  }
+  const status = typeof error?.status === "number" ? error.status : 0;
+  const code = typeof error?.body?.code === "string" ? error.body.code : null;
+  return {
+    ok: false,
+    status,
+    code: code || (status ? `http_${status}` : "transport_error"),
+    error: typeof error?.message === "string" ? error.message : String(error),
+  };
 }
 
 async function fetchSessionWorkspace(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.session) params.set("session", payload.session);
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/workspace?${params.toString()}`);
-  return response.json();
-}
-
-async function fetchTasks(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.taskId) params.set("taskId", payload.taskId);
-  if (payload.status) params.set("status", payload.status);
-  if (payload.agentId) params.set("agentId", payload.agentId);
-  if (payload.sessionName) params.set("sessionName", payload.sessionName);
-  if (payload.actorSession) params.set("actorSession", payload.actorSession);
-  if (payload.eventsLimit) params.set("eventsLimit", String(payload.eventsLimit));
-  if (payload.timeZone) params.set("timeZone", payload.timeZone);
-  if (payload.todayKey) params.set("todayKey", payload.todayKey);
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks?${params.toString()}`);
-  return response.json();
+  const session = clean(payload.session);
+  if (!session) return { ok: false, error: "Missing session" };
+  const { client } = await getClient();
+  const options = { workspace: true };
+  if (typeof payload.count === "number") options.count = payload.count;
+  return await client.sessions.read(session, options);
 }
 
 async function fetchInsights(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.limit) params.set("limit", String(payload.limit));
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/insights?${params.toString()}`);
-  return response.json();
+  const { client } = await getClient();
+  const options = { rich: true };
+  if (typeof payload.limit === "number") options.limit = payload.limit;
+  return await client.insights.list(options);
 }
 
 async function fetchArtifacts(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.limit) params.set("limit", String(payload.limit));
-  if (payload.lifecycle) params.set("lifecycle", String(payload.lifecycle));
-  if (payload.kind) params.set("kind", String(payload.kind));
-  if (payload.taskId) params.set("taskId", String(payload.taskId));
-  if (payload.sessionId) params.set("sessionId", String(payload.sessionId));
-  if (payload.agentId) params.set("agentId", String(payload.agentId));
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/artifacts?${params.toString()}`);
-  return response.json();
+  const { client } = await getClient();
+  const options = { rich: true };
+  if (typeof payload.limit === "number") options.limit = payload.limit;
+  if (clean(payload.lifecycle)) options.lifecycle = clean(payload.lifecycle);
+  if (clean(payload.kind)) options.kind = clean(payload.kind);
+  if (clean(payload.taskId)) options.taskId = clean(payload.taskId);
+  if (clean(payload.sessionId)) options.sessionId = clean(payload.sessionId);
+  if (clean(payload.agentId)) options.agentId = clean(payload.agentId);
+  return await client.artifacts.list(options);
 }
 
 async function fetchArtifactBlob(payload = {}) {
-  const artifactId = typeof payload?.artifactId === "string" ? payload.artifactId.trim() : "";
+  const artifactId = clean(payload?.artifactId);
   if (!artifactId) return { ok: false, status: 400, code: "missing_id", error: "Missing artifactId" };
 
-  const params = new URLSearchParams();
-  params.set("id", artifactId);
-
-  let response;
+  let result;
   try {
-    response = await bridgeFetch(
-      `${BRIDGE_BASE}/api/whatsapp-overlay/artifact-blob?${params.toString()}`,
-      { timeoutMs: ARTIFACT_BLOB_TIMEOUT_MS },
-    );
+    result = await callBinary({
+      groupSegments: ["artifacts"],
+      command: "blob",
+      body: { id: artifactId },
+    });
   } catch (error) {
-    return { ok: false, status: 0, code: "network", error: String(error) };
+    return toErrorResponse(error);
   }
 
-  if (!response.ok) {
-    let parsed = null;
-    try {
-      parsed = await response.clone().json();
-    } catch {}
-    return {
-      ok: false,
-      status: response.status,
-      code: parsed?.code || `http_${response.status}`,
-      error: parsed?.error || response.statusText || `HTTP ${response.status}`,
-    };
+  const contentType = result?.contentType || "application/octet-stream";
+  const buffer = result?.body instanceof ArrayBuffer ? result.body : null;
+  if (!buffer) {
+    return { ok: false, status: 0, code: "decode_failed", error: "Empty binary response" };
   }
-
-  const contentType = response.headers.get("content-type") || "application/octet-stream";
-  let buffer;
-  try {
-    buffer = await response.arrayBuffer();
-  } catch (error) {
-    return { ok: false, status: response.status, code: "decode_failed", error: String(error) };
-  }
-
   return {
     ok: true,
     artifactId,
@@ -251,131 +122,140 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-async function postTaskDispatch(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/tasks/dispatch`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+async function fetchMessageMeta(payload = {}) {
+  const session = clean(payload.session);
+  const messageId = clean(payload.messageId);
+  if (!session || !messageId) {
+    return { ok: false, error: "Missing session or messageId" };
+  }
+  const { client } = await getClient();
+  return await client.sessions.read(session, { messageId });
 }
 
-async function postAction(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/action`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+async function postTaskDispatch(payload = {}) {
+  const taskId = clean(payload.taskId);
+  if (!taskId) return { ok: false, error: "Missing taskId" };
+  const { client } = await getClient();
+  const options = {};
+  if (clean(payload.agentId)) options.agentId = clean(payload.agentId);
+  if (clean(payload.sessionName)) options.sessionName = clean(payload.sessionName);
+  if (clean(payload.actorSession)) options.actorSession = clean(payload.actorSession);
+  if (clean(payload.reportToSessionName)) options.reportToSessionName = clean(payload.reportToSessionName);
+  return await client.tasks.dispatch(taskId, options);
 }
 
 async function postSessionPrompt(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/session/prompt`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+  const session = clean(payload.session) ?? clean(payload.nameOrKey);
+  const prompt = typeof payload.prompt === "string" ? payload.prompt : null;
+  if (!session || !prompt) return { ok: false, error: "Missing session or prompt" };
+  const { client } = await getClient();
+  const options = {};
+  if (clean(payload.actorSession)) options.actorSession = clean(payload.actorSession);
+  if (typeof payload.wait === "boolean") options.wait = payload.wait;
+  return await client.sessions.send(session, prompt, options);
+}
+
+async function postAction(payload = {}) {
+  const session = clean(payload.session);
+  const action = clean(payload.action);
+  if (!session) return { ok: false, error: "Missing session" };
+  if (!action) return { ok: false, error: "Missing action" };
+  const { client } = await getClient();
+  switch (action) {
+    case "abort": {
+      return await client.sessions.runtime.interrupt(session);
+    }
+    case "reset": {
+      return await client.sessions.reset(session);
+    }
+    case "set-thinking": {
+      const value = clean(payload.value);
+      if (value !== "off" && value !== "normal" && value !== "verbose") {
+        return { ok: false, error: "Invalid thinking level" };
+      }
+      return await client.sessions.setThinking(session, value);
+    }
+    case "rename": {
+      const value = clean(payload.value);
+      if (!value) return { ok: false, error: "Missing display name" };
+      return await client.sessions.setDisplay(session, value);
+    }
+    default:
+      return { ok: false, error: `Unsupported action: ${action}` };
+  }
+}
+
+async function fetchTasks(payload = {}) {
+  const { client } = await getClient();
+  return await buildTasksSnapshot(client, payload);
 }
 
 async function publishViewState(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/current`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
-}
-
-async function resolveChatList(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/chat-list/resolve`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+  await setViewState(payload);
+  return { ok: true };
 }
 
 async function fetchV3Placeholders() {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/placeholders`);
-  return response.json();
+  const publishedState = await getViewState();
+  return buildOverlayV3PlaceholderSnapshot({ publishedState });
 }
 
 async function postV3Command(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/v3/command`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+  const name = clean(payload?.name);
+  if (!name) return { ok: false, error: "Missing name", code: "invalid_command" };
+  if (name === "chat.bindSession") {
+    const args = payload.args ?? {};
+    try {
+      const binding = await upsertBinding({
+        title: args.title,
+        chatId: args.chatId,
+        session: args.session,
+        instance: args.instance,
+        chatType: args.chatType,
+        chatName: args.chatName,
+      });
+      const commandId = `v3c_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+      return {
+        ok: true,
+        ack: { body: { commandId, ok: true, result: { binding } } },
+      };
+    } catch (error) {
+      return { ok: false, error: error?.message || String(error), code: "bind_failed" };
+    }
+  }
+  return { ok: false, error: `Unsupported v3 command: ${name}`, code: "unsupported_command" };
 }
 
-async function fetchMessageMeta(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/message-meta`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+async function fetchSnapshot(payload = {}) {
+  const { client } = await getClient();
+  return await buildSnapshot(client, payload);
 }
 
 async function fetchOmniPanel(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.chatId) params.set("chatId", payload.chatId);
-  if (payload.title) params.set("title", payload.title);
-  if (payload.session) params.set("session", payload.session);
-  if (payload.instance) params.set("instance", payload.instance);
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/panel?${params.toString()}`);
-  return response.json();
-}
-
-async function postBind(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/bind`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+  const { client } = await getClient();
+  return await buildOmniPanelSnapshot(client, payload);
 }
 
 async function postOmniRoute(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/omni/route`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+  const { client } = await getClient();
+  return await executeOmniRoute(client, payload);
 }
 
-async function fetchNextDomCommand(payload = {}) {
-  const params = new URLSearchParams();
-  if (payload.clientId) params.set("clientId", payload.clientId);
-
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/command/next?${params.toString()}`);
-  return response.json();
+async function resolveChatList(payload = {}) {
+  const { client } = await getClient();
+  return await resolveChatListComposition(client, payload);
 }
 
-async function postDomCommandResult(payload = {}) {
-  const response = await bridgeFetch(`${BRIDGE_BASE}/api/whatsapp-overlay/dom/result`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return response.json();
+function noopDomNext() {
+  return { ok: true, command: null };
 }
 
-async function bridgeFetch(url, options = {}) {
-  const { timeoutMs, ...fetchOptions } = options;
-  const effectiveTimeoutMs = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : BRIDGE_TIMEOUT_MS;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), effectiveTimeoutMs);
-  try {
-    return await fetch(url, {
-      ...fetchOptions,
-      signal: fetchOptions.signal || controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
-  }
+function noopDomResult() {
+  return { ok: true };
+}
+
+function clean(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

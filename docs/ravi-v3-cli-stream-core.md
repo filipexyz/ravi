@@ -75,22 +75,13 @@ As of `2026-03-29`, wave 1, the placeholder consumer slice, the first minimal ac
 - `src/stream/relay.test.ts`
 - `src/cli/index.ts`
   - top-level `ravi stream` command
-- `src/whatsapp-overlay/placeholders.ts`
-  - bridge/browser-friendly placeholder snapshot derived from relay health + mapped DOM anchors
-- `src/whatsapp-overlay/placeholders.test.ts`
-- `src/whatsapp-overlay/bridge.ts`
-  - `GET /api/whatsapp-overlay/v3/placeholders`
-  - `POST /api/whatsapp-overlay/v3/command`
-  - long-lived local relay bootstrap for `overlay.whatsapp`
-- `src/whatsapp-overlay/cli.ts`
-  - `ravi-overlay placeholders`
-  - `ravi-overlay placeholders-outline <componentId>`
-  - `ravi-overlay bind <session>`
+- `extensions/whatsapp-overlay/lib/dom-model.js`
+  - placeholder snapshot built from extension-local view-state and a minimal component map
 - `extensions/whatsapp-overlay/background.js`
-  - proxy for `ravi:get-v3-placeholders`
+  - handlers for `ravi:get-v3-placeholders` and `ravi:v3-command`
+  - composes snapshots via parallel `@ravi-os/sdk` calls (`sessions.list`, `tasks.list`, `routes.list`)
 - `extensions/whatsapp-overlay/content.js`
-  - first browser consumer for placeholder mode
-  - first widget action wired through relay command path
+  - browser consumer for placeholder mode
 - `extensions/whatsapp-overlay/styles.css`
   - placeholder layer visuals
 
@@ -100,15 +91,8 @@ Validated behaviors:
 - `stdin command ping` returns `ack`
 - `stdin command snapshot.open` emits `snapshot`
 - relay reaches `running`, stores `hello/snapshot`, resolves `ping`, and rejects `fail`
-- `GET /api/whatsapp-overlay/v3/placeholders` responds with relay health + mapped slots
-- `ravi-overlay placeholders` and `ravi-overlay placeholders --json` read that state from the terminal
-- browser runtime now has a placeholder layer fed by bridge state instead of ad-hoc inline knowledge
-- clicking a placeholder now sends `placeholder.outline` through `command -> ack/error`
-- the relay emits `overlay.whatsapp.command.requested`
-- the bridge turns that event into a DOM outline on the mapped slot
-- structured command errors now survive the relay instead of collapsing into plain `Error(message)`
-- `chat.bindSession` now uses the same `/v3/command` boundary to execute a real overlay mutation with a real result payload
-- the Omni bind button already rides this new path instead of the old bespoke bind route
+- the extension renders a placeholder layer from view-state persisted in `chrome.storage.local`
+- `chat.bindSession` is handled inside the service worker and persisted to `chrome.storage.local.ravi_overlay_bindings`
 
 ## What Is Not Built Yet
 

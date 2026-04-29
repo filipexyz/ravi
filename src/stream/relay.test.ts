@@ -36,29 +36,6 @@ describe("cli stream relay", () => {
     expect(ack.body.ok).toBe(true);
     expect(ack.body.result).toEqual({ pong: true });
 
-    const nextEvent = new Promise<any>((resolve) => {
-      relay.events.once("event", resolve);
-    });
-
-    const outlineAck = await relay.sendCommand("placeholder.outline", {
-      componentId: "timeline",
-      selector: "main [data-testid='conversation-panel-body']",
-    });
-    expect(outlineAck.body.ok).toBe(true);
-    expect(outlineAck.body.result).toMatchObject({
-      accepted: true,
-      emitted: "overlay.whatsapp.command.requested",
-    });
-
-    const event = await nextEvent;
-    expect(event.topic).toBe("overlay.whatsapp.command.requested");
-    expect(event.body).toMatchObject({
-      name: "placeholder.outline",
-      args: {
-        componentId: "timeline",
-      },
-    });
-
     await expect(relay.sendCommand("fail")).rejects.toMatchObject({
       code: "boom",
       message: "fixture failure",
