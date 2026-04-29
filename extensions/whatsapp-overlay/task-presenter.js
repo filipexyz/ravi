@@ -9,6 +9,36 @@
     return Array.isArray(node?.children) ? node.children : [];
   }
 
+  function normalizeTaskListItem(item) {
+    if (!item || typeof item !== "object") return null;
+
+    const envelopeTask =
+      item.task && typeof item.task === "object" ? item.task : null;
+    const task = envelopeTask || item;
+    if (!task?.id) return null;
+
+    if (!envelopeTask) return task;
+
+    return {
+      ...task,
+      activeAssignment: item.activeAssignment ?? task.activeAssignment ?? null,
+      visualStatus: item.visualStatus ?? task.visualStatus ?? task.status ?? null,
+      runtime: item.runtime ?? task.runtime ?? null,
+      readiness: item.readiness ?? task.readiness ?? null,
+      dependencyCount: item.dependencyCount ?? task.dependencyCount,
+      unsatisfiedDependencyCount:
+        item.unsatisfiedDependencyCount ?? task.unsatisfiedDependencyCount,
+      launchPlan: item.launchPlan ?? task.launchPlan ?? null,
+      project: item.project ?? task.project ?? null,
+    };
+  }
+
+  function normalizeTaskListItems(items) {
+    return (Array.isArray(items) ? items : [])
+      .map((item) => normalizeTaskListItem(item))
+      .filter(Boolean);
+  }
+
   function countTaskDescendants(node) {
     return getChildNodes(node).reduce(
       (total, childNode) => total + 1 + countTaskDescendants(childNode),
@@ -414,6 +444,8 @@
 
   root.RaviWaOverlayTaskPresenter = {
     clampTaskProgressValue,
+    normalizeTaskListItem,
+    normalizeTaskListItems,
     getTaskVisualProgressState,
     getTaskReadinessState,
     getTaskWorkflowSummary,

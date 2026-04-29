@@ -5677,6 +5677,58 @@ function shouldReplaceTaskSessionMatch(currentTask, nextTask) {
   );
 }
 
+function normalizeTaskListItem(item) {
+  const sharedNormalizer =
+    globalThis.RaviWaOverlayTaskPresenter?.normalizeTaskListItem;
+  if (typeof sharedNormalizer === "function") {
+    return sharedNormalizer(item);
+  }
+
+  if (!item || typeof item !== "object") return null;
+  const envelopeTask =
+    item.task && typeof item.task === "object" ? item.task : null;
+  const task = envelopeTask || item;
+  if (!task?.id) return null;
+  if (!envelopeTask) return task;
+
+  return {
+    ...task,
+    activeAssignment: item.activeAssignment ?? task.activeAssignment ?? null,
+    visualStatus: item.visualStatus ?? task.visualStatus ?? task.status ?? null,
+    runtime: item.runtime ?? task.runtime ?? null,
+    readiness: item.readiness ?? task.readiness ?? null,
+    dependencyCount: item.dependencyCount ?? task.dependencyCount,
+    unsatisfiedDependencyCount:
+      item.unsatisfiedDependencyCount ?? task.unsatisfiedDependencyCount,
+    launchPlan: item.launchPlan ?? task.launchPlan ?? null,
+    project: item.project ?? task.project ?? null,
+  };
+}
+
+function normalizeTaskListItems(items) {
+  const sharedNormalizer =
+    globalThis.RaviWaOverlayTaskPresenter?.normalizeTaskListItems;
+  if (typeof sharedNormalizer === "function") {
+    return sharedNormalizer(items);
+  }
+  return (Array.isArray(items) ? items : [])
+    .map((item) => normalizeTaskListItem(item))
+    .filter(Boolean);
+}
+
+function getTaskSessionNames(task) {
+  const activeAssignment = task?.activeAssignment || null;
+  return [
+    ...new Set(
+      [
+        normalizeTaskSessionName(activeAssignment?.sessionName),
+        normalizeTaskSessionName(task?.assigneeSessionName),
+        normalizeTaskSessionName(task?.workSessionName),
+      ].filter(Boolean),
+    ),
+  ];
+}
+
 function getTaskSessionLookup(snapshot = latestTasksSnapshot) {
   if (!snapshot) {
     lastTaskSessionLookupSnapshot = snapshot;
@@ -5689,16 +5741,9 @@ function getTaskSessionLookup(snapshot = latestTasksSnapshot) {
   }
 
   const lookup = new Map();
-  const tasks = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const tasks = normalizeTaskListItems(snapshot?.items);
   tasks.forEach((task) => {
-    const sessionNames = [
-      ...new Set(
-        [
-          normalizeTaskSessionName(task?.workSessionName),
-          normalizeTaskSessionName(task?.assigneeSessionName),
-        ].filter(Boolean),
-      ),
-    ];
+    const sessionNames = getTaskSessionNames(task);
     sessionNames.forEach((sessionName) => {
       const existing = lookup.get(sessionName);
       if (!existing || shouldReplaceTaskSessionMatch(existing, task)) {
@@ -7328,7 +7373,7 @@ function buildTaskKanbanColumnStats(items) {
     TASK_KANBAN_COLUMNS.map((column) => [column.id, 0]),
   );
 
-  (Array.isArray(items) ? items : []).forEach((task) => {
+  normalizeTaskListItems(items).forEach((task) => {
     const surfaceStatus = getTaskKanbanSurfaceStatus(task);
     if (!Object.hasOwn(counts, surfaceStatus)) {
       counts[surfaceStatus] = 0;
@@ -7372,9 +7417,10 @@ function summarizeTaskCardCopy(task) {
 }
 
 function buildTaskAssigneeLabel(task, activeAssignment = null) {
-  const agentId = activeAssignment?.agentId || task?.assigneeAgentId || null;
+  const assignment = activeAssignment || task?.activeAssignment || null;
+  const agentId = assignment?.agentId || task?.assigneeAgentId || null;
   const sessionName =
-    activeAssignment?.sessionName || task?.assigneeSessionName || null;
+    assignment?.sessionName || task?.assigneeSessionName || null;
   return agentId || sessionName || null;
 }
 
@@ -8463,8 +8509,9 @@ function renderTaskReadinessContent(view) {
 }
 
 function getTaskPrimarySessionName(task, activeAssignment = null) {
+  const assignment = activeAssignment || task?.activeAssignment || null;
   return (
-    activeAssignment?.sessionName ||
+    assignment?.sessionName ||
     task?.assigneeSessionName ||
     task?.workSessionName ||
     null
@@ -10178,7 +10225,7 @@ function syncTaskDetailDrawerHost(host, drawerState) {
 
 function renderTasksWorkspace(body) {
   const snapshot = latestTasksSnapshot;
-  const items = Array.isArray(snapshot?.items) ? snapshot.items : [];
+  const items = normalizeTaskListItems(snapshot?.items);
   const taskRoots = buildTaskHierarchy(items);
   const stats = snapshot?.stats || null;
   const columnStats = buildTaskKanbanColumnStats(items);
@@ -10314,7 +10361,7 @@ function getTaskHierarchyState(snapshot = latestTasksSnapshot) {
 }
 
 function createTaskHierarchyState(items) {
-  const list = Array.isArray(items) ? [...items] : [];
+  const list = normalizeTaskListItems(items);
   const nodes = new Map(list.map((task) => [task.id, { task, children: [] }]));
   const roots = [];
   const parentByTaskId = new Map();

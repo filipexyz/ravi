@@ -106,6 +106,25 @@ describe("whatsapp overlay task drawer state", () => {
     expect(drawerState.taskStillExists).toBe(true);
   });
 
+  it("keeps selections alive when task snapshots use envelope items", () => {
+    const drawerState = resolveTaskDetailDrawerState({
+      selectedTaskId: "task-1",
+      drawerOpen: true,
+      snapshot: {
+        items: [{ task: { id: "task-1", status: "in_progress" } }],
+        selectedTask: null,
+        query: {
+          taskId: "task-2",
+        },
+      },
+      cachedSelection: makeSelection("task-1", "in_progress"),
+    });
+
+    expect(drawerState.taskStillExists).toBe(true);
+    expect(drawerState.detailDrawerVisible).toBe(true);
+    expect(drawerState.isHydrating).toBe(true);
+  });
+
   it("closes the drawer and clears the local selection when the task really disappears", () => {
     const nextState = syncTaskDetailDrawerState({
       selectedTaskId: "task-1",
