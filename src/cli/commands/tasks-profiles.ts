@@ -75,26 +75,24 @@ export class TaskProfileCommands {
   @Command({ name: "list", description: "List resolved task profiles from all catalog sources" })
   list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const profiles = listTaskProfiles();
+    const payload = { total: profiles.length, profiles };
 
     if (asJson) {
-      console.log(JSON.stringify({ total: profiles.length, profiles }, null, 2));
-      return;
-    }
-
-    if (profiles.length === 0) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else if (profiles.length === 0) {
       console.log("\nNo task profiles found.\n");
-      return;
+    } else {
+      console.log(`\nTask profiles (${profiles.length})\n`);
+      console.log("  ID                  VERSION  SOURCE     WORKSPACE                SURFACE");
+      console.log("  ------------------  -------  ---------  -----------------------  ------------------------------");
+      for (const profile of profiles) {
+        console.log(
+          `  ${profile.id.padEnd(18)}  ${profile.version.padEnd(7)}  ${profile.sourceKind.padEnd(9)}  ${formatWorkspaceBootstrap(profile).slice(0, 23).padEnd(23)}  ${profile.rendererHints.label.slice(0, 30)}`,
+        );
+      }
+      console.log("");
     }
-
-    console.log(`\nTask profiles (${profiles.length})\n`);
-    console.log("  ID                  VERSION  SOURCE     WORKSPACE                SURFACE");
-    console.log("  ------------------  -------  ---------  -----------------------  ------------------------------");
-    for (const profile of profiles) {
-      console.log(
-        `  ${profile.id.padEnd(18)}  ${profile.version.padEnd(7)}  ${profile.sourceKind.padEnd(9)}  ${formatWorkspaceBootstrap(profile).slice(0, 23).padEnd(23)}  ${profile.rendererHints.label.slice(0, 30)}`,
-      );
-    }
-    console.log("");
+    return payload;
   }
 
   @Command({ name: "show", description: "Show the resolved manifest for one task profile" })
@@ -106,7 +104,7 @@ export class TaskProfileCommands {
 
     if (asJson) {
       console.log(JSON.stringify(profile, null, 2));
-      return;
+      return profile;
     }
 
     console.log(`\nProfile:     ${profile.id}`);
@@ -153,6 +151,7 @@ export class TaskProfileCommands {
     console.log(`  reportDoneMessage:   ${profile.templates.reportDoneMessage}`);
     console.log(`  reportBlockedMessage: ${profile.templates.reportBlockedMessage}`);
     console.log(`  reportFailedMessage: ${profile.templates.reportFailedMessage}`);
+    return profile;
   }
 
   @Command({ name: "preview", description: "Render a profile preview with the resolved template context" })
@@ -198,30 +197,30 @@ export class TaskProfileCommands {
 
     if (asJson) {
       console.log(JSON.stringify(preview, null, 2));
-      return;
+    } else {
+      console.log(`\nProfile preview: ${preview.profile.id}@${preview.profile.version}`);
+      console.log(`Source: ${preview.profile.sourceKind} :: ${preview.profile.source}`);
+      if (preview.primaryArtifact) {
+        console.log(`Primary artifact: ${preview.primaryArtifact.label} -> ${preview.primaryArtifact.path}`);
+      }
+      console.log("\nCreate output:\n");
+      console.log(preview.rendered.create);
+      console.log("\nDispatch prompt:\n");
+      console.log(preview.rendered.dispatch);
+      console.log("\nResume prompt:\n");
+      console.log(preview.rendered.resume);
+      console.log("\nDispatch summary:\n");
+      console.log(preview.rendered.dispatchSummary);
+      console.log("\nDispatch event message:\n");
+      console.log(preview.rendered.dispatchEventMessage);
+      console.log("\nDone report message:\n");
+      console.log(preview.rendered.reportDoneMessage);
+      console.log("\nBlocked report message:\n");
+      console.log(preview.rendered.reportBlockedMessage);
+      console.log("\nFailed report message:\n");
+      console.log(preview.rendered.reportFailedMessage);
     }
-
-    console.log(`\nProfile preview: ${preview.profile.id}@${preview.profile.version}`);
-    console.log(`Source: ${preview.profile.sourceKind} :: ${preview.profile.source}`);
-    if (preview.primaryArtifact) {
-      console.log(`Primary artifact: ${preview.primaryArtifact.label} -> ${preview.primaryArtifact.path}`);
-    }
-    console.log("\nCreate output:\n");
-    console.log(preview.rendered.create);
-    console.log("\nDispatch prompt:\n");
-    console.log(preview.rendered.dispatch);
-    console.log("\nResume prompt:\n");
-    console.log(preview.rendered.resume);
-    console.log("\nDispatch summary:\n");
-    console.log(preview.rendered.dispatchSummary);
-    console.log("\nDispatch event message:\n");
-    console.log(preview.rendered.dispatchEventMessage);
-    console.log("\nDone report message:\n");
-    console.log(preview.rendered.reportDoneMessage);
-    console.log("\nBlocked report message:\n");
-    console.log(preview.rendered.reportBlockedMessage);
-    console.log("\nFailed report message:\n");
-    console.log(preview.rendered.reportFailedMessage);
+    return preview;
   }
 
   @Command({ name: "validate", description: "Validate one profile or the whole resolved catalog" })
@@ -231,24 +230,25 @@ export class TaskProfileCommands {
   ) {
     const results = validateTaskProfiles(profileId?.trim() || undefined);
     const invalid = results.filter((item) => !item.valid);
+    const payload = { valid: invalid.length === 0, results };
 
     if (asJson) {
-      console.log(JSON.stringify({ valid: invalid.length === 0, results }, null, 2));
-      return;
-    }
-
-    for (const result of results) {
-      if (result.valid) {
-        console.log(`✓ ${result.id}@${result.version} (${result.sourceKind})`);
-      } else {
-        console.log(`✗ ${result.id}@${result.version} (${result.sourceKind})`);
-        console.log(`  ${result.error}`);
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      for (const result of results) {
+        if (result.valid) {
+          console.log(`✓ ${result.id}@${result.version} (${result.sourceKind})`);
+        } else {
+          console.log(`✗ ${result.id}@${result.version} (${result.sourceKind})`);
+          console.log(`  ${result.error}`);
+        }
       }
     }
 
-    if (invalid.length > 0) {
+    if (invalid.length > 0 && !asJson) {
       fail(`Task profile validation failed for ${invalid.length} profile(s).`);
     }
+    return payload;
   }
 
   @Command({ name: "init", description: "Create a profile scaffold in the workspace or user catalog" })
@@ -269,12 +269,12 @@ export class TaskProfileCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`✓ Task profile scaffold created`);
+      console.log(`  Source:   ${result.sourceKind}`);
+      console.log(`  Dir:      ${result.profileDir}`);
+      console.log(`  Manifest: ${result.manifestPath}`);
     }
-
-    console.log(`✓ Task profile scaffold created`);
-    console.log(`  Source:   ${result.sourceKind}`);
-    console.log(`  Dir:      ${result.profileDir}`);
-    console.log(`  Manifest: ${result.manifestPath}`);
+    return result;
   }
 }

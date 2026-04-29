@@ -111,7 +111,7 @@ mock.module("../../cron/index.js", () => ({
 
 const { CronCommands } = await import("./cron.js");
 
-async function captureJson(run: () => Promise<void>): Promise<Record<string, unknown>> {
+async function captureJson(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
   const lines: string[] = [];
   const originalLog = console.log;
   console.log = (...args: unknown[]) => {

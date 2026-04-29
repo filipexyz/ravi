@@ -209,35 +209,33 @@ export class AgentsCommands {
     const ctx = getScopeContext();
     const agents = filterVisibleAgents(ctx, getAllAgents());
     const config = loadRouterConfig();
+    const payload = {
+      total: agents.length,
+      defaultAgent: config.defaultAgent,
+      agents: agents.map((agent) => buildAgentJson(agent, config.defaultAgent)),
+    };
 
     if (asJson) {
-      printJson({
-        total: agents.length,
-        defaultAgent: config.defaultAgent,
-        agents: agents.map((agent) => buildAgentJson(agent, config.defaultAgent)),
-      });
-      return;
-    }
-
-    if (agents.length === 0) {
+      printJson(payload);
+    } else if (agents.length === 0) {
       console.log("No agents configured.");
       console.log("\nCreate an agent: ravi agents create <id> <cwd>");
-      return;
+    } else {
+      console.log("\nAgents:\n");
+      console.log("  ID              CWD");
+      console.log("  --------------  ---------------------------");
+
+      for (const agent of agents) {
+        const isDefault = agent.id === config.defaultAgent;
+        const id = (agent.id + (isDefault ? " *" : "")).padEnd(14);
+        const cwd = agent.cwd;
+
+        console.log(`  ${id}  ${cwd}`);
+      }
+
+      console.log(`\n  Total: ${agents.length} (* = default)`);
     }
-
-    console.log("\nAgents:\n");
-    console.log("  ID              CWD");
-    console.log("  --------------  ---------------------------");
-
-    for (const agent of agents) {
-      const isDefault = agent.id === config.defaultAgent;
-      const id = (agent.id + (isDefault ? " *" : "")).padEnd(14);
-      const cwd = agent.cwd;
-
-      console.log(`  ${id}  ${cwd}`);
-    }
-
-    console.log(`\n  Total: ${agents.length} (* = default)`);
+    return payload;
   }
 
   @Command({ name: "show", description: "Show agent details" })
@@ -257,40 +255,41 @@ export class AgentsCommands {
     }
 
     const isDefault = agent.id === config.defaultAgent;
+    const payload = {
+      agent: buildAgentJson(agent, config.defaultAgent),
+      permissionsCommand: `ravi permissions list --subject agent:${agent.id}`,
+    };
 
     if (asJson) {
-      printJson({
-        agent: buildAgentJson(agent, config.defaultAgent),
-        permissionsCommand: `ravi permissions list --subject agent:${agent.id}`,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\nAgent: ${agent.id}${isDefault ? " (default)" : ""}`);
+      console.log(`  Name:          ${agent.name || "-"}`);
+      console.log(`  CWD:           ${agent.cwd}`);
+      console.log(`  Model:         ${agent.model || "-"}`);
+      console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
+      console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
+      console.log(`  Mode:          ${agent.mode ?? "active"}`);
+      console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
+      console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
+      console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
+
+      console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
+      console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
+
+      if (agent.remote) {
+        console.log(`  Remote:        ${agent.remote}${agent.remoteUser ? ` (user: ${agent.remoteUser})` : ""}`);
+      }
+
+      if (agent.defaults && Object.keys(agent.defaults).length > 0) {
+        console.log(`  Defaults:      ${JSON.stringify(agent.defaults)}`);
+      }
+
+      if (agent.systemPromptAppend) {
+        console.log(`  System Append: ${agent.systemPromptAppend.slice(0, 50)}...`);
+      }
     }
-
-    console.log(`\nAgent: ${agent.id}${isDefault ? " (default)" : ""}`);
-    console.log(`  Name:          ${agent.name || "-"}`);
-    console.log(`  CWD:           ${agent.cwd}`);
-    console.log(`  Model:         ${agent.model || "-"}`);
-    console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
-    console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
-    console.log(`  Mode:          ${agent.mode ?? "active"}`);
-    console.log(`  Debounce:      ${agent.debounceMs ? `${agent.debounceMs}ms` : "disabled"}`);
-    console.log(`  Group Debounce:${agent.groupDebounceMs ? ` ${agent.groupDebounceMs}ms` : " -"}`);
-    console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
-
-    console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
-    console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
-
-    if (agent.remote) {
-      console.log(`  Remote:        ${agent.remote}${agent.remoteUser ? ` (user: ${agent.remoteUser})` : ""}`);
-    }
-
-    if (agent.defaults && Object.keys(agent.defaults).length > 0) {
-      console.log(`  Defaults:      ${JSON.stringify(agent.defaults)}`);
-    }
-
-    if (agent.systemPromptAppend) {
-      console.log(`  System Append: ${agent.systemPromptAppend.slice(0, 50)}...`);
-    }
+    return payload;
   }
 
   @Command({ name: "create", description: "Create a new agent" })
@@ -320,30 +319,30 @@ export class AgentsCommands {
 
       const createdAgent =
         getAgent(id) ?? ({ id, cwd, ...(normalizedProvider ? { provider: normalizedProvider } : {}) } as AgentConfig);
+      const payload = {
+        action: "create" as const,
+        changed: true as const,
+        agent: buildAgentJson(createdAgent, config.defaultAgent),
+        runtimeTarget: inspectCliRuntimeTarget(),
+        permissions: {
+          default: "closed" as const,
+          initCommand: `ravi permissions init agent:${id} full-access`,
+        },
+      };
       if (asJson) {
-        printJson({
-          action: "create",
-          changed: true,
-          agent: buildAgentJson(createdAgent, config.defaultAgent),
-          runtimeTarget: inspectCliRuntimeTarget(),
-          permissions: {
-            default: "closed",
-            initCommand: `ravi permissions init agent:${id} full-access`,
-          },
-        });
-        emitConfigChanged();
-        return;
+        printJson(payload);
+      } else {
+        printAgentMutationTarget();
+        console.log(`\u2713 Agent created: ${id}`);
+        console.log(`  CWD: ${cwd}`);
+        if (normalizedProvider) {
+          console.log(`  Provider: ${normalizedProvider}`);
+        }
+        console.log(`  Permissions: closed (no tools, no executables)`);
+        console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
       }
-
-      printAgentMutationTarget();
-      console.log(`\u2713 Agent created: ${id}`);
-      console.log(`  CWD: ${cwd}`);
-      if (normalizedProvider) {
-        console.log(`  Provider: ${normalizedProvider}`);
-      }
-      console.log(`  Permissions: closed (no tools, no executables)`);
-      console.log(`  Use 'ravi permissions init agent:${id} full-access' to configure`);
       emitConfigChanged();
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -399,37 +398,33 @@ export class AgentsCommands {
         result.after === "agents-only" || result.after === "claude-only" || result.after === "agents-bridge-only",
     );
 
+    const payload = {
+      total: results.length,
+      migrated: migrated.length,
+      alreadyCanonical: alreadyCanonical.length,
+      missing: missing.length,
+      manualReview: manualReview.length,
+      incomplete: incomplete.length,
+      results,
+    };
+
     if (json) {
-      console.log(
-        JSON.stringify(
-          {
-            total: results.length,
-            migrated: migrated.length,
-            alreadyCanonical: alreadyCanonical.length,
-            missing: missing.length,
-            manualReview: manualReview.length,
-            incomplete: incomplete.length,
-            results,
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log("\nInstruction sync summary:\n");
+      console.log(`  Migrated:          ${migrated.length}`);
+      console.log(`  Already canonical: ${alreadyCanonical.length}`);
+      console.log(`  Missing files:     ${missing.length}`);
+      console.log(`  Manual review:     ${manualReview.length}`);
+      console.log(`  Incomplete:        ${incomplete.length}`);
 
-    console.log("\nInstruction sync summary:\n");
-    console.log(`  Migrated:          ${migrated.length}`);
-    console.log(`  Already canonical: ${alreadyCanonical.length}`);
-    console.log(`  Missing files:     ${missing.length}`);
-    console.log(`  Manual review:     ${manualReview.length}`);
-    console.log(`  Incomplete:        ${incomplete.length}`);
-
-    for (const result of [...migrated, ...missing, ...manualReview, ...incomplete]) {
-      console.log(`\n  ${result.agentId}`);
-      console.log(`    ${result.cwd}`);
-      console.log(`    ${result.before} -> ${result.after}`);
+      for (const result of [...migrated, ...missing, ...manualReview, ...incomplete]) {
+        console.log(`\n  ${result.agentId}`);
+        console.log(`    ${result.cwd}`);
+        console.log(`    ${result.before} -> ${result.after}`);
+      }
     }
+    return payload;
   }
 
   @Command({ name: "delete", description: "Delete an agent" })
@@ -441,21 +436,21 @@ export class AgentsCommands {
       const before = getAgent(id);
       const deleted = deleteAgent(id);
       if (deleted) {
+        const payload = {
+          action: "delete" as const,
+          changed: true as const,
+          agentId: id,
+          before,
+        };
         if (asJson) {
-          printJson({
-            action: "delete",
-            changed: true,
-            agentId: id,
-            before,
-          });
-          emitConfigChanged();
-          return;
+          printJson(payload);
+        } else {
+          console.log(`\u2713 Agent deleted: ${id}`);
         }
-        console.log(`\u2713 Agent deleted: ${id}`);
         emitConfigChanged();
-      } else {
-        fail(`Agent not found: ${id}`);
+        return payload;
       }
+      fail(`Agent not found: ${id}`);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -500,26 +495,28 @@ export class AgentsCommands {
       }
       try {
         updateAgent(id, { groupDebounceMs: parsed === 0 ? undefined : parsed });
+        const debouncePayload = {
+          action: "set" as const,
+          changed: true as const,
+          agentId: id,
+          key,
+          value: parsed === 0 ? null : parsed,
+          agent: getAgent(id),
+        };
         if (asJson) {
-          printJson({
-            action: "set",
-            changed: true,
-            agentId: id,
-            key,
-            value: parsed === 0 ? null : parsed,
-            agent: getAgent(id),
-          });
-          emitConfigChanged();
-          return;
+          printJson(debouncePayload);
+        } else {
+          console.log(
+            parsed === 0
+              ? `\u2713 groupDebounceMs disabled: ${id}`
+              : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
+          );
         }
-        console.log(
-          parsed === 0 ? `\u2713 groupDebounceMs disabled: ${id}` : `\u2713 groupDebounceMs set: ${id} -> ${parsed}ms`,
-        );
         emitConfigChanged();
+        return debouncePayload;
       } catch (err) {
         fail(`Error: ${err instanceof Error ? err.message : err}`);
       }
-      return;
     }
 
     // Validate dmScope values
@@ -600,22 +597,23 @@ export class AgentsCommands {
       if (key === "cwd" || key === "provider") {
         ensureAgentDirs(loadRouterConfig());
       }
+      const payload = {
+        action: "set" as const,
+        changed: true as const,
+        agentId: id,
+        key,
+        value: parsedValue,
+        agent: getAgent(id),
+      };
       if (asJson) {
-        printJson({
-          action: "set",
-          changed: true,
-          agentId: id,
-          key,
-          value: parsedValue,
-          agent: getAgent(id),
-        });
-        emitConfigChanged();
-        return;
+        printJson(payload);
+      } else {
+        console.log(
+          `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
+        );
       }
-      console.log(
-        `\u2713 ${key} set: ${id} -> ${typeof parsedValue === "string" ? parsedValue : JSON.stringify(parsedValue)}`,
-      );
       emitConfigChanged();
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -635,29 +633,30 @@ export class AgentsCommands {
     // No ms = show current debounce
     if (ms === undefined) {
       const current = agent.debounceMs;
+      const showPayload = {
+        agentId: id,
+        debounceMs: current && current > 0 ? current : null,
+        enabled: Boolean(current && current > 0),
+      };
       if (asJson) {
-        printJson({
-          agentId: id,
-          debounceMs: current && current > 0 ? current : null,
-          enabled: Boolean(current && current > 0),
-        });
-        return;
-      }
-      if (current && current > 0) {
-        console.log(`\nDebounce for agent: ${id}`);
-        console.log(`  Time: ${current}ms`);
-        console.log(`\nMessages arriving within ${current}ms will be grouped.`);
+        printJson(showPayload);
       } else {
-        console.log(`\nDebounce for agent: ${id}`);
-        console.log("  Status: disabled");
+        if (current && current > 0) {
+          console.log(`\nDebounce for agent: ${id}`);
+          console.log(`  Time: ${current}ms`);
+          console.log(`\nMessages arriving within ${current}ms will be grouped.`);
+        } else {
+          console.log(`\nDebounce for agent: ${id}`);
+          console.log("  Status: disabled");
+        }
+        console.log("\nUsage:");
+        console.log("  ravi agents debounce <id> <ms>   # Set debounce time");
+        console.log("  ravi agents debounce <id> 0      # Disable debounce");
+        console.log("\nExamples:");
+        console.log("  ravi agents debounce main 2000   # Group messages within 2 seconds");
+        console.log("  ravi agents debounce main 500    # Group messages within 500ms");
       }
-      console.log("\nUsage:");
-      console.log("  ravi agents debounce <id> <ms>   # Set debounce time");
-      console.log("  ravi agents debounce <id> 0      # Disable debounce");
-      console.log("\nExamples:");
-      console.log("  ravi agents debounce main 2000   # Group messages within 2 seconds");
-      console.log("  ravi agents debounce main 500    # Group messages within 500ms");
-      return;
+      return showPayload;
     }
 
     const debounceMs = parseInt(ms, 10);
@@ -667,21 +666,23 @@ export class AgentsCommands {
 
     try {
       setAgentDebounce(id, debounceMs);
+      const setPayload = {
+        action: "set-debounce" as const,
+        changed: true,
+        agentId: id,
+        debounceMs: debounceMs === 0 ? null : debounceMs,
+        enabled: debounceMs > 0,
+      };
       if (asJson) {
-        printJson({
-          action: "set-debounce",
-          changed: true,
-          agentId: id,
-          debounceMs: debounceMs === 0 ? null : debounceMs,
-          enabled: debounceMs > 0,
-        });
-        return;
-      }
-      if (debounceMs === 0) {
-        console.log(`✓ Debounce disabled: ${id}`);
+        printJson(setPayload);
       } else {
-        console.log(`✓ Debounce set: ${id} -> ${debounceMs}ms`);
+        if (debounceMs === 0) {
+          console.log(`✓ Debounce disabled: ${id}`);
+        } else {
+          console.log(`✓ Debounce set: ${id} -> ${debounceMs}ms`);
+        }
       }
+      return setPayload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -699,19 +700,20 @@ export class AgentsCommands {
     }
 
     if (enabled === undefined) {
+      const showPayload = {
+        agentId: id,
+        specMode: Boolean(agent.specMode),
+      };
       if (asJson) {
-        printJson({
-          agentId: id,
-          specMode: Boolean(agent.specMode),
-        });
-        return;
+        printJson(showPayload);
+      } else {
+        console.log(`\nSpec mode for agent: ${id}`);
+        console.log(`  Status: ${agent.specMode ? "enabled" : "disabled"}`);
+        console.log("\nUsage:");
+        console.log("  ravi agents spec-mode <id> true    # Enable spec mode");
+        console.log("  ravi agents spec-mode <id> false   # Disable spec mode");
       }
-      console.log(`\nSpec mode for agent: ${id}`);
-      console.log(`  Status: ${agent.specMode ? "enabled" : "disabled"}`);
-      console.log("\nUsage:");
-      console.log("  ravi agents spec-mode <id> true    # Enable spec mode");
-      console.log("  ravi agents spec-mode <id> false   # Disable spec mode");
-      return;
+      return showPayload;
     }
 
     if (enabled !== "true" && enabled !== "false") {
@@ -721,18 +723,19 @@ export class AgentsCommands {
     const value = enabled === "true";
     try {
       setAgentSpecMode(id, value);
+      const setPayload = {
+        action: "set-spec-mode" as const,
+        changed: true,
+        agentId: id,
+        specMode: value,
+      };
       if (asJson) {
-        printJson({
-          action: "set-spec-mode",
-          changed: true,
-          agentId: id,
-          specMode: value,
-        });
-        emitConfigChanged();
-        return;
+        printJson(setPayload);
+      } else {
+        console.log(`✓ Spec mode ${value ? "enabled" : "disabled"}: ${id}`);
       }
-      console.log(`✓ Spec mode ${value ? "enabled" : "disabled"}: ${id}`);
       emitConfigChanged();
+      return setPayload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -749,14 +752,15 @@ export class AgentsCommands {
     }
 
     const sessions = getSessionsByAgent(id);
+    const payload = {
+      agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+      total: sessions.length,
+      sessions: sessions.map(buildDebugSessionSummary),
+    };
 
     if (asJson) {
-      printJson({
-        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
-        total: sessions.length,
-        sessions: sessions.map(buildDebugSessionSummary),
-      });
-      return;
+      printJson(payload);
+      return payload;
     }
 
     console.log(`\n📋 Sessions for agent: ${id}\n`);
@@ -764,7 +768,7 @@ export class AgentsCommands {
     if (sessions.length === 0) {
       console.log("  No active sessions");
       console.log(`\n  Start a session with: ravi agents run ${id} "hello"`);
-      return;
+      return payload;
     }
 
     for (const session of sessions) {
@@ -777,6 +781,7 @@ export class AgentsCommands {
       console.log(`    Updated: ${updated}`);
       console.log();
     }
+    return payload;
   }
 
   @Command({ name: "reset", description: "Reset agent session" })
@@ -810,19 +815,20 @@ export class AgentsCommands {
     if (nameOrKey === "all") {
       const sessions = getSessionsByAgent(id);
       if (sessions.length === 0) {
+        const emptyPayload = {
+          action: "reset" as const,
+          changed: false,
+          agentId: id,
+          target: "all" as const,
+          resetSessions: [],
+          count: 0,
+        };
         if (asJson) {
-          printJson({
-            action: "reset",
-            changed: false,
-            agentId: id,
-            target: "all",
-            resetSessions: [],
-            count: 0,
-          });
-          return;
+          printJson(emptyPayload);
+        } else {
+          console.log(`ℹ️  No sessions to reset for agent: ${id}`);
         }
-        console.log(`ℹ️  No sessions to reset for agent: ${id}`);
-        return;
+        return emptyPayload;
       }
       let count = 0;
       const resetSessions: Array<{ sessionKey: string; name?: string; deleted: boolean }> = [];
@@ -835,19 +841,20 @@ export class AgentsCommands {
           deleted,
         });
       }
+      const allPayload = {
+        action: "reset" as const,
+        changed: count > 0,
+        agentId: id,
+        target: "all" as const,
+        resetSessions,
+        count,
+      };
       if (asJson) {
-        printJson({
-          action: "reset",
-          changed: count > 0,
-          agentId: id,
-          target: "all",
-          resetSessions,
-          count,
-        });
-        return;
+        printJson(allPayload);
+      } else {
+        console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
       }
-      console.log(`✅ Reset ${count} session${count !== 1 ? "s" : ""} for agent: ${id}`);
-      return;
+      return allPayload;
     }
 
     // Resolve by name, or find main session
@@ -861,47 +868,51 @@ export class AgentsCommands {
     if (session) {
       const deleted = await resetOne(session.sessionKey, session.name);
       const label = session.name ?? session.sessionKey;
+      const sessionPayload = {
+        action: "reset" as const,
+        changed: deleted,
+        agentId: id,
+        target: nameOrKey ?? "main",
+        session: buildDebugSessionSummary(session),
+      };
       if (asJson) {
-        printJson({
-          action: "reset",
-          changed: deleted,
-          agentId: id,
-          target: nameOrKey ?? "main",
-          session: buildDebugSessionSummary(session),
-        });
-        return;
-      }
-      if (deleted) {
-        console.log(`✅ Session reset: ${label}`);
+        printJson(sessionPayload);
       } else {
-        console.log(`ℹ️  Session already clean: ${label}`);
+        if (deleted) {
+          console.log(`✅ Session reset: ${label}`);
+        } else {
+          console.log(`ℹ️  Session already clean: ${label}`);
+        }
       }
+      return sessionPayload;
     } else {
       // Show available sessions as hint
       const sessions = getSessionsByAgent(id);
+      const notFoundPayload = {
+        action: "reset" as const,
+        changed: false,
+        agentId: id,
+        target: nameOrKey ?? "main",
+        reason: "not_found" as const,
+        availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
+      };
       if (asJson) {
-        printJson({
-          action: "reset",
-          changed: false,
-          agentId: id,
-          target: nameOrKey ?? "main",
-          reason: "not_found",
-          availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
-        });
-        return;
-      }
-      if (sessions.length > 0) {
-        console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
-        console.log(`\n  Available sessions for ${id}:`);
-        for (const s of sessions) {
-          console.log(`    ${s.name ?? s.sessionKey}`);
-        }
-        console.log(`\n  Usage:`);
-        console.log(`    ravi agents reset ${id} <name>   Reset specific session`);
-        console.log(`    ravi agents reset ${id} all      Reset all sessions`);
+        printJson(notFoundPayload);
       } else {
-        console.log(`ℹ️  No sessions to reset for agent: ${id}`);
+        if (sessions.length > 0) {
+          console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
+          console.log(`\n  Available sessions for ${id}:`);
+          for (const s of sessions) {
+            console.log(`    ${s.name ?? s.sessionKey}`);
+          }
+          console.log(`\n  Usage:`);
+          console.log(`    ravi agents reset ${id} <name>   Reset specific session`);
+          console.log(`    ravi agents reset ${id} all      Reset all sessions`);
+        } else {
+          console.log(`ℹ️  No sessions to reset for agent: ${id}`);
+        }
       }
+      return notFoundPayload;
     }
   }
 
@@ -927,25 +938,23 @@ export class AgentsCommands {
 
     if (!session) {
       const sessions = getSessionsByAgent(id);
+      const notFoundPayload = {
+        error: `No session found: ${nameOrKey ?? "(main)"}` as const,
+        agentId: id,
+        availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
+      };
       if (asJson) {
-        console.log(
-          JSON.stringify({
-            error: `No session found: ${nameOrKey ?? "(main)"}`,
-            agentId: id,
-            availableSessions: sessions.map((s) => s.name ?? s.sessionKey),
-          }),
-        );
-        return;
-      }
-
-      console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
-      if (sessions.length > 0) {
-        console.log(`\n  Available sessions for ${id}:`);
-        for (const s of sessions) {
-          console.log(`    ${s.name ?? s.sessionKey}`);
+        console.log(JSON.stringify(notFoundPayload));
+      } else {
+        console.log(`ℹ️  No session found: ${nameOrKey ?? "(main)"}`);
+        if (sessions.length > 0) {
+          console.log(`\n  Available sessions for ${id}:`);
+          for (const s of sessions) {
+            console.log(`    ${s.name ?? s.sessionKey}`);
+          }
         }
       }
-      return;
+      return notFoundPayload;
     }
 
     const maxTurns = parseInt(turnsStr ?? "5", 10);
@@ -969,22 +978,20 @@ export class AgentsCommands {
     // Try to read provider transcript
     const providerSessionId = session.providerSessionId ?? session.sdkSessionId;
     if (!providerSessionId) {
+      const noRuntimePayload = {
+        session: sessionSummary,
+        transcript: {
+          available: false as const,
+          reason: "No runtime session ID" as const,
+        },
+        entries: [] as const,
+      };
       if (asJson) {
-        console.log(
-          JSON.stringify({
-            session: sessionSummary,
-            transcript: {
-              available: false,
-              reason: "No runtime session ID",
-            },
-            entries: [],
-          }),
-        );
-        return;
+        console.log(JSON.stringify(noRuntimePayload));
+      } else {
+        console.log(`\n  ⚠️  No runtime session ID — cannot read transcript`);
       }
-
-      console.log(`\n  ⚠️  No runtime session ID — cannot read transcript`);
-      return;
+      return noRuntimePayload;
     }
 
     const agentConfig = getAgent(session.agentId);
@@ -996,22 +1003,20 @@ export class AgentsCommands {
     });
 
     if (!transcript.path) {
+      const noTranscriptPayload = {
+        session: sessionSummary,
+        transcript: {
+          available: false as const,
+          reason: transcript.reason ?? "Transcript not found",
+        },
+        entries: [] as const,
+      };
       if (asJson) {
-        console.log(
-          JSON.stringify({
-            session: sessionSummary,
-            transcript: {
-              available: false,
-              reason: transcript.reason ?? "Transcript not found",
-            },
-            entries: [],
-          }),
-        );
-        return;
+        console.log(JSON.stringify(noTranscriptPayload));
+      } else {
+        console.log(`\n  ⚠️  ${transcript.reason ?? "Transcript not found"}`);
       }
-
-      console.log(`\n  ⚠️  ${transcript.reason ?? "Transcript not found"}`);
-      return;
+      return noTranscriptPayload;
     }
 
     // Read and parse JSONL
@@ -1020,24 +1025,23 @@ export class AgentsCommands {
 
     // Show last N turns
     const recent = turns.slice(-maxTurns * 2); // user+assistant pairs
-    if (asJson) {
-      const recentRawEntries = parsedEntries
-        .filter((entry) => entry.type === "user" || entry.type === "assistant")
-        .slice(-maxTurns * 2);
+    const recentRawEntries = parsedEntries
+      .filter((entry) => entry.type === "user" || entry.type === "assistant")
+      .slice(-maxTurns * 2);
+    const transcriptPayload = {
+      session: sessionSummary,
+      transcript: {
+        available: true as const,
+        path: transcript.path,
+        totalEntries: parsedEntries.length,
+        selectedEntries: recentRawEntries.length,
+      },
+      entries: recentRawEntries,
+    };
 
-      console.log(
-        JSON.stringify({
-          session: sessionSummary,
-          transcript: {
-            available: true,
-            path: transcript.path,
-            totalEntries: parsedEntries.length,
-            selectedEntries: recentRawEntries.length,
-          },
-          entries: recentRawEntries,
-        }),
-      );
-      return;
+    if (asJson) {
+      console.log(JSON.stringify(transcriptPayload));
+      return transcriptPayload;
     }
 
     console.log(`\n  📋 Last ${Math.min(recent.length, maxTurns * 2)} entries (of ${turns.length} total):\n`);
@@ -1055,5 +1059,6 @@ export class AgentsCommands {
     }
 
     console.log();
+    return transcriptPayload;
   }
 }

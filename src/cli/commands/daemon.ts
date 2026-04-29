@@ -279,19 +279,19 @@ export class DaemonCommands {
     requirePm2();
 
     if (isRaviRunning()) {
+      const payload = {
+        action: "start" as const,
+        changed: false,
+        reason: "already_running" as const,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "start",
-          changed: false,
-          reason: "already_running",
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Daemon is already running");
+        console.log(`PID: ${getRaviPid()}`);
       }
-      console.log("Daemon is already running");
-      console.log(`PID: ${getRaviPid()}`);
-      return;
+      return payload;
     }
 
     // Clean up old launchd/systemd if present
@@ -312,14 +312,15 @@ export class DaemonCommands {
     ];
     const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
 
+    const payload = {
+      action: "start" as const,
+      changed: status === 0,
+      pm2Status: status,
+      target,
+      status: buildDaemonStatusJson(),
+    };
+
     if (asJson) {
-      const payload = {
-        action: "start",
-        changed: status === 0,
-        pm2Status: status,
-        target,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
       if (status !== 0) fail("Failed to start daemon");
       return payload;
@@ -330,6 +331,7 @@ export class DaemonCommands {
     } else {
       fail("Failed to start daemon");
     }
+    return payload;
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
@@ -337,28 +339,28 @@ export class DaemonCommands {
     requirePm2();
 
     if (!isRaviRunning()) {
+      const payload = {
+        action: "stop" as const,
+        changed: false,
+        reason: "not_running" as const,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "stop",
-          changed: false,
-          reason: "not_running",
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Daemon is not running");
       }
-      console.log("Daemon is not running");
-      return;
+      return payload;
     }
 
     const { status } = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
+    const payload = {
+      action: "stop" as const,
+      changed: status === 0,
+      pm2Status: status,
+      status: buildDaemonStatusJson(),
+    };
     if (asJson) {
-      const payload = {
-        action: "stop",
-        changed: status === 0,
-        pm2Status: status,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
       if (status !== 0) fail("Failed to stop daemon");
       return payload;
@@ -369,6 +371,7 @@ export class DaemonCommands {
     } else {
       fail("Failed to stop daemon");
     }
+    return payload;
   }
 
   @Command({ name: "restart", description: "Restart the daemon" })
@@ -410,22 +413,22 @@ export class DaemonCommands {
       });
       child.unref();
 
-      if (asJson) {
-        const payload = {
-          action: "restart",
-          mode: "handoff",
-          changed: true,
-          message,
-          build: Boolean(build),
-          target,
-          sessionName,
-        };
-        printJson(payload);
-        return payload;
-      }
+      const payload = {
+        action: "restart" as const,
+        mode: "handoff" as const,
+        changed: true,
+        message,
+        build: Boolean(build),
+        target,
+        sessionName,
+      };
 
-      console.log("Daemon restart started");
-      return;
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log("Daemon restart started");
+      }
+      return payload;
     }
 
     // Build first if requested
@@ -480,17 +483,17 @@ export class DaemonCommands {
       ];
       const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
       pm2Status = status;
+      const payload = {
+        action: "restart" as const,
+        changed: status === 0,
+        previousRunning,
+        pm2Status,
+        build: buildResult,
+        message,
+        target,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "restart",
-          changed: status === 0,
-          previousRunning,
-          pm2Status,
-          build: buildResult,
-          message,
-          target,
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
         if (status !== 0) fail("Failed to restart daemon");
         return payload;
@@ -500,22 +503,23 @@ export class DaemonCommands {
       } else {
         fail("Failed to restart daemon");
       }
+      return payload;
     } else {
+      const args = [
+        "start",
+        target.bundlePath,
+        "--name",
+        PM2_PROCESS_NAME,
+        "--interpreter",
+        "bun",
+        "--",
+        "daemon",
+        "run",
+      ];
       if (asJson) {
-        const args = [
-          "start",
-          target.bundlePath,
-          "--name",
-          PM2_PROCESS_NAME,
-          "--interpreter",
-          "bun",
-          "--",
-          "daemon",
-          "run",
-        ];
         const { status } = runPm2Quiet(args, { cwd: target.cwd });
         const payload = {
-          action: "restart",
+          action: "restart" as const,
           changed: status === 0,
           previousRunning,
           pm2Status: status,
@@ -528,21 +532,32 @@ export class DaemonCommands {
         if (status !== 0) fail("Failed to restart daemon");
         return payload;
       }
-      this.start();
+      const startResult = this.start();
+      const startPm2Status = startResult && "pm2Status" in startResult ? startResult.pm2Status : null;
+      return {
+        action: "restart" as const,
+        changed: startResult?.changed ?? false,
+        previousRunning,
+        pm2Status: startPm2Status,
+        build: buildResult,
+        message,
+        target,
+        status: buildDaemonStatusJson(),
+      };
     }
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const payload = buildDaemonStatusJson();
     if (asJson) {
-      const payload = buildDaemonStatusJson();
       printJson(payload);
       return payload;
     }
 
     if (!isPm2Available()) {
       console.log("\nPM2 not installed. Install: bun add -g pm2\n");
-      return;
+      return payload;
     }
 
     const procs = getPm2Processes();
@@ -576,6 +591,7 @@ export class DaemonCommands {
     }
 
     console.log();
+    return payload;
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
@@ -591,34 +607,34 @@ export class DaemonCommands {
 
     if (path) {
       const logPath = resolvePm2OutLogPath();
+      const payload = {
+        action: "logs" as const,
+        process: PM2_PROCESS_NAME,
+        path: logPath,
+        available: Boolean(logPath),
+      };
       if (asJson) {
-        const payload = {
-          action: "logs",
-          process: PM2_PROCESS_NAME,
-          path: logPath,
-          available: Boolean(logPath),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log(logPath || "Run 'pm2 info ravi' to find log path");
       }
-      console.log(logPath || "Run 'pm2 info ravi' to find log path");
-      return;
+      return payload;
     }
 
     if (clear) {
       const result = asJson ? runPm2Quiet(["flush", PM2_PROCESS_NAME]) : runPm2(["flush", PM2_PROCESS_NAME]);
+      const payload = {
+        action: "flush-logs" as const,
+        changed: result.status === 0,
+        pm2Status: result.status,
+        process: PM2_PROCESS_NAME,
+      };
       if (asJson) {
-        const payload = {
-          action: "flush-logs",
-          changed: result.status === 0,
-          pm2Status: result.status,
-          process: PM2_PROCESS_NAME,
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Logs flushed");
       }
-      console.log("Logs flushed");
-      return;
+      return payload;
     }
 
     const lines = tail || "50";
@@ -717,18 +733,19 @@ export class DaemonCommands {
   install(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
     const result = asJson ? runPm2Quiet(["save"]) : runPm2(["save"]);
+    const payload = {
+      action: "install" as const,
+      changed: result.status === 0,
+      pm2Status: result.status,
+      startupCommand: "pm2 startup",
+    };
     if (asJson) {
-      const payload = {
-        action: "install",
-        changed: result.status === 0,
-        pm2Status: result.status,
-        startupCommand: "pm2 startup",
-      };
       printJson(payload);
-      return payload;
+    } else {
+      console.log("\nPM2 process list saved.");
+      console.log("To start on boot, run: pm2 startup");
     }
-    console.log("\nPM2 process list saved.");
-    console.log("To start on boot, run: pm2 startup");
+    return payload;
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
@@ -746,20 +763,20 @@ export class DaemonCommands {
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
 
+    const payload = {
+      action: "uninstall" as const,
+      changed: wasRunning || saveResult.status === 0,
+      wasRunning,
+      deleteStatus,
+      saveStatus: saveResult.status,
+      status: buildDaemonStatusJson(),
+    };
     if (asJson) {
-      const payload = {
-        action: "uninstall",
-        changed: wasRunning || saveResult.status === 0,
-        wasRunning,
-        deleteStatus,
-        saveStatus: saveResult.status,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
-      return payload;
+    } else {
+      console.log("Ravi removed from PM2");
     }
-
-    console.log("Ravi removed from PM2");
+    return payload;
   }
 
   @Command({ name: "run", description: "Run daemon in foreground (used by PM2)" })
@@ -875,7 +892,7 @@ ANTHROPIC_API_KEY=
 
     if (asJson) {
       const payload = {
-        action: "env",
+        action: "env" as const,
         path: ENV_FILE,
         existedBefore,
         created: !existedBefore,
@@ -886,11 +903,20 @@ ANTHROPIC_API_KEY=
     }
 
     const editor = process.env.EDITOR || "nano";
+    let openedEditor = true;
     try {
       execSync(`${editor} ${ENV_FILE}`, { stdio: "inherit" });
     } catch {
+      openedEditor = false;
       console.log(`Edit the file manually: ${ENV_FILE}`);
     }
+    return {
+      action: "env" as const,
+      path: ENV_FILE,
+      existedBefore,
+      created: !existedBefore,
+      openedEditor,
+    };
   }
 
   @Command({
@@ -936,18 +962,18 @@ ANTHROPIC_API_KEY=
         const resolved = resolveRuntimeContext(envKey, { touch: false });
         const matching = resolved ? live.find((ctx) => ctx.contextId === resolved.contextId) : undefined;
         if (matching) {
+          const payload = {
+            action: "init-admin-key" as const,
+            changed: false,
+            reason: "idempotent" as const,
+            contextId: matching.contextId,
+          };
           if (asJson) {
-            const payload = {
-              action: "init-admin-key",
-              changed: false,
-              reason: "idempotent",
-              contextId: matching.contextId,
-            };
             printJson(payload);
-            return payload;
+          } else {
+            console.log(`Admin context already configured: ${matching.contextId} (idempotent).`);
           }
-          console.log(`Admin context already configured: ${matching.contextId} (idempotent).`);
-          return;
+          return payload;
         }
         fail(
           `RAVI_BOOTSTRAP_KEY does not match any of the ${live.length} existing live admin context(s). ` +
@@ -960,30 +986,29 @@ ANTHROPIC_API_KEY=
         contextKey: envKey,
       });
       const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
-      this.printBootstrapResult({
+      return this.printBootstrapResult({
         created,
         persisted,
         persist,
         asJson,
         importedFromEnv: true,
       });
-      return;
     }
 
     if (live.length > 0) {
+      const payload = {
+        action: "init-admin-key" as const,
+        changed: false,
+        reason: "admin_context_exists" as const,
+        existing: live.map((ctx) => ({
+          contextId: ctx.contextId,
+          label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
+          kind: ctx.kind,
+          createdAt: ctx.createdAt,
+          expiresAt: ctx.expiresAt ?? null,
+        })),
+      };
       if (asJson) {
-        const payload = {
-          action: "init-admin-key",
-          changed: false,
-          reason: "admin_context_exists",
-          existing: live.map((ctx) => ({
-            contextId: ctx.contextId,
-            label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
-            kind: ctx.kind,
-            createdAt: ctx.createdAt,
-            expiresAt: ctx.expiresAt ?? null,
-          })),
-        };
         printJson(payload);
       } else {
         console.error("Refusing to bootstrap: a live admin context already exists.\n");
@@ -1001,7 +1026,7 @@ ANTHROPIC_API_KEY=
 
     const created = this.createBootstrapContext({ label: resolvedLabel });
     const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
-    this.printBootstrapResult({
+    return this.printBootstrapResult({
       created,
       persisted,
       persist,
@@ -1141,22 +1166,22 @@ ANTHROPIC_API_KEY=
     importedFromEnv: boolean;
   }) {
     const { created, persisted, persist, asJson, importedFromEnv } = input;
+    const payload = {
+      action: "init-admin-key" as const,
+      changed: true,
+      importedFromEnv,
+      contextId: created.record.contextId,
+      contextKey: created.contextKey,
+      agentId: ADMIN_BOOTSTRAP_AGENT_ID,
+      kind: ADMIN_BOOTSTRAP_KIND,
+      label: created.entry.label,
+      expiresAt: created.expiresAt,
+      credentialsPath: persisted?.path ?? null,
+      persisted: persist,
+    };
     if (asJson) {
-      const payload = {
-        action: "init-admin-key",
-        changed: true,
-        importedFromEnv,
-        contextId: created.record.contextId,
-        contextKey: created.contextKey,
-        agentId: ADMIN_BOOTSTRAP_AGENT_ID,
-        kind: ADMIN_BOOTSTRAP_KIND,
-        label: created.entry.label,
-        expiresAt: created.expiresAt,
-        credentialsPath: persisted?.path ?? null,
-        persisted: persist,
-      };
       printJson(payload);
-      return;
+      return payload;
     }
 
     console.log("\nAdmin runtime context-key issued. Save this now — it will not be shown again.\n");
@@ -1172,5 +1197,6 @@ ANTHROPIC_API_KEY=
     } else {
       console.log("\nNot persisted (printed only). Save it somewhere safe.");
     }
+    return payload;
   }
 }

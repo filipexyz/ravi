@@ -58,6 +58,7 @@ export class AdapterCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printAdapterList(payload.adapters));
+    return payload;
   }
 
   @Command({ name: "show", description: "Show a session adapter debug snapshot" })
@@ -72,6 +73,7 @@ export class AdapterCommands {
 
     const payload = this.serializeAdapter(adapter);
     this.printPayload(payload, asJson, () => this.printAdapterRecord(payload));
+    return payload;
   }
 
   private printPayload(payload: unknown, asJson: boolean, printer: () => void): void {

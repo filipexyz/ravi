@@ -65,15 +65,15 @@ export class TaskDependencyCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      const verb = result.wasNoop ? "already present" : "added";
+      console.log(`\n✓ Dependency ${verb}: ${taskId} -> ${dependencyTaskId}`);
+      console.log(`  Readiness: ${result.readiness.label}`);
+      if (result.readiness.hasLaunchPlan) {
+        console.log("  Launch plan remains armed; task will auto-dispatch when ready.");
+      }
     }
-
-    const verb = result.wasNoop ? "already present" : "added";
-    console.log(`\n✓ Dependency ${verb}: ${taskId} -> ${dependencyTaskId}`);
-    console.log(`  Readiness: ${result.readiness.label}`);
-    if (result.readiness.hasLaunchPlan) {
-      console.log("  Launch plan remains armed; task will auto-dispatch when ready.");
-    }
+    return result;
   }
 
   @Command({ name: "rm", description: "Remove one gating dependency from a task", aliases: ["remove"] })
@@ -87,15 +87,15 @@ export class TaskDependencyCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      const verb = result.wasNoop ? "already absent" : "removed";
+      console.log(`\n✓ Dependency ${verb}: ${taskId} -> ${dependencyTaskId}`);
+      console.log(`  Readiness: ${result.readiness.label}`);
+      if (result.readiness.hasLaunchPlan) {
+        console.log("  Launch plan remains armed.");
+      }
     }
-
-    const verb = result.wasNoop ? "already absent" : "removed";
-    console.log(`\n✓ Dependency ${verb}: ${taskId} -> ${dependencyTaskId}`);
-    console.log(`  Readiness: ${result.readiness.label}`);
-    if (result.readiness.hasLaunchPlan) {
-      console.log("  Launch plan remains armed.");
-    }
+    return result;
   }
 
   @Command({ name: "ls", description: "List gating dependencies and dependents for a task", aliases: ["list"] })
@@ -109,57 +109,52 @@ export class TaskDependencyCommands {
     }
 
     const dependencySurface = getTaskDependencySurface(details.task, details.activeAssignment);
+    const payload = {
+      taskId,
+      readiness: dependencySurface.readiness,
+      launchPlan: dependencySurface.launchPlan,
+      dependencies: dependencySurface.dependencies,
+      dependents: dependencySurface.dependents,
+    };
     if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\nTask deps:   ${taskId}`);
+      console.log(`Readiness:   ${dependencySurface.readiness.label}`);
       console.log(
-        JSON.stringify(
-          {
-            taskId,
-            readiness: dependencySurface.readiness,
-            launchPlan: dependencySurface.launchPlan,
-            dependencies: dependencySurface.dependencies,
-            dependents: dependencySurface.dependents,
-          },
-          null,
-          2,
-        ),
+        `Launch plan: ${dependencySurface.launchPlan ? `${dependencySurface.launchPlan.agentId}/${dependencySurface.launchPlan.sessionName}` : "-"}`,
       );
-      return;
-    }
 
-    console.log(`\nTask deps:   ${taskId}`);
-    console.log(`Readiness:   ${dependencySurface.readiness.label}`);
-    console.log(
-      `Launch plan: ${dependencySurface.launchPlan ? `${dependencySurface.launchPlan.agentId}/${dependencySurface.launchPlan.sessionName}` : "-"}`,
-    );
+      console.log("\nDependencies:");
+      if (dependencySurface.dependencies.length === 0) {
+        console.log("  - none");
+      } else {
+        for (const dependency of dependencySurface.dependencies) {
+          const satisfaction = dependency.satisfied ? `done @ ${formatTime(dependency.satisfiedAt)}` : "pending";
+          console.log(
+            `  - ${dependency.relatedTaskId} :: ${formatStatus(dependency.relatedTaskStatus)} :: ${dependency.relatedTaskProgress}% :: ${satisfaction} :: ${dependency.relatedTaskTitle}`,
+          );
+        }
+      }
 
-    console.log("\nDependencies:");
-    if (dependencySurface.dependencies.length === 0) {
-      console.log("  - none");
-    } else {
-      for (const dependency of dependencySurface.dependencies) {
-        const satisfaction = dependency.satisfied ? `done @ ${formatTime(dependency.satisfiedAt)}` : "pending";
-        console.log(
-          `  - ${dependency.relatedTaskId} :: ${formatStatus(dependency.relatedTaskStatus)} :: ${dependency.relatedTaskProgress}% :: ${satisfaction} :: ${dependency.relatedTaskTitle}`,
-        );
+      console.log("\nDependents:");
+      if (dependencySurface.dependents.length === 0) {
+        console.log("  - none");
+      } else {
+        for (const dependent of dependencySurface.dependents) {
+          const satisfaction = dependent.satisfied ? `done @ ${formatTime(dependent.satisfiedAt)}` : "pending";
+          console.log(
+            `  - ${dependent.relatedTaskId} :: ${formatStatus(dependent.relatedTaskStatus)} :: ${dependent.relatedTaskProgress}% :: ${satisfaction} :: ${dependent.relatedTaskTitle}`,
+          );
+        }
+      }
+
+      if (dependencySurface.dependencies.length === 0 && dependencySurface.dependents.length === 0) {
+        console.log("\nExamples:");
+        console.log(`  ravi tasks deps add ${taskId} <upstream-task>`);
+        console.log(`  ravi tasks create "Blocked work" --instructions "..." --depends-on ${taskId}`);
       }
     }
-
-    console.log("\nDependents:");
-    if (dependencySurface.dependents.length === 0) {
-      console.log("  - none");
-    } else {
-      for (const dependent of dependencySurface.dependents) {
-        const satisfaction = dependent.satisfied ? `done @ ${formatTime(dependent.satisfiedAt)}` : "pending";
-        console.log(
-          `  - ${dependent.relatedTaskId} :: ${formatStatus(dependent.relatedTaskStatus)} :: ${dependent.relatedTaskProgress}% :: ${satisfaction} :: ${dependent.relatedTaskTitle}`,
-        );
-      }
-    }
-
-    if (dependencySurface.dependencies.length === 0 && dependencySurface.dependents.length === 0) {
-      console.log("\nExamples:");
-      console.log(`  ravi tasks deps add ${taskId} <upstream-task>`);
-      console.log(`  ravi tasks create "Blocked work" --instructions "..." --depends-on ${taskId}`);
-    }
+    return payload;
   }
 }

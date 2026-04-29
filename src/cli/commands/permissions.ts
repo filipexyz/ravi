@@ -160,21 +160,20 @@ export class PermissionsCommands {
     const [objectType, objectId] = parseEntity(object);
 
     const allowed = can(subjectType, subjectId, permission, objectType, objectId);
+    const payload = {
+      subject: { raw: subject, type: subjectType, id: subjectId },
+      permission,
+      object: { raw: object, type: objectType, id: objectId },
+      allowed,
+    };
     if (asJson) {
-      printJson({
-        subject: { raw: subject, type: subjectType, id: subjectId },
-        permission,
-        object: { raw: object, type: objectType, id: objectId },
-        allowed,
-      });
-      return;
-    }
-
-    if (allowed) {
+      printJson(payload);
+    } else if (allowed) {
       console.log(`✓ ALLOWED: (${subject}) ${permission} (${object})`);
     } else {
       console.log(`✗ DENIED: (${subject}) ${permission} (${object})`);
     }
+    return payload;
   }
 
   @Command({ name: "list", description: "List relations" })
@@ -302,17 +301,19 @@ export class PermissionsCommands {
     }
 
     const count = fn();
+    const relations = listRelations({ subjectType, subjectId, source: "manual" });
+    const payload = {
+      status: "applied" as const,
+      target: { type: "permission-template" as const, subject, template },
+      changedCount: count,
+      relations: relations.map(serializeRelation),
+    };
     if (asJson) {
-      const relations = listRelations({ subjectType, subjectId, source: "manual" });
-      printJson({
-        status: "applied",
-        target: { type: "permission-template", subject, template },
-        changedCount: count,
-        relations: relations.map(serializeRelation),
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Applied template "${template}" to ${subject} (${count} relation(s))`);
     }
-    console.log(`✓ Applied template "${template}" to ${subject} (${count} relation(s))`);
+    return payload;
   }
 
   @Command({ name: "clear", description: "Clear all manual relations" })
@@ -321,21 +322,21 @@ export class PermissionsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const count = all ? clearRelations() : clearRelations({ source: "manual" });
+    const payload = {
+      status: "cleared" as const,
+      target: { type: "permission-relations" as const, source: all ? ("all" as const) : ("manual" as const) },
+      changedCount: count,
+    };
 
     if (asJson) {
-      printJson({
-        status: "cleared",
-        target: { type: "permission-relations", source: all ? "all" : "manual" },
-        changedCount: count,
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Cleared ${count} relation(s)`);
+      if (all) {
+        console.log("Run 'ravi permissions sync' to regenerate config relations.");
+      }
     }
-
-    console.log(`✓ Cleared ${count} relation(s)`);
-
-    if (all) {
-      console.log("Run 'ravi permissions sync' to regenerate config relations.");
-    }
+    return payload;
   }
 }
 

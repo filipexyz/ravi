@@ -98,42 +98,41 @@ export class CronCommands {
       jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
     }
 
-    if (asJson) {
-      printJson({ total: jobs.length, jobs: jobs.map(serializeCronJob) });
-      return;
-    }
+    const payload = { total: jobs.length, jobs: jobs.map(serializeCronJob) };
 
-    if (jobs.length === 0) {
+    if (asJson) {
+      printJson(payload);
+    } else if (jobs.length === 0) {
       console.log("\nNo cron jobs configured.\n");
       console.log("Usage:");
       console.log('  ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate report"');
       console.log('  ravi cron add "Check emails" --every 30m --message "Check for new emails"');
-      return;
+    } else {
+      console.log("\nScheduled Jobs:\n");
+      console.log("  ID        NAME                      ENABLED  SCHEDULE                 NEXT RUN");
+      console.log("  --------  ------------------------  -------  -----------------------  --------------------");
+
+      for (const job of jobs) {
+        const id = job.id.padEnd(8);
+        const name = job.name.slice(0, 24).padEnd(24);
+        const enabled = (job.enabled ? "yes" : "no").padEnd(7);
+        const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
+        const nextRun = job.nextRunAt
+          ? new Date(job.nextRunAt).toLocaleString()
+          : job.schedule.type === "at"
+            ? "(expired)"
+            : "-";
+
+        console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
+      }
+
+      console.log(`\n  Total: ${jobs.length} jobs`);
+      console.log("\nUsage:");
+      console.log("  ravi cron show <id>     # Show job details");
+      console.log("  ravi cron run <id>      # Manually run job");
+      console.log("  ravi cron rm <id>       # Delete job");
     }
-
-    console.log("\nScheduled Jobs:\n");
-    console.log("  ID        NAME                      ENABLED  SCHEDULE                 NEXT RUN");
-    console.log("  --------  ------------------------  -------  -----------------------  --------------------");
-
-    for (const job of jobs) {
-      const id = job.id.padEnd(8);
-      const name = job.name.slice(0, 24).padEnd(24);
-      const enabled = (job.enabled ? "yes" : "no").padEnd(7);
-      const schedule = describeSchedule(job.schedule).slice(0, 23).padEnd(23);
-      const nextRun = job.nextRunAt
-        ? new Date(job.nextRunAt).toLocaleString()
-        : job.schedule.type === "at"
-          ? "(expired)"
-          : "-";
-
-      console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
-    }
-
-    console.log(`\n  Total: ${jobs.length} jobs`);
-    console.log("\nUsage:");
-    console.log("  ravi cron show <id>     # Show job details");
-    console.log("  ravi cron run <id>      # Manually run job");
-    console.log("  ravi cron rm <id>       # Delete job");
+    return payload;
   }
 
   @Command({ name: "show", description: "Show job details" })
@@ -146,17 +145,18 @@ export class CronCommands {
       fail(`Job not found: ${id}`);
     }
 
+    const payload = { job: serializeCronJob(job) };
     if (asJson) {
-      printJson({ job: serializeCronJob(job) });
-      return;
-    }
+      printJson(payload);
+    } else {
+      const agentId = job.agentId ?? getDefaultAgentId();
+      const routing = resolveCronRouting(job);
 
-    const agentId = job.agentId ?? getDefaultAgentId();
-    const routing = resolveCronRouting(job);
-
-    for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
-      console.log(line);
+      for (const line of buildCronShowOutput(job, describeSchedule(job.schedule), agentId, routing)) {
+        console.log(line);
+      }
     }
+    return payload;
   }
 
   @Command({ name: "add", description: "Add a new scheduled job" })
@@ -260,23 +260,25 @@ export class CronCommands {
       // Signal daemon to refresh timers
       await nats.emit("ravi.cron.refresh", {});
 
-      if (asJson) {
-        printJson({
-          status: "created",
-          target: { type: "cron", id: job.id },
-          changedCount: 1,
-          warnings,
-          job: serializeCronJob(job),
-        });
-        return;
-      }
+      const payload = {
+        status: "created" as const,
+        target: { type: "cron" as const, id: job.id },
+        changedCount: 1,
+        warnings,
+        job: serializeCronJob(job),
+      };
 
-      console.log(`\n✓ Created job: ${job.id}`);
-      console.log(`  Name:       ${job.name}`);
-      console.log(`  Schedule:   ${describeSchedule(job.schedule)}`);
-      if (job.nextRunAt) {
-        console.log(`  Next run:   ${new Date(job.nextRunAt).toLocaleString()}`);
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`\n✓ Created job: ${job.id}`);
+        console.log(`  Name:       ${job.name}`);
+        console.log(`  Schedule:   ${describeSchedule(job.schedule)}`);
+        if (job.nextRunAt) {
+          console.log(`  Next run:   ${new Date(job.nextRunAt).toLocaleString()}`);
+        }
       }
+      return payload;
     } catch (err) {
       fail(`Error creating job: ${err instanceof Error ? err.message : err}`);
     }
@@ -300,19 +302,21 @@ export class CronCommands {
       await nats.emit("ravi.cron.refresh", {});
 
       const updatedJob = dbGetCronJob(id)!;
+      const payload = {
+        status: "enabled" as const,
+        target: { type: "cron" as const, id },
+        changedCount: 1,
+        job: serializeCronJob(updatedJob),
+      };
       if (asJson) {
-        printJson({
-          status: "enabled",
-          target: { type: "cron", id },
-          changedCount: 1,
-          job: serializeCronJob(updatedJob),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Enabled job: ${id} (${job.name})`);
+        if (updatedJob.nextRunAt) {
+          console.log(`  Next run: ${new Date(updatedJob.nextRunAt).toLocaleString()}`);
+        }
       }
-      console.log(`✓ Enabled job: ${id} (${job.name})`);
-      if (updatedJob.nextRunAt) {
-        console.log(`  Next run: ${new Date(updatedJob.nextRunAt).toLocaleString()}`);
-      }
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -331,17 +335,19 @@ export class CronCommands {
     try {
       dbUpdateCronJob(id, { enabled: false });
       await nats.emit("ravi.cron.refresh", {});
+      const updatedJob = dbGetCronJob(id) ?? { ...job, enabled: false };
+      const payload = {
+        status: "disabled" as const,
+        target: { type: "cron" as const, id },
+        changedCount: 1,
+        job: serializeCronJob(updatedJob),
+      };
       if (asJson) {
-        const updatedJob = dbGetCronJob(id) ?? { ...job, enabled: false };
-        printJson({
-          status: "disabled",
-          target: { type: "cron", id },
-          changedCount: 1,
-          job: serializeCronJob(updatedJob),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Disabled job: ${id} (${job.name})`);
       }
-      console.log(`✓ Disabled job: ${id} (${job.name})`);
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -488,17 +494,19 @@ export class CronCommands {
       // Signal daemon to refresh timers
       await nats.emit("ravi.cron.refresh", {});
 
+      const updatedJob = dbGetCronJob(id);
+      const payload = {
+        status: "updated" as const,
+        target: { type: "cron" as const, id },
+        changedCount: 1,
+        property: key,
+        value: normalizedValue,
+        job: updatedJob ? serializeCronJob(updatedJob) : null,
+      };
       if (asJson) {
-        const updatedJob = dbGetCronJob(id);
-        printJson({
-          status: "updated",
-          target: { type: "cron", id },
-          changedCount: 1,
-          property: key,
-          value: normalizedValue,
-          job: updatedJob ? serializeCronJob(updatedJob) : null,
-        });
+        printJson(payload);
       }
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -521,17 +529,19 @@ export class CronCommands {
     try {
       // Send trigger signal to daemon
       await nats.emit("ravi.cron.trigger", { jobId: id });
+      const payload = {
+        status: "triggered" as const,
+        target: { type: "cron" as const, id },
+        changedCount: 0,
+        job: serializeCronJob(job),
+      };
       if (asJson) {
-        printJson({
-          status: "triggered",
-          target: { type: "cron", id },
-          changedCount: 0,
-          job: serializeCronJob(job),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log("✓ Job triggered");
+        console.log("  Check daemon logs: ravi daemon logs -f");
       }
-      console.log("✓ Job triggered");
-      console.log("  Check daemon logs: ravi daemon logs -f");
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -550,16 +560,18 @@ export class CronCommands {
     try {
       dbDeleteCronJob(id);
       await nats.emit("ravi.cron.refresh", {});
+      const payload = {
+        status: "deleted" as const,
+        target: { type: "cron" as const, id },
+        changedCount: 1,
+        job: serializeCronJob(job),
+      };
       if (asJson) {
-        printJson({
-          status: "deleted",
-          target: { type: "cron", id },
-          changedCount: 1,
-          job: serializeCronJob(job),
-        });
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ Deleted job: ${id} (${job.name})`);
       }
-      console.log(`✓ Deleted job: ${id} (${job.name})`);
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }

@@ -120,13 +120,13 @@ export class WorkflowSpecCommands {
 
     if (asJson) {
       console.log(JSON.stringify(spec, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Workflow spec created: ${spec.id}`);
+      console.log(`  Title: ${spec.title}`);
+      console.log(`  Nodes: ${spec.nodes.length}`);
+      console.log(`  Edges: ${spec.edges.length}`);
     }
-
-    console.log(`\n✓ Workflow spec created: ${spec.id}`);
-    console.log(`  Title: ${spec.title}`);
-    console.log(`  Nodes: ${spec.nodes.length}`);
-    console.log(`  Edges: ${spec.edges.length}`);
+    return spec;
   }
 
   @Command({ name: "list", description: "List workflow specs" })
@@ -134,18 +134,15 @@ export class WorkflowSpecCommands {
     const specs = listWorkflowSpecs();
     if (asJson) {
       console.log(JSON.stringify(specs, null, 2));
-      return;
-    }
-
-    if (specs.length === 0) {
+    } else if (specs.length === 0) {
       console.log("No workflow specs found.");
-      return;
+    } else {
+      console.log("");
+      for (const spec of specs) {
+        console.log(`${spec.id} :: ${spec.title} :: ${spec.nodes.length} nodes :: ${spec.edges.length} edges`);
+      }
     }
-
-    console.log("");
-    for (const spec of specs) {
-      console.log(`${spec.id} :: ${spec.title} :: ${spec.nodes.length} nodes :: ${spec.edges.length} edges`);
-    }
+    return specs;
   }
 
   @Command({ name: "show", description: "Show one workflow spec" })
@@ -160,26 +157,26 @@ export class WorkflowSpecCommands {
 
     if (asJson) {
       console.log(JSON.stringify(spec, null, 2));
-      return;
-    }
-
-    console.log(`\nWorkflow spec ${spec.id}`);
-    console.log(`Title:  ${spec.title}`);
-    console.log(`Policy: ${spec.policy.completionMode ?? "all_required"}`);
-
-    console.log("\nNodes:");
-    for (const node of spec.nodes) {
-      console.log(`  - ${node.key} :: ${node.label} :: ${node.kind}/${node.requirement}/${node.releaseMode}`);
-    }
-
-    console.log("\nEdges:");
-    if (spec.edges.length === 0) {
-      console.log("  - none");
     } else {
-      for (const edge of spec.edges) {
-        console.log(`  - ${edge.from} -> ${edge.to}`);
+      console.log(`\nWorkflow spec ${spec.id}`);
+      console.log(`Title:  ${spec.title}`);
+      console.log(`Policy: ${spec.policy.completionMode ?? "all_required"}`);
+
+      console.log("\nNodes:");
+      for (const node of spec.nodes) {
+        console.log(`  - ${node.key} :: ${node.label} :: ${node.kind}/${node.requirement}/${node.releaseMode}`);
+      }
+
+      console.log("\nEdges:");
+      if (spec.edges.length === 0) {
+        console.log("  - none");
+      } else {
+        for (const edge of spec.edges) {
+          console.log(`  - ${edge.from} -> ${edge.to}`);
+        }
       }
     }
+    return spec;
   }
 }
 
@@ -205,11 +202,11 @@ export class WorkflowRunCommands {
 
     if (asJson) {
       console.log(JSON.stringify(details, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Workflow run started: ${details.run.id}`);
+      printWorkflowRun(details);
     }
-
-    console.log(`\n✓ Workflow run started: ${details.run.id}`);
-    printWorkflowRun(details);
+    return details;
   }
 
   @Command({ name: "list", description: "List workflow runs" })
@@ -217,18 +214,15 @@ export class WorkflowRunCommands {
     const runs = listWorkflowRuns();
     if (asJson) {
       console.log(JSON.stringify(runs, null, 2));
-      return;
-    }
-
-    if (runs.length === 0) {
+    } else if (runs.length === 0) {
       console.log("No workflow runs found.");
-      return;
+    } else {
+      console.log("");
+      for (const run of runs) {
+        console.log(`${run.id} :: ${run.status} :: ${run.workflowSpecId} :: ${run.title}`);
+      }
     }
-
-    console.log("");
-    for (const run of runs) {
-      console.log(`${run.id} :: ${run.status} :: ${run.workflowSpecId} :: ${run.title}`);
-    }
+    return runs;
   }
 
   @Command({ name: "show", description: "Show one workflow run with node state" })
@@ -243,10 +237,10 @@ export class WorkflowRunCommands {
 
     if (asJson) {
       console.log(JSON.stringify(details, null, 2));
-      return;
+    } else {
+      printWorkflowRun(details);
     }
-
-    printWorkflowRun(details);
+    return details;
   }
 
   @Command({ name: "release", description: "Release a manual node transition or gate" })
@@ -259,11 +253,11 @@ export class WorkflowRunCommands {
     const result = releaseWorkflowNodeRun(runId, nodeKey, actor);
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Released ${nodeKey} in ${runId}`);
+      printWorkflowRun(result.details);
     }
-
-    console.log(`\n✓ Released ${nodeKey} in ${runId}`);
-    printWorkflowRun(result.details);
+    return result;
   }
 
   @Command({ name: "skip", description: "Skip one optional workflow node" })
@@ -275,11 +269,11 @@ export class WorkflowRunCommands {
     const result = skipWorkflowNodeRun(runId, nodeKey);
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Skipped optional node ${nodeKey} in ${runId}`);
+      printWorkflowRun(result.details);
     }
-
-    console.log(`\n✓ Skipped optional node ${nodeKey} in ${runId}`);
-    printWorkflowRun(result.details);
+    return result;
   }
 
   @Command({ name: "cancel", description: "Cancel one workflow node run" })
@@ -291,11 +285,11 @@ export class WorkflowRunCommands {
     const result = cancelWorkflowNodeRun(runId, nodeKey);
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Cancelled node ${nodeKey} in ${runId}`);
+      printWorkflowRun(result.details);
     }
-
-    console.log(`\n✓ Cancelled node ${nodeKey} in ${runId}`);
-    printWorkflowRun(result.details);
+    return result;
   }
 
   @Command({ name: "archive-node", description: "Archive one node run from workflow aggregate state" })
@@ -307,11 +301,11 @@ export class WorkflowRunCommands {
     const result = archiveWorkflowNodeRun(runId, nodeKey);
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Archived node ${nodeKey} in ${runId}`);
+      printWorkflowRun(result.details);
     }
-
-    console.log(`\n✓ Archived node ${nodeKey} in ${runId}`);
-    printWorkflowRun(result.details);
+    return result;
   }
 
   @Command({ name: "task-attach", description: "Attach an existing task to a workflow task node" })
@@ -324,11 +318,11 @@ export class WorkflowRunCommands {
     const result = attachTaskToWorkflowNodeRun(runId, nodeKey, taskId);
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-      return;
+    } else {
+      console.log(`\n✓ Attached task ${taskId} to ${nodeKey} in ${runId}`);
+      printWorkflowRun(result.details);
     }
-
-    console.log(`\n✓ Attached task ${taskId} to ${nodeKey} in ${runId}`);
-    printWorkflowRun(result.details);
+    return result;
   }
 
   @Command({ name: "task-create", description: "Create a new task attempt for one workflow task node" })
@@ -395,25 +389,22 @@ export class WorkflowRunCommands {
       await emitDispatchResult(launch);
     }
 
-    if (asJson) {
-      console.log(
-        JSON.stringify(
-          {
-            task: created.task,
-            workflow: launch ? getWorkflowRunDetails(runId) : attached.details,
-            ...(launch ? { launch } : {}),
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+    const workflow = launch ? getWorkflowRunDetails(runId) : attached.details;
+    const payload = {
+      task: created.task,
+      workflow,
+      ...(launch ? { launch } : {}),
+    };
 
-    console.log(`\n✓ Created task ${created.task.id} for workflow node ${nodeKey}`);
-    if (launch) {
-      console.log(`  Launch: ${launch.mode === "dispatched" ? "dispatched" : "launch planned"}`);
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\n✓ Created task ${created.task.id} for workflow node ${nodeKey}`);
+      if (launch) {
+        console.log(`  Launch: ${launch.mode === "dispatched" ? "dispatched" : "launch planned"}`);
+      }
+      printWorkflowRun(getWorkflowRunDetails(runId)!);
     }
-    printWorkflowRun(getWorkflowRunDetails(runId)!);
+    return payload;
   }
 }

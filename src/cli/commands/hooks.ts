@@ -177,12 +177,11 @@ export class HooksCommands {
   @Command({ name: "list", description: "List configured hooks" })
   list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const hooks = dbListHooks();
-    if (asJson) {
-      printJson({ total: hooks.length, hooks: hooks.map(serializeHook) });
-      return;
-    }
+    const payload = { total: hooks.length, hooks: hooks.map(serializeHook) };
 
-    if (hooks.length === 0) {
+    if (asJson) {
+      printJson(payload);
+    } else if (hooks.length === 0) {
       console.log("\nNo hooks configured.\n");
       console.log("Usage:");
       console.log(
@@ -191,30 +190,30 @@ export class HooksCommands {
       console.log(
         '  ravi hooks create "observer" --event PostToolUse --matcher "Write|Edit" --action append_history --message "{{toolName}} -> {{path}}" --async',
       );
-      return;
+    } else {
+      console.log("\nRuntime Hooks:\n");
+      console.log("  ID        NAME                      ENABLED  EVENT         SCOPE                   ACTION");
+      console.log(
+        "  --------  ------------------------  -------  ------------  ----------------------  -----------------",
+      );
+      for (const hook of hooks) {
+        const id = hook.id.padEnd(8);
+        const name = hook.name.slice(0, 24).padEnd(24);
+        const enabled = (hook.enabled ? "yes" : "no").padEnd(7);
+        const event = hook.eventName.padEnd(12);
+        const scope = formatScope(hook).slice(0, 22).padEnd(22);
+        const action = hook.actionType;
+        console.log(`  ${id}  ${name}  ${enabled}  ${event}  ${scope}  ${action}`);
+      }
+      console.log(`\n  Total: ${hooks.length} hooks`);
+      console.log("\nUsage:");
+      console.log("  ravi hooks show <id>");
+      console.log("  ravi hooks test <id>");
+      console.log("  ravi hooks enable <id>");
+      console.log("  ravi hooks disable <id>");
+      console.log("  ravi hooks rm <id>");
     }
-
-    console.log("\nRuntime Hooks:\n");
-    console.log("  ID        NAME                      ENABLED  EVENT         SCOPE                   ACTION");
-    console.log(
-      "  --------  ------------------------  -------  ------------  ----------------------  -----------------",
-    );
-    for (const hook of hooks) {
-      const id = hook.id.padEnd(8);
-      const name = hook.name.slice(0, 24).padEnd(24);
-      const enabled = (hook.enabled ? "yes" : "no").padEnd(7);
-      const event = hook.eventName.padEnd(12);
-      const scope = formatScope(hook).slice(0, 22).padEnd(22);
-      const action = hook.actionType;
-      console.log(`  ${id}  ${name}  ${enabled}  ${event}  ${scope}  ${action}`);
-    }
-    console.log(`\n  Total: ${hooks.length} hooks`);
-    console.log("\nUsage:");
-    console.log("  ravi hooks show <id>");
-    console.log("  ravi hooks test <id>");
-    console.log("  ravi hooks enable <id>");
-    console.log("  ravi hooks disable <id>");
-    console.log("  ravi hooks rm <id>");
+    return payload;
   }
 
   @Command({ name: "show", description: "Show hook details" })
@@ -227,32 +226,33 @@ export class HooksCommands {
       fail(`Hook not found: ${id}`);
     }
 
+    const payload = { hook: serializeHook(hook) };
     if (asJson) {
-      printJson({ hook: serializeHook(hook) });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\nHook: ${hook.name}\n`);
+      console.log(`  ID:              ${hook.id}`);
+      console.log(`  Event:           ${hook.eventName}`);
+      console.log(`  Scope:           ${formatScope(hook)}`);
+      console.log(`  Matcher:         ${hook.matcher ?? "(none)"}`);
+      console.log(`  Action:          ${hook.actionType}`);
+      console.log(`  Enabled:         ${hook.enabled ? "yes" : "no"}`);
+      console.log(`  Async:           ${hook.async ? "yes" : "no"}`);
+      console.log(`  Cooldown:        ${formatDurationMs(hook.cooldownMs)}`);
+      console.log(`  Dedupe key:      ${hook.dedupeKey ?? "(none)"}`);
+      console.log(`  Fire count:      ${hook.fireCount}`);
+      if (hook.lastFiredAt) {
+        console.log(`  Last fired:      ${new Date(hook.lastFiredAt).toLocaleString()}`);
+      }
+      if (hook.lastDedupeKey) {
+        console.log(`  Last dedupe:     ${hook.lastDedupeKey}`);
+      }
+      console.log(`  Created:         ${new Date(hook.createdAt).toLocaleString()}`);
+      console.log("");
+      console.log("  Action payload:");
+      console.log(`    ${JSON.stringify(hook.actionPayload, null, 2).split("\n").join("\n    ")}`);
     }
-
-    console.log(`\nHook: ${hook.name}\n`);
-    console.log(`  ID:              ${hook.id}`);
-    console.log(`  Event:           ${hook.eventName}`);
-    console.log(`  Scope:           ${formatScope(hook)}`);
-    console.log(`  Matcher:         ${hook.matcher ?? "(none)"}`);
-    console.log(`  Action:          ${hook.actionType}`);
-    console.log(`  Enabled:         ${hook.enabled ? "yes" : "no"}`);
-    console.log(`  Async:           ${hook.async ? "yes" : "no"}`);
-    console.log(`  Cooldown:        ${formatDurationMs(hook.cooldownMs)}`);
-    console.log(`  Dedupe key:      ${hook.dedupeKey ?? "(none)"}`);
-    console.log(`  Fire count:      ${hook.fireCount}`);
-    if (hook.lastFiredAt) {
-      console.log(`  Last fired:      ${new Date(hook.lastFiredAt).toLocaleString()}`);
-    }
-    if (hook.lastDedupeKey) {
-      console.log(`  Last dedupe:     ${hook.lastDedupeKey}`);
-    }
-    console.log(`  Created:         ${new Date(hook.createdAt).toLocaleString()}`);
-    console.log("");
-    console.log("  Action payload:");
-    console.log(`    ${JSON.stringify(hook.actionPayload, null, 2).split("\n").join("\n    ")}`);
+    return payload;
   }
 
   @Command({ name: "create", description: "Create a new runtime hook", aliases: ["add"] })
@@ -315,22 +315,23 @@ export class HooksCommands {
     const created = dbCreateHook(input);
     await emitHookRefresh();
 
+    const payload = {
+      status: "created" as const,
+      target: { type: "hook" as const, id: created.id },
+      changedCount: 1,
+      hook: serializeHook(created),
+    };
     if (asJson) {
-      printJson({
-        status: "created",
-        target: { type: "hook", id: created.id },
-        changedCount: 1,
-        hook: serializeHook(created),
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`\n✓ Created hook: ${created.id}`);
+      console.log(`  Name:       ${created.name}`);
+      console.log(`  Event:      ${created.eventName}`);
+      console.log(`  Scope:      ${formatScope(created)}`);
+      console.log(`  Action:     ${created.actionType}`);
+      console.log(`  Cooldown:   ${formatDurationMs(created.cooldownMs)}`);
     }
-
-    console.log(`\n✓ Created hook: ${created.id}`);
-    console.log(`  Name:       ${created.name}`);
-    console.log(`  Event:      ${created.eventName}`);
-    console.log(`  Scope:      ${formatScope(created)}`);
-    console.log(`  Action:     ${created.actionType}`);
-    console.log(`  Cooldown:   ${formatDurationMs(created.cooldownMs)}`);
+    return payload;
   }
 
   @Command({ name: "enable", description: "Enable a hook" })
@@ -344,16 +345,18 @@ export class HooksCommands {
     }
     const updated = dbUpdateHook(id, { enabled: true });
     await emitHookRefresh();
+    const payload = {
+      status: "enabled" as const,
+      target: { type: "hook" as const, id },
+      changedCount: 1,
+      hook: serializeHook(updated),
+    };
     if (asJson) {
-      printJson({
-        status: "enabled",
-        target: { type: "hook", id },
-        changedCount: 1,
-        hook: serializeHook(updated),
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Enabled hook: ${id} (${hook.name})`);
     }
-    console.log(`✓ Enabled hook: ${id} (${hook.name})`);
+    return payload;
   }
 
   @Command({ name: "disable", description: "Disable a hook" })
@@ -367,16 +370,18 @@ export class HooksCommands {
     }
     const updated = dbUpdateHook(id, { enabled: false });
     await emitHookRefresh();
+    const payload = {
+      status: "disabled" as const,
+      target: { type: "hook" as const, id },
+      changedCount: 1,
+      hook: serializeHook(updated),
+    };
     if (asJson) {
-      printJson({
-        status: "disabled",
-        target: { type: "hook", id },
-        changedCount: 1,
-        hook: serializeHook(updated),
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Disabled hook: ${id} (${hook.name})`);
     }
-    console.log(`✓ Disabled hook: ${id} (${hook.name})`);
+    return payload;
   }
 
   @Command({
@@ -394,16 +399,18 @@ export class HooksCommands {
     }
     dbDeleteHook(id);
     await emitHookRefresh();
+    const payload = {
+      status: "deleted" as const,
+      target: { type: "hook" as const, id },
+      changedCount: 1,
+      hook: serializeHook(hook),
+    };
     if (asJson) {
-      printJson({
-        status: "deleted",
-        target: { type: "hook", id },
-        changedCount: 1,
-        hook: serializeHook(hook),
-      });
-      return;
+      printJson(payload);
+    } else {
+      console.log(`✓ Deleted hook: ${id} (${hook.name})`);
     }
-    console.log(`✓ Deleted hook: ${id} (${hook.name})`);
+    return payload;
   }
 
   @Command({ name: "test", description: "Execute a hook once with a synthetic event" })
@@ -414,14 +421,14 @@ export class HooksCommands {
     const result = await runHookById(id);
     if (asJson) {
       printJson(result);
-      return;
+    } else {
+      console.log(`✓ Tested hook: ${result.hookId}`);
+      if (result.skipped) {
+        console.log(`  Skipped: ${result.skipped}${result.detail ? ` (${result.detail})` : ""}`);
+      } else {
+        console.log(`  Event: ${result.eventName}`);
+      }
     }
-
-    console.log(`✓ Tested hook: ${result.hookId}`);
-    if (result.skipped) {
-      console.log(`  Skipped: ${result.skipped}${result.detail ? ` (${result.detail})` : ""}`);
-      return;
-    }
-    console.log(`  Event: ${result.eventName}`);
+    return result;
   }
 }
