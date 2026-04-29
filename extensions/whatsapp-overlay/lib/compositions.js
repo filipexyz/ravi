@@ -6,8 +6,6 @@ import {
   isBusyLiveActivity,
 } from "./live-state.js";
 
-const ACTIVE_WINDOW_MS = 10 * 60 * 1000;
-
 export async function buildSnapshot(client, query) {
   const [sessionsResult, allBindings] = await Promise.all([
     client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
@@ -26,9 +24,7 @@ export async function buildSnapshot(client, query) {
   });
 
   const now = Date.now();
-  const activeSessions = sessions
-    .filter((s) => isActive(s, now))
-    .map(toListEntry);
+  const activeSessions = sessions.filter(isActive).map(toListEntry);
   const activeKeys = new Set(activeSessions.map((s) => s.sessionKey));
   const recentSessions = sessions
     .filter((s) => !activeKeys.has(s.sessionKey))
@@ -341,11 +337,9 @@ function mergeTaskDetail(item, detail) {
   };
 }
 
-function isActive(session, now) {
+function isActive(session) {
   const live = getLiveForSession(session);
-  if (isBusyLiveActivity(live?.activity)) return true;
-  if (live?.updatedAt && now - live.updatedAt < ACTIVE_WINDOW_MS) return true;
-  return session.updatedAt && now - session.updatedAt < ACTIVE_WINDOW_MS;
+  return isBusyLiveActivity(live?.activity);
 }
 
 function toListEntry(session) {
