@@ -247,7 +247,7 @@ export async function resolveChatList(client, body) {
   const items = await Promise.all(
     entries.map(async (entry) => {
       const id = clean(entry?.id) ?? null;
-      const query = entry?.query ?? {};
+      const query = entry?.query ?? entry ?? {};
       const binding = await findBinding({ chatId: query.chatId, title: query.title });
       const requestedSessionName = clean(query.session) ?? clean(binding?.session);
       const resolved = resolveSession(sessions, {
