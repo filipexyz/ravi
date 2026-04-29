@@ -671,6 +671,7 @@ export class EventsCommands {
   }
 
   @Command({ name: "replay", description: "Replay persisted JetStream events with filters" })
+  @CliOnly()
   async replay(
     @Option({ flags: "-s, --stream <names>", description: "Comma-separated streams (default: all non-KV streams)" })
     streamOpt?: string,

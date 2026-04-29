@@ -28,7 +28,7 @@ import "reflect-metadata";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
 import { createOmniClient } from "../../omni/client.js";
@@ -1016,6 +1016,7 @@ export class InstancesCommands {
   // connect
   // --------------------------------------------------------------------------
   @Command({ name: "connect", description: "Connect an instance to omni (QR code for WhatsApp)" })
+  @CliOnly()
   async connect(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--channel <channel>", description: "Channel type (default: whatsapp)" }) channelOpt?: string,
