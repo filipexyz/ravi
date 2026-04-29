@@ -5,28 +5,25 @@
 Pré-requisito: existir consumidor concreto que precisa do stream remoto. Sem
 consumidor, não criar channel — manter handler `@CliOnly()`.
 
-Passos previstos (a confirmar quando a primeira implementação for feita):
+Passos:
 
 1. **Registrar channel** em `src/sdk/gateway/streaming/channels.ts` com:
    - `name` (ex: `events`, `tasks`)
    - `scope` REBAC (ex: `view system:events`)
-   - função `subscribe(ctx, filters) -> AsyncIterable<{ id, event, data }>`
-2. **Branch SSE no gateway** (`src/sdk/gateway/server.ts`): roteia
-   `GET /api/v1/_stream/<channel>` antes do dispatcher single-shot.
-3. **Auth + audit** reutilizando `resolveRuntimeContext` e `runWithContext`
-   do gateway atual; emitir `sdk.gateway.stream.opened` e
-   `sdk.gateway.stream.closed`.
-4. **Codegen do client SDK** (`src/sdk/client-codegen/`) emite método
-   tipado por channel usando `EventSource` (browser) ou fetch streaming
-   (Node).
+   - função `subscribe(ctx, match) -> AsyncIterable<{ id?, event, data }>`
+2. **Branch SSE no gateway** já existe em `src/sdk/gateway/server.ts`.
+3. **Auth + audit** já existe em `src/sdk/gateway/streaming/handler.ts`;
+   emitir `sdk.gateway.stream.opened`, `sdk.gateway.stream.closed` e
+   `sdk.gateway.stream.denied`.
+4. **Client SDK**: adicionar método tipado em
+   `packages/ravi-os-sdk/src/streaming.ts`.
 5. **Smoke test** com curl:
    ```bash
    curl -N -H "Authorization: Bearer rctx_..." \
         -H "Accept: text/event-stream" \
         "http://127.0.0.1:4211/api/v1/_stream/events?subject=ravi.session.>"
    ```
-6. **Atualizar SPEC.md** marcando o channel como implementado, removendo
-   da tabela "previstos" e movendo pra "ativos".
+6. **Atualizar SPEC.md** com o novo channel ativo e o escopo REBAC.
 
 ## Como Diagnosticar Stream Pendurado
 
@@ -34,7 +31,7 @@ Se um cliente reporta que stream não recebe eventos:
 
 1. Verificar audit:
    ```bash
-   ravi events replay --subject "sdk.gateway.stream.>" --since 5m
+   ravi events replay --subject "ravi.audit.sdk.gateway.stream.>" --since 5m
    ```
    Espera-se ver `opened` e `closed` casados. `opened` sem `closed` = leak.
 2. Confirmar que o publisher upstream (NATS topic) tá emitindo:

@@ -9,3 +9,14 @@ export { dispatch } from "./dispatcher.js";
 export type { DispatchOptions, DispatchResult, AuditEvent } from "./dispatcher.js";
 export { commandUrlPath, buildRouteTable, buildMetaPayload, API_PREFIX } from "./route-table.js";
 export type { RouteTable, RegistryMetaPayload } from "./route-table.js";
+export { defaultStreamChannels } from "./streaming/channels.js";
+export { createSseResponse, createSseReadableStream, encodeSseEvent } from "./streaming/sse.js";
+export type {
+  StreamAuditEvent,
+  StreamChannel,
+  StreamChannelMatch,
+  StreamEvent,
+  StreamRequestContext,
+  StreamScope,
+  StreamingGatewayConfig,
+} from "./streaming/types.js";

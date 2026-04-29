@@ -1183,6 +1183,34 @@ export const ContextCheckInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `context.cleanup-agent-runtime`. */
+export const ContextCleanupAgentRuntimeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent ID",
+      "type": "string"
+    },
+    "olderThan": {
+      "description": "Only include contexts whose last use or creation is older than this duration (default: 1h)",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Revocation reason for audit metadata",
+      "type": "string"
+    },
+    "revoke": {
+      "description": "Actually revoke matching contexts; omitted means dry-run",
+      "type": "boolean"
+    },
+    "session": {
+      "description": "Filter by session key",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.codex-bash-hook`. */
 export const ContextCodexBashHookInputSchema = {
   "additionalProperties": false,
@@ -1602,13 +1630,6 @@ export const CronShowInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `daemon.dev`. */
-export const DaemonDevInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `daemon.env`. */
 export const DaemonEnvInputSchema = {
   "additionalProperties": false,
@@ -1686,13 +1707,6 @@ export const DaemonRestartInputSchema = {
       "type": "string"
     }
   },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `daemon.run`. */
-export const DaemonRunInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2035,92 +2049,6 @@ export const EvalRunInputSchema = {
   "required": [
     "specPath"
   ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `events.replay`. */
-export const EventsReplayInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Substring filter for agent id",
-      "type": "string"
-    },
-    "chat": {
-      "description": "Substring filter for channel chatId/groupId",
-      "type": "string"
-    },
-    "contains": {
-      "description": "Case-insensitive substring filter; comma-separated",
-      "type": "string"
-    },
-    "limit": {
-      "description": "Max matching events to print (default: 100)",
-      "type": "string"
-    },
-    "raw": {
-      "description": "Print raw stored payload text",
-      "type": "boolean"
-    },
-    "scan": {
-      "description": "Max stored events to scan per stream before filters",
-      "type": "string"
-    },
-    "session": {
-      "description": "Substring filter for a session name/key",
-      "type": "string"
-    },
-    "since": {
-      "description": "Start time: ISO, epoch, or duration like 15m/2h (default: 15m)",
-      "type": "string"
-    },
-    "stream": {
-      "description": "Comma-separated streams (default: all non-KV streams)",
-      "type": "string"
-    },
-    "subject": {
-      "description": "NATS subject filter, e.g. message.received.>",
-      "type": "string"
-    },
-    "type": {
-      "description": "Match data.type or data.payload.type",
-      "type": "string"
-    },
-    "until": {
-      "description": "End time: ISO, epoch, or duration like 5m",
-      "type": "string"
-    },
-    "where": {
-      "description": "JSON filter: path=value, path!=value or path~=text; comma/semicolon-separated",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `events.stream`. */
-export const EventsStreamInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "filter": {
-      "description": "Topic glob filter (e.g. 'ravi.session.*')",
-      "type": "string"
-    },
-    "noClaude": {
-      "default": true,
-      "description": "Hide raw claude SDK events (type=text, type=thinking, etc.)",
-      "type": "boolean"
-    },
-    "noHeartbeat": {
-      "default": true,
-      "description": "Hide heartbeat events",
-      "type": "boolean"
-    },
-    "only": {
-      "description": "Only show: prompt, response, tool, claude, runtime, cli, audit",
-      "type": "string"
-    }
-  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2698,29 +2626,6 @@ export const InsightsShowInputSchema = {
   },
   "required": [
     "id"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `instances.connect`. */
-export const InstancesConnectInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Agent to route messages to",
-      "type": "string"
-    },
-    "channel": {
-      "description": "Channel type (default: whatsapp)",
-      "type": "string"
-    },
-    "name": {
-      "description": "Instance name",
-      "type": "string"
-    }
-  },
-  "required": [
-    "name"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -4680,22 +4585,6 @@ export const SessionsAskInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `sessions.debug`. */
-export const SessionsDebugInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "nameOrKey": {
-      "description": "Session name or key",
-      "type": "string"
-    },
-    "timeout": {
-      "description": "Stop after N seconds (default: 60)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `sessions.delete`. */
 export const SessionsDeleteInputSchema = {
   "additionalProperties": false,
@@ -6419,37 +6308,6 @@ export const TasksUnarchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `tasks.watch`. */
-export const TasksWatchInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "taskId": {
-      "description": "Task ID (optional)",
-      "type": "string"
-    }
-  },
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `tmux.attach`. */
-export const TmuxAttachInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Agent ID",
-      "type": "string"
-    },
-    "session": {
-      "description": "Optional Ravi session name/key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "agent"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `tmux.list`. */
 export const TmuxListInputSchema = {
   "additionalProperties": false,
@@ -6473,18 +6331,6 @@ export const TmuxOpenInputSchema = {
   "required": [
     "agent"
   ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `tmux.watch`. */
-export const TmuxWatchInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "sync": {
-      "description": "Bootstrap windows for existing sessions before watching",
-      "type": "boolean"
-    }
-  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -502,6 +502,18 @@ export type ContextCheckInput = {
 /** Return shape for `context.check`. (no @Returns declared) */
 export type ContextCheckReturn = unknown;
 
+/** Input shape for `context.cleanup-agent-runtime`. */
+export type ContextCleanupAgentRuntimeInput = {
+  agent?: string;
+  olderThan?: string;
+  reason?: string;
+  revoke?: boolean;
+  session?: string;
+};
+
+/** Return shape for `context.cleanup-agent-runtime`. (no @Returns declared) */
+export type ContextCleanupAgentRuntimeReturn = unknown;
+
 /** Input shape for `context.codex-bash-hook`. */
 export type ContextCodexBashHookInput = Record<string, never>;
 
@@ -711,12 +723,6 @@ export type CronShowInput = {
 /** Return shape for `cron.show`. (no @Returns declared) */
 export type CronShowReturn = unknown;
 
-/** Input shape for `daemon.dev`. */
-export type DaemonDevInput = Record<string, never>;
-
-/** Return shape for `daemon.dev`. (no @Returns declared) */
-export type DaemonDevReturn = unknown;
-
 /** Input shape for `daemon.env`. */
 export type DaemonEnvInput = Record<string, never>;
 
@@ -759,12 +765,6 @@ export type DaemonRestartInput = {
 
 /** Return shape for `daemon.restart`. (no @Returns declared) */
 export type DaemonRestartReturn = unknown;
-
-/** Input shape for `daemon.run`. */
-export type DaemonRunInput = Record<string, never>;
-
-/** Return shape for `daemon.run`. (no @Returns declared) */
-export type DaemonRunReturn = unknown;
 
 /** Input shape for `daemon.start`. */
 export type DaemonStartInput = Record<string, never>;
@@ -915,37 +915,6 @@ export type EvalRunInput = {
 
 /** Return shape for `eval.run`. (no @Returns declared) */
 export type EvalRunReturn = unknown;
-
-/** Input shape for `events.replay`. */
-export type EventsReplayInput = {
-  agent?: string;
-  chat?: string;
-  contains?: string;
-  limit?: string;
-  raw?: boolean;
-  scan?: string;
-  session?: string;
-  since?: string;
-  stream?: string;
-  subject?: string;
-  type?: string;
-  until?: string;
-  where?: string;
-};
-
-/** Return shape for `events.replay`. (no @Returns declared) */
-export type EventsReplayReturn = unknown;
-
-/** Input shape for `events.stream`. */
-export type EventsStreamInput = {
-  filter?: string;
-  noClaude?: boolean;
-  noHeartbeat?: boolean;
-  only?: string;
-};
-
-/** Return shape for `events.stream`. (no @Returns declared) */
-export type EventsStreamReturn = unknown;
 
 /** Input shape for `heartbeat.disable`. */
 export type HeartbeatDisableInput = {
@@ -1171,16 +1140,6 @@ export type InsightsShowInput = {
 
 /** Return shape for `insights.show`. (no @Returns declared) */
 export type InsightsShowReturn = unknown;
-
-/** Input shape for `instances.connect`. */
-export type InstancesConnectInput = {
-  agent?: string;
-  channel?: string;
-  name: string;
-};
-
-/** Return shape for `instances.connect`. (no @Returns declared) */
-export type InstancesConnectReturn = unknown;
 
 /** Input shape for `instances.create`. */
 export type InstancesCreateInput = {
@@ -2036,15 +1995,6 @@ export type SessionsAskInput = {
 /** Return shape for `sessions.ask`. (no @Returns declared) */
 export type SessionsAskReturn = unknown;
 
-/** Input shape for `sessions.debug`. */
-export type SessionsDebugInput = {
-  nameOrKey?: string;
-  timeout?: string;
-};
-
-/** Return shape for `sessions.debug`. (no @Returns declared) */
-export type SessionsDebugReturn = unknown;
-
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
   nameOrKey: string;
@@ -2776,23 +2726,6 @@ export type TasksUnarchiveInput = {
 /** Return shape for `tasks.unarchive`. (no @Returns declared) */
 export type TasksUnarchiveReturn = unknown;
 
-/** Input shape for `tasks.watch`. */
-export type TasksWatchInput = {
-  taskId?: string;
-};
-
-/** Return shape for `tasks.watch`. (no @Returns declared) */
-export type TasksWatchReturn = unknown;
-
-/** Input shape for `tmux.attach`. */
-export type TmuxAttachInput = {
-  agent: string;
-  session?: string;
-};
-
-/** Return shape for `tmux.attach`. (no @Returns declared) */
-export type TmuxAttachReturn = unknown;
-
 /** Input shape for `tmux.list`. */
 export type TmuxListInput = Record<string, never>;
 
@@ -2807,14 +2740,6 @@ export type TmuxOpenInput = {
 
 /** Return shape for `tmux.open`. (no @Returns declared) */
 export type TmuxOpenReturn = unknown;
-
-/** Input shape for `tmux.watch`. */
-export type TmuxWatchInput = {
-  sync?: boolean;
-};
-
-/** Return shape for `tmux.watch`. (no @Returns declared) */
-export type TmuxWatchReturn = unknown;
 
 /** Input shape for `tools.list`. */
 export type ToolsListInput = Record<string, never>;

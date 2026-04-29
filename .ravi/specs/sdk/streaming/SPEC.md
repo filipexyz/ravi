@@ -14,7 +14,7 @@ applies_to:
   - src/cli/commands/**
 owners:
   - sdk
-status: draft
+status: active
 normative: true
 ---
 
@@ -79,15 +79,14 @@ Cada channel é uma view nomeada sobre um topic (ou conjunto de topics) NATS,
 publicada como SSE. O channel é registrado em runtime; não usar discovery
 mágico.
 
-Channels iniciais previstos (apenas planejamento; só implementar quando
-houver consumidor concreto):
+Channels ativos:
 
-| Channel              | Substitui handler CLI | Topic NATS subjacente             |
-|----------------------|-----------------------|-----------------------------------|
-| `events`             | `events.stream`       | `>` com filtros                   |
-| `tasks`              | `tasks.watch`         | `ravi.tasks.>`                    |
-| `sessions/<name>`    | `sessions.debug`      | `ravi.session.<name>.>`           |
-| `audit`              | (novo)                | `ravi.audit.>`                    |
+| Channel              | Endpoint                         | Topic NATS subjacente             | Escopo REBAC              |
+|----------------------|----------------------------------|-----------------------------------|---------------------------|
+| `events`             | `/api/v1/_stream/events`         | `>` com filtros                   | `view system:events`      |
+| `tasks`              | `/api/v1/_stream/tasks`          | `ravi.task.*.event`               | `view system:tasks`       |
+| `sessions/<name>`    | `/api/v1/_stream/sessions/<name>`| `ravi.session.<name>.*` + approval| `access session:<name>`   |
+| `audit`              | `/api/v1/_stream/audit`          | `ravi.audit.>`                    | `view system:audit`       |
 
 `tmux.watch`, `tmux.attach`, `daemon.run`, `daemon.dev`, `instances.connect`
 permanecem permanentemente CLI-only — não fazem sentido remotos.
@@ -113,17 +112,21 @@ permanecem permanentemente CLI-only — não fazem sentido remotos.
 
 ## Materialização
 
-A spec só vira código quando houver **consumidor concreto** (ex: WA-overlay
-querer timeline live de um chat). Ordem prevista:
+Implementado em:
 
-1. Marcar handler com decorator dedicado (ex: `@StreamChannel("events")`)
-   ou registry separado (a definir na implementação).
-2. Adicionar branch SSE no `Bun.serve` do gateway, antes do dispatcher
-   single-shot.
-3. Auth + audit envelope reuso do gateway atual.
-4. Codegen do SDK emite client com `EventSource`/`fetch` streaming
-   tipado por channel.
-5. WA-overlay consome.
+- `src/sdk/gateway/streaming/*` — registry de channels, encoder SSE,
+  keepalive, fila bounded/drop-oldest, auth, escopo e audit.
+- `src/sdk/gateway/server.ts` — branch `GET /api/v1/_stream/*` antes do
+  dispatcher single-shot.
+- `src/sdk/gateway/route-table.ts` — reserva `/api/v1/_stream/*` para SSE e
+  mantém comandos `@CliOnly()` fora de rotas/meta remotas.
+- `packages/ravi-os-sdk/src/streaming.ts` — client fetch streaming com parser
+  SSE tipado por channel.
 
-Antes do passo 1, esta spec serve apenas como **contrato congelado** pra
-evitar que cada handler invente formato próprio.
+O SDK usa `fetch` streaming em vez de `EventSource` nativo porque o contrato
+MUST exigir header `Authorization: Bearer rctx_*`, e `EventSource` de browser
+não permite header customizado sem polyfill.
+
+O channel `events` reaproveita o mesmo filtro glob do CLI (`*` dentro do
+segmento, `**` atravessando segmentos) e suprime os eventos ruidosos que o CLI
+já suprime por padrão.

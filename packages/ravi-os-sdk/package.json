@@ -26,6 +26,10 @@
       "types": "./dist/errors.d.ts",
       "default": "./dist/errors.js"
     },
+    "./streaming": {
+      "types": "./dist/streaming.d.ts",
+      "default": "./dist/streaming.js"
+    },
     "./transport/http": {
       "types": "./dist/transport/http.d.ts",
       "default": "./dist/transport/http.js"

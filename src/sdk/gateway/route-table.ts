@@ -28,6 +28,9 @@ export function buildRouteTable(registry: RegistrySnapshot): RouteTable {
   for (const cmd of registry.commands) {
     if (cmd.cliOnly) continue;
     const path = commandUrlPath(cmd);
+    if (path === `${API_PREFIX}/_stream` || path.startsWith(`${API_PREFIX}/_stream/`)) {
+      throw new Error(`Gateway route collision: ${path} is reserved for SDK streaming channels.`);
+    }
     if (byPath.has(path)) {
       const prev = byPath.get(path)!;
       throw new Error(`Gateway route collision: ${path} is claimed by both ${prev.fullName} and ${cmd.fullName}.`);
@@ -71,7 +74,7 @@ export interface RegistryMetaPayload {
 
 export function buildMetaPayload(table: RouteTable): RegistryMetaPayload {
   const commands: MetaCommand[] = [];
-  for (const cmd of [...table.registry.commands].sort((a, b) =>
+  for (const cmd of [...table.byPath.values()].sort((a, b) =>
     a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0,
   )) {
     commands.push({
@@ -107,9 +110,9 @@ export function buildMetaPayload(table: RouteTable): RegistryMetaPayload {
 
 function hashRegistry(registry: RegistrySnapshot): string {
   const parts: string[] = [];
-  for (const cmd of [...registry.commands].sort((a, b) =>
-    a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0,
-  )) {
+  for (const cmd of [...registry.commands]
+    .filter((entry) => !entry.cliOnly)
+    .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0))) {
     parts.push(`${cmd.fullName}|${cmd.scope}|${cmd.args.length}|${cmd.options.length}`);
   }
   return createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 16);

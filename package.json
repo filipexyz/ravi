@@ -44,7 +44,7 @@
     "lint": "bunx biome check src/",
     "lint:fix": "bunx biome check --write src/",
     "test": "bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ src/plugins/ src/adapters/ src/approval/ src/tui/hooks/runtime-feed.test.ts src/tui/hooks/runtime-display.test.ts src/gateway-typing.test.ts && bun test src/tasks/ src/projects/ src/workflow-substrate/ src/whatsapp-overlay/ && bun run test:cli-commands && bun test src/bot.runtime-guards.test.ts && bun test src/remote-spawn-nats.test.ts && bun test src/runtime/index.test.ts src/runtime/model-catalog.test.ts && bun test src/runtime/context-registry.test.ts && bun test src/cli/context.test.ts src/cli/logging.test.ts && bun test src/utils/logger.test.ts && bun test src/transcripts.test.ts && bun run test:sdk",
-    "test:sdk": "bun test src/sdk/client-codegen/ ./tests/integration/sdk-roundtrip.test.ts ./packages/ravi-os-sdk/src/__tests__/types.test-d.ts && bun run sdk:check",
+    "test:sdk": "bun test src/sdk/client-codegen/ ./tests/integration/sdk-roundtrip.test.ts ./packages/ravi-os-sdk/src/__tests__/types.test-d.ts ./packages/ravi-os-sdk/src/__tests__/streaming.test.ts && bun run sdk:check",
     "test:cli-commands": "for f in src/cli/commands/*.test.ts; do bun test \"$f\" || exit 1; done",
     "test:live": "RAVI_LIVE_TESTS=1 bun test src/runtime/*.live.test.ts && RAVI_LIVE_TESTS=1 bun test src/bot.live.test.ts",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",

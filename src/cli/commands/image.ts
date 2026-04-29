@@ -20,7 +20,7 @@ import {
   type ArtifactRecord,
 } from "../../artifacts/store.js";
 import { splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
-import { sendMediaWithOmniCli } from "../media-send.js";
+import { sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = defaults?.[key];
@@ -121,6 +121,21 @@ function contextArtifactFields(ctx: ToolContext | undefined): {
     ...(ctx?.source?.accountId ? { accountId: ctx.source.accountId } : {}),
     ...(ctx?.source?.chatId ? { chatId: ctx.source.chatId } : {}),
     ...(ctx?.source?.threadId ? { threadId: ctx.source.threadId } : {}),
+  };
+}
+
+export function resolveImageArtifactMediaTarget(
+  artifact: ArtifactRecord | undefined,
+  ctx: ToolContext | undefined,
+): MediaSendTargetInput | undefined {
+  const accountId = artifact?.accountId ?? ctx?.source?.accountId;
+  const chatId = artifact?.chatId ?? ctx?.source?.chatId;
+  if (!accountId || !chatId) return undefined;
+  return {
+    ...((artifact?.channel ?? ctx?.source?.channel) ? { channel: artifact?.channel ?? ctx?.source?.channel } : {}),
+    accountId,
+    chatId,
+    ...((artifact?.threadId ?? ctx?.source?.threadId) ? { threadId: artifact?.threadId ?? ctx?.source?.threadId } : {}),
   };
 }
 
@@ -689,11 +704,13 @@ export class ImageCommands {
     if (shouldSend && results.length > 0) {
       try {
         for (const img of results) {
+          const artifact = artifacts.find((item) => item.filePath === img.filePath) ?? runningArtifact;
           const delivered = await sendMediaWithOmniCli({
             filePath: img.filePath,
             caption: caption ?? prompt,
             type: "image",
             filename: basename(img.filePath),
+            target: resolveImageArtifactMediaTarget(artifact, ctx),
           });
           const delivery = {
             transport: delivered.delivery.transport,
@@ -708,7 +725,6 @@ export class ImageCommands {
             ...(delivered.delivery.status ? { status: delivered.delivery.status } : {}),
           };
           payload.sent.push(delivery);
-          const artifact = artifacts.find((item) => item.filePath === img.filePath);
           if (artifact) {
             appendArtifactEvent(artifact.id, {
               eventType: "sent",

@@ -7,6 +7,7 @@ import { Group, Command, CliOnly, Option } from "../decorators.js";
 import { DeliverPolicy, StringCodec } from "nats";
 import { ensureConnected, nats } from "../../nats.js";
 import { resolveSession } from "../../router/sessions.js";
+import { matchesTopicGlob } from "../../events/topic-glob.js";
 
 const sc = StringCodec();
 const DEFAULT_REPLAY_LOOKBACK_MS = 15 * 60_000;
@@ -264,19 +265,6 @@ function formatTopic(topic: string): string {
   }
 
   return topic;
-}
-
-function matches(topic: string, filter: string): boolean {
-  // Simple glob: * matches anything within a segment, ** matches across segments
-  const regex = new RegExp(
-    "^" +
-      filter
-        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-        .replace(/\*\*/g, ".*")
-        .replace(/\*/g, "[^.]*") +
-      "$",
-  );
-  return regex.test(topic);
 }
 
 function matchesNatsSubject(subject: string, pattern: string): boolean {
@@ -609,7 +597,7 @@ export class EventsCommands {
       const { topic, data } = event;
 
       // Apply --filter
-      if (filter && !matches(topic, filter)) continue;
+      if (filter && !matchesTopicGlob(topic, filter)) continue;
 
       // Apply --only
       if (only) {

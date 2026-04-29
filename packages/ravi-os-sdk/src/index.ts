@@ -17,6 +17,20 @@ export {
   createHttpTransport,
   type HttpTransportConfig,
 } from "./transport/http.js";
+export {
+  RaviStreamClient,
+  createStreamClient,
+  parseSse,
+  type AuditStreamOptions,
+  type EventsStreamOptions,
+  type GatewayTopicEvent,
+  type RaviSseEvent,
+  type SessionStreamOptions,
+  type SessionStreamPayload,
+  type StreamClientConfig,
+  type TaskStreamPayload,
+  type TasksStreamOptions,
+} from "./streaming.js";
 export type { Transport, TransportCallInput } from "./transport/types.js";
 export {
   RaviError,

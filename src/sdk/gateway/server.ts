@@ -18,6 +18,8 @@ import { resolveAuth, type AuthFailureReason, type GatewayAuthConfig } from "./a
 import { dispatch } from "./dispatcher.js";
 import { errorResponse, json, methodNotAllowed, notFound, unauthorized } from "./errors.js";
 import { hasLiveAdminContext } from "../../runtime/context-registry.js";
+import { handleStreamingRequest } from "./streaming/handler.js";
+import type { StreamingGatewayConfig } from "./streaming/types.js";
 
 const log = logger.child("sdk:gateway");
 
@@ -42,6 +44,7 @@ export interface GatewayConfig {
   allowSuperadmin?: boolean;
   auth?: GatewayAuthConfig;
   registry?: RegistrySnapshot;
+  streaming?: StreamingGatewayConfig;
 }
 
 export interface GatewayHandle {
@@ -62,6 +65,7 @@ export interface GatewayHandlerContext {
   auth: GatewayAuthConfig;
   allowSuperadmin: boolean;
   maxBodyBytes: number;
+  streaming?: StreamingGatewayConfig;
 }
 
 export const GATEWAY_VERSION = "0.1.0";
@@ -74,6 +78,7 @@ export function createGatewayHandlerContext(config: GatewayConfig = {}): Gateway
     auth: config.auth ?? {},
     allowSuperadmin: Boolean(config.allowSuperadmin),
     maxBodyBytes: config.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    streaming: config.streaming,
   };
 }
 
@@ -168,6 +173,14 @@ export function startGateway(config: GatewayConfig = {}): GatewayHandle {
 }
 
 async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHandlerContext): Promise<Response> {
+  const streamResponse = await handleStreamingRequest(request, url, {
+    auth: ctx.auth,
+    hasLiveAdminContext,
+    authFailureMessage,
+    streaming: ctx.streaming,
+  });
+  if (streamResponse) return streamResponse;
+
   if (url.pathname === `${API_PREFIX}/_meta/registry`) {
     if (request.method !== "GET") return methodNotAllowed(request.method, url.pathname);
     return json(200, buildMetaPayload(ctx.table));
