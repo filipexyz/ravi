@@ -28,6 +28,7 @@ let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
+const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -184,6 +185,15 @@ mock.module("../../transcripts.js", () => ({
   locateRuntimeTranscript: () => ({ path: null, reason: "Transcript not found" }),
 }));
 
+mock.module("../../runtime/live-state.js", () => ({
+  getRuntimeLiveStateForSession: (session: Record<string, unknown>) => {
+    const byName = typeof session.name === "string" ? runtimeLiveStates.get(session.name) : null;
+    if (byName) return byName;
+    const byKey = typeof session.sessionKey === "string" ? runtimeLiveStates.get(session.sessionKey) : null;
+    return byKey ?? null;
+  },
+}));
+
 const { SessionCommands } = await import("./sessions.js");
 const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
 
@@ -227,6 +237,7 @@ beforeEach(() => {
   renameSessionNameCalls = [];
   renameSessionNameError = null;
   renameRouteReferencesUpdated = 0;
+  runtimeLiveStates.clear();
 });
 
 describe("SessionCommands wait mode", () => {
@@ -357,6 +368,29 @@ describe("SessionCommands list --json", () => {
       runtimeId: "resp_1",
       runtimeProvider: "codex",
       tokenTotal: 42,
+    });
+    expect(payload.sessions[0]).not.toHaveProperty("live");
+  });
+
+  it("includes live runtime state when requested", () => {
+    runtimeLiveStates.set("main", {
+      activity: "thinking",
+      summary: "running",
+      updatedAt: 3000,
+      busySince: 2500,
+    });
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true, true);
+      }),
+    );
+
+    expect(payload.filters.live).toBe(true);
+    expect(payload.sessions[0].live).toMatchObject({
+      activity: "thinking",
+      summary: "running",
+      updatedAt: 3000,
     });
   });
 });

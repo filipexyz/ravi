@@ -18,6 +18,7 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
+import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import type { RuntimeCapabilities, RuntimeEventMetadata, RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
 
 const log = logger.child("bot");
@@ -61,6 +62,11 @@ function truncateLogDetail(value: unknown, maxLength = MAX_TURN_FAILURE_LOG_DETA
   }
 
   return text.length > maxLength ? `${text.slice(0, maxLength - 15)}... [truncated]` : text;
+}
+
+function truncateLiveSummary(value: unknown, maxLength = 180): string | undefined {
+  const text = truncateLogDetail(value, maxLength)?.replace(/\s+/g, " ").trim();
+  return text || undefined;
 }
 
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -295,6 +301,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   let providerRawEventCount = 0;
   let responseText = "";
+  updateRuntimeLiveState(sessionName, {
+    activity: "thinking",
+    summary: "runtime active",
+    agentId: agent.id,
+    runId,
+    provider: runtimeSession.provider,
+    model,
+    source: streaming.currentSource,
+  });
   const clearActiveToolState = () => {
     streaming.toolRunning = false;
     streaming.currentToolId = undefined;
@@ -550,6 +565,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
+        updateRuntimeLiveState(sessionName, {
+          activity: "streaming",
+          summary: truncateLiveSummary(event.text) || "streaming",
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          source: streaming.currentSource,
+        });
         queueChunkEmit(event.text, event.metadata);
         continue;
       }
@@ -587,6 +611,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             compacting: streaming.compacting,
             metadata: event.metadata,
           },
+        });
+        updateRuntimeLiveState(sessionName, {
+          activity: streaming.compacting ? "compacting" : "thinking",
+          summary: streaming.compacting ? "compacting" : "runtime active",
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          source: streaming.currentSource,
         });
 
         if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
@@ -636,6 +669,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           agentId: agent.id,
           metadata: event.metadata,
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
+        updateRuntimeLiveState(sessionName, {
+          activity: "thinking",
+          summary: `${event.toolUse.name} running`,
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          toolName: event.toolUse.name,
+          source: streaming.currentSource,
+        });
         continue;
       }
 
@@ -698,6 +741,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
             } else {
+              updateRuntimeLiveState(sessionName, {
+                activity: "streaming",
+                summary: truncateLiveSummary(messageText) || "response",
+                agentId: agent.id,
+                runId,
+                provider: runtimeSession.provider,
+                model,
+                source: streaming.currentSource,
+              });
               await emitResponse(messageText, event.metadata);
             }
           }
@@ -741,6 +793,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           agentId: agent.id,
           metadata: event.metadata,
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
+        updateRuntimeLiveState(sessionName, {
+          activity: event.isError ? "blocked" : "thinking",
+          summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          toolName,
+          source: streaming.currentSource,
+        });
 
         streaming.lastToolFailure = event.isError
           ? {
@@ -926,6 +988,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         clearTraceTurnState();
+        markRuntimeLiveIdle(sessionName, "turn complete");
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
@@ -949,6 +1012,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
+        markRuntimeLiveIdle(sessionName, "turn interrupted");
         signalTurnComplete();
         continue;
       }
@@ -1006,6 +1070,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         if (suppressedRecoverable) {
+          markRuntimeLiveIdle(sessionName, "turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
@@ -1019,6 +1084,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (streaming.agentMode !== "sentinel") {
           await emitResponse(formatUserFacingTurnFailure(event.error));
         }
+        updateRuntimeLiveState(sessionName, {
+          activity: "blocked",
+          summary: truncateLiveSummary(event.error) || "turn failed",
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          source: streaming.currentSource,
+        });
 
         signalTurnComplete();
       }

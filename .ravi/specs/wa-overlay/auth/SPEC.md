@@ -113,7 +113,7 @@ Derived from the migration plan in `.ravi/specs/wa-overlay/migration/SPEC.md`. T
 
 Required:
 
-- Read substrate state to assemble UI: `view sessions:*`, `view tasks:*`, `view artifacts:*`, `view insights:*`, `view instances:*`, `view routes:*`, `view agents:*`.
+- Read substrate state to assemble UI: `view sessions:*`, `view tasks:*`, `view artifacts:*`, `view insights:*`, `view instances:*`, `view routes:*`, `view agents:*`, `view system:events`.
 - Drive sessions: `read sessions/*`, `mutate sessions/*` (covers send/abort/reset/set-thinking/rename).
 - Dispatch tasks: `dispatch tasks/*` (and `mutate tasks/*` if `tasks dispatch` requires it).
 - Mutate routes/instances for omni-route flows: `mutate routes/*`, `mutate instances/*`.

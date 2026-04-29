@@ -1,11 +1,18 @@
 import { findBinding, getBindings, upsertBinding, getViewState } from "./storage.js";
+import {
+  ensureLiveStateStream,
+  getLiveForSession,
+  getLiveStateStreamStatus,
+  isBusyLiveActivity,
+} from "./live-state.js";
 
 const ACTIVE_WINDOW_MS = 10 * 60 * 1000;
 
 export async function buildSnapshot(client, query) {
   const [sessionsResult, allBindings] = await Promise.all([
-    client.sessions.list({}).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
     getBindings(),
+    ensureLiveStateStream().catch(() => false),
   ]);
 
   const sessions = normalizeSessions(sessionsResult);
@@ -34,6 +41,13 @@ export async function buildSnapshot(client, query) {
   }
   if (!resolved.session && (query?.chatId || query?.title) && !binding) {
     warnings.push({ code: "no_binding", message: "No binding registered for this chat" });
+  }
+  const liveStatus = getLiveStateStreamStatus();
+  if (!liveStatus.connected && liveStatus.lastError) {
+    warnings.push({
+      code: "live_stream_unavailable",
+      message: `Live status stream unavailable: ${liveStatus.lastError}`,
+    });
   }
 
   return {
@@ -64,16 +78,13 @@ export async function buildTasksSnapshot(client, query) {
 
   const [tasksResult, sessionsResult] = await Promise.all([
     client.tasks.list(filters).catch(() => ({ tasks: [] })),
-    client.sessions.list({}).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    ensureLiveStateStream().catch(() => false),
   ]);
 
   const tasks = normalizeTasks(tasksResult);
   const sessions = normalizeSessions(sessionsResult);
-  const dispatchSessions = sessions.map((s) => ({
-    sessionName: s.name ?? s.sessionKey,
-    agentId: s.agentId,
-    displayName: s.displayName ?? null,
-  }));
+  const dispatchSessions = sessions.map(toDispatchSessionEntry);
 
   const items = tasks
     .map((t) => normalizeTaskItem(t))
@@ -166,9 +177,10 @@ function buildDispatchState(item, actorSession, dispatchSessions) {
 
 export async function buildOmniPanelSnapshot(client, query) {
   const [sessionsResult, routesResult, allBindings] = await Promise.all([
-    client.sessions.list({}).catch(() => ({ sessions: [] })),
+    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
     client.routes.list().catch(() => ({ routes: [] })),
     getBindings(),
+    ensureLiveStateStream().catch(() => false),
   ]);
 
   const sessions = normalizeSessions(sessionsResult);
@@ -231,7 +243,10 @@ export async function executeOmniRoute(client, body) {
 
 export async function resolveChatList(client, body) {
   const entries = Array.isArray(body?.entries) ? body.entries : [];
-  const sessionsResult = await client.sessions.list({}).catch(() => ({ sessions: [] }));
+  const [sessionsResult] = await Promise.all([
+    client.sessions.list({ live: true }).catch(() => ({ sessions: [] })),
+    ensureLiveStateStream().catch(() => false),
+  ]);
   const sessions = normalizeSessions(sessionsResult);
   const items = await Promise.all(
     entries.map(async (entry) => {
@@ -327,10 +342,14 @@ function mergeTaskDetail(item, detail) {
 }
 
 function isActive(session, now) {
+  const live = getLiveForSession(session);
+  if (isBusyLiveActivity(live?.activity)) return true;
+  if (live?.updatedAt && now - live.updatedAt < ACTIVE_WINDOW_MS) return true;
   return session.updatedAt && now - session.updatedAt < ACTIVE_WINDOW_MS;
 }
 
 function toListEntry(session) {
+  const live = getLiveForSession(session);
   return {
     sessionKey: session.sessionKey,
     sessionName: session.name ?? session.sessionKey,
@@ -343,7 +362,18 @@ function toListEntry(session) {
     createdAt: session.createdAt ?? 0,
     thinkingLevel: session.thinkingLevel ?? null,
     modelOverride: session.modelOverride ?? null,
-    live: { activity: "idle" },
+    live,
+  };
+}
+
+function toDispatchSessionEntry(session) {
+  const live = getLiveForSession(session);
+  return {
+    sessionName: session.name ?? session.sessionKey,
+    agentId: session.agentId,
+    displayName: session.displayName ?? null,
+    activity: live.activity,
+    live,
   };
 }
 

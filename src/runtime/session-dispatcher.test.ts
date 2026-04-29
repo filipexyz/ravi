@@ -196,6 +196,8 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
       done: false,
       starting: false,
       compacting: false,
+      toolRunning: false,
+      lastActivity: Date.now(),
       ...overrides,
     } as RuntimeHostStreamingSession;
   }
@@ -249,6 +251,28 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
             { type: "user", message: { role: "user", content: "primeira" }, session_id: "", parent_tool_use_id: null },
           ],
           currentTurnPendingIds: ["pending-1"],
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not native steer into a stale active turn", () => {
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          lastActivity: Date.now() - 60_000,
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not native steer while a tool is still running", () => {
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          toolRunning: true,
         }),
         "after_tool",
       ),

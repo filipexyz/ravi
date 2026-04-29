@@ -59,6 +59,7 @@ import {
   parseOverlayTimestamp,
   type OverlaySessionWorkspaceMessage,
 } from "../../whatsapp-overlay/model.js";
+import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -94,7 +95,7 @@ function printJsonl(payload: unknown): void {
   console.log(JSON.stringify(payload));
 }
 
-function buildSessionJson(session: SessionEntry): Record<string, unknown> {
+function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {}): Record<string, unknown> {
   const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
   return {
     ...session,
@@ -104,6 +105,7 @@ function buildSessionJson(session: SessionEntry): Record<string, unknown> {
       session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
+    ...(options.live ? { live: getRuntimeLiveStateForSession(session) } : {}),
   };
 }
 
@@ -1171,6 +1173,7 @@ export class SessionCommands {
     @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1189,8 +1192,9 @@ export class SessionCommands {
       filters: {
         agentId: agentId ?? null,
         ephemeralOnly: Boolean(ephemeralOnly),
+        live: Boolean(includeLive),
       },
-      sessions: sessions.map(buildSessionJson),
+      sessions: sessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
     };
 
     if (asJson) {

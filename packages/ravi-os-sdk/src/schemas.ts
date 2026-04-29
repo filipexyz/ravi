@@ -4724,6 +4724,10 @@ export const SessionsListInputSchema = {
     "ephemeral": {
       "description": "Show only ephemeral sessions",
       "type": "boolean"
+    },
+    "live": {
+      "description": "Include live runtime state snapshot",
+      "type": "boolean"
     }
   },
   "type": "object"

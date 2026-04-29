@@ -23,6 +23,7 @@ import type { ChannelContext, RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
+import { updateRuntimeLiveState } from "./live-state.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -199,6 +200,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     traceRunId: runId,
   };
   streamingSessions.set(sessionName, streamingSession);
+  updateRuntimeLiveState(sessionName, {
+    activity: "thinking",
+    summary: "starting runtime",
+    agentId: agent.id,
+    runId,
+    provider: runtimeProviderId,
+    model,
+    source: resolvedSource,
+  });
 
   try {
     recordRuntimeTraceEvent({
@@ -334,6 +344,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     streamingSessions.delete(sessionName);
     drainPendingStarts();
+    updateRuntimeLiveState(sessionName, {
+      activity: "blocked",
+      summary: errorMessage,
+      agentId: agent.id,
+      runId,
+      provider: runtimeProviderId,
+      model,
+      source: resolvedSource,
+    });
 
     recordRuntimeTraceEvent({
       sessionKey: dbSessionKey,

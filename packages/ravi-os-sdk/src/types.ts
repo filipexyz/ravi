@@ -2056,6 +2056,7 @@ export type SessionsKeepReturn = unknown;
 export type SessionsListInput = {
   agent?: string;
   ephemeral?: boolean;
+  live?: boolean;
 };
 
 /** Return shape for `sessions.list`. (no @Returns declared) */

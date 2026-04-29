@@ -2267,6 +2267,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       ephemeral?: boolean;
+      live?: boolean;
     }): Promise<SessionsListReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],

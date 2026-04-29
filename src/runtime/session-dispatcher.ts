@@ -26,6 +26,7 @@ import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
+import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
@@ -35,6 +36,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 
 const log = logger.child("runtime:session-dispatcher");
+const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 
 interface DebounceState {
   messages: RuntimeLaunchPrompt[];
@@ -180,6 +182,7 @@ export class RuntimeSessionDispatcher {
       });
     shutdownRuntimeStreamingSession(session, abortReason);
     this.streamingSessions.delete(sessionName);
+    markRuntimeLiveIdle(sessionName, "turn interrupted");
     return true;
   }
 
@@ -486,6 +489,15 @@ export class RuntimeSessionDispatcher {
           sessionEntry?.sessionKey,
         );
         if (nativeSteer === "accepted") {
+          updateRuntimeLiveState(sessionName, {
+            activity: "thinking",
+            summary: "runtime control accepted",
+            agentId: existing.agentId,
+            runId: existing.traceRunId,
+            provider: existing.queryHandle.provider,
+            model: existing.currentModel,
+            source: prompt.source ?? existing.currentSource,
+          });
           return;
         }
 
@@ -493,6 +505,15 @@ export class RuntimeSessionDispatcher {
           ...createQueuedRuntimeUserMessage(prompt),
         };
         existing.pendingMessages.push(userMsg);
+        updateRuntimeLiveState(sessionName, {
+          activity: "thinking",
+          summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
+          agentId: existing.agentId,
+          runId: existing.traceRunId,
+          provider: existing.queryHandle.provider,
+          model: existing.currentModel,
+          source: prompt.source ?? existing.currentSource,
+        });
 
         recordRuntimeTraceEvent({
           sessionKey: sessionEntry?.sessionKey ?? sessionName,
@@ -841,14 +862,18 @@ export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, b
     !session.pushMessage &&
     session.pendingMessages.length > 0 &&
     !session.currentTurnPendingIds?.length;
+  const activeTurnIsFresh =
+    !session.turnActive || Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
 
   return (
     barrier === "after_tool" &&
     Boolean(session.queryHandle.control) &&
     (session.turnActive || piPreTurnQueue) &&
+    activeTurnIsFresh &&
     !session.done &&
     !session.starting &&
-    !session.compacting
+    !session.compacting &&
+    !session.toolRunning
   );
 }
 
