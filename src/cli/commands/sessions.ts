@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
@@ -2503,6 +2503,7 @@ export class SessionCommands {
     name: "debug",
     description: "Tail live runtime events for a session (defaults to current session when available)",
   })
+  @CliOnly()
   async debug(
     @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,
     @Option({ flags: "-t, --timeout <seconds>", description: "Stop after N seconds (default: 60)" })

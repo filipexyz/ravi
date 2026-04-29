@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { resolveSession } from "../../router/sessions.js";
 import { nats } from "../../nats.js";
@@ -1675,6 +1675,7 @@ export class TaskCommands {
   }
 
   @Command({ name: "watch", description: "Watch task events live" })
+  @CliOnly()
   async watch(
     @Arg("taskId", { description: "Task ID (optional)", required: false }) taskId?: string,
     @Option({ flags: "--json", description: "Print raw JSONL events" }) asJson?: boolean,

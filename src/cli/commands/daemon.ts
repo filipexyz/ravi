@@ -7,7 +7,7 @@ import { execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { Group, Command, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Option } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
 import {
@@ -780,12 +780,14 @@ export class DaemonCommands {
   }
 
   @Command({ name: "run", description: "Run daemon in foreground (used by PM2)" })
+  @CliOnly()
   async run() {
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
   }
 
   @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
+  @CliOnly()
   async dev() {
     const projectRoot = this.requireSourceProjectRoot();
 

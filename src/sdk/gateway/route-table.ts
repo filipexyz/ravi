@@ -26,6 +26,7 @@ export interface RouteTable {
 export function buildRouteTable(registry: RegistrySnapshot): RouteTable {
   const byPath = new Map<string, CommandRegistryEntry>();
   for (const cmd of registry.commands) {
+    if (cmd.cliOnly) continue;
     const path = commandUrlPath(cmd);
     if (byPath.has(path)) {
       const prev = byPath.get(path)!;

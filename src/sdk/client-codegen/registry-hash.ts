@@ -13,9 +13,9 @@ import { buildInputSchema, buildReturnSchema } from "./registry-shape.js";
 import { stableStringify } from "./stable-json.js";
 
 export function computeRegistryHash(registry: RegistrySnapshot): string {
-  const sorted = [...registry.commands].sort((a, b) =>
-    a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0,
-  );
+  const sorted = [...registry.commands]
+    .filter((cmd) => !cmd.cliOnly)
+    .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0));
   const projection = sorted.map((cmd) => commandFingerprint(cmd));
   const payload = stableStringify(projection, 0);
   return `sha256:${createHash("sha256").update(payload).digest("hex")}`;

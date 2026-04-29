@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Option } from "../decorators.js";
 import { DeliverPolicy, StringCodec } from "nats";
 import { ensureConnected, nats } from "../../nats.js";
 import { resolveSession } from "../../router/sessions.js";
@@ -579,6 +579,7 @@ async function replayStream(options: {
 })
 export class EventsCommands {
   @Command({ name: "stream", description: "Stream all events in real-time (default command)" })
+  @CliOnly()
   async stream(
     @Option({ flags: "-f, --filter <pattern>", description: "Topic glob filter (e.g. 'ravi.session.*')" })
     filter?: string,

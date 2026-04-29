@@ -49,9 +49,9 @@ export interface EmitOptions {
 }
 
 export function emitAll(registry: RegistrySnapshot, options: EmitOptions): EmittedSdk {
-  const sortedCommands = [...registry.commands].sort((a, b) =>
-    a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0,
-  );
+  const sortedCommands = [...registry.commands]
+    .filter((cmd) => !cmd.cliOnly)
+    .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0));
   return {
     types: emitTypes(sortedCommands),
     schemas: emitSchemas(sortedCommands),

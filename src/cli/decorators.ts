@@ -14,6 +14,7 @@ const OPTIONS_KEY = Symbol("cli:options");
 const SCOPE_KEY = Symbol("cli:scope");
 const RETURNS_KEY = Symbol("cli:returns");
 const RETURNS_BINARY_KEY = Symbol("cli:returns:binary");
+const CLI_ONLY_KEY = Symbol("cli:cliOnly");
 
 // Types
 
@@ -146,6 +147,31 @@ Returns.binary = () => (target: object, propertyKey: string, _descriptor: Proper
   Reflect.defineMetadata(RETURNS_BINARY_KEY, set, target.constructor);
 };
 
+/**
+ * @CliOnly decorator - marks a command as CLI-exclusive.
+ *
+ * The command is excluded from the SDK gateway route table, OpenAPI emit, and
+ * client codegen. Use for handlers that have no remote-call semantics:
+ *
+ * - Streaming/long-lived loops (NATS subscribe, file watchers, polling) that
+ *   never return a JSON-safe payload.
+ * - Process-level commands (daemon bootstrap, dev watcher) that only make
+ *   sense as foreground entry points.
+ * - Interactive commands that exec a foreground client (tmux attach,
+ *   instances connect).
+ *
+ * The handler stays callable via the local CLI; only the SDK surface ignores
+ * it. When a streaming consumer eventually needs over-the-wire access, design
+ * a dedicated SSE endpoint instead of forcing the request/response dispatcher.
+ */
+export function CliOnly() {
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const set: Set<string> = Reflect.getMetadata(CLI_ONLY_KEY, target.constructor) || new Set();
+    set.add(propertyKey);
+    Reflect.defineMetadata(CLI_ONLY_KEY, set, target.constructor);
+  };
+}
+
 // Metadata getters
 export function getGroupMetadata(target: Function): GroupOptions | undefined {
   return Reflect.getMetadata(GROUP_KEY, target);
@@ -175,4 +201,8 @@ export function getReturnsMetadata(target: Function): Map<string, ZodTypeAny> {
 
 export function getReturnsBinaryMetadata(target: Function): Set<string> {
   return Reflect.getMetadata(RETURNS_BINARY_KEY, target) || new Set();
+}
+
+export function getCliOnlyMetadata(target: Function): Set<string> {
+  return Reflect.getMetadata(CLI_ONLY_KEY, target) || new Set();
 }

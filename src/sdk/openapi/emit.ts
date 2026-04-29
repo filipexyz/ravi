@@ -188,9 +188,9 @@ function computeSpecHash(spec: OpenApiSpec): string {
  * the JSON serializer sorts.
  */
 export function emit(registry: RegistrySnapshot, options: EmitOptions = {}): OpenApiSpec {
-  const sortedCommands = [...registry.commands].sort((a, b) =>
-    a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0,
-  );
+  const sortedCommands = [...registry.commands]
+    .filter((cmd) => !cmd.cliOnly)
+    .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0));
 
   const paths: Record<string, OpenApiPathItem> = {};
   for (const cmd of sortedCommands) {

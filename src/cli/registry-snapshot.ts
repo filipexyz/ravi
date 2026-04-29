@@ -14,6 +14,7 @@ import "reflect-metadata";
 import type { ZodTypeAny } from "zod";
 import {
   getArgsMetadata,
+  getCliOnlyMetadata,
   getCommandsMetadata,
   getGroupMetadata,
   getOptionsMetadata,
@@ -101,6 +102,12 @@ export interface CommandRegistryEntry {
    * `Promise<Response>` for these methods. See `@Returns.binary()`.
    */
   binary?: boolean;
+  /**
+   * When true, the command is CLI-exclusive: the SDK gateway, OpenAPI emit,
+   * and client codegen skip it. Use for streaming/interactive/process-level
+   * handlers that have no remote-call semantics. See `@CliOnly()`.
+   */
+  cliOnly?: boolean;
 }
 
 export interface RegistrySnapshot {
@@ -138,6 +145,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
     const scopeMap = getScopeMetadata(cls);
     const returnsMap = getReturnsMetadata(cls);
     const binaryReturnsSet = getReturnsBinaryMetadata(cls);
+    const cliOnlySet = getCliOnlyMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -191,6 +199,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         options,
         ...(returnsMap.get(cmdMeta.method) ? { returns: returnsMap.get(cmdMeta.method)! } : {}),
         ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
+        ...(cliOnlySet.has(cmdMeta.method) ? { cliOnly: true } : {}),
       };
 
       const existing = commandsByFullName.get(fullName);
