@@ -274,7 +274,7 @@ function authFailureMessage(reason: AuthFailureReason): string {
 
 function logged(request: Request, url: URL, status: number, startedAt: number, response: Response): Response {
   const durationMs = Date.now() - startedAt;
-  const level = status >= 500 ? "error" : status >= 400 ? "warn" : "info";
+  const level = status >= 500 ? "error" : status >= 400 ? "warn" : "debug";
   log[level]("gateway request", {
     method: request.method,
     path: url.pathname,

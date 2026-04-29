@@ -103,7 +103,10 @@ OpenAPI) branch on this field.
 3. Pass the handler's `Response` through unchanged. The `Content-Type`,
    `Content-Length`, body stream, and any custom headers ride to the
    client untouched.
-4. The audit event is emitted exactly once, identical to JSON commands.
+4. Error audit is emitted exactly once, identical to JSON commands. Successful
+   high-frequency read calls MAY be suppressed by the gateway dispatcher to
+   avoid poll-loop noise in the event stream; mutating calls MUST keep success
+   audit.
 
 ### Transport behaviour
 

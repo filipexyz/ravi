@@ -2,15 +2,16 @@
  * Generic dispatcher for the SDK gateway.
  *
  * Pipeline: parse flat body → validate via Zod → scope check → invoke handler →
- * optionally validate return shape → emit `cli.audit` event → return JSON.
+ * optionally validate return shape → emit audit when useful → return JSON.
  *
  * Body shape: flat-only. Args and options are merged into top-level keys
  * (e.g. `{ id, limit }`). The wrapped CLI invocation form (`{ args, options }`)
  * is intentionally rejected because it leaks CLI grammar into the API surface.
  *
  * Audit emit lives here on purpose. The transport layer (server.ts) never
- * emits audits, which preserves the invariant "one request → one audit event"
- * and prevents drift between CLI and gateway tool naming.
+ * emits command audits, which prevents drift between CLI and gateway tool
+ * naming. High-frequency successful read calls may be suppressed here; errors
+ * still emit audit.
  *
  * Context binding: when the gateway resolves a runtime context-key, it threads
  * the resolved `ContextRecord` into the dispatcher so audit events carry the
@@ -35,6 +36,8 @@ import {
   type JsonIssue,
 } from "./errors.js";
 
+const QUIET_SUCCESS_AUDIT_TOOLS = new Set(["sessions_list", "tasks_list", "tasks_show"]);
+
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
   allowSuperadmin?: boolean;
@@ -58,7 +61,7 @@ export interface AuditEvent {
 
 export interface DispatchResult {
   response: Response;
-  /** Audit event emitted exactly once for this dispatch. */
+  /** Audit event emitted for this dispatch, or null when validation/quiet-success policy suppressed it. */
   audit: AuditEvent | null;
 }
 
@@ -140,15 +143,15 @@ export async function dispatch(
     if (err instanceof ScopeDenied) {
       response = permissionDenied(err.message);
       const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-      await emitDispatchAudit(audit, opts.emitAudit);
-      return { response, audit };
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
     }
     isError = true;
     const message = err instanceof Error ? err.message : String(err);
     response = internalError(message);
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
-    await emitDispatchAudit(audit, opts.emitAudit);
-    return { response, audit };
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
   }
 
   if (cmd.binary) {
@@ -161,12 +164,12 @@ export async function dispatch(
         },
       ]);
       const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-      await emitDispatchAudit(audit, opts.emitAudit);
-      return { response, audit };
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
     }
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
-    await emitDispatchAudit(audit, opts.emitAudit);
-    return { response: returnValue, audit };
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response: returnValue, audit: auditEmitted ? audit : null };
   }
 
   if (cmd.returns) {
@@ -174,15 +177,15 @@ export async function dispatch(
     if (returnIssues) {
       response = returnShapeError(returnIssues);
       const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-      await emitDispatchAudit(audit, opts.emitAudit);
-      return { response, audit };
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
     }
   }
 
   response = json(200, returnValue ?? {});
   const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, isError, startedAt, lineage);
-  await emitDispatchAudit(audit, opts.emitAudit);
-  return { response, audit };
+  const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+  return { response, audit: auditEmitted ? audit : null };
 }
 
 function describeReturnValue(value: unknown): string {
@@ -369,7 +372,7 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
 }
 
 function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
-  const ctx: ToolContext = {};
+  const ctx: ToolContext = { suppressCliOutput: true };
   if (scope.agentId) ctx.agentId = scope.agentId;
   if (scope.sessionKey) ctx.sessionKey = scope.sessionKey;
   if (scope.sessionName) ctx.sessionName = scope.sessionName;
@@ -380,10 +383,11 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
   return ctx;
 }
 
-async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<void> {
+async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<boolean> {
+  if (!event.isError && QUIET_SUCCESS_AUDIT_TOOLS.has(event.tool)) return false;
   if (override) {
     await override(event);
-    return;
+    return true;
   }
   await emitCliAuditEvent({
     group: event.group,
@@ -398,4 +402,5 @@ async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["e
     agentId: event.agentId,
     closeLazyConnection: false,
   });
+  return true;
 }

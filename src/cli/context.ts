@@ -34,12 +34,19 @@ export interface ToolContext {
   };
   /** Arbitrary metadata */
   [key: string]: unknown;
+  /** Suppress human CLI stdout when commands are executed through another surface. */
+  suppressCliOutput?: boolean;
 }
 
 /**
  * AsyncLocalStorage instance for tool context
  */
 const contextStorage = new AsyncLocalStorage<ToolContext>();
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleInfo = console.info.bind(console);
+let consoleGateInstalled = false;
+
+installContextualConsoleGate();
 
 /**
  * Run a function with tool context.
@@ -159,6 +166,19 @@ function resolveDefaultCredential(): ContextRecord | undefined {
   if (!key) return undefined;
   const record = resolveRuntimeContext(key, { touch: false });
   return record ?? undefined;
+}
+
+function installContextualConsoleGate(): void {
+  if (consoleGateInstalled) return;
+  consoleGateInstalled = true;
+  console.log = (...args: unknown[]) => {
+    if (contextStorage.getStore()?.suppressCliOutput === true) return;
+    originalConsoleLog(...args);
+  };
+  console.info = (...args: unknown[]) => {
+    if (contextStorage.getStore()?.suppressCliOutput === true) return;
+    originalConsoleInfo(...args);
+  };
 }
 
 /**

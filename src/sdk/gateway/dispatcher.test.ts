@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 
@@ -21,6 +22,12 @@ class GatewayDemoCommands {
   @Command({ name: "void", description: "Returns nothing" })
   voidNoop(): void {
     return;
+  }
+
+  @Command({ name: "context", description: "Inspect gateway tool context" })
+  context() {
+    console.log("human CLI output should not leak through the SDK gateway");
+    return { suppressCliOutput: getContext()?.suppressCliOutput === true };
   }
 
   @Command({ name: "broken", description: "Returns wrong shape" })
@@ -58,7 +65,34 @@ class GatewaySuperadminCommands {
   }
 }
 
-const registry = buildRegistry([GatewayDemoCommands, GatewaySuperadminCommands]);
+@Group({ name: "sessions", description: "Gateway session read commands", scope: "open" })
+class GatewaySessionsCommands {
+  @Command({ name: "list", description: "Noisy polling read" })
+  list() {
+    return { ok: true };
+  }
+}
+
+@Group({ name: "tasks", description: "Gateway task read commands", scope: "open" })
+class GatewayTasksCommands {
+  @Command({ name: "list", description: "Noisy polling read" })
+  list() {
+    return { ok: true };
+  }
+
+  @Command({ name: "show", description: "Noisy polling read" })
+  show(@Arg("taskId", { description: "Task id" }) taskId: string) {
+    if (taskId === "boom") throw new Error("task exploded");
+    return { taskId };
+  }
+}
+
+const registry = buildRegistry([
+  GatewayDemoCommands,
+  GatewaySuperadminCommands,
+  GatewaySessionsCommands,
+  GatewayTasksCommands,
+]);
 
 function findCmd(fullName: string) {
   const cmd = registry.commands.find((c) => c.fullName === fullName);
@@ -210,6 +244,31 @@ describe("dispatch — audit", () => {
     const audits = captureAudits();
     await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
     expect(audits.events).toHaveLength(0);
+  });
+
+  it("suppresses successful high-frequency read audits", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(findCmd("sessions.list"), {}, {}, { emitAudit: audits.emit });
+    expect(result.audit).toBeNull();
+    expect(audits.events).toHaveLength(0);
+  });
+
+  it("still emits audit when a high-frequency read fails", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(findCmd("tasks.show"), { taskId: "boom" }, {}, { emitAudit: audits.emit });
+    expect(result.response.status).toBe(500);
+    expect(result.audit?.tool).toBe("tasks_show");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.isError).toBe(true);
+  });
+});
+
+describe("dispatch — CLI output", () => {
+  it("marks gateway command context to suppress human CLI output", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(findCmd("demo.context"), {}, {}, { emitAudit: audits.emit });
+    const body = (await result.response.json()) as { suppressCliOutput: boolean };
+    expect(body.suppressCliOutput).toBe(true);
   });
 });
 
