@@ -1,3 +1,23 @@
+---
+id: wa-overlay/migration
+title: "wa-overlay SDK consumer migration"
+kind: capability
+domain: wa-overlay
+capabilities:
+  - migration
+tags:
+  - extension
+  - sdk
+  - bridge-removal
+applies_to:
+  - extensions/whatsapp-overlay
+  - src/whatsapp-overlay
+owners:
+  - dev
+status: active
+normative: true
+---
+
 # wa-overlay → SDK consumer migration
 
 Status: active

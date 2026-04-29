@@ -1,7 +1,7 @@
 ---
 id: artifacts/image-atlas
 title: "Image Atlas Artifacts"
-kind: feature
+kind: capability
 domain: artifacts
 capabilities:
   - image-atlas

@@ -1,3 +1,26 @@
+---
+id: sdk/schema
+title: "SDK schema contract"
+kind: capability
+domain: sdk
+capabilities:
+  - schema
+tags:
+  - sdk
+  - registry
+  - json-safe
+  - binary-escape-hatch
+applies_to:
+  - src/cli/registry-snapshot.ts
+  - src/sdk/gateway/dispatcher.ts
+  - src/sdk/openapi/emit.ts
+  - src/sdk/client-codegen
+owners:
+  - dev
+status: draft
+normative: true
+---
+
 # SDK schema contract
 
 Status: draft

@@ -1,3 +1,22 @@
+---
+id: wa-overlay/auth
+title: "wa-overlay extension auth"
+kind: capability
+domain: wa-overlay
+capabilities:
+  - auth
+tags:
+  - extension
+  - context-key
+  - gateway
+applies_to:
+  - extensions/whatsapp-overlay
+owners:
+  - dev
+status: active
+normative: true
+---
+
 # wa-overlay extension auth
 
 Status: active
