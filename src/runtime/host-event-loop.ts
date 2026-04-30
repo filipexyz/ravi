@@ -3,7 +3,6 @@ import { backfillProviderSessionId, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { SILENT_TOKEN } from "../prompt-builder.js";
 import {
   dbInsertCostEvent,
@@ -26,9 +25,6 @@ const log = logger.child("bot");
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const MAX_TURN_FAILURE_RESPONSE = 320;
-const DEFAULT_TURN_STALL_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_FAILED_TOOL_STALL_TIMEOUT_MS = 90 * 1000;
-const DEFAULT_STALL_CHECK_INTERVAL_MS = 30 * 1000;
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -213,15 +209,6 @@ export interface RunRuntimeEventLoopOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
-  turnStallTimeoutMs?: number;
-  failedToolStallTimeoutMs?: number;
-  stallCheckIntervalMs?: number;
-  publishRecoveryPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
-}
-
-function resolvePositiveMs(value: number | string | undefined, fallback: number): number {
-  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
-  return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -242,19 +229,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     safeEmit,
     drainPendingStarts,
   } = options;
-  const turnStallTimeoutMs = resolvePositiveMs(
-    options.turnStallTimeoutMs ?? process.env.RAVI_RUNTIME_TURN_STALL_MS,
-    DEFAULT_TURN_STALL_TIMEOUT_MS,
-  );
-  const failedToolStallTimeoutMs = resolvePositiveMs(
-    options.failedToolStallTimeoutMs ?? process.env.RAVI_RUNTIME_FAILED_TOOL_STALL_MS,
-    DEFAULT_FAILED_TOOL_STALL_TIMEOUT_MS,
-  );
-  const stallCheckIntervalMs = resolvePositiveMs(
-    options.stallCheckIntervalMs ?? process.env.RAVI_RUNTIME_STALL_CHECK_MS,
-    DEFAULT_STALL_CHECK_INTERVAL_MS,
-  );
-  const publishRecoveryPrompt = options.publishRecoveryPrompt ?? publishSessionPrompt;
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -323,177 +297,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.onTurnComplete = null;
     }
   };
-  const removeCurrentTurnPendingMessages = () => {
-    const yieldedIds = new Set(streaming.currentTurnPendingIds ?? []);
-    if (yieldedIds.size === 0) {
-      return;
-    }
-    streaming.pendingMessages = streaming.pendingMessages.filter((message) => {
-      return !message.pendingId || !yieldedIds.has(message.pendingId);
-    });
-  };
-  const summarizeToolFailure = (): string | null => {
-    const failure = streaming.lastToolFailure;
-    if (!failure) {
-      return null;
-    }
-    const detail = truncateLogDetail(failure.output, 700);
-    const tool = failure.toolName ?? "unknown";
-    return detail ? `${tool}: ${detail}` : tool;
-  };
-  const buildRecoveryPrompt = (input: {
-    kind: "tool_failure" | "turn_inactivity";
-    elapsedMs: number;
-    timeoutMs: number;
-  }): string => {
-    const seconds = Math.round(input.elapsedMs / 1000);
-    const timeoutSeconds = Math.round(input.timeoutMs / 1000);
-    const reason =
-      input.kind === "tool_failure"
-        ? `a tool failed and the provider emitted no further terminal event for ${seconds}s`
-        : `the provider emitted no runtime event for ${seconds}s while a turn was active`;
-    const toolFailure = summarizeToolFailure();
-    const toolLine = toolFailure ? ` Last failed tool: ${toolFailure}` : "";
-    return `[System] Inform: Runtime recovery notice. The previous turn was marked failed because ${reason} (limit ${timeoutSeconds}s). The stuck provider process was stopped without resetting this session. Continue using only this session's durable history; assume any already-recorded tool calls may have executed and do not repeat side effects blindly.${toolLine}`;
-  };
-  const recoverStalledTurn = async (input: {
-    kind: "tool_failure" | "turn_inactivity";
-    elapsedMs: number;
-    timeoutMs: number;
-  }) => {
-    if (streaming.done || streaming.stallRecoveryRequested) {
-      return;
-    }
-    streaming.stallRecoveryRequested = true;
-    const abortReason = input.kind === "tool_failure" ? "tool_failure_stall" : "turn_inactivity_stall";
-    const error =
-      input.kind === "tool_failure"
-        ? `Runtime turn stalled after failed tool: ${summarizeToolFailure() ?? "unknown"}`
-        : "Runtime turn stalled after provider inactivity";
-
-    streaming.done = true;
-    streaming.starting = false;
-    streaming.turnActive = false;
-    streaming.internalAbortReason = abortReason;
-
-    log.warn("Runtime turn stalled - recovering without session reset", {
-      sessionName,
-      kind: input.kind,
-      elapsedMs: input.elapsedMs,
-      timeoutMs: input.timeoutMs,
-      tool: streaming.lastToolFailure?.toolName ?? null,
-      pendingMessages: streaming.pendingMessages.length,
-    });
-
-    recordTraceEvent({
-      turnId: streaming.currentTraceTurnId,
-      provider: runtimeSession.provider,
-      model,
-      eventType: "session.stalled",
-      eventGroup: "session",
-      status: "stalled",
-      source: streaming.currentSource,
-      error,
-      payloadJson: {
-        reason: abortReason,
-        kind: input.kind,
-        elapsedMs: input.elapsedMs,
-        timeoutMs: input.timeoutMs,
-        lastToolFailure: streaming.lastToolFailure
-          ? {
-              at: streaming.lastToolFailure.at,
-              toolId: streaming.lastToolFailure.toolId ?? null,
-              toolName: streaming.lastToolFailure.toolName ?? null,
-              output: streaming.lastToolFailure.output ?? null,
-              metadata: streaming.lastToolFailure.metadata,
-            }
-          : null,
-      },
-    });
-    recordTerminalTraceOnce({
-      status: "failed",
-      eventType: "turn.failed",
-      error,
-      abortReason,
-      completedAt: Date.now(),
-      payloadJson: {
-        recoverable: true,
-        reason: abortReason,
-        kind: input.kind,
-        elapsedMs: input.elapsedMs,
-        timeoutMs: input.timeoutMs,
-      },
-    });
-
-    await safeEmit(`ravi.session.${sessionName}.runtime`, {
-      type: "turn.failed",
-      provider: runtimeSession.provider,
-      error,
-      recoverable: true,
-      reason: abortReason,
-      sessionName,
-      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
-      timestamp: new Date().toISOString(),
-    }).catch((emitError) => {
-      log.warn("Failed to emit stalled turn failure event", { sessionName, error: emitError });
-    });
-
-    removeCurrentTurnPendingMessages();
-    if (streaming.pendingMessages.length > 0) {
-      stashedMessages.set(
-        sessionName,
-        streaming.pendingMessages.map((message) => ({ ...message })),
-      );
-    }
-
-    const recoveryPrompt = buildRecoveryPrompt(input);
-    signalTurnComplete();
-    if (streaming.pushMessage) {
-      streaming.pushMessage(null);
-      streaming.pushMessage = null;
-    }
-    streamingSessions.delete(sessionName);
-    drainPendingStarts();
-
-    await runtimeSession.interrupt().catch((interruptError) => {
-      log.warn("Failed to interrupt stalled runtime", { sessionName, error: interruptError });
-    });
-    if (!streaming.abortController.signal.aborted) {
-      streaming.abortController.abort();
-    }
-
-    await publishRecoveryPrompt(sessionName, {
-      prompt: recoveryPrompt,
-      source: streaming.currentSource,
-      deliveryBarrier: "after_tool",
-      _agentId: agent.id,
-    }).catch((publishError) => {
-      log.warn("Failed to publish stalled turn recovery prompt", { sessionName, error: publishError });
-    });
-
-    clearInterval(watchdog);
-  };
-
-  const watchdog = setInterval(() => {
-    if (streaming.done || streaming.stallRecoveryRequested || !streaming.turnActive) {
-      return;
-    }
-    if (streaming.toolRunning || streaming.compacting) {
-      return;
-    }
-
-    const elapsed = Date.now() - streaming.lastActivity;
-    const hasFailedTool = Boolean(streaming.lastToolFailure);
-    const timeoutMs = hasFailedTool ? failedToolStallTimeoutMs : turnStallTimeoutMs;
-    if (elapsed > timeoutMs) {
-      void recoverStalledTurn({
-        kind: hasFailedTool ? "tool_failure" : "turn_inactivity",
-        elapsedMs: elapsed,
-        timeoutMs,
-      });
-    }
-  }, stallCheckIntervalMs);
-  watchdog.unref?.();
 
   const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
     const legacyEventTopicSuffix = runtimeCapabilities.legacyEventTopicSuffix;
@@ -550,7 +353,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   try {
     for await (const event of runtimeSession.events) {
-      if (streaming.done || streaming.stallRecoveryRequested) {
+      if (streaming.done) {
         break;
       }
       providerRawEventCount++;
@@ -1099,7 +902,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
-    clearInterval(watchdog);
 
     streaming.done = true;
     streaming.starting = false;

@@ -21,7 +21,7 @@ export type RuntimeSessionStateMode = "none" | "provider-session-id" | "thread-i
 export type RuntimeUsageSemantics = "terminal-event" | "streaming" | "unavailable";
 export type RuntimeToolPermissionMode = "ravi-host" | "provider-native" | "unrestricted";
 export type RuntimeSystemPromptMode = "append" | "override" | "provider-composed";
-export type RuntimeTerminalEventGuarantee = "provider" | "adapter" | "host-watchdog";
+export type RuntimeTerminalEventGuarantee = "provider" | "adapter";
 
 export type RuntimeStatus = "queued" | "thinking" | "compacting" | "idle";
 

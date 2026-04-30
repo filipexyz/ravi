@@ -86,7 +86,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 
 - Provider-native tool result is missing or malformed, leaving Ravi with `tool.start` and no `tool.end`.
 - Query throws after an interrupt and Ravi misclassifies it as a user-facing failure.
-- Provider emits text/tool events but no terminal result, leaving the generator blocked until watchdog.
+- Provider emits text/tool events but no terminal result, leaving the turn active until the adapter converts stream end into `turn.failed`.
 - Host exit-plan logic still reads a provider-specific plan directory; future providers need an explicit plan artifact/control contract instead of host hardcoding.
 - Provider-specific settings files are created during prepare but not captured as explicit runtime bootstrap state.
 - Host hooks are available here but not in Codex, which can hide permission behavior differences.

@@ -47,7 +47,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `RuntimeHostHooks`: provider-native hook adapter when supported.
 - `RuntimeHostStreamingSession`: host-side live state for one session process/stream.
 - `RuntimeEvent`: canonical event stream consumed by the Ravi host event loop.
-- `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, provider state, and recovery prompts.
+- `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, and provider state.
 
 ## Lifecycle
 
@@ -71,7 +71,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
-- Stalled-turn recovery MAY exist as a safety net, but it MUST NOT be the primary terminal-event mechanism.
+- Stalled-turn watchdog recovery MUST NOT be used. Missing terminal events are provider/adapter bugs and MUST be fixed at that boundary.
 - New providers MUST add provider contract tests, event normalization tests, and runtime capability matrix coverage before live use.
 
 ## Validation
@@ -86,7 +86,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 
 ## Known Failure Modes
 
-- A provider emits a tool result but no terminal event, leaving `turnActive` true until watchdog recovery.
+- A provider emits a tool result but no terminal event, leaving `turnActive` true until explicit interruption.
 - Raw provider keepalive/status events update `lastActivity` and mask a logically stuck turn.
 - Multiple assistant messages in one turn are aggregated into one durable assistant message while also being emitted as separate responses; UI consumers can misread boundaries.
 - Host tool tracking currently assumes one active tool at a time. Parallel provider tools would corrupt `currentToolId/currentToolName`.
@@ -94,4 +94,4 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Model catalog and provider options still contain provider-specific branches.
 - Legacy event suffix support can keep transport/UI code coupled to old provider topic names.
 - `prepareSession` is constrained to env/start-request fragments; embedded providers may need a more explicit bootstrap object for resource loaders, session managers, or native tool adapters.
-- Tool failure recovery is heuristic and can mark a turn failed when the provider is still alive but not emitting the expected terminal event.
+- Tool failure terminality depends on provider/adapter normalization; failed tools MUST still be followed by an explicit terminal event.

@@ -181,26 +181,6 @@ async function runTraceLoop(
   });
 }
 
-function makeStallingRuntimeSession(
-  streaming: RuntimeHostStreamingSession,
-  events: RuntimeEvent[],
-): RuntimeSessionHandle {
-  return {
-    provider: PROVIDER,
-    events: (async function* () {
-      for (const event of events) {
-        yield event;
-      }
-      if (!streaming.abortController.signal.aborted) {
-        await new Promise<void>((resolve) => {
-          streaming.abortController.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-      }
-    })(),
-    interrupt: async () => {},
-  };
-}
-
 describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
@@ -431,76 +411,5 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
-  });
-
-  it("recovers a stalled turn after a failed tool stops producing provider events", async () => {
-    const originalMessage = createQueuedRuntimeUserMessage({
-      prompt: "original prompt",
-      deliveryBarrier: "after_tool",
-    });
-    const queuedMessage = createQueuedRuntimeUserMessage({
-      prompt: "message queued while stuck",
-      deliveryBarrier: "after_tool",
-    });
-    const streaming = makeStreamingSession({
-      pendingMessages: [originalMessage, queuedMessage],
-      currentTurnPendingIds: originalMessage.pendingId ? [originalMessage.pendingId] : [],
-    });
-    seedAdapterTrace(streaming, "turn-stalled-tool");
-
-    const stashedMessages = new Map<string, typeof streaming.pendingMessages>();
-    const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
-    const recoveryPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
-    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
-
-    await runTraceLoop(
-      streaming,
-      makeStallingRuntimeSession(streaming, [
-        {
-          type: "tool.started",
-          toolUse: { id: "tool-1", name: "sessions_send", input: { session: "missing" } },
-        },
-        {
-          type: "tool.completed",
-          toolUseId: "tool-1",
-          toolName: "sessions_send",
-          content: "Session not found: missing",
-          isError: true,
-        },
-      ]),
-      {
-        streamingSessions,
-        stashedMessages,
-        failedToolStallTimeoutMs: 5,
-        stallCheckIntervalMs: 1,
-        turnStallTimeoutMs: 60_000,
-        safeEmit: async (topic, data) => {
-          runtimeEvents.push({ topic, data });
-        },
-        publishRecoveryPrompt: async (sessionName, payload) => {
-          recoveryPrompts.push({ sessionName, payload });
-        },
-      },
-    );
-
-    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
-    expect(eventTypes).toEqual(["adapter.request", "tool.start", "tool.end", "session.stalled", "turn.failed"]);
-    const stalled = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "session.stalled");
-    expect(stalled?.status).toBe("stalled");
-    expect(stalled?.error).toContain("Runtime turn stalled after failed tool");
-    const turn = getSessionTurn("turn-stalled-tool");
-    expect(turn?.status).toBe("failed");
-    expect(turn?.abortReason).toBe("tool_failure_stall");
-    expect(turn?.error).toContain("sessions_send");
-    expect(streaming.abortController.signal.aborted).toBe(true);
-    expect(streamingSessions.has(SESSION_NAME)).toBe(false);
-    expect(runtimeEvents.some((event) => event.data.type === "turn.failed")).toBe(true);
-    expect(recoveryPrompts).toHaveLength(1);
-    expect(recoveryPrompts[0]?.sessionName).toBe(SESSION_NAME);
-    expect(String(recoveryPrompts[0]?.payload.prompt)).toContain("Runtime recovery notice");
-    expect(String(recoveryPrompts[0]?.payload.prompt)).toContain("sessions_send");
-    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
-      "message queued while stuck",
-    ]);
   });
 });

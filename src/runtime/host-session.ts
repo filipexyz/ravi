@@ -99,8 +99,6 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
-  /** Prevents duplicate recovery for the same stuck runtime process. */
-  stallRecoveryRequested?: boolean;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}

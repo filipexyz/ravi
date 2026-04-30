@@ -1426,8 +1426,8 @@ rl.on("line", (line) => {
   if (message.id && !message.method) {
     if (message.id === "tool_req") {
       if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
-      if (!Array.isArray(message.result?.content_items)) throw new Error("tool response must use content_items");
-      if (message.result?.contentItems) throw new Error("tool response must not use contentItems");
+      if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
+      if (message.result?.content_items) throw new Error("tool response must not use content_items");
     }
     toolResponse = message.result;
     finishIfReady();
@@ -1513,7 +1513,7 @@ rl.on("line", (line) => {
     expect(toolCompleted[0]?.isError).toBe(false);
     expect(response).toEqual({
       success: true,
-      content_items: [{ type: "inputText", text: "tool output" }],
+      contentItems: [{ type: "inputText", text: "tool output" }],
     });
   });
 

@@ -5,10 +5,10 @@
 1. Inspect `adapter.request` for provider, model, cwd, prompt hash, and previous provider session id.
 2. Inspect `provider.raw` events for `thread/started`, `turn/started`, and `turn/completed`.
 3. If a tool started, verify there is a matching `tool.completed`.
-4. If a dynamic tool ran, verify the JSON-RPC response had `success` and `content_items`.
+4. If a dynamic tool ran, verify the JSON-RPC response had `success` and `contentItems`.
 5. If a reaction or silent turn happened, verify `turn.complete` was emitted even without assistant text.
 6. If the native child exited, verify the provider emitted `turn.failed` or `turn.interrupted`.
-7. If watchdog recovered the turn, treat it as an adapter/runtime bug until proven otherwise.
+7. If there is no `turn/completed`, inspect the app-server response schema and adapter event normalization before touching host runtime.
 
 ## Runtime Control
 

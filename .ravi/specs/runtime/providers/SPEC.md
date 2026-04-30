@@ -110,7 +110,7 @@ Structured capabilities every provider MUST expose:
 - `usage`: whether token usage arrives on terminal events, streams incrementally, or is unavailable.
 - `tools`: Ravi permission mode, required unrestricted access level, and parallel tool support.
 - `systemPrompt`: append, override, or provider-composed prompt behavior.
-- `terminalEvents`: whether terminal events are provider-guaranteed, adapter-enforced, or host-watchdog recovered.
+- `terminalEvents`: whether terminal events are provider-guaranteed or adapter-enforced.
 
 The legacy fields remain until downstream call sites are migrated. New provider decisions MUST prefer structured fields.
 

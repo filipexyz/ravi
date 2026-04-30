@@ -161,7 +161,7 @@ Leitura rápida:
 - `response.emitted` = Ravi emitiu resposta para o gateway.
 - `delivery.*` = gateway observou delivered, failed, dropped ou outro status.
 - `turn.complete` / `turn.failed` / `turn.interrupted` = estado terminal do turno.
-- `session.stalled` = turno ativo parou de receber eventos do provider e foi recuperado sem resetar historico.
+- `session.stalled` = evento legado do watchdog de runtime; hoje deve aparecer só em traces históricos. Código novo deve fechar o turno via evento terminal do provider.
 
 Achados comuns do `--explain`:
 
@@ -170,8 +170,8 @@ Achados comuns do `--explain`:
 - `response-without-delivery`: resposta saiu do runtime mas nao teve delivery observado.
 - `delivery-failed` / `delivery-dropped`: falha ou drop no outbound; olhar payload de delivery e target.
 - `interruption-or-abort`: houve interrupt/abort; ler `abortReason`, `session.abort` e `dispatch.interrupt_requested`.
-- `runtime-stalled`: turno ativo ficou sem eventos do provider e foi fechado como failed recuperavel; olhar `tool.end` anterior e payload de recuperacao.
-- `timeout`: watchdog/timeout interrompeu a sessao/turno.
+- `runtime-stalled`: trace historico contem `session.stalled` do watchdog removido; verificar se foi produzido por daemon antigo.
+- `timeout`: timeout interrompeu a sessao/turno.
 - `resume-disabled-with-provider-session`: havia provider session id mas `resume=false`; investigar reset/delete/fork/troca de provider ou modelo.
 - `tool-start-without-end`: tool iniciou e nao completou no trace.
 - `system-prompt-changed`: hashes de system prompt mudaram entre turns.
@@ -189,7 +189,7 @@ Classifique pela ultima linha confiavel:
 - `route.resolved` sem `prompt.published`: publish no stream da sessao.
 - `prompt.published` sem `adapter.request`: dispatch, task barrier, debounce, concorrencia ou runtime startup.
 - `adapter.request` sem terminal turn: provider/runtime apos handoff.
-- `session.stalled`: runtime ficou mudo e o turno foi recuperado como failed sem reset de historico.
+- `session.stalled`: trace histórico do watchdog removido; se aparecer em evento novo, há daemon antigo rodando.
 - `assistant.message` sem `response.emitted`: resposta silenciosa, suppressao ou interrupcao.
 - `response.emitted` sem `delivery.*`: gateway/outbound observation.
 - `delivery.failed` / `delivery.dropped`: entrega final no canal.

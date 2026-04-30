@@ -64,7 +64,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - The provider MUST send Ravi dynamic tool definitions only after `prepareSession` obtains host services.
 - Dynamic tool calls MUST route through `hostServices.executeDynamicTool`.
 - Command/file/permission/user-input approval requests MUST route through Ravi approval handlers.
-- A dynamic tool response MUST always include normalized `content_items`; missing output MUST become text fallback.
+- A dynamic tool JSON-RPC response MUST always include normalized `contentItems`; missing output MUST become text fallback.
 - A completed native turn MUST produce `turn.complete` with provider session state.
 - A native interrupted turn or interrupt request MUST produce `turn.interrupted`, not `turn.failed`, unless the native process actually fails before interruption can be established.
 - A native exit without terminal event MUST become recoverable `turn.failed`.
@@ -81,9 +81,10 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 
 ## Known Failure Modes
 
-- Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes.
+- Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes; `contentItems` is the app-server contract.
 - Reaction-only or silent turns can finish natively but remain active in Ravi if `turn.complete` is not normalized.
-- Native raw events may continue while the logical turn is stuck; watchdog recovery should not be treated as normal completion.
+- Native raw events may continue while the logical turn is stuck; missing `turn/completed` is an adapter/runtime bug, not normal completion.
+- Synthetic and native dynamic tool item events can both appear; the adapter MUST dedupe canonical tool lifecycle by tool call id.
 - The app-server transport rejects overlapping turns; dispatcher must queue/interrupt instead of yielding concurrent prompts.
 - Synthetic tool starts are needed when a completed item arrives without a previous start.
 - Cwd mismatch on stored session state must disable resume to avoid attaching to the wrong native thread.

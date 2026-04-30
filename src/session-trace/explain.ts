@@ -211,13 +211,13 @@ export function explainSessionTrace(trace: SessionTraceQueryResult): SessionTrac
       addFinding(findings, {
         severity: "error",
         code: "runtime-stalled",
-        title: "Runtime stalled and recovered",
-        detail: event.error ?? event.preview ?? "The runtime stopped receiving provider events during an active turn.",
+        title: "Runtime stalled (legacy watchdog)",
+        detail: event.error ?? event.preview ?? "A removed runtime watchdog recovered this historical turn.",
         eventIds: [event.id],
         turnId: event.turnId,
         runId: event.runId,
         timestamp: event.timestamp,
-        hint: "Inspect the preceding tool/runtime events. A stalled turn is closed as failed without resetting session history.",
+        hint: "This event should only exist in historical traces. New turns must close through provider terminal events.",
       });
     }
 

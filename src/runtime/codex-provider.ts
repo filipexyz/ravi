@@ -539,6 +539,7 @@ async function* normalizeCodexEvents(
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
       const startedToolUseIds = new Set<string>();
+      const completedToolUseIds = new Set<string>();
 
       try {
         for await (const event of turn.events) {
@@ -614,13 +615,15 @@ async function* normalizeCodexEvents(
 
             const toolStart = extractCliToolStarted(event.item);
             if (toolStart) {
-              startedToolUseIds.add(toolStart.id);
-              yield {
-                type: "tool.started",
-                toolUse: toolStart,
-                rawEvent,
-                metadata,
-              };
+              if (!startedToolUseIds.has(toolStart.id)) {
+                startedToolUseIds.add(toolStart.id);
+                yield {
+                  type: "tool.started",
+                  toolUse: toolStart,
+                  rawEvent,
+                  metadata,
+                };
+              }
             }
             continue;
           }
@@ -649,6 +652,9 @@ async function* normalizeCodexEvents(
             const toolCompleted = extractCliToolCompleted(event.item);
             const toolUseId = toolCompleted?.toolUseId ?? toolCompleted?.syntheticStart?.id;
             if (toolCompleted?.syntheticStart && !(toolUseId && startedToolUseIds.has(toolUseId))) {
+              if (toolUseId) {
+                startedToolUseIds.add(toolUseId);
+              }
               yield {
                 type: "tool.started",
                 toolUse: toolCompleted.syntheticStart,
@@ -657,15 +663,21 @@ async function* normalizeCodexEvents(
               };
             }
             if (toolCompleted) {
-              yield {
-                type: "tool.completed",
-                toolUseId: toolCompleted.toolUseId,
-                toolName: toolCompleted.toolName,
-                content: toolCompleted.content,
-                isError: toolCompleted.isError,
-                rawEvent,
-                metadata,
-              };
+              const completionId = toolUseId ?? toolCompleted.toolUseId;
+              if (!completionId || !completedToolUseIds.has(completionId)) {
+                if (completionId) {
+                  completedToolUseIds.add(completionId);
+                }
+                yield {
+                  type: "tool.completed",
+                  toolUseId: toolCompleted.toolUseId,
+                  toolName: toolCompleted.toolName,
+                  content: toolCompleted.content,
+                  isError: toolCompleted.isError,
+                  rawEvent,
+                  metadata,
+                };
+              }
             }
             continue;
           }
@@ -1056,7 +1068,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     activeTurn?.queue.push(
       buildDynamicToolTraceEvent("item.completed", request, {
         success: response.success,
-        contentItems: response.content_items,
+        contentItems: response.contentItems,
       }),
     );
     await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
@@ -2415,11 +2427,11 @@ function buildDynamicToolCallItem(input: {
 
 function buildCodexDynamicToolCallResponse(result: RuntimeDynamicToolCallResult): {
   success: boolean;
-  content_items: RuntimeDynamicToolCallContentItem[];
+  contentItems: RuntimeDynamicToolCallContentItem[];
 } {
   const success = result.success === true;
   const contentItems = normalizeDynamicToolCallContentItems(result.contentItems, result.reason);
-  return { success, content_items: contentItems };
+  return { success, contentItems };
 }
 
 function normalizeDynamicToolCallContentItems(
