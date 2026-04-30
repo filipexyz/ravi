@@ -1,15 +1,4 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
-
-afterAll(() => mock.restore());
-
-mock.module("../decorators.js", () => ({
-  Group: () => () => {},
-  Command: () => () => {},
-  Scope: () => () => {},
-  CliOnly: () => () => {},
-  Arg: () => () => {},
-  Option: () => () => {},
-}));
+import { describe, expect, it } from "bun:test";
 
 const { ServiceCommands } = await import("./service.js");
 
