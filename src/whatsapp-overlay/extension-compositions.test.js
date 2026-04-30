@@ -41,7 +41,9 @@ function installChromeStorageMock() {
 
 const chromeStorage = installChromeStorageMock();
 
-const { buildSnapshot, resolveChatList } = await import("../../extensions/whatsapp-overlay/lib/compositions.js");
+const { buildSnapshot, buildTasksSnapshot, resolveChatList } = await import(
+  "../../extensions/whatsapp-overlay/lib/compositions.js"
+);
 const { setBindings } = await import("../../extensions/whatsapp-overlay/lib/storage.js");
 
 describe("whatsapp overlay extension compositions", () => {
@@ -138,6 +140,51 @@ describe("whatsapp overlay extension compositions", () => {
         sessionName: "dev",
         live: { activity: "idle", summary: "turn complete" },
       },
+    });
+  });
+
+  it("loads all visible tasks for the workspace and reports status counts", async () => {
+    let listOptions = null;
+    const now = Date.now();
+    const tasks = [
+      { id: "task-open", title: "Open", status: "open", priority: "normal", updatedAt: now },
+      { id: "task-dispatched", title: "Queued", status: "dispatched", priority: "normal", updatedAt: now - 1 },
+      { id: "task-working", title: "Working", status: "in_progress", priority: "normal", updatedAt: now - 2 },
+      { id: "task-blocked", title: "Blocked", status: "blocked", priority: "normal", updatedAt: now - 3 },
+      { id: "task-done", title: "Done", status: "done", priority: "normal", updatedAt: now - 4 },
+      { id: "task-failed", title: "Failed", status: "failed", priority: "normal", updatedAt: now - 5 },
+    ];
+    const client = {
+      tasks: {
+        list: async (options) => {
+          listOptions = options;
+          return { archiveMode: "exclude", limit: null, tasks };
+        },
+        show: async (taskId) => ({ task: tasks.find((task) => task.id === taskId) }),
+      },
+      sessions: {
+        list: async () => ({ sessions: [] }),
+      },
+    };
+
+    const snapshot = await buildTasksSnapshot(client, {});
+
+    expect(listOptions).toMatchObject({ last: "all" });
+    expect(snapshot.items).toHaveLength(6);
+    expect(snapshot.query).toMatchObject({
+      last: "all",
+      archiveMode: "exclude",
+      limit: null,
+    });
+    expect(snapshot.stats).toMatchObject({
+      total: 6,
+      open: 1,
+      dispatched: 1,
+      queued: 1,
+      inProgress: 1,
+      blocked: 1,
+      done: 1,
+      failed: 1,
     });
   });
 });

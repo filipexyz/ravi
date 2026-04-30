@@ -68,6 +68,7 @@ export async function buildSnapshot(client, query) {
 export async function buildTasksSnapshot(client, query) {
   const eventsLimit = typeof query?.eventsLimit === "number" ? query.eventsLimit : 20;
   const filters = {};
+  filters.last = clean(query?.last) ?? "all";
   if (clean(query?.status)) filters.status = clean(query.status);
   if (clean(query?.agentId)) filters.agent = clean(query.agentId);
   if (clean(query?.sessionName)) filters.session = clean(query.sessionName);
@@ -113,6 +114,9 @@ export async function buildTasksSnapshot(client, query) {
       status: clean(query?.status),
       agentId: clean(query?.agentId),
       sessionName: clean(query?.sessionName),
+      last: filters.last,
+      archiveMode: tasksResult?.archiveMode ?? null,
+      limit: tasksResult?.limit ?? null,
       actorSession: clean(query?.actorSession),
       eventsLimit,
       timeZone: clean(query?.timeZone),
@@ -409,10 +413,26 @@ function resolveSession(sessions, query) {
 }
 
 function computeTaskStats(items) {
-  const stats = { open: 0, queued: 0, dispatched: 0, done: 0, failed: 0, total: items.length };
+  const stats = {
+    open: 0,
+    queued: 0,
+    dispatched: 0,
+    inProgress: 0,
+    blocked: 0,
+    done: 0,
+    failed: 0,
+    total: items.length,
+  };
   for (const item of items) {
     const status = item.task?.status;
-    if (status && status in stats) stats[status]++;
+    if (status === "in_progress") {
+      stats.inProgress++;
+    } else if (status === "dispatched") {
+      stats.dispatched++;
+      stats.queued++;
+    } else if (status && status in stats) {
+      stats[status]++;
+    }
   }
   return stats;
 }

@@ -1,4 +1,4 @@
-import { getActiveServer, subscribe } from "../auth.js";
+import { getActiveServer, isValidContextKey, subscribe } from "../auth.js";
 import { RaviClient } from "./sdk/client.js";
 import { createHttpTransport } from "./sdk/transport/http.js";
 
@@ -13,6 +13,7 @@ subscribe(() => {
 });
 
 function buildClient(server) {
+  assertValidServerContextKey(server);
   const transport = createHttpTransport({
     baseUrl: server.baseUrl,
     contextKey: server.contextKey,
@@ -25,6 +26,19 @@ export class NoActiveServerError extends Error {
   constructor() {
     super("No active server configured. Open the extension options page to add one.");
     this.name = "NoActiveServerError";
+  }
+}
+
+export class InvalidContextKeyError extends Error {
+  constructor() {
+    super("Active server context key is invalid. Open the extension options page and paste an rctx_* runtime context key.");
+    this.name = "InvalidContextKeyError";
+  }
+}
+
+function assertValidServerContextKey(server) {
+  if (!isValidContextKey(server?.contextKey)) {
+    throw new InvalidContextKeyError();
   }
 }
 
@@ -48,6 +62,7 @@ export async function withClient(fn) {
 export async function callBinary({ groupSegments, command, body }) {
   const server = await getActiveServer();
   if (!server) throw new NoActiveServerError();
+  assertValidServerContextKey(server);
   const transport = createHttpTransport({
     baseUrl: server.baseUrl,
     contextKey: server.contextKey,

@@ -1,4 +1,4 @@
-import { getClient, callBinary, NoActiveServerError } from "./lib/client.js";
+import { getClient, callBinary, NoActiveServerError, InvalidContextKeyError } from "./lib/client.js";
 import { getViewState, setViewState, upsertBinding, findBinding } from "./lib/storage.js";
 import { buildOverlayV3PlaceholderSnapshot } from "./lib/dom-model.js";
 import {
@@ -44,13 +44,22 @@ function toErrorResponse(error) {
   if (error instanceof NoActiveServerError) {
     return { ok: false, error: error.message, code: "no_active_server" };
   }
+  if (error instanceof InvalidContextKeyError) {
+    return { ok: false, status: 0, code: "invalid_context_key", error: error.message };
+  }
   const status = typeof error?.status === "number" ? error.status : 0;
   const code = typeof error?.body?.code === "string" ? error.body.code : null;
+  const command = typeof error?.command === "string" ? error.command : null;
+  const message = typeof error?.message === "string" ? error.message : String(error);
   return {
     ok: false,
     status,
+    command,
     code: code || (status ? `http_${status}` : "transport_error"),
-    error: typeof error?.message === "string" ? error.message : String(error),
+    error:
+      status === 401 || status === 403
+        ? `${message}. Open the extension options page and update the active server context key.`
+        : message,
   };
 }
 
@@ -66,14 +75,16 @@ async function fetchSessionWorkspace(payload = {}) {
 async function fetchInsights(payload = {}) {
   const { client } = await getClient();
   const options = { rich: true };
-  if (typeof payload.limit === "number") options.limit = payload.limit;
+  const limit = cleanOptionString(payload.limit);
+  if (limit) options.limit = limit;
   return await client.insights.list(options);
 }
 
 async function fetchArtifacts(payload = {}) {
   const { client } = await getClient();
   const options = { rich: true };
-  if (typeof payload.limit === "number") options.limit = payload.limit;
+  const limit = cleanOptionString(payload.limit);
+  if (limit) options.limit = limit;
   if (clean(payload.lifecycle)) options.lifecycle = clean(payload.lifecycle);
   if (clean(payload.kind)) options.kind = clean(payload.kind);
   if (clean(payload.taskId)) options.taskId = clean(payload.taskId);
@@ -258,4 +269,9 @@ function clean(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function cleanOptionString(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return clean(value);
 }

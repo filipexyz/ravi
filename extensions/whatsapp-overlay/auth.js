@@ -23,6 +23,23 @@ function normalizeBaseUrl(value) {
   return trimmed.replace(/\/+$/, "");
 }
 
+export function normalizeContextKey(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function isValidContextKey(value) {
+  return normalizeContextKey(value).startsWith("rctx_");
+}
+
+function requireContextKey(value) {
+  const contextKey = normalizeContextKey(value);
+  if (!contextKey) throw new Error("contextKey required");
+  if (!isValidContextKey(contextKey)) {
+    throw new Error("contextKey must be an rctx_* runtime context key");
+  }
+  return contextKey;
+}
+
 function generateId() {
   if (globalThis.crypto?.randomUUID) {
     return `srv_${globalThis.crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -63,7 +80,7 @@ export async function getActiveServer() {
 
 export async function addServer({ name, baseUrl, contextKey }) {
   if (typeof name !== "string" || !name.trim()) throw new Error("name required");
-  if (typeof contextKey !== "string" || !contextKey.trim()) throw new Error("contextKey required");
+  const normalizedContextKey = requireContextKey(contextKey);
   const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
   if (!normalizedBaseUrl) throw new Error("baseUrl required");
   const state = await getAuthState();
@@ -71,7 +88,7 @@ export async function addServer({ name, baseUrl, contextKey }) {
     id: generateId(),
     name: name.trim(),
     baseUrl: normalizedBaseUrl,
-    contextKey: contextKey.trim(),
+    contextKey: normalizedContextKey,
     addedAt: Date.now(),
   };
   const servers = [...state.servers, entry];
@@ -94,7 +111,7 @@ export async function updateServer(id, partial) {
       ? { baseUrl: normalizeBaseUrl(partial.baseUrl) }
       : {}),
     ...(typeof partial.contextKey === "string" && partial.contextKey.trim()
-      ? { contextKey: partial.contextKey.trim() }
+      ? { contextKey: requireContextKey(partial.contextKey) }
       : {}),
   };
   const servers = [...state.servers];
@@ -123,6 +140,14 @@ export async function testConnection(entry) {
   const target = isValidEntry(entry) ? entry : await getActiveServer();
   if (!target) {
     return { ok: false, status: 0, code: "no_active_server", error: "No active server configured" };
+  }
+  if (!isValidContextKey(target.contextKey)) {
+    return {
+      ok: false,
+      status: 0,
+      code: "invalid_context_key",
+      error: "Context key must be an rctx_* runtime context key",
+    };
   }
   const url = `${target.baseUrl}/api/v1/context/whoami`;
   try {

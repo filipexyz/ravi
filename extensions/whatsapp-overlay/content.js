@@ -47,9 +47,7 @@ const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const TASK_SELECTED_ID_STORAGE = "ravi-wa-overlay-task";
 const WORKSPACE_NAV_ITEMS = [
   { id: "ravi", label: "Ravi", glyph: "R" },
-  { id: "insights", label: "Insights", glyph: "I" },
   { id: "artifacts", label: "Artifacts", glyph: "A" },
-  { id: "omni", label: "Omni", glyph: "O" },
   { id: "tasks", label: "Tasks", glyph: "T" },
 ];
 const TASK_KANBAN_COLUMNS = [
@@ -118,6 +116,11 @@ let insightsFilter = "";
 let artifactsFilter = "";
 let artifactsLifecycleFilter = "all";
 let artifactsKindFilter = "all";
+let taskSearchFilter = "";
+let taskStatusFilter = "all";
+let taskAgentFilter = "all";
+let taskProjectFilter = "all";
+const activeTaskQuickFilters = new Set();
 let omniFilter = "";
 let omniSessionFilter = "";
 let sidebarNotice = null;
@@ -347,6 +350,10 @@ async function refreshSnapshot() {
       type: "ravi:get-snapshot",
       payload: context,
     });
+    if (!snapshot?.ok) {
+      setBridgeErrorFromResponse(snapshot, "não consegui carregar o snapshot do Ravi");
+      return;
+    }
     bridgeError = null;
     latestSnapshot = snapshot;
     if (
@@ -375,11 +382,7 @@ async function refreshSessionWorkspace(force = false) {
     });
     if (requestedSessionKey !== selectedWorkspaceSessionKey) return;
     if (!workspace?.ok) {
-      bridgeError = {
-        message:
-          workspace?.error || "não consegui atualizar a timeline da sessão",
-      };
-      requestRender();
+      setBridgeErrorFromResponse(workspace, "não consegui atualizar a timeline da sessão");
       return;
     }
     bridgeError = null;
@@ -423,6 +426,8 @@ async function refreshOmniPanel(force = false) {
       ) {
         requestRender();
       }
+    } else {
+      setBridgeErrorFromResponse(panel, "não consegui carregar o painel Omni");
     }
   } catch (error) {
     handleRuntimeError(error);
@@ -501,6 +506,8 @@ async function refreshTasks(force = false) {
       ) {
         requestRender();
       }
+    } else {
+      setBridgeErrorFromResponse(next, "não consegui carregar tasks");
     }
   } catch (error) {
     handleRuntimeError(error);
@@ -530,6 +537,8 @@ async function refreshInsights(force = false) {
       ) {
         requestRender();
       }
+    } else {
+      setBridgeErrorFromResponse(next, "não consegui carregar insights");
     }
   } catch (error) {
     handleRuntimeError(error);
@@ -564,12 +573,39 @@ async function refreshArtifacts(force = false) {
       ) {
         requestRender();
       }
+    } else {
+      setBridgeErrorFromResponse(next, "não consegui carregar artifacts");
     }
   } catch (error) {
     handleRuntimeError(error);
   } finally {
     artifactsInFlight = false;
   }
+}
+
+function setBridgeErrorFromResponse(response, fallbackMessage) {
+  const status =
+    typeof response?.status === "number" && response.status > 0 ? response.status : null;
+  const code = typeof response?.code === "string" ? response.code : null;
+  let message =
+    typeof response?.error === "string" && response.error.trim()
+      ? response.error.trim()
+      : fallbackMessage;
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    code === "invalid_context_key" ||
+    code === "no_active_server"
+  ) {
+    const alreadyActionable = /options|opções|rctx_/i.test(message);
+    if (!alreadyActionable) {
+      message = `${message}. Abra as opções da extensão e confira o server ativo e o context key rctx_*.`;
+    }
+  }
+
+  bridgeError = { message, status, code };
+  requestRender();
 }
 
 async function sendV3Command(name, args = {}) {
@@ -584,11 +620,9 @@ function refreshAll() {
   refreshSnapshot();
   refreshSessionWorkspace(true);
   refreshTasks(true);
-  refreshInsights(true);
   refreshArtifacts(true);
   refreshChatListOverlay();
   refreshMessageChips();
-  refreshOmniPanel();
   refreshV3Placeholders();
 }
 
@@ -7399,14 +7433,337 @@ function renderTaskOverviewStat({ label, value, note, tone = null }) {
   `;
 }
 
-function renderTaskStatusCounter(column, stats) {
+function renderTaskStatusCounter(column, stats, filterState = getTaskFilterState()) {
   const count = getTaskColumnStatValue(column, stats);
   const statusClass = taskSurfaceClass(column?.id || null);
+  const statusId = column?.id || "all";
+  const active = filterState.status === statusId;
   return `
-    <span class="ravi-wa-task-counter ravi-wa-task-counter--${statusClass}">
+    <button
+      type="button"
+      class="ravi-wa-task-counter ravi-wa-task-counter--${statusClass}${active ? " ravi-wa-task-counter--active" : ""}"
+      data-ravi-task-status-filter="${escapeAttribute(statusId)}"
+      aria-pressed="${active ? "true" : "false"}"
+      title="Filtrar por ${escapeAttribute(column?.label || "status")}"
+    >
       <span class="ravi-wa-task-counter__label">${escapeHtml(column?.label || "status")}</span>
       <strong class="ravi-wa-task-counter__value">${escapeHtml(String(count))}</strong>
-    </span>
+    </button>
+  `;
+}
+
+function getTaskFilterState() {
+  return {
+    search: taskSearchFilter.trim(),
+    searchNeedle: normalizeLookupToken(taskSearchFilter),
+    status: taskStatusFilter || "all",
+    agent: taskAgentFilter || "all",
+    project: taskProjectFilter || "all",
+    quickFilters: Array.from(activeTaskQuickFilters),
+    actorAgentId: normalizeTaskAgentId(latestSnapshot?.session?.agentId),
+    actorSessionName: normalizeTaskSessionName(getCurrentTaskActorSession()),
+  };
+}
+
+function hasActiveTaskFilters(filterState = getTaskFilterState()) {
+  return Boolean(
+    filterState.searchNeedle ||
+      filterState.status !== "all" ||
+      filterState.agent !== "all" ||
+      filterState.project !== "all" ||
+      filterState.quickFilters.length,
+  );
+}
+
+function getTaskFilterProjectKey(task) {
+  const project = getTaskProjectSummary(task);
+  return project?.slug || project?.id || "__unlinked__";
+}
+
+function getTaskFilterProjectLabel(task) {
+  const project = getTaskProjectSummary(task);
+  return project?.slug || project?.title || "no project";
+}
+
+function getTaskFilterAgentKey(task) {
+  return normalizeTaskAgentId(task?.assigneeAgentId || task?.activeAssignment?.agentId) || "__unassigned__";
+}
+
+function getTaskFilterAgentLabel(task) {
+  return task?.assigneeAgentId || task?.activeAssignment?.agentId || "unassigned";
+}
+
+function collectTaskFacetOptions(items, type) {
+  const map = new Map();
+  normalizeTaskListItems(items).forEach((task) => {
+    const key =
+      type === "agent" ? getTaskFilterAgentKey(task) : getTaskFilterProjectKey(task);
+    const label =
+      type === "agent" ? getTaskFilterAgentLabel(task) : getTaskFilterProjectLabel(task);
+    const current = map.get(key) || { key, label, count: 0 };
+    current.count += 1;
+    map.set(key, current);
+  });
+
+  return Array.from(map.values()).sort((left, right) => {
+    if (left.key === "__unlinked__" || left.key === "__unassigned__") return -1;
+    if (right.key === "__unlinked__" || right.key === "__unassigned__") return 1;
+    return left.label.localeCompare(right.label);
+  });
+}
+
+function taskHasArtifacts(task) {
+  const artifacts = task?.artifacts;
+  return Boolean(
+    artifacts?.primary ||
+      (Array.isArray(artifacts?.items) && artifacts.items.length) ||
+      (Array.isArray(task?.artifactLinks) && task.artifactLinks.length),
+  );
+}
+
+function taskWasRecentlyUpdated(task, now = Date.now()) {
+  const updatedAt = toPositiveTaskTimestamp(task?.updatedAt) || 0;
+  return updatedAt > 0 && now - updatedAt <= 24 * 60 * 60 * 1000;
+}
+
+function buildTaskSearchCorpus(task) {
+  const project = getTaskProjectSummary(task);
+  const workflow = getTaskWorkflowSummary(task);
+  return [
+    task?.id,
+    task?.title,
+    task?.summary,
+    task?.blockerReason,
+    task?.instructions,
+    task?.priority,
+    task?.profileId,
+    task?.assigneeAgentId,
+    task?.assigneeSessionName,
+    task?.workSessionName,
+    project?.slug,
+    project?.title,
+    project?.status,
+    workflow?.runTitle,
+    workflow?.nodeKey,
+    workflow?.nodeLabel,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function taskMatchesQuickFilter(task, filter, filterState, now = Date.now()) {
+  const surfaceStatus = getTaskKanbanSurfaceStatus(task);
+  switch (filter) {
+    case "live":
+      return surfaceStatus !== "done" && surfaceStatus !== "failed";
+    case "mine": {
+      const agent = getTaskFilterAgentKey(task);
+      const session = normalizeTaskSessionName(getTaskPrimarySessionName(task));
+      return Boolean(
+        (filterState.actorAgentId && agent === filterState.actorAgentId) ||
+          (filterState.actorSessionName && session === filterState.actorSessionName),
+      );
+    }
+    case "blocked":
+      return surfaceStatus === "blocked";
+    case "unlinked":
+      return getTaskFilterProjectKey(task) === "__unlinked__";
+    case "artifacts":
+      return taskHasArtifacts(task);
+    case "recent":
+      return taskWasRecentlyUpdated(task, now);
+    default:
+      return true;
+  }
+}
+
+function filterTaskListItems(items, filterState = getTaskFilterState()) {
+  const list = normalizeTaskListItems(items);
+  const now = Date.now();
+  return list.filter((task) => {
+    if (
+      filterState.status !== "all" &&
+      getTaskKanbanSurfaceStatus(task) !== filterState.status
+    ) {
+      return false;
+    }
+    if (filterState.agent !== "all" && getTaskFilterAgentKey(task) !== filterState.agent) {
+      return false;
+    }
+    if (
+      filterState.project !== "all" &&
+      getTaskFilterProjectKey(task) !== filterState.project
+    ) {
+      return false;
+    }
+    if (
+      filterState.searchNeedle &&
+      !buildTaskSearchCorpus(task).includes(filterState.searchNeedle)
+    ) {
+      return false;
+    }
+    return filterState.quickFilters.every((filter) =>
+      taskMatchesQuickFilter(task, filter, filterState, now),
+    );
+  });
+}
+
+function getTaskQuickFilterCount(items, filter, filterState = getTaskFilterState()) {
+  const now = Date.now();
+  return normalizeTaskListItems(items).filter((task) =>
+    taskMatchesQuickFilter(task, filter, filterState, now),
+  ).length;
+}
+
+function renderTaskFilterSelect({ id, label, value, options }) {
+  return `
+    <label class="ravi-wa-task-filter-field" for="${escapeAttribute(id)}">
+      <span>${escapeHtml(label)}</span>
+      <select id="${escapeAttribute(id)}" class="ravi-wa-task-filter-select">
+        ${options
+          .map(
+            (option) => `
+              <option value="${escapeAttribute(option.value)}"${option.value === value ? " selected" : ""}>${escapeHtml(option.label)}</option>
+            `,
+          )
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
+function renderTaskFilterControls(allItems, filteredItems, filterState) {
+  const agentOptions = collectTaskFacetOptions(allItems, "agent");
+  const projectOptions = collectTaskFacetOptions(allItems, "project");
+  void filteredItems;
+  return `
+    <label class="ravi-wa-task-filter-search" for="ravi-wa-task-search">
+      <span>search</span>
+      <input
+        id="ravi-wa-task-search"
+        type="search"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder="id, title, agent, session, project"
+      />
+    </label>
+    ${renderTaskFilterSelect({
+      id: "ravi-wa-task-status-filter",
+      label: "status",
+      value: filterState.status,
+      options: [
+        { value: "all", label: "all status" },
+        ...TASK_KANBAN_COLUMNS.map((column) => ({
+          value: column.id,
+          label: `${column.label} ${getTaskColumnStatValue(column, buildTaskKanbanColumnStats(allItems))}`,
+        })),
+      ],
+    })}
+    ${renderTaskFilterSelect({
+      id: "ravi-wa-task-agent-filter",
+      label: "agent",
+      value: filterState.agent,
+      options: [
+        { value: "all", label: "all agents" },
+        ...agentOptions.map((option) => ({
+          value: option.key,
+          label: `${option.label} ${option.count}`,
+        })),
+      ],
+    })}
+    ${renderTaskFilterSelect({
+      id: "ravi-wa-task-project-filter",
+      label: "project",
+      value: filterState.project,
+      options: [
+        { value: "all", label: "all projects" },
+        ...projectOptions.map((option) => ({
+          value: option.key,
+          label: `${shorten(option.label, 24)} ${option.count}`,
+        })),
+      ],
+    })}
+    <button
+      type="button"
+      class="ravi-wa-task-filter-clear"
+      data-ravi-task-clear-filters="true"
+      ${hasActiveTaskFilters(filterState) ? "" : "disabled"}
+    >
+      clear
+    </button>
+    <span class="ravi-wa-task-filter-result" data-ravi-task-filter-result="true"></span>
+  `;
+}
+
+function syncTaskFilterControls(container, filterState, visibleCount = 0, totalCount = 0) {
+  if (!(container instanceof HTMLElement)) return;
+  const searchInput = container.querySelector("#ravi-wa-task-search");
+  if (searchInput instanceof HTMLInputElement && searchInput.value !== filterState.search) {
+    searchInput.value = filterState.search;
+  }
+  const statusSelect = container.querySelector("#ravi-wa-task-status-filter");
+  if (statusSelect instanceof HTMLSelectElement && statusSelect.value !== filterState.status) {
+    statusSelect.value = filterState.status;
+  }
+  const agentSelect = container.querySelector("#ravi-wa-task-agent-filter");
+  if (agentSelect instanceof HTMLSelectElement && agentSelect.value !== filterState.agent) {
+    agentSelect.value = filterState.agent;
+  }
+  const projectSelect = container.querySelector("#ravi-wa-task-project-filter");
+  if (projectSelect instanceof HTMLSelectElement && projectSelect.value !== filterState.project) {
+    projectSelect.value = filterState.project;
+  }
+  const result = container.querySelector("[data-ravi-task-filter-result='true']");
+  if (result instanceof HTMLElement) {
+    result.textContent = `${visibleCount}/${totalCount}`;
+  }
+}
+
+function renderTaskQuickFilters(allItems, filterState) {
+  const quickFilters = [
+    { id: "live", label: "live" },
+    { id: "mine", label: "mine" },
+    { id: "blocked", label: "blocked" },
+    { id: "unlinked", label: "no project" },
+    { id: "artifacts", label: "artifacts" },
+    { id: "recent", label: "24h" },
+  ];
+  return `
+    <span class="ravi-wa-task-filter-strip__label">quick</span>
+    ${quickFilters
+      .map((filter) => {
+        const active = activeTaskQuickFilters.has(filter.id);
+        const count = getTaskQuickFilterCount(allItems, filter.id, filterState);
+        return `
+          <button
+            type="button"
+            class="ravi-wa-task-quick-filter${active ? " ravi-wa-task-quick-filter--active" : ""}"
+            data-ravi-task-quick-filter="${escapeAttribute(filter.id)}"
+            aria-pressed="${active ? "true" : "false"}"
+          >
+            <span>${escapeHtml(filter.label)}</span>
+            <strong>${escapeHtml(String(count))}</strong>
+          </button>
+        `;
+      })
+      .join("")}
+  `;
+}
+
+function renderTaskFilterStatusLine(allItems, filteredItems, columnStats, filterState) {
+  const filterCopy = hasActiveTaskFilters(filterState)
+    ? `${filteredItems.length} matching`
+    : "all visible";
+  return `
+    <div class="ravi-wa-task-filter-strip">
+      <span class="ravi-wa-task-filter-strip__label">${escapeHtml(filterCopy)}</span>
+      ${TASK_KANBAN_COLUMNS.map((column) =>
+        renderTaskStatusCounter(column, columnStats, filterState),
+      ).join("")}
+      <span class="ravi-wa-task-filter-strip__divider" aria-hidden="true"></span>
+      ${renderTaskQuickFilters(allItems, filterState)}
+    </div>
   `;
 }
 
@@ -9757,6 +10114,10 @@ function ensureTasksWorkspaceShell(body) {
             class="ravi-wa-tasks-toolbar__stats"
             data-ravi-tasks-toolbar-stats="true"
           ></div>
+          <div
+            class="ravi-wa-tasks-filterbar"
+            data-ravi-tasks-filterbar="true"
+          ></div>
         </section>
         <div
           class="ravi-wa-tasks-toolbar__statusline"
@@ -9782,6 +10143,7 @@ function ensureTasksWorkspaceShell(body) {
     page,
     toolbarCopy: page.querySelector("[data-ravi-tasks-toolbar-copy='true']"),
     toolbarStats: page.querySelector("[data-ravi-tasks-toolbar-stats='true']"),
+    filterbar: page.querySelector("[data-ravi-tasks-filterbar='true']"),
     statusLine: page.querySelector("[data-ravi-tasks-statusline='true']"),
     noticeSlot: page.querySelector("[data-ravi-tasks-notice-slot='true']"),
     activitySlot: page.querySelector("[data-ravi-tasks-activity-slot='true']"),
@@ -9821,6 +10183,37 @@ async function handleTasksWorkspaceClick(event) {
   if (closeButton instanceof Element) {
     event.preventDefault();
     closeTaskDetailDrawer();
+    return;
+  }
+
+  const statusFilterButton = target.closest("[data-ravi-task-status-filter]");
+  if (statusFilterButton instanceof Element) {
+    event.preventDefault();
+    const status = statusFilterButton.getAttribute("data-ravi-task-status-filter");
+    taskStatusFilter = taskStatusFilter === status ? "all" : status || "all";
+    requestRender();
+    return;
+  }
+
+  const quickFilterButton = target.closest("[data-ravi-task-quick-filter]");
+  if (quickFilterButton instanceof Element) {
+    event.preventDefault();
+    const filter = quickFilterButton.getAttribute("data-ravi-task-quick-filter");
+    if (!filter) return;
+    if (activeTaskQuickFilters.has(filter)) {
+      activeTaskQuickFilters.delete(filter);
+    } else {
+      activeTaskQuickFilters.add(filter);
+    }
+    requestRender();
+    return;
+  }
+
+  const clearFiltersButton = target.closest("[data-ravi-task-clear-filters]");
+  if (clearFiltersButton instanceof Element) {
+    event.preventDefault();
+    clearTaskBoardFilters();
+    requestRender();
     return;
   }
 
@@ -9888,6 +10281,13 @@ async function handleTasksWorkspaceClick(event) {
 function handleTasksWorkspaceInput(event) {
   const target = event?.target;
   if (!(target instanceof Element)) return;
+
+  if (target.matches("#ravi-wa-task-search")) {
+    taskSearchFilter = target.value || "";
+    requestRender();
+    return;
+  }
+
   const selectedTaskKey = selectedTaskId;
   if (!selectedTaskKey) return;
 
@@ -9901,6 +10301,25 @@ function handleTasksWorkspaceInput(event) {
 function handleTasksWorkspaceChange(event) {
   const target = event?.target;
   if (!(target instanceof Element)) return;
+
+  if (target.matches("#ravi-wa-task-status-filter")) {
+    taskStatusFilter = target.value || "all";
+    requestRender();
+    return;
+  }
+
+  if (target.matches("#ravi-wa-task-agent-filter")) {
+    taskAgentFilter = target.value || "all";
+    requestRender();
+    return;
+  }
+
+  if (target.matches("#ravi-wa-task-project-filter")) {
+    taskProjectFilter = target.value || "all";
+    requestRender();
+    return;
+  }
+
   const selectedTaskKey = selectedTaskId;
   if (!selectedTaskKey) return;
 
@@ -9916,6 +10335,14 @@ function handleTasksWorkspaceChange(event) {
       reportToSessionName: target.value || "",
     });
   }
+}
+
+function clearTaskBoardFilters() {
+  taskSearchFilter = "";
+  taskStatusFilter = "all";
+  taskAgentFilter = "all";
+  taskProjectFilter = "all";
+  activeTaskQuickFilters.clear();
 }
 
 function syncElementHtml(element, html) {
@@ -10225,11 +10652,12 @@ function syncTaskDetailDrawerHost(host, drawerState) {
 
 function renderTasksWorkspace(body) {
   const snapshot = latestTasksSnapshot;
-  const items = normalizeTaskListItems(snapshot?.items);
+  const allItems = normalizeTaskListItems(snapshot?.items);
+  const filterState = getTaskFilterState();
+  const items = filterTaskListItems(allItems, filterState);
   const taskRoots = buildTaskHierarchy(items);
   const stats = snapshot?.stats || null;
   const columnStats = buildTaskKanbanColumnStats(items);
-  const dailyActivity = snapshot?.dailyActivity || null;
   const drawerState = resolveTaskDetailDrawerState({
     selectedTaskId,
     drawerOpen: taskDetailDrawerOpen,
@@ -10240,6 +10668,7 @@ function renderTasksWorkspace(body) {
   const selectedTaskKey = drawerState.effectiveTaskId || null;
   const rootCount = taskRoots.length;
   const childCount = Math.max(0, items.length - rootCount);
+  const totalRootCount = buildTaskHierarchy(allItems).length;
   const liveCount =
     (columnStats.waiting ?? 0) +
     (columnStats.ready ?? 0) +
@@ -10262,12 +10691,11 @@ function renderTasksWorkspace(body) {
   syncElementHtml(
     shell.toolbarCopy,
     `
-      <span class="ravi-wa-tasks-toolbar__eyebrow">task workspace</span>
+      <span class="ravi-wa-tasks-toolbar__eyebrow">task board</span>
       <div class="ravi-wa-tasks-toolbar__titleline">
-        <h2>Task Workspace</h2>
-        <span>${escapeHtml(buildTasksWorkspaceSubtitle(snapshot))}</span>
+        <h2>Tasks</h2>
+        <span>${escapeHtml(`${items.length}/${allItems.length} visible · ${rootCount}/${totalRootCount} roots · ${childCount} subtasks`)}</span>
       </div>
-      <p>kanban operacional do runtime atual, com workspace lateral, lineage clicavel, artifacts surfaced e ações reais acima da dobra.</p>
     `,
   );
   syncElementHtml(
@@ -10275,18 +10703,18 @@ function renderTasksWorkspace(body) {
     `
       ${renderTaskOverviewStat({
         label: "total",
-        value: stats?.total ?? items.length,
-        note: `${rootCount} roots · ${childCount} subtasks`,
+        value: stats?.total ?? allItems.length,
+        note: `${allItems.length} visible DB rows`,
       })}
       ${renderTaskOverviewStat({
-        label: "live",
-        value: liveCount,
-        note: `waiting ${columnStats.waiting ?? 0} · ready ${columnStats.ready ?? 0} · queued ${columnStats.queued ?? 0} · working ${columnStats.working ?? 0}`,
+        label: "showing",
+        value: items.length,
+        note: `live ${liveCount} · roots ${rootCount}`,
         tone: "live",
       })}
       ${renderTaskOverviewStat({
         label: "done",
-        value: stats?.done ?? 0,
+        value: stats?.done ?? columnStats.done ?? 0,
         note: `failed ${stats?.failed ?? 0} · blocked ${stats?.blocked ?? 0}`,
         tone: "done",
       })}
@@ -10298,11 +10726,16 @@ function renderTasksWorkspace(body) {
       })}
     `,
   );
+  if (!(shell.filterbar instanceof HTMLElement && shell.filterbar.contains(document.activeElement))) {
+    syncElementHtml(
+      shell.filterbar,
+      renderTaskFilterControls(allItems, items, filterState),
+    );
+  }
+  syncTaskFilterControls(shell.filterbar, filterState, items.length, allItems.length);
   syncElementHtml(
     shell.statusLine,
-    TASK_KANBAN_COLUMNS.map((column) =>
-      renderTaskStatusCounter(column, columnStats),
-    ).join(""),
+    renderTaskFilterStatusLine(allItems, items, columnStats, filterState),
   );
   syncElementHtml(
     shell.noticeSlot,
@@ -10316,7 +10749,7 @@ function renderTasksWorkspace(body) {
   );
   syncElementHtml(
     shell.activitySlot,
-    renderTasksDailyActivityCard(dailyActivity),
+    "",
   );
   if (shell.layout instanceof HTMLElement) {
     shell.layout.classList.toggle(
@@ -12636,10 +13069,7 @@ function loadPinnedSessionKey() {
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
-    return stored === "omni" ||
-      stored === "tasks" ||
-      stored === "insights" ||
-      stored === "artifacts"
+    return stored === "tasks" || stored === "artifacts"
       ? stored
       : "ravi";
   } catch {
@@ -12737,10 +13167,7 @@ function persistV3PlaceholdersEnabled(value) {
 
 function setActiveWorkspace(nextWorkspace) {
   activeWorkspace =
-    nextWorkspace === "omni" ||
-    nextWorkspace === "tasks" ||
-    nextWorkspace === "insights" ||
-    nextWorkspace === "artifacts"
+    nextWorkspace === "tasks" || nextWorkspace === "artifacts"
       ? nextWorkspace
       : "ravi";
   if (activeWorkspace !== "tasks") {
@@ -12750,11 +13177,7 @@ function setActiveWorkspace(nextWorkspace) {
   persistActiveWorkspace(activeWorkspace);
   syncWorkspaceLauncher();
   render();
-  if (activeWorkspace === "omni") {
-    refreshOmniPanel(true);
-  } else if (activeWorkspace === "insights") {
-    refreshInsights(true);
-  } else if (activeWorkspace === "artifacts") {
+  if (activeWorkspace === "artifacts") {
     refreshArtifacts(true);
   } else if (activeWorkspace === "tasks") {
     refreshTasks(true);
