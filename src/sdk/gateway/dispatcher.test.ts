@@ -8,7 +8,7 @@ import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
 import { getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
-import { createAgent, getOrCreateSession, getSession } from "../../router/index.js";
+import { createAgent, dbUpsertSkillGateRule, getOrCreateSession, getSession } from "../../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 
@@ -92,7 +92,7 @@ class GatewayTasksCommands {
   }
 }
 
-@Group({ name: "gated", description: "Skill-gated admin commands", scope: "admin", skillGate: "demo-skill" })
+@Group({ name: "gated", description: "Skill-gated admin commands", scope: "admin" })
 class GatewayGatedCommands {
   @Command({ name: "ping", description: "Gated ping" })
   ping() {
@@ -253,6 +253,7 @@ describe("dispatch — scope and superadmin gating", () => {
     try {
       process.env.CODEX_HOME = join(stateDir, "codex");
       writeCodexSkill(process.env.CODEX_HOME, "demo-skill");
+      dbUpsertSkillGateRule({ id: "gated", pattern: "^gated(?:[._]|$)", skill: "demo-skill" });
       createAgent({ id: "locked", cwd: stateDir });
       getOrCreateSession("agent:locked:main", "locked", stateDir, {
         name: "locked-session",

@@ -274,6 +274,52 @@ interface SettingRow {
   updated_at: number;
 }
 
+interface SkillGateRuleRow {
+  id: string;
+  skill: string | null;
+  disabled: number;
+  pattern: string | null;
+  group_regex: string | null;
+  tool: string | null;
+  tool_prefix: string | null;
+  tool_regex: string | null;
+  command: string | null;
+  command_prefix: string | null;
+  command_regex: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DbSkillGateRule {
+  id: string;
+  skill?: string;
+  disabled: boolean;
+  pattern?: string;
+  groupRegex?: string;
+  tool?: string;
+  toolPrefix?: string;
+  toolRegex?: string;
+  command?: string;
+  commandPrefix?: string;
+  commandRegex?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DbSkillGateRuleInput {
+  id: string;
+  skill?: string | null;
+  disabled?: boolean;
+  pattern?: string | null;
+  groupRegex?: string | null;
+  tool?: string | null;
+  toolPrefix?: string | null;
+  toolRegex?: string | null;
+  command?: string | null;
+  commandPrefix?: string | null;
+  commandRegex?: string | null;
+}
+
 interface MatrixAccountRow {
   username: string;
   user_id: string;
@@ -540,6 +586,23 @@ function getDb(): Database {
       value TEXT NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS skill_gate_rules (
+      id TEXT PRIMARY KEY,
+      skill TEXT,
+      disabled INTEGER NOT NULL DEFAULT 0 CHECK(disabled IN (0,1)),
+      pattern TEXT,
+      group_regex TEXT,
+      tool TEXT,
+      tool_prefix TEXT,
+      tool_regex TEXT,
+      command TEXT,
+      command_prefix TEXT,
+      command_regex TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_gate_rules_disabled ON skill_gate_rules(disabled);
 
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
@@ -2283,6 +2346,11 @@ interface PreparedStatements {
   getSetting: Statement;
   deleteSetting: Statement;
   listSettings: Statement;
+  // Skill gate rules
+  upsertSkillGateRule: Statement;
+  getSkillGateRule: Statement;
+  deleteSkillGateRule: Statement;
+  listSkillGateRules: Statement;
   // Matrix accounts
   upsertMatrixAccount: Statement;
   getMatrixAccount: Statement;
@@ -2415,6 +2483,30 @@ function getStatements(): PreparedStatements {
     getSetting: database.prepare("SELECT * FROM settings WHERE key = ?"),
     deleteSetting: database.prepare("DELETE FROM settings WHERE key = ?"),
     listSettings: database.prepare("SELECT * FROM settings ORDER BY key"),
+
+    // Skill gate rules
+    upsertSkillGateRule: database.prepare(`
+      INSERT INTO skill_gate_rules (
+        id, skill, disabled, pattern, group_regex, tool, tool_prefix, tool_regex,
+        command, command_prefix, command_regex, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        skill = excluded.skill,
+        disabled = excluded.disabled,
+        pattern = excluded.pattern,
+        group_regex = excluded.group_regex,
+        tool = excluded.tool,
+        tool_prefix = excluded.tool_prefix,
+        tool_regex = excluded.tool_regex,
+        command = excluded.command,
+        command_prefix = excluded.command_prefix,
+        command_regex = excluded.command_regex,
+        updated_at = excluded.updated_at
+    `),
+    getSkillGateRule: database.prepare("SELECT * FROM skill_gate_rules WHERE id = ?"),
+    deleteSkillGateRule: database.prepare("DELETE FROM skill_gate_rules WHERE id = ?"),
+    listSkillGateRules: database.prepare("SELECT * FROM skill_gate_rules ORDER BY id"),
 
     // Matrix accounts
     upsertMatrixAccount: database.prepare(`
@@ -3228,6 +3320,83 @@ export function dbListSettings(): Record<string, string> {
     result[row.key] = row.value;
   }
   return result;
+}
+
+// ============================================================================
+// Skill Gate Rule CRUD
+// ============================================================================
+
+function cleanOptionalText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function rowToSkillGateRule(row: SkillGateRuleRow): DbSkillGateRule {
+  return {
+    id: row.id,
+    ...(row.skill !== null ? { skill: row.skill } : {}),
+    disabled: row.disabled === 1,
+    ...(row.pattern !== null ? { pattern: row.pattern } : {}),
+    ...(row.group_regex !== null ? { groupRegex: row.group_regex } : {}),
+    ...(row.tool !== null ? { tool: row.tool } : {}),
+    ...(row.tool_prefix !== null ? { toolPrefix: row.tool_prefix } : {}),
+    ...(row.tool_regex !== null ? { toolRegex: row.tool_regex } : {}),
+    ...(row.command !== null ? { command: row.command } : {}),
+    ...(row.command_prefix !== null ? { commandPrefix: row.command_prefix } : {}),
+    ...(row.command_regex !== null ? { commandRegex: row.command_regex } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function dbListSkillGateRules(): DbSkillGateRule[] {
+  const s = getStatements();
+  return (s.listSkillGateRules.all() as SkillGateRuleRow[]).map(rowToSkillGateRule);
+}
+
+export function dbGetSkillGateRule(id: string): DbSkillGateRule | null {
+  const s = getStatements();
+  const row = s.getSkillGateRule.get(id) as SkillGateRuleRow | undefined;
+  return row ? rowToSkillGateRule(row) : null;
+}
+
+export function dbUpsertSkillGateRule(input: DbSkillGateRuleInput): DbSkillGateRule {
+  const id = cleanOptionalText(input.id);
+  if (!id) {
+    throw new Error("Skill gate rule id is required.");
+  }
+
+  const s = getStatements();
+  const existing = dbGetSkillGateRule(id);
+  const now = Date.now();
+  s.upsertSkillGateRule.run(
+    id,
+    cleanOptionalText(input.skill),
+    input.disabled === true ? 1 : 0,
+    cleanOptionalText(input.pattern),
+    cleanOptionalText(input.groupRegex),
+    cleanOptionalText(input.tool),
+    cleanOptionalText(input.toolPrefix),
+    cleanOptionalText(input.toolRegex),
+    cleanOptionalText(input.command),
+    cleanOptionalText(input.commandPrefix),
+    cleanOptionalText(input.commandRegex),
+    existing?.createdAt ?? now,
+    now,
+  );
+  log.info("Upserted skill gate rule", { id, disabled: input.disabled === true });
+  return dbGetSkillGateRule(id)!;
+}
+
+export function dbDeleteSkillGateRule(id: string): boolean {
+  const cleanId = cleanOptionalText(id);
+  if (!cleanId) {
+    return false;
+  }
+
+  const s = getStatements();
+  s.deleteSkillGateRule.run(cleanId);
+  return getDbChanges() > 0;
 }
 
 // ============================================================================

@@ -8,17 +8,15 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
-  getSkillGateMetadata,
   type ArgMetadata,
   type OptionMetadata,
-  type SkillGateMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
-import { resolveCommandSkillGate } from "./skill-gates.js";
+import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
 // ============================================================================
 // Types
@@ -82,7 +80,6 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
-    const skillGateMap = getSkillGateMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -96,9 +93,6 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
         groupPath: groupMeta.name,
         command: cmdMeta.name,
         method: cmdMeta.method,
-        groupSkillGate: groupMeta.skillGate,
-        commandSkillGate: cmdMeta.skillGate,
-        methodSkillGate: skillGateMap.get(cmdMeta.method),
       });
 
       tools.push({

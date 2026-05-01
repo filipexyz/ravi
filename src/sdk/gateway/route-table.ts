@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { z, type ZodTypeAny } from "zod";
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";
-import type { SkillGateMetadata } from "../../cli/decorators.js";
+import type { SkillGateMetadata } from "../../cli/skill-gates.js";
 
 export const API_PREFIX = "/api/v1";
 

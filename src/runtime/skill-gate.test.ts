@@ -3,8 +3,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
-import { dbSetSetting, getOrCreateSession, getSession } from "../router/index.js";
-import { configuredSkillGateForCommand, configuredSkillGateForTool, evaluateSkillGate } from "./skill-gate.js";
+import { dbUpsertSkillGateRule, getOrCreateSession, getSession } from "../router/index.js";
+import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
@@ -53,7 +53,7 @@ describe("evaluateSkillGate", () => {
     });
 
     const first = evaluateSkillGate({
-      gate: { skill: "demo-skill", source: "decorator" },
+      gate: { skill: "demo-skill", source: "config" },
       context,
       toolName: "demo_run",
     });
@@ -67,7 +67,7 @@ describe("evaluateSkillGate", () => {
     expect(persisted.loadedSkills).toEqual(["demo-skill"]);
 
     const second = evaluateSkillGate({
-      gate: { skill: "demo-skill", source: "decorator" },
+      gate: { skill: "demo-skill", source: "config" },
       context,
       toolName: "demo_run",
     });
@@ -85,7 +85,7 @@ describe("evaluateSkillGate", () => {
     });
 
     const decision = evaluateSkillGate({
-      gate: { skill: "missing-skill", source: "decorator" },
+      gate: { skill: "missing-skill", source: "config" },
       context,
       toolName: "demo_run",
     });
@@ -96,15 +96,10 @@ describe("evaluateSkillGate", () => {
   });
 
   it("resolves flexible operator-configured gates for tools and external CLI commands", () => {
-    dbSetSetting(
-      "runtime.skillGates",
-      JSON.stringify([
-        { tool: "external_lookup", skill: "external-skill", variant: "hard" },
-        { commandPrefix: "gh issue", skill: "github" },
-      ]),
-    );
+    dbUpsertSkillGateRule({ id: "external-lookup", tool: "external_lookup", skill: "external-skill" });
+    dbUpsertSkillGateRule({ id: "github-issue", commandPrefix: "gh issue", skill: "github" });
 
-    const toolGate = configuredSkillGateForTool("external_lookup");
+    const toolGate = runtimeSkillGateForTool("external_lookup");
     if (!toolGate) {
       throw new Error("Expected external_lookup to resolve a configured skill gate.");
     }
@@ -113,8 +108,26 @@ describe("evaluateSkillGate", () => {
       source: "config",
     });
     expect(Object.prototype.hasOwnProperty.call(toolGate, "variant")).toBe(false);
-    expect(configuredSkillGateForCommand("gh issue view 123")).toMatchObject({
+    expect(runtimeSkillGateForCommand("gh issue view 123")).toMatchObject({
       skill: "github",
+      source: "config",
+    });
+  });
+
+  it("applies operator overrides and removals to default Ravi group gates", () => {
+    dbUpsertSkillGateRule({ id: "image", skill: "custom-image-skill" });
+    dbUpsertSkillGateRule({ id: "tasks", disabled: true });
+    dbUpsertSkillGateRule({ id: "linear", pattern: "^linear(?:[._]|$)", skill: "linear-skill" });
+
+    expect(runtimeSkillGateForTool("image_generate")).toMatchObject({
+      skill: "custom-image-skill",
+      source: "config",
+      ruleId: "image",
+    });
+    expect(runtimeSkillGateForTool("tasks_list")).toBeUndefined();
+    expect(runtimeSkillGateForCommand("ravi tasks list")).toBeUndefined();
+    expect(runtimeSkillGateForTool("linear_issue_list")).toMatchObject({
+      skill: "linear-skill",
       source: "config",
     });
   });

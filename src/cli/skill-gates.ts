@@ -1,45 +1,75 @@
-import { normalizeSkillGateInput, type SkillGateInput, type SkillGateMetadata } from "./decorators.js";
+export interface SkillGateMetadata {
+  skill: string;
+  source: "inferred" | "config";
+  ruleId?: string;
+}
+
+export interface SkillGateRuleConfig {
+  id?: string;
+  skill?: string | null;
+  disabled?: boolean;
+  remove?: boolean;
+  pattern?: string;
+  groupRegex?: string;
+  tool?: string;
+  toolPrefix?: string;
+  toolRegex?: string;
+  command?: string;
+  commandPrefix?: string;
+  commandRegex?: string;
+}
 
 export interface ResolveCommandSkillGateInput {
   groupPath: string;
   command: string;
-  method: string;
-  groupSkillGate?: SkillGateInput;
-  commandSkillGate?: SkillGateInput;
-  methodSkillGate?: SkillGateMetadata | false;
+  method?: string;
 }
 
 interface RaviGroupSkillRule {
+  id: string;
   pattern: RegExp;
   skill: string;
 }
 
-const DEFAULT_RAVI_GROUP_SKILL_RULES: RaviGroupSkillRule[] = [
-  { pattern: /^agents(?:[._]|$)/, skill: "ravi-system-agents-manager" },
-  { pattern: /^artifacts(?:[._]|$)/, skill: "ravi-system-artifacts" },
-  { pattern: /^audio(?:[._]|$)/, skill: "ravi-system-audio" },
-  { pattern: /^contacts(?:[._]|$)/, skill: "ravi-system-contacts-manager" },
-  { pattern: /^context(?:[._]|$)/, skill: "ravi-dev-context-cli" },
-  { pattern: /^cron(?:[._]|$)/, skill: "ravi-system-cron-manager" },
-  { pattern: /^daemon(?:[._]|$)/, skill: "ravi-system-daemon-manager" },
-  { pattern: /^eval(?:[._]|$)/, skill: "ravi-system-tasks-eval" },
-  { pattern: /^events(?:[._]|$)/, skill: "ravi-system-events" },
-  { pattern: /^heartbeat(?:[._]|$)/, skill: "ravi-system-heartbeat-manager" },
-  { pattern: /^image(?:[._]|$)/, skill: "ravi-system-image" },
-  { pattern: /^(?:routes|instances[._]routes)(?:[._]|$)/, skill: "ravi-system-routes-manager" },
-  { pattern: /^instances(?:[._]|$)/, skill: "ravi-system-instances-manager" },
-  { pattern: /^permissions(?:[._]|$)/, skill: "ravi-system-permissions-manager" },
-  { pattern: /^projects(?:[._]|$)/, skill: "ravi-system-projects" },
-  { pattern: /^prox[._]calls(?:[._]|$)/, skill: "ravi-system-prox-calls" },
-  { pattern: /^sessions(?:[._]|$)/, skill: "ravi-system-sessions" },
-  { pattern: /^settings(?:[._]|$)/, skill: "ravi-system-settings-manager" },
-  { pattern: /^skills(?:[._]|$)/, skill: "ravi-system-skill-creator" },
-  { pattern: /^specs(?:[._]|$)/, skill: "ravi-system-specs" },
-  { pattern: /^stickers(?:[._]|$)/, skill: "ravi-system-stickers" },
-  { pattern: /^tasks(?:[._]|$)/, skill: "ravi-system-tasks" },
-  { pattern: /^triggers(?:[._]|$)/, skill: "ravi-system-trigger-manager" },
-  { pattern: /^video(?:[._]|$)/, skill: "ravi-system-video" },
-  { pattern: /^whatsapp(?:[._]|$)/, skill: "ravi-system-whatsapp-manager" },
+export interface DefaultSkillGateRule {
+  id: string;
+  pattern: string;
+  skill: string;
+}
+
+interface EffectiveGroupSkillRule extends RaviGroupSkillRule {
+  source: SkillGateMetadata["source"];
+}
+
+type ConfiguredGateResolution = SkillGateMetadata | false | undefined;
+
+export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
+  { id: "agents", pattern: /^agents(?:[._]|$)/, skill: "ravi-system-agents-manager" },
+  { id: "artifacts", pattern: /^artifacts(?:[._]|$)/, skill: "ravi-system-artifacts" },
+  { id: "audio", pattern: /^audio(?:[._]|$)/, skill: "ravi-system-audio" },
+  { id: "contacts", pattern: /^contacts(?:[._]|$)/, skill: "ravi-system-contacts-manager" },
+  { id: "context", pattern: /^context(?:[._]|$)/, skill: "ravi-dev-context-cli" },
+  { id: "cron", pattern: /^cron(?:[._]|$)/, skill: "ravi-system-cron-manager" },
+  { id: "daemon", pattern: /^daemon(?:[._]|$)/, skill: "ravi-system-daemon-manager" },
+  { id: "eval", pattern: /^eval(?:[._]|$)/, skill: "ravi-system-tasks-eval" },
+  { id: "events", pattern: /^events(?:[._]|$)/, skill: "ravi-system-events" },
+  { id: "heartbeat", pattern: /^heartbeat(?:[._]|$)/, skill: "ravi-system-heartbeat-manager" },
+  { id: "image", pattern: /^image(?:[._]|$)/, skill: "ravi-system-image" },
+  { id: "routes", pattern: /^(?:routes|instances[._]routes)(?:[._]|$)/, skill: "ravi-system-routes-manager" },
+  { id: "instances", pattern: /^instances(?:[._]|$)/, skill: "ravi-system-instances-manager" },
+  { id: "permissions", pattern: /^permissions(?:[._]|$)/, skill: "ravi-system-permissions-manager" },
+  { id: "projects", pattern: /^projects(?:[._]|$)/, skill: "ravi-system-projects" },
+  { id: "prox-calls", pattern: /^prox[._]calls(?:[._]|$)/, skill: "ravi-system-prox-calls" },
+  { id: "sessions", pattern: /^sessions(?:[._]|$)/, skill: "ravi-system-sessions" },
+  { id: "settings", pattern: /^settings(?:[._]|$)/, skill: "ravi-system-settings-manager" },
+  { id: "skill-gates", pattern: /^skill[-._]?gates(?:[-._]|$)/, skill: "ravi-system-skill-gates" },
+  { id: "skills", pattern: /^skills(?:[._]|$)/, skill: "ravi-system-skill-creator" },
+  { id: "specs", pattern: /^specs(?:[._]|$)/, skill: "ravi-system-specs" },
+  { id: "stickers", pattern: /^stickers(?:[._]|$)/, skill: "ravi-system-stickers" },
+  { id: "tasks", pattern: /^tasks(?:[._]|$)/, skill: "ravi-system-tasks" },
+  { id: "triggers", pattern: /^triggers(?:[._]|$)/, skill: "ravi-system-trigger-manager" },
+  { id: "video", pattern: /^video(?:[._]|$)/, skill: "ravi-system-video" },
+  { id: "whatsapp", pattern: /^whatsapp(?:[._]|$)/, skill: "ravi-system-whatsapp-manager" },
 ];
 
 const RAVI_GATE_EXEMPT_COMMANDS = new Set([
@@ -54,50 +84,70 @@ const RAVI_GATE_EXEMPT_COMMANDS = new Set([
   "sessions.visibility",
 ]);
 
-export function resolveCommandSkillGate(input: ResolveCommandSkillGateInput): SkillGateMetadata | undefined {
+export function listDefaultSkillGateRules(): DefaultSkillGateRule[] {
+  return DEFAULT_RAVI_GROUP_SKILL_RULES.map((rule) => ({
+    id: rule.id,
+    pattern: rule.pattern.source,
+    skill: rule.skill,
+  }));
+}
+
+export function isDefaultSkillGateRuleId(id: string): boolean {
+  return DEFAULT_RAVI_GROUP_SKILL_RULES.some((rule) => rule.id === id);
+}
+
+export function resolveCommandSkillGate(
+  input: ResolveCommandSkillGateInput,
+  options?: { rules?: readonly SkillGateRuleConfig[] },
+): SkillGateMetadata | undefined {
   const fullName = `${input.groupPath}.${input.command}`;
   if (RAVI_GATE_EXEMPT_COMMANDS.has(fullName)) {
     return undefined;
   }
 
-  if (input.methodSkillGate !== undefined) {
-    return input.methodSkillGate === false ? undefined : input.methodSkillGate;
+  const configured = resolveConfiguredGroupTargetGate(input.groupPath, options?.rules ?? []);
+  if (configured !== undefined) {
+    return configured === false ? undefined : configured;
   }
 
-  const commandGate = normalizeSkillGateInput(input.commandSkillGate, "command");
-  if (commandGate !== undefined) {
-    return commandGate === false ? undefined : commandGate;
-  }
-
-  const groupGate = normalizeSkillGateInput(input.groupSkillGate, "group");
-  if (groupGate !== undefined) {
-    return groupGate === false ? undefined : groupGate;
-  }
-
-  return inferRaviGroupSkillGate(input.groupPath);
+  return inferRaviGroupSkillGate(input.groupPath, { rules: options?.rules });
 }
 
-export function resolveRuntimeToolSkillGate(input: {
-  toolName: string;
-  metadataSkillGate?: SkillGateMetadata;
-}): SkillGateMetadata | undefined {
+export function resolveRuntimeToolSkillGate(
+  input: { toolName: string },
+  options?: { rules?: readonly SkillGateRuleConfig[] },
+): SkillGateMetadata | undefined {
   if (isExemptRaviToolName(input.toolName)) {
     return undefined;
   }
-  return input.metadataSkillGate ?? inferRaviToolSkillGate(input.toolName);
+
+  const configured = resolveConfiguredToolGate(input.toolName, options?.rules ?? []);
+  if (configured !== undefined) {
+    return configured === false ? undefined : configured;
+  }
+
+  return inferRaviToolSkillGate(input.toolName, { rules: options?.rules });
 }
 
-export function inferRaviToolSkillGate(toolName: string): SkillGateMetadata | undefined {
+export function inferRaviToolSkillGate(
+  toolName: string,
+  options?: { rules?: readonly SkillGateRuleConfig[] },
+): SkillGateMetadata | undefined {
   if (isExemptRaviToolName(toolName)) {
     return undefined;
   }
-  return inferRaviGroupSkillGate(toolName);
+  return inferRaviGroupSkillGate(toolName, { rules: options?.rules });
 }
 
 export function inferRaviCommandSkillGate(
   commandLine: string,
-  options?: { executables?: readonly string[] },
+  options?: { executables?: readonly string[]; rules?: readonly SkillGateRuleConfig[] },
 ): SkillGateMetadata | undefined {
+  const configured = resolveConfiguredCommandGate(commandLine, options);
+  if (configured !== undefined) {
+    return configured === false ? undefined : configured;
+  }
+
   if (options?.executables && !options.executables.includes("ravi")) {
     return undefined;
   }
@@ -114,7 +164,12 @@ export function inferRaviCommandSkillGate(
   }
   const candidates = second ? [`${first}.${second}`, first] : [first];
   for (const groupPath of candidates) {
-    const inferred = inferRaviGroupSkillGate(groupPath);
+    const configuredGroup = resolveConfiguredGroupTargetGate(groupPath, options?.rules ?? []);
+    if (configuredGroup !== undefined) {
+      return configuredGroup === false ? undefined : configuredGroup;
+    }
+
+    const inferred = inferRaviGroupSkillGate(groupPath, { rules: options?.rules });
     if (inferred) {
       return inferred;
     }
@@ -123,17 +178,221 @@ export function inferRaviCommandSkillGate(
   return undefined;
 }
 
-export function inferRaviGroupSkillGate(groupOrToolName: string): SkillGateMetadata | undefined {
+export function inferRaviGroupSkillGate(
+  groupOrToolName: string,
+  options?: { rules?: readonly SkillGateRuleConfig[] },
+): SkillGateMetadata | undefined {
   const normalized = normalizeGateTarget(groupOrToolName);
-  const matched = DEFAULT_RAVI_GROUP_SKILL_RULES.find((rule) => rule.pattern.test(normalized));
+  const matched = getEffectiveDefaultRules(options?.rules ?? []).find((rule) => rule.pattern.test(normalized));
   if (!matched) {
     return undefined;
   }
 
   return {
     skill: matched.skill,
-    source: "inferred",
+    source: matched.source,
+    ruleId: matched.id,
   };
+}
+
+function resolveConfiguredToolGate(toolName: string, rules: readonly SkillGateRuleConfig[]): ConfiguredGateResolution {
+  const normalized = normalizeGateTarget(toolName);
+  for (const rule of rules) {
+    if (!ruleHasDirectToolMatcher(rule) && !ruleHasGroupMatcher(rule)) {
+      continue;
+    }
+    if (!configuredToolRuleMatches(rule, normalized, toolName)) {
+      continue;
+    }
+    const resolution = configuredRuleResolution(rule);
+    if (resolution !== undefined) {
+      return resolution;
+    }
+  }
+  return undefined;
+}
+
+function resolveConfiguredCommandGate(
+  commandLine: string,
+  options?: { executables?: readonly string[]; rules?: readonly SkillGateRuleConfig[] },
+): ConfiguredGateResolution {
+  const normalizedCommand = normalizeShell(commandLine);
+  const rules = options?.rules ?? [];
+  for (const rule of rules) {
+    if (!ruleHasDirectCommandMatcher(rule)) {
+      continue;
+    }
+    if (!configuredCommandRuleMatches(rule, commandLine, normalizedCommand, options?.executables)) {
+      continue;
+    }
+    const resolution = configuredRuleResolution(rule);
+    if (resolution !== undefined) {
+      return resolution;
+    }
+  }
+  return undefined;
+}
+
+function resolveConfiguredGroupTargetGate(
+  groupOrToolName: string,
+  rules: readonly SkillGateRuleConfig[],
+): ConfiguredGateResolution {
+  const normalized = normalizeGateTarget(groupOrToolName);
+  for (const rule of rules) {
+    if (!ruleHasGroupMatcher(rule)) {
+      continue;
+    }
+    if (!configuredGroupRuleMatches(rule, normalized)) {
+      continue;
+    }
+    const resolution = configuredRuleResolution(rule);
+    if (resolution !== undefined) {
+      return resolution;
+    }
+  }
+  return undefined;
+}
+
+function getEffectiveDefaultRules(rules: readonly SkillGateRuleConfig[]): EffectiveGroupSkillRule[] {
+  const effective: EffectiveGroupSkillRule[] = DEFAULT_RAVI_GROUP_SKILL_RULES.map((rule) => ({
+    ...rule,
+    source: "inferred",
+  }));
+
+  for (const config of rules) {
+    if (!config.id) {
+      continue;
+    }
+    const index = effective.findIndex((rule) => rule.id === config.id);
+    if (index === -1) {
+      continue;
+    }
+    if (isRuleDisabled(config)) {
+      effective.splice(index, 1);
+      continue;
+    }
+
+    const skill = normalizeConfiguredSkill(config.skill);
+    const pattern = compileRulePattern(config.pattern ?? config.groupRegex);
+    if (!skill && !pattern) {
+      continue;
+    }
+
+    effective[index] = {
+      ...effective[index]!,
+      ...(skill ? { skill } : {}),
+      ...(pattern ? { pattern } : {}),
+      source: "config",
+    };
+  }
+
+  return effective;
+}
+
+function configuredRuleResolution(rule: SkillGateRuleConfig): ConfiguredGateResolution {
+  if (isRuleDisabled(rule)) {
+    return false;
+  }
+
+  const skill = normalizeConfiguredSkill(rule.skill);
+  if (!skill) {
+    return undefined;
+  }
+
+  return {
+    skill,
+    source: "config",
+    ...(rule.id ? { ruleId: rule.id } : {}),
+  };
+}
+
+function isRuleDisabled(rule: SkillGateRuleConfig): boolean {
+  return rule.disabled === true || rule.remove === true || rule.skill === null;
+}
+
+function normalizeConfiguredSkill(skill: SkillGateRuleConfig["skill"]): string | undefined {
+  return typeof skill === "string" && skill.trim().length > 0 ? skill.trim() : undefined;
+}
+
+function configuredToolRuleMatches(
+  rule: SkillGateRuleConfig,
+  normalizedToolName: string,
+  rawToolName: string,
+): boolean {
+  if (typeof rule.tool === "string" && normalizeGateTarget(rule.tool) === normalizedToolName) {
+    return true;
+  }
+  if (typeof rule.toolPrefix === "string" && normalizedToolName.startsWith(normalizeGateTarget(rule.toolPrefix))) {
+    return true;
+  }
+  if (regexMatches(rule.toolRegex, rawToolName)) {
+    return true;
+  }
+  return configuredGroupRuleMatches(rule, normalizedToolName);
+}
+
+function configuredCommandRuleMatches(
+  rule: SkillGateRuleConfig,
+  rawCommandLine: string,
+  normalizedCommandLine: string,
+  executables: readonly string[] | undefined,
+): boolean {
+  if (typeof rule.command === "string" && normalizeShell(rule.command) === normalizedCommandLine) {
+    return configuredMatcherExecutableAllowed(rule.command, executables);
+  }
+  if (
+    typeof rule.commandPrefix === "string" &&
+    commandStartsWith(normalizedCommandLine, normalizeShell(rule.commandPrefix))
+  ) {
+    return configuredMatcherExecutableAllowed(rule.commandPrefix, executables);
+  }
+  return regexMatches(rule.commandRegex, rawCommandLine);
+}
+
+function configuredGroupRuleMatches(rule: SkillGateRuleConfig, normalizedTarget: string): boolean {
+  return regexMatches(rule.pattern ?? rule.groupRegex, normalizedTarget);
+}
+
+function ruleHasDirectToolMatcher(rule: SkillGateRuleConfig): boolean {
+  return typeof rule.tool === "string" || typeof rule.toolPrefix === "string" || typeof rule.toolRegex === "string";
+}
+
+function ruleHasDirectCommandMatcher(rule: SkillGateRuleConfig): boolean {
+  return (
+    typeof rule.command === "string" || typeof rule.commandPrefix === "string" || typeof rule.commandRegex === "string"
+  );
+}
+
+function ruleHasGroupMatcher(rule: SkillGateRuleConfig): boolean {
+  return typeof rule.pattern === "string" || typeof rule.groupRegex === "string";
+}
+
+function compileRulePattern(pattern: string | undefined): RegExp | undefined {
+  if (!pattern) {
+    return undefined;
+  }
+  try {
+    return new RegExp(pattern);
+  } catch {
+    return undefined;
+  }
+}
+
+function regexMatches(pattern: string | undefined, value: string): boolean {
+  const regex = compileRulePattern(pattern);
+  return regex ? regex.test(value) : false;
+}
+
+function configuredMatcherExecutableAllowed(matcher: string, executables: readonly string[] | undefined): boolean {
+  if (!executables) {
+    return true;
+  }
+  const firstToken = normalizeShell(matcher).split(" ")[0];
+  if (!firstToken) {
+    return true;
+  }
+  const executable = firstToken.split("/").filter(Boolean).at(-1) ?? firstToken;
+  return executables.includes(executable);
 }
 
 function normalizeCliSegment(value: string | undefined): string {
@@ -142,6 +401,15 @@ function normalizeCliSegment(value: string | undefined): string {
 
 function normalizeGateTarget(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeShell(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function commandStartsWith(command: string, prefix: string): boolean {
+  if (!prefix) return false;
+  return command === prefix || command.startsWith(`${prefix} `) || command.includes(` ${prefix} `);
 }
 
 function isExemptRaviToolName(toolName: string): boolean {

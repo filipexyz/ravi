@@ -1,7 +1,6 @@
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
-import { inferRaviCommandSkillGate, resolveRuntimeToolSkillGate } from "../cli/skill-gates.js";
 import {
   checkDangerousPatterns,
   emitBashDeniedAudit,
@@ -29,7 +28,7 @@ import type {
   RuntimeUserInputRequest,
   RuntimeCapabilities,
 } from "./types.js";
-import { configuredSkillGateForCommand, configuredSkillGateForTool, evaluateSkillGate } from "./skill-gate.js";
+import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -170,12 +169,7 @@ async function executeRuntimeDynamicTool(
     };
   }
 
-  const gate =
-    configuredSkillGateForTool(tool.name) ??
-    resolveRuntimeToolSkillGate({
-      toolName: tool.name,
-      metadataSkillGate: tool.metadata.skillGate,
-    });
+  const gate = runtimeSkillGateForTool(tool.name);
   const gateDecision = evaluateSkillGate({
     gate,
     context: options.context,
@@ -416,9 +410,7 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
   }
 
-  const gate =
-    configuredSkillGateForCommand(command, { executables: parsed.executables }) ??
-    inferRaviCommandSkillGate(command, { executables: parsed.executables });
+  const gate = runtimeSkillGateForCommand(command, { executables: parsed.executables });
   const gateDecision = evaluateSkillGate({
     gate,
     context: options.context,

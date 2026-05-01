@@ -21,12 +21,10 @@ import {
   getReturnsBinaryMetadata,
   getReturnsMetadata,
   getScopeMetadata,
-  getSkillGateMetadata,
-  type SkillGateMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { inferArgSchema, inferOptionSchema, type ParsedOptionFlags } from "./schema-inference.js";
-import { resolveCommandSkillGate } from "./skill-gates.js";
+import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
 export type CommandClass = new () => object;
 
@@ -151,7 +149,6 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
     const returnsMap = getReturnsMetadata(cls);
     const binaryReturnsSet = getReturnsBinaryMetadata(cls);
     const cliOnlySet = getCliOnlyMetadata(cls);
-    const skillGateMap = getSkillGateMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -194,9 +191,6 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         groupPath: groupMeta.name,
         command: cmdMeta.name,
         method: cmdMeta.method,
-        groupSkillGate: groupMeta.skillGate,
-        commandSkillGate: cmdMeta.skillGate,
-        methodSkillGate: skillGateMap.get(cmdMeta.method),
       });
 
       const entry: CommandRegistryEntry = {

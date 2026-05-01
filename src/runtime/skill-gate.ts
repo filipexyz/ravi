@@ -1,5 +1,5 @@
 import {
-  dbGetSetting,
+  dbListSkillGateRules,
   getSession,
   resolveSession,
   updateProviderSession,
@@ -13,21 +13,18 @@ import {
   slugifySkillName,
   type RaviSkill,
 } from "../skills/manager.js";
-import type { SkillGateMetadata } from "../cli/decorators.js";
+import {
+  inferRaviCommandSkillGate,
+  resolveRuntimeToolSkillGate,
+  type SkillGateMetadata,
+  type SkillGateRuleConfig,
+} from "../cli/skill-gates.js";
 import { nats } from "../nats.js";
 import type { SessionEntry } from "../router/types.js";
 import { markLoadedFromSkillGate, readSkillVisibilityFromParams } from "./skill-visibility.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
-const SKILL_GATE_SETTING_KEY = "runtime.skillGates";
-
-export interface ConfiguredSkillGateRule {
-  tool?: string;
-  command?: string;
-  commandPrefix?: string;
-  commandRegex?: string;
-  skill: string;
-}
+export type ConfiguredSkillGateRule = SkillGateRuleConfig;
 
 export interface SkillGateDecision {
   allowed: boolean;
@@ -43,39 +40,15 @@ export interface EvaluateSkillGateInput {
   toolName: string;
 }
 
-let cachedConfiguredRulesRaw: string | null | undefined;
-let cachedConfiguredRules: ConfiguredSkillGateRule[] = [];
-
-export function configuredSkillGateForTool(toolName: string): SkillGateMetadata | undefined {
-  const rule = readConfiguredSkillGateRules().find((candidate) => candidate.tool === toolName);
-  return rule ? configuredRuleToGate(rule) : undefined;
+export function runtimeSkillGateForTool(toolName: string): SkillGateMetadata | undefined {
+  return resolveRuntimeToolSkillGate({ toolName }, { rules: readConfiguredSkillGateRules() });
 }
 
-export function configuredSkillGateForCommand(
+export function runtimeSkillGateForCommand(
   commandLine: string,
   options?: { executables?: readonly string[] },
 ): SkillGateMetadata | undefined {
-  const normalizedCommand = normalizeShell(commandLine);
-  for (const rule of readConfiguredSkillGateRules()) {
-    if (!rule.skill.trim()) continue;
-
-    if (rule.command && normalizeShell(rule.command) === normalizedCommand) {
-      if (!configuredMatcherExecutableAllowed(rule.command, options?.executables)) continue;
-      return configuredRuleToGate(rule);
-    }
-    if (rule.commandPrefix && commandStartsWith(normalizedCommand, normalizeShell(rule.commandPrefix))) {
-      if (!configuredMatcherExecutableAllowed(rule.commandPrefix, options?.executables)) continue;
-      return configuredRuleToGate(rule);
-    }
-    if (rule.commandRegex) {
-      try {
-        if (new RegExp(rule.commandRegex).test(commandLine)) {
-          return configuredRuleToGate(rule);
-        }
-      } catch {}
-    }
-  }
-  return undefined;
+  return inferRaviCommandSkillGate(commandLine, { ...options, rules: readConfiguredSkillGateRules() });
 }
 
 export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecision {
@@ -144,68 +117,20 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
   };
 }
 
-function readConfiguredSkillGateRules(): ConfiguredSkillGateRule[] {
-  const raw = dbGetSetting(SKILL_GATE_SETTING_KEY);
-  if (raw === cachedConfiguredRulesRaw) {
-    return cachedConfiguredRules;
-  }
-
-  cachedConfiguredRulesRaw = raw;
-  cachedConfiguredRules = parseConfiguredSkillGateRules(raw);
-  return cachedConfiguredRules;
-}
-
-function parseConfiguredSkillGateRules(raw: string | null): ConfiguredSkillGateRule[] {
-  if (!raw?.trim()) {
-    return [];
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-
-  const list = Array.isArray(parsed)
-    ? parsed
-    : parsed && typeof parsed === "object" && Array.isArray((parsed as { rules?: unknown }).rules)
-      ? (parsed as { rules: unknown[] }).rules
-      : [];
-
-  return list.filter(isConfiguredSkillGateRule);
-}
-
-function isConfiguredSkillGateRule(value: unknown): value is ConfiguredSkillGateRule {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-  const rule = value as Record<string, unknown>;
-  const hasMatcher =
-    typeof rule.tool === "string" ||
-    typeof rule.command === "string" ||
-    typeof rule.commandPrefix === "string" ||
-    typeof rule.commandRegex === "string";
-  return hasMatcher && typeof rule.skill === "string";
-}
-
-function configuredRuleToGate(rule: ConfiguredSkillGateRule): SkillGateMetadata {
-  return {
-    skill: rule.skill.trim(),
-    source: "config",
-  };
-}
-
-function configuredMatcherExecutableAllowed(matcher: string, executables: readonly string[] | undefined): boolean {
-  if (!executables) {
-    return true;
-  }
-  const firstToken = normalizeShell(matcher).split(" ")[0];
-  if (!firstToken) {
-    return true;
-  }
-  const executable = firstToken.split("/").filter(Boolean).at(-1) ?? firstToken;
-  return executables.includes(executable);
+function readConfiguredSkillGateRules(): SkillGateRuleConfig[] {
+  return dbListSkillGateRules().map((rule) => ({
+    id: rule.id,
+    skill: rule.skill ?? null,
+    disabled: rule.disabled,
+    pattern: rule.pattern,
+    groupRegex: rule.groupRegex,
+    tool: rule.tool,
+    toolPrefix: rule.toolPrefix,
+    toolRegex: rule.toolRegex,
+    command: rule.command,
+    commandPrefix: rule.commandPrefix,
+    commandRegex: rule.commandRegex,
+  }));
 }
 
 function resolveContextSession(context: ContextRecord | null | undefined): SessionEntry | null {
@@ -296,15 +221,6 @@ function buildSoftGateMessage(toolName: string, skillName: string, skill: RaviSk
     "",
     skill.content,
   ].join("\n");
-}
-
-function normalizeShell(value: string): string {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function commandStartsWith(command: string, prefix: string): boolean {
-  if (!prefix) return false;
-  return command === prefix || command.startsWith(`${prefix} `) || command.includes(` ${prefix} `);
 }
 
 export function skillGateErrorPayload(decision: SkillGateDecision): Record<string, unknown> {

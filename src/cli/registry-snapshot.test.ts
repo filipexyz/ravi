@@ -2,9 +2,14 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, RequiresSkill, Returns, getReturnsMetadata } from "./decorators.js";
+import { Arg, Command, Group, Option, Returns, getReturnsMetadata } from "./decorators.js";
 import { buildRegistry } from "./registry-snapshot.js";
-import { inferRaviCommandSkillGate, inferRaviToolSkillGate } from "./skill-gates.js";
+import {
+  inferRaviCommandSkillGate,
+  inferRaviToolSkillGate,
+  resolveCommandSkillGate,
+  resolveRuntimeToolSkillGate,
+} from "./skill-gates.js";
 
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {
@@ -66,23 +71,6 @@ class ExplicitSchemaCommands {
 class InferredSkillGateCommands {
   @Command({ name: "list", description: "List tasks" })
   list() {
-    return {};
-  }
-}
-
-@Group({ name: "custom", description: "Custom commands", scope: "open", skillGate: "custom-skill" })
-class GroupSkillGateCommands {
-  @Command({ name: "run", description: "Run custom" })
-  run() {
-    return {};
-  }
-}
-
-@Group({ name: "decorated", description: "Decorated commands", scope: "open" })
-class DecoratedSkillGateCommands {
-  @Command({ name: "run", description: "Run decorated" })
-  @RequiresSkill("decorated-skill")
-  run() {
     return {};
   }
 }
@@ -175,20 +163,12 @@ describe("buildRegistry", () => {
     expect(reg.commands.every((c) => c.cls !== (Plain as unknown))).toBe(true);
   });
 
-  it("attaches inferred and explicit skill gates to command entries", () => {
-    const reg = buildRegistry([InferredSkillGateCommands, GroupSkillGateCommands, DecoratedSkillGateCommands]);
+  it("attaches inferred skill gates to command entries", () => {
+    const reg = buildRegistry([InferredSkillGateCommands]);
 
     expect(reg.commands.find((c) => c.fullName === "tasks.list")?.skillGate).toMatchObject({
       skill: "ravi-system-tasks",
       source: "inferred",
-    });
-    expect(reg.commands.find((c) => c.fullName === "custom.run")?.skillGate).toMatchObject({
-      skill: "custom-skill",
-      source: "group",
-    });
-    expect(reg.commands.find((c) => c.fullName === "decorated.run")?.skillGate).toMatchObject({
-      skill: "decorated-skill",
-      source: "decorator",
     });
   });
 
@@ -220,5 +200,32 @@ describe("buildRegistry", () => {
       source: "inferred",
     });
     expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();
+  });
+
+  it("applies configured rule additions, overrides, and removals through one resolver", () => {
+    const rules = [
+      { id: "image", skill: "custom-image-skill" },
+      { id: "tasks", disabled: true },
+      { pattern: "^linear(?:[._]|$)", skill: "linear-skill" },
+      { tool: "direct_lookup", skill: "direct-skill" },
+      { toolRegex: "^legacy_", disabled: true },
+    ];
+
+    expect(resolveRuntimeToolSkillGate({ toolName: "image_generate" }, { rules })).toMatchObject({
+      skill: "custom-image-skill",
+      source: "config",
+      ruleId: "image",
+    });
+    expect(resolveRuntimeToolSkillGate({ toolName: "tasks_list" }, { rules })).toBeUndefined();
+    expect(resolveCommandSkillGate({ groupPath: "tasks", command: "list" }, { rules })).toBeUndefined();
+    expect(resolveRuntimeToolSkillGate({ toolName: "linear_issue_list" }, { rules })).toMatchObject({
+      skill: "linear-skill",
+      source: "config",
+    });
+    expect(resolveRuntimeToolSkillGate({ toolName: "direct_lookup" }, { rules })).toMatchObject({
+      skill: "direct-skill",
+      source: "config",
+    });
+    expect(resolveRuntimeToolSkillGate({ toolName: "legacy_lookup" }, { rules })).toBeUndefined();
   });
 });

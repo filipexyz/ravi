@@ -26,8 +26,7 @@ import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
-import { resolveRuntimeToolSkillGate } from "../../cli/skill-gates.js";
-import { configuredSkillGateForTool, evaluateSkillGate, skillGateErrorPayload } from "../../runtime/skill-gate.js";
+import { evaluateSkillGate, runtimeSkillGateForTool, skillGateErrorPayload } from "../../runtime/skill-gate.js";
 import {
   errorResponse,
   internalError,
@@ -123,12 +122,7 @@ export async function dispatch(
     return { response, audit: auditEmitted ? audit : null };
   }
 
-  const gate =
-    configuredSkillGateForTool(tool) ??
-    resolveRuntimeToolSkillGate({
-      toolName: tool,
-      metadataSkillGate: cmd.skillGate,
-    });
+  const gate = runtimeSkillGateForTool(tool);
   const gateDecision = evaluateSkillGate({
     gate,
     context: opts.contextRecord ?? null,
