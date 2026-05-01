@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -30,6 +32,7 @@ const messageMetaById = new Map<
   }
 >();
 let stateDir: string | null = null;
+let agentCwd = "/tmp/ravi-agent";
 
 mock.module("../nats.js", () => ({
   getNats: () => {
@@ -61,7 +64,7 @@ mock.module("../router/index.js", () => ({
     route: { pattern: "group:120363424772797713", priority: 0, session: "dev" },
     agent: {
       id: "main",
-      cwd: "/tmp/ravi-agent",
+      cwd: agentCwd,
       mode: "active",
     },
   }),
@@ -134,6 +137,10 @@ mock.module("../session-trace/channel-trace.js", () => ({
   recordRouteResolvedTrace: mock(() => ({})),
 }));
 
+mock.module("../session-trace/runtime-trace.js", () => ({
+  recordRuntimeTraceEvent: mock(() => ({})),
+}));
+
 mock.module("../utils/media.js", () => ({
   fetchOmniMedia: mock(async () => null),
   saveToAgentAttachments: mock(async () => null),
@@ -164,7 +171,8 @@ afterAll(() => {
 describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
-    actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", "/tmp/ravi-agent");
+    agentCwd = join(stateDir, "agent");
+    actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
@@ -244,6 +252,72 @@ describe("OmniConsumer channel context", () => {
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
     });
+  });
+
+  it("expands registered Ravi commands before building the channel envelope", async () => {
+    const commandsDir = join(agentCwd, ".ravi", "commands");
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(
+      join(commandsDir, "restart.md"),
+      [
+        "---",
+        "description: Restart with a reason.",
+        "arguments:",
+        "  - reason",
+        "---",
+        'Use `ravi daemon restart -m "$reason"`.',
+        "",
+      ].join("\n"),
+    );
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-command",
+      type: "message.received",
+      payload: {
+        externalId: "msg-command",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: '#restart "ativar commands"',
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("Luis Filipe:");
+    expect(prompt.prompt).toContain("## Ravi Command: #restart");
+    expect(prompt.prompt).toContain('Use `ravi daemon restart -m "ativar commands"`.');
+    expect(prompt.commands).toMatchObject([
+      {
+        id: "restart",
+        scope: "agent",
+        originalText: '#restart "ativar commands"',
+        arguments: '"ativar commands"',
+      },
+    ]);
   });
 
   it("resolves an agent-owned platform identity as an agent actor", async () => {

@@ -288,6 +288,10 @@ export class RuntimeSessionDispatcher {
     const sessionEntry = getSessionByName(sessionName);
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+    if (!agent) {
+      log.error("No agent found for prompt", { sessionName, agentId });
+      return;
+    }
 
     const isGroup = sessionEntry?.chatType === "group" || sessionName.includes(":group:");
     const debounceMs = isGroup && agent?.groupDebounceMs ? agent.groupDebounceMs : agent?.debounceMs;
@@ -474,6 +478,7 @@ export class RuntimeSessionDispatcher {
           accountId: messageSource?.accountId ?? prompt.context?.accountId,
           chatId: messageSource?.chatId ?? prompt.context?.chatId,
           sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
         });
 
         if (prompt.source) {
@@ -694,6 +699,7 @@ export class RuntimeSessionDispatcher {
         accountId: prompt.source?.accountId ?? prompt.context?.accountId,
         chatId: prompt.source?.chatId ?? prompt.context?.chatId,
         sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+        commands: prompt.commands,
       });
       const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
       recordRuntimeTraceEvent({
@@ -949,6 +955,7 @@ function combineDebounceBatch(batch: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt
     ...last,
     prompt: batch.map((entry) => entry.prompt).join("\n\n"),
     deliveryBarrier,
+    commands: batch.flatMap((entry) => entry.commands ?? []),
   };
 }
 

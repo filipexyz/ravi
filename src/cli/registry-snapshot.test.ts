@@ -179,6 +179,10 @@ describe("buildRegistry", () => {
       skill: "ravi-system-skill-creator",
       source: "inferred",
     });
+    expect(inferRaviCommandSkillGate("ravi commands validate --agent dev")).toMatchObject({
+      skill: "ravi-system-commands",
+      source: "inferred",
+    });
     expect(inferRaviCommandSkillGate("/Users/luis/dev/filipelabs/ravi.bot/bin/ravi tasks list")).toMatchObject({
       skill: "ravi-system-tasks",
       source: "inferred",
@@ -197,6 +201,10 @@ describe("buildRegistry", () => {
     });
     expect(inferRaviToolSkillGate("instances_routes_list")).toMatchObject({
       skill: "ravi-system-routes-manager",
+      source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("commands_list")).toMatchObject({
+      skill: "ravi-system-commands",
       source: "inferred",
     });
     expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();

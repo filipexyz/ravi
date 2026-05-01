@@ -65,6 +65,7 @@ export interface RuntimeTraceAdapterRequestInput extends RuntimeTraceIdentity {
   capabilitySummary?: Record<string, unknown>;
   queuedMessageCount?: number;
   pendingIds?: string[];
+  commands?: unknown[];
 }
 
 export interface RuntimeTraceTerminalTurnInput extends RuntimeTraceIdentity {
@@ -217,6 +218,7 @@ export function recordAdapterRequestTrace(input: RuntimeTraceAdapterRequestInput
       capability_summary: input.capabilitySummary ?? {},
       queued_message_count: input.queuedMessageCount ?? null,
       pending_ids: input.pendingIds ?? [],
+      commands: input.commands ?? [],
     };
     const request = recordSessionBlob({
       kind: "adapter_request",

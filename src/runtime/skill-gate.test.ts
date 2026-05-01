@@ -133,6 +133,11 @@ describe("evaluateSkillGate", () => {
   });
 
   it("infers Ravi CLI gates from parsed commands without matching quoted text", () => {
+    expect(runtimeSkillGateForCommand("bin/ravi commands list --agent dev --json")).toMatchObject({
+      skill: "ravi-system-commands",
+      source: "inferred",
+      ruleId: "commands",
+    });
     expect(runtimeSkillGateForCommand("bin/ravi skill-gates list --json")).toMatchObject({
       skill: "ravi-system-skill-gates",
       source: "inferred",

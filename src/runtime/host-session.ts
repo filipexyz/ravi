@@ -1,6 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
-import type { MessageActorMetadata } from "./message-types.js";
+import type { MessageActorMetadata, RaviCommandPromptMetadata } from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -24,6 +24,7 @@ export interface RuntimeMessageTarget extends MessageActorMetadata {
 export interface RuntimeUserMessage extends RuntimePromptMessage {
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
+  commands?: RaviCommandPromptMetadata[];
   pendingId?: string;
   queuedAt?: number;
 }

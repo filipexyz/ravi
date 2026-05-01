@@ -122,7 +122,8 @@ function registerCommand(
 
   // Add positional arguments to commander
   for (const arg of argsMeta) {
-    const argDef = arg.required ? `<${arg.name}>` : `[${arg.name}]`;
+    const argName = arg.variadic ? `${arg.name}...` : arg.name;
+    const argDef = arg.required ? `<${argName}>` : `[${argName}]`;
     if (arg.description) {
       sub.argument(argDef, arg.description, arg.defaultValue);
     } else {

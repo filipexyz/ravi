@@ -10,6 +10,7 @@
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
+import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { handleSlashCommand } from "../slash/index.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
 
@@ -40,8 +41,15 @@ import {
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
 } from "../session-trace/channel-trace.js";
+import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import type { MessageActorMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
+import type {
+  MessageActorMetadata,
+  MessageContext,
+  MessageTarget,
+  RaviCommandPromptMetadata,
+} from "../runtime/message-types.js";
+import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
@@ -944,46 +952,46 @@ export class OmniConsumer {
       });
     }
 
-    // Build message envelope text
-    const envelope = this.formatEnvelope(
+    const rawText = payload.content.text ?? "";
+    const humanUrgent = isUrgentInboundText(rawText);
+    const context = this.buildContext(
       channelType,
+      effectiveAccountId,
+      instanceId,
       payload,
       isGroup,
       senderPhone,
+      resolvedSenderPhone,
       senderName,
       groupName,
+      groupMembers,
       chatJid,
-      event.timestamp,
-      threadId,
-      mediaResult,
-      replyContext,
-      replyMediaPath,
+      event,
+      sourceActorMetadata,
     );
-    const rawText = payload.content.text ?? "";
-    const humanUrgent = isUrgentInboundText(rawText);
 
     if (agentMode === "sentinel") {
+      const sentinelEnvelope = this.formatEnvelope(
+        channelType,
+        payload,
+        isGroup,
+        senderPhone,
+        senderName,
+        groupName,
+        chatJid,
+        event.timestamp,
+        threadId,
+        mediaResult,
+        replyContext,
+        replyMediaPath,
+      );
       // Sentinel: observe silently, no typing indicator, no source
       try {
-        const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
+        const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
-          prompt: sentinelEnvelope,
+          prompt: sentinelPrompt,
           _humanUrgent: humanUrgent,
-          context: this.buildContext(
-            channelType,
-            effectiveAccountId,
-            instanceId,
-            payload,
-            isGroup,
-            senderPhone,
-            resolvedSenderPhone,
-            senderName,
-            groupName,
-            groupMembers,
-            chatJid,
-            event,
-            sourceActorMetadata,
-          ),
+          context,
         });
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
@@ -1019,6 +1027,34 @@ export class OmniConsumer {
       ...sourceActorMetadata,
     };
 
+    const commandExpansion = await this.expandInboundRaviCommand({
+      rawText,
+      sessionName,
+      sessionKey: resolved.sessionKey,
+      agent,
+      source,
+      context,
+    });
+    if (commandExpansion.status === "failed") {
+      return;
+    }
+
+    const envelope = this.formatEnvelope(
+      channelType,
+      payload,
+      isGroup,
+      senderPhone,
+      senderName,
+      groupName,
+      chatJid,
+      event.timestamp,
+      threadId,
+      mediaResult,
+      replyContext,
+      replyMediaPath,
+      commandExpansion.content,
+    );
+
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
     if (payload.replyToId && payload.content.text) {
       nats
@@ -1040,28 +1076,129 @@ export class OmniConsumer {
     try {
       await publishSessionPrompt(sessionName, {
         prompt: envelope,
+        commands: commandExpansion.commands,
         source,
         _humanUrgent: humanUrgent,
-        context: this.buildContext(
-          channelType,
-          effectiveAccountId,
-          instanceId,
-          payload,
-          isGroup,
-          senderPhone,
-          resolvedSenderPhone,
-          senderName,
-          groupName,
-          groupMembers,
-          chatJid,
-          event,
-          sourceActorMetadata,
-        ),
+        context,
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
       this.clearActiveTarget(sessionName);
     }
+  }
+
+  private async expandInboundRaviCommand(input: {
+    rawText: string;
+    sessionName: string;
+    sessionKey: string;
+    agent: AgentConfig;
+    source: MessageTarget;
+    context: MessageContext;
+  }): Promise<{ status: "ready"; content?: string; commands?: RaviCommandPromptMetadata[] } | { status: "failed" }> {
+    if (!input.rawText.trimStart().startsWith("#")) {
+      return { status: "ready" };
+    }
+
+    try {
+      const expanded = expandRaviCommandPrompt(
+        {
+          prompt: input.rawText,
+          source: input.source,
+          context: input.context,
+        },
+        { agent: input.agent },
+      );
+      const commandMetadata = expanded.commands?.at(-1);
+      if (!commandMetadata) {
+        return { status: "ready" };
+      }
+
+      recordRuntimeTraceEvent({
+        sessionKey: input.sessionKey,
+        sessionName: input.sessionName,
+        agentId: input.agent.id,
+        eventType: "command.invoked",
+        eventGroup: "command",
+        status: "expanded",
+        source: input.source,
+        messageId: input.context.messageId,
+        payloadJson: commandMetadata,
+      });
+
+      return {
+        status: "ready",
+        content: expanded.prompt,
+        commands: expanded.commands,
+      };
+    } catch (error) {
+      if (error instanceof RaviCommandError) {
+        await this.emitInboundRaviCommandFailure(input, error);
+        return { status: "failed" };
+      }
+      throw error;
+    }
+  }
+
+  private async emitInboundRaviCommandFailure(
+    input: {
+      rawText: string;
+      sessionName: string;
+      sessionKey: string;
+      agent: AgentConfig;
+      source: MessageTarget;
+      context: MessageContext;
+    },
+    error: RaviCommandError,
+  ): Promise<void> {
+    recordRuntimeTraceEvent({
+      sessionKey: input.sessionKey,
+      sessionName: input.sessionName,
+      agentId: input.agent.id,
+      eventType: "command.failed",
+      eventGroup: "command",
+      status: "failed",
+      source: input.source,
+      messageId: input.context.messageId,
+      error: error.message,
+      payloadJson: {
+        code: error.code,
+        commandId: error.commandId ?? null,
+        originalText: input.rawText,
+      },
+    });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.runtime`, {
+        type: "command.failed",
+        code: error.code,
+        commandId: error.commandId ?? null,
+        error: error.message,
+        source: input.source,
+        context: input.context,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure runtime event", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.response`, {
+        error: error.message,
+        target: input.source,
+        _emitId: Math.random().toString(36).slice(2, 8),
+        _instanceId: input.source.instanceId,
+        _pid: process.pid,
+        _v: 2,
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure response", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
   }
 
   /**
@@ -1439,6 +1576,7 @@ export class OmniConsumer {
     mediaResult?: { localPath?: string; transcript?: string } | null,
     replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
     replyMediaPath?: string,
+    contentOverride?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -1457,7 +1595,7 @@ export class OmniConsumer {
       })
       .toLowerCase();
 
-    const content = this.formatContent(payload, mediaResult);
+    const content = contentOverride ?? this.formatContent(payload, mediaResult);
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
     const threadTag = threadId ? ` thread:${threadId}` : "";
 

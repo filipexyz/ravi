@@ -57,9 +57,20 @@ export interface MessageTarget extends MessageActorMetadata {
   sourceMessageId?: string;
 }
 
+export interface RaviCommandPromptMetadata {
+  id: string;
+  scope: "agent" | "global";
+  sourcePath: string;
+  originalText: string;
+  arguments: string;
+  renderedPromptSha256: string;
+}
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
+  /** Ravi Commands that produced this prompt, when a user invoked #command. */
+  commands?: RaviCommandPromptMetadata[];
   /**
    * Message delivery barrier:
    * - immediate_interrupt: interrupt current turn as soon as it is safe

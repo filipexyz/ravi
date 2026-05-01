@@ -9,6 +9,7 @@ export * from "./adapters.js";
 export * from "./agents.js";
 export * from "./artifacts.js";
 export * from "./audio.js";
+export * from "./commands.js";
 export * from "./contacts.js";
 export * from "./context.js";
 export * from "./costs.js";

@@ -178,6 +178,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
     chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
     sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+    commands: prompt.commands,
   });
 
   const runtimeResolution = resolveRuntimeForPrompt({ sessionName, prompt, session, agent, configModel });

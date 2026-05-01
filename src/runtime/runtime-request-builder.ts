@@ -225,6 +225,7 @@ export async function buildRuntimeStartRequest(
       capabilitySummary: summarizeRuntimeCapabilities(runtimeCapabilities),
       queuedMessageCount: input.deliverableMessages.length,
       pendingIds: input.deliverableMessages.map((message) => message.pendingId).filter((id): id is string => !!id),
+      commands: input.deliverableMessages.flatMap((message) => message.commands ?? []),
     });
   };
   const messageGenerator = createRuntimeMessageGenerator({

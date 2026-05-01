@@ -45,6 +45,7 @@ function getDb(): Database {
       account_id TEXT,
       chat_id TEXT,
       source_message_id TEXT,
+      command_json TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
@@ -56,7 +57,7 @@ function getDb(): Database {
   } catch {
     // column already exists
   }
-  for (const column of ["agent_id", "channel", "account_id", "chat_id", "source_message_id"]) {
+  for (const column of ["agent_id", "channel", "account_id", "chat_id", "source_message_id", "command_json"]) {
     try {
       db.exec(`ALTER TABLE messages ADD COLUMN ${column} TEXT`);
     } catch {
@@ -85,6 +86,7 @@ export interface Message {
   account_id?: string | null;
   chat_id?: string | null;
   source_message_id?: string | null;
+  command_json?: string | null;
   created_at: string;
 }
 
@@ -94,6 +96,7 @@ export interface SaveMessageMetadata {
   accountId?: string | null;
   chatId?: string | null;
   sourceMessageId?: string | null;
+  commands?: unknown[] | null;
 }
 
 export function saveMessage(
@@ -114,8 +117,9 @@ export function saveMessage(
         channel,
         account_id,
         chat_id,
-        source_message_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        source_message_id,
+        command_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       sessionId,
@@ -127,6 +131,7 @@ export function saveMessage(
       metadata.accountId ?? null,
       metadata.chatId ?? null,
       metadata.sourceMessageId ?? null,
+      metadata.commands && metadata.commands.length > 0 ? JSON.stringify(metadata.commands) : null,
     );
 }
 

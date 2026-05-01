@@ -49,6 +49,7 @@ export const DEFAULT_RAVI_GROUP_SKILL_RULES: readonly RaviGroupSkillRule[] = [
   { id: "audio", pattern: /^audio(?:[._]|$)/, skill: "ravi-system-audio" },
   { id: "contacts", pattern: /^contacts(?:[._]|$)/, skill: "ravi-system-contacts-manager" },
   { id: "context", pattern: /^context(?:[._]|$)/, skill: "ravi-dev-context-cli" },
+  { id: "commands", pattern: /^commands(?:[._]|$)/, skill: "ravi-system-commands" },
   { id: "cron", pattern: /^cron(?:[._]|$)/, skill: "ravi-system-cron-manager" },
   { id: "daemon", pattern: /^daemon(?:[._]|$)/, skill: "ravi-system-daemon-manager" },
   { id: "eval", pattern: /^eval(?:[._]|$)/, skill: "ravi-system-tasks-eval" },

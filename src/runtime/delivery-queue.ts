@@ -3,6 +3,7 @@ import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
+import type { RaviCommandPromptMetadata } from "./message-types.js";
 import type { RuntimePromptMessage } from "./types.js";
 
 const log = logger.child("runtime:delivery-queue");
@@ -11,6 +12,7 @@ export interface RuntimePromptDeliveryMessage {
   prompt: string;
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
+  commands?: RaviCommandPromptMetadata[];
 }
 
 export function getRuntimePromptDeliveryBarrier(prompt: RuntimePromptDeliveryMessage): DeliveryBarrier {
@@ -25,6 +27,7 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
     parent_tool_use_id: null,
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
     taskBarrierTaskId: prompt.taskBarrierTaskId,
+    commands: prompt.commands,
     pendingId: Math.random().toString(36).slice(2, 10),
     queuedAt: Date.now(),
   };
