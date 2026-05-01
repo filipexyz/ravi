@@ -272,7 +272,6 @@ function requirePm2() {
   name: "daemon",
   description: "Manage ravi via PM2",
   scope: "admin",
-  skillGate: "ravi-system-daemon-manager",
 })
 export class DaemonCommands {
   @Command({ name: "start", description: "Start the daemon via PM2" })

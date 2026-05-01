@@ -213,7 +213,6 @@ function summarizeContacts(contacts: Contact[]) {
 @Group({
   name: "contacts",
   description: "Contact management",
-  skillGate: "ravi-system-contacts-manager",
 })
 export class ContactsCommands {
   @Scope("open")

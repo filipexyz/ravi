@@ -123,7 +123,6 @@ interface AgentRuntimeCleanupCandidate {
   name: "context",
   description: "Runtime context registry and introspection",
   scope: "open",
-  skillGate: "ravi-dev-context-cli",
 })
 export class ContextCommands {
   @Command({ name: "list", description: "List issued runtime contexts without exposing context keys" })
@@ -807,7 +806,6 @@ interface SerializedCredentialEntry {
   name: "context.credentials",
   description: "Manage the local runtime context credentials store (~/.ravi/credentials.json)",
   scope: "open",
-  skillGate: "ravi-dev-context-cli",
 })
 export class ContextCredentialsCommands {
   @Command({ name: "list", description: "List entries in the local credentials store" })

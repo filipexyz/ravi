@@ -770,7 +770,6 @@ function resolveLinkTarget(
   name: "projects",
   description: "Project alignment/context substrate",
   scope: "open",
-  skillGate: "ravi-system-projects",
 })
 export class ProjectCommands {
   @Command({ name: "init", description: "Materialize a project with cheap links and optional canonical workflows" })
@@ -1071,7 +1070,6 @@ export class ProjectCommands {
   name: "projects.workflows",
   description: "Project-scoped workflow run operations",
   scope: "open",
-  skillGate: "ravi-system-projects",
 })
 export class ProjectWorkflowCommands {
   @Command({ name: "start", description: "Start one workflow run from a project and link it in one step" })
@@ -1148,7 +1146,6 @@ export class ProjectWorkflowCommands {
 @Group({
   name: "projects.tasks",
   description: "Project-scoped task operations",
-  skillGate: "ravi-system-projects",
 })
 export class ProjectTaskCommands {
   @Command({ name: "create", description: "Create a task attempt from a project workflow node" })
@@ -1291,7 +1288,6 @@ export class ProjectTaskCommands {
   name: "projects.resources",
   description: "Cheap project resource links",
   scope: "open",
-  skillGate: "ravi-system-projects",
 })
 export class ProjectResourceCommands {
   @Command({ name: "add", description: "Add one resource link to a project" })

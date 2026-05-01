@@ -8,6 +8,7 @@ import {
   dbInsertCostEvent,
   deleteSession,
   getAnnounceCompaction,
+  getSession,
   updateProviderSession,
   updateRuntimeProviderState,
   updateTokens,
@@ -298,7 +299,40 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     skills: runtimeSession.skillVisibility?.skills,
     loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
   });
+  const STUCK_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
+  const PROVIDER_INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+  let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
+  let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearProviderInactivityWatch = () => {
+    if (providerInactivityTimer !== undefined) {
+      clearTimeout(providerInactivityTimer);
+      providerInactivityTimer = undefined;
+    }
+  };
+  const armProviderInactivityWatch = () => {
+    clearProviderInactivityWatch();
+    providerInactivityTimer = setTimeout(() => {
+      providerInactivityTimer = undefined;
+      log.warn("Provider inactive after tool result — aborting session", {
+        sessionName,
+        timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
+      });
+      safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "provider.inactive",
+        timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
+        sessionName,
+      }).catch(() => {});
+      if (!streaming.abortController.signal.aborted) {
+        streaming.internalAbortReason = "provider_inactive";
+        streaming.abortController.abort();
+      }
+    }, PROVIDER_INACTIVITY_TIMEOUT_MS);
+  };
   const clearActiveToolState = () => {
+    if (toolStuckTimer !== undefined) {
+      clearTimeout(toolStuckTimer);
+      toolStuckTimer = undefined;
+    }
     streaming.toolRunning = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
@@ -307,6 +341,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.currentToolSafety = null;
   };
   const signalTurnComplete = () => {
+    clearProviderInactivityWatch();
     if (streaming.onTurnComplete) {
       streaming.onTurnComplete();
       streaming.onTurnComplete = null;
@@ -439,6 +474,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
 
+      // Any event from the provider counts as activity — reset the inactivity watchdog.
+      // The watchdog is only armed after tool.result_delivered, so this is a no-op otherwise.
+      if (providerInactivityTimer !== undefined && event.type !== "tool.result_delivered") {
+        armProviderInactivityWatch();
+      }
+
       const logLevel = event.type === "text.delta" ? "debug" : "info";
       log[logLevel]("Runtime event", {
         runId,
@@ -497,6 +538,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         let statusSkillVisibility: RuntimeSkillVisibilitySnapshot | undefined;
         if (streaming.compacting && !wasCompacting) {
+          // Re-read runtimeSessionParams from DB before compaction reset so any skill gate marks
+          // written during this turn (by persistSkillGateVisibility) are not lost.
+          const freshSession = getSession(session.sessionKey);
+          if (freshSession?.runtimeSessionParams) {
+            session.runtimeSessionParams = freshSession.runtimeSessionParams;
+          }
           statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
             runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
           );
@@ -539,6 +586,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentToolName = event.toolUse.name;
         streaming.currentToolInput = event.toolUse.input;
         streaming.toolStartTime = Date.now();
+        log.info("Tool started", { sessionName, tool: event.toolUse.name, toolId: event.toolUse.id });
+        // Arm stuck-tool watchdog: if tool.completed never fires within the window, abort the session.
+        if (toolStuckTimer !== undefined) clearTimeout(toolStuckTimer);
+        toolStuckTimer = setTimeout(() => {
+          toolStuckTimer = undefined;
+          const stuckTool = streaming.currentToolName ?? "unknown";
+          log.warn("Tool stuck — aborting session", { sessionName, tool: stuckTool, timeoutMs: STUCK_TOOL_TIMEOUT_MS });
+          safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: "tool.stuck",
+            tool: stuckTool,
+            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
+            sessionName,
+          }).catch(() => {});
+          if (!streaming.abortController.signal.aborted) {
+            streaming.internalAbortReason = "stuck_tool";
+            streaming.abortController.abort();
+          }
+        }, STUCK_TOOL_TIMEOUT_MS);
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
@@ -660,6 +725,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       // Handle tool results
+      if (event.type === "tool.result_delivered") {
+        // Tool handler finished and result was sent to the runtime provider.
+        // The provider is now responsible (model thinking). Clear the stuck-tool watchdog.
+        if (toolStuckTimer !== undefined) {
+          clearTimeout(toolStuckTimer);
+          toolStuckTimer = undefined;
+        }
+        // Arm provider inactivity watchdog: catches cases where the provider
+        // (e.g. codex's API call to OpenAI) hangs silently with no further events.
+        armProviderInactivityWatch();
+      }
+
       if (event.type === "tool.completed") {
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";

@@ -27,7 +27,6 @@ function printJson(payload: unknown): void {
   name: "permissions",
   description: "REBAC permission management",
   scope: "superadmin",
-  skillGate: "ravi-system-permissions-manager",
 })
 export class PermissionsCommands {
   @Command({ name: "grant", description: "Grant a relation" })

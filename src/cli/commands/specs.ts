@@ -25,7 +25,6 @@ function printSpecSummary(spec: SpecRecord): void {
   name: "specs",
   description: "Versioned Ravi specs memory",
   scope: "open",
-  skillGate: "ravi-system-specs",
 })
 export class SpecsCommands {
   @Command({ name: "list", description: "List specs from .ravi/specs" })

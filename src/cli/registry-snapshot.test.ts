@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { Arg, Command, Group, Option, RequiresSkill, Returns, getReturnsMetadata } from "./decorators.js";
 import { buildRegistry } from "./registry-snapshot.js";
-import { inferRaviCommandSkillGate } from "./skill-gates.js";
+import { inferRaviCommandSkillGate, inferRaviToolSkillGate } from "./skill-gates.js";
 
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {
@@ -204,5 +204,21 @@ describe("buildRegistry", () => {
       source: "inferred",
     });
     expect(inferRaviCommandSkillGate('echo "ravi tasks list"', { executables: ["echo"] })).toBeUndefined();
+  });
+
+  it("infers runtime tool skill gates from group regexes", () => {
+    expect(inferRaviToolSkillGate("image_generate")).toMatchObject({
+      skill: "ravi-system-image",
+      source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("image_atlas_split")).toMatchObject({
+      skill: "ravi-system-image",
+      source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("instances_routes_list")).toMatchObject({
+      skill: "ravi-system-routes-manager",
+      source: "inferred",
+    });
+    expect(inferRaviToolSkillGate("sessions_visibility")).toBeUndefined();
   });
 });

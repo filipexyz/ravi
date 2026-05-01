@@ -144,7 +144,6 @@ function resolveSendTarget(options: {
   name: "stickers",
   description: "Sticker library management and sending",
   scope: "open",
-  skillGate: "ravi-system-stickers",
 })
 export class StickerCommands {
   @Command({ name: "add", description: "Add or update a sticker catalog entry" })

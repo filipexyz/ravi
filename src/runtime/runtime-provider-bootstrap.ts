@@ -1,5 +1,5 @@
 import { discoverPlugins } from "../plugins/index.js";
-import type { AgentConfig } from "../router/index.js";
+import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type {
@@ -20,6 +20,7 @@ export interface RuntimeProviderBootstrapOptions {
   approvalSource?: RuntimeMessageTarget;
   toolContext: Record<string, unknown>;
   context: Parameters<typeof createRuntimeHostServices>[0]["context"];
+  session?: SessionEntry;
 }
 
 export interface RuntimeProviderBootstrap {
@@ -31,6 +32,7 @@ export interface RuntimeProviderBootstrap {
 export async function prepareRuntimeProviderBootstrap(
   options: RuntimeProviderBootstrapOptions,
 ): Promise<RuntimeProviderBootstrap> {
+  const session = options.session;
   const hostServices = createRuntimeHostServices({
     context: options.context,
     agentId: options.agent.id,
@@ -38,6 +40,11 @@ export async function prepareRuntimeProviderBootstrap(
     resolvedSource: options.resolvedSource,
     approvalSource: options.approvalSource,
     toolContext: options.toolContext,
+    onSkillGatePersisted: session
+      ? (skillVisibility) => {
+          session.runtimeSessionParams = { ...(session.runtimeSessionParams ?? {}), skillVisibility };
+        }
+      : undefined,
   });
   const discoveredPlugins = discoverPlugins();
   const providerBootstrap = await options.runtimeProvider.prepareSession?.({

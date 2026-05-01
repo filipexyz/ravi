@@ -123,7 +123,6 @@ function printJson(payload: unknown): void {
   name: "tasks.automations",
   description: "Event-driven follow-up task automations",
   scope: "open",
-  skillGate: "ravi-system-tasks",
 })
 export class TaskAutomationCommands {
   @Command({ name: "list", description: "List configured task automations" })

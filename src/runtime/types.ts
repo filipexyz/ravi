@@ -482,6 +482,10 @@ export type RuntimeEvent =
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
+      type: "tool.result_delivered";
+      toolCallId: string;
+    } & RuntimeEventBase)
+  | ({
       type: "turn.interrupted";
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)

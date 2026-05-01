@@ -144,6 +144,7 @@ export async function buildRuntimeStartRequest(
     approvalSource,
     toolContext,
     context: runtimeContext,
+    session,
   });
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,

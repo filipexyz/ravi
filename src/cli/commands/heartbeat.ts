@@ -76,7 +76,6 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
   name: "heartbeat",
   description: "Heartbeat scheduling management",
   scope: "admin",
-  skillGate: "ravi-system-heartbeat-manager",
 })
 export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })

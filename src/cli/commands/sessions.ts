@@ -1167,7 +1167,6 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
   name: "sessions",
   description: "Manage agent sessions",
   scope: "open",
-  skillGate: "ravi-system-sessions",
 })
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })

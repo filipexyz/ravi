@@ -656,6 +656,11 @@ async function* normalizeCodexEvents(
             continue;
           }
 
+          if (event.type === "tool.result_delivered") {
+            yield { type: "tool.result_delivered", toolCallId: String(event.toolCallId ?? "") };
+            continue;
+          }
+
           if (event.type === "item.completed") {
             const itemMetadata = metadata.item ?? extractRuntimeItemMetadata(event.item);
             if (itemMetadata) {
@@ -1106,6 +1111,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       contentItems: response.contentItems,
     });
     await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
+    activeTurn?.queue.push({ type: "tool.result_delivered", toolCallId: toolItemId });
   }
 
   const requestTurnInterrupt = async (turn: AppServerTurnState) => {

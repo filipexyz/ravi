@@ -186,7 +186,6 @@ function renderCropCaption(template: string | undefined, name: string): string {
   name: "image",
   description: "Image generation tools",
   scope: "open",
-  skillGate: "ravi-system-image",
 })
 export class ImageCommands {
   @Command({
@@ -776,7 +775,6 @@ export class ImageCommands {
   name: "image.atlas",
   description: "Image atlas/contact sheet tools",
   scope: "open",
-  skillGate: "ravi-system-image",
 })
 export class ImageAtlasCommands {
   @Command({

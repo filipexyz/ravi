@@ -1,7 +1,7 @@
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
-import { inferRaviCommandSkillGate } from "../cli/skill-gates.js";
+import { inferRaviCommandSkillGate, resolveRuntimeToolSkillGate } from "../cli/skill-gates.js";
 import {
   checkDangerousPatterns,
   emitBashDeniedAudit,
@@ -23,6 +23,7 @@ import type {
   RuntimeDynamicToolExecutionOptions,
   RuntimeDynamicToolSpec,
   RuntimeHostServices,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeToolAccessMode,
   RuntimeToolUseAuthorizationRequest,
   RuntimeUserInputRequest,
@@ -41,6 +42,7 @@ export interface RuntimeHostServicesOptions {
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
+  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -145,7 +147,10 @@ async function authorizeRuntimeCapability(
 }
 
 async function executeRuntimeDynamicTool(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "toolContext">,
+  options: Pick<
+    RuntimeHostServicesOptions,
+    "context" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted"
+  >,
   request: RuntimeDynamicToolCallRequest,
   executionOptions?: RuntimeDynamicToolExecutionOptions,
 ): Promise<RuntimeDynamicToolCallResult> {
@@ -165,12 +170,20 @@ async function executeRuntimeDynamicTool(
     };
   }
 
-  const gate = configuredSkillGateForTool(tool.name) ?? tool.metadata.skillGate;
+  const gate =
+    configuredSkillGateForTool(tool.name) ??
+    resolveRuntimeToolSkillGate({
+      toolName: tool.name,
+      metadataSkillGate: tool.metadata.skillGate,
+    });
   const gateDecision = evaluateSkillGate({
     gate,
     context: options.context,
     toolName: tool.name,
   });
+  if (gateDecision.skillVisibility) {
+    options.onSkillGatePersisted?.(gateDecision.skillVisibility);
+  }
   if (!gateDecision.allowed) {
     return {
       success: false,
@@ -180,8 +193,20 @@ async function executeRuntimeDynamicTool(
   }
 
   const args = normalizeDynamicToolArguments(request.arguments);
-  const result = await runWithContext(options.toolContext, () => tool.handler(args));
-  return buildRuntimeDynamicToolResult(result);
+  const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`Dynamic tool ${tool.name} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
+      DYNAMIC_TOOL_TIMEOUT_MS,
+    );
+  });
+  try {
+    const result = await Promise.race([runWithContext(options.toolContext, () => tool.handler(args)), timeoutError]);
+    return buildRuntimeDynamicToolResult(result);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 async function authorizeRuntimeDynamicToolCall(
@@ -283,7 +308,7 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -399,6 +424,9 @@ async function authorizeRuntimeCommandExecution(
     context: options.context,
     toolName: "Bash",
   });
+  if (gateDecision.skillVisibility) {
+    options.onSkillGatePersisted?.(gateDecision.skillVisibility);
+  }
   if (!gateDecision.allowed) {
     return {
       approved: false,

@@ -70,7 +70,6 @@ function summarizePrimaryArtifacts(profile: {
   name: "tasks.profiles",
   description: "Inspect and scaffold the task profile catalog",
   scope: "open",
-  skillGate: "ravi-system-tasks",
 })
 export class TaskProfileCommands {
   @Command({ name: "list", description: "List resolved task profiles from all catalog sources" })

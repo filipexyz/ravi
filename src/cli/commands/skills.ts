@@ -43,7 +43,6 @@ function syncCodex(): string[] {
   name: "skills",
   description: "Skill discovery, install and inspection tools",
   scope: "open",
-  skillGate: "ravi-system-skill-creator",
 })
 export class SkillsCommands {
   @Command({

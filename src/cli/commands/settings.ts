@@ -182,7 +182,6 @@ function buildSettingsListPayload(showLegacy: boolean) {
   name: "settings",
   description: "Global settings management",
   scope: "admin",
-  skillGate: "ravi-system-settings-manager",
 })
 export class SettingsCommands {
   @Command({ name: "list", description: "List live settings (legacy account.* hidden by default)" })

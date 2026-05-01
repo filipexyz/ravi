@@ -37,7 +37,6 @@ function serializeTrigger(trigger: Trigger) {
   name: "triggers",
   description: "Event triggers",
   scope: "resource",
-  skillGate: "ravi-system-trigger-manager",
 })
 export class TriggersCommands {
   @Command({ name: "list", description: "List all event triggers" })

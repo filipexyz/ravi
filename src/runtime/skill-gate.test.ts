@@ -121,6 +121,52 @@ describe("evaluateSkillGate", () => {
 });
 
 describe("runtime host skill-gate enforcement", () => {
+  it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
+    writeCodexSkill("ravi-system-image");
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-test",
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "image_generate", source: "test" }],
+    });
+    let callbackSnapshot: RuntimeSkillVisibilitySnapshot | undefined;
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-gate-test",
+      toolContext: {},
+      onSkillGatePersisted: (skillVisibility) => {
+        callbackSnapshot = skillVisibility;
+      },
+    });
+
+    const result = await services.executeDynamicTool({
+      toolName: "image_generate",
+      arguments: { prompt: "dry-run skill gate check" },
+    });
+
+    expect(result.success).toBe(false);
+    const contentItem = result.contentItems[0];
+    expect(contentItem?.type).toBe("inputText");
+    if (contentItem?.type !== "inputText") {
+      throw new Error("Expected skill gate to return text content.");
+    }
+    expect(contentItem.text).toContain("RAVI_SKILL_REQUIRED: image_generate requires skill ravi-system-image");
+    expect(contentItem.text).toContain("# ravi-system-image");
+    expect(callbackSnapshot?.loadedSkills).toEqual(["ravi-system-image"]);
+
+    const persisted = getSession("agent:main:main")?.runtimeSessionParams
+      ?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-image"]);
+  });
+
   it("checks Bash permission before delivering a required skill", async () => {
     writeCodexSkill("ravi-system-daemon-manager");
     getOrCreateSession("agent:main:main", "main", stateDir!, {

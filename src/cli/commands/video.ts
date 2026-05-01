@@ -20,7 +20,6 @@ function slugify(text: string): string {
   name: "video",
   description: "Video analysis tools",
   scope: "open",
-  skillGate: "ravi-system-video",
 })
 export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })
