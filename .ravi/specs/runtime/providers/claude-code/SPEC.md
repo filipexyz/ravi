@@ -60,6 +60,16 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Query exception -> recoverable `turn.failed`
 - Stream end without a terminal result -> recoverable `turn.failed` (desired contract; current code must be audited when this path is changed)
 
+## Skill Visibility
+
+- Claude Code supports Ravi plugins during provider bootstrap, but plugin availability MUST NOT be interpreted as skill loaded state.
+- Claude skill visibility MUST distinguish:
+  - `available`/`advertised`: plugin or skill data was passed to the native query bridge.
+  - `requested`: a Skill tool or equivalent provider mechanism was requested.
+  - `loaded`: the adapter observed a provider-native Skill load/invocation signal or Ravi completed explicit skill injection.
+- The adapter MAY derive `loaded` from a provider tool-use event only after the Skill event shape is verified and normalized. Until then, Claude sessions MUST keep `loadedSkills` conservative.
+- Skill evidence SHOULD retain the raw provider event type, tool-use id, and canonical skill name so session visibility can explain why a skill appears as loaded.
+
 ## Invariants
 
 - The provider MUST pass Ravi `systemPromptAppend` as additional system instructions.
@@ -93,3 +103,4 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Runtime controls are unavailable even though the sessions CLI exposes a generic control surface.
 - Raw events lack consistent thread/turn/item metadata compared with Codex, reducing trace correlation.
 - The model catalog is alias-based and provider-specific instead of a generic provider model registry.
+- Skill loading is not yet normalized as a first-class provider event; passing plugins to Claude only proves availability/advertisement.

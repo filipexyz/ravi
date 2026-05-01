@@ -86,6 +86,7 @@ function serializeCronJob(job: CronJob) {
   name: "cron",
   description: "Scheduled job management",
   scope: "resource",
+  skillGate: "ravi-system-cron-manager",
 })
 export class CronCommands {
   @Command({ name: "list", description: "List all scheduled jobs" })

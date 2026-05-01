@@ -111,6 +111,7 @@ Structured capabilities every provider MUST expose:
 - `tools`: Ravi permission mode, required unrestricted access level, and parallel tool support.
 - `systemPrompt`: append, override, or provider-composed prompt behavior.
 - `terminalEvents`: whether terminal events are provider-guaranteed or adapter-enforced.
+- `skillVisibility`: how the provider exposes skill availability, synchronization, advertisement, request, and loaded-state evidence.
 
 The legacy fields remain until downstream call sites are migrated. New provider decisions MUST prefer structured fields.
 
@@ -148,6 +149,8 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider that supports fork MUST define how parent provider state maps into the child session.
 - A provider that supports control MUST reject unsafe control operations while an active turn is running.
 - `turn.steer` means “inject this into the active native run”; `turn.follow_up` means “run this after the active native run would otherwise stop”. CLIs and UIs MUST expose both semantics distinctly.
+- A provider MUST NOT report a skill as loaded unless it can expose observed evidence or Ravi completed an explicit provider injection flow.
+- A provider that cannot expose skill-loading evidence MUST declare that through `skillVisibility` and return conservative `session-visibility` state.
 
 ## Validation
 
@@ -168,3 +171,4 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider with no hook support is started for an agent that needs restricted tools.
 - A provider with no control support receives `sessions runtime` commands and fails silently.
 - Model switching is implemented by provider name instead of handle strategy.
+- Provider capability data says skills are supported, but session visibility can only prove local sync or prompt advertisement.

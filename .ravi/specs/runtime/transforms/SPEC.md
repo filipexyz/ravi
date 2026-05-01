@@ -53,6 +53,13 @@ Transforms entram no pipeline a partir de três fontes:
 
 Definidos no próprio runtime (`src/runtime/transforms/`). Cobrem capacidades centrais: `skill-gate`, `audit-log`, `token-track`, `permission-check`. Não dependem de plugin instalado.
 
+`skill-gate` builtin tem duas fontes de registro:
+
+- gates fixos gerados pelo registry de CLIs do Ravi a partir de decorators/metadados/inferência first-party;
+- gates flexíveis configurados pelo operador para tools ou comandos externos específicos.
+
+As duas fontes entram no mesmo pipeline e produzem o mesmo formato de evento/erro. O pipeline não deve ter um caminho especial para "Ravi CLI" depois que o gate foi resolvido.
+
 ### Plugin
 
 Plugins associados à sessão (ver `runtime/skill-loading` + `plugins/runtime-sync`) podem declarar transforms no manifest. Schema mínimo:
@@ -113,7 +120,7 @@ Dentro de cada pipeline do Ravi, transforms executam por `priority` ascendente. 
 
 ## Interação com Outras Capabilities
 
-- `runtime/context-keys/skill-gate` — caso particular de transform PreToolUse com policy de gate (hard/soft/passive). Ver spec específica.
+- `runtime/context-keys/skill-gate` — caso particular de transform PreToolUse com policy de gate soft auto-inject. Ver spec específica.
 - `runtime/skill-loading` — `loadedSkills` é input para skill-gate; transforms podem ler mas MUST NOT mutar.
 - `runtime/session-visibility` — expõe lista de transforms ativos e contagem de execuções por sessão.
 - `plugins/runtime-sync` — instalação de plugin pode trazer novos transforms; sync MUST resolver-los antes da primeira tool call.

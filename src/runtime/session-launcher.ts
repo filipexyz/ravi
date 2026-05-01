@@ -104,6 +104,16 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         max: maxConcurrentSessions,
       },
     });
+    safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "dispatch.queued",
+      reason: "concurrency_limit",
+      active: streamingSessions.size,
+      queued: pendingStarts.length + 1,
+      max: maxConcurrentSessions,
+      timestamp: new Date().toISOString(),
+    }).catch((error) => {
+      log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+    });
     const pendingStart: PendingRuntimeSessionStart = {
       sessionName,
       prompt,

@@ -211,6 +211,7 @@ function serializeEvent(event: CallEvent) {
   name: "prox.calls.profiles",
   description: "Manage call profiles",
   scope: "open",
+  skillGate: "ravi-system-prox-calls",
 })
 export class ProxCallsProfileCommands {
   @Command({ name: "list", description: "List available call profiles" })
@@ -397,6 +398,7 @@ export class ProxCallsProfileCommands {
   name: "prox.calls",
   description: "Voice follow-up / activation for prox.city",
   scope: "open",
+  skillGate: "ravi-system-prox-calls",
 })
 export class ProxCallsCommands {
   @Command({ name: "rules", description: "Show active call rules" })
@@ -815,6 +817,7 @@ function serializeToolRun(run: CallToolRun) {
   name: "prox.calls.voice-agents",
   description: "Manage call voice agents",
   scope: "open",
+  skillGate: "ravi-system-prox-calls",
 })
 export class ProxCallsVoiceAgentCommands {
   @Command({ name: "list", description: "List voice agents" })
@@ -1112,6 +1115,7 @@ const VALID_SIDE_EFFECTS = new Set([
   name: "prox.calls.tools",
   description: "Manage call tools and tool execution",
   scope: "open",
+  skillGate: "ravi-system-prox-calls",
 })
 export class ProxCallsToolCommands {
   @Command({ name: "list", description: "List call tools" })

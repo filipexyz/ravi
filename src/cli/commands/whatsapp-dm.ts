@@ -53,6 +53,7 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
   name: "whatsapp.dm",
   description: "WhatsApp direct messages",
   scope: "open",
+  skillGate: "ravi-system-whatsapp-manager",
 })
 export class WhatsAppDmCommands {
   @Command({ name: "send", description: "Send a direct message to a contact" })

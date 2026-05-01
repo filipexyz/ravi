@@ -509,6 +509,7 @@ const ROUTE_SETTABLE_KEYS = ["agent", "priority", "dmScope", "session", "policy"
   name: "instances",
   description: "Instance management (channels, policies, routes)",
   scope: "admin",
+  skillGate: "ravi-system-instances-manager",
 })
 export class InstancesCommands {
   // --------------------------------------------------------------------------
@@ -1300,6 +1301,7 @@ export class InstancesCommands {
   name: "routes",
   description: "Inspect route config and live routing without drilling into instances",
   scope: "admin",
+  skillGate: "ravi-system-routes-manager",
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List routes across all instances or for one instance" })
@@ -1360,6 +1362,7 @@ export class RoutesCommands {
   name: "instances.routes",
   description: "Manage routes for an instance",
   scope: "admin",
+  skillGate: "ravi-system-routes-manager",
 })
 export class InstancesRoutesCommands {
   @Command({ name: "list", description: "List routes for an instance" })
@@ -1676,6 +1679,7 @@ export class InstancesRoutesCommands {
   name: "instances.pending",
   description: "Manage pending contact and chat review for an instance",
   scope: "admin",
+  skillGate: "ravi-system-instances-manager",
 })
 export class InstancesPendingCommands {
   @Command({ name: "list", description: "List pending contacts and chats for an instance" })

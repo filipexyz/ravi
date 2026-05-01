@@ -1,6 +1,6 @@
 import type { SessionEntry } from "../router/types.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
-import type { RuntimeProviderId } from "./types.js";
+import type { RuntimeProviderId, RuntimeSkillVisibilityRecord } from "./types.js";
 
 export type RuntimeLiveActivity = "idle" | "thinking" | "streaming" | "compacting" | "awaiting_approval" | "blocked";
 
@@ -15,6 +15,8 @@ export interface RuntimeLiveState {
   model?: string;
   toolName?: string;
   source?: RuntimeMessageTarget;
+  skills?: RuntimeSkillVisibilityRecord[];
+  loadedSkills?: string[];
 }
 
 export interface RuntimeLiveStatePatch {
@@ -26,6 +28,8 @@ export interface RuntimeLiveStatePatch {
   model?: string;
   toolName?: string;
   source?: RuntimeMessageTarget;
+  skills?: RuntimeSkillVisibilityRecord[];
+  loadedSkills?: string[];
 }
 
 const liveBySessionName = new Map<string, RuntimeLiveState>();
@@ -46,6 +50,8 @@ export function updateRuntimeLiveState(sessionName: string, patch: RuntimeLiveSt
     ...(patch.model !== undefined ? { model: patch.model } : {}),
     ...(patch.toolName !== undefined ? { toolName: patch.toolName } : {}),
     ...(patch.source !== undefined ? { source: patch.source } : {}),
+    ...(patch.skills !== undefined ? { skills: patch.skills } : {}),
+    ...(patch.loadedSkills !== undefined ? { loadedSkills: patch.loadedSkills } : {}),
   };
   if (!busy) {
     delete next.busySince;

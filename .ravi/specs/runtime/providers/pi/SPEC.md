@@ -116,6 +116,14 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 
 Important: Pi `turn_end` is an internal LLM/tool-cycle boundary, not always a Ravi terminal turn. The adapter MUST emit exactly one Ravi terminal event per accepted Ravi prompt.
 
+## Skill Visibility
+
+- The Pi RPC MVP does not support Ravi plugins or Codex-style skill catalogs.
+- Current Pi state and event payloads do not expose a skill list, skill request, skill load, or skill unload event.
+- Pi sessions MUST report an empty `loadedSkills` vector unless Ravi owns an explicit skill injection flow and observes completion.
+- If the visibility payload includes skill records for Pi, their state MUST be `unknown` or non-loaded. The adapter MUST NOT infer loaded skills from appended prompt text.
+- A future Pi SDK-backed provider MAY expose richer skill/resource state. That state MUST be mapped into the canonical `runtime/skill-loading` record shape before it appears in `session-visibility`.
+
 ## Usage Mapping
 
 Pi assistant messages include usage fields:

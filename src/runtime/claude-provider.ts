@@ -15,12 +15,14 @@ import type {
   RuntimePrepareSessionResult,
   RuntimeSessionState,
   RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeStartRequest,
   RuntimeThinking,
   RuntimeStatus,
   SessionRuntimeProvider,
 } from "./types.js";
 import { toStrongestCompatibleRuntimeEffort } from "./effort.js";
+import { buildPluginSkillVisibilitySnapshot, emptySkillVisibilitySnapshot } from "./skill-visibility.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 
 const nodeRequire = createRequire(import.meta.url);
@@ -63,6 +65,10 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         terminalEvents: {
           guarantee: "adapter",
         },
+        skillVisibility: {
+          availability: "plugins",
+          loadedState: "provider-events",
+        },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -87,15 +93,24 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
       const resumeSessionId = readRuntimeSessionId(input.resumeSession) ?? input.resume;
       const env = buildClaudeCodeEnvironment(input.env);
       const pathToClaudeCodeExecutable = resolveClaudeCodeExecutable(env);
+      const skillVisibility = buildPluginSkillVisibilitySnapshot({
+        provider: "claude",
+        plugins: input.plugins,
+        state: "advertised",
+        confidence: "declared",
+        evidenceKind: "plugin-bootstrap",
+      });
       let activeQuery: Query | null = null;
       let currentModel = input.model;
 
       return {
         provider: "claude",
+        skillVisibility,
         events: runClaudeTurns(input, {
           initialResumeSessionId: resumeSessionId,
           env,
           pathToClaudeCodeExecutable,
+          skillVisibility,
           getModel: () => currentModel,
           setActiveQuery: (queryResult) => {
             activeQuery = queryResult;
@@ -126,6 +141,7 @@ async function* runClaudeTurns(
     initialResumeSessionId?: string;
     env: Record<string, string>;
     pathToClaudeCodeExecutable?: string;
+    skillVisibility?: RuntimeSkillVisibilitySnapshot;
     getModel(): string;
     setActiveQuery(queryResult: Query | null): void;
   },
@@ -161,6 +177,9 @@ async function* runClaudeTurns(
         }
         if (event.type === "turn.complete") {
           resumeSessionId = event.providerSessionId ?? readRuntimeSessionId(event.session) ?? resumeSessionId;
+          if (event.session?.params) {
+            event.session.params.skillVisibility = runtime.skillVisibility ?? emptySkillVisibilitySnapshot();
+          }
           useForkSession = false;
         }
         yield event;

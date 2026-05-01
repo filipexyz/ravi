@@ -86,6 +86,7 @@ async function groupRequest<T = Record<string, unknown>>(
   name: "whatsapp.group",
   description: "WhatsApp group management",
   scope: "admin",
+  skillGate: "ravi-system-whatsapp-manager",
 })
 export class GroupCommands {
   @Command({ name: "list", description: "List all groups the bot participates in" })

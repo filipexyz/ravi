@@ -105,6 +105,7 @@ async function requestRuntimeControl(
   name: "sessions.runtime",
   description: "Transparent controls for active session runtimes",
   scope: "admin",
+  skillGate: "ravi-system-sessions",
 })
 export class SessionRuntimeCommands {
   @Command({ name: "list", description: "List runtime threads through an active session" })

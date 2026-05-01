@@ -13,12 +13,14 @@ import type {
   RuntimePromptMessage,
   RuntimeSessionHandle,
   RuntimeSessionState,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeStartRequest,
   RuntimeToolUse,
   RuntimeUsage,
   SessionRuntimeProvider,
 } from "./types.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { emptySkillVisibilitySnapshot } from "./skill-visibility.js";
 
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
@@ -184,6 +186,10 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         terminalEvents: {
           guarantee: "adapter",
         },
+        skillVisibility: {
+          availability: "none",
+          loadedState: "none",
+        },
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
@@ -211,6 +217,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
               }));
       const canRestartTransport = Boolean(options.transportFactory) || !options.transport;
       const initialTransport = createTransport();
+      const skillVisibility = emptySkillVisibilitySnapshot();
       const state: PiSessionRuntimeState = {
         activeTurn: false,
         interrupted: false,
@@ -228,7 +235,8 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
 
       return {
         provider: "pi",
-        events: runPiTurns(input, createTransport, state, { canRestartTransport }),
+        skillVisibility,
+        events: runPiTurns(input, createTransport, state, { canRestartTransport, skillVisibility }),
         interrupt: async () => {
           state.interrupted = true;
           const transport = state.transport;
@@ -410,7 +418,7 @@ async function* runPiTurns(
   input: RuntimeStartRequest,
   createTransport: () => PiRpcTransport,
   state: PiSessionRuntimeState,
-  options: { canRestartTransport: boolean },
+  options: { canRestartTransport: boolean; skillVisibility: RuntimeSkillVisibilitySnapshot },
 ): AsyncGenerator<RuntimeEvent> {
   const modelSelector = parsePiModelSelector(input.model);
   const thinkingLevel = toPiThinkingLevel(input.effort, input.thinking);
@@ -528,6 +536,7 @@ async function* runPiTurns(
             if (!terminalTracker.accept(runtimeEvent)) {
               continue;
             }
+            attachPiSkillVisibility(runtimeEvent, options.skillVisibility);
             yield runtimeEvent;
             if (runtimeEvent.type === "turn.complete") {
               state.currentState = context.state;
@@ -536,6 +545,7 @@ async function* runPiTurns(
 
           const terminal = await maybeBuildPiTerminalEvent(event, context, transport, terminalTracker);
           if (terminal) {
+            attachPiSkillVisibility(terminal, options.skillVisibility);
             if (terminal.type === "turn.complete") {
               state.currentState = context.state;
             }
@@ -1216,6 +1226,13 @@ function buildPiRuntimeSessionState(
     },
     displayId: displayId ?? null,
   };
+}
+
+function attachPiSkillVisibility(event: RuntimeEvent, skillVisibility: RuntimeSkillVisibilitySnapshot): void {
+  if (event.type !== "turn.complete" || !event.session?.params) {
+    return;
+  }
+  event.session.params.skillVisibility = skillVisibility;
 }
 
 function readPiProviderSessionId(state: PiRpcSessionState | undefined): string | undefined {

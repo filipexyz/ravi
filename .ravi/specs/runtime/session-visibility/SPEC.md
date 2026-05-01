@@ -43,8 +43,11 @@ A session-visibility query MUST return a structured payload with at least:
 - `compact.threshold` — the proportion of `limit` at which the runtime triggers auto-compact (provider default or operator override).
 - `compact.willCompactAt` — projected token count that will trigger auto-compact for the current session.
 - `compact.lastCompactedAt` — timestamp of the most recent compact for this session, or `null`.
-- `loadedSkills` — vector of skill identifiers currently loaded (see `runtime/skill-loading`).
+- `skills` — per-skill visibility records with `state`, `confidence`, `source`, and `evidence` (see `runtime/skill-loading`).
+- `loadedSkills` — compatibility vector of skill identifiers currently loaded with observed evidence (see `runtime/skill-loading`).
 - `lastUpdatedAt` — timestamp of the most recent state refresh.
+
+`loadedSkills` is a projection, not the canonical evidence store. New consumers SHOULD read `skills` so they can distinguish `available`, `synced`, `advertised`, `requested`, `loaded`, `stale`, and `unknown` states.
 
 ## Rules
 
@@ -54,12 +57,17 @@ A session-visibility query MUST return a structured payload with at least:
 - The state MUST be refreshed at least at every provider event boundary (turn complete, tool call complete, compaction event) and on explicit operator query.
 - Visibility queries MUST NOT mutate session state. They are read-only and MUST be safe to call from any tool.
 - The capability MUST tolerate stale data: if the most recent refresh failed, the response MUST include `lastUpdatedAt` so consumers can detect staleness.
+- The capability MUST NOT claim a skill is loaded from discovery, local sync, prompt catalog text, UI mention, or approval request alone.
+- A successful Ravi-owned skill read command (`ravi skills show <skill>`) MAY be surfaced as loaded when the runtime records `tool-call` evidence for the canonical skill id.
+- Provider gaps MUST be visible in the payload as `skills[].state=unknown` or by leaving `loadedSkills` empty. Consumers MUST NOT infer `loaded` from provider name.
+- Compatibility clients that only read `loadedSkills` MUST see a conservative view: unknown or merely advertised skills are omitted.
 
 ## Failure Modes
 
 - **Provider does not expose tokens** — `tokens.used` and `tokens.limit` MUST be `null`. Consumers MUST handle this gracefully without assuming the session is unbounded.
 - **Compaction event mid-query** — the response MUST reflect the post-compact state, with `compact.lastCompactedAt` updated and `loadedSkills` reset per `runtime/skill-loading`.
 - **Session not found** — return a structured error, not an empty payload; consumers MUST distinguish "no session" from "session with zero tokens".
+- **Provider does not expose skill loading** — return the normal visibility shape with conservative skill state. For Codex this may include `synced` or `advertised`; for Pi this is currently `unknown` or empty. Do not synthesize `loaded`.
 
 ## Acceptance Criteria
 
@@ -67,3 +75,5 @@ A session-visibility query MUST return a structured payload with at least:
 - The same payload is reachable via the CLI surface and via a runtime context key, returning identical content.
 - Compact events update `compact.lastCompactedAt` and reset `loadedSkills` to empty in the next visibility query.
 - Visibility responses are sub-100ms p95 in steady state (no provider round-trip required for cached state).
+- A Codex session with synchronized Ravi skills exposes those skills in `skills` but does not include them in `loadedSkills` until observed load evidence exists.
+- A Pi session exposes the skill fields without pretending to support skill loading.

@@ -1,10 +1,15 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
 import { getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
+import { createAgent, getOrCreateSession, getSession } from "../../router/index.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
@@ -87,11 +92,20 @@ class GatewayTasksCommands {
   }
 }
 
+@Group({ name: "gated", description: "Skill-gated admin commands", scope: "admin", skillGate: "demo-skill" })
+class GatewayGatedCommands {
+  @Command({ name: "ping", description: "Gated ping" })
+  ping() {
+    return { ok: true };
+  }
+}
+
 const registry = buildRegistry([
   GatewayDemoCommands,
   GatewaySuperadminCommands,
   GatewaySessionsCommands,
   GatewayTasksCommands,
+  GatewayGatedCommands,
 ]);
 
 function findCmd(fullName: string) {
@@ -103,6 +117,15 @@ function findCmd(fullName: string) {
 function captureAudits(): { events: AuditEvent[]; emit: (e: AuditEvent) => void } {
   const events: AuditEvent[] = [];
   return { events, emit: (e) => events.push(e) };
+}
+
+function writeCodexSkill(root: string, name: string): void {
+  const dir = join(root, "skills", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "SKILL.md"),
+    `---\nname: ${name}\ndescription: Test skill\n---\n\n# ${name}\n\nUse this skill before running the tool.\n`,
+  );
 }
 
 describe("dispatch — body shape (flat-only)", () => {
@@ -221,6 +244,52 @@ describe("dispatch — scope and superadmin gating", () => {
     const result = await dispatch(findCmd("secret.ping"), {}, {}, { allowSuperadmin: true, emitAudit: audits.emit });
     expect(result.response.status).toBe(200);
     expect(audits.events).toHaveLength(1);
+  });
+
+  it("checks scope before delivering a required skill", async () => {
+    const previousCodexHome = process.env.CODEX_HOME;
+    const stateDir = await createIsolatedRaviState("gateway-skill-gate-");
+
+    try {
+      process.env.CODEX_HOME = join(stateDir, "codex");
+      writeCodexSkill(process.env.CODEX_HOME, "demo-skill");
+      createAgent({ id: "locked", cwd: stateDir });
+      getOrCreateSession("agent:locked:main", "locked", stateDir, {
+        name: "locked-session",
+        runtimeProvider: "codex",
+        providerSessionId: "thread-1",
+        runtimeSessionDisplayId: "thread-1",
+      });
+      const context = createRuntimeContext({
+        kind: "agent-runtime",
+        agentId: "locked",
+        sessionKey: "agent:locked:main",
+        sessionName: "locked-session",
+      });
+
+      const audits = captureAudits();
+      const result = await dispatch(
+        findCmd("gated.ping"),
+        {},
+        { agentId: "locked", sessionKey: "agent:locked:main", sessionName: "locked-session" },
+        { contextRecord: context, emitAudit: audits.emit },
+      );
+
+      expect(result.response.status).toBe(403);
+      const body = (await result.response.json()) as { error: string; reason: string };
+      expect(body.error).toBe("PermissionDenied");
+      expect(body.reason).toContain("requires execute");
+      expect(getSession("agent:locked:main")?.runtimeSessionParams?.skillVisibility).toBeUndefined();
+      expect(audits.events).toHaveLength(1);
+      expect(audits.events[0]?.tool).toBe("gated_ping");
+    } finally {
+      if (previousCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = previousCodexHome;
+      }
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });
 

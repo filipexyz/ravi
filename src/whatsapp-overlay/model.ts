@@ -1,4 +1,5 @@
 import type { SessionEntry } from "../router/types.js";
+import type { RuntimeSkillVisibilityRecord } from "../runtime/types.js";
 import { resolveOverlayAssistantMessageSlotKey } from "./live-assistant.js";
 
 export type OverlayActivity =
@@ -63,6 +64,8 @@ export interface OverlayLiveState {
   events?: OverlaySessionEvent[];
   messages?: OverlaySessionWorkspaceMessage[];
   artifacts?: OverlayChatArtifact[];
+  skills?: RuntimeSkillVisibilityRecord[];
+  loadedSkills?: string[];
 }
 
 export interface OverlaySessionWorkspaceMessage {
@@ -322,6 +325,8 @@ export function compactOverlayLiveState(
     busySince: live.busySince,
     events: Array.isArray(live.events) ? live.events.slice(0, eventLimit) : undefined,
     messages: Array.isArray(live.messages) ? live.messages.slice(-messageLimit) : undefined,
+    skills: Array.isArray(live.skills) ? live.skills : undefined,
+    loadedSkills: Array.isArray(live.loadedSkills) ? live.loadedSkills : undefined,
     artifacts: Array.isArray(live.artifacts)
       ? normalizeWorkspaceArtifacts(live.artifacts)
           .slice(-artifactLimit)

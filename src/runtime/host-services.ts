@@ -1,6 +1,7 @@
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
+import { inferRaviCommandSkillGate } from "../cli/skill-gates.js";
 import {
   checkDangerousPatterns,
   emitBashDeniedAudit,
@@ -27,6 +28,7 @@ import type {
   RuntimeUserInputRequest,
   RuntimeCapabilities,
 } from "./types.js";
+import { configuredSkillGateForCommand, configuredSkillGateForTool, evaluateSkillGate } from "./skill-gate.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -160,6 +162,20 @@ async function executeRuntimeDynamicTool(
     return {
       success: false,
       contentItems: [{ type: "inputText", text: authorization.reason ?? `${request.toolName} permission denied.` }],
+    };
+  }
+
+  const gate = configuredSkillGateForTool(tool.name) ?? tool.metadata.skillGate;
+  const gateDecision = evaluateSkillGate({
+    gate,
+    context: options.context,
+    toolName: tool.name,
+  });
+  if (!gateDecision.allowed) {
+    return {
+      success: false,
+      reason: gateDecision.reason,
+      contentItems: [{ type: "inputText", text: gateDecision.reason ?? `${tool.name} requires a skill.` }],
     };
   }
 
@@ -373,6 +389,21 @@ async function authorizeRuntimeCommandExecution(
   if (!finalDecision.allowed) {
     emitBashDeniedAudit(command, finalDecision, options.agentId);
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const gate =
+    configuredSkillGateForCommand(command, { executables: parsed.executables }) ??
+    inferRaviCommandSkillGate(command, { executables: parsed.executables });
+  const gateDecision = evaluateSkillGate({
+    gate,
+    context: options.context,
+    toolName: "Bash",
+  });
+  if (!gateDecision.allowed) {
+    return {
+      approved: false,
+      reason: gateDecision.reason ?? "Command requires a skill before execution.",
+    };
   }
 
   return { approved: true, inherited, updatedInput: request.input };

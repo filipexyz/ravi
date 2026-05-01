@@ -130,6 +130,7 @@ function sleep(ms: number): Promise<void> {
   name: "artifacts",
   description: "Generic artifact ledger and lineage tools",
   scope: "open",
+  skillGate: "ravi-system-artifacts",
 })
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })

@@ -325,9 +325,28 @@ export function findSkillByName(skills: RaviSkill[], name: string): RaviSkill | 
   return (
     skills.find((skill) => skill.name.toLowerCase() === wanted) ??
     skills.find((skill) => slugifySkillName(skill.name) === wantedSlug) ??
+    skills.find((skill) => managedSkillAlias(skill)?.toLowerCase() === wanted) ??
+    skills.find((skill) => slugifySkillName(managedSkillAlias(skill) ?? "") === wantedSlug) ??
     skills.find((skill) => basename(skill.path).toLowerCase() === wanted) ??
     null
   );
+}
+
+function managedSkillAlias(skill: Pick<RaviSkill, "name" | "pluginName">): string | null {
+  if (!skill.pluginName) {
+    return null;
+  }
+  const pluginSlug = codexManagedSlug(skill.pluginName);
+  const skillSlug = codexManagedSlug(skill.name);
+  return pluginSlug && skillSlug ? `${pluginSlug}-${skillSlug}` : null;
+}
+
+function codexManagedSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function ensureUserSkillPlugin(pluginDir: string, pluginName: string): void {

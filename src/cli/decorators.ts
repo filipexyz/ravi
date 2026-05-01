@@ -15,6 +15,7 @@ const SCOPE_KEY = Symbol("cli:scope");
 const RETURNS_KEY = Symbol("cli:returns");
 const RETURNS_BINARY_KEY = Symbol("cli:returns:binary");
 const CLI_ONLY_KEY = Symbol("cli:cliOnly");
+const SKILL_GATE_KEY = Symbol("cli:skillGate");
 
 // Types
 
@@ -33,12 +34,25 @@ export interface GroupOptions {
   name: string;
   description: string;
   scope?: ScopeType;
+  skillGate?: SkillGateInput;
 }
 
 export interface CommandOptions {
   name: string;
   description: string;
   aliases?: string[];
+  skillGate?: SkillGateInput;
+}
+
+export type SkillGateInput = string | SkillGateOptions | false;
+
+export interface SkillGateOptions {
+  skill: string;
+}
+
+export interface SkillGateMetadata {
+  skill: string;
+  source: "decorator" | "group" | "command" | "inferred" | "config";
 }
 
 export interface ArgOptions {
@@ -89,6 +103,28 @@ export function Command(options: CommandOptions) {
     Reflect.defineMetadata(COMMANDS_KEY, commands, target.constructor);
   };
 }
+
+/**
+ * @RequiresSkill decorator - declares that a command must load a skill before use.
+ *
+ * This only records metadata. Runtime surfaces decide when to enforce it:
+ * provider dynamic tools and SDK gateway calls can gate against session
+ * `loadedSkills`; local human CLI execution remains unchanged.
+ */
+export function RequiresSkill(options: SkillGateInput) {
+  return (target: object, propertyKey: string, _descriptor: PropertyDescriptor) => {
+    const gate = normalizeSkillGateInput(options, "decorator");
+    if (gate === undefined) {
+      throw new Error("@RequiresSkill requires a skill gate declaration.");
+    }
+    const gates: Map<string, SkillGateMetadata | false> =
+      Reflect.getMetadata(SKILL_GATE_KEY, target.constructor) || new Map();
+    gates.set(propertyKey, gate);
+    Reflect.defineMetadata(SKILL_GATE_KEY, gates, target.constructor);
+  };
+}
+
+export const SkillGate = RequiresSkill;
 
 /**
  * @Scope decorator - declares the access scope for a command method.
@@ -205,4 +241,26 @@ export function getReturnsBinaryMetadata(target: Function): Set<string> {
 
 export function getCliOnlyMetadata(target: Function): Set<string> {
   return Reflect.getMetadata(CLI_ONLY_KEY, target) || new Set();
+}
+
+export function getSkillGateMetadata(target: Function): Map<string, SkillGateMetadata | false> {
+  return Reflect.getMetadata(SKILL_GATE_KEY, target) || new Map();
+}
+
+export function normalizeSkillGateInput(
+  input: SkillGateInput | undefined,
+  source: SkillGateMetadata["source"],
+): SkillGateMetadata | false | undefined {
+  if (input === undefined) return undefined;
+  if (input === false) return false;
+
+  const options = typeof input === "string" ? { skill: input } : input;
+  const skill = options.skill.trim();
+  if (!skill) {
+    throw new Error("Skill gate requires a non-empty skill name.");
+  }
+  return {
+    skill,
+    source,
+  };
 }

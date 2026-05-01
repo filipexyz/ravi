@@ -21,9 +21,12 @@ import {
   getReturnsBinaryMetadata,
   getReturnsMetadata,
   getScopeMetadata,
+  getSkillGateMetadata,
+  type SkillGateMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { inferArgSchema, inferOptionSchema, type ParsedOptionFlags } from "./schema-inference.js";
+import { resolveCommandSkillGate } from "./skill-gates.js";
 
 export type CommandClass = new () => object;
 
@@ -108,6 +111,8 @@ export interface CommandRegistryEntry {
    * handlers that have no remote-call semantics. See `@CliOnly()`.
    */
   cliOnly?: boolean;
+  /** Skill gate declaration enforced for runtime/gateway tool calls. */
+  skillGate?: SkillGateMetadata;
 }
 
 export interface RegistrySnapshot {
@@ -146,6 +151,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
     const returnsMap = getReturnsMetadata(cls);
     const binaryReturnsSet = getReturnsBinaryMetadata(cls);
     const cliOnlySet = getCliOnlyMetadata(cls);
+    const skillGateMap = getSkillGateMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -184,6 +190,14 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
 
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       const fullName = `${groupMeta.name}.${cmdMeta.name}`;
+      const skillGate = resolveCommandSkillGate({
+        groupPath: groupMeta.name,
+        command: cmdMeta.name,
+        method: cmdMeta.method,
+        groupSkillGate: groupMeta.skillGate,
+        commandSkillGate: cmdMeta.skillGate,
+        methodSkillGate: skillGateMap.get(cmdMeta.method),
+      });
 
       const entry: CommandRegistryEntry = {
         groupPath: groupMeta.name,
@@ -200,6 +214,7 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         ...(returnsMap.get(cmdMeta.method) ? { returns: returnsMap.get(cmdMeta.method)! } : {}),
         ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
         ...(cliOnlySet.has(cmdMeta.method) ? { cliOnly: true } : {}),
+        ...(skillGate ? { skillGate } : {}),
       };
 
       const existing = commandsByFullName.get(fullName);

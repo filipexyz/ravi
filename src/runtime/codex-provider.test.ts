@@ -339,7 +339,14 @@ rl.on("line", (line) => {
     expect(completions).toHaveLength(1);
     expect(completions[0]?.providerSessionId).toBe("thread_1");
     expect(completions[0]?.session).toEqual({
-      params: { sessionId: "thread_1", cwd: "/tmp/ravi-codex" },
+      params: {
+        sessionId: "thread_1",
+        cwd: "/tmp/ravi-codex",
+        skillVisibility: expect.objectContaining({
+          skills: [],
+          loadedSkills: [],
+        }),
+      },
       displayId: "thread_1",
     });
     expect(completions[0]?.execution).toEqual({
@@ -554,12 +561,73 @@ rl.on("line", (line) => {
     });
 
     const session = provider.startSession(makeStartRequest(["hello"]));
-    await collectEvents(session.events);
+    const events = await collectEvents(session.events);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.systemPromptAppend).toContain("Ravi synchronized these Codex skills for this session:");
     expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-events");
     expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-agents-manager");
+    expect(session.skillVisibility?.loadedSkills).toEqual([]);
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual([
+      "ravi-system-agents-manager",
+      "ravi-system-events",
+    ]);
+
+    const completion = findEventsByType(events, "turn.complete")[0];
+    const skillVisibility = completion?.session?.params?.skillVisibility as any;
+    expect(skillVisibility.loadedSkills).toEqual([]);
+    expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
+  });
+
+  it("marks Codex skills loaded from app-server instruction sources", async () => {
+    const codexHome = mkdtempSync(join(tmpdir(), "ravi-codex-skills-"));
+    const originalCodexHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = codexHome;
+
+    try {
+      const { transport } = createMockTransport([
+        () => ({
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: "thread_skill_sources" };
+            yield { type: "turn.started" };
+            yield {
+              type: "turn.completed",
+              usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              instruction_sources: [join(codexHome, "skills", "ravi-system-events", "SKILL.md")],
+            };
+          })(),
+        }),
+      ]);
+
+      const provider = createCodexRuntimeProvider({
+        transport: transport as any,
+        defaultModel: "gpt-5",
+        syncSkills: () => ["ravi-system-events", "ravi-system-agents-manager"],
+      });
+
+      provider.prepareSession?.({
+        agentId: "main",
+        cwd: "/tmp/ravi-codex",
+        plugins: [{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }],
+      });
+
+      const session = provider.startSession(makeStartRequest(["hello"]));
+      const events = await collectEvents(session.events);
+      const completion = findEventsByType(events, "turn.complete")[0];
+      const skillVisibility = completion?.session?.params?.skillVisibility as any;
+
+      expect(skillVisibility.loadedSkills).toEqual(["ravi-system-events"]);
+      expect(skillVisibility.skills).toEqual([
+        expect.objectContaining({ id: "ravi-system-agents-manager", state: "advertised", confidence: "declared" }),
+        expect.objectContaining({ id: "ravi-system-events", state: "loaded", confidence: "observed" }),
+      ]);
+    } finally {
+      if (originalCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = originalCodexHome;
+      }
+    }
   });
 
   it("maps agent message delta events into runtime text.delta chunks", async () => {
@@ -1406,6 +1474,22 @@ const finishIfReady = () => {
     method: "item/completed",
     params: {
       item: {
+        id: "dyn_tool_1",
+        type: "dynamicToolCall",
+        tool: "tools_list",
+        arguments: { verbose: true },
+        success: toolResponse.success,
+        contentItems: toolResponse.contentItems,
+        status: "completed",
+        parentItemId: "turn_tool",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
         id: "msg_tool",
         type: "agentMessage",
         text: JSON.stringify(toolResponse),
@@ -1514,6 +1598,258 @@ rl.on("line", (line) => {
     expect(response).toEqual({
       success: true,
       contentItems: [{ type: "inputText", text: "tool output" }],
+    });
+  });
+
+  it("waits for native app-server dynamic tool completion before reporting tool completion", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-no-complete-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+let toolResponse;
+const finishIfReady = () => {
+  if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_tool_no_complete",
+        type: "agentMessage",
+        text: JSON.stringify(toolResponse),
+        status: "completed",
+        parentItemId: "turn_tool_no_complete",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_tool_no_complete", turn: { id: "turn_tool_no_complete", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    toolResponse = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: {
+        thread: { id: "thread_tool_no_complete", title: "Tool thread without completion" },
+        model: "gpt-5.4",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/started",
+      params: { thread: { id: "thread_tool_no_complete", title: "Tool thread without completion" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_tool_no_complete", turn: { id: "turn_tool_no_complete", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "tool_req_no_complete",
+      method: "item/tool/call",
+      params: {
+        callId: "dyn_tool_no_complete_1",
+        threadId: "thread_tool_no_complete",
+        turnId: "turn_tool_no_complete",
+        tool: "tools_list",
+        arguments: { verbose: false },
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["tool"], {
+        cwd,
+        handleRuntimeToolCall: async () => ({
+          success: true,
+          contentItems: [{ type: "inputText", text: "tool output without native completion" }],
+        }),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+    const toolStarted = findEventsByType(events, "tool.started");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+
+    expect(toolStarted[0]?.toolUse).toEqual({
+      id: "dyn_tool_no_complete_1",
+      name: "tools_list",
+      input: { verbose: false },
+    });
+    expect(toolCompleted).toHaveLength(0);
+    expect(response).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: "tool output without native completion" }],
+    });
+  });
+
+  it("reports failed app-server dynamic tool calls without failing the Codex protocol response", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-fail-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+let toolResponse;
+const finishIfReady = () => {
+  if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "dyn_tool_fail_1",
+        type: "dynamicToolCall",
+        tool: "tasks_list",
+        arguments: { last: "10" },
+        success: toolResponse.success,
+        contentItems: toolResponse.contentItems,
+        status: "completed",
+        parentItemId: "turn_tool_fail",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_tool_fail",
+        type: "agentMessage",
+        text: JSON.stringify(toolResponse),
+        status: "completed",
+        parentItemId: "turn_tool_fail",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_tool_fail", turn: { id: "turn_tool_fail", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    if (message.id === "tool_req_fail") {
+      if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
+      if (message.result?.success !== true) throw new Error("failed tool responses must stay protocol-successful");
+      if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
+    }
+    toolResponse = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: { thread: { id: "thread_tool_fail", title: "Tool fail thread" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_tool_fail", title: "Tool fail thread" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_tool_fail", turn: { id: "turn_tool_fail", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "tool_req_fail",
+      method: "item/tool/call",
+      params: {
+        callId: "dyn_tool_fail_1",
+        threadId: "thread_tool_fail",
+        turnId: "turn_tool_fail",
+        tool: "tasks_list",
+        arguments: { last: "10" },
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["tool"], {
+        cwd,
+        handleRuntimeToolCall: async () => ({
+          success: false,
+          contentItems: [
+            { type: "inputText", text: "RAVI_SKILL_REQUIRED: tasks_list requires skill ravi-system-tasks" },
+          ],
+        }),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+
+    expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_fail_1");
+    expect(toolCompleted[0]?.toolName).toBe("tasks_list");
+    expect(toolCompleted[0]?.content).toEqual([
+      { type: "inputText", text: "RAVI_SKILL_REQUIRED: tasks_list requires skill ravi-system-tasks" },
+    ]);
+    expect(toolCompleted[0]?.isError).toBe(true);
+    expect(response).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: "RAVI_SKILL_REQUIRED: tasks_list requires skill ravi-system-tasks" }],
     });
   });
 

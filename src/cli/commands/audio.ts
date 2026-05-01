@@ -14,6 +14,7 @@ import { sendMediaWithOmniCli } from "../media-send.js";
   name: "audio",
   description: "Audio generation tools (TTS)",
   scope: "open",
+  skillGate: "ravi-system-audio",
 })
 export class AudioCommands {
   @Command({

@@ -60,6 +60,7 @@ import {
   type OverlaySessionWorkspaceMessage,
 } from "../../whatsapp-overlay/model.js";
 import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
+import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -1166,6 +1167,7 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
   name: "sessions",
   description: "Manage agent sessions",
   scope: "open",
+  skillGate: "ravi-system-sessions",
 })
 export class SessionCommands {
   @Command({ name: "list", description: "List all sessions" })
@@ -1397,6 +1399,51 @@ export class SessionCommands {
       adapters: relatedAdapters,
       commands: suggestedCommands,
     };
+  }
+
+  @Command({ name: "visibility", description: "Show runtime session visibility state" })
+  visibility(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    let session = resolveSession(nameOrKey);
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const payload = buildRuntimeSessionVisibilityPayload(session);
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`\nSession Visibility: ${session.name ?? session.sessionKey}`);
+    printInspectionField("Session Key", payload.sessionKey, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Agent", payload.agentId, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Provider", payload.provider ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Tokens Used", payload.tokens.used ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Compact Count", payload.compact.count, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Loaded Skills", payload.loadedSkills.length, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    if (payload.skills.length > 0) {
+      console.log(`\n${formatInspectionSection(`  Skills (${payload.skills.length})`, RUNTIME_SNAPSHOT_META)}`);
+      for (const skill of payload.skills) {
+        console.log(`  - ${skill.id} :: ${skill.state} :: ${skill.confidence}`);
+        if (skill.source) console.log(`    source=${skill.source}`);
+      }
+    }
+    console.log();
+    return payload;
   }
 
   @Command({ name: "set-display", description: "Set session display label" })

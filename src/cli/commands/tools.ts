@@ -106,6 +106,9 @@ export class ToolsCommands {
       console.log(`Group: ${tool.metadata.group}`);
       console.log(`Command: ${tool.metadata.command}`);
       console.log(`Method: ${tool.metadata.method}`);
+      if (tool.metadata.skillGate) {
+        console.log(`Skill Gate: ${tool.metadata.skillGate.skill} (${tool.metadata.skillGate.source})`);
+      }
 
       console.log("\nParameters:");
       if (tool.metadata.args.length === 0 && tool.metadata.options.length === 0) {

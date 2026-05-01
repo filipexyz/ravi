@@ -112,6 +112,7 @@ export function summarizeRuntimeCapabilities(capabilities: RuntimeCapabilities):
     tools: capabilities.tools,
     systemPrompt: capabilities.systemPrompt,
     terminalEvents: capabilities.terminalEvents,
+    skillVisibility: capabilities.skillVisibility,
     supportsSessionResume: capabilities.supportsSessionResume,
     supportsSessionFork: capabilities.supportsSessionFork,
     supportsPartialText: capabilities.supportsPartialText,

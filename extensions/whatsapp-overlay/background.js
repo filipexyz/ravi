@@ -69,7 +69,47 @@ async function fetchSessionWorkspace(payload = {}) {
   const { client } = await getClient();
   const options = { workspace: true };
   if (typeof payload.count === "number") options.count = payload.count;
-  return await client.sessions.read(session, options);
+  const [workspace, trace] = await Promise.all([
+    client.sessions.read(session, options),
+    client.sessions
+      .trace(session, { showSystemPrompt: true, limit: "1" })
+      .catch((error) => ({ error })),
+  ]);
+
+  return {
+    ...workspace,
+    systemPrompt: extractSessionSystemPrompt(trace),
+    systemPromptError: trace?.error ? stringifyError(trace.error) : null,
+  };
+}
+
+function extractSessionSystemPrompt(result) {
+  const trace = result?.trace ?? result;
+  const snapshot = trace?.systemPrompt ?? null;
+  if (!snapshot?.sha256) return null;
+
+  const blob = trace?.blobsBySha256?.[snapshot.sha256] ?? null;
+  const content = typeof blob?.contentText === "string" ? blob.contentText : "";
+
+  return {
+    sha256: snapshot.sha256,
+    turnId: snapshot.turnId ?? null,
+    runId: snapshot.runId ?? null,
+    agentId: snapshot.agentId ?? null,
+    provider: snapshot.provider ?? null,
+    model: snapshot.model ?? null,
+    cwd: snapshot.cwd ?? null,
+    recordedAt: snapshot.recordedAt ?? null,
+    source: snapshot.source ?? null,
+    content,
+    bytes: blob?.sizeBytes ?? content.length,
+  };
+}
+
+function stringifyError(error) {
+  if (!error) return null;
+  if (typeof error?.message === "string") return error.message;
+  return String(error);
 }
 
 async function fetchInsights(payload = {}) {

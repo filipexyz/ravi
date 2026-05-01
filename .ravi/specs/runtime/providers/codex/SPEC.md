@@ -57,6 +57,16 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - JSON-RPC approval request -> `approval.requested` / `approval.resolved`
 - JSON-RPC dynamic tool call -> synthetic `item.started` / `item.completed` plus dynamic tool response.
 
+## Skill Visibility
+
+- Codex skills are provider-native files under the Codex skills directory. Ravi synchronizes plugin-backed skills during `prepareSession` through `syncCodexSkills`.
+- `syncCodexSkills` proves `synced`, not `loaded`.
+- The Codex system prompt catalog proves `advertised`, not `loaded`.
+- App-server `skills/list` MAY be used to refresh `available` skill metadata for one or more cwds. `skills/changed` MUST be treated as metadata invalidation and SHOULD trigger a later `skills/list` refresh when visibility needs fresh metadata.
+- `UserInput` entries with `type=skill` prove a requested skill reference. They MUST be recorded as `requested` unless a later provider signal proves the skill content was loaded.
+- Thread start/resume `instructionSources` MAY prove loaded instruction files for a thread. The adapter MAY mark a skill `loaded` only if an instruction source path is matched to a canonical `SKILL.md` path for that skill.
+- Codex currently has no stable dedicated `skill.loaded` notification in the app-server event stream. Until one exists or `instructionSources` are matched to canonical skill paths, Codex MUST expose synchronized Ravi skills as `synced`/`advertised` and keep `loadedSkills` empty.
+
 ## Invariants
 
 - The provider MUST initialize or resume one native thread before starting a turn.
@@ -91,3 +101,4 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Model provider/model metadata may be absent and must not break terminal persistence.
 - Dynamic tools currently return mostly text through host services; richer content paths need explicit tests.
 - Runtime control/capability metadata regressions can break dispatcher decisions; `RuntimeCapabilities` coverage must stay aligned with provider behavior.
+- Skill sync can be mistaken for loaded state. The adapter MUST not populate `loadedSkills` from `syncCodexSkills` or prompt catalog text alone.

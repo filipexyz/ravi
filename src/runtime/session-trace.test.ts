@@ -1,19 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
+import { getOrCreateSession, getSession, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
+import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
   RuntimeProviderId,
   RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
   SessionRuntimeProvider,
 } from "./types.js";
 
@@ -38,6 +40,7 @@ const capabilities: RuntimeCapabilities = {
   },
   systemPrompt: { mode: "append" },
   terminalEvents: { guarantee: "adapter" },
+  skillVisibility: { availability: "none", loadedState: "none" },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,
@@ -118,6 +121,43 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
       }
     })(),
     interrupt: async () => {},
+  };
+}
+
+function makeSkillVisibility(state: "advertised" | "loaded" = "loaded"): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "trace-skill",
+        provider: PROVIDER,
+        state,
+        confidence: state === "loaded" ? "observed" : "declared",
+        source: "test",
+        loadedAt: state === "loaded" ? 123 : null,
+        lastSeenAt: 123,
+      },
+    ],
+    loadedSkills: state === "loaded" ? ["trace-skill"] : [],
+    updatedAt: 123,
+  };
+}
+
+function makeRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "ravi-system-tasks",
+        provider: "codex",
+        state: "advertised",
+        confidence: "declared",
+        source: "codex:sync",
+        evidence: [{ kind: "system-prompt", observedAt: 100, detail: "test catalog" }],
+        loadedAt: null,
+        lastSeenAt: 100,
+      },
+    ],
+    loadedSkills: [],
+    updatedAt: 100,
   };
 }
 
@@ -320,6 +360,13 @@ describe("runtime session trace instrumentation", () => {
         {
           type: "turn.complete",
           providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeSkillVisibility("loaded"),
+            },
+          },
           usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 1 },
         },
       ]),
@@ -340,6 +387,10 @@ describe("runtime session trace instrumentation", () => {
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
     expect(turn?.inputTokens).toBe(10);
     expect(turn?.outputTokens).toBe(4);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["trace-skill"]);
+    expect(
+      (getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot).loadedSkills,
+    ).toEqual(["trace-skill"]);
     expect(events[1]).toMatchObject({
       eventType: "tool.start",
       canonicalChatId: "chat_1",
@@ -347,6 +398,111 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+  });
+
+  it("resets loaded skill visibility when compaction starts", async () => {
+    const streaming = makeStreamingSession();
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeSkillVisibility("loaded"),
+    };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "compacting",
+        },
+      ]),
+      {
+        session,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual([]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "trace-skill", state: "stale" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual([]);
+    expect(emitted.some((event) => event.data.type === "skill.visibility.reset")).toBe(true);
+  });
+
+  it("marks a skill loaded when a ravi skills show command completes", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSession([
+      {
+        type: "tool.started",
+        toolUse: {
+          id: "tool-skill",
+          name: "shell",
+          input: { command: "/bin/zsh -lc 'bin/ravi skills show tasks --json'" },
+        },
+        metadata: { turn: { id: "provider-turn" }, item: { id: "tool-skill", type: "command_execution" } },
+      },
+      {
+        type: "tool.completed",
+        toolUseId: "tool-skill",
+        toolName: "shell",
+        content: JSON.stringify({
+          skill: {
+            name: "tasks",
+            source: "catalog:ravi-system/tasks",
+            pluginName: "ravi-system",
+            skillFilePath: "skills/tasks/SKILL.md",
+            content: "---\nname: tasks\n---\n\n# Tasks\n",
+          },
+        }),
+        metadata: { turn: { id: "provider-turn" }, item: { id: "tool-skill", type: "command_execution" } },
+      },
+      {
+        type: "turn.complete",
+        providerSessionId: "provider-after",
+        session: {
+          displayId: "provider-after",
+          params: {
+            sessionId: "provider-after",
+          },
+        },
+        usage: { inputTokens: 10, outputTokens: 4 },
+      },
+    ]);
+    runtimeSession.skillVisibility = makeRaviTaskSkillVisibility();
+
+    await runTraceLoop(streaming, runtimeSession, {
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([
+      expect.objectContaining({
+        id: "ravi-system-tasks",
+        state: "loaded",
+        confidence: "observed",
+        loadedAt: expect.any(Number),
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "tool-call",
+            eventType: "ravi.skills.show",
+            itemId: "tool-skill",
+          }),
+        ]),
+      }),
+    ]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
   });
 
   it("does not persist raw stream lifecycle events in the trace ledger", async () => {

@@ -32,41 +32,62 @@ The feature exists because today the operator relies on agent prompts and on per
 
 ## Model
 
-A CLI declares its skill requirement at registration time (manifest, frontmatter, or skill metadata — exact surface is out of scope here). The runtime, holding `RAVI_CONTEXT_KEY` for that invocation, evaluates the gate before forwarding the call.
+Skill-gate has two declaration surfaces:
 
-Three enforcement variants MUST be supported:
+1. **Fixed Ravi CLI binding** — Ravi-owned decorated commands MAY declare a gate through `@RequiresSkill(...)`, `@Command({ skillGate })`, or `@Group({ skillGate })`. When no explicit declaration exists, the Ravi registry MAY infer a default gate from known first-party command groups such as `tasks -> ravi-system-tasks`, `sessions -> ravi-system-sessions`, and `whatsapp.group -> ravi-system-whatsapp-manager`. These inferred gates are still visible in registry/inspection metadata and are not hidden prompt advice.
+2. **Flexible operator binding** — operators MAY configure skill gates for any runtime tool or shell CLI command through durable config. The config is evaluated before execution and uses the same declaration shape as fixed gates: `tool` or command matcher + `skill`.
 
-### Variant 1 — Hard gate
+The runtime, holding `RAVI_CONTEXT_KEY` for that invocation, evaluates the gate before forwarding the call.
 
-- If the required skill is NOT in `loadedSkills`, the runtime MUST reject the call with a structured error.
-- The error MUST include: the missing skill name, the canonical command to load it, and a stable error code consumers can branch on.
-- The tool MUST NOT execute. The agent MUST receive the error and decide whether to load the skill and retry.
-
-### Variant 2 — Soft gate with auto-inject
+Skill-gate uses one enforcement mode for now: **soft gate with auto-inject**.
 
 - If the required skill is NOT in `loadedSkills`, the runtime MUST resolve the skill content and return it to the caller as part of the error payload.
 - The runtime MUST add the skill to `loadedSkills` as soon as it is delivered so the agent's next attempt does not re-trigger the gate.
 - The tool MUST NOT execute on the first call; the agent MUST acknowledge the injected skill content (i.e. consume it into its working context) before the runtime allows a retry.
+- Hard gate and passive inject semantics are intentionally not exposed as declarative choices until a later spec revision proves they are needed.
 
-### Variant 3 — Passive inject
+## Declaration Shape
 
-- The tool MUST execute normally — the gate does NOT abort the call.
-- After execution, the runtime MUST prepend the required skill content to the tool output the agent receives.
-- The runtime MUST add the skill to `loadedSkills` once the injection happens, so subsequent calls in the same session do not re-inject.
-- This variant is intended for tools where the cost of running without the skill is low (the call is informative or idempotent) but where the agent should still acquire the skill for future calls.
-- This variant MUST NOT be chosen for tools whose first execution has destructive or expensive side effects, since the skill arrives only after the action. The CLI manifest MUST justify the choice (one-line `passive_safety_rationale`).
+The canonical declaration shape is:
 
-The choice between variants is per-CLI declaration. A given tool MUST pick one and document it in the CLI manifest.
+```ts
+{
+  skill: "ravi-system-tasks"
+}
+```
+
+For Ravi-owned commands this shape is carried by the CLI metadata layer and MUST be surfaced by registry consumers such as `ravi tools show`, SDK gateway metadata, and OpenAPI/client generation where relevant.
+
+For flexible operator config, the same shape is attached to a matcher:
+
+```json
+[
+  { "tool": "tasks_list", "skill": "ravi-system-tasks" },
+  { "commandPrefix": "gh issue", "skill": "github" }
+]
+```
+
+Matcher fields are mutually additive but a single rule SHOULD use the narrowest stable matcher:
+
+- `tool` — exact Ravi runtime tool name, e.g. `tasks_list`.
+- `command` — exact shell command after whitespace normalization.
+- `commandPrefix` — shell command prefix for external CLIs.
+- `commandRegex` — last-resort matcher for external CLIs whose invocation shape is not prefix-stable.
 
 ## Rules
 
 - The gate MUST evaluate against the live `loadedSkills` vector held by `runtime/skill-loading`. It MUST NOT scan the filesystem on the hot path; if the skill is not in the vector it is treated as not loaded.
 - Skill identifiers in gate declarations MUST match the canonical skill name (frontmatter `name`). Aliases or paths MUST NOT be accepted at gate evaluation.
 - A gate MUST be enforced before any side effect of the tool. Tools that already started external work when the gate fires are a violation of the contract.
-- A gate failure MUST emit a structured event on the runtime event stream tagged with the agent, session, tool, missing skill, and chosen variant.
-- The variant selection MUST be visible to the operator (e.g. via `ravi tools show <tool>`). The operator MUST be able to audit which tools are gated and how.
-- A tool with no skill-gate declaration is unchanged. The gate MUST be opt-in per tool; the absence of a declaration is treated as no gate.
+- A gate failure MUST emit a structured event on the runtime event stream tagged with the agent, session, tool, and missing skill.
+- Skill-gate declarations MUST NOT expose an operator-selectable enforcement variant. Soft auto-inject is the only supported behavior for this revision.
+- The required skill MUST be visible to the operator (e.g. via `ravi tools show <tool>`). The operator MUST be able to audit which tools are gated.
+- A tool with no explicit or inferred skill-gate declaration is unchanged. The gate MUST be opt-in by declaration or first-party registry inference; unknown tools MUST NOT be gated by naming convention alone.
 - The gate MUST be evaluated even if the agent claims to have loaded the skill in its narration. The runtime trusts the vector, not natural language.
+- The skill-loading command itself (`ravi skills show ...`) MUST remain exempt from fixed Ravi CLI gates so soft gates can deliver skill content without recursion.
+- Ravi-owned command groups that have a matching first-party skill SHOULD declare `skillGate` directly on `@Group`. Registry inference is a compatibility fallback for unmigrated groups and Bash command detection, not the preferred declaration surface.
+- Flexible operator rules MUST compose with fixed Ravi rules. A matching configured rule takes precedence over inferred fixed metadata for the same invocation.
+- If legacy or future config includes `variant`, the runtime MUST ignore it until a new spec explicitly reintroduces selectable modes.
 
 ## Interaction
 
@@ -83,21 +104,20 @@ The choice between variants is per-CLI declaration. A given tool MUST pick one a
 - **stage**: `pre`.
 - **scope**: `tool:<name>` for each tool that declares a gate.
 - **priority**: high (executes early, before plugin transforms that assume the skill is already loaded).
-- **mutation semantics**: hard gate aborts the pipeline with a structured error; soft gate aborts with a payload carrying the skill content and adds the skill to `loadedSkills`; passive lets the pipeline continue and injects the skill into the PostToolUse payload.
+- **mutation semantics**: if the skill is unloaded, the gate aborts with a payload carrying the skill content and adds the skill to `loadedSkills`; if already loaded, the pipeline continues unchanged.
 
 The transform pipeline is the orchestrator; `skill-gate` is one policy plugged into it. Other PreToolUse policies (permission-check, dry-run, approval-required) can be added in the same model without changing the gate. This composition is normative: implementations of `skill-gate` MUST register through the transform registry, not through ad-hoc hooks in the runtime event loop.
 
 ## Failure Modes
 
-- **Skill exists but is unloaded** — both variants behave as designed (reject, or inject + retry).
+- **Skill exists but is unloaded** — the runtime delivers the skill content, marks it loaded, rejects the first call, and allows the retry.
 - **Skill does not exist anywhere** — the runtime MUST surface a clear error: "tool requires skill X, no plugin provides X". This is a configuration error, not a runtime gate failure, and MUST be reported distinctly.
-- **Variant 2 mid-flight** — the runtime delivers the skill content; the agent's next attempt is allowed to invoke the tool only after the agent's context has acknowledged the skill. Acknowledgement is a turn boundary, not a free pass.
+- **Mid-flight soft gate** — the runtime delivers the skill content; the agent's next attempt is allowed to invoke the tool only after the agent's context has acknowledged the skill. Acknowledgement is a turn boundary, not a free pass.
 - **Permission missing** — if the agent lacks permission to load the skill (no `toolgroup:navigate` or skill-specific deny), the gate MUST report the permission gap rather than silently auto-loading.
 
 ## Acceptance Criteria
 
-- A tool declared with a hard gate against skill `foo` MUST refuse execution when `foo` is absent from `loadedSkills`, returning a structured error.
-- A tool declared with a soft gate MUST return the skill content on the first call and allow the second call to proceed once the skill is in the vector.
-- A tool declared with a passive gate MUST execute on the first call AND return the skill content prepended to its output, with the skill added to `loadedSkills` so subsequent calls in the same session do not re-inject.
+- A tool declared with skill `foo` MUST return the skill content on the first call and allow the second call to proceed once the skill is in the vector.
+- Skill-gate metadata and flexible config MUST NOT require or honor a `variant` field in this revision.
 - Gate failures MUST appear in `ravi events` filtered by event type and carry sufficient context to debug the failure offline.
 - Disabling the gate for a tool (operator override) MUST be auditable and MUST NOT happen silently.

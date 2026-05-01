@@ -2,8 +2,9 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
-import { Arg, Command, Group, Option, Returns, getReturnsMetadata } from "./decorators.js";
+import { Arg, Command, Group, Option, RequiresSkill, Returns, getReturnsMetadata } from "./decorators.js";
 import { buildRegistry } from "./registry-snapshot.js";
+import { inferRaviCommandSkillGate } from "./skill-gates.js";
 
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {
@@ -58,6 +59,31 @@ class ExplicitSchemaCommands {
   ) {
     void id;
     void count;
+  }
+}
+
+@Group({ name: "tasks", description: "Task commands", scope: "open" })
+class InferredSkillGateCommands {
+  @Command({ name: "list", description: "List tasks" })
+  list() {
+    return {};
+  }
+}
+
+@Group({ name: "custom", description: "Custom commands", scope: "open", skillGate: "custom-skill" })
+class GroupSkillGateCommands {
+  @Command({ name: "run", description: "Run custom" })
+  run() {
+    return {};
+  }
+}
+
+@Group({ name: "decorated", description: "Decorated commands", scope: "open" })
+class DecoratedSkillGateCommands {
+  @Command({ name: "run", description: "Run decorated" })
+  @RequiresSkill("decorated-skill")
+  run() {
+    return {};
   }
 }
 
@@ -147,5 +173,36 @@ describe("buildRegistry", () => {
     class Plain {}
     const reg = buildRegistry([Plain as unknown as new () => object, DemoCommands]);
     expect(reg.commands.every((c) => c.cls !== (Plain as unknown))).toBe(true);
+  });
+
+  it("attaches inferred and explicit skill gates to command entries", () => {
+    const reg = buildRegistry([InferredSkillGateCommands, GroupSkillGateCommands, DecoratedSkillGateCommands]);
+
+    expect(reg.commands.find((c) => c.fullName === "tasks.list")?.skillGate).toMatchObject({
+      skill: "ravi-system-tasks",
+      source: "inferred",
+    });
+    expect(reg.commands.find((c) => c.fullName === "custom.run")?.skillGate).toMatchObject({
+      skill: "custom-skill",
+      source: "group",
+    });
+    expect(reg.commands.find((c) => c.fullName === "decorated.run")?.skillGate).toMatchObject({
+      skill: "decorated-skill",
+      source: "decorator",
+    });
+  });
+
+  it("keeps skill-loading and visibility commands exempt in shell inference", () => {
+    expect(inferRaviCommandSkillGate("bin/ravi skills show ravi-system-tasks --json")).toBeUndefined();
+    expect(inferRaviCommandSkillGate("ravi sessions visibility main")).toBeUndefined();
+    expect(inferRaviCommandSkillGate("ravi skills install foo")).toMatchObject({
+      skill: "ravi-system-skill-creator",
+      source: "inferred",
+    });
+    expect(inferRaviCommandSkillGate("/Users/luis/dev/filipelabs/ravi.bot/bin/ravi tasks list")).toMatchObject({
+      skill: "ravi-system-tasks",
+      source: "inferred",
+    });
+    expect(inferRaviCommandSkillGate('echo "ravi tasks list"', { executables: ["echo"] })).toBeUndefined();
   });
 });

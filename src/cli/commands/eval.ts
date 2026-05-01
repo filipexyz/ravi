@@ -12,6 +12,7 @@ import { runEvalTask } from "../../eval/runner.js";
   name: "eval",
   description: "Run reproducible evaluation tasks against Ravi",
   scope: "admin",
+  skillGate: "ravi-system-tasks-eval",
 })
 export class EvalCommands {
   @Command({ name: "run", description: "Run an eval task spec and persist artifacts" })

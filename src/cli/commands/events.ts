@@ -564,6 +564,7 @@ async function replayStream(options: {
   name: "events",
   description: "Stream live NATS events",
   scope: "open",
+  skillGate: "ravi-system-events",
 })
 export class EventsCommands {
   @Command({ name: "stream", description: "Stream all events in real-time (default command)" })

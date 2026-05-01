@@ -8,14 +8,17 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  getSkillGateMetadata,
   type ArgMetadata,
   type OptionMetadata,
+  type SkillGateMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
+import { resolveCommandSkillGate } from "./skill-gates.js";
 
 // ============================================================================
 // Types
@@ -35,6 +38,7 @@ export interface ExportedTool {
     args: ArgMetadata[];
     options: OptionMetadata[];
     scope?: ScopeType;
+    skillGate?: SkillGateMetadata;
   };
 }
 
@@ -78,6 +82,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
 
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
+    const skillGateMap = getSkillGateMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
@@ -87,6 +92,14 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
       const normalizedGroup = groupMeta.name.replace(/\./g, "_");
 
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
+      const skillGate = resolveCommandSkillGate({
+        groupPath: groupMeta.name,
+        command: cmdMeta.name,
+        method: cmdMeta.method,
+        groupSkillGate: groupMeta.skillGate,
+        commandSkillGate: cmdMeta.skillGate,
+        methodSkillGate: skillGateMap.get(cmdMeta.method),
+      });
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -108,6 +121,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           args: argsMeta,
           options: optionsMeta,
           scope: effectiveScope,
+          ...(skillGate ? { skillGate } : {}),
         },
       });
     }

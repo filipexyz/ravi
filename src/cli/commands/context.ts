@@ -10,7 +10,8 @@ import {
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
 import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
-import { listSessions } from "../../router/sessions.js";
+import { listSessions, resolveSession } from "../../router/sessions.js";
+import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
   CredentialsFileError,
   emptyCredentialsFile,
@@ -122,6 +123,7 @@ interface AgentRuntimeCleanupCandidate {
   name: "context",
   description: "Runtime context registry and introspection",
   scope: "open",
+  skillGate: "ravi-dev-context-cli",
 })
 export class ContextCommands {
   @Command({ name: "list", description: "List issued runtime contexts without exposing context keys" })
@@ -178,6 +180,32 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printCapabilitiesPayload(payload));
+    return payload;
+  }
+
+  @Command({ name: "visibility", description: "Show the current context session visibility" })
+  visibility(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
+    const context = this.requireResolvedContext();
+    const session =
+      (context.sessionKey ? resolveSession(context.sessionKey) : null) ??
+      (context.sessionName ? resolveSession(context.sessionName) : null);
+    if (!session) {
+      fail("Current context is not linked to a live session.");
+    }
+
+    const payload = buildRuntimeSessionVisibilityPayload(session);
+    this.printPayload(payload, asJson, () => {
+      printInspectionField("Session Key", payload.sessionKey, RESOLVER_META);
+      printInspectionField("Agent", payload.agentId, RESOLVER_META);
+      printInspectionField("Provider", payload.provider ?? "-", RESOLVER_META);
+      printInspectionField("Loaded Skills", payload.loadedSkills.length, RESOLVER_META);
+      if (payload.skills.length > 0) {
+        console.log(`\n${formatInspectionSection(`  Skills (${payload.skills.length})`, RESOLVER_META)}`);
+        for (const skill of payload.skills) {
+          console.log(`  - ${skill.id} :: ${skill.state} :: ${skill.confidence}`);
+        }
+      }
+    });
     return payload;
   }
 
@@ -779,6 +807,7 @@ interface SerializedCredentialEntry {
   name: "context.credentials",
   description: "Manage the local runtime context credentials store (~/.ravi/credentials.json)",
   scope: "open",
+  skillGate: "ravi-dev-context-cli",
 })
 export class ContextCredentialsCommands {
   @Command({ name: "list", description: "List entries in the local credentials store" })

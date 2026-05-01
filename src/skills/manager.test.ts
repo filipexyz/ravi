@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   discoverSkills,
+  findSkillByName,
   installSkills,
   listCatalogSkills,
   listInstalledSkills,
@@ -98,6 +99,13 @@ describe("skills manager", () => {
     expect(installed.name).toBe("image");
     expect(existsSync(join(userSkillsPluginDir(home), "skills", "image", "SKILL.md"))).toBe(true);
     expect(listInstalledSkills({ homeDir: home }).map((skill) => skill.name)).toEqual(["image"]);
+  });
+
+  it("resolves catalog skills by Codex managed aliases", () => {
+    const catalogSkills = listCatalogSkills();
+
+    expect(findSkillByName(catalogSkills, "ravi-system-tasks")?.name).toBe("tasks");
+    expect(findSkillByName(catalogSkills, "ravi-dev-ravi-architecture")?.name).toBe("ravi-architecture");
   });
 });
 

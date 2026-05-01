@@ -202,6 +202,7 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 @Group({
   name: "agents",
   description: "Agent management",
+  skillGate: "ravi-system-agents-manager",
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })

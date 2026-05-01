@@ -58,6 +58,7 @@ export interface RuntimeHostStreamingSession {
   toolRunning: boolean;
   currentToolId?: string;
   currentToolName?: string;
+  currentToolInput?: unknown;
   toolStartTime?: number;
   lastToolFailure?: {
     at: number;

@@ -790,6 +790,7 @@ function sleep(ms: number): Promise<void> {
   name: "tasks",
   description: "Task runtime for dispatching work to Ravi agents",
   scope: "open",
+  skillGate: "ravi-system-tasks",
 })
 export class TaskCommands {
   @Command({

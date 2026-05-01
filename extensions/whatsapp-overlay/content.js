@@ -25,6 +25,7 @@ const CHAT_ARTIFACT_ANCHOR_ATTR = "data-ravi-chat-artifact-anchor";
 const expandedConversationToolGroups = new Set();
 const expandedSessionWorkspaceTools = new Set();
 const MESSAGE_POPOVER_ID = "ravi-wa-message-popover";
+const ARTIFACT_MODAL_ID = "ravi-wa-artifact-modal";
 const RECENT_STACK_ID = "ravi-wa-overlay-recent";
 const PAGE_BRIDGE_SCRIPT_ID = "ravi-wa-page-bridge";
 const PAGE_CHAT_REQUEST_EVENT = "ravi-wa-request-active-chat";
@@ -111,6 +112,7 @@ let chatListRefreshInFlight = false;
 let openMessageChip = null;
 let openMessageId = null;
 let openMessageData = null;
+let openArtifactModalData = null;
 let sidebarFilter = "";
 let insightsFilter = "";
 let artifactsFilter = "";
@@ -2665,6 +2667,219 @@ function syncMessagePopoverPosition() {
   popover.style.visibility = "visible";
 }
 
+function ensureArtifactModal() {
+  let modal = document.getElementById(ARTIFACT_MODAL_ID);
+  if (modal instanceof HTMLElement) return modal;
+
+  modal = document.createElement("div");
+  modal.id = ARTIFACT_MODAL_ID;
+  modal.className = "ravi-hidden";
+  modal.addEventListener("click", (event) => {
+    const target = resolveEventElement(event.target);
+    if (!target) return;
+
+    if (
+      target === modal ||
+      target.closest("[data-ravi-artifact-modal-close]")
+    ) {
+      closeArtifactModal();
+      return;
+    }
+
+    const copyButton = target.closest("[data-ravi-artifact-modal-copy]");
+    if (copyButton) {
+      const value = copyButton.getAttribute("data-ravi-artifact-modal-copy");
+      const label =
+        copyButton.getAttribute("data-ravi-artifact-modal-copy-label") ||
+        "artifact";
+      void copyOverlayValue(value, label);
+      return;
+    }
+
+    const taskButton = target.closest("[data-ravi-artifact-modal-task]");
+    if (taskButton) {
+      const taskId = taskButton.getAttribute("data-ravi-artifact-modal-task");
+      closeArtifactModal();
+      void focusArtifactTask(taskId);
+      return;
+    }
+
+    const sessionButton = target.closest("[data-ravi-artifact-modal-session]");
+    if (sessionButton) {
+      const sessionKey = sessionButton.getAttribute(
+        "data-ravi-artifact-modal-session",
+      );
+      closeArtifactModal();
+      void focusArtifactSessionByKey(sessionKey);
+    }
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function closeArtifactModal() {
+  const modal = document.getElementById(ARTIFACT_MODAL_ID);
+  openArtifactModalData = null;
+  if (modal instanceof HTMLElement) {
+    modal.className = "ravi-hidden";
+    modal.innerHTML = "";
+  }
+}
+
+function openArtifactModal(data) {
+  if (!data) return;
+  openArtifactModalData = data;
+  renderArtifactModal();
+}
+
+function renderArtifactModal() {
+  const data = openArtifactModalData;
+  const modal = ensureArtifactModal();
+  if (!data) {
+    closeArtifactModal();
+    return;
+  }
+
+  const title = data.title || data.label || data.id || "artifact";
+  const status = [data.kind, data.status, data.lifecycle]
+    .filter(Boolean)
+    .join(" · ");
+  const hasImage = Boolean(data.imageSrc);
+  const image = data.imageSrc
+    ? `<div class="ravi-wa-artifact-modal__visual">
+        <img src="${escapeAttribute(data.imageSrc)}" alt="${escapeAttribute(title)}" />
+      </div>`
+    : data.glyph
+      ? `<div class="ravi-wa-artifact-modal__visual ravi-wa-artifact-modal__visual--glyph">
+          <span>${escapeHtml(data.glyph)}</span>
+        </div>`
+      : "";
+  const primaryText = [data.summary, data.description, data.preview]
+    .filter((value) => typeof value === "string" && value.trim())
+    .find(Boolean);
+  const detailText = [data.fullDetail, data.detail]
+    .filter((value) => typeof value === "string" && value.trim())
+    .find(Boolean);
+  const fullDetail =
+    detailText && detailText !== primaryText ? detailText : null;
+  const metaRows = buildArtifactModalMetaRows(data);
+  const actions = buildArtifactModalActions(data);
+  const panelClass = `ravi-wa-artifact-modal__panel${hasImage ? " ravi-wa-artifact-modal__panel--image" : ""}`;
+  const contentClass = [
+    "ravi-wa-artifact-modal__content",
+    hasImage
+      ? "ravi-wa-artifact-modal__content--image"
+      : image
+        ? ""
+        : "ravi-wa-artifact-modal__content--text",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  modal.className = "ravi-wa-artifact-modal";
+  modal.innerHTML = `
+    <div class="${panelClass}" role="dialog" aria-modal="true" aria-label="${escapeAttribute(title)}">
+      <header class="ravi-wa-artifact-modal__header">
+        <div>
+          <span class="ravi-wa-artifact-modal__eyebrow">${escapeHtml(status || "artifact")}</span>
+          <h2>${escapeHtml(title)}</h2>
+        </div>
+        <button type="button" class="ravi-wa-artifact-modal__close" data-ravi-artifact-modal-close="true" aria-label="Fechar">×</button>
+      </header>
+      <div class="${contentClass}">
+        ${image}
+        <section class="ravi-wa-artifact-modal__body">
+          ${
+            primaryText
+              ? `<p class="ravi-wa-artifact-modal__summary">${escapeHtml(primaryText)}</p>`
+              : ""
+          }
+          ${
+            fullDetail
+              ? `<pre class="ravi-wa-artifact-modal__detail">${escapeHtml(fullDetail)}</pre>`
+              : ""
+          }
+          ${
+            metaRows
+              ? `<dl class="ravi-wa-artifact-modal__meta">${metaRows}</dl>`
+              : ""
+          }
+          ${actions ? `<div class="ravi-wa-artifact-modal__actions">${actions}</div>` : ""}
+        </section>
+      </div>
+    </div>
+  `;
+}
+
+function buildArtifactModalMetaRows(data) {
+  const rows = [
+    ["id", data.id],
+    ["kind", data.kind],
+    ["status", data.status || data.lifecycle],
+    ["mime", data.mimeType],
+    ["provider", [data.provider, data.model].filter(Boolean).join(" / ")],
+    ["size", typeof data.sizeBytes === "number" ? formatCompactBytes(data.sizeBytes) : null],
+    ["path", data.path],
+    ["blob", data.blobPath],
+    ["uri", data.uri],
+    ["session", data.sessionName || data.sessionKey],
+    ["task", data.taskTitle || data.taskId],
+    ["agent", data.agentName || data.agentId],
+    ["updated", data.updatedAt ? formatTimestampLong(data.updatedAt) : null],
+  ].filter(([, value]) => value !== null && value !== undefined && value !== "");
+
+  const metadata =
+    data.metadata && typeof data.metadata === "object"
+      ? formatArtifactModalJson(data.metadata)
+      : null;
+  if (metadata) rows.push(["metadata", metadata]);
+
+  return rows
+    .map(
+      ([label, value]) => `
+        <div>
+          <dt>${escapeHtml(label)}</dt>
+          <dd>${escapeHtml(String(value))}</dd>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function buildArtifactModalActions(data) {
+  const actions = [];
+  if (data.taskId) {
+    actions.push(
+      `<button type="button" data-ravi-artifact-modal-task="${escapeAttribute(data.taskId)}">abrir task</button>`,
+    );
+  }
+  if (data.sessionKey) {
+    actions.push(
+      `<button type="button" data-ravi-artifact-modal-session="${escapeAttribute(data.sessionKey)}">abrir sessão</button>`,
+    );
+  }
+  for (const [label, value] of [
+    ["path", data.path],
+    ["blob", data.blobPath],
+    ["uri", data.uri],
+    ["id", data.id],
+  ]) {
+    if (!value) continue;
+    actions.push(
+      `<button type="button" data-ravi-artifact-modal-copy="${escapeAttribute(String(value))}" data-ravi-artifact-modal-copy-label="${escapeAttribute(label)}">copiar ${escapeHtml(label)}</button>`,
+    );
+  }
+  return actions.join("");
+}
+
+function formatArtifactModalJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function clearMessageChips() {
   closeMessagePopover();
   document
@@ -2781,6 +2996,10 @@ function ensureShell() {
 
       if (openMessageChip) {
         closeMessagePopover();
+      }
+
+      if (openArtifactModalData) {
+        closeArtifactModal();
       }
 
       if (taskDetailDrawerOpen) {
@@ -4510,6 +4729,10 @@ function normalizeSessionWorkspaceTimelineItem(item, index) {
     duration: typeof item.duration === "string" ? item.duration : null,
     timestamp,
     source: item.source || "live",
+    metadata:
+      item.metadata && typeof item.metadata === "object"
+        ? item.metadata
+        : null,
   };
 }
 
@@ -4542,6 +4765,24 @@ function getSessionWorkspaceTimelineItems(workspace) {
     .map((item, index) => normalizeSessionWorkspaceTimelineItem(item, index))
     .filter(Boolean)
     .sort(compareSessionWorkspaceTimelineItems);
+}
+
+function normalizeSessionWorkspaceSystemPrompt(systemPrompt) {
+  if (!systemPrompt || typeof systemPrompt.content !== "string") return null;
+  if (!systemPrompt.content.trim()) return null;
+
+  return {
+    id: `system-prompt:${systemPrompt.sha256 || "latest"}`,
+    type: "system_prompt",
+    content: systemPrompt.content,
+    sha256: systemPrompt.sha256 || null,
+    provider: systemPrompt.provider || null,
+    model: systemPrompt.model || null,
+    cwd: systemPrompt.cwd || null,
+    source: systemPrompt.source || null,
+    bytes: typeof systemPrompt.bytes === "number" ? systemPrompt.bytes : null,
+    recordedAt: systemPrompt.recordedAt ?? null,
+  };
 }
 
 // ── tone / speaker / labels ─────────────────────────────────────
@@ -4652,6 +4893,13 @@ function hideSessionWorkspaceMain() {
 function swBindHostDelegation(host) {
   // close button
   host.addEventListener("click", (e) => {
+    const promptCopy = e.target.closest("[data-ravi-session-prompt-copy]");
+    if (promptCopy) {
+      const prompt = latestSessionWorkspace?.systemPrompt?.content || "";
+      void copyOverlayValue(prompt, "system prompt");
+      return;
+    }
+
     const closeBtn = e.target.closest("[data-ravi-session-workspace-close]");
     if (closeBtn) {
       clearSessionWorkspace();
@@ -4670,6 +4918,18 @@ function swBindHostDelegation(host) {
       openCockpitChat(target).then((opened) => {
         if (opened) clearSessionWorkspace();
       });
+      return;
+    }
+
+    const artifactOpen = e.target.closest("[data-ravi-session-artifact-open]");
+    if (artifactOpen) {
+      const artifactId = artifactOpen.getAttribute(
+        "data-ravi-session-artifact-open",
+      );
+      const item = findSessionWorkspaceArtifactItem(artifactId);
+      if (item) {
+        openArtifactModal(buildSessionWorkspaceArtifactModalData(item));
+      }
       return;
     }
 
@@ -4741,28 +5001,93 @@ function swSyncToolExpandedState(root, expanded) {
   }
 }
 
+function findSessionWorkspaceArtifactItem(itemId) {
+  if (!itemId) return null;
+  return (
+    getSessionWorkspaceTimelineItems(latestSessionWorkspace).find(
+      (item) => item?.type === "artifact" && item.id === itemId,
+    ) || null
+  );
+}
+
+function buildSessionWorkspaceArtifactModalData(item) {
+  if (!item) return null;
+  const session = latestSessionWorkspace?.session || getSelectedWorkspaceSession();
+  return {
+    id: item.id || null,
+    kind: item.kind || "artifact",
+    label: item.label || item.kind || "artifact",
+    title: item.label || item.kind || "artifact",
+    status: item.status || null,
+    lifecycle: item.status || null,
+    detail: item.detail || null,
+    description: item.description || null,
+    preview: item.preview || null,
+    fullDetail: item.fullDetail || item.preview || item.detail || null,
+    metadata: item.metadata || null,
+    updatedAt: item.timestamp || null,
+    sessionName: session?.sessionName || session?.name || null,
+    sessionKey: session?.sessionKey || null,
+    agentId: session?.agentId || null,
+    glyph: getArtifactGlyph(item.kind, null),
+  };
+}
+
 // ── element creation helpers ────────────────────────────────────
 
 function swCreateToolCallElement(item) {
   const el = document.createElement("div");
   el.setAttribute("data-ravi-sw-id", item.id);
   el.setAttribute("data-ravi-session-tool-root", item.id);
-  swUpdateToolCallElement(el, item);
+  swUpdateArtifactElement(el, item);
   return el;
 }
 
-function swUpdateToolCallElement(article, item) {
+function swUpdateSystemPromptSlot(host, workspace) {
+  const slot = host.querySelector("[data-ravi-session-system-prompt]");
+  if (!(slot instanceof HTMLElement)) return;
+  const wasOpen = Boolean(
+    slot.querySelector(".sw-system-prompt__details")?.open,
+  );
+
+  const item = normalizeSessionWorkspaceSystemPrompt(workspace?.systemPrompt);
+  if (!item) {
+    slot.className = "sw-system-prompt ravi-hidden";
+    slot.innerHTML = "";
+    return;
+  }
+
+  slot.className = "sw-system-prompt";
+
+  const providerLabel = [item.provider, item.model].filter(Boolean).join(" / ");
+  const meta = [
+    providerLabel,
+    item.sha256 ? `sha ${shorten(item.sha256, 14)}` : null,
+    typeof item.bytes === "number" ? formatCompactBytes(item.bytes) : null,
+    item.recordedAt ? formatTimestamp(item.recordedAt) : null,
+  ].filter(Boolean);
+
+  slot.innerHTML = `
+    <div class="sw-system-prompt__head">
+      <strong class="sw-system-prompt__label">system</strong>
+      <span class="sw-system-prompt__meta" title="${escapeAttribute(meta.join(" · ") || "sem metadados")}">${escapeHtml(meta.join(" · ") || "sem metadados")}</span>
+      <details class="sw-system-prompt__details"${wasOpen ? " open" : ""}>
+        <summary>prompt</summary>
+        <pre>${escapeHtml(item.content)}</pre>
+      </details>
+      <button type="button" class="sw-system-prompt__copy" data-ravi-session-prompt-copy="true">copiar</button>
+    </div>
+  `;
+}
+
+function swUpdateArtifactElement(article, item) {
   const timeLabel = formatTimestamp(item.timestamp) || "";
-  const toolName = item.label || item.kind || "tool";
+  const toolName = item.label || item.kind || "artifact";
   const description = item.description || "";
   const preview = item.preview || item.detail || "";
-  const fullDetail =
-    typeof item.fullDetail === "string" ? item.fullDetail.trim() : "";
-  const expandable = Boolean(fullDetail && fullDetail !== preview);
-  const expanded = expandable && expandedSessionWorkspaceTools.has(item.id);
-  const statusLabel = formatSessionWorkspaceToolStatusLabel(item.status);
 
-  article.className = "sw-tool" + (expanded ? " is-expanded" : "");
+  article.className = "sw-tool sw-artifact";
+  article.setAttribute("data-ravi-session-tool-root", item.id);
 
   const statusDot = item.status === "running"
     ? `<span class="sw-tool__dot sw-tool__dot--running"></span>`
@@ -4774,28 +5099,15 @@ function swUpdateToolCallElement(article, item) {
 
   const summaryText = description || preview || "";
 
-  const inner = expandable
-    ? `<button type="button" class="sw-tool__row"
-        data-ravi-session-tool-toggle="${escapeAttribute(item.id)}"
-        aria-expanded="${expanded ? "true" : "false"}">
-        ${statusDot}
-        <span class="sw-tool__name">${escapeHtml(toolName)}</span>
-        ${summaryText ? `<span class="sw-tool__desc">${escapeHtml(shorten(summaryText, 60))}</span>` : ""}
-        ${timeLabel ? `<span class="sw-tool__time">${escapeHtml(timeLabel)}</span>` : ""}
-        <span class="sw-tool__chevron">›</span>
-      </button>`
-    : `<div class="sw-tool__row">
-        ${statusDot}
-        <span class="sw-tool__name">${escapeHtml(toolName)}</span>
-        ${summaryText ? `<span class="sw-tool__desc">${escapeHtml(shorten(summaryText, 60))}</span>` : ""}
-        ${timeLabel ? `<span class="sw-tool__time">${escapeHtml(timeLabel)}</span>` : ""}
-      </div>`;
-
-  const expandedMarkup = expandable
-    ? `<pre class="sw-tool__detail"${expanded ? "" : " hidden"}>${escapeHtml(fullDetail)}</pre>`
-    : "";
-
-  article.innerHTML = inner + expandedMarkup;
+  article.innerHTML = `<button type="button" class="sw-tool__row"
+      data-ravi-session-artifact-open="${escapeAttribute(item.id)}"
+      title="${escapeAttribute(summaryText || toolName)}">
+      ${statusDot}
+      <span class="sw-tool__name">${escapeHtml(toolName)}</span>
+      ${summaryText ? `<span class="sw-tool__desc">${escapeHtml(shorten(summaryText, 80))}</span>` : ""}
+      ${timeLabel ? `<span class="sw-tool__time">${escapeHtml(timeLabel)}</span>` : ""}
+      <span class="sw-tool__chevron">↗</span>
+    </button>`;
 }
 
 function swCreateBubbleElement(item, session) {
@@ -4895,8 +5207,8 @@ function swReconcileTimeline(thread, items, session) {
     if (existing) {
       // update if changed
       if (existing.fingerprint !== fingerprint) {
-        if (item.type === "artifact" && item.kind === "tool") {
-          swUpdateToolCallElement(existing.element, item);
+        if (item.type === "artifact") {
+          swUpdateArtifactElement(existing.element, item);
         } else {
           swUpdateBubbleElement(existing.element, item, session);
         }
@@ -4917,7 +5229,7 @@ function swReconcileTimeline(thread, items, session) {
     } else {
       // create new node
       let element;
-      if (item.type === "artifact" && item.kind === "tool") {
+      if (item.type === "artifact") {
         element = swCreateToolCallElement(item);
       } else {
         element = swCreateBubbleElement(item, session);
@@ -4997,6 +5309,7 @@ function swCreateScaffold(session, workspace) {
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"/></svg>
       </button>` : ""}
     </header>
+    <div class="sw-system-prompt ravi-hidden" data-ravi-session-system-prompt="true"></div>
     <div class="sw-thread" data-ravi-session-thread="true"></div>
     <form class="sw-composer" data-ravi-session-compose="true">
       <textarea
@@ -5053,6 +5366,7 @@ function syncSessionWorkspaceMain(snapshot = latestSnapshot, options = {}) {
   if (!needsScaffold) {
     swUpdateHeader(host, session, workspace);
   }
+  swUpdateSystemPromptSlot(host, workspace);
 
   // reconcile timeline
   const items = getSessionWorkspaceTimelineItems(workspace);
@@ -9751,6 +10065,14 @@ function applyArtifactBlobToTiles(artifactId) {
     if (tile.dataset.raviArtifactBlobState === "loaded") return;
     swapArtifactTileToImage(tile, dataUri);
   });
+  if (openArtifactModalData?.artifactId === artifactId) {
+    openArtifactModalData = {
+      ...openArtifactModalData,
+      imageSrc: dataUri,
+      glyph: null,
+    };
+    renderArtifactModal();
+  }
 }
 
 function swapArtifactTileToImage(tile, dataUri) {
@@ -9891,6 +10213,53 @@ function renderArtifactTile(item) {
       </div>
     </article>
   `;
+}
+
+function findArtifactsWorkspaceItem(artifactId) {
+  if (!artifactId) return null;
+  const items = Array.isArray(latestArtifactsSnapshot?.items)
+    ? latestArtifactsSnapshot.items
+    : [];
+  return items.find((item) => item?.id === artifactId) || null;
+}
+
+function buildArtifactsWorkspaceModalData(item) {
+  if (!item) return null;
+  const httpImageSrc = getArtifactImageSrc(item);
+  const blobArtifactId = httpImageSrc ? null : getLocalArtifactImageBlobId(item);
+  const cachedBlob = blobArtifactId ? ARTIFACT_BLOB_CACHE.get(blobArtifactId) : null;
+  const imageSrc = httpImageSrc || (cachedBlob?.ok ? cachedBlob.dataUri : null);
+  if (blobArtifactId && !imageSrc) {
+    requestArtifactBlobLoad(blobArtifactId);
+  }
+
+  return {
+    artifactId: item.id,
+    id: item.id,
+    kind: item.kind || "artifact",
+    label: item.label || item.id || "artifact",
+    title: item.label || item.id || "artifact",
+    status: item.status || null,
+    lifecycle: item.lifecycle || null,
+    summary: item.summary || null,
+    path: item.path || null,
+    blobPath: item.blobPath || null,
+    uri: item.uri || null,
+    mimeType: item.mimeType || null,
+    sizeBytes: item.sizeBytes ?? null,
+    provider: item.provider || null,
+    model: item.model || null,
+    taskId: item.task?.id || item.taskId || null,
+    taskTitle: item.task?.title || null,
+    sessionName: item.session?.sessionName || item.sessionName || null,
+    sessionKey: item.session?.sessionKey || item.sessionKey || null,
+    agentId: item.agent?.agentId || item.agentId || null,
+    agentName: item.agent?.name || null,
+    updatedAt: item.updatedAt || item.createdAt || null,
+    imageSrc,
+    glyph: imageSrc ? null : getArtifactGlyph(item.kind, item.mimeType),
+    links: item.links || [],
+  };
 }
 
 async function copyArtifactValue(value, label) {
@@ -10056,15 +10425,27 @@ function renderArtifactsWorkspace(body) {
     });
   });
 
+  body.querySelectorAll("[data-ravi-artifact-tile]").forEach((tile) => {
+    tile.addEventListener("click", (event) => {
+      if (event.target.closest(".ravi-wa-artifact-tile__chip")) return;
+      const artifactId = tile.getAttribute("data-ravi-artifact-tile");
+      const item = findArtifactsWorkspaceItem(artifactId);
+      if (!item) return;
+      openArtifactModal(buildArtifactsWorkspaceModalData(item));
+    });
+  });
+
   body.querySelectorAll("[data-ravi-artifact-open-task]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
       const taskId = button.getAttribute("data-ravi-artifact-open-task");
       await focusArtifactTask(taskId);
     });
   });
 
   body.querySelectorAll("[data-ravi-artifact-open-session]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
       const sessionKey = button.getAttribute("data-ravi-artifact-open-session");
       await focusArtifactSessionByKey(sessionKey);
     });
@@ -10073,7 +10454,8 @@ function renderArtifactsWorkspace(body) {
   body
     .querySelectorAll("[data-ravi-artifact-open-agent-session]")
     .forEach((button) => {
-      button.addEventListener("click", async () => {
+      button.addEventListener("click", async (event) => {
+        event.stopPropagation();
         const sessionKey = button.getAttribute(
           "data-ravi-artifact-open-agent-session",
         );
@@ -10082,7 +10464,8 @@ function renderArtifactsWorkspace(body) {
     });
 
   body.querySelectorAll("[data-ravi-artifact-copy-value]").forEach((button) => {
-    button.addEventListener("click", async () => {
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
       const value = button.getAttribute("data-ravi-artifact-copy-value");
       const label = button.getAttribute("data-ravi-artifact-copy-label");
       await copyArtifactValue(value, label);
@@ -13253,6 +13636,17 @@ function flag(value) {
 function formatTimestamp(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "-";
   return new Date(value).toLocaleTimeString();
+}
+
+function formatCompactBytes(value) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return "";
+  }
+  if (value < 1024) return `${value} B`;
+  const kib = value / 1024;
+  if (kib < 1024) return `${kib.toFixed(kib >= 10 ? 0 : 1)} KB`;
+  const mib = kib / 1024;
+  return `${mib.toFixed(mib >= 10 ? 0 : 1)} MB`;
 }
 
 function formatElapsedCompact(value) {

@@ -28,6 +28,7 @@ function createFileBackedProviderCapabilities(): RuntimeCapabilities {
     },
     systemPrompt: { mode: "append" },
     terminalEvents: { guarantee: "adapter" },
+    skillVisibility: { availability: "none", loadedState: "none" },
     supportsSessionResume: true,
     supportsSessionFork: false,
     supportsPartialText: true,

@@ -26,6 +26,7 @@ import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
+import { configuredSkillGateForTool, evaluateSkillGate, skillGateErrorPayload } from "../../runtime/skill-gate.js";
 import {
   errorResponse,
   internalError,
@@ -111,6 +112,29 @@ export async function dispatch(
   }
 
   const startedAt = Date.now();
+  const scopeResult = runWithContext(asToolContext(scopeContext, opts.contextRecord ?? null), () =>
+    enforceScopeCheck(cmd.scope, cmd.groupSegments.join("_"), cmd.command),
+  );
+  if (!scopeResult.allowed) {
+    const response = permissionDenied(scopeResult.errorMessage);
+    const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
+  }
+
+  const gate = configuredSkillGateForTool(tool) ?? cmd.skillGate;
+  const gateDecision = evaluateSkillGate({
+    gate,
+    context: opts.contextRecord ?? null,
+    toolName: tool,
+  });
+  if (!gateDecision.allowed) {
+    return {
+      response: errorResponse(409, "SkillRequired", skillGateErrorPayload(gateDecision)),
+      audit: null,
+    };
+  }
+
   let isError = false;
   let response: Response;
   let returnValue: unknown;
@@ -120,11 +144,6 @@ export async function dispatch(
       asToolContext(scopeContext, opts.contextRecord ?? null),
       () =>
         new Promise<unknown>((resolve, reject) => {
-          const scopeResult = enforceScopeCheck(cmd.scope, cmd.groupSegments.join("_"), cmd.command);
-          if (!scopeResult.allowed) {
-            reject(new ScopeDenied(scopeResult.errorMessage));
-            return;
-          }
           try {
             const instance = new cmd.cls();
             const method = (instance as unknown as Record<string, Function>)[cmd.method];
@@ -140,12 +159,6 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    if (err instanceof ScopeDenied) {
-      response = permissionDenied(err.message);
-      const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
-      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
-      return { response, audit: auditEmitted ? audit : null };
-    }
     isError = true;
     const message = err instanceof Error ? err.message : String(err);
     response = internalError(message);
@@ -231,8 +244,6 @@ function buildAuditEvent(
     agentId: lineage.agentId,
   };
 }
-
-class ScopeDenied extends Error {}
 
 function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResult {
   if (body === undefined || body === null) {

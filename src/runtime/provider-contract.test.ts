@@ -18,6 +18,7 @@ const REQUIRED_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
   "tools",
   "systemPrompt",
   "terminalEvents",
+  "skillVisibility",
   "supportsSessionResume",
   "supportsSessionFork",
   "supportsPartialText",
@@ -109,6 +110,8 @@ describe("runtime provider contract", () => {
       expect(typeof capabilities.tools.supportsParallelCalls).toBe("boolean");
       expect(typeof capabilities.systemPrompt.mode).toBe("string");
       expect(typeof capabilities.terminalEvents.guarantee).toBe("string");
+      expect(typeof capabilities.skillVisibility.availability).toBe("string");
+      expect(typeof capabilities.skillVisibility.loadedState).toBe("string");
     }
   });
 
@@ -140,6 +143,10 @@ describe("runtime provider contract", () => {
       },
       terminalEvents: {
         guarantee: "adapter",
+      },
+      skillVisibility: {
+        availability: "plugins",
+        loadedState: "provider-events",
       },
       supportsSessionResume: true,
       supportsSessionFork: true,
@@ -180,6 +187,10 @@ describe("runtime provider contract", () => {
       },
       terminalEvents: {
         guarantee: "adapter",
+      },
+      skillVisibility: {
+        availability: "codex-skills",
+        loadedState: "instruction-sources",
       },
       supportsSessionResume: true,
       supportsSessionFork: false,
@@ -230,6 +241,10 @@ describe("runtime provider contract", () => {
       },
       terminalEvents: {
         guarantee: "adapter",
+      },
+      skillVisibility: {
+        availability: "none",
+        loadedState: "none",
       },
       supportsSessionResume: true,
       supportsSessionFork: false,

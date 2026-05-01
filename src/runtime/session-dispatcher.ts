@@ -571,6 +571,19 @@ export class RuntimeSessionDispatcher {
                 reason: "waiting_for_barrier",
               },
             });
+            this.options
+              .safeEmit(`ravi.session.${sessionName}.runtime`, {
+                type: "dispatch.queued",
+                provider: existing.queryHandle.provider,
+                reason: "waiting_for_barrier",
+                barrier: describeDeliveryBarrier(barrier),
+                queueSize: existing.pendingMessages.length,
+                sessionState: describeSessionState(existing),
+                timestamp: new Date().toISOString(),
+              })
+              .catch((error) => {
+                log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+              });
           }
         } else {
           const decision = shouldInterruptRuntimeForIncoming(sessionName, existing, barrier, prompt.taskBarrierTaskId);
@@ -602,6 +615,20 @@ export class RuntimeSessionDispatcher {
                 tool: existing.currentToolName ?? null,
               },
             });
+            this.options
+              .safeEmit(`ravi.session.${sessionName}.runtime`, {
+                type: "dispatch.queued",
+                provider: existing.queryHandle.provider,
+                reason: decision.reason,
+                barrier: describeDeliveryBarrier(barrier),
+                queueSize: existing.pendingMessages.length,
+                tool: existing.currentToolName ?? null,
+                sessionState: describeSessionState(existing),
+                timestamp: new Date().toISOString(),
+              })
+              .catch((error) => {
+                log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+              });
           } else {
             nats
               .emit(`ravi.session.${sessionName}.runtime`, {
@@ -686,6 +713,17 @@ export class RuntimeSessionDispatcher {
           taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
         },
       });
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.queued",
+          provider: requestedProvider,
+          reason: "cold_start_inflight",
+          queueSize: queued.length,
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+        });
       return;
     }
 
@@ -1002,4 +1040,15 @@ function recordStreamingTurnInterruptedTrace(
     },
   });
   session.currentTraceTurnTerminalRecorded = true;
+}
+
+function describeSessionState(session: RuntimeHostStreamingSession): Record<string, unknown> {
+  return {
+    starting: session.starting,
+    compacting: session.compacting,
+    toolRunning: session.toolRunning,
+    turnActive: session.turnActive,
+    tool: session.currentToolName ?? null,
+    idleMs: session.lastActivity ? Date.now() - session.lastActivity : null,
+  };
 }

@@ -86,4 +86,21 @@ describe("buildMetaPayload", () => {
     expect(show.args[0]?.name).toBe("id");
     expect(show.args[0]?.schema).toBeDefined();
   });
+
+  it("surfaces command skill gates in registry metadata", () => {
+    @Group({ name: "tasks", description: "tasks", scope: "open" })
+    class GatedTasksCommands {
+      @Command({ name: "list", description: "list tasks" })
+      list() {
+        return { ok: true };
+      }
+    }
+
+    const meta = buildMetaPayload(buildRouteTable(buildRegistry([GatedTasksCommands])));
+    const list = meta.commands.find((cmd) => cmd.fullName === "tasks.list")!;
+    expect(list.skillGate).toMatchObject({
+      skill: "ravi-system-tasks",
+      source: "inferred",
+    });
+  });
 });

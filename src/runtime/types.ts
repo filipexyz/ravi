@@ -22,6 +22,27 @@ export type RuntimeUsageSemantics = "terminal-event" | "streaming" | "unavailabl
 export type RuntimeToolPermissionMode = "ravi-host" | "provider-native" | "unrestricted";
 export type RuntimeSystemPromptMode = "append" | "override" | "provider-composed";
 export type RuntimeTerminalEventGuarantee = "provider" | "adapter";
+export type RuntimeSkillVisibilityState =
+  | "available"
+  | "synced"
+  | "advertised"
+  | "requested"
+  | "loaded"
+  | "stale"
+  | "unknown";
+export type RuntimeSkillVisibilityConfidence = "observed" | "inferred" | "declared" | "unknown";
+export type RuntimeSkillVisibilityEvidenceKind =
+  | "provider-event"
+  | "tool-call"
+  | "sync-manifest"
+  | "system-prompt"
+  | "control-api"
+  | "rpc-state"
+  | "plugin-bootstrap"
+  | "instruction-source"
+  | "skill-gate";
+export type RuntimeSkillAvailabilityMode = "none" | "plugins" | "codex-skills" | "provider";
+export type RuntimeSkillLoadedStateMode = "none" | "provider-events" | "instruction-sources" | "ravi-injection";
 
 export type RuntimeStatus = "queued" | "thinking" | "compacting" | "idle";
 
@@ -278,6 +299,39 @@ export interface RuntimeTerminalEventCapabilities {
   guarantee: RuntimeTerminalEventGuarantee;
 }
 
+export interface RuntimeSkillVisibilityCapabilities {
+  availability: RuntimeSkillAvailabilityMode;
+  loadedState: RuntimeSkillLoadedStateMode;
+}
+
+export interface RuntimeSkillVisibilityEvidence {
+  kind: RuntimeSkillVisibilityEvidenceKind;
+  observedAt?: number;
+  path?: string;
+  eventType?: string;
+  eventId?: string;
+  turnId?: string;
+  itemId?: string;
+  detail?: string;
+}
+
+export interface RuntimeSkillVisibilityRecord {
+  id: string;
+  provider: RuntimeProviderId;
+  state: RuntimeSkillVisibilityState;
+  confidence: RuntimeSkillVisibilityConfidence;
+  source?: string;
+  evidence?: RuntimeSkillVisibilityEvidence[];
+  loadedAt?: number | null;
+  lastSeenAt: number;
+}
+
+export interface RuntimeSkillVisibilitySnapshot {
+  skills: RuntimeSkillVisibilityRecord[];
+  loadedSkills: string[];
+  updatedAt: number;
+}
+
 export interface RuntimeHookMatcher {
   matcher?: string;
   hooks: Array<(...args: any[]) => any>;
@@ -449,6 +503,7 @@ export type RuntimeEvent =
 export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
   events: AsyncIterable<RuntimeEvent>;
+  skillVisibility?: RuntimeSkillVisibilitySnapshot;
   interrupt(): Promise<void>;
   setModel?(model: string): Promise<void>;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;
@@ -463,6 +518,7 @@ export interface RuntimeCapabilities {
   tools: RuntimeToolCapabilities;
   systemPrompt: RuntimeSystemPromptCapabilities;
   terminalEvents: RuntimeTerminalEventCapabilities;
+  skillVisibility: RuntimeSkillVisibilityCapabilities;
   supportsSessionResume: boolean;
   supportsSessionFork: boolean;
   supportsPartialText: boolean;

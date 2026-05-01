@@ -52,6 +52,7 @@ async function emitMutation(result: {
   name: "tasks.deps",
   description: "Inspect and mutate task dependency gating",
   scope: "open",
+  skillGate: "ravi-system-tasks",
 })
 export class TaskDependencyCommands {
   @Command({ name: "add", description: "Add one gating dependency to a task" })

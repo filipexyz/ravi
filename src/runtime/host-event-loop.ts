@@ -9,6 +9,7 @@ import {
   deleteSession,
   getAnnounceCompaction,
   updateProviderSession,
+  updateRuntimeProviderState,
   updateTokens,
   type AgentConfig,
   type SessionEntry,
@@ -18,7 +19,18 @@ import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
-import type { RuntimeCapabilities, RuntimeEventMetadata, RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
+import {
+  markLoadedFromRaviSkillToolCall,
+  readSkillVisibilityFromParams,
+  resetLoadedSkillVisibilitySnapshot,
+} from "./skill-visibility.js";
+import type {
+  RuntimeCapabilities,
+  RuntimeEventMetadata,
+  RuntimeProviderId,
+  RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
+} from "./types.js";
 
 const log = logger.child("bot");
 
@@ -283,11 +295,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     provider: runtimeSession.provider,
     model,
     source: streaming.currentSource,
+    skills: runtimeSession.skillVisibility?.skills,
+    loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
   });
   const clearActiveToolState = () => {
     streaming.toolRunning = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
+    streaming.currentToolInput = undefined;
     streaming.toolStartTime = undefined;
     streaming.currentToolSafety = null;
   };
@@ -317,6 +332,71 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const emitRuntimeEvent = async (event: Record<string, unknown>) => {
     const augmented = streaming.currentSource ? { ...event, _source: streaming.currentSource } : event;
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
+  };
+
+  const patchLiveState = (
+    input: Parameters<typeof updateRuntimeLiveState>[1],
+    skillVisibility?: RuntimeSkillVisibilitySnapshot,
+  ) =>
+    updateRuntimeLiveState(sessionName, {
+      ...input,
+      ...(skillVisibility
+        ? {
+            skills: skillVisibility.skills,
+            loadedSkills: skillVisibility.loadedSkills,
+          }
+        : {}),
+    });
+
+  const runtimeSkillVisibilityFromParams = (params: Record<string, unknown> | undefined) => {
+    if (isRecord(params?.skillVisibility)) {
+      return readSkillVisibilityFromParams(params);
+    }
+    if (isRecord(session.runtimeSessionParams?.skillVisibility)) {
+      return readSkillVisibilityFromParams(session.runtimeSessionParams);
+    }
+    return runtimeSession.skillVisibility;
+  };
+
+  const mergeRuntimeSessionParams = (
+    params: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined => {
+    if (!isRecord(session.runtimeSessionParams?.skillVisibility)) {
+      return params;
+    }
+    if (isRecord(params?.skillVisibility)) {
+      return params;
+    }
+    return {
+      ...(params ?? {}),
+      skillVisibility: session.runtimeSessionParams.skillVisibility,
+    };
+  };
+
+  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
+    const runtimeSessionParams: Record<string, unknown> = {
+      ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
+      skillVisibility,
+    };
+    const persistedSessionId =
+      session.runtimeSessionDisplayId ??
+      session.providerSessionId ??
+      session.sdkSessionId ??
+      (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+
+    session.runtimeSessionParams = runtimeSessionParams;
+    runtimeSession.skillVisibility = skillVisibility;
+    if (persistedSessionId) {
+      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+        runtimeSessionParams,
+        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+      });
+    } else {
+      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+        runtimeSessionParams,
+      });
+    }
+    return runtimeSessionParams;
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -415,15 +495,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           },
         });
-        updateRuntimeLiveState(sessionName, {
-          activity: streaming.compacting ? "compacting" : "thinking",
-          summary: streaming.compacting ? "compacting" : "runtime active",
-          agentId: agent.id,
-          runId,
-          provider: runtimeSession.provider,
-          model,
-          source: streaming.currentSource,
-        });
+        let statusSkillVisibility: RuntimeSkillVisibilitySnapshot | undefined;
+        if (streaming.compacting && !wasCompacting) {
+          statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
+            runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
+          );
+          persistRuntimeSkillVisibility(statusSkillVisibility);
+          await emitRuntimeEvent({
+            type: "skill.visibility.reset",
+            provider: runtimeSession.provider,
+            reason: "compact",
+            skillVisibility: statusSkillVisibility,
+            metadata: event.metadata,
+          });
+        }
+
+        patchLiveState(
+          {
+            activity: streaming.compacting ? "compacting" : "thinking",
+            summary: streaming.compacting ? "compacting" : "runtime active",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          },
+          statusSkillVisibility,
+        );
 
         if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
           if (streaming.compacting && !wasCompacting) {
@@ -439,6 +537,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
+        streaming.currentToolInput = event.toolUse.input;
         streaming.toolStartTime = Date.now();
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
@@ -565,6 +664,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
+        const toolInput = streaming.currentToolInput;
         const output = truncateOutput(event.content);
         recordTraceEvent({
           turnId: streaming.currentTraceTurnId,
@@ -606,6 +706,57 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           toolName,
           source: streaming.currentSource,
         });
+
+        if (!event.isError) {
+          const previousSkillVisibility =
+            runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined);
+          const nextSkillVisibility = markLoadedFromRaviSkillToolCall(previousSkillVisibility, {
+            provider: runtimeSession.provider,
+            toolName,
+            toolInput,
+            output: event.content,
+            metadata: event.metadata,
+          });
+          if (nextSkillVisibility !== previousSkillVisibility) {
+            persistRuntimeSkillVisibility(nextSkillVisibility);
+            patchLiveState(
+              {
+                activity: "thinking",
+                summary: `${toolName} completed`,
+                agentId: agent.id,
+                runId,
+                provider: runtimeSession.provider,
+                model,
+                toolName,
+                source: streaming.currentSource,
+              },
+              nextSkillVisibility,
+            );
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "skill.visibility.loaded",
+              eventGroup: "runtime",
+              status: "complete",
+              payloadJson: {
+                toolId,
+                toolName,
+                loadedSkills: nextSkillVisibility.loadedSkills,
+                skillVisibility: nextSkillVisibility,
+                metadata: event.metadata,
+              },
+              preview: nextSkillVisibility.loadedSkills.join(", "),
+            });
+            await emitRuntimeEvent({
+              type: "skill.visibility.loaded",
+              provider: runtimeSession.provider,
+              skillVisibility: nextSkillVisibility,
+              loadedSkills: nextSkillVisibility.loadedSkills,
+              metadata: event.metadata,
+            });
+          }
+        }
 
         streaming.lastToolFailure = event.isError
           ? {
@@ -683,7 +834,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
-        const runtimeSessionParams = event.session?.params ?? undefined;
+        const runtimeSessionParams = mergeRuntimeSessionParams(event.session?.params ?? undefined);
+        const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
@@ -791,7 +943,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         clearTraceTurnState();
-        markRuntimeLiveIdle(sessionName, "turn complete");
+        patchLiveState(
+          {
+            activity: "idle",
+            summary: "turn complete",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          },
+          terminalSkillVisibility,
+        );
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
@@ -924,4 +1087,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streamingSessions.delete(sessionName);
     drainPendingStarts();
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

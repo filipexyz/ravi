@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
   RuntimeApprovalHandler,
@@ -33,6 +34,7 @@ import type {
   RuntimePromptMessage,
   RuntimeSessionState,
   RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeStartRequest,
   RuntimeStatus,
   RuntimeThreadMetadata,
@@ -59,7 +61,7 @@ const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
 ];
 const CODEX_SKILL_DISCOVERY_NOTE = [
   "Ravi may install native Codex skills under ~/.codex/skills (or $CODEX_HOME/skills).",
-  "If the task clearly matches a skill, inspect that directory and follow the relevant SKILL.md files.",
+  "If the task clearly matches a skill, prefer `ravi skills show <skill-name> --json` (or repo `bin/ravi`) to inspect it, then follow the returned SKILL.md instructions.",
 ].join(" ");
 
 interface CodexCliUsage {
@@ -141,6 +143,16 @@ interface AppServerApprovalTurn {
   turnId?: string;
 }
 
+interface PendingDynamicToolResult {
+  success: boolean;
+  contentItems: RuntimeDynamicToolCallContentItem[];
+}
+
+interface CodexSkillVisibilityByCwd {
+  syncedSkillNames: string[];
+  snapshot: RuntimeSkillVisibilitySnapshot;
+}
+
 export interface CreateCodexRuntimeProviderOptions {
   transport?: CodexCliTransport;
   defaultModel?: string;
@@ -155,7 +167,7 @@ export interface CodexRuntimeProvider extends SessionRuntimeProvider {
 export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOptions = {}): CodexRuntimeProvider {
   const defaultModel = options.defaultModel ?? process.env.RAVI_CODEX_MODEL ?? DEFAULT_CODEX_MODEL;
   const syncSkills = options.syncSkills ?? syncCodexSkills;
-  const syncedSkillsByCwd = new Map<string, string[]>();
+  const skillVisibilityByCwd = new Map<string, CodexSkillVisibilityByCwd>();
 
   return {
     id: "codex",
@@ -189,6 +201,10 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         terminalEvents: {
           guarantee: "adapter",
         },
+        skillVisibility: {
+          availability: "codex-skills",
+          loadedState: "instruction-sources",
+        },
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
@@ -204,7 +220,11 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       ensureAgentInstructionFiles(input.cwd);
       ensureGlobalCodexBashHookConfig();
       const syncedSkills = syncSkills(input.plugins ?? []);
-      syncedSkillsByCwd.set(input.cwd, Array.isArray(syncedSkills) ? syncedSkills : []);
+      const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
+      skillVisibilityByCwd.set(input.cwd, {
+        syncedSkillNames,
+        snapshot: buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+      });
       return input.hostServices
         ? {
             startRequest: createCodexRuntimeStartRequest(input.hostServices),
@@ -217,10 +237,18 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         activeTurn: null,
         interrupted: false,
       };
+      const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
 
       return {
         provider: "codex",
-        events: normalizeCodexEvents(input, transport, defaultModel, state, syncedSkillsByCwd.get(input.cwd) ?? []),
+        skillVisibility,
+        events: normalizeCodexEvents(
+          input,
+          transport,
+          defaultModel,
+          state,
+          skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
+        ),
         interrupt: async () => {
           if (!state.activeTurn) {
             return;
@@ -724,10 +752,14 @@ async function* normalizeCodexEvents(
 
           if (event.type === "turn.completed") {
             previousSessionId = metadata.thread?.id ?? turnSessionId;
+            const skillVisibility = markLoadedFromInstructionSources(
+              buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+              stringArray(event.instruction_sources),
+            );
             const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
-              session: buildCodexSessionState(previousSessionId, input.cwd),
+              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -839,9 +871,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let stderr = "";
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
+  let currentInstructionSources: string[] = [];
   let resolvedModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
+  const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
   let bootstrapPromise: Promise<void> | null = null;
   let activeTurn: AppServerTurnState | null = null;
 
@@ -1065,12 +1099,12 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     const response = buildCodexDynamicToolCallResponse(result);
-    activeTurn?.queue.push(
-      buildDynamicToolTraceEvent("item.completed", request, {
-        success: response.success,
-        contentItems: response.contentItems,
-      }),
-    );
+    const toolSucceeded = result.success === true;
+    const toolItemId = request.callId ?? `${request.toolName}-unknown`;
+    pendingDynamicToolResults.set(toolItemId, {
+      success: toolSucceeded,
+      contentItems: response.contentItems,
+    });
     await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
   }
 
@@ -1378,7 +1412,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "item/completed": {
         if (turn) {
-          const item = normalizeAppServerItem(params.item);
+          const item = applyPendingDynamicToolResult(normalizeAppServerItem(params.item), pendingDynamicToolResults);
           if (item) {
             turn.queue.push({
               type: "item.completed",
@@ -1430,6 +1464,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             usage: turn.lastUsage ?? {},
             model: resolvedModel,
             model_provider: resolvedModelProvider,
+            instruction_sources: currentInstructionSources,
           });
         } else if (status === "interrupted") {
           turn.queue.push({
@@ -1449,6 +1484,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
           });
         }
+        pendingDynamicToolResults.clear();
         settleTurn(turn);
         break;
       }
@@ -1524,6 +1560,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             });
 
         currentThreadId = firstString(asRecord(threadResponse.thread)?.id, resumeThreadId);
+        currentInstructionSources = stringArray(threadResponse.instructionSources);
         resolvedModel = firstString(threadResponse.model, input.model) ?? null;
         resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
       } finally {
@@ -1934,7 +1971,11 @@ function resolveCodexResumeId(
   return sessionId;
 }
 
-function buildCodexSessionState(sessionId: string | undefined, cwd: string): RuntimeSessionState | undefined {
+function buildCodexSessionState(
+  sessionId: string | undefined,
+  cwd: string,
+  skillVisibility: RuntimeSkillVisibilitySnapshot,
+): RuntimeSessionState | undefined {
   if (!sessionId) {
     return undefined;
   }
@@ -1943,6 +1984,7 @@ function buildCodexSessionState(sessionId: string | undefined, cwd: string): Run
     params: {
       sessionId,
       cwd,
+      skillVisibility,
     },
     displayId: sessionId,
   };
@@ -2319,6 +2361,33 @@ function normalizeAppServerItem(value: unknown): Record<string, unknown> | null 
   }
 }
 
+function applyPendingDynamicToolResult(
+  item: Record<string, unknown> | null,
+  pendingResults: Map<string, PendingDynamicToolResult>,
+): Record<string, unknown> | null {
+  if (!item || item.type !== "dynamic_tool_call") {
+    return item;
+  }
+
+  const itemId = firstString(item.id);
+  if (!itemId) {
+    return item;
+  }
+
+  const result = pendingResults.get(itemId);
+  if (!result) {
+    return item;
+  }
+
+  pendingResults.delete(itemId);
+  return {
+    ...item,
+    status: result.success ? (firstString(item.status) ?? "completed") : "failed",
+    success: result.success,
+    content_items: result.contentItems,
+  };
+}
+
 function normalizeAppServerStatus(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length === 0) {
     return undefined;
@@ -2429,9 +2498,13 @@ function buildCodexDynamicToolCallResponse(result: RuntimeDynamicToolCallResult)
   success: boolean;
   contentItems: RuntimeDynamicToolCallContentItem[];
 } {
-  const success = result.success === true;
   const contentItems = normalizeDynamicToolCallContentItems(result.contentItems, result.reason);
-  return { success, contentItems };
+  // Codex CLI 0.125.0 accepts `success: false` by schema, but the app-server
+  // does not reliably resume the turn after a failed dynamic tool response.
+  // Keep Ravi's own semantic status on the native item/completed event, and
+  // deliver the failure text as a successful protocol response so the model can
+  // read it and continue or retry.
+  return { success: true, contentItems };
 }
 
 function normalizeDynamicToolCallContentItems(
@@ -2890,6 +2963,12 @@ function firstString(...values: Array<unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
 }
 
 function toNumber(value: unknown): number {
