@@ -20,6 +20,7 @@ O `task runtime` é o control plane operacional do Ravi.
 - `catálogo` = lista de profiles disponíveis
 - `artifact` = corpo real do trabalho
 - `session` = contexto de execução
+- sessões de trabalho de task são efêmeras por padrão, com retenção configurável
 
 Em frase curta:
 
@@ -94,6 +95,25 @@ Precedência por campo:
 7. `effort` default do runtime: `xhigh`
 
 Não use `ravi sessions set-model` como mecanismo interno de task. O runtime resolve model/effort/thinking no turno ligado à task por `taskBarrierTaskId`, sem mutar a sessão.
+
+## Retenção de Sessões
+
+Sessões de trabalho criadas ou retomadas por tasks recebem TTL efêmero automaticamente.
+O default é `1d`; depois disso o runner de sessões efêmeras apaga a sessão se ela
+não tiver sido mantida/estendida.
+
+Configuração:
+
+```bash
+ravi settings get tasks.sessionTtl
+ravi settings set tasks.sessionTtl 1d
+ravi settings set tasks.sessionTtl 12h
+ravi settings set tasks.sessionTtl off
+```
+
+`off`, `false`, `disabled`, `none` ou `0` desativam o TTL automático para novas
+materializações/retomadas de sessão de task. Para continuar uma task cuja sessão
+foi apagada, despache/comente a task de novo para criar uma nova sessão.
 
 ## Built-ins Atuais
 

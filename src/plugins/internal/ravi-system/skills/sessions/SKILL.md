@@ -5,6 +5,7 @@ description: |
   - Listar, ver detalhes ou renomear sessões
   - Resetar ou deletar sessões
   - Configurar modelo ou thinking level por sessão
+  - Limpar sessões inativas com dry-run e filtros explícitos
   - Criar sessões efêmeras com TTL
   - Estender, manter ou excluir sessões efêmeras
   - Enviar prompts, perguntas ou comandos entre sessões
@@ -67,7 +68,26 @@ ravi sessions reset <name>
 
 # Deletar sessão permanentemente (abort + delete)
 ravi sessions delete <name>
+
+# Preview de limpeza por inatividade (não apaga nada)
+ravi sessions prune --inactive-for 2d --json
+
+# Deletar sessões inativas há mais de 2 dias
+ravi sessions prune --inactive-for 2d --execute
 ```
+
+`prune` usa `updated_at`/última atividade da sessão, não `created_at`.
+Isso evita apagar uma sessão antiga que teve atividade recente.
+
+Filtros úteis:
+
+```bash
+ravi sessions prune --inactive-for 1d --agent dev
+ravi sessions prune --inactive-for 2d --name-prefix task-
+ravi sessions prune --inactive-for 12h --ephemeral
+```
+
+Sem `--execute`, `prune` é sempre dry-run. Use o dry-run antes de apagar em lote.
 
 ### Sessões Efêmeras
 

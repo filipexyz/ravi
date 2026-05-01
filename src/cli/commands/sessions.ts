@@ -351,7 +351,7 @@ function buildSessionMutationAuditSnapshot(session: SessionEntry): SessionMutati
 }
 
 async function emitSessionMutationAudit(
-  operation: "reset" | "delete",
+  operation: "reset" | "delete" | "prune",
   phase: "requested" | "completed",
   payload: {
     cliInvocation: CliInvocationMetadata;
@@ -427,6 +427,44 @@ function timeAgo(ts: number): string {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
+}
+
+function normalizeOptionalFilter(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function sessionLabel(session: SessionEntry): string {
+  return session.name ?? session.sessionKey;
+}
+
+function matchesSessionPrefix(session: SessionEntry, prefix: string | undefined): boolean {
+  if (!prefix) return true;
+  const normalized = prefix.toLowerCase();
+  return (
+    session.sessionKey.toLowerCase().startsWith(normalized) ||
+    (session.name?.toLowerCase().startsWith(normalized) ?? false)
+  );
+}
+
+function buildPruneSessionJson(session: SessionEntry, now: number): Record<string, unknown> {
+  const inactiveMs = Math.max(0, now - session.updatedAt);
+  return {
+    sessionKey: session.sessionKey,
+    name: session.name ?? null,
+    label: sessionLabel(session),
+    agentId: session.agentId,
+    runtimeProvider: session.runtimeProvider ?? null,
+    updatedAt: session.updatedAt,
+    updatedAtIso: new Date(session.updatedAt).toISOString(),
+    inactiveMs,
+    inactiveFor: timeAgo(session.updatedAt),
+    createdAt: session.createdAt,
+    ephemeral: Boolean(session.ephemeral),
+    expiresAt: session.expiresAt ?? null,
+    tokenTotal:
+      session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
+  };
 }
 
 function extractRuntimeTerminalError(data: Record<string, unknown>): string | undefined {
@@ -1806,6 +1844,164 @@ export class SessionCommands {
     if (revokedContexts.length > 0) {
       console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
     }
+  }
+
+  @Command({ name: "prune", description: "Prune sessions inactive for a duration (dry-run by default)" })
+  async prune(
+    @Option({ flags: "--inactive-for <duration>", description: "Only match sessions inactive for this duration" })
+    inactiveFor?: string,
+    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
+    @Option({ flags: "--ephemeral", description: "Only match ephemeral sessions" }) ephemeralOnly?: boolean,
+    @Option({
+      flags: "--name-prefix <prefix>",
+      description: "Only match sessions whose name or key starts with prefix",
+    })
+    namePrefix?: string,
+    @Option({ flags: "--execute", description: "Actually delete matching sessions; default is dry-run" })
+    execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const inactiveDuration = normalizeOptionalFilter(inactiveFor);
+    if (!inactiveDuration) {
+      fail("Missing required filter: --inactive-for <duration>");
+      return;
+    }
+
+    const inactiveForMs = parseDurationMs(inactiveDuration);
+    if (!inactiveForMs || inactiveForMs <= 0) {
+      fail(`Invalid --inactive-for duration: ${inactiveDuration}. Use format like 12h, 2d, 30m`);
+      return;
+    }
+
+    const normalizedAgentId = normalizeOptionalFilter(agentId);
+    const normalizedNamePrefix = normalizeOptionalFilter(namePrefix);
+    const now = Date.now();
+    const cutoff = now - inactiveForMs;
+    let sessions = normalizedAgentId ? getSessionsByAgent(normalizedAgentId) : listSessions();
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      sessions = execute
+        ? sessions.filter((session) => canModifySession(scopeCtx, sessionLabel(session)))
+        : filterAccessibleSessions(scopeCtx, sessions);
+    }
+
+    const candidates = sessions.filter(
+      (session) =>
+        session.updatedAt <= cutoff &&
+        (!ephemeralOnly || session.ephemeral) &&
+        matchesSessionPrefix(session, normalizedNamePrefix),
+    );
+
+    const filters = {
+      inactiveFor: inactiveDuration,
+      inactiveForMs,
+      inactiveSince: cutoff,
+      inactiveSinceIso: new Date(cutoff).toISOString(),
+      agentId: normalizedAgentId ?? null,
+      ephemeralOnly: Boolean(ephemeralOnly),
+      namePrefix: normalizedNamePrefix ?? null,
+    };
+
+    const candidatePayload = candidates.map((session) => buildPruneSessionJson(session, now));
+
+    if (!execute) {
+      const payload = {
+        action: "prune",
+        dryRun: true,
+        execute: false,
+        filters,
+        scanned: sessions.length,
+        matched: candidates.length,
+        deleted: 0,
+        candidates: candidatePayload,
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Dry-run: ${candidates.length} session(s) inactive for ${inactiveDuration} would be deleted.`);
+      if (candidates.length > 0) {
+        console.log("\n  NAME                                  AGENT     INACTIVE   UPDATED             TYPE");
+        console.log("  ────────────────────────────────────  ────────  ─────────  ──────────────────  ─────────");
+        for (const session of candidates) {
+          const name = sessionLabel(session).padEnd(38);
+          const agent = session.agentId.padEnd(8);
+          const inactive = timeAgo(session.updatedAt).padEnd(9);
+          const updated = formatDate(session.updatedAt).padEnd(18);
+          const type = (session.ephemeral ? "ephemeral" : "permanent").padEnd(9);
+          console.log(`  ${name}  ${agent}  ${inactive}  ${updated}  ${type}`);
+        }
+        console.log("\nRun again with --execute to delete these sessions.");
+      }
+      return payload;
+    }
+
+    const cliInvocation = buildCliInvocationMetadata({
+      group: "sessions",
+      name: "prune",
+      tool: "sessions_prune",
+    });
+    const startedAt = Date.now();
+    const results: Array<Record<string, unknown>> = [];
+    let deletedCount = 0;
+
+    for (const session of candidates) {
+      const before = buildSessionMutationAuditSnapshot(session);
+      await emitSessionMutationAudit("prune", "requested", { cliInvocation, before });
+
+      try {
+        await nats.emit("ravi.session.abort", {
+          sessionKey: session.sessionKey,
+          sessionName: session.name,
+          source: "cli",
+          action: "sessions.prune",
+          reason: "cli_session_prune_inactive",
+          actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+          correlationId: cliInvocation.invocationId,
+        });
+      } catch {
+        /* session may not be active */
+      }
+
+      const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
+        reason: "cli_session_prune_inactive",
+      });
+      const changed = deleteSession(session.sessionKey);
+      if (changed) deletedCount += 1;
+      await emitSessionMutationAudit("prune", "completed", {
+        cliInvocation,
+        before,
+        after: null,
+        changed,
+        revokedContexts: revokedContexts.length,
+        durationMs: Date.now() - startedAt,
+      });
+
+      results.push({
+        ...buildPruneSessionJson(session, now),
+        changed,
+        revokedContexts: revokedContexts.length,
+      });
+    }
+
+    const payload = {
+      action: "prune",
+      dryRun: false,
+      execute: true,
+      filters,
+      scanned: sessions.length,
+      matched: candidates.length,
+      deleted: deletedCount,
+      results,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`Deleted ${deletedCount}/${candidates.length} session(s) inactive for ${inactiveDuration}.`);
+    return payload;
   }
 
   // ===========================================================================

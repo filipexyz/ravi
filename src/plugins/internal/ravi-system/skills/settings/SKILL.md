@@ -42,6 +42,7 @@ ravi settings delete <key>
 | `defaultAgent` | Agent padrão quando nenhuma rota casa | ID do agent |
 | `defaultDmScope` | Escopo padrão de DMs | main, per-peer, per-channel-peer, per-account-channel-peer |
 | `defaultTimezone` | Fuso horário padrão | America/Sao_Paulo, etc |
+| `tasks.sessionTtl` | TTL padrão para sessões de trabalho de tasks | duração como 1d, 12h, ou off |
 
 ## ⚠️ Settings Depreciadas (use `ravi instances`)
 
@@ -67,6 +68,13 @@ ravi settings set defaultAgent main
 Configurar timezone:
 ```bash
 ravi settings set defaultTimezone America/Sao_Paulo
+```
+
+Configurar retenção de sessões de tasks:
+```bash
+ravi settings get tasks.sessionTtl
+ravi settings set tasks.sessionTtl 1d
+ravi settings set tasks.sessionTtl off
 ```
 
 Configurar policy por instância (forma correta):

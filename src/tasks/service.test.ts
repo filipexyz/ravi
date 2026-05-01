@@ -60,7 +60,7 @@ const {
 } = await import("./index.js");
 const { attachTaskToWorkflowNodeRun, createWorkflowSpec, startWorkflowRun } = await import("../workflows/index.js");
 const { createProject, linkProject } = await import("../projects/index.js");
-import { dbCreateAgent, dbDeleteAgent } from "../router/router-db.js";
+import { dbCreateAgent, dbDeleteAgent, dbSetSetting } from "../router/router-db.js";
 import { deleteSession, getOrCreateSession, resolveSession } from "../router/sessions.js";
 import type { ResolvedTaskProfile } from "./types.js";
 
@@ -1721,6 +1721,35 @@ describe("task substrate contract", () => {
     } finally {
       process.chdir(previousCwd);
     }
+  });
+
+  it("marks task work sessions ephemeral with the configured retention TTL", async () => {
+    const agentId = "test-task-session-ttl-agent";
+    const sessionName = "task-session-ttl-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-task-session-ttl-agent" });
+    dbSetSetting("tasks.sessionTtl", "2h");
+
+    const created = createTask({
+      title: "Task session retention",
+      instructions: "Dispatch should attach a retention TTL to the work session.",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const beforeDispatch = Date.now();
+    await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+
+    const session = resolveSession(sessionName);
+    expect(session?.ephemeral).toBe(true);
+    expect(session?.expiresAt).toBeGreaterThanOrEqual(beforeDispatch + 2 * 60 * 60 * 1000);
+    expect(session?.expiresAt).toBeLessThanOrEqual(Date.now() + 2 * 60 * 60 * 1000 + 1000);
   });
 
   it("fails closed when a runtime-only task dir contains an unexpected legacy TASK.md", async () => {

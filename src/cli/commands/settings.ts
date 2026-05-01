@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
+import { parseDurationMs } from "../../cron/schedule.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -96,6 +97,14 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       }
     },
   },
+  "tasks.sessionTtl": {
+    description: "Default TTL for task work sessions (duration like 1d, 12h, or off)",
+    validate: (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (["off", "false", "disabled", "none", "0"].includes(normalized)) return;
+      parseDurationMs(normalized);
+    },
+  },
   "whatsapp.groupPolicy": {
     description: `WhatsApp group policy (${GROUP_POLICIES.join(", ")})`,
     validate: (value: string) => {
@@ -141,6 +150,7 @@ function knownSettingDefault(key: string): string | null {
   if (key === "defaultAgent") return "main";
   if (key === "defaultDmScope") return "per-peer";
   if (key === "image.mode") return "fast";
+  if (key === "tasks.sessionTtl") return "1d";
   return null;
 }
 
