@@ -123,6 +123,16 @@ let revokedContext:
 let resolvedContextOptions: { touch?: boolean; readOnly?: boolean } | undefined;
 let revokedCalls: Array<{ contextId: string; options?: unknown }> = [];
 let listedSessions: Array<{ sessionKey: string }> = [];
+let commandSkillGateDecision:
+  | {
+      allowed: boolean;
+      reason?: string;
+      code?: string;
+      skill?: string;
+      skillVisibility?: unknown;
+    }
+  | undefined;
+let commandSkillGateCalls: Array<Record<string, unknown>> = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -220,6 +230,13 @@ mock.module("../../approval/service.js", () => ({
     },
 }));
 
+mock.module("../../runtime/skill-gate.js", () => ({
+  evaluateRuntimeCommandSkillGate: (input: Record<string, unknown>) => {
+    commandSkillGateCalls.push(input);
+    return commandSkillGateDecision ?? { allowed: true };
+  },
+}));
+
 mock.module("../../nats.js", () => ({
   ...actualNatsModule,
   publish: async (topic: string, data: Record<string, unknown>) => {
@@ -262,6 +279,8 @@ describe("ContextCommands", () => {
     revokedCalls = [];
     listedSessions = [{ sessionKey: "agent:dev:main" }];
     publishedAuditEvents = [];
+    commandSkillGateDecision = undefined;
+    commandSkillGateCalls = [];
   });
 
   afterEach(() => {
@@ -281,6 +300,8 @@ describe("ContextCommands", () => {
     revokedCalls = [];
     listedSessions = [];
     publishedAuditEvents = [];
+    commandSkillGateDecision = undefined;
+    commandSkillGateCalls = [];
   });
 
   it("lists contexts with visible lineage and no context key in --json mode", () => {
@@ -806,6 +827,36 @@ describe("ContextCommands", () => {
 
       expect(result).toEqual({});
       expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
+    });
+
+    it("runs runtime skill gates from the Codex Bash hook path", () => {
+      commandSkillGateDecision = {
+        allowed: false,
+        code: "RAVI_SKILL_REQUIRED",
+        skill: "ravi-system-skill-gates",
+        reason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
+      };
+
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "ravi skill-gates list",
+        },
+      });
+
+      expect(result).toMatchObject({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
+        },
+      });
+      expect(commandSkillGateCalls).toEqual([
+        expect.objectContaining({
+          commandLine: "ravi skill-gates list",
+          context: resolvedContext,
+          toolName: "Bash",
+        }),
+      ]);
     });
 
     it("publishes executable deny audit events for git status", () => {

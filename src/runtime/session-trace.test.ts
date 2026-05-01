@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getOrCreateSession, getSession, type AgentConfig, type SessionEntry } from "../router/index.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateRuntimeProviderState,
+  type AgentConfig,
+  type SessionEntry,
+} from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
@@ -157,6 +163,25 @@ function makeRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
       },
     ],
     loadedSkills: [],
+    updatedAt: 100,
+  };
+}
+
+function makeLoadedRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "ravi-system-tasks",
+        provider: "codex",
+        state: "loaded",
+        confidence: "observed",
+        source: "catalog:ravi-system/tasks",
+        evidence: [{ kind: "skill-gate", observedAt: 100, detail: "delivered by skill gate for Bash" }],
+        loadedAt: 100,
+        lastSeenAt: 100,
+      },
+    ],
+    loadedSkills: ["ravi-system-tasks"],
     updatedAt: 100,
   };
 }
@@ -503,6 +528,85 @@ describe("runtime session trace instrumentation", () => {
     ]);
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
     expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
+  });
+
+  it("keeps skill-gate loaded state when provider turn completion reports only advertised skills", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeLoadedRaviTaskSkillVisibility(),
+    };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeRaviTaskSkillVisibility(),
+            },
+          },
+          usage: { inputTokens: 10, outputTokens: 4 },
+        },
+      ]),
+      { session },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "ravi-system-tasks", state: "loaded" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
+  });
+
+  it("keeps externally persisted skill-gate state when in-memory session params are stale", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "provider-before",
+      runtimeSessionDisplayId: "provider-before",
+      runtimeSessionParams: {
+        sessionId: "provider-before",
+        skillVisibility: makeLoadedRaviTaskSkillVisibility(),
+      },
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeRaviTaskSkillVisibility(),
+            },
+          },
+          usage: { inputTokens: 10, outputTokens: 4 },
+        },
+      ]),
+      { session },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "ravi-system-tasks", state: "loaded" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
   });
 
   it("does not persist raw stream lifecycle events in the trace ledger", async () => {

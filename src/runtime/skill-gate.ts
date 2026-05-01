@@ -13,6 +13,7 @@ import {
   slugifySkillName,
   type RaviSkill,
 } from "../skills/manager.js";
+import { parseBashCommand } from "../bash/parser.js";
 import {
   inferRaviCommandSkillGate,
   resolveRuntimeToolSkillGate,
@@ -40,6 +41,20 @@ export interface EvaluateSkillGateInput {
   toolName: string;
 }
 
+export interface EvaluateRuntimeToolSkillGateInput {
+  toolName: string;
+  context?: ContextRecord | null;
+  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+}
+
+export interface EvaluateRuntimeCommandSkillGateInput {
+  commandLine: string;
+  context?: ContextRecord | null;
+  toolName?: string;
+  executables?: readonly string[];
+  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+}
+
 export function runtimeSkillGateForTool(toolName: string): SkillGateMetadata | undefined {
   return resolveRuntimeToolSkillGate({ toolName }, { rules: readConfiguredSkillGateRules() });
 }
@@ -48,7 +63,38 @@ export function runtimeSkillGateForCommand(
   commandLine: string,
   options?: { executables?: readonly string[] },
 ): SkillGateMetadata | undefined {
-  return inferRaviCommandSkillGate(commandLine, { ...options, rules: readConfiguredSkillGateRules() });
+  const executables = options?.executables ?? parseBashCommand(commandLine).executables;
+  return inferRaviCommandSkillGate(commandLine, { executables, rules: readConfiguredSkillGateRules() });
+}
+
+export function evaluateRuntimeToolSkillGate(input: EvaluateRuntimeToolSkillGateInput): SkillGateDecision {
+  return evaluateResolvedRuntimeSkillGate({
+    gate: runtimeSkillGateForTool(input.toolName),
+    context: input.context,
+    toolName: input.toolName,
+    onSkillGatePersisted: input.onSkillGatePersisted,
+  });
+}
+
+export function evaluateRuntimeCommandSkillGate(input: EvaluateRuntimeCommandSkillGateInput): SkillGateDecision {
+  return evaluateResolvedRuntimeSkillGate({
+    gate: runtimeSkillGateForCommand(input.commandLine, { executables: input.executables }),
+    context: input.context,
+    toolName: input.toolName ?? "Bash",
+    onSkillGatePersisted: input.onSkillGatePersisted,
+  });
+}
+
+function evaluateResolvedRuntimeSkillGate(
+  input: EvaluateSkillGateInput & {
+    onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
+  },
+): SkillGateDecision {
+  const decision = evaluateSkillGate(input);
+  if (decision.skillVisibility) {
+    input.onSkillGatePersisted?.(decision.skillVisibility);
+  }
+  return decision;
 }
 
 export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecision {

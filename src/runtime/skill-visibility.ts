@@ -333,6 +333,24 @@ export function resetLoadedSkillVisibilitySnapshot(
   return buildSkillVisibilitySnapshot(records, now);
 }
 
+export function mergeSkillVisibilitySnapshots(
+  stored: RuntimeSkillVisibilitySnapshot | null | undefined,
+  incoming: RuntimeSkillVisibilitySnapshot | null | undefined,
+  now = Date.now(),
+): RuntimeSkillVisibilitySnapshot {
+  if (!stored) {
+    return incoming ?? emptySkillVisibilitySnapshot(now);
+  }
+  if (!incoming) {
+    return stored;
+  }
+
+  return buildSkillVisibilitySnapshot(
+    [...stored.skills, ...incoming.skills],
+    Math.max(stored.updatedAt ?? 0, incoming.updatedAt ?? 0, now),
+  );
+}
+
 export function readSkillVisibilityFromParams(params: Record<string, unknown> | null | undefined) {
   const raw = params?.skillVisibility;
   if (!isRecord(raw)) {

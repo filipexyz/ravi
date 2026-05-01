@@ -26,6 +26,7 @@ import { canWithCapabilityContext } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
+import { evaluateRuntimeCommandSkillGate } from "../../runtime/skill-gate.js";
 import {
   formatInspectionSection,
   printInspectionBlock,
@@ -492,6 +493,15 @@ export class ContextCommands {
       if (!decision.allowed) {
         emitBashDeniedAudit(command, decision, context.agentId);
         return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
+      }
+
+      const gateDecision = evaluateRuntimeCommandSkillGate({
+        commandLine: command,
+        context,
+        toolName: "Bash",
+      });
+      if (!gateDecision.allowed) {
+        return buildPreToolUseDenyResult(gateDecision.reason ?? "Command requires a skill before execution.");
       }
 
       return {};

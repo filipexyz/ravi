@@ -131,6 +131,16 @@ describe("evaluateSkillGate", () => {
       source: "config",
     });
   });
+
+  it("infers Ravi CLI gates from parsed commands without matching quoted text", () => {
+    expect(runtimeSkillGateForCommand("bin/ravi skill-gates list --json")).toMatchObject({
+      skill: "ravi-system-skill-gates",
+      source: "inferred",
+      ruleId: "skill-gates",
+    });
+    expect(runtimeSkillGateForCommand("bin/ravi context codex-bash-hook")).toBeUndefined();
+    expect(runtimeSkillGateForCommand('echo "ravi tasks list"')).toBeUndefined();
+  });
 });
 
 describe("runtime host skill-gate enforcement", () => {

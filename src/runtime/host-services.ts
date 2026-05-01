@@ -28,7 +28,7 @@ import type {
   RuntimeUserInputRequest,
   RuntimeCapabilities,
 } from "./types.js";
-import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
+import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -169,15 +169,11 @@ async function executeRuntimeDynamicTool(
     };
   }
 
-  const gate = runtimeSkillGateForTool(tool.name);
-  const gateDecision = evaluateSkillGate({
-    gate,
+  const gateDecision = evaluateRuntimeToolSkillGate({
     context: options.context,
     toolName: tool.name,
+    onSkillGatePersisted: options.onSkillGatePersisted,
   });
-  if (gateDecision.skillVisibility) {
-    options.onSkillGatePersisted?.(gateDecision.skillVisibility);
-  }
   if (!gateDecision.allowed) {
     return {
       success: false,
@@ -410,15 +406,13 @@ async function authorizeRuntimeCommandExecution(
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
   }
 
-  const gate = runtimeSkillGateForCommand(command, { executables: parsed.executables });
-  const gateDecision = evaluateSkillGate({
-    gate,
+  const gateDecision = evaluateRuntimeCommandSkillGate({
+    commandLine: command,
+    executables: parsed.executables,
     context: options.context,
     toolName: "Bash",
+    onSkillGatePersisted: options.onSkillGatePersisted,
   });
-  if (gateDecision.skillVisibility) {
-    options.onSkillGatePersisted?.(gateDecision.skillVisibility);
-  }
   if (!gateDecision.allowed) {
     return {
       approved: false,

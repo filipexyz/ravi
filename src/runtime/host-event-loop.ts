@@ -22,6 +22,7 @@ import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-ses
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   markLoadedFromRaviSkillToolCall,
+  mergeSkillVisibilitySnapshots,
   readSkillVisibilityFromParams,
   resetLoadedSkillVisibilitySnapshot,
 } from "./skill-visibility.js";
@@ -393,18 +394,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     return runtimeSession.skillVisibility;
   };
 
+  const refreshRuntimeSessionParamsFromDb = () => {
+    const freshSession = getSession(session.sessionKey);
+    if (freshSession?.runtimeSessionParams) {
+      session.runtimeSessionParams = freshSession.runtimeSessionParams;
+    }
+  };
+
   const mergeRuntimeSessionParams = (
     params: Record<string, unknown> | undefined,
   ): Record<string, unknown> | undefined => {
-    if (!isRecord(session.runtimeSessionParams?.skillVisibility)) {
+    if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
       return params;
     }
-    if (isRecord(params?.skillVisibility)) {
-      return params;
-    }
+    const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
+      ? readSkillVisibilityFromParams(session.runtimeSessionParams)
+      : undefined;
+    const incomingSkillVisibility = isRecord(params?.skillVisibility)
+      ? readSkillVisibilityFromParams(params)
+      : undefined;
+    const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
     return {
       ...(params ?? {}),
-      skillVisibility: session.runtimeSessionParams.skillVisibility,
+      skillVisibility,
     };
   };
 
@@ -540,10 +552,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (streaming.compacting && !wasCompacting) {
           // Re-read runtimeSessionParams from DB before compaction reset so any skill gate marks
           // written during this turn (by persistSkillGateVisibility) are not lost.
-          const freshSession = getSession(session.sessionKey);
-          if (freshSession?.runtimeSessionParams) {
-            session.runtimeSessionParams = freshSession.runtimeSessionParams;
-          }
+          refreshRuntimeSessionParamsFromDb();
           statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
             runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
           );
@@ -911,6 +920,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
+        // Skill gates can be persisted by the Codex Bash hook in a separate process.
+        // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
+        refreshRuntimeSessionParamsFromDb();
         const runtimeSessionParams = mergeRuntimeSessionParams(event.session?.params ?? undefined);
         const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =

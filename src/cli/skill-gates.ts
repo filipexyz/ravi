@@ -80,6 +80,7 @@ const RAVI_GATE_EXEMPT_COMMANDS = new Set([
   "tools.show",
   "tools.manifest",
   "tools.schema",
+  "context.codex-bash-hook",
   "context.visibility",
   "sessions.visibility",
 ]);
