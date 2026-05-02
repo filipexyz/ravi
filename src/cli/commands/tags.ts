@@ -11,6 +11,7 @@ import {
   dbUpsertTagBinding,
 } from "../../tags/index.js";
 import type { TagAssetType, TagBinding, TagDefinition, TagKind } from "../../tags/types.js";
+import { dbGetTask } from "../../tasks/task-db.js";
 
 const VALID_TAG_KINDS = new Set<TagKind>(["system", "user"]);
 
@@ -44,11 +45,31 @@ function parseMetadata(value?: string): Record<string, unknown> | undefined {
   }
 }
 
-function resolveTagTarget(agentId?: string, sessionName?: string): { assetType: TagAssetType; assetId: string } {
+function resolveTagTarget(input: {
+  agentId?: string;
+  sessionName?: string;
+  taskId?: string;
+  projectId?: string;
+  profileId?: string;
+  contactId?: string;
+}): { assetType: TagAssetType; assetId: string } {
+  const { agentId, sessionName, taskId, projectId, profileId, contactId } = input;
   const normalizedAgent = agentId?.trim();
   const normalizedSession = sessionName?.trim();
-  if ((normalizedAgent ? 1 : 0) + (normalizedSession ? 1 : 0) !== 1) {
-    fail("Use exactly one target: --agent <id> or --session <name>.");
+  const normalizedTask = taskId?.trim();
+  const normalizedProject = projectId?.trim();
+  const normalizedProfile = profileId?.trim();
+  const normalizedContact = contactId?.trim();
+  const targetCount = [
+    normalizedAgent,
+    normalizedSession,
+    normalizedTask,
+    normalizedProject,
+    normalizedProfile,
+    normalizedContact,
+  ].filter(Boolean).length;
+  if (targetCount !== 1) {
+    fail("Use exactly one target: --agent, --session, --task, --project, --profile, or --contact.");
   }
 
   if (normalizedAgent) {
@@ -59,14 +80,26 @@ function resolveTagTarget(agentId?: string, sessionName?: string): { assetType: 
     return { assetType: "agent", assetId: normalizedAgent };
   }
 
-  const session = resolveSession(normalizedSession!);
-  if (!session) {
-    fail(`Session not found: ${normalizedSession}`);
+  if (normalizedSession) {
+    const session = resolveSession(normalizedSession);
+    if (!session) {
+      fail(`Session not found: ${normalizedSession}`);
+    }
+    return {
+      assetType: "session",
+      assetId: session.name ?? session.sessionKey,
+    };
   }
-  return {
-    assetType: "session",
-    assetId: session.name ?? session.sessionKey,
-  };
+
+  if (normalizedTask) {
+    if (!dbGetTask(normalizedTask)) {
+      fail(`Task not found: ${normalizedTask}`);
+    }
+    return { assetType: "task", assetId: normalizedTask };
+  }
+  if (normalizedProject) return { assetType: "project", assetId: normalizedProject };
+  if (normalizedProfile) return { assetType: "profile", assetId: normalizedProfile };
+  return { assetType: "contact", assetId: normalizedContact! };
 }
 
 function resolveTagActor(): string {
@@ -102,11 +135,26 @@ export class TagCommands {
   @Command({ name: "create", description: "Create a new tag definition" })
   create(
     @Arg("slug", { description: "Stable tag slug" }) slug: string,
-    @Option({ flags: "--label <text>", description: "Display label" }) label?: string,
-    @Option({ flags: "--description <text>", description: "Optional description" }) description?: string,
-    @Option({ flags: "--kind <kind>", description: "system|user", defaultValue: "user" }) kind?: string,
-    @Option({ flags: "--meta <json>", description: "Free JSON metadata for the tag definition" }) metadataJson?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--label <text>", description: "Display label" })
+    label?: string,
+    @Option({
+      flags: "--description <text>",
+      description: "Optional description",
+    })
+    description?: string,
+    @Option({
+      flags: "--kind <kind>",
+      description: "system|user",
+      defaultValue: "user",
+    })
+    kind?: string,
+    @Option({
+      flags: "--meta <json>",
+      description: "Free JSON metadata for the tag definition",
+    })
+    metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const tag = dbCreateTagDefinition({
       slug: normalizeSlug(slug),
@@ -132,7 +180,10 @@ export class TagCommands {
   }
 
   @Command({ name: "list", description: "List tag definitions" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
     const tags = dbListTagDefinitions();
     const payload = { total: tags.length, tags };
 
@@ -154,7 +205,8 @@ export class TagCommands {
   @Command({ name: "show", description: "Show one tag and its bindings" })
   show(
     @Arg("slug", { description: "Tag slug" }) slug: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const normalizedSlug = normalizeSlug(slug);
     const tag = dbGetTagDefinition(normalizedSlug);
@@ -180,15 +232,40 @@ export class TagCommands {
     return payload;
   }
 
-  @Command({ name: "attach", description: "Attach a tag to an agent or session" })
+  @Command({
+    name: "attach",
+    description: "Attach a tag to an agent, session, task, project, profile, or contact",
+  })
   attach(
     @Arg("slug", { description: "Tag slug" }) slug: string,
-    @Option({ flags: "--agent <id>", description: "Target agent id" }) agentId?: string,
-    @Option({ flags: "--session <name>", description: "Target session name" }) sessionName?: string,
-    @Option({ flags: "--meta <json>", description: "Free JSON metadata for this binding" }) metadataJson?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--agent <id>", description: "Target agent id" })
+    agentId?: string,
+    @Option({ flags: "--session <name>", description: "Target session name" })
+    sessionName?: string,
+    @Option({ flags: "--task <id>", description: "Target task id" })
+    taskId?: string,
+    @Option({ flags: "--project <id>", description: "Target project id" })
+    projectId?: string,
+    @Option({ flags: "--profile <id>", description: "Target task profile id" })
+    profileId?: string,
+    @Option({ flags: "--contact <id>", description: "Target contact id" })
+    contactId?: string,
+    @Option({
+      flags: "--meta <json>",
+      description: "Free JSON metadata for this binding",
+    })
+    metadataJson?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
-    const target = resolveTagTarget(agentId, sessionName);
+    const target = resolveTagTarget({
+      agentId,
+      sessionName,
+      taskId,
+      projectId,
+      profileId,
+      contactId,
+    });
     const binding = dbUpsertTagBinding({
       slug: normalizeSlug(slug),
       assetType: target.assetType,
@@ -219,15 +296,36 @@ export class TagCommands {
     return payload;
   }
 
-  @Command({ name: "detach", description: "Detach a tag from an agent or session" })
+  @Command({
+    name: "detach",
+    description: "Detach a tag from an agent, session, task, project, profile, or contact",
+  })
   detach(
     @Arg("slug", { description: "Tag slug" }) slug: string,
-    @Option({ flags: "--agent <id>", description: "Target agent id" }) agentId?: string,
-    @Option({ flags: "--session <name>", description: "Target session name" }) sessionName?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--agent <id>", description: "Target agent id" })
+    agentId?: string,
+    @Option({ flags: "--session <name>", description: "Target session name" })
+    sessionName?: string,
+    @Option({ flags: "--task <id>", description: "Target task id" })
+    taskId?: string,
+    @Option({ flags: "--project <id>", description: "Target project id" })
+    projectId?: string,
+    @Option({ flags: "--profile <id>", description: "Target task profile id" })
+    profileId?: string,
+    @Option({ flags: "--contact <id>", description: "Target contact id" })
+    contactId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const normalizedSlug = normalizeSlug(slug);
-    const target = resolveTagTarget(agentId, sessionName);
+    const target = resolveTagTarget({
+      agentId,
+      sessionName,
+      taskId,
+      projectId,
+      profileId,
+      contactId,
+    });
     const removed = dbDeleteTagBinding({
       slug: normalizedSlug,
       assetType: target.assetType,
@@ -258,12 +356,40 @@ export class TagCommands {
 
   @Command({ name: "search", description: "Search bindings by tag or asset" })
   search(
-    @Option({ flags: "--tag <slug>", description: "Filter by tag slug" }) slug?: string,
-    @Option({ flags: "--agent <id>", description: "Filter by agent id" }) agentId?: string,
-    @Option({ flags: "--session <name>", description: "Filter by session name" }) sessionName?: string,
-    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by tag slug" })
+    slug?: string,
+    @Option({ flags: "--agent <id>", description: "Filter by agent id" })
+    agentId?: string,
+    @Option({
+      flags: "--session <name>",
+      description: "Filter by session name",
+    })
+    sessionName?: string,
+    @Option({ flags: "--task <id>", description: "Filter by task id" })
+    taskId?: string,
+    @Option({ flags: "--project <id>", description: "Filter by project id" })
+    projectId?: string,
+    @Option({
+      flags: "--profile <id>",
+      description: "Filter by task profile id",
+    })
+    profileId?: string,
+    @Option({ flags: "--contact <id>", description: "Filter by contact id" })
+    contactId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
-    const target = agentId?.trim() || sessionName?.trim() ? resolveTagTarget(agentId, sessionName) : undefined;
+    const hasTarget = [agentId, sessionName, taskId, projectId, profileId, contactId].some((value) => value?.trim());
+    const target = hasTarget
+      ? resolveTagTarget({
+          agentId,
+          sessionName,
+          taskId,
+          projectId,
+          profileId,
+          contactId,
+        })
+      : undefined;
     const bindings = dbFindTagBindings({
       ...(slug?.trim() ? { slug: normalizeSlug(slug) } : {}),
       ...(target ? { assetType: target.assetType, assetId: target.assetId } : {}),

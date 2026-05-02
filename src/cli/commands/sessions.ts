@@ -62,6 +62,17 @@ import {
 import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
 import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
 import {
+  accountSessionGoalUsage,
+  clearSessionGoal,
+  completeSessionGoal,
+  createSessionGoal,
+  getSessionGoal,
+  pauseActiveSessionGoal,
+  replaceSessionGoal,
+  resumeSessionGoal,
+  type SessionGoal,
+} from "../../runtime/session-goals.js";
+import {
   getScopeContext,
   isScopeEnforced,
   canAccessSession,
@@ -465,6 +476,61 @@ function buildPruneSessionJson(session: SessionEntry, now: number): Record<strin
     tokenTotal:
       session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
   };
+}
+
+function buildSessionGoalJson(goal: SessionGoal | null): Record<string, unknown> | null {
+  if (!goal) return null;
+  return {
+    sessionKey: goal.sessionKey,
+    goalId: goal.goalId,
+    objective: goal.objective,
+    status: goal.status,
+    tokenBudget: goal.tokenBudget ?? null,
+    tokensUsed: goal.tokensUsed,
+    timeUsedSeconds: goal.timeUsedSeconds,
+    taskId: goal.taskId ?? null,
+    projectId: goal.projectId ?? null,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+  };
+}
+
+function parseIntegerOption(
+  value: string | undefined,
+  label: string,
+  options: { positive?: boolean } = {},
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^-?\d+$/.test(value.trim())) {
+    throw new Error(`${label} must be an integer`);
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${label} must be a safe integer`);
+  }
+  if (options.positive ? parsed <= 0 : parsed < 0) {
+    throw new Error(options.positive ? `${label} must be positive` : `${label} must be non-negative`);
+  }
+  return parsed;
+}
+
+function printSessionGoal(goal: SessionGoal | null, session: SessionEntry): void {
+  const label = session.name ?? session.sessionKey;
+  if (!goal) {
+    console.log(`No goal set for session: ${label}`);
+    return;
+  }
+
+  console.log(`\nGoal for ${label}\n`);
+  console.log(`  Status: ${goal.status}`);
+  console.log(`  Objective: ${goal.objective}`);
+  console.log(
+    `  Tokens: ${formatTokens(goal.tokensUsed)}${goal.tokenBudget ? ` / ${formatTokens(goal.tokenBudget)}` : ""}`,
+  );
+  console.log(`  Time: ${goal.timeUsedSeconds}s`);
+  if (goal.taskId) console.log(`  Task: ${goal.taskId}`);
+  if (goal.projectId) console.log(`  Project: ${goal.projectId}`);
+  console.log();
 }
 
 function extractRuntimeTerminalError(data: Record<string, unknown>): string | undefined {
@@ -1436,6 +1502,126 @@ export class SessionCommands {
       adapters: relatedAdapters,
       commands: suggestedCommands,
     };
+  }
+
+  @Command({ name: "goal", description: "Inspect or mutate persisted session goal state" })
+  goal(
+    @Arg("action", { description: "get|set|create|pause|resume|complete|clear|account" }) action: string,
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("objective", { description: "Goal objective for set/create", required: false }) objective?: string,
+    @Option({ flags: "--budget <tokens>", description: "Positive token budget for set/create" }) budgetStr?: string,
+    @Option({ flags: "--task <id>", description: "Optional task id link for set/create" }) taskId?: string,
+    @Option({ flags: "--project <id>", description: "Optional project id link for set/create" }) projectId?: string,
+    @Option({ flags: "--tokens <n>", description: "Token delta for account" }) tokenDeltaStr?: string,
+    @Option({ flags: "--seconds <n>", description: "Elapsed seconds delta for account" }) secondsStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedAction = action.trim().toLowerCase();
+    const session = this.resolveTarget(nameOrKey);
+    if (!session) return;
+
+    const mutating = normalizedAction !== "get";
+    if (mutating) {
+      const scopeCtx = getScopeContext();
+      const target = session.name ?? session.sessionKey;
+      if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, target)) {
+        fail(`Cannot modify session: ${nameOrKey}`);
+        return;
+      }
+    }
+
+    let goal: SessionGoal | null = null;
+    let changed = false;
+    const budget = parseIntegerOption(budgetStr, "budget", { positive: true });
+
+    switch (normalizedAction) {
+      case "get":
+        goal = getSessionGoal(session.sessionKey);
+        break;
+      case "set":
+        if (!objective?.trim()) {
+          fail("Goal objective is required for action: set");
+          return;
+        }
+        goal = replaceSessionGoal({
+          sessionKey: session.sessionKey,
+          objective,
+          tokenBudget: budget,
+          taskId,
+          projectId,
+        });
+        changed = true;
+        break;
+      case "create":
+        if (!objective?.trim()) {
+          fail("Goal objective is required for action: create");
+          return;
+        }
+        goal = createSessionGoal({
+          sessionKey: session.sessionKey,
+          objective,
+          tokenBudget: budget,
+          taskId,
+          projectId,
+        });
+        changed = Boolean(goal);
+        break;
+      case "pause":
+        goal = pauseActiveSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        goal = goal ?? getSessionGoal(session.sessionKey);
+        break;
+      case "resume":
+        goal = resumeSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        break;
+      case "complete":
+        goal = completeSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        break;
+      case "clear":
+        changed = clearSessionGoal(session.sessionKey);
+        goal = null;
+        break;
+      case "account": {
+        const tokenDelta = parseIntegerOption(tokenDeltaStr, "tokens") ?? 0;
+        const timeDeltaSeconds = parseIntegerOption(secondsStr, "seconds") ?? 0;
+        const result = accountSessionGoalUsage({
+          sessionKey: session.sessionKey,
+          tokenDelta,
+          timeDeltaSeconds,
+        });
+        goal = result.goal;
+        changed = result.kind === "updated";
+        break;
+      }
+      default:
+        fail(`Unknown goal action: ${action}. Use get, set, create, pause, resume, complete, clear, or account.`);
+        return;
+    }
+
+    const payload = {
+      action: normalizedAction,
+      changed,
+      session: buildSessionJson(session),
+      goal: buildSessionGoalJson(goal),
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    if (normalizedAction === "clear") {
+      console.log(changed ? "Goal cleared." : "No goal to clear.");
+      return payload;
+    }
+
+    printSessionGoal(goal, session);
+    if (normalizedAction === "create" && !changed) {
+      console.log("Goal already exists; use `set` to replace it.");
+    }
+    return payload;
   }
 
   @Command({ name: "visibility", description: "Show runtime session visibility state" })

@@ -1,5 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeEventMetadata } from "./types.js";
+import type { RuntimeProviderId } from "./types.js";
 
 export interface MessageActorMetadata {
   /** Canonical chat id from the Ravi chat model. Raw chat ids remain in chatId as provenance. */
@@ -66,6 +67,16 @@ export interface RaviCommandPromptMetadata {
   renderedPromptSha256: string;
 }
 
+export interface ObservationPromptMetadata {
+  sourceSessionKey: string;
+  sourceSessionName: string;
+  bindingId: string;
+  ruleId: string;
+  role: string;
+  mode: string;
+  eventIds: string[];
+}
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
@@ -87,6 +98,12 @@ export interface PromptMessage {
   _approvalSource?: MessageTarget;
   /** Explicit agent override injected by router/task dispatch paths */
   _agentId?: string;
+  /** Explicit runtime provider override for internal dispatch paths such as observers. */
+  _runtimeProviderId?: RuntimeProviderId;
+  /** Explicit runtime model override for internal dispatch paths such as observers. */
+  _runtimeModel?: string;
+  /** Observation Plane metadata for observer-session prompts. */
+  _observation?: ObservationPromptMetadata;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

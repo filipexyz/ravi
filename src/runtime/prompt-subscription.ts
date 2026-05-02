@@ -95,7 +95,10 @@ export class RuntimePromptSubscription {
               const raw = sc.decode(msg.data);
               prompt = JSON.parse(raw) as RuntimeLaunchPrompt;
             } catch (err) {
-              log.error("Failed to parse session prompt", { error: err, subject: msg.subject });
+              log.error("Failed to parse session prompt", {
+                error: err,
+                subject: msg.subject,
+              });
               msg.nak();
               continue;
             }
@@ -114,11 +117,15 @@ export class RuntimePromptSubscription {
                 deliveryBarrier: prompt.deliveryBarrier,
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
                 commands: prompt.commands,
+                observation: prompt._observation,
                 _agentId: prompt._agentId,
                 timestamp: new Date().toISOString(),
               })
               .catch((error) => {
-                log.warn("Failed to emit prompt audit event", { sessionName, error });
+                log.warn("Failed to emit prompt audit event", {
+                  sessionName,
+                  error,
+                });
               });
             this.options.handlePrompt(sessionName, prompt).catch((err) => {
               log.error("Failed to handle prompt", err);
@@ -129,7 +136,9 @@ export class RuntimePromptSubscription {
             break;
           }
 
-          log.debug("Prompt pull window ended, renewing", { promptsReceived: this.promptsReceived });
+          log.debug("Prompt pull window ended, renewing", {
+            promptsReceived: this.promptsReceived,
+          });
         } catch (err) {
           if (!this.options.isRunning()) {
             break;
@@ -140,7 +149,9 @@ export class RuntimePromptSubscription {
             await ensureSessionPromptsStream();
             await ensureSessionConsumer(jsm);
           } else {
-            log.error("Prompt subscription error - will reconnect pull", { error: err });
+            log.error("Prompt subscription error - will reconnect pull", {
+              error: err,
+            });
           }
 
           await delay(1000);

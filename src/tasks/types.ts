@@ -29,6 +29,7 @@ export type TaskRuntimeEffort = RuntimeEffort;
 export type TaskRuntimeThinking = "off" | "normal" | "verbose";
 
 export type TaskRuntimeOptionsSource =
+  | "prompt_override"
   | "dispatch_override"
   | "task_override"
   | "profile_default"

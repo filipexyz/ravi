@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getDb } from "../router/router-db.js";
+import { getDb, getRaviDbPath } from "../router/router-db.js";
 import type {
   CreateTagDefinitionInput,
   TagBinding,
@@ -37,6 +37,7 @@ interface TagBindingRow {
 }
 
 let schemaReady = false;
+let schemaDbPath: string | null = null;
 
 function parseMetadata(value: string | null): Record<string, unknown> | undefined {
   if (!value) return undefined;
@@ -89,7 +90,8 @@ function rowToTagBinding(row: TagBindingRow): TagBinding {
 }
 
 function ensureTagSchema(): void {
-  if (schemaReady) return;
+  const dbPath = getRaviDbPath();
+  if (schemaReady && schemaDbPath === dbPath) return;
   const db = getDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS tag_definitions (
@@ -121,6 +123,7 @@ function ensureTagSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_tag_bindings_asset ON tag_bindings(asset_type, asset_id, updated_at DESC);
   `);
   schemaReady = true;
+  schemaDbPath = dbPath;
 }
 
 function getTagDefinitionRowBySlug(slug: string): TagDefinitionRow | undefined {
@@ -139,11 +142,13 @@ export function dbCreateTagDefinition(input: CreateTagDefinitionInput): TagDefin
 
   const now = Date.now();
   const id = `tag-${randomUUID().slice(0, 8)}`;
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO tag_definitions (
       id, slug, label, description, kind, metadata_json, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  `,
+  ).run(
     id,
     input.slug,
     input.label,
@@ -166,7 +171,8 @@ export function dbListTagDefinitions(): TagDefinitionSummary[] {
   ensureTagSchema();
   const db = getDb();
   const rows = db
-    .prepare(`
+    .prepare(
+      `
     SELECT
       t.*,
       COUNT(b.id) AS binding_count
@@ -174,7 +180,8 @@ export function dbListTagDefinitions(): TagDefinitionSummary[] {
     LEFT JOIN tag_bindings b ON b.tag_id = t.id
     GROUP BY t.id
     ORDER BY t.slug ASC
-  `)
+  `,
+    )
     .all() as TagDefinitionSummaryRow[];
   return rows.map(rowToTagDefinitionSummary);
 }
@@ -188,7 +195,8 @@ export function dbUpsertTagBinding(input: UpsertTagBindingInput): TagBinding {
   }
 
   const existing = db
-    .prepare(`
+    .prepare(
+      `
     SELECT
       b.id,
       b.tag_id,
@@ -202,22 +210,27 @@ export function dbUpsertTagBinding(input: UpsertTagBindingInput): TagBinding {
     FROM tag_bindings b
     JOIN tag_definitions t ON t.id = b.tag_id
     WHERE b.tag_id = ? AND b.asset_type = ? AND b.asset_id = ?
-  `)
+  `,
+    )
     .get(tag.id, input.assetType, input.assetId) as TagBindingRow | undefined;
 
   const now = Date.now();
   if (existing) {
-    db.prepare(`
+    db.prepare(
+      `
       UPDATE tag_bindings
       SET metadata_json = ?, created_by = COALESCE(?, created_by), updated_at = ?
       WHERE id = ?
-    `).run(stringifyMetadata(input.metadata), input.createdBy ?? null, now, existing.id);
+    `,
+    ).run(stringifyMetadata(input.metadata), input.createdBy ?? null, now, existing.id);
   } else {
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO tag_bindings (
         id, tag_id, asset_type, asset_id, metadata_json, created_by, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `,
+    ).run(
       `tb-${randomUUID().slice(0, 8)}`,
       tag.id,
       input.assetType,
@@ -246,10 +259,12 @@ export function dbDeleteTagBinding(input: {
   const tag = getTagDefinitionRowBySlug(input.slug);
   if (!tag) return false;
   const result = db
-    .prepare(`
+    .prepare(
+      `
     DELETE FROM tag_bindings
     WHERE tag_id = ? AND asset_type = ? AND asset_id = ?
-  `)
+  `,
+    )
     .run(tag.id, input.assetType, input.assetId);
   return result.changes > 0;
 }
@@ -275,7 +290,8 @@ export function dbFindTagBindings(query: TagBindingQuery = {}): TagBinding[] {
 
   const where = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const rows = db
-    .prepare(`
+    .prepare(
+      `
     SELECT
       b.id,
       b.tag_id,
@@ -290,7 +306,8 @@ export function dbFindTagBindings(query: TagBindingQuery = {}): TagBinding[] {
     JOIN tag_definitions t ON t.id = b.tag_id
     ${where}
     ORDER BY t.slug ASC, b.asset_type ASC, b.asset_id ASC
-  `)
+  `,
+    )
     .all(...params) as TagBindingRow[];
 
   return rows.map(rowToTagBinding);

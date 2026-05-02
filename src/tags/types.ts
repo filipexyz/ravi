@@ -1,6 +1,6 @@
 export type TagKind = "system" | "user";
 
-export type TagAssetType = "agent" | "session";
+export type TagAssetType = "agent" | "session" | "task" | "project" | "profile" | "contact";
 
 export interface TagDefinition {
   id: string;

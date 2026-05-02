@@ -361,7 +361,10 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
-    const requestedProvider: RuntimeProviderId = agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+    const requestedProvider: RuntimeProviderId =
+      prompt._observation && prompt._runtimeProviderId
+        ? prompt._runtimeProviderId
+        : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
     const existing = this.streamingSessions.get(sessionName);
 
     if (existing && !existing.done) {
