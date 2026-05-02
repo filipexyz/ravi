@@ -10,6 +10,12 @@ import { logger } from "../utils/logger.js";
 import { dbGetTaskWorkflowSurface } from "../workflows/index.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { validateRuntimeModelSelector } from "./model-validation.js";
+import {
+  buildObserverProfileSnapshotMarkdown,
+  renderObservationPromptForProfile,
+  resolveObserverProfile,
+  resolveObserverProfileFromSnapshotMarkdown,
+} from "./observation-profiles.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 
@@ -44,6 +50,7 @@ export interface ObserverRule {
   observerAgentId: string;
   observerRuntimeProviderId?: RuntimeProviderId;
   observerModel?: string;
+  observerProfileId?: string;
   observerMode: ObserverMode;
   eventTypes: string[];
   deliveryPolicy: ObservationDeliveryPolicy;
@@ -71,6 +78,7 @@ export interface ObserverRuleInput {
   observerAgentId: string;
   observerRuntimeProviderId?: RuntimeProviderId | null;
   observerModel?: string | null;
+  observerProfileId?: string | null;
   observerMode?: ObserverMode;
   eventTypes?: string[];
   deliveryPolicy?: ObservationDeliveryPolicy;
@@ -96,6 +104,10 @@ export interface ObserverBinding {
   observerAgentId: string;
   observerRuntimeProviderId?: RuntimeProviderId;
   observerModel?: string;
+  observerProfileId?: string;
+  observerProfileVersion?: string;
+  observerProfileSource?: string;
+  observerProfileSnapshotMarkdown?: string;
   observerRole: string;
   observerMode: ObserverMode;
   ruleId: string;
@@ -144,6 +156,7 @@ interface ObserverRuleRow {
   observer_agent_id: string;
   observer_runtime_provider_id: RuntimeProviderId | null;
   observer_model: string | null;
+  observer_profile_id: string | null;
   observer_mode: ObserverMode;
   event_types_json: string;
   delivery_policy: ObservationDeliveryPolicy;
@@ -171,6 +184,10 @@ interface ObserverBindingRow {
   observer_agent_id: string;
   observer_runtime_provider_id: RuntimeProviderId | null;
   observer_model: string | null;
+  observer_profile_id: string | null;
+  observer_profile_version: string | null;
+  observer_profile_source: string | null;
+  observer_profile_snapshot_markdown: string | null;
   observer_role: string;
   observer_mode: ObserverMode;
   rule_id: string;
@@ -217,6 +234,7 @@ export function ensureObservationSchema(): void {
       observer_agent_id TEXT NOT NULL,
       observer_runtime_provider_id TEXT,
       observer_model TEXT,
+      observer_profile_id TEXT,
       observer_mode TEXT NOT NULL CHECK(observer_mode IN ('observe','summarize','report','intervene')),
       event_types_json TEXT NOT NULL,
       delivery_policy TEXT NOT NULL CHECK(delivery_policy IN ('realtime','debounce','end_of_turn','manual')),
@@ -251,6 +269,10 @@ export function ensureObservationSchema(): void {
       observer_agent_id TEXT NOT NULL,
       observer_runtime_provider_id TEXT,
       observer_model TEXT,
+      observer_profile_id TEXT,
+      observer_profile_version TEXT,
+      observer_profile_source TEXT,
+      observer_profile_snapshot_markdown TEXT,
       observer_role TEXT NOT NULL,
       observer_mode TEXT NOT NULL CHECK(observer_mode IN ('observe','summarize','report','intervene')),
       rule_id TEXT NOT NULL,
@@ -275,8 +297,13 @@ export function ensureObservationSchema(): void {
   `);
   ensureObservationColumn("observer_rules", "observer_runtime_provider_id", "TEXT");
   ensureObservationColumn("observer_rules", "observer_model", "TEXT");
+  ensureObservationColumn("observer_rules", "observer_profile_id", "TEXT");
   ensureObservationColumn("observer_bindings", "observer_runtime_provider_id", "TEXT");
   ensureObservationColumn("observer_bindings", "observer_model", "TEXT");
+  ensureObservationColumn("observer_bindings", "observer_profile_id", "TEXT");
+  ensureObservationColumn("observer_bindings", "observer_profile_version", "TEXT");
+  ensureObservationColumn("observer_bindings", "observer_profile_source", "TEXT");
+  ensureObservationColumn("observer_bindings", "observer_profile_snapshot_markdown", "TEXT");
   ensureObservationColumn("observer_bindings", "debounce_ms", "INTEGER");
   schemaReady = true;
   schemaDbPath = dbPath;
@@ -380,6 +407,7 @@ function validateRuleSafety(input: {
   observerAgentId: string;
   observerRuntimeProviderId?: RuntimeProviderId;
   observerModel?: string;
+  observerProfileId?: string;
   tagTargetType?: ObserverTagTargetType | null;
   tagSlug?: string | null;
   permissionGrants: string[];
@@ -394,6 +422,9 @@ function validateRuleSafety(input: {
     if (!result.ok) {
       throw new Error(result.error ?? `Invalid observer model: ${input.observerModel}`);
     }
+  }
+  if (input.observerProfileId) {
+    resolveObserverProfile(input.observerProfileId);
   }
   if (input.scope === "tag" && (!input.tagTargetType || !input.tagSlug)) {
     throw new Error("Tag-scoped observer rules require --tag and --tag-target.");
@@ -435,6 +466,7 @@ function rowToRule(row: ObserverRuleRow): ObserverRule {
     observerAgentId: row.observer_agent_id,
     ...(row.observer_runtime_provider_id ? { observerRuntimeProviderId: row.observer_runtime_provider_id } : {}),
     ...(row.observer_model ? { observerModel: row.observer_model } : {}),
+    ...(row.observer_profile_id ? { observerProfileId: row.observer_profile_id } : {}),
     observerMode: row.observer_mode,
     eventTypes: normalizeEventTypes(parseJsonArray(row.event_types_json, DEFAULT_EVENT_TYPES)),
     deliveryPolicy: row.delivery_policy,
@@ -464,6 +496,12 @@ function rowToBinding(row: ObserverBindingRow): ObserverBinding {
     observerAgentId: row.observer_agent_id,
     ...(row.observer_runtime_provider_id ? { observerRuntimeProviderId: row.observer_runtime_provider_id } : {}),
     ...(row.observer_model ? { observerModel: row.observer_model } : {}),
+    ...(row.observer_profile_id ? { observerProfileId: row.observer_profile_id } : {}),
+    ...(row.observer_profile_version ? { observerProfileVersion: row.observer_profile_version } : {}),
+    ...(row.observer_profile_source ? { observerProfileSource: row.observer_profile_source } : {}),
+    ...(row.observer_profile_snapshot_markdown
+      ? { observerProfileSnapshotMarkdown: row.observer_profile_snapshot_markdown }
+      : {}),
     observerRole: row.observer_role,
     observerMode: row.observer_mode,
     ruleId: row.rule_id,
@@ -506,9 +544,15 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
     existing?.observerRuntimeProviderId,
   ) as RuntimeProviderId | undefined;
   const observerModel = resolveOptionalTextOverride(input.observerModel, existing?.observerModel);
-  const observerMode = normalizeMode(input.observerMode ?? existing?.observerMode);
-  const eventTypes = normalizeEventTypes(input.eventTypes ?? existing?.eventTypes);
-  const deliveryPolicy = normalizeDeliveryPolicy(input.deliveryPolicy ?? existing?.deliveryPolicy);
+  const observerProfileId = resolveOptionalTextOverride(input.observerProfileId, existing?.observerProfileId);
+  const observerProfile = resolveObserverProfile(observerProfileId);
+  const observerMode = normalizeMode(input.observerMode ?? existing?.observerMode ?? observerProfile.defaults.mode);
+  const eventTypes = normalizeEventTypes(
+    input.eventTypes ?? existing?.eventTypes ?? observerProfile.defaults.eventTypes,
+  );
+  const deliveryPolicy = normalizeDeliveryPolicy(
+    input.deliveryPolicy ?? existing?.deliveryPolicy ?? observerProfile.defaults.deliveryPolicy,
+  );
   const permissionGrants = normalizePermissionGrants(input.permissionGrants ?? existing?.permissionGrants);
   const tagTargetType = normalizeTagTargetType(input.tagTargetType ?? existing?.tagTargetType);
   const tagSlug = cleanOptionalText(input.tagSlug ?? existing?.tagSlug);
@@ -519,6 +563,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
     observerAgentId,
     observerRuntimeProviderId,
     observerModel,
+    observerProfileId,
     tagTargetType,
     tagSlug,
     permissionGrants,
@@ -531,12 +576,12 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       `
         INSERT INTO observer_rules (
           id, enabled, scope, priority, observer_role, observer_agent_id,
-          observer_runtime_provider_id, observer_model, observer_mode,
+          observer_runtime_provider_id, observer_model, observer_profile_id, observer_mode,
           event_types_json, delivery_policy, debounce_ms,
           source_agent_id, source_session, source_task_id, source_profile_id, source_project_id,
           tag_target_type, tag_slug, tag_inherited, permission_grants_json, metadata_json,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           enabled = excluded.enabled,
           scope = excluded.scope,
@@ -545,6 +590,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
           observer_agent_id = excluded.observer_agent_id,
           observer_runtime_provider_id = excluded.observer_runtime_provider_id,
           observer_model = excluded.observer_model,
+          observer_profile_id = excluded.observer_profile_id,
           observer_mode = excluded.observer_mode,
           event_types_json = excluded.event_types_json,
           delivery_policy = excluded.delivery_policy,
@@ -571,6 +617,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
       observerAgentId,
       observerRuntimeProviderId ?? null,
       observerModel ?? null,
+      observerProfileId ?? null,
       observerMode,
       stringifyJson(eventTypes),
       deliveryPolicy,
@@ -665,6 +712,11 @@ function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rul
   const now = Date.now();
   const observerSessionName =
     existing?.observerSessionName ?? makeObserverSessionName(input.source.sessionKey, input.rule.observerRole);
+  const profile = existing?.observerProfileSnapshotMarkdown
+    ? resolveObserverProfileFromSnapshotMarkdown(existing.observerProfileSnapshotMarkdown)
+    : resolveObserverProfile(input.rule.observerProfileId);
+  const profileSnapshotMarkdown =
+    existing?.observerProfileSnapshotMarkdown ?? buildObserverProfileSnapshotMarkdown(profile);
   getDb()
     .prepare(
       `
@@ -672,16 +724,21 @@ function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rul
           id, source_session_key, source_session_name, source_agent_id,
           observer_session_name, observer_agent_id,
           observer_runtime_provider_id, observer_model,
+          observer_profile_id, observer_profile_version, observer_profile_source, observer_profile_snapshot_markdown,
           observer_role, observer_mode, rule_id,
           event_types_json, delivery_policy, debounce_ms, permission_grants_json, metadata_json,
           enabled, created_at, updated_at, last_delivered_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source_session_key, observer_role) DO UPDATE SET
           source_session_name = excluded.source_session_name,
           source_agent_id = excluded.source_agent_id,
           observer_agent_id = excluded.observer_agent_id,
           observer_runtime_provider_id = excluded.observer_runtime_provider_id,
           observer_model = excluded.observer_model,
+          observer_profile_id = COALESCE(observer_bindings.observer_profile_id, excluded.observer_profile_id),
+          observer_profile_version = COALESCE(observer_bindings.observer_profile_version, excluded.observer_profile_version),
+          observer_profile_source = COALESCE(observer_bindings.observer_profile_source, excluded.observer_profile_source),
+          observer_profile_snapshot_markdown = COALESCE(observer_bindings.observer_profile_snapshot_markdown, excluded.observer_profile_snapshot_markdown),
           observer_mode = excluded.observer_mode,
           rule_id = excluded.rule_id,
           event_types_json = excluded.event_types_json,
@@ -702,6 +759,10 @@ function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rul
       input.rule.observerAgentId,
       input.rule.observerRuntimeProviderId ?? null,
       input.rule.observerModel ?? null,
+      existing?.observerProfileId ?? profile.id,
+      existing?.observerProfileVersion ?? profile.version,
+      existing?.observerProfileSource ?? profile.source,
+      profileSnapshotMarkdown,
       input.rule.observerRole,
       input.rule.observerMode,
       input.rule.id,
@@ -948,48 +1009,23 @@ function bindingAllowsEvent(
   );
 }
 
-function compactEvent(event: ObservationEvent): Record<string, unknown> {
-  return {
-    id: event.id,
-    type: event.type,
-    timestamp: event.timestamp,
-    ...(event.turnId ? { turnId: event.turnId } : {}),
-    ...(event.preview ? { preview: event.preview.slice(0, 500) } : {}),
-    ...(event.payload ? { payload: event.payload } : {}),
-  };
-}
-
-function observerInstructions(binding: ObserverBinding): string | undefined {
-  const value = binding.metadata?.instructions;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
 function composeObservationPrompt(input: {
   binding: ObserverBinding;
   source: ObservationSourceDescriptor;
   events: ObservationEvent[];
   runId?: string;
 }): string {
-  const instructions = observerInstructions(input.binding);
-  const eventLines = input.events
-    .map((event, index) => `${index + 1}. ${JSON.stringify(compactEvent(event))}`)
-    .join("\n");
-  return `## Ravi Observation Batch
-
-Source session: ${input.source.sessionName}
-Source session key: ${input.source.sessionKey}
-Source agent: ${input.source.agentId}
-${input.source.taskId ? `Task: ${input.source.taskId}\n` : ""}${input.source.profileId ? `Task profile: ${input.source.profileId}\n` : ""}Observer binding: ${input.binding.id}
-Observer role: ${input.binding.observerRole}
-Observer mode: ${input.binding.observerMode}
-Rule: ${input.binding.ruleId}
-${input.runId ? `Run: ${input.runId}\n` : ""}
-You are an observer session. Use only your own permissions and tools. Do not assume you can write to the source session. Do not send chat messages unless your observer instructions and permissions explicitly require that.
-${instructions ? `\nObserver instructions:\n${instructions}\n` : ""}
-
-Events:
-${eventLines}
-`;
+  const profile = input.binding.observerProfileSnapshotMarkdown
+    ? resolveObserverProfileFromSnapshotMarkdown(input.binding.observerProfileSnapshotMarkdown)
+    : resolveObserverProfile(input.binding.observerProfileId);
+  return renderObservationPromptForProfile({
+    profile,
+    source: input.source,
+    binding: input.binding,
+    events: input.events,
+    deliveryPolicy: input.binding.deliveryPolicy,
+    runId: input.runId,
+  });
 }
 
 export async function deliverObservationEvents(input: {
@@ -1052,6 +1088,9 @@ export async function deliverObservationEvents(input: {
         ruleId: binding.ruleId,
         role: binding.observerRole,
         mode: binding.observerMode,
+        ...(binding.observerProfileId ? { profileId: binding.observerProfileId } : {}),
+        ...(binding.observerProfileVersion ? { profileVersion: binding.observerProfileVersion } : {}),
+        ...(binding.permissionGrants.length > 0 ? { permissionGrants: binding.permissionGrants } : {}),
         eventIds: selected.map((event) => event.id),
       },
       deliveryBarrier: "after_response",
@@ -1110,6 +1149,7 @@ export function validateObserverRules(): {
         observerAgentId: rule.observerAgentId,
         observerRuntimeProviderId: rule.observerRuntimeProviderId,
         observerModel: rule.observerModel,
+        observerProfileId: rule.observerProfileId,
         tagTargetType: rule.tagTargetType,
         tagSlug: rule.tagSlug,
         permissionGrants: rule.permissionGrants,

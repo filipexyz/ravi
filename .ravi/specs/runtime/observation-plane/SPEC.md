@@ -160,10 +160,31 @@ For a task source session:
 
 - the worker session SHOULD receive only the task objective, constraints, and working context needed to execute;
 - a task progress observer MAY receive task objective, acceptance criteria, profile metadata, and selected source events;
-- only the observer MAY be granted `tasks.report`, `tasks.block`, or `tasks.done` when the task profile delegates reporting to observers;
+- only the observer MAY be granted `tasks.report`, `tasks.block`, `tasks.done`, or `tasks.fail` when the task profile delegates reporting to observers;
 - observer reports MUST be idempotent and tied to source event ids or source turn ids.
 
 The task service MUST NOT rely on hidden prompt instructions in the worker session to maintain status when an observer profile is configured for reporting.
+
+The canonical initial task-reporting use case is:
+
+- task profile `observed-task` keeps the worker focused on execution and asks it to state progress, blockers, done, and failure clearly in ordinary responses;
+- observer profile `tasks` renders task-source events as a status-synchronization prompt;
+- an observer rule with `scope=profile` and `sourceProfileId=observed-task` attaches the status observer;
+- the observer rule uses `mode=report` and MAY grant task mutation permissions to the observer session;
+- the worker prompt MUST NOT include the default task-sync protocol when status reporting is delegated to the observer.
+
+Example operator setup:
+
+```bash
+ravi observers rules set observed-task-status <observer-agent> \
+  --scope profile \
+  --source-profile observed-task \
+  --role task-status \
+  --mode report \
+  --profile tasks \
+  --delivery end_of_turn \
+  --permissions tasks.report,tasks.block,tasks.done,tasks.fail
+```
 
 ## Invariants
 

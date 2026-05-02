@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { dbCreateAgent } from "../router/router-db.js";
@@ -35,6 +37,16 @@ afterEach(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
+
+function writeObserverProfile(profileId: string, files: Record<string, string>): void {
+  if (!stateDir) throw new Error("missing isolated state");
+  const profileDir = join(stateDir, "observers", "profiles", profileId);
+  for (const [relativePath, content] of Object.entries(files)) {
+    const path = join(profileDir, relativePath);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, "utf8");
+  }
+}
 
 describe("Observation Plane", () => {
   it("creates one idempotent observer binding for a matched agent rule", () => {
@@ -212,8 +224,79 @@ describe("Observation Plane", () => {
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.sessionName).toMatch(/^obs:/);
     expect(publishedPrompts[0]?.payload._agentId).toBe("observer");
-    expect(String(publishedPrompts[0]?.payload.prompt)).toContain("turn.complete");
+    expect(String(publishedPrompts[0]?.payload.prompt)).toContain("Turn Completed");
+    expect(String(publishedPrompts[0]?.payload.prompt)).not.toContain('{"id"');
     expect(String(publishedPrompts[0]?.payload.prompt)).not.toContain("ignored by filter");
+  });
+
+  it("uses rule-selected Markdown profiles and snapshots them on bindings", async () => {
+    writeObserverProfile("compact", {
+      "PROFILE.md": `---
+id: compact
+version: "1"
+label: Compact Observer
+description: Compact test renderer.
+defaults:
+  eventTypes:
+    - turn.complete
+  deliveryPolicy: end_of_turn
+  mode: summarize
+templates:
+  delivery:
+    end_of_turn: ./delivery/end.md
+    realtime: ./delivery/realtime.md
+    debounce: ./delivery/debounce.md
+  events:
+    default: ./events/default.md
+    turn.complete: ./events/complete.md
+rendererHints:
+  label: Compact
+---
+
+# Compact Observer
+`,
+      "delivery/end.md": "## Compact Delivery\n\n{{events.rendered}}\n\nProfile: {{profile.id}}",
+      "delivery/realtime.md": "## Realtime\n\n{{events.rendered}}",
+      "delivery/debounce.md": "## Debounce\n\n{{events.rendered}}",
+      "events/default.md": "### Default\n\n{{event.preview}}",
+      "events/complete.md": "### Compact Complete\n\n{{event.payloadSummary}}",
+    });
+    const session = getOrCreateSession("profile-source", "worker", "/tmp/worker", { name: "profile-source" });
+    dbUpsertObserverRule({
+      id: "compact-rule",
+      scope: "session",
+      sourceSession: "profile-source",
+      observerAgentId: "observer",
+      observerRole: "compact",
+      observerProfileId: "compact",
+    });
+    ensureObserverBindingsForSession({
+      sessionName: "profile-source",
+      session,
+    });
+
+    await deliverObservationEvents({
+      sourceSessionName: "profile-source",
+      sourceSession: session,
+      agentId: "worker",
+      events: [
+        createObservationEvent({
+          runId: "run-test",
+          sequence: 1,
+          type: "turn.complete",
+          payload: { responseChars: 7 },
+        }),
+      ],
+    });
+
+    const binding = dbListObserverBindings({ sourceSessionKey: "profile-source" })[0];
+    expect(binding?.observerProfileId).toBe("compact");
+    expect(binding?.observerProfileVersion).toBe("1");
+    expect(binding?.observerMode).toBe("summarize");
+    expect(binding?.eventTypes).toEqual(["turn.complete"]);
+    expect(binding?.observerProfileSnapshotMarkdown).toContain("Compact Observer");
+    expect(String(publishedPrompts[0]?.payload.prompt)).toContain("## Compact Delivery");
+    expect(String(publishedPrompts[0]?.payload.prompt)).toContain("### Compact Complete");
   });
 
   it("delivers observation events only to the requested delivery policies", async () => {
@@ -302,6 +385,7 @@ describe("Observation Plane", () => {
       observerRole: "cheap-reporter",
       observerMode: "report",
       eventTypes: ["turn.complete"],
+      permissionGrants: ["tasks.report", "use:tool:tasks_done"],
     });
     expect(rule.observerRuntimeProviderId).toBe("codex");
     expect(rule.observerModel).toBe("gpt-5.4-mini");
@@ -328,8 +412,17 @@ describe("Observation Plane", () => {
     })[0];
     expect(binding?.observerRuntimeProviderId).toBe("codex");
     expect(binding?.observerModel).toBe("gpt-5.4-mini");
+    expect(binding?.permissionGrants).toEqual(["tasks.report", "use:tool:tasks_done"]);
+    expect(binding?.observerProfileId).toBe("default");
+    expect(binding?.observerProfileSnapshotMarkdown).toContain("Observer Profile Snapshot");
     expect(publishedPrompts[0]?.payload._runtimeProviderId).toBe("codex");
     expect(publishedPrompts[0]?.payload._runtimeModel).toBe("gpt-5.4-mini");
+    expect((publishedPrompts[0]?.payload._observation as Record<string, unknown> | undefined)?.profileId).toBe(
+      "default",
+    );
+    expect(
+      (publishedPrompts[0]?.payload._observation as Record<string, unknown> | undefined)?.permissionGrants,
+    ).toEqual(["tasks.report", "use:tool:tasks_done"]);
   });
 
   it("includes rule instructions from metadata in observer prompts", async () => {

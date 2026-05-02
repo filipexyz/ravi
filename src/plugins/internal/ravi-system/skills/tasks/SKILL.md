@@ -120,6 +120,11 @@ foi apagada, despache/comente a task de novo para criar uma nova sessão.
 - `default`
   - workspace = task workspace
   - artifact primário = `TASK.md`
+- `observed-task`
+  - workspace = task workspace
+  - artifact primário = `TASK.md`
+  - protocolo = worker executa e deixa sinais claros; observer faz `report|block|done|fail`
+  - use com uma observer rule `scope=profile --source-profile observed-task --profile tasks --mode report`
 - `devin`
   - workspace = task workspace
   - artifact primário = `TASK.md`
@@ -205,7 +210,9 @@ ravi tasks create --profile <id>
 -> prompt/resumo/evento vêm do profile
 -> runtime model/effort/thinking vem da task/profile/dispatch quando definido
 -> agent trabalha no artifact certo
--> ravi tasks report|block|done|fail
+-> sync de status vem do contrato do profile:
+   - `default`: worker chama `ravi tasks report|block|done|fail`
+   - `observed-task`: observer chama `ravi tasks report|block|done|fail`
 -> show/watch expõem profile + workspace + artifacts
 ```
 
@@ -214,7 +221,7 @@ ravi tasks create --profile <id>
 1. ler o `profile` efetivo
 2. ler o `artifact` primário surfaced pelo runtime
 3. seguir o protocolo do dispatch/resume
-4. sincronizar estado via `ravi tasks ...`
+4. sincronizar estado via `ravi tasks ...` somente quando o profile mandar isso
 
 Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vazar contexto de task para conversas fora da task.
 
@@ -223,6 +230,13 @@ Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vaza
 - trabalhar em `TASK.md`
 - manter frontmatter/corpo coerentes
 - sincronizar via `report|block|done|fail`
+
+### `observed-task`
+
+- trabalhar em `TASK.md`
+- não chamar `ravi tasks report|block|done|fail` por padrão
+- declarar progresso, blockers, conclusão e falhas claramente na resposta normal
+- deixar o observer profile `tasks` transformar esses sinais em status durável
 
 Para profiles customizados, siga o contrato pinado no snapshot da task. Não assuma que um preset de scaffold é built-in disponível no catálogo system.
 

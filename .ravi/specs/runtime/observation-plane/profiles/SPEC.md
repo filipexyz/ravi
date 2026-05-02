@@ -231,6 +231,17 @@ The effective prompt formatting is resolved as:
 
 Rules MUST NOT embed large prompt formatting text when a profile can own the formatting. Rule metadata instructions MAY remain for short observer-specific responsibility notes.
 
+## System Profiles
+
+The initial system observer profiles are:
+
+- `default`: generic readable Markdown renderer for minimal observation.
+- `tasks`: task-status renderer for sidecar observers that keep task progress, blocked, done, and failed states synchronized.
+
+The `tasks` profile MUST keep status rules in Markdown templates, not in runtime code. It SHOULD instruct the observer to inspect current task state when needed, mutate task status at most once per delivery, and respond with a short observer-local status line.
+
+`tasks` is intended to be selected by rules, especially a profile-scoped rule for source task profile `observed-task`. It MUST NOT create rules or bindings by itself.
+
 ## CLI Surface
 
 The implementation SHOULD expose:

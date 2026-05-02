@@ -19,6 +19,13 @@ import {
   type ObserverScope,
   type ObserverTagTargetType,
 } from "../../runtime/observation-plane.js";
+import {
+  initObserverProfile,
+  listObserverProfiles,
+  previewObserverProfile,
+  validateObserverProfiles,
+  type ResolvedObserverProfile,
+} from "../../runtime/observation-profiles.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -87,6 +94,7 @@ function serializeRule(rule: ReturnType<typeof dbListObserverRules>[number]): Re
     observerAgentId: rule.observerAgentId,
     observerRuntimeProviderId: rule.observerRuntimeProviderId ?? null,
     observerModel: rule.observerModel ?? null,
+    observerProfileId: rule.observerProfileId ?? null,
     observerMode: rule.observerMode,
     eventTypes: rule.eventTypes,
     deliveryPolicy: rule.deliveryPolicy,
@@ -116,6 +124,9 @@ function serializeBinding(binding: ReturnType<typeof dbListObserverBindings>[num
     observerAgentId: binding.observerAgentId,
     observerRuntimeProviderId: binding.observerRuntimeProviderId ?? null,
     observerModel: binding.observerModel ?? null,
+    observerProfileId: binding.observerProfileId ?? null,
+    observerProfileVersion: binding.observerProfileVersion ?? null,
+    observerProfileSource: binding.observerProfileSource ?? null,
     observerRole: binding.observerRole,
     observerMode: binding.observerMode,
     ruleId: binding.ruleId,
@@ -138,6 +149,7 @@ function printBinding(binding: ReturnType<typeof dbListObserverBindings>[number]
     `  Runtime:  ${binding.observerRuntimeProviderId ?? "(agent provider)"} / ${binding.observerModel ?? "(agent model)"}`,
   );
   console.log(`  Role:     ${binding.observerRole} :: ${binding.observerMode}`);
+  console.log(`  Profile:  ${binding.observerProfileId ?? "default"}@${binding.observerProfileVersion ?? "current"}`);
   console.log(`  Rule:     ${binding.ruleId}`);
   console.log(`  Events:   ${binding.eventTypes.join(", ")}`);
 }
@@ -149,6 +161,7 @@ function printRule(rule: ReturnType<typeof dbListObserverRules>[number]): void {
   console.log(
     `  Runtime:  ${rule.observerRuntimeProviderId ?? "(agent provider)"} / ${rule.observerModel ?? "(agent model)"}`,
   );
+  console.log(`  Profile:  ${rule.observerProfileId ?? "default"}`);
   console.log(`  Delivery: ${rule.deliveryPolicy}`);
   console.log(`  Events:   ${rule.eventTypes.join(", ")}`);
   const selectors = [
@@ -160,6 +173,30 @@ function printRule(rule: ReturnType<typeof dbListObserverRules>[number]): void {
     rule.tagSlug ? `tag=${rule.tagTargetType ?? "any"}:${rule.tagSlug}` : null,
   ].filter(Boolean);
   console.log(`  Match:    ${selectors.join(" | ") || "(all matching scope)"}`);
+}
+
+function serializeProfile(profile: ResolvedObserverProfile): Record<string, unknown> {
+  return {
+    id: profile.id,
+    version: profile.version,
+    label: profile.label,
+    description: profile.description,
+    sourceKind: profile.sourceKind,
+    source: profile.source,
+    profilePath: profile.profilePath,
+    defaults: profile.defaults,
+    deliveryTemplates: Object.keys(profile.templates.delivery).sort(),
+    eventTemplates: Object.keys(profile.templates.events).sort(),
+  };
+}
+
+function printProfile(profile: ResolvedObserverProfile): void {
+  console.log(`${profile.id}@${profile.version} :: ${profile.label}`);
+  console.log(`  Source:   ${profile.sourceKind} :: ${profile.source}`);
+  console.log(`  Default:  ${profile.defaults.deliveryPolicy} :: ${profile.defaults.mode ?? "observe"}`);
+  console.log(`  Events:   ${profile.defaults.eventTypes.join(", ")}`);
+  console.log(`  Delivery: ${Object.keys(profile.templates.delivery).sort().join(", ")}`);
+  console.log(`  Templates:${Object.keys(profile.templates.events).sort().join(", ")}`);
 }
 
 @Group({
@@ -331,6 +368,11 @@ export class ObserverRuleCommands {
     })
     observerModel?: string,
     @Option({
+      flags: "--profile <id>",
+      description: "Observer profile id for Markdown prompt rendering; use 'clear' to use the default profile",
+    })
+    observerProfileId?: string,
+    @Option({
       flags: "--events <csv>",
       description: "Comma-separated observation event types",
     })
@@ -399,6 +441,7 @@ export class ObserverRuleCommands {
   ) {
     const parsedObserverRuntimeProviderId = parseClearableText(observerRuntimeProviderId);
     const parsedObserverModel = parseClearableText(observerModel);
+    const parsedObserverProfileId = parseClearableText(observerProfileId);
     const parsedEventTypes = parseCsv(eventTypesCsv);
     const parsedPriority = parseInteger(priorityStr, "priority");
     const parsedPermissions = parseCsv(permissionsCsv);
@@ -413,6 +456,7 @@ export class ObserverRuleCommands {
         ? { observerRuntimeProviderId: parsedObserverRuntimeProviderId }
         : {}),
       ...(parsedObserverModel !== undefined ? { observerModel: parsedObserverModel } : {}),
+      ...(parsedObserverProfileId !== undefined ? { observerProfileId: parsedObserverProfileId } : {}),
       ...(parsedEventTypes ? { eventTypes: parsedEventTypes } : {}),
       ...(deliveryPolicy?.trim() ? { deliveryPolicy: deliveryPolicy.trim() as ObservationDeliveryPolicy } : {}),
       ...(parsedPriority !== undefined ? { priority: parsedPriority } : {}),
@@ -530,5 +574,86 @@ export class ObserverRuleCommands {
       console.log(`\nBindings: ${explanation.bindings.length}`);
     }
     return payload;
+  }
+}
+
+@Group({
+  name: "observers.profiles",
+  description: "Manage Observation Plane Markdown profiles",
+  scope: "admin",
+})
+export class ObserverProfileCommands {
+  @Command({ name: "list", description: "List observer profiles" })
+  list() {
+    const profiles = listObserverProfiles();
+    if (profiles.length === 0) {
+      console.log("\nNo observer profiles found.\n");
+    } else {
+      console.log(`\nObserver profiles (${profiles.length}):\n`);
+      for (const profile of profiles) {
+        printProfile(profile);
+        console.log("");
+      }
+    }
+    return { total: profiles.length, profiles: profiles.map(serializeProfile) };
+  }
+
+  @Command({ name: "show", description: "Show one observer profile" })
+  show(@Arg("profileId", { description: "Observer profile id" }) profileId: string) {
+    const profile = listObserverProfiles().find((item) => item.id === profileId.trim());
+    if (!profile) fail(`Observer profile not found: ${profileId}`);
+    printProfile(profile);
+    console.log("");
+    console.log(profile.body.trim() || "(no profile body)");
+    return { profile: serializeProfile(profile) };
+  }
+
+  @Command({ name: "preview", description: "Render an observer profile preview" })
+  preview(
+    @Arg("profileId", { description: "Observer profile id" }) profileId: string,
+    @Option({ flags: "--event <type>", description: "Observation event type to preview" })
+    eventType?: string,
+  ) {
+    const result = previewObserverProfile(profileId, eventType?.trim() || "message.user");
+    console.log(result.prompt);
+    return {
+      profile: serializeProfile(result.profile),
+      eventType: result.eventType,
+      eventMarkdown: result.eventMarkdown,
+      prompt: result.prompt,
+    };
+  }
+
+  @Command({ name: "validate", description: "Validate observer profiles" })
+  validate(@Arg("profileId", { required: false, description: "Optional observer profile id" }) profileId?: string) {
+    const result = validateObserverProfiles(profileId);
+    if (result.ok) {
+      console.log(`Observer profiles OK (${result.profiles.length}).`);
+    } else {
+      console.log("\nObserver profile errors:\n");
+      for (const error of result.errors) {
+        console.log(`- ${error.profileId}: ${error.message}`);
+      }
+      process.exitCode = 1;
+    }
+    return result;
+  }
+
+  @Command({ name: "init", description: "Create a Markdown observer profile scaffold" })
+  init(
+    @Arg("profileId", { description: "Observer profile id" }) profileId: string,
+    @Option({ flags: "--source <source>", description: "workspace|user" })
+    source?: string,
+    @Option({ flags: "--overwrite", description: "Overwrite existing profile files" })
+    overwrite?: boolean,
+  ) {
+    const sourceKind = source?.trim() === "user" ? "user" : "workspace";
+    const result = initObserverProfile({
+      profileId,
+      sourceKind,
+      overwrite: overwrite === true,
+    });
+    console.log(`Initialized observer profile ${profileId} at ${result.profileDir}`);
+    return result;
   }
 }

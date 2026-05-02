@@ -74,6 +74,9 @@ export interface ObservationPromptMetadata {
   ruleId: string;
   role: string;
   mode: string;
+  profileId?: string;
+  profileVersion?: string;
+  permissionGrants?: string[];
   eventIds: string[];
 }
 

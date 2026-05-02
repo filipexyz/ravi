@@ -1,4 +1,5 @@
 import { getAccountForAgent, type AgentConfig } from "../router/index.js";
+import { dbUpdateContextCapabilities, type ContextCapability, type ContextRecord } from "../router/router-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
@@ -37,7 +38,8 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
     approvalSource,
   } = options;
 
-  const runtimeContext = getOrCreateAgentRuntimeContext({
+  const capabilities = buildRuntimeContextCapabilities(agent.id, prompt);
+  let runtimeContext = getOrCreateAgentRuntimeContext({
     agentId: agent.id,
     sessionKey: dbSessionKey,
     sessionName,
@@ -49,7 +51,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
           ...(resolvedSource.threadId ? { threadId: resolvedSource.threadId } : {}),
         }
       : undefined,
-    capabilities: snapshotAgentCapabilities(agent.id),
+    capabilities,
     metadata: {
       runtimeProvider: runtimeProviderId,
       runtimeModel: model,
@@ -59,6 +61,7 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
       ...(approvalSource ? { approvalSource } : {}),
     },
   });
+  runtimeContext = refreshRuntimeContextCapabilities(runtimeContext, capabilities);
 
   const toolContext = {
     contextId: runtimeContext.contextId,
@@ -82,6 +85,93 @@ export function buildRuntimeRequestContext(options: RuntimeRequestContextOptions
       resolvedSource,
     }),
   };
+}
+
+function buildRuntimeContextCapabilities(agentId: string, prompt: RuntimeLaunchPrompt): ContextCapability[] {
+  return dedupeContextCapabilities([
+    ...snapshotAgentCapabilities(agentId),
+    ...parseObservationPermissionGrants(prompt._observation?.permissionGrants),
+  ]);
+}
+
+function parseObservationPermissionGrants(values?: string[]): ContextCapability[] {
+  return (values ?? []).flatMap((value) => parseObservationPermissionGrant(value));
+}
+
+function parseObservationPermissionGrant(value: string): ContextCapability[] {
+  const grant = value.trim();
+  if (!grant) return [];
+
+  const direct = /^([^:\s]+):([^:\s]+):(.+)$/.exec(grant);
+  if (direct) {
+    return [
+      {
+        permission: direct[1]!,
+        objectType: direct[2]!,
+        objectId: direct[3]!.trim(),
+        source: "observer-rule",
+      },
+    ];
+  }
+
+  const shortcut = /^([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_.*-]+)$/.exec(grant);
+  if (!shortcut) return [];
+
+  const group = normalizeCliToolNamePart(shortcut[1]!);
+  const command = shortcut[2]!;
+  if (command === "*") {
+    return [
+      { permission: "use", objectType: "tool", objectId: `${group}_*`, source: "observer-rule" },
+      { permission: "execute", objectType: "group", objectId: group, source: "observer-rule" },
+    ];
+  }
+
+  return [
+    {
+      permission: "use",
+      objectType: "tool",
+      objectId: `${group}_${normalizeCliToolNamePart(command)}`,
+      source: "observer-rule",
+    },
+  ];
+}
+
+function normalizeCliToolNamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function refreshRuntimeContextCapabilities(context: ContextRecord, capabilities: ContextCapability[]): ContextRecord {
+  if (contextCapabilitiesEqual(context.capabilities, capabilities)) {
+    return context;
+  }
+  return dbUpdateContextCapabilities(context.contextId, capabilities);
+}
+
+function contextCapabilitiesEqual(left: ContextCapability[], right: ContextCapability[]): boolean {
+  return JSON.stringify(sortContextCapabilities(left)) === JSON.stringify(sortContextCapabilities(right));
+}
+
+function dedupeContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
+  const seen = new Set<string>();
+  const result: ContextCapability[] = [];
+  for (const capability of capabilities) {
+    const key = `${capability.permission}:${capability.objectType}:${capability.objectId}:${capability.source ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(capability);
+  }
+  return result;
+}
+
+function sortContextCapabilities(capabilities: ContextCapability[]): ContextCapability[] {
+  return [...capabilities].sort((a, b) =>
+    `${a.permission}:${a.objectType}:${a.objectId}:${a.source ?? ""}`.localeCompare(
+      `${b.permission}:${b.objectType}:${b.objectId}:${b.source ?? ""}`,
+    ),
+  );
 }
 
 export function buildRuntimeRequestEnv(options: {

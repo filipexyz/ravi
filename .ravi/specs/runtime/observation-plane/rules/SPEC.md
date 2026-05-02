@@ -119,6 +119,13 @@ tag:project:memory-capture
   -> attach memory-observer
 ```
 
+Profile-scoped task reporting example:
+
+```text
+scope:profile sourceProfileId=observed-task
+  -> attach role task-status with observer profile tasks
+```
+
 Tag selector rules MUST define:
 
 - target type: `agent`, `session`, `task`, `project`, `contact`, `profile`, or `any`;
@@ -181,6 +188,14 @@ Rules SHOULD reference profiles for substantial prompt formatting. Rule metadata
 Rules MAY grant observer permissions, but only to the observer session/context. Rules MUST NOT grant tools to the source session.
 
 Permission grants MUST be limited by observer mode. A rule with `observe` mode MUST NOT grant side-effecting tools. A rule with `report` mode MAY grant task/project reporting tools. `intervene` mode MUST require an explicit future policy.
+
+Permission grant strings MAY use either full capability syntax or CLI shortcut syntax:
+
+- full capability: `use:tool:tasks_report`, `execute:group:tasks`, `admin:system:*`;
+- shortcut: `tasks.report`, `tasks.block`, `tasks.done`, `tasks.fail`;
+- wildcard shortcut: `tasks.*`.
+
+Shortcut grants MUST be expanded only for the observer runtime context and MUST NOT grant capabilities to the source session.
 
 ## Lifecycle
 

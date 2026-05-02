@@ -14,4 +14,5 @@ Run these checks when changing observer profile resolution, rendering, catalog l
 - Create two rules pointing to different observer profiles for different observer roles. Each observer MUST receive the prompt format from its own profile.
 - Create a rule that overrides profile event filters. The effective event filter MUST use the rule override, while formatting still comes from the profile.
 - Verify `realtime`, `debounce`, and `end_of_turn` delivery envelopes can differ for the same event list.
+- Preview system profile `tasks` for `message.assistant` and `turn.complete`. The prompt MUST be Markdown, mention the source task id, and describe report/block/done/fail decision rules without raw JSON dumps.
 - Verify observer profile rendering never mutates source session messages, source system prompt, source permissions, or rule state.
