@@ -485,6 +485,67 @@ export interface ListContextsOptions {
 }
 
 // ============================================================================
+// Slow Query Instrumentation
+// ============================================================================
+
+const SLOW_QUERY_WARN_MS = Number(process.env.RAVI_DB_SLOW_QUERY_WARN_MS ?? 250);
+const SLOW_QUERY_ERROR_MS = Number(process.env.RAVI_DB_SLOW_QUERY_ERROR_MS ?? 5000);
+const SLOW_QUERY_DISABLED = process.env.RAVI_DB_SLOW_QUERY_DISABLE === "1";
+
+function shortSql(sql: string): string {
+  const collapsed = sql.replace(/\s+/g, " ").trim();
+  return collapsed.length > 200 ? `${collapsed.slice(0, 200)}…` : collapsed;
+}
+
+function reportSlowQuery(elapsed: number, method: string, sql: string): void {
+  if (elapsed >= SLOW_QUERY_ERROR_MS) {
+    log.error("very slow db query (possible lock contention)", { ms: elapsed, method, sql: shortSql(sql) });
+  } else if (elapsed >= SLOW_QUERY_WARN_MS) {
+    log.warn("slow db query", { ms: elapsed, method, sql: shortSql(sql) });
+  }
+}
+
+function instrumentSlowQueries(db: Database): void {
+  if (SLOW_QUERY_DISABLED) return;
+
+  const originalPrepare = db.prepare.bind(db);
+  // @ts-expect-error: replacing method with a wrapper of identical signature
+  db.prepare = (sql: string) => {
+    const stmt = originalPrepare(sql);
+    const proxy = new Proxy(stmt, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (
+          typeof value === "function" &&
+          (prop === "run" || prop === "get" || prop === "all" || prop === "iterate" || prop === "values")
+        ) {
+          return (...args: unknown[]) => {
+            const start = Date.now();
+            try {
+              return (value as (...a: unknown[]) => unknown).apply(target, args);
+            } finally {
+              reportSlowQuery(Date.now() - start, String(prop), sql);
+            }
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    return proxy;
+  };
+
+  const originalExec = db.exec.bind(db);
+  db.exec = (sql: string, ...rest: unknown[]) => {
+    const start = Date.now();
+    try {
+      return originalExec(sql, ...(rest as []));
+    } finally {
+      reportSlowQuery(Date.now() - start, "exec", sql);
+    }
+  };
+}
+
+// ============================================================================
 // Lazy Database Initialization
 // ============================================================================
 
@@ -541,6 +602,7 @@ function getDb(): Database {
   }
 
   const db = new Database(nextDbPath);
+  instrumentSlowQueries(db);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
@@ -638,6 +700,23 @@ function getDb(): Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS session_goals (
+      session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
+      goal_id TEXT NOT NULL,
+      objective TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','complete')),
+      token_budget INTEGER,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      time_used_seconds INTEGER NOT NULL DEFAULT 0,
+      task_id TEXT,
+      project_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_goals_status ON session_goals(status);
+    CREATE INDEX IF NOT EXISTS idx_session_goals_task ON session_goals(task_id);
+    CREATE INDEX IF NOT EXISTS idx_session_goals_project ON session_goals(project_id);
 
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
