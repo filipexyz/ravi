@@ -24,6 +24,7 @@ import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
+import { ensureObserverBindingsForSession } from "./observation-plane.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -181,8 +182,43 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     commands: prompt.commands,
   });
 
-  const runtimeResolution = resolveRuntimeForPrompt({ sessionName, prompt, session, agent, configModel });
+  const runtimeResolution = resolveRuntimeForPrompt({
+    sessionName,
+    prompt,
+    session,
+    agent,
+    configModel,
+  });
   const model = runtimeResolution.options.model ?? configModel;
+  try {
+    const observation = ensureObserverBindingsForSession({
+      sessionName,
+      session,
+      agent,
+      prompt,
+    });
+    if (observation.source && (observation.bindings.length > 0 || observation.created.length > 0)) {
+      recordRuntimeTraceEvent({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        provider: runtimeProviderId,
+        model,
+        eventType: "observation.bindings",
+        eventGroup: "observation",
+        status: "ready",
+        source: resolvedSource,
+        payloadJson: {
+          bindingIds: observation.bindings.map((binding) => binding.id),
+          createdBindingIds: observation.created.map((binding) => binding.id),
+          skipped: observation.skipped.slice(0, 20),
+        },
+      });
+    }
+  } catch (error) {
+    log.warn("Failed to ensure observer bindings", { sessionName, error });
+  }
   const abortController = new AbortController();
 
   const streamingSession: RuntimeHostStreamingSession = {
@@ -298,7 +334,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         ? { runtimeSessionParams: storedRuntimeSessionParams }
         : {}),
       ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
-        ? { runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId }
+        ? {
+            runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
+          }
         : {}),
     });
     session.runtimeProvider = runtimeProviderId;

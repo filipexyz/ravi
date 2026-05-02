@@ -72,7 +72,7 @@ function makeStartRequest(messages: string[], overrides: Partial<RuntimeStartReq
     cwd: "/tmp/ravi-codex",
     abortController: new AbortController(),
     systemPromptAppend: "",
-    env: { PATH: process.env.PATH ?? "" },
+    env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio" },
     ...overrides,
   };
 }
@@ -1058,7 +1058,7 @@ rl.on("line", (line) => {
       makeStartRequest([], {
         cwd,
         abortController,
-        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath, RAVI_CODEX_TRANSPORT: "stdio" },
         prompt: (async function* () {
           yield {
             type: "user" as const,
@@ -1199,7 +1199,7 @@ rl.on("line", (line) => {
       makeStartRequest([], {
         cwd,
         abortController,
-        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath, RAVI_CODEX_TRANSPORT: "stdio" },
         prompt: (async function* () {
           yield {
             type: "user" as const,
@@ -1601,7 +1601,7 @@ rl.on("line", (line) => {
     });
   });
 
-  it("waits for native app-server dynamic tool completion before reporting tool completion", async () => {
+  it("emits synthetic tool completion immediately so the agent never hangs when codex's item/completed never arrives", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-no-complete-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
     writeFileSync(
@@ -1713,7 +1713,12 @@ rl.on("line", (line) => {
       name: "tools_list",
       input: { verbose: false },
     });
-    expect(toolCompleted).toHaveLength(0);
+    // Synthetic tool.completed must fire even when codex never emits item/completed
+    // for the dynamic_tool_call item — otherwise codex's `could not find callback`
+    // race leaves the agent stuck on a dangling tool.started forever.
+    expect(toolCompleted).toHaveLength(1);
+    expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_no_complete_1");
+    expect(toolCompleted[0]?.isError).toBeFalsy();
     expect(response).toEqual({
       success: true,
       contentItems: [{ type: "inputText", text: "tool output without native completion" }],

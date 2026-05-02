@@ -4,6 +4,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import { logger } from "../utils/logger.js";
+import {
+  createCodexTransport,
+  resolveCodexTransportKind,
+  type CodexTransport,
+  type CodexTransportKind,
+} from "./codex-transport.js";
+
+const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
 import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
 import type {
@@ -871,9 +880,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   let child: ReturnType<typeof spawn> | null = null;
+  let transport: CodexTransport | null = null;
   let closed = true;
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
-  let stderr = "";
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
   let currentInstructionSources: string[] = [];
@@ -891,12 +900,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   };
 
-  const currentChild = () => {
-    if (!child || closed) {
-      throw new Error("Codex app-server is not connected");
-    }
-    return child;
-  };
+  const getStderr = (): string => transport?.getStderr() ?? "";
+  const getStderrLength = (): number => transport?.getStderrOffset() ?? 0;
 
   const settleTurn = (
     turn: AppServerTurnState,
@@ -920,7 +925,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     turn.resolveResult({
       exitCode: result.exitCode ?? 0,
       signal: result.signal ?? null,
-      stderr: result.stderr ?? stderr.slice(turn.stderrOffset),
+      stderr: result.stderr ?? getStderr().slice(turn.stderrOffset),
     });
   };
 
@@ -932,6 +937,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   const handleChildTermination = (exitCode: number | null, signal: NodeJS.Signals | null, error?: Error) => {
+    if (closed && child === null && transport === null) {
+      // Already cleaned up — guard against duplicate close/error events from
+      // both the child process and the websocket layer.
+      return;
+    }
     closed = true;
     clearForcedKillTimer();
     const disconnectError =
@@ -943,87 +953,93 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         {
           exitCode,
           signal,
-          stderr: stderr.slice(activeTurn.stderrOffset),
+          stderr: getStderr().slice(activeTurn.stderrOffset),
         },
         error ? { failQueue: error } : undefined,
       );
     }
+    if (transport) {
+      try {
+        transport.closeChannel();
+      } catch {
+        // ignore
+      }
+      transport = null;
+    }
     child = null;
   };
 
-  const spawnChild = (input: CodexCliTurnRequest) => {
+  const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
     ensureGlobalCodexBashHookConfig();
-    const spawned = spawn(command, ["-c", "features.codex_hooks=true", "app-server"], {
+    // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
+    // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
+    // diagnosing silent hangs in the JSON-RPC layer.
+    const spawnEnv = {
+      ...input.env,
+      RUST_LOG: input.env?.RUST_LOG ?? input.env?.RAVI_CODEX_RUST_LOG ?? "warn",
+    };
+
+    const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    const newTransport = createCodexTransport(transportKind, {
+      command,
+      baseArgs: ["-c", "features.codex_hooks=true"],
       cwd: input.cwd,
-      env: input.env,
-      stdio: ["pipe", "pipe", "pipe"],
+      env: spawnEnv,
+      onMessage: (line: string) => {
+        try {
+          const parsed = JSON.parse(line) as CodexJsonRpcMessage;
+          routeAppServerMessage(parsed);
+        } catch (error) {
+          if (activeTurn) {
+            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+          }
+          newTransport.child.kill("SIGKILL");
+        }
+      },
+      onTransportError: (error) => {
+        if (activeTurn) {
+          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+        }
+        try {
+          newTransport.child.kill("SIGKILL");
+        } catch {
+          // child already gone
+        }
+      },
     });
 
-    child = spawned;
+    transport = newTransport;
+    child = newTransport.child;
     closed = false;
-    stderr = "";
     nextRequestId = 1;
     pendingRequests = new Map();
     clearForcedKillTimer();
 
-    spawned.stderr.setEncoding("utf8");
-    spawned.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
+    log.info("codex spawn", { pid: newTransport.child.pid, transport: newTransport.kind });
 
-    spawned.stdout.setEncoding("utf8");
-    const stdoutLines = createInterface({ input: spawned.stdout });
-    stdoutLines.on("line", (line) => {
-      const value = line.trim();
-      if (!value) {
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(value) as CodexJsonRpcMessage;
-        routeAppServerMessage(parsed);
-      } catch (error) {
-        if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
-        }
-        spawned.kill("SIGKILL");
-      }
-    });
-
-    spawned.stdin.on("error", (error: NodeJS.ErrnoException) => {
-      if (error.code !== "EPIPE") {
-        if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
-        }
-        spawned.kill("SIGKILL");
-      }
-    });
-
-    spawned.on("error", (error) => {
+    newTransport.child.on("error", (error) => {
       handleChildTermination(1, null, error);
     });
 
-    spawned.on("close", (exitCode, signal) => {
+    newTransport.child.on("close", (exitCode, signal) => {
       handleChildTermination(exitCode, signal);
     });
+
+    // For WebSocket transport, we must wait for the listener to be ready
+    // before any caller attempts writeJsonRpc. Stdio resolves immediately.
+    try {
+      await newTransport.ready;
+    } catch (error) {
+      handleChildTermination(1, null, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
   };
 
   async function writeJsonRpc(message: Record<string, unknown>): Promise<void> {
-    const payload = `${JSON.stringify(message)}\n`;
-    const activeChild = currentChild();
-    const stdin = activeChild.stdin;
-    if (!stdin) {
-      throw new Error("Codex app-server stdin is unavailable");
+    if (!transport || closed) {
+      throw new Error("Codex app-server transport is not connected");
     }
-    await new Promise<void>((resolve, reject) => {
-      stdin.write(payload, (error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    });
+    await transport.send(JSON.stringify(message));
   }
 
   function sendRequest(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1106,10 +1122,17 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const response = buildCodexDynamicToolCallResponse(result);
     const toolSucceeded = result.success === true;
     const toolItemId = request.callId ?? `${request.toolName}-unknown`;
-    pendingDynamicToolResults.set(toolItemId, {
-      success: toolSucceeded,
-      contentItems: response.contentItems,
-    });
+    // Emit a synthetic item.completed event BEFORE writing the response. Codex's
+    // app-server has a race where TurnComplete fires `abort_pending_server_requests`
+    // which silently drops our reply ("could not find callback for String(...)" WARN).
+    // Pushing the trace event up front keeps the agent's tool lifecycle moving even
+    // when codex's native item/completed never arrives.
+    activeTurn?.queue.push(
+      buildDynamicToolTraceEvent("item.completed", request, {
+        success: toolSucceeded,
+        contentItems: response.contentItems,
+      }),
+    );
     await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
     activeTurn?.queue.push({ type: "tool.result_delivered", toolCallId: toolItemId });
   }
@@ -1327,7 +1350,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (typeof message.method === "string") {
         void handleServerRequest(requestId, message.method, asRecord(message.params) ?? {}).catch((error) => {
           if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
+            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
         });
         return;
@@ -1509,7 +1532,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     if (!child || closed) {
-      spawnChild(input);
+      await spawnChild(input);
     }
 
     bootstrapPromise = (async () => {
@@ -1615,7 +1638,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           resolveResult = resolve;
         }),
         resolveResult,
-        stderrOffset: stderr.length,
+        stderrOffset: getStderrLength(),
         approveRuntimeRequest: input.approveRuntimeRequest,
         handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
@@ -1650,7 +1673,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             collaborationMode: null,
           });
         } catch (error) {
-          settleTurn(turn, { exitCode: 1, stderr: stderr.slice(turn.stderrOffset) }, { failQueue: error });
+          settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             child.kill("SIGKILL");
           }

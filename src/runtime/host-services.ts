@@ -1,6 +1,9 @@
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("runtime:host-services");
 import {
   checkDangerousPatterns,
   emitBashDeniedAudit,
@@ -279,6 +282,30 @@ function normalizeDynamicToolArguments(value: unknown): Record<string, unknown> 
   return value as Record<string, unknown>;
 }
 
+// Hard cap on the JSON-RPC payload we feed back to the runtime provider.
+// Codex (app-server) emits "could not find callback" warnings and drops
+// dynamic tool responses above ~1MB because the model's turn state advances
+// before the response is parsed. Our own tasks_list etc. can return many MB
+// when unfiltered. Truncate at the boundary instead.
+const DYNAMIC_TOOL_PAYLOAD_MAX_BYTES = 256_000;
+const DYNAMIC_TOOL_TRUNCATION_NOTICE =
+  "\n\n[...truncated by ravi: tool output exceeded 256KB. Re-run with a tighter filter (e.g. --last 20, --status open, --text <query>).]";
+
+function truncateContentItemText(text: string, budget: number): { text: string; truncatedBytes: number } {
+  if (Buffer.byteLength(text, "utf8") <= budget) {
+    return { text, truncatedBytes: 0 };
+  }
+  // Slice by chars conservatively (utf8 chars are <= 4 bytes); then re-check.
+  let kept = text.slice(0, budget);
+  while (Buffer.byteLength(kept, "utf8") > budget && kept.length > 0) {
+    kept = kept.slice(0, kept.length - 1024);
+  }
+  return {
+    text: kept + DYNAMIC_TOOL_TRUNCATION_NOTICE,
+    truncatedBytes: Buffer.byteLength(text, "utf8") - Buffer.byteLength(kept, "utf8"),
+  };
+}
+
 function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCallResult {
   return {
     success: result.isError !== true,
@@ -288,10 +315,19 @@ function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCa
 
 function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynamicToolCallContentItem[] {
   const items: RuntimeDynamicToolCallContentItem[] = [];
+  let remainingBudget = DYNAMIC_TOOL_PAYLOAD_MAX_BYTES;
   for (const item of content) {
-    if (item.type === "text") {
-      items.push({ type: "inputText", text: item.text });
+    if (item.type !== "text") continue;
+    if (remainingBudget <= 0) break;
+    const { text, truncatedBytes } = truncateContentItemText(item.text, remainingBudget);
+    if (truncatedBytes > 0) {
+      log.warn("Dynamic tool output truncated", {
+        droppedBytes: truncatedBytes,
+        keptBytes: Buffer.byteLength(text, "utf8"),
+      });
     }
+    items.push({ type: "inputText", text });
+    remainingBudget -= Buffer.byteLength(text, "utf8");
   }
 
   return items.length > 0 ? items : [{ type: "inputText", text: "(no output)" }];
