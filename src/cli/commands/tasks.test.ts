@@ -1396,12 +1396,23 @@ describe("TaskCommands create", () => {
     expect(listTasksCalls).toHaveLength(1);
     expect(listTasksCalls[0]).toMatchObject({
       archiveMode: "only",
-      limit: 30,
+      limit: 31,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
     });
 
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.archiveMode).toBe("only");
     expect(payload.limit).toBe(30);
+    expect(payload.page).toMatchObject({
+      limit: 30,
+      count: 1,
+      hasMore: false,
+      sort: "updated",
+      order: "desc",
+      defaultWindow: "1d",
+    });
     expect(payload.tasks[0]).toMatchObject({
       id: "task-cli-1",
       archivedBy: "dev-session",
@@ -1497,6 +1508,88 @@ describe("TaskCommands create", () => {
     ]);
   });
 
+  it("returns page metadata and next cursor for task lists", async () => {
+    taskListMock = [
+      {
+        id: "task-cli-3",
+        title: "third task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 3,
+        updatedAt: 300,
+      },
+      {
+        id: "task-cli-2",
+        title: "second task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 2,
+        updatedAt: 200,
+      },
+      {
+        id: "task-cli-1",
+        title: "first task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 1,
+        updatedAt: 100,
+      },
+    ];
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        false,
+        false,
+        false,
+        undefined,
+        true,
+        "2",
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(listTasksCalls[0]).toMatchObject({
+      limit: 3,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
+    });
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.total).toBe(2);
+    expect(payload.tasks.map((task: { id: string }) => task.id)).toEqual(["task-cli-3", "task-cli-2"]);
+    expect(payload.items.map((task: { id: string }) => task.id)).toEqual(["task-cli-3", "task-cli-2"]);
+    expect(payload.page).toMatchObject({
+      limit: 2,
+      count: 2,
+      hasMore: true,
+      sort: "updated",
+      order: "desc",
+      defaultWindow: "1d",
+    });
+    expect(payload.page.nextCursor).toEqual(expect.any(String));
+    expect(payload.page.nextCommand).toContain("ravi tasks list --cursor");
+  });
+
   it("rejects conflicting archive filters on list", async () => {
     const commands = new TaskCommands();
     expect(() =>
@@ -1554,13 +1647,17 @@ describe("TaskCommands create", () => {
       profileId: "brainstorm",
       parentTaskId: "task-parent-1",
       query: "pipeline",
-      limit: 30,
+      limit: 31,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
       archiveMode: "exclude",
     });
 
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.limit).toBe(30);
     expect(payload.archiveMode).toBe("exclude");
+    expect(payload.page.defaultWindow).toBe("1d");
   });
 
   it("rejects conflicting parent and root filters on list", () => {

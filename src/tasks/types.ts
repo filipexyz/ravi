@@ -483,6 +483,17 @@ export interface TaskCommentInput {
   body: string;
 }
 
+export type TaskListSort = "updated" | "created";
+
+export type TaskListOrder = "asc" | "desc";
+
+export interface TaskListCursor {
+  sort: TaskListSort;
+  order: TaskListOrder;
+  value: number;
+  id: string;
+}
+
 export interface ListTasksOptions {
   status?: TaskStatus;
   agentId?: string;
@@ -493,5 +504,10 @@ export interface ListTasksOptions {
   profileId?: string;
   query?: string;
   limit?: number;
+  updatedSince?: number;
+  updatedUntil?: number;
+  sort?: TaskListSort;
+  order?: TaskListOrder;
+  cursor?: TaskListCursor;
   archiveMode?: TaskArchiveMode;
 }

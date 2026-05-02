@@ -1,6 +1,15 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import {
+  decodeListCursor,
+  encodeListCursor,
+  parseListLimit,
+  parseListOrder,
+  parseListSort,
+  parseListTimeBound,
+  type ListOrder,
+} from "../listing.js";
 import { resolveSession } from "../../router/sessions.js";
 import { nats } from "../../nats.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
@@ -55,6 +64,9 @@ import type {
   TaskReportEvent,
   TaskRuntimeOptions,
   TaskRuntimeResolution,
+  TaskListCursor,
+  TaskListOrder,
+  TaskListSort,
   TaskStatus,
 } from "../../tasks/types.js";
 
@@ -62,7 +74,10 @@ const VALID_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent
 const VALID_STATUSES = new Set<TaskStatus>(["open", "dispatched", "in_progress", "blocked", "done", "failed"]);
 const TASK_WATCH_RECONNECT_DELAY_MS = 1000;
 const DEFAULT_TASK_LIST_LAST = 30;
+const MAX_TASK_LIST_LIMIT = 500;
+const DEFAULT_TASK_LIST_WINDOW = "1d";
 const DEFAULT_TASK_SHOW_LAST = 12;
+const TASK_LIST_SORT_FIELDS = ["updated", "created"] as const satisfies readonly TaskListSort[];
 
 function formatTaskStatus(status: TaskStatus | "waiting"): string {
   switch (status) {
@@ -355,11 +370,128 @@ function parseLastLimit(value: string | undefined, defaultValue: number): number
     return undefined;
   }
 
-  const parsed = Number.parseInt(normalized, 10);
-  if (!Number.isFinite(parsed) || parsed < 0) {
+  if (!/^\d+$/.test(normalized)) {
     fail(`Invalid --last value: ${value}. Use a positive integer, 0, or "all".`);
   }
+  const parsed = Number.parseInt(normalized, 10);
   return parsed === 0 ? undefined : parsed;
+}
+
+function parseTaskListLimit(limit: string | undefined, last: string | undefined): number | undefined {
+  if (limit?.trim()) {
+    return parseListLimit(limit, {
+      defaultValue: DEFAULT_TASK_LIST_LAST,
+      maxValue: MAX_TASK_LIST_LIMIT,
+      flag: "--limit",
+    });
+  }
+
+  const parsed = parseLastLimit(last, DEFAULT_TASK_LIST_LAST);
+  if (typeof parsed === "number" && parsed > MAX_TASK_LIST_LIMIT) {
+    fail(`Invalid --last value: ${last}. Maximum page size is ${MAX_TASK_LIST_LIMIT}; use --last all explicitly.`);
+  }
+  return parsed;
+}
+
+function resolveTaskListCursor(
+  value: string | undefined,
+  sort: TaskListSort,
+  order: TaskListOrder,
+): TaskListCursor | undefined {
+  const parsed = decodeListCursor(value);
+  if (!parsed) return undefined;
+  if (parsed.sort !== sort || parsed.order !== order) {
+    fail(`Cursor was created for sort ${parsed.sort} ${parsed.order}. Re-run with matching --sort/--order.`);
+  }
+  if (parsed.sort !== "updated" && parsed.sort !== "created") {
+    fail("Cursor was created for an unsupported task sort field.");
+  }
+  return {
+    sort: parsed.sort,
+    order: parsed.order,
+    value: parsed.value,
+    id: parsed.id,
+  };
+}
+
+function getTaskListSortValue(task: TaskRecord, sort: TaskListSort): number {
+  return sort === "created" ? task.createdAt : task.updatedAt;
+}
+
+function quoteCliArg(value: string | number): string {
+  const text = String(value);
+  return /^[A-Za-z0-9._:/@=-]+$/.test(text) ? text : JSON.stringify(text);
+}
+
+interface TaskListNextCommandInput {
+  cursor: string;
+  limit: number | undefined;
+  sort: TaskListSort;
+  order: ListOrder;
+  status?: string;
+  agentId?: string;
+  sessionName?: string;
+  profileId?: string;
+  parentTaskId?: string;
+  rootTaskId?: string;
+  onlyRootTasks?: boolean;
+  textQuery?: string;
+  mine?: boolean;
+  archiveMode: TaskArchiveMode;
+  updatedSince?: number;
+  updatedUntil?: number;
+}
+
+function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
+  const args = [
+    "ravi",
+    "tasks",
+    "list",
+    "--cursor",
+    quoteCliArg(input.cursor),
+    "--sort",
+    input.sort,
+    "--order",
+    input.order,
+  ];
+  if (typeof input.limit === "number") {
+    args.push("--limit", String(input.limit));
+  } else {
+    args.push("--last", "all");
+  }
+  if (input.status) args.push("--status", quoteCliArg(input.status));
+  if (input.mine) {
+    args.push("--mine");
+  } else {
+    if (input.agentId) args.push("--agent", quoteCliArg(input.agentId));
+    if (input.sessionName) args.push("--session", quoteCliArg(input.sessionName));
+  }
+  if (input.profileId) args.push("--profile", quoteCliArg(input.profileId));
+  if (input.parentTaskId) args.push("--parent", quoteCliArg(input.parentTaskId));
+  if (input.rootTaskId) args.push("--root", quoteCliArg(input.rootTaskId));
+  if (input.onlyRootTasks) args.push("--roots");
+  if (input.textQuery) args.push("--text", quoteCliArg(input.textQuery));
+  if (input.archiveMode === "only") args.push("--archived");
+  if (input.archiveMode === "include") args.push("--all");
+  if (typeof input.updatedSince === "number") args.push("--since", String(input.updatedSince));
+  if (typeof input.updatedUntil === "number") args.push("--until", String(input.updatedUntil));
+  if (typeof input.updatedSince !== "number" && typeof input.updatedUntil !== "number") args.push("--all-time");
+  return args.join(" ");
+}
+
+function formatTaskListWindow(defaultWindow: string | null, since?: number, until?: number): string {
+  const parts: string[] = [];
+  if (defaultWindow) {
+    parts.push(`updated last ${defaultWindow}`);
+  } else if (typeof since === "number") {
+    parts.push(`updated since ${new Date(since).toISOString()}`);
+  } else {
+    parts.push("all time");
+  }
+  if (typeof until === "number") {
+    parts.push(`until ${new Date(until).toISOString()}`);
+  }
+  return parts.join(", ");
 }
 
 function sliceLastEntries<T>(items: T[], limit: number | undefined): T[] {
@@ -971,23 +1103,95 @@ export class TaskCommands {
     })
     last?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--limit <n>",
+      description: `Page size (default: ${DEFAULT_TASK_LIST_LAST}, max: ${MAX_TASK_LIST_LIMIT})`,
+    })
+    limit?: string,
+    @Option({ flags: "--cursor <token>", description: "Opaque cursor returned by the previous page" }) cursor?: string,
+    @Option({ flags: "--sort <field>", description: "Sort field: updated|created" }) sort?: string,
+    @Option({ flags: "--order <dir>", description: "Sort direction: asc|desc" }) order?: string,
+    @Option({ flags: "--since <time>", description: "Lower updated_at bound: 1d, epoch ms, or ISO datetime" })
+    since?: string,
+    @Option({ flags: "--until <time>", description: "Upper updated_at bound: 1d, epoch ms, or ISO datetime" })
+    until?: string,
+    @Option({ flags: "--all-time", description: "Disable the default 1d updated_at window" }) allTime?: boolean,
   ) {
     const ctx = getContext();
     const archiveMode = resolveArchiveListMode(archived, all);
     const lineageFilters = resolveListLineageFilters(parentTaskId, rootTaskId, onlyRootTasks);
-    const lastLimit = parseLastLimit(last, DEFAULT_TASK_LIST_LAST);
-    const tasks = listTasks({
-      status: requireStatus(status),
-      agentId: mine ? (ctx?.agentId ?? undefined) : agentId?.trim() || undefined,
-      sessionName: mine ? (ctx?.sessionName ?? undefined) : sessionName?.trim() || undefined,
-      ...(profileId?.trim() ? { profileId: profileId.trim() } : {}),
+    const pageLimit = parseTaskListLimit(limit, last);
+    const sortField = parseListSort(sort, TASK_LIST_SORT_FIELDS, "updated");
+    const orderDirection = parseListOrder(order) as TaskListOrder;
+    const taskCursor = resolveTaskListCursor(cursor, sortField, orderDirection);
+    const now = Date.now();
+    const explicitSince = parseListTimeBound(since, "--since", now);
+    const updatedUntil = parseListTimeBound(until, "--until", now);
+    const defaultWindow = !allTime && typeof explicitSince !== "number" ? DEFAULT_TASK_LIST_WINDOW : null;
+    const updatedSince =
+      typeof explicitSince === "number"
+        ? explicitSince
+        : defaultWindow
+          ? now - parseDurationMs(DEFAULT_TASK_LIST_WINDOW)
+          : undefined;
+    if (typeof updatedSince === "number" && typeof updatedUntil === "number" && updatedSince > updatedUntil) {
+      fail("--since must be earlier than or equal to --until.");
+    }
+    const queryLimit = typeof pageLimit === "number" ? pageLimit + 1 : undefined;
+    const resolvedStatus = requireStatus(status);
+    const resolvedAgentId = mine ? (ctx?.agentId ?? undefined) : agentId?.trim() || undefined;
+    const resolvedSessionName = mine ? (ctx?.sessionName ?? undefined) : sessionName?.trim() || undefined;
+    const normalizedProfileId = profileId?.trim() || undefined;
+    const normalizedTextQuery = textQuery?.trim() || undefined;
+    const fetchedTasks = listTasks({
+      status: resolvedStatus,
+      agentId: resolvedAgentId,
+      sessionName: resolvedSessionName,
+      ...(normalizedProfileId ? { profileId: normalizedProfileId } : {}),
       ...(lineageFilters.parentTaskId ? { parentTaskId: lineageFilters.parentTaskId } : {}),
       ...(lineageFilters.rootTaskId ? { rootTaskId: lineageFilters.rootTaskId } : {}),
       ...(lineageFilters.onlyRootTasks ? { onlyRootTasks: true } : {}),
-      ...(textQuery?.trim() ? { query: textQuery.trim() } : {}),
-      ...(typeof lastLimit === "number" ? { limit: lastLimit } : {}),
+      ...(normalizedTextQuery ? { query: normalizedTextQuery } : {}),
+      ...(typeof queryLimit === "number" ? { limit: queryLimit } : {}),
+      ...(typeof updatedSince === "number" ? { updatedSince } : {}),
+      ...(typeof updatedUntil === "number" ? { updatedUntil } : {}),
+      sort: sortField,
+      order: orderDirection,
+      ...(taskCursor ? { cursor: taskCursor } : {}),
       archiveMode,
     });
+    const hasMore = typeof pageLimit === "number" && fetchedTasks.length > pageLimit;
+    const tasks = hasMore && typeof pageLimit === "number" ? fetchedTasks.slice(0, pageLimit) : fetchedTasks;
+    const lastTask = tasks[tasks.length - 1];
+    const nextCursor =
+      hasMore && lastTask
+        ? encodeListCursor({
+            sort: sortField,
+            order: orderDirection,
+            value: getTaskListSortValue(lastTask, sortField),
+            id: lastTask.id,
+          })
+        : null;
+    const nextCommand = nextCursor
+      ? buildTaskListNextCommand({
+          cursor: nextCursor,
+          limit: pageLimit,
+          sort: sortField,
+          order: orderDirection,
+          status: resolvedStatus,
+          agentId: resolvedAgentId,
+          sessionName: resolvedSessionName,
+          profileId: normalizedProfileId,
+          parentTaskId: lineageFilters.parentTaskId,
+          rootTaskId: lineageFilters.rootTaskId,
+          onlyRootTasks: lineageFilters.onlyRootTasks,
+          textQuery: normalizedTextQuery,
+          mine,
+          archiveMode,
+          updatedSince,
+          updatedUntil,
+        })
+      : null;
     const surfacedTasks = tasks.map((task) => {
       const activeAssignment = task.status === "dispatched" ? getTaskDetails(task.id).activeAssignment : null;
       const dependencySurface = getTaskDependencySurface(task, activeAssignment);
@@ -1000,23 +1204,49 @@ export class TaskCommands {
       };
     });
 
+    const payloadTasks = surfacedTasks.map((item) => ({
+      ...item.task,
+      project: item.project,
+      visualStatus: item.visualStatus,
+      runtime: resolveTaskRuntimeForRead(item.task, {
+        assignment: item.activeAssignment,
+        launchPlan: item.dependencySurface.launchPlan,
+      }),
+      readiness: item.dependencySurface.readiness,
+      dependencyCount: item.dependencySurface.readiness.dependencyCount,
+      unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
+      launchPlan: item.dependencySurface.launchPlan,
+    }));
     const payload = {
       total: tasks.length,
       archiveMode,
-      limit: lastLimit ?? null,
-      tasks: surfacedTasks.map((item) => ({
-        ...item.task,
-        project: item.project,
-        visualStatus: item.visualStatus,
-        runtime: resolveTaskRuntimeForRead(item.task, {
-          assignment: item.activeAssignment,
-          launchPlan: item.dependencySurface.launchPlan,
-        }),
-        readiness: item.dependencySurface.readiness,
-        dependencyCount: item.dependencySurface.readiness.dependencyCount,
-        unsatisfiedDependencyCount: item.dependencySurface.readiness.unsatisfiedDependencyCount,
-        launchPlan: item.dependencySurface.launchPlan,
-      })),
+      limit: pageLimit ?? null,
+      page: {
+        limit: pageLimit ?? null,
+        count: tasks.length,
+        hasMore,
+        nextCursor,
+        nextCommand,
+        sort: sortField,
+        order: orderDirection,
+        since: updatedSince ?? null,
+        until: updatedUntil ?? null,
+        defaultWindow,
+      },
+      filters: {
+        status: resolvedStatus ?? null,
+        agentId: resolvedAgentId ?? null,
+        sessionName: resolvedSessionName ?? null,
+        profileId: normalizedProfileId ?? null,
+        parentTaskId: lineageFilters.parentTaskId ?? null,
+        rootTaskId: lineageFilters.rootTaskId ?? null,
+        onlyRootTasks: Boolean(lineageFilters.onlyRootTasks),
+        query: normalizedTextQuery ?? null,
+        archiveMode,
+        mine: Boolean(mine),
+      },
+      items: payloadTasks,
+      tasks: payloadTasks,
     };
 
     if (asJson) {
@@ -1028,12 +1258,16 @@ export class TaskCommands {
       console.log("\nNo tasks found for the current filters.\n");
       console.log("Usage:");
       console.log('  ravi tasks create "Fix routing" --instructions "..."');
-      console.log("  ravi tasks list --last all --all");
+      console.log("  ravi tasks list --limit 30 --cursor <nextCursor>");
+      console.log("  ravi tasks list --all-time --all");
       return payload;
     }
 
-    const limitSummary = typeof lastLimit === "number" ? `, last ${lastLimit}` : ", all";
-    console.log(`\nTasks (${tasks.length}${limitSummary})\n`);
+    const limitSummary = typeof pageLimit === "number" ? `limit ${pageLimit}` : "unlimited";
+    const windowSummary = formatTaskListWindow(defaultWindow, updatedSince, updatedUntil);
+    console.log(
+      `\nTasks (${tasks.length} returned, ${limitSummary}, ${windowSummary}, sort ${sortField} ${orderDirection})\n`,
+    );
     const showArchiveColumn = archiveMode !== "exclude";
     if (showArchiveColumn) {
       console.log(
@@ -1080,8 +1314,11 @@ export class TaskCommands {
       }
     }
     console.log("");
-    if (typeof lastLimit === "number") {
-      console.log(`Showing the newest ${lastLimit} tasks by update time. Use --last all to remove the limit.\n`);
+    if (nextCommand) {
+      console.log("Next page:");
+      console.log(`  ${nextCommand}\n`);
+    } else if (defaultWindow) {
+      console.log("Showing tasks updated in the last 1d. Use --all-time to include older tasks.\n");
     }
     return payload;
   }
