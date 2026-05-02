@@ -65,12 +65,6 @@ Ver timeline ordenada:
 ravi artifacts events art_xxx --json
 ```
 
-Acompanhar até status terminal:
-
-```bash
-ravi artifacts watch art_xxx
-```
-
 Adicionar evento manual/recovery:
 
 ```bash

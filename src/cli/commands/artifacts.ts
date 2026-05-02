@@ -122,10 +122,6 @@ function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
   };
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 @Group({
   name: "artifacts",
   description: "Generic artifact ledger and lineage tools",
@@ -455,72 +451,6 @@ export class ArtifactsCommands {
       return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  @Command({ name: "watch", description: "Watch artifact lifecycle until a terminal status" })
-  async watch(
-    @Arg("id", { description: "Artifact id" }) id: string,
-    @Option({ flags: "--interval-ms <n>", description: "Polling interval in milliseconds (default: 1000)" })
-    intervalMs?: string,
-    @Option({ flags: "--timeout-ms <n>", description: "Timeout in milliseconds (default: 300000)" })
-    timeoutMs?: string,
-    @Option({ flags: "--json", description: "Print final JSON result" }) asJson?: boolean,
-  ) {
-    const interval = parseInteger(intervalMs ?? "1000", "--interval-ms") ?? 1000;
-    const timeout = parseInteger(timeoutMs ?? "300000", "--timeout-ms") ?? 300_000;
-    const terminal = new Set(["completed", "failed", "archived"]);
-    const startedAt = Date.now();
-    const printedEvents = new Set<number>();
-    let lastStatus: string | undefined;
-
-    for (;;) {
-      const details = getArtifactDetails(id);
-      if (!details) fail(`Artifact not found: ${id}`);
-      const events = [...details.events].reverse();
-      if (details.artifact.status !== lastStatus) {
-        lastStatus = details.artifact.status;
-        if (!asJson) {
-          console.log(`${new Date(details.artifact.updatedAt).toISOString()} status [${details.artifact.status}]`);
-        }
-      }
-
-      if (!asJson) {
-        for (const event of events) {
-          if (printedEvents.has(event.id)) continue;
-          printedEvents.add(event.id);
-          console.log(
-            `${new Date(event.createdAt).toISOString()} ${event.eventType}${event.status ? ` [${event.status}]` : ""}${
-              event.message ? ` — ${event.message}` : ""
-            }`,
-          );
-        }
-      }
-
-      if (terminal.has(details.artifact.status)) {
-        const payload = {
-          artifact: details.artifact,
-          events: events.map(summarizeEvent),
-          terminal: true,
-          elapsedMs: Date.now() - startedAt,
-        };
-        if (asJson) printJson(payload);
-        return payload;
-      }
-
-      if (Date.now() - startedAt > timeout) {
-        const payload = {
-          artifact: details.artifact,
-          events: events.map(summarizeEvent),
-          terminal: false,
-          elapsedMs: Date.now() - startedAt,
-        };
-        if (asJson) printJson(payload);
-        else console.log(`Timed out watching artifact ${id} at status ${details.artifact.status}`);
-        return payload;
-      }
-
-      await sleep(interval);
     }
   }
 

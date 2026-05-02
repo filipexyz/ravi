@@ -317,10 +317,10 @@ export class ImageCommands {
     const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
     const shouldSend = send === true || hasOriginChat;
     const asyncHint = shouldSend
-      ? "No polling needed: this artifact emits lifecycle events and will be sent to the origin chat when completed. Use watch/events only for manual inspection or debugging."
+      ? "No polling needed: this artifact emits lifecycle events and will be sent to the origin chat when completed. Use events only for manual inspection or debugging."
       : ctx?.sessionName || ctx?.sessionKey
-        ? "No polling needed: this artifact emits lifecycle events and the owner session is notified on completed/failed. Use watch/events only for manual inspection or debugging."
-        : "No polling needed: this artifact emits lifecycle events. Use watch/events only for manual inspection or debugging.";
+        ? "No polling needed: this artifact emits lifecycle events and the owner session is notified on completed/failed. Use events only for manual inspection or debugging."
+        : "No polling needed: this artifact emits lifecycle events. Use events only for manual inspection or debugging.";
     const optionsPayload = {
       provider: normalizedProvider,
       ...(resolvedModel ? { model: resolvedModel } : {}),
@@ -425,7 +425,6 @@ export class ImageCommands {
               },
             }
           : {}),
-        watch: `ravi artifacts watch ${artifact.id}`,
         events: `ravi artifacts events ${artifact.id}`,
         ...(pid ? { workerPid: pid } : {}),
       };
@@ -434,7 +433,7 @@ export class ImageCommands {
       } else {
         console.log(`✓ Image generation queued: ${artifact.id}`);
         console.log(`  Hint: ${asyncHint}`);
-        console.log(`  Debug: ravi artifacts watch ${artifact.id}`);
+        console.log(`  Debug: ravi artifacts show ${artifact.id}`);
       }
       return queuedPayload;
     }
