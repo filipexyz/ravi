@@ -10,6 +10,7 @@ capabilities:
   - event-loop
   - session-continuity
   - context-keys
+  - observation-plane
   - traces
 tags:
   - runtime
