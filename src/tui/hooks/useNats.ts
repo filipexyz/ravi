@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { subscribe } from "../../nats.js";
 import { getRecentHistory } from "../../db.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { createThrottledFlush, type ThrottledFlush } from "../lib/throttle.js";
 import { applyTerminalUsage, isTerminalRuntimeEvent, type RuntimeFeedUsage } from "./runtime-feed.js";
 
 export interface ChatMessage {
@@ -95,6 +96,9 @@ export function useNats(sessionName: string): UseNatsResult {
   const streamBuf = useRef("");
   const streamDone = useRef(false);
   const terminalUsageCounted = useRef(false);
+  // Trailing-edge throttle for stream chunk -> setMessages flush.
+  // Without this, every text.delta from NATS triggers a full React re-render.
+  const streamFlush = useRef<ThrottledFlush | null>(null);
 
   useEffect(() => {
     abortRef.current = false;
@@ -171,32 +175,39 @@ export function useNats(sessionName: string): UseNatsResult {
             const chunk = (data as { chunk?: string }).chunk;
             if (!chunk) continue;
             streamBuf.current += chunk;
-            const text = streamBuf.current;
-            setIsTyping(true);
-            setMessages((prev) => {
-              const existing = prev.findIndex((m) => m.id === STREAMING_ID);
-              const entry: ChatMessage = {
-                id: STREAMING_ID,
-                type: "chat",
-                role: "assistant",
-                content: text,
-                streaming: true,
-                timestamp: Date.now(),
-              };
-              if (existing >= 0) {
-                const next = [...prev];
-                next[existing] = entry;
-                return next;
-              }
-              const next = [...prev, entry];
-              return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
-            });
+            if (streamFlush.current === null) {
+              streamFlush.current = createThrottledFlush(() => {
+                const text = streamBuf.current;
+                if (!text) return;
+                setIsTyping(true);
+                setMessages((prev) => {
+                  const existing = prev.findIndex((m) => m.id === STREAMING_ID);
+                  const entry: ChatMessage = {
+                    id: STREAMING_ID,
+                    type: "chat",
+                    role: "assistant",
+                    content: text,
+                    streaming: true,
+                    timestamp: Date.now(),
+                  };
+                  if (existing >= 0) {
+                    const next = [...prev];
+                    next[existing] = entry;
+                    return next;
+                  }
+                  const next = [...prev, entry];
+                  return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next;
+                });
+              }, 50);
+            }
+            streamFlush.current.schedule();
           } else if (topic === responseTopic) {
             const responseData = data as { response?: string };
             const response = responseData.response;
             if (!response) continue;
 
             // Replace streaming placeholder with final message
+            streamFlush.current?.cancel();
             streamBuf.current = "";
             streamDone.current = true;
             const finalMsg: ChatMessage = {
@@ -282,6 +293,7 @@ export function useNats(sessionName: string): UseNatsResult {
               streamDone.current = false;
               setIsTyping(true);
             } else if (isTerminalRuntimeEvent(runtimeData.type)) {
+              streamFlush.current?.cancel();
               streamBuf.current = "";
               streamDone.current = true;
               setIsTyping(false);
@@ -322,6 +334,8 @@ export function useNats(sessionName: string): UseNatsResult {
 
     return () => {
       abortRef.current = true;
+      streamFlush.current?.cancel();
+      streamFlush.current = null;
       setIsConnected(false);
     };
   }, [sessionName]);
@@ -350,6 +364,9 @@ export function useNats(sessionName: string): UseNatsResult {
   }, []);
 
   const stopWorking = useCallback(() => {
+    streamFlush.current?.cancel();
+    streamBuf.current = "";
+    streamDone.current = true;
     setIsWorking(false);
     setIsTyping(false);
     // Remove in-progress streaming message
