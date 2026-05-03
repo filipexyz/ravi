@@ -606,10 +606,21 @@ function getDb(): Database {
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
+  // WAL mode for concurrent read/write access (CLI + daemon).
   db.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately
+  // Wait up to 5s for locks to clear instead of failing immediately.
   db.exec("PRAGMA busy_timeout = 5000");
+  // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
+  // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
+  // checkpoint). This is the single biggest knob to mitigate disk-pressure
+  // induced lock spirals.
+  db.exec("PRAGMA synchronous = NORMAL");
+  // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
+  db.exec("PRAGMA cache_size = -64000");
+  // Temp tables & sort scratch in RAM.
+  db.exec("PRAGMA temp_store = MEMORY");
+  // 256MB memory-mapped read window. Hot queries become page-cache hits.
+  db.exec("PRAGMA mmap_size = 268435456");
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
@@ -848,6 +859,8 @@ function getDb(): Database {
       media_type TEXT,
       created_at INTEGER NOT NULL
     );
+    -- TTL pruning hot path (DELETE FROM message_metadata WHERE created_at < ?)
+    CREATE INDEX IF NOT EXISTS idx_message_metadata_created ON message_metadata(created_at);
 
     -- Cost tracking: granular per-turn cost events
     CREATE TABLE IF NOT EXISTS cost_events (
@@ -912,6 +925,12 @@ function getDb(): Database {
       ON session_events(session_name, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
+    -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_seq
+      ON session_events(session_key, seq DESC);
+    -- TTL pruning: DELETE FROM session_events WHERE timestamp < ?
+    CREATE INDEX IF NOT EXISTS idx_session_events_timestamp
+      ON session_events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
       ON session_events(turn_id, seq);
     CREATE INDEX IF NOT EXISTS idx_session_events_type_time
@@ -991,6 +1010,9 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_kind
       ON session_trace_blobs(kind, created_at);
+    -- TTL pruning: DELETE FROM session_trace_blobs WHERE created_at < ?
+    CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
+      ON session_trace_blobs(created_at);
 
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
@@ -1531,6 +1553,7 @@ function getDb(): Database {
       ts         INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 
     CREATE TABLE IF NOT EXISTS router_meta (
       key        TEXT PRIMARY KEY,
@@ -3228,6 +3251,16 @@ export function dbCreateRoute(input: z.input<typeof RouteInputSchema>): RouteCon
 export function dbGetRoute(pattern: string, accountId: string): (RouteConfig & { id: number }) | null {
   const s = getStatements();
   const row = s.getRoute.get(pattern, accountId) as RouteRow | undefined;
+  return row ? rowToRoute(row) : null;
+}
+
+/**
+ * Get an active route by its durable config id.
+ */
+export function dbGetRouteById(id: number): (RouteConfig & { id: number }) | null {
+  const row = getDb().prepare("SELECT * FROM routes WHERE id = ? AND deleted_at IS NULL").get(id) as
+    | RouteRow
+    | undefined;
   return row ? rowToRoute(row) : null;
 }
 
