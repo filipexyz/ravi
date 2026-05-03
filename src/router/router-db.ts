@@ -883,6 +883,32 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cost_events_session ON cost_events(session_key);
     CREATE INDEX IF NOT EXISTS idx_cost_events_created ON cost_events(created_at);
 
+    -- Daily aggregated metrics. Source of truth for historical reporting AND
+    -- the gate that allows TTL pruning of session_events / cost_events: a date
+    -- without a row here cannot be pruned. UPSERT-friendly: re-running the
+    -- rollup for a day overwrites the previous aggregation.
+    CREATE TABLE IF NOT EXISTS daily_metrics (
+      agent_id              TEXT NOT NULL,
+      date                  TEXT NOT NULL,           -- YYYY-MM-DD (UTC)
+      model                 TEXT NOT NULL,
+      input_tokens          INTEGER NOT NULL DEFAULT 0,
+      output_tokens         INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      total_cost_usd        REAL    NOT NULL DEFAULT 0,
+      cost_event_count      INTEGER NOT NULL DEFAULT 0,
+      turns_complete        INTEGER NOT NULL DEFAULT 0,
+      turns_failed          INTEGER NOT NULL DEFAULT 0,
+      turns_interrupted     INTEGER NOT NULL DEFAULT 0,
+      tool_calls            INTEGER NOT NULL DEFAULT 0,
+      tool_errors           INTEGER NOT NULL DEFAULT 0,
+      total_duration_ms     INTEGER NOT NULL DEFAULT 0,
+      rolled_up_at          INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, date, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_metrics_date ON daily_metrics(date);
+    CREATE INDEX IF NOT EXISTS idx_daily_metrics_agent_date ON daily_metrics(agent_id, date DESC);
+
     -- Session trace: append-only session inspection ledger
     CREATE TABLE IF NOT EXISTS session_events (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4206,6 +4232,10 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TRACE_BLOBS_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 /**
  * Delete message metadata older than 7 days.
@@ -4226,6 +4256,107 @@ export function dbCleanupExpiredSessions(): number {
   const s = getStatements();
   s.cleanupExpiredSessions.run(Date.now());
   return getDbChanges();
+}
+
+export interface DbPruneResult {
+  messageMetadata: number;
+  sessionEvents: number;
+  sessionTraceBlobs: number;
+  auditLog: number;
+  costEvents: number;
+  expiredSessions: number;
+  vacuumed: boolean;
+  vacuumedBytesReclaimed?: number;
+  walCheckpointed: boolean;
+}
+
+export interface DbPruneOptions {
+  vacuum?: boolean;
+  dryRun?: boolean;
+  walCheckpoint?: boolean;
+}
+
+/**
+ * Prune stale rows from large tables.
+ *
+ * In dry-run mode, returns the row counts that WOULD be deleted (no writes).
+ *
+ * In live mode, runs each delete in its own transaction so a slow path doesn't
+ * block subsequent prunes if the daemon is under load. After pruning, optionally
+ * runs `PRAGMA wal_checkpoint(PASSIVE)` to drain the WAL and `VACUUM` to reclaim
+ * file space (rewrites the file — slow but reclaims megabytes).
+ */
+export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
+  const db = getDb();
+  const now = Date.now();
+  const result: DbPruneResult = {
+    messageMetadata: 0,
+    sessionEvents: 0,
+    sessionTraceBlobs: 0,
+    auditLog: 0,
+    costEvents: 0,
+    expiredSessions: 0,
+    vacuumed: false,
+    walCheckpointed: false,
+  };
+
+  if (options.dryRun) {
+    const count = (sql: string, threshold: number): number =>
+      Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
+    result.messageMetadata = count(
+      "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
+      now - MESSAGE_META_TTL_MS,
+    );
+    result.sessionEvents = count(
+      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
+      now - SESSION_EVENTS_TTL_MS,
+    );
+    result.sessionTraceBlobs = count(
+      "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
+      now - SESSION_TRACE_BLOBS_TTL_MS,
+    );
+    result.auditLog = count("SELECT COUNT(*) AS c FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
+    result.costEvents = count("SELECT COUNT(*) AS c FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
+    result.expiredSessions = count(
+      "SELECT COUNT(*) AS c FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
+      now,
+    );
+    return result;
+  }
+
+  // Each delete runs in its own implicit transaction. We deliberately don't
+  // wrap them in a single BEGIN/COMMIT — a long single transaction is a worse
+  // lock-contention risk than several short ones.
+  const runDelete = (sql: string, threshold: number): number => {
+    db.prepare(sql).run(threshold);
+    return getDbChanges();
+  };
+
+  result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
+  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+  result.sessionTraceBlobs = runDelete(
+    "DELETE FROM session_trace_blobs WHERE created_at < ?",
+    now - SESSION_TRACE_BLOBS_TTL_MS,
+  );
+  result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
+  result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
+  result.expiredSessions = dbCleanupExpiredSessions();
+
+  if (options.walCheckpoint) {
+    db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+    result.walCheckpointed = true;
+  }
+
+  if (options.vacuum) {
+    const before = (db.query("PRAGMA page_count").get() as { page_count: number }).page_count;
+    const pageSize = (db.query("PRAGMA page_size").get() as { page_size: number }).page_size;
+    db.exec("VACUUM");
+    const after = (db.query("PRAGMA page_count").get() as { page_count: number }).page_count;
+    result.vacuumed = true;
+    result.vacuumedBytesReclaimed = Math.max(0, (before - after) * pageSize);
+  }
+
+  return result;
 }
 
 // ============================================================================

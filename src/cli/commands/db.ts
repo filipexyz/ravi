@@ -8,6 +8,7 @@ import { existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { Arg, Command, CliOnly, Group, Option, Scope } from "../decorators.js";
 import { getRaviStateDir } from "../../utils/paths.js";
+import { dbPruneStaleRows, type DbPruneResult } from "../../router/router-db.js";
 import { join } from "node:path";
 
 interface ProcessHolder {
@@ -240,6 +241,55 @@ export class DbCommands {
     } else {
       console.log(`✗ Write lock FAILED after ${result.elapsedMs}ms`);
       console.log(`  ${result.error}`);
+    }
+    return result;
+  }
+
+  @Scope("superadmin")
+  @Command({
+    name: "prune",
+    description: "Prune stale rows from session_events, session_trace_blobs, audit_log, cost_events, message_metadata",
+  })
+  @CliOnly()
+  async prune(
+    @Option({ flags: "--vacuum", description: "Run VACUUM after pruning to reclaim file space (slow)" })
+    vacuum?: boolean,
+    @Option({ flags: "--checkpoint", description: "Run PRAGMA wal_checkpoint(PASSIVE) after pruning" })
+    checkpoint?: boolean,
+    @Option({ flags: "--dry-run", description: "Report row counts that WOULD be pruned, without writing" })
+    dryRun?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ): Promise<DbPruneResult> {
+    const dbPathBefore = join(getRaviStateDir(), "ravi.db");
+    const sizeBefore = fileSize(dbPathBefore);
+    const result = dbPruneStaleRows({
+      vacuum: vacuum === true,
+      walCheckpoint: checkpoint === true,
+      dryRun: dryRun === true,
+    });
+    const sizeAfter = fileSize(dbPathBefore);
+
+    if (asJson) {
+      console.log(JSON.stringify({ ...result, sizeBefore, sizeAfter }, null, 2));
+      return result;
+    }
+
+    const verb = dryRun ? "Would prune" : "Pruned";
+    console.log(`${verb}:`);
+    console.log(`  message_metadata:    ${result.messageMetadata}`);
+    console.log(`  session_events:      ${result.sessionEvents}`);
+    console.log(`  session_trace_blobs: ${result.sessionTraceBlobs}`);
+    console.log(`  audit_log:           ${result.auditLog}`);
+    console.log(`  cost_events:         ${result.costEvents}`);
+    console.log(`  ephemeral_sessions:  ${result.expiredSessions}`);
+    if (result.walCheckpointed) console.log(`  ✓ WAL checkpoint (PASSIVE)`);
+    if (result.vacuumed) {
+      const reclaimed = result.vacuumedBytesReclaimed ?? 0;
+      console.log(`  ✓ VACUUM — reclaimed ${formatBytes(reclaimed)}`);
+    }
+    if (!dryRun) {
+      console.log("");
+      console.log(`DB size: ${formatBytes(sizeBefore)} → ${formatBytes(sizeAfter)}`);
     }
     return result;
   }

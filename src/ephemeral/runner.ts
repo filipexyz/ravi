@@ -11,6 +11,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
 import { dbCleanupMessageMeta, dbCleanupExpiredSessions } from "../router/router-db.js";
+import { rollupDailyMetrics } from "../metrics/rollup.js";
 
 const log = logger.child("ephemeral");
 
@@ -20,10 +21,15 @@ const CHECK_INTERVAL_MS = 60_000; // 1 minute
 /** How far ahead to look for sessions to warn (ms) */
 const WARN_AHEAD_MS = 10 * 60_000; // 10 minutes
 
+/** How often to run the daily-metrics rollup (ms) */
+const ROLLUP_INTERVAL_MS = 60 * 60_000; // 1 hour
+
 /** Track which sessions we already warned */
 const warned = new Set<string>();
 
 let intervalTimer: ReturnType<typeof setInterval> | null = null;
+let rollupTimer: ReturnType<typeof setInterval> | null = null;
+let lastRollupAt = 0;
 let running = false;
 
 /**
@@ -91,6 +97,20 @@ Sem ação = sessão será excluída automaticamente.`;
   }
 }
 
+function rollupTick(): void {
+  const now = Date.now();
+  if (now - lastRollupAt < ROLLUP_INTERVAL_MS / 2) return;
+  lastRollupAt = now;
+  try {
+    const result = rollupDailyMetrics();
+    if (result.rowsWritten > 0) {
+      log.info("Daily metrics rollup", { dayCount: result.dates.length, rowsWritten: result.rowsWritten });
+    }
+  } catch (err) {
+    log.error("Daily metrics rollup failed", err);
+  }
+}
+
 export async function startEphemeralRunner(): Promise<void> {
   if (running) return;
   running = true;
@@ -99,11 +119,18 @@ export async function startEphemeralRunner(): Promise<void> {
 
   // Run first tick immediately
   await tick();
+  // Kick off an initial rollup so a freshly-restarted daemon backfills any
+  // missing days from the last shutdown without waiting an hour.
+  rollupTick();
 
   // Then run periodically
   intervalTimer = setInterval(tick, CHECK_INTERVAL_MS);
+  rollupTimer = setInterval(rollupTick, ROLLUP_INTERVAL_MS);
 
-  log.info("Ephemeral runner started", { checkIntervalMs: CHECK_INTERVAL_MS });
+  log.info("Ephemeral runner started", {
+    checkIntervalMs: CHECK_INTERVAL_MS,
+    rollupIntervalMs: ROLLUP_INTERVAL_MS,
+  });
 }
 
 export async function stopEphemeralRunner(): Promise<void> {
@@ -113,6 +140,10 @@ export async function stopEphemeralRunner(): Promise<void> {
   if (intervalTimer) {
     clearInterval(intervalTimer);
     intervalTimer = null;
+  }
+  if (rollupTimer) {
+    clearInterval(rollupTimer);
+    rollupTimer = null;
   }
 
   warned.clear();
