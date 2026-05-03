@@ -138,6 +138,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -818,7 +819,7 @@ describe("ContextCommands", () => {
       listedContexts = [resolvedContext];
     });
 
-    it("resolves context without touching the DB from the Bash hook path", () => {
+    it("resolves context without rewriting the shell command from the Bash hook path", () => {
       const result = callCodexBashHook({
         tool_input: {
           command: "ravi context whoami",

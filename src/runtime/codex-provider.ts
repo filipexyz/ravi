@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -59,7 +60,23 @@ const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_BASH_HOOK_MATCHER = "^Bash$";
+const RAVI_CODEX_BASH_HOOK_MATCHER = "^(Bash|shell)$";
+const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
+const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
+const CODEX_SHELL_ENV_INCLUDE_ONLY = [
+  "RAVI_*",
+  "CODEX_HOME",
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_*",
+];
 const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
   "thread.list",
   "thread.read",
@@ -187,7 +204,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           operations: CODEX_RUNTIME_CONTROL_OPERATIONS,
         },
         dynamicTools: {
-          mode: "host",
+          mode: "none",
         },
         execution: {
           mode: "subprocess-rpc",
@@ -293,8 +310,6 @@ function createCodexRuntimeStartRequest(
 ): NonNullable<RuntimePrepareSessionResult["startRequest"]> {
   return {
     approveRuntimeRequest: createCodexApprovalHandler(hostServices),
-    dynamicTools: hostServices.listDynamicTools(),
-    handleRuntimeToolCall: createCodexDynamicToolHandler(hostServices),
   };
 }
 
@@ -311,13 +326,6 @@ function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeA
         return requestCodexUserInput(hostServices, request);
     }
   };
-}
-
-function createCodexDynamicToolHandler(hostServices: RuntimeHostServices): RuntimeDynamicToolCallHandler {
-  return (request) =>
-    hostServices.executeDynamicTool(request, {
-      eventData: buildCodexDynamicToolEventData(request),
-    });
 }
 
 async function authorizeCodexCommandExecution(
@@ -405,19 +413,6 @@ function buildCodexApprovalEventData(request: RuntimeApprovalRequest): Record<st
       method: request.method,
       toolName: request.toolName,
       input: truncateRuntimeEventData(request.input),
-    },
-    runtimeMetadata: request.metadata,
-  };
-}
-
-function buildCodexDynamicToolEventData(request: RuntimeDynamicToolCallRequest): Record<string, unknown> {
-  return {
-    runtimeToolCall: {
-      provider: "codex",
-      method: "item/tool/call",
-      toolName: request.toolName,
-      callId: request.callId,
-      arguments: truncateRuntimeEventData(request.arguments),
     },
     runtimeMetadata: request.metadata,
   };
@@ -560,8 +555,8 @@ async function* normalizeCodexEvents(
         resume: previousSessionId,
         systemPromptAppend,
         approveRuntimeRequest: input.approveRuntimeRequest,
-        dynamicTools: input.dynamicTools,
-        handleRuntimeToolCall: input.handleRuntimeToolCall,
+        dynamicTools: undefined,
+        handleRuntimeToolCall: undefined,
       });
 
       state.activeTurn = turn;
@@ -892,6 +887,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
   let bootstrapPromise: Promise<void> | null = null;
   let activeTurn: AppServerTurnState | null = null;
+  let activeSpawnEnvSignature: string | null = null;
+  let intentionalChildRestart = false;
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -947,7 +944,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const disconnectError =
       error ?? new Error(`Codex app-server exited unexpectedly (${signal ?? exitCode ?? "unknown"})`);
     rejectPendingRequests(disconnectError);
-    if (activeTurn) {
+    if (!intentionalChildRestart && activeTurn) {
       settleTurn(
         activeTurn,
         {
@@ -967,10 +964,13 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       transport = null;
     }
     child = null;
+    activeSpawnEnvSignature = null;
   };
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
-    ensureGlobalCodexBashHookConfig();
+    if (shouldMaterializeCodexHookForCommand(command)) {
+      ensureGlobalCodexBashHookConfig();
+    }
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
     // diagnosing silent hangs in the JSON-RPC layer.
@@ -982,7 +982,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
     const newTransport = createCodexTransport(transportKind, {
       command,
-      baseArgs: ["-c", "features.codex_hooks=true"],
+      baseArgs: buildCodexAppServerBaseArgs(),
       cwd: input.cwd,
       env: spawnEnv,
       onMessage: (line: string) => {
@@ -1010,6 +1010,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
     transport = newTransport;
     child = newTransport.child;
+    activeSpawnEnvSignature = buildCodexAppServerEnvSignature(input.env);
     closed = false;
     nextRequestId = 1;
     pendingRequests = new Map();
@@ -1523,6 +1524,20 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   }
 
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
+    const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
+    if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
+      log.info("codex env changed; respawning app-server", {
+        pid: child.pid,
+        envKeys: listCodexAppServerEnvSignatureKeys(input.env),
+      });
+      intentionalChildRestart = true;
+      try {
+        await close();
+      } finally {
+        intentionalChildRestart = false;
+      }
+    }
+
     if (!closed && child && !bootstrapPromise) {
       return;
     }
@@ -1567,7 +1582,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               config: { model_reasoning_effort: effort },
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: input.dynamicTools ?? null,
+              dynamicTools: null,
               personality: null,
               persistExtendedHistory: false,
             })
@@ -1581,7 +1596,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               serviceName: null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: input.dynamicTools ?? null,
+              dynamicTools: null,
               personality: null,
               ephemeral: false,
               experimentalRawEvents: false,
@@ -1697,6 +1712,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     },
     close,
   };
+}
+
+function buildCodexAppServerBaseArgs(): string[] {
+  return [
+    "-c",
+    "features.codex_hooks=true",
+    "-c",
+    "shell_environment_policy.inherit=all",
+    "-c",
+    "shell_environment_policy.ignore_default_excludes=true",
+    "-c",
+    `shell_environment_policy.include_only=${JSON.stringify(CODEX_SHELL_ENV_INCLUDE_ONLY)}`,
+  ];
 }
 
 function _createCodexCliTransport(options: { command?: string } = {}): CodexCliTransport {
@@ -2938,13 +2966,71 @@ function isRaviCodexHookGroup(value: unknown): boolean {
   });
 }
 
+function shouldMaterializeCodexHookForCommand(command: string): boolean {
+  const commandName = basename(command);
+  return commandName === "codex" || commandName === "codex.exe";
+}
+
 function buildRaviCodexHookCommand(): string {
+  const configuredRaviBin = process.env.RAVI_BIN?.trim();
+  if (configuredRaviBin) {
+    return [configuredRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  }
+
   const bundlePath = process.argv[1];
-  if (bundlePath) {
+  if (isRunnableRaviCliEntrypoint(bundlePath)) {
     return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
   }
 
+  const sourceRaviBin = resolveSourceRaviBinPath();
+  if (sourceRaviBin) {
+    return [sourceRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  }
+
   return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+}
+
+function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {
+  if (!entrypoint || !existsSync(entrypoint)) {
+    return false;
+  }
+  if (/\.test\.[cm]?[jt]sx?$/.test(entrypoint)) {
+    return false;
+  }
+  return entrypoint.endsWith("/dist/bundle/index.js") || entrypoint.endsWith("/src/cli/index.ts");
+}
+
+function resolveSourceRaviBinPath(): string | null {
+  try {
+    const modulePath = fileURLToPath(import.meta.url);
+    const candidate = join(dirname(dirname(dirname(modulePath))), "bin", "ravi");
+    return existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildCodexAppServerEnvSignature(env: NodeJS.ProcessEnv): string {
+  return JSON.stringify(
+    Object.entries(env)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .filter(
+        ([key]) =>
+          CODEX_APP_SERVER_ENV_KEYS.has(key) ||
+          CODEX_APP_SERVER_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
+      )
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function listCodexAppServerEnvSignatureKeys(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env)
+    .filter(
+      (key) =>
+        CODEX_APP_SERVER_ENV_KEYS.has(key) ||
+        CODEX_APP_SERVER_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    )
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function shellEscape(value: string): string {
