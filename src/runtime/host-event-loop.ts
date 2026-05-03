@@ -423,7 +423,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
   });
   const STUCK_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
-  const PROVIDER_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+  // Tight timeout for the well-known codex bug: after we deliver a tool result,
+  // codex's app-server occasionally drops the JSON-RPC callback and never asks
+  // the model for the next step. The agent can't make progress until we abort.
+  // 3 minutes is enough for legitimate xhigh thinking on most workloads while
+  // recovering quickly from the silent hang.
+  // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
+  const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
+    30_000,
+    Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
+  );
   let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
   const clearProviderInactivityWatch = () => {
