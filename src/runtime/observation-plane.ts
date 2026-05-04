@@ -3,7 +3,7 @@ import { publishSessionPrompt } from "../omni/session-stream.js";
 import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetAgent, getDb, getRaviDbPath } from "../router/router-db.js";
-import { dbFindTagBindings } from "../tags/index.js";
+import { canonicalTagSlugsForAsset, dbGetTagDefinition } from "../tags/index.js";
 import type { TagAssetType } from "../tags/types.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
@@ -131,6 +131,26 @@ export interface ObservationEvent {
   payload?: Record<string, unknown>;
 }
 
+export interface ObservationSourceTag {
+  targetType: ObserverTagTargetType;
+  slug: string;
+  assetId: string;
+  inherited: boolean;
+}
+
+export interface ObservationTagPolicyMatch {
+  consumer: "observer_rule";
+  behavior: "create_observer_binding";
+  ruleId: string;
+  tagSelector: {
+    targetType: ObserverTagTargetType;
+    slug: string;
+    inherited: boolean;
+  };
+  matchedTag: ObservationSourceTag;
+  permissionsGranted: string[];
+}
+
 export interface ObservationSourceDescriptor {
   sessionKey: string;
   sessionName: string;
@@ -139,12 +159,13 @@ export interface ObservationSourceDescriptor {
   profileId?: string;
   projectId?: string;
   projectSlug?: string;
-  tags: Array<{
-    targetType: ObserverTagTargetType;
-    slug: string;
-    assetId: string;
-    inherited: boolean;
-  }>;
+  tags: ObservationSourceTag[];
+}
+
+interface ObserverRuleMatchResult {
+  matched: boolean;
+  reason: string;
+  policyMatch?: ObservationTagPolicyMatch;
 }
 
 interface ObserverRuleRow {
@@ -384,6 +405,15 @@ function normalizeTagTargetType(
   return tagTargetType as ObserverTagTargetType;
 }
 
+function normalizeTagSlug(value: string | null | undefined): string | null {
+  const slug = cleanOptionalText(value)?.toLowerCase();
+  if (!slug) return null;
+  if (!/^[a-z0-9._:-]+$/.test(slug)) {
+    throw new Error(`Invalid observer tag slug: ${value}. Use [a-z0-9._:-].`);
+  }
+  return slug;
+}
+
 function normalizeEventTypes(values?: string[]): string[] {
   const normalized = [
     ...new Set((values ?? DEFAULT_EVENT_TYPES).map(normalizeObservationEventType).filter(Boolean)),
@@ -431,6 +461,12 @@ function validateRuleSafety(input: {
   }
   if (input.scope !== "tag" && (input.tagTargetType || input.tagSlug)) {
     throw new Error("Tag selector fields are only valid with scope=tag.");
+  }
+  if (input.scope === "tag" && input.tagSlug) {
+    const tag = dbGetTagDefinition(input.tagSlug);
+    if (!tag) {
+      throw new Error(`Tag selector references unknown tag: ${input.tagSlug}. Create it before using it in a rule.`);
+    }
   }
   if (input.mode === "observe" && input.permissionGrants.length > 0) {
     throw new Error("Observe-mode rules cannot grant permissions.");
@@ -555,7 +591,7 @@ export function dbUpsertObserverRule(input: ObserverRuleInput): ObserverRule {
   );
   const permissionGrants = normalizePermissionGrants(input.permissionGrants ?? existing?.permissionGrants);
   const tagTargetType = normalizeTagTargetType(input.tagTargetType ?? existing?.tagTargetType);
-  const tagSlug = cleanOptionalText(input.tagSlug ?? existing?.tagSlug);
+  const tagSlug = normalizeTagSlug(input.tagSlug ?? existing?.tagSlug);
 
   validateRuleSafety({
     scope,
@@ -702,7 +738,22 @@ export function dbGetObserverBinding(id: string): ObserverBinding | null {
   return row ? rowToBinding(row) : null;
 }
 
-function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rule: ObserverRule }): {
+function buildObserverBindingMetadata(
+  rule: ObserverRule,
+  match: ObserverRuleMatchResult,
+): Record<string, unknown> | undefined {
+  const metadata: Record<string, unknown> = { ...(rule.metadata ?? {}) };
+  if (match.policyMatch) {
+    metadata.observerPolicy = match.policyMatch;
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function upsertObserverBinding(input: {
+  source: ObservationSourceDescriptor;
+  rule: ObserverRule;
+  match: ObserverRuleMatchResult;
+}): {
   binding: ObserverBinding;
   created: boolean;
 } {
@@ -717,6 +768,7 @@ function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rul
     : resolveObserverProfile(input.rule.observerProfileId);
   const profileSnapshotMarkdown =
     existing?.observerProfileSnapshotMarkdown ?? buildObserverProfileSnapshotMarkdown(profile);
+  const metadata = buildObserverBindingMetadata(input.rule, input.match);
   getDb()
     .prepare(
       `
@@ -770,7 +822,7 @@ function upsertObserverBinding(input: { source: ObservationSourceDescriptor; rul
       input.rule.deliveryPolicy,
       input.rule.debounceMs ?? null,
       stringifyJson(input.rule.permissionGrants),
-      input.rule.metadata ? stringifyJson(input.rule.metadata) : null,
+      metadata ? stringifyJson(metadata) : null,
       input.rule.enabled ? 1 : 0,
       existing?.createdAt ?? now,
       now,
@@ -810,10 +862,10 @@ function collectTagsForTarget(
   inherited = false,
 ): Array<{ targetType: ObserverTagTargetType; slug: string; assetId: string; inherited: boolean }> {
   if (!assetId) return [];
-  return dbFindTagBindings({ assetType: targetType, assetId }).map((binding) => ({
-    targetType: binding.assetType as ObserverTagTargetType,
-    slug: binding.tagSlug,
-    assetId: binding.assetId,
+  return canonicalTagSlugsForAsset(targetType, assetId).map((slug) => ({
+    targetType: targetType as ObserverTagTargetType,
+    slug,
+    assetId,
     inherited,
   }));
 }
@@ -863,7 +915,7 @@ function isObserverSessionName(sessionName: string): boolean {
   return sessionName.startsWith("obs:");
 }
 
-function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): { matched: boolean; reason: string } {
+function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): ObserverRuleMatchResult {
   if (!rule.enabled) return { matched: false, reason: "disabled" };
   switch (rule.scope) {
     case "global":
@@ -907,6 +959,7 @@ function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): { m
           : { matched: false, reason: "no_project" };
     case "tag": {
       const tagTarget = rule.tagTargetType ?? "any";
+      if (!rule.tagSlug) return { matched: false, reason: "tag_mismatch" };
       const matchedTag = source.tags.find(
         (tag) =>
           tag.slug === rule.tagSlug &&
@@ -917,6 +970,18 @@ function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): { m
         ? {
             matched: true,
             reason: `tag:${matchedTag.targetType}:${matchedTag.slug}${matchedTag.inherited ? ":inherited" : ""}`,
+            policyMatch: {
+              consumer: "observer_rule",
+              behavior: "create_observer_binding",
+              ruleId: rule.id,
+              tagSelector: {
+                targetType: tagTarget,
+                slug: rule.tagSlug,
+                inherited: rule.tagInherited,
+              },
+              matchedTag,
+              permissionsGranted: rule.permissionGrants,
+            },
           }
         : { matched: false, reason: "tag_mismatch" };
     }
@@ -925,7 +990,7 @@ function matchRule(rule: ObserverRule, source: ObservationSourceDescriptor): { m
 
 export function explainObserverRulesForSession(nameOrKey: string): {
   source: ObservationSourceDescriptor | null;
-  rules: Array<{ rule: ObserverRule; matched: boolean; reason: string }>;
+  rules: Array<{ rule: ObserverRule; matched: boolean; reason: string; policyMatch?: ObservationTagPolicyMatch }>;
   bindings: ObserverBinding[];
 } {
   const session = readSessionByNameOrKey(nameOrKey);
@@ -988,7 +1053,7 @@ export function ensureObserverBindingsForSession(input: {
       continue;
     }
     usedRoles.add(rule.observerRole);
-    const result = upsertObserverBinding({ source, rule });
+    const result = upsertObserverBinding({ source, rule, match });
     bindings.push(result.binding);
     if (result.created) created.push(result.binding);
   }

@@ -383,6 +383,11 @@ export function dbListInsights(query: InsightListQuery = {}): InsightSummary[] {
   const filters: string[] = [];
   const params: Array<string | number> = [];
 
+  if (query.insightIds) {
+    if (query.insightIds.length === 0) return [];
+    filters.push(`i.id IN (${query.insightIds.map(() => "?").join(", ")})`);
+    params.push(...query.insightIds);
+  }
   if (query.kind) {
     filters.push("i.kind = ?");
     params.push(query.kind);

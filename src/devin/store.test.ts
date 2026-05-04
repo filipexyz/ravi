@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
 import {
   getDevinDbPath,
   getDevinSession,
@@ -60,7 +61,13 @@ describe("Devin store", () => {
     expect(existsSync(getDevinDbPath())).toBe(true);
     expect(second.devinId).toBe("devin-test");
     expect(getDevinDbPath()).toBe(`${stateDir}/devin.db`);
-  });
+
+    const mirroredBindings = dbFindTagBindings({ assetType: "devin_session", assetId: "devin-test" });
+    expect(mirroredBindings.map((binding) => binding.tagSlug).sort()).toEqual(["ravi", "test"]);
+    expect(mirroredBindings.every((binding) => binding.source === "devin.remote_tags")).toBe(true);
+    expect(mirroredBindings.every((binding) => binding.metadata?.external === true)).toBe(true);
+    expect(mirroredBindings.every((binding) => binding.metadata?.provider === "devin")).toBe(true);
+  }, 15_000);
 
   it("lists and filters local sessions", () => {
     upsertDevinSession(fakeSession({ session_id: "a", status: "running", tags: ["ravi"] }));
@@ -68,6 +75,15 @@ describe("Devin store", () => {
 
     expect(listDevinSessions({ status: "running" }).map((session) => session.devinId)).toEqual(["devin-a"]);
     expect(listDevinSessions({ tag: "other" }).map((session) => session.devinId)).toEqual(["devin-b"]);
+
+    attachTagSlugsToAsset({
+      assetType: "devin_session",
+      assetId: "devin-b",
+      tags: ["ops.review"],
+      source: "test",
+      createdBy: "test",
+    });
+    expect(listDevinSessions({ tag: "ops.review" }).map((session) => session.devinId)).toEqual(["devin-b"]);
     expect(getDevinSession("devin-a")?.status).toBe("running");
   });
 

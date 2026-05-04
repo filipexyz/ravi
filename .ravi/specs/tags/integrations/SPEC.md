@@ -12,7 +12,6 @@ tags:
   - tags
   - integrations
   - migration
-  - policy
 applies_to:
   - src/tasks
   - src/projects
@@ -172,6 +171,9 @@ Recommended examples:
 - `surface.whatsapp`
 - `route.allowlist`
 - `policy.closed`
+
+`policy.*` names are only naming conventions. A tag changes behavior only when
+a stored route/permission/observer/automation rule references it.
 
 Benefits:
 

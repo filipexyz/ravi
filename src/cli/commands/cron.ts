@@ -26,6 +26,7 @@ import {
   type CronJob,
   type CronSchedule,
 } from "../../cron/index.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { buildCronShowOutput, type CronRoutingResolution, type CronRoutingSource } from "../cron-show-output.js";
 
 function resolveCronRouting(job: CronJob): CronRoutingResolution {
@@ -89,7 +90,10 @@ function serializeCronJob(job: CronJob) {
 })
 export class CronCommands {
   @Command({ name: "list", description: "List all scheduled jobs" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical cron job tag" }) tagSlug?: string,
+  ) {
     let jobs = dbListCronJobs();
 
     // Scope isolation: filter to own agent's jobs
@@ -97,8 +101,14 @@ export class CronCommands {
     if (isScopeEnforced(scopeCtx)) {
       jobs = jobs.filter((j) => canAccessResource(scopeCtx, j.agentId));
     }
+    const tagFilter = tagSlug?.trim() || null;
+    jobs = filterItemsByCanonicalTag(jobs, "cron_job", tagFilter ?? undefined, (job) => job.id);
 
-    const payload = { total: jobs.length, jobs: jobs.map(serializeCronJob) };
+    const payload = {
+      total: jobs.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      jobs: jobs.map(serializeCronJob),
+    };
 
     if (asJson) {
       printJson(payload);

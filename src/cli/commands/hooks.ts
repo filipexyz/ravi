@@ -21,6 +21,7 @@ import {
   HOOK_EVENT_NAMES,
   HOOK_SCOPE_TYPES,
 } from "../../hooks-runtime/index.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 const VALID_SCOPE_TYPES = new Set<string>(HOOK_SCOPE_TYPES);
 const VALID_ACTION_TYPES = new Set<string>(HOOK_ACTION_TYPES);
@@ -175,9 +176,17 @@ function serializeHook(hook: HookRecord) {
 })
 export class HooksCommands {
   @Command({ name: "list", description: "List configured hooks" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const hooks = dbListHooks();
-    const payload = { total: hooks.length, hooks: hooks.map(serializeHook) };
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical hook tag" }) tagSlug?: string,
+  ) {
+    const tagFilter = tagSlug?.trim() || null;
+    const hooks = filterItemsByCanonicalTag(dbListHooks(), "hook", tagFilter ?? undefined, (hook) => hook.id);
+    const payload = {
+      total: hooks.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      hooks: hooks.map(serializeHook),
+    };
 
     if (asJson) {
       printJson(payload);

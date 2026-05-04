@@ -3,6 +3,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { getDb } from "../../router/router-db.js";
+import { attachTagSlugsToAsset } from "../../tags/helpers.js";
+import { ProxCallsProfileCommands, ProxCallsToolCommands, ProxCallsVoiceAgentCommands } from "./prox-calls.js";
 
 const testDir = join(tmpdir(), `ravi-prox-calls-cli-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
@@ -68,6 +70,17 @@ function initCallsDefaultsForDialing(): void {
     .run();
 }
 
+function withoutLogs<T>(run: () => T): T {
+  const originalLog = console.log;
+  console.log = () => {};
+
+  try {
+    return run();
+  } finally {
+    console.log = originalLog;
+  }
+}
+
 describe("prox calls storage integration", () => {
   it("initCallsDefaults seeds profiles and rules", () => {
     initCallsDefaults();
@@ -112,6 +125,52 @@ describe("prox calls storage integration", () => {
     expect(rules!.max_attempts).toBe(3);
     expect(rules!.cooldown_seconds).toBe(3600);
     expect(rules!.cancel_on_inbound_reply).toBe(true);
+  });
+});
+
+describe("prox calls CLI tag filters", () => {
+  it("filters profile, voice-agent, and tool catalogs through canonical tags", () => {
+    initCallsDefaults();
+    attachTagSlugsToAsset({
+      assetType: "call_profile",
+      assetId: "checkin",
+      tags: ["ops-profile"],
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "call_voice_agent",
+      assetId: "ravi-followup",
+      tags: ["ops-voice"],
+      source: "test",
+    });
+    attachTagSlugsToAsset({
+      assetType: "call_tool",
+      assetId: "call.end",
+      tags: ["ops-tool"],
+      source: "test",
+    });
+
+    const profiles = withoutLogs(() => new ProxCallsProfileCommands().list(true, "ops-profile"));
+    const voiceAgents = withoutLogs(() => new ProxCallsVoiceAgentCommands().list(true, "ops-voice"));
+    const tools = withoutLogs(() => new ProxCallsToolCommands().list(undefined, true, "ops-tool"));
+    const unfilteredProfiles = withoutLogs(() => new ProxCallsProfileCommands().list(true));
+
+    expect(profiles).toMatchObject({
+      total: 1,
+      filters: { tag: "ops-profile" },
+      profiles: [expect.objectContaining({ id: "checkin" })],
+    });
+    expect(voiceAgents).toMatchObject({
+      total: 1,
+      filters: { tag: "ops-voice" },
+      voice_agents: [expect.objectContaining({ id: "ravi-followup" })],
+    });
+    expect(tools).toMatchObject({
+      total: 1,
+      filters: { tag: "ops-tool" },
+      tools: [expect.objectContaining({ id: "call.end" })],
+    });
+    expect(unfilteredProfiles).not.toHaveProperty("filters");
   });
 });
 

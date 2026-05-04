@@ -83,6 +83,9 @@ import { formatInspectionSection, printInspectionBlock, printInspectionField } f
 import { parseSessionTraceTime, querySessionTrace, type SessionTraceQueryResult } from "../../session-trace/query.js";
 import { explainSessionTrace, type SessionTraceExplanation } from "../../session-trace/explain.js";
 import { buildCliInvocationMetadata, hashForAudit, type CliInvocationMetadata } from "../provenance.js";
+import { canonicalAssetIdsForTag } from "../../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../../tags/service.js";
+import type { TagBinding } from "../../tags/types.js";
 import type {
   JsonValue,
   SessionEventRecord,
@@ -107,6 +110,36 @@ function printJsonl(payload: unknown): void {
   console.log(JSON.stringify(payload));
 }
 
+function formatTagSlugs(tags: TagBinding[]): string {
+  return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
+}
+
+function sessionTagLookupIds(session: Pick<SessionEntry, "name" | "sessionKey">): string[] {
+  return [session.name, session.sessionKey].filter((value): value is string => Boolean(value?.trim()));
+}
+
+function listSessionTags(session: SessionEntry): TagBinding[] {
+  const seen = new Set<string>();
+  const tags: TagBinding[] = [];
+  for (const id of sessionTagLookupIds(session)) {
+    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+      const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tags.push(binding);
+    }
+  }
+  return tags;
+}
+
+function sessionMatchesTag(session: SessionEntry, tagSlug: string | undefined): boolean {
+  const canonicalIds = canonicalAssetIdsForTag("session", tagSlug);
+  if (!canonicalIds) return true;
+  if (canonicalIds.length === 0) return false;
+  const allowed = new Set(canonicalIds);
+  return sessionTagLookupIds(session).some((id) => allowed.has(id));
+}
+
 function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {}): Record<string, unknown> {
   const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
   return {
@@ -117,6 +150,7 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
       session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
+    tags: listSessionTags(session),
     ...(options.live ? { live: getRuntimeLiveStateForSession(session) } : {}),
   };
 }
@@ -1279,6 +1313,7 @@ export class SessionCommands {
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical session tag slug" }) tagSlug?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1291,6 +1326,9 @@ export class SessionCommands {
     if (ephemeralOnly) {
       sessions = sessions.filter((s) => s.ephemeral);
     }
+    if (tagSlug?.trim()) {
+      sessions = sessions.filter((s) => sessionMatchesTag(s, tagSlug));
+    }
 
     const payload = {
       total: sessions.length,
@@ -1298,6 +1336,7 @@ export class SessionCommands {
         agentId: agentId ?? null,
         ephemeralOnly: Boolean(ephemeralOnly),
         live: Boolean(includeLive),
+        tag: tagSlug?.trim() || null,
       },
       sessions: sessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
     };
@@ -1328,10 +1367,10 @@ export class SessionCommands {
       }
     } else {
       console.log(
-        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             DISPLAY",
+        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
       );
       console.log(
-        "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ──────────────────",
+        "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
       );
 
       for (const s of sessions) {
@@ -1342,8 +1381,9 @@ export class SessionCommands {
         const activity = timeAgo(s.updatedAt).padEnd(9);
         const type = (s.ephemeral ? "ephemeral" : "permanent").padEnd(9);
         const expires = s.ephemeral && s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "-".padEnd(18);
+        const tags = formatTagSlugs(listSessionTags(s)).padEnd(15);
         const display = s.displayName ?? s.lastTo ?? "-";
-        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${activity}  ${type}  ${expires}  ${display}`);
+        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${activity}  ${type}  ${expires}  ${tags}  ${display}`);
       }
     }
 
@@ -1414,6 +1454,7 @@ export class SessionCommands {
     printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Thinking", s.thinkingLevel ?? "(default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Tags", formatTagSlugs(listSessionTags(s)), SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Runtime", s.runtimeProvider ?? "(unknown)", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
     printInspectionField("Runtime ID", s.providerSessionId ?? s.sdkSessionId ?? "(none)", RUNTIME_SNAPSHOT_META, {
       labelWidth: 14,

@@ -14,6 +14,7 @@ import {
   type DbSkillGateRule,
   type DbSkillGateRuleInput,
 } from "../../router/router-db.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -159,10 +160,20 @@ function printRule(rule: EffectiveSkillGateRule): void {
 })
 export class SkillGatesCommands {
   @Command({ name: "list", description: "List skill gate rules" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const effective = buildEffectiveRules();
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical skill gate rule tag" }) tagSlug?: string,
+  ) {
+    const tagFilter = tagSlug?.trim() || null;
+    const effective = filterItemsByCanonicalTag(
+      buildEffectiveRules(),
+      "skill_gate_rule",
+      tagFilter ?? undefined,
+      (rule) => rule.id,
+    );
     const payload = {
       total: effective.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       configuredTotal: dbListSkillGateRules().length,
       rules: effective.map(serializeEffectiveRule),
     };

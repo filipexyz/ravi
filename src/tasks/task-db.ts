@@ -34,6 +34,7 @@ import {
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
 import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
+import { canonicalAssetIdsForTag } from "../tags/helpers.js";
 
 interface TaskRow {
   id: string;
@@ -1236,6 +1237,15 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
   if (options.profileId) {
     filters.push("profile_id = ?");
     params.push(options.profileId);
+  }
+  if (options.tagSlug) {
+    const taggedTaskIds = canonicalAssetIdsForTag("task", options.tagSlug);
+    if (taggedTaskIds && taggedTaskIds.length === 0) {
+      filters.push("0 = 1");
+    } else if (taggedTaskIds) {
+      filters.push(`tasks.id IN (${taggedTaskIds.map(() => "?").join(", ")})`);
+      params.push(...taggedTaskIds);
+    }
   }
   if (normalizedQuery) {
     filters.push("(LOWER(title) LIKE ? OR LOWER(instructions) LIKE ? OR LOWER(COALESCE(summary, '')) LIKE ?)");

@@ -12,6 +12,8 @@ import type {
   UpdateProjectInput,
   UpsertProjectLinkInput,
 } from "./types.js";
+import { canonicalAssetIdsForTag } from "../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../tags/service.js";
 
 interface ProjectRow {
   id: string;
@@ -289,6 +291,16 @@ export function dbListProjects(query: ProjectListQuery = {}): ProjectSummary[] {
     filters.push("p.status = ?");
     params.push(query.status);
   }
+  if (query.tagSlug) {
+    const taggedProjectRefs = canonicalAssetIdsForTag("project", query.tagSlug);
+    if (taggedProjectRefs && taggedProjectRefs.length === 0) {
+      filters.push("0 = 1");
+    } else if (taggedProjectRefs) {
+      const placeholders = taggedProjectRefs.map(() => "?").join(", ");
+      filters.push(`(p.slug IN (${placeholders}) OR p.id IN (${placeholders}))`);
+      params.push(...taggedProjectRefs, ...taggedProjectRefs);
+    }
+  }
 
   const whereClause = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : "";
   const rows = db
@@ -304,7 +316,10 @@ export function dbListProjects(query: ProjectListQuery = {}): ProjectSummary[] {
     `)
     .all(...params) as ProjectSummaryRow[];
 
-  return rows.map(rowToProjectSummary);
+  return rows.map((row) => ({
+    ...rowToProjectSummary(row),
+    tags: searchTagBindingsForSelector({ selector: { project: row.slug } }).bindings,
+  }));
 }
 
 export function dbUpdateProject(ref: string, input: UpdateProjectInput): ProjectRecord {
@@ -513,6 +528,7 @@ export function dbGetProjectDetails(ref: string): ProjectDetails | null {
   if (!project) return null;
   return {
     project,
+    tags: searchTagBindingsForSelector({ selector: { project: project.slug } }).bindings,
     links: dbListProjectLinks({ projectRef: project.id }),
     linkedWorkflows: [],
     workflowAggregate: null,

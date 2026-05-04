@@ -46,6 +46,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -143,6 +144,17 @@ mock.module("../../router/sessions.js", () => ({
   getSessionsByAgent: () => sessionsByAgent,
   getMainSession: () => mainSession,
   resolveSession: () => resolvedSession,
+}));
+
+mock.module("../../tags/helpers.js", () => ({
+  canonicalAssetIdsForTag: () => undefined,
+  filterItemsByCanonicalTag: <T>(items: T[]) => items,
+}));
+
+mock.module("../../tags/service.js", () => ({
+  searchTagBindingsForSelector: () => ({
+    bindings: [],
+  }),
 }));
 
 mock.module("../../transcripts.js", () => ({

@@ -13,6 +13,7 @@ import {
   updateTaskAutomation,
 } from "../../tasks/index.js";
 import type { TaskAutomationEventType, TaskPriority, TaskReportEvent } from "../../tasks/types.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 const VALID_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
 
@@ -126,9 +127,17 @@ function printJson(payload: unknown): void {
 })
 export class TaskAutomationCommands {
   @Command({ name: "list", description: "List configured task automations" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const automations = listTaskAutomations();
-    const payload = { total: automations.length, automations };
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical task automation tag" }) tagSlug?: string,
+  ) {
+    const automations = filterItemsByCanonicalTag(
+      listTaskAutomations(),
+      "task_automation",
+      tagSlug,
+      (automation) => automation.id,
+    );
+    const payload = { total: automations.length, filters: { tag: tagSlug?.trim() || null }, automations };
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));

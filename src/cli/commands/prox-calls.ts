@@ -50,6 +50,7 @@ import {
   type CallToolExecutorType,
   type VoicemailPolicy,
 } from "../../prox/calls/index.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -214,10 +215,23 @@ function serializeEvent(event: CallEvent) {
 })
 export class ProxCallsProfileCommands {
   @Command({ name: "list", description: "List available call profiles" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical call profile tag" }) tagSlug?: string,
+  ) {
     initCallsDefaults();
-    const profiles = listCallProfiles();
-    const payload = { total: profiles.length, profiles: profiles.map(serializeProfile) };
+    const tagFilter = tagSlug?.trim() || null;
+    const profiles = filterItemsByCanonicalTag(
+      listCallProfiles(),
+      "call_profile",
+      tagFilter ?? undefined,
+      (profile) => profile.id,
+    );
+    const payload = {
+      total: profiles.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      profiles: profiles.map(serializeProfile),
+    };
 
     if (asJson) {
       printJson(payload);
@@ -818,10 +832,23 @@ function serializeToolRun(run: CallToolRun) {
 })
 export class ProxCallsVoiceAgentCommands {
   @Command({ name: "list", description: "List voice agents" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical call voice agent tag" }) tagSlug?: string,
+  ) {
     initCallsDefaults();
-    const agents = listCallVoiceAgents();
-    const payload = { total: agents.length, voice_agents: agents.map(serializeVoiceAgent) };
+    const tagFilter = tagSlug?.trim() || null;
+    const agents = filterItemsByCanonicalTag(
+      listCallVoiceAgents(),
+      "call_voice_agent",
+      tagFilter ?? undefined,
+      (agent) => agent.id,
+    );
+    const payload = {
+      total: agents.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      voice_agents: agents.map(serializeVoiceAgent),
+    };
 
     if (asJson) {
       printJson(payload);
@@ -1118,10 +1145,21 @@ export class ProxCallsToolCommands {
   list(
     @Option({ flags: "--profile <profile_id>", description: "Filter tools by profile binding" }) profileId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical call tool tag" }) tagSlug?: string,
   ) {
     initCallsDefaults();
-    const tools = listCallTools(profileId);
-    const payload = { total: tools.length, tools: tools.map(serializeCallTool) };
+    const tagFilter = tagSlug?.trim() || null;
+    const tools = filterItemsByCanonicalTag(
+      listCallTools(profileId),
+      "call_tool",
+      tagFilter ?? undefined,
+      (tool) => tool.id,
+    );
+    const payload = {
+      total: tools.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      tools: tools.map(serializeCallTool),
+    };
 
     if (asJson) {
       printJson(payload);

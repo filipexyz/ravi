@@ -20,6 +20,7 @@ import {
   type Trigger,
 } from "../../triggers/index.js";
 import { getBlockedTriggerTopicReason } from "../../triggers/topic-policy.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -40,7 +41,10 @@ function serializeTrigger(trigger: Trigger) {
 })
 export class TriggersCommands {
   @Command({ name: "list", description: "List all event triggers" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical trigger tag" }) tagSlug?: string,
+  ) {
     let triggers = dbListTriggers();
 
     // Scope isolation: filter to own agent's triggers
@@ -48,8 +52,14 @@ export class TriggersCommands {
     if (isScopeEnforced(scopeCtx)) {
       triggers = triggers.filter((t) => canAccessResource(scopeCtx, t.agentId));
     }
+    const tagFilter = tagSlug?.trim() || null;
+    triggers = filterItemsByCanonicalTag(triggers, "trigger", tagFilter ?? undefined, (trigger) => trigger.id);
 
-    const payload = { total: triggers.length, triggers: triggers.map(serializeTrigger) };
+    const payload = {
+      total: triggers.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
+      triggers: triggers.map(serializeTrigger),
+    };
 
     if (asJson) {
       printJson(payload);

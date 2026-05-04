@@ -52,6 +52,7 @@ import {
   taskDocExists,
   unarchiveTask,
 } from "../../tasks/index.js";
+import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type {
   TaskAssignment,
   TaskArchiveMode,
@@ -393,6 +394,27 @@ function parseTaskListLimit(limit: string | undefined, last: string | undefined)
   return parsed;
 }
 
+function parseTagSlug(value: string | undefined): string | undefined {
+  const slug = value?.trim().toLowerCase();
+  if (!slug) return undefined;
+  if (!/^[a-z0-9._:-]+$/.test(slug)) {
+    fail(`Invalid tag slug: ${value}. Use [a-z0-9._:-].`);
+  }
+  return slug;
+}
+
+function parseTagSlugs(value: string[] | string | undefined): string[] {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return [
+    ...new Set(
+      values
+        .flatMap((item) => item.split(","))
+        .map((item) => parseTagSlug(item))
+        .filter((item): item is string => Boolean(item)),
+    ),
+  ];
+}
+
 function resolveTaskListCursor(
   value: string | undefined,
   sort: TaskListSort,
@@ -432,6 +454,7 @@ interface TaskListNextCommandInput {
   agentId?: string;
   sessionName?: string;
   profileId?: string;
+  tagSlug?: string;
   parentTaskId?: string;
   rootTaskId?: string;
   onlyRootTasks?: boolean;
@@ -467,6 +490,7 @@ function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
     if (input.sessionName) args.push("--session", quoteCliArg(input.sessionName));
   }
   if (input.profileId) args.push("--profile", quoteCliArg(input.profileId));
+  if (input.tagSlug) args.push("--tag", quoteCliArg(input.tagSlug));
   if (input.parentTaskId) args.push("--parent", quoteCliArg(input.parentTaskId));
   if (input.rootTaskId) args.push("--root", quoteCliArg(input.rootTaskId));
   if (input.onlyRootTasks) args.push("--roots");
@@ -964,6 +988,11 @@ export class TaskCommands {
     @Option({ flags: "--input <key=value...>", description: "Profile input values pinned to the task" })
     profileInputRaw?: string[] | string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--tag <slug...>",
+      description: "Attach canonical task tags; repeat or pass comma-separated slugs",
+    })
+    tagSlugsRaw?: string[] | string,
     @Option({ flags: "--model <model>", description: "Task runtime model override" })
     model?: string,
     @Option({ flags: "--effort <level>", description: "Runtime effort: low|medium|high|xhigh" })
@@ -996,8 +1025,14 @@ export class TaskCommands {
     const checkpointIntervalMs = parseCheckpointInterval(checkpoint);
     const parsedReportEvents = parseReportEvents(reportEvents);
     const profileInput = parseProfileInputs(normalizedTail.profileInputRaw);
+    const tagSlugs = parseTagSlugs(tagSlugsRaw);
     const runtimeOverride = parseRuntimeOverride(model, effort, thinking);
     const actor = getTaskActor();
+    if (!actor.sessionName && !reportToSessionName?.trim()) {
+      fail(
+        "Cannot infer task report target outside a Ravi session. Run with RAVI_CONTEXT_KEY or pass --report-to <session>.",
+      );
+    }
     const created = await createTask({
       title: title.trim(),
       instructions: instructions.trim(),
@@ -1008,6 +1043,7 @@ export class TaskCommands {
       ...(reportToSessionName?.trim() ? { reportToSessionName: reportToSessionName.trim() } : {}),
       ...(parsedReportEvents ? { reportEvents: parsedReportEvents } : {}),
       ...(profileInput ? { profileInput } : {}),
+      ...(tagSlugs.length > 0 ? { tagSlugs } : {}),
       ...(runtimeOverride ? { runtimeOverride } : {}),
       createdBy: actor.actor,
       createdByAgentId: actor.agentId,
@@ -1116,6 +1152,7 @@ export class TaskCommands {
     @Option({ flags: "--until <time>", description: "Upper updated_at bound: 1d, epoch ms, or ISO datetime" })
     until?: string,
     @Option({ flags: "--all-time", description: "Disable the default 1d updated_at window" }) allTime?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical task tag" }) tagSlug?: string,
   ) {
     const ctx = getContext();
     const archiveMode = resolveArchiveListMode(archived, all);
@@ -1142,12 +1179,14 @@ export class TaskCommands {
     const resolvedAgentId = mine ? (ctx?.agentId ?? undefined) : agentId?.trim() || undefined;
     const resolvedSessionName = mine ? (ctx?.sessionName ?? undefined) : sessionName?.trim() || undefined;
     const normalizedProfileId = profileId?.trim() || undefined;
+    const normalizedTagSlug = parseTagSlug(tagSlug);
     const normalizedTextQuery = textQuery?.trim() || undefined;
     const fetchedTasks = listTasks({
       status: resolvedStatus,
       agentId: resolvedAgentId,
       sessionName: resolvedSessionName,
       ...(normalizedProfileId ? { profileId: normalizedProfileId } : {}),
+      ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       ...(lineageFilters.parentTaskId ? { parentTaskId: lineageFilters.parentTaskId } : {}),
       ...(lineageFilters.rootTaskId ? { rootTaskId: lineageFilters.rootTaskId } : {}),
       ...(lineageFilters.onlyRootTasks ? { onlyRootTasks: true } : {}),
@@ -1182,6 +1221,7 @@ export class TaskCommands {
           agentId: resolvedAgentId,
           sessionName: resolvedSessionName,
           profileId: normalizedProfileId,
+          tagSlug: normalizedTagSlug,
           parentTaskId: lineageFilters.parentTaskId,
           rootTaskId: lineageFilters.rootTaskId,
           onlyRootTasks: lineageFilters.onlyRootTasks,
@@ -1206,6 +1246,7 @@ export class TaskCommands {
 
     const payloadTasks = surfacedTasks.map((item) => ({
       ...item.task,
+      tags: searchTagBindingsForSelector({ selector: { task: item.task.id } }).bindings,
       project: item.project,
       visualStatus: item.visualStatus,
       runtime: resolveTaskRuntimeForRead(item.task, {
@@ -1238,6 +1279,7 @@ export class TaskCommands {
         agentId: resolvedAgentId ?? null,
         sessionName: resolvedSessionName ?? null,
         profileId: normalizedProfileId ?? null,
+        tagSlug: normalizedTagSlug ?? null,
         parentTaskId: lineageFilters.parentTaskId ?? null,
         rootTaskId: lineageFilters.rootTaskId ?? null,
         onlyRootTasks: Boolean(lineageFilters.onlyRootTasks),
@@ -1380,6 +1422,16 @@ export class TaskCommands {
       console.log(`  Tool topic: ${taskSession.toolTopic}`);
       console.log(`  Read:       ${taskSession.readCommand}`);
       console.log(`  Debug:      ${taskSession.debugCommand}`);
+    }
+
+    const taskTags = details.tags ?? [];
+    console.log("\nTags:");
+    if (taskTags.length === 0) {
+      console.log("  - none");
+    } else {
+      for (const tag of taskTags) {
+        console.log(`  - ${tag.tagSlug}${tag.metadata ? ` :: ${JSON.stringify(tag.metadata)}` : ""}`);
+      }
     }
 
     const taskDocument = buildTaskDocumentSummary(details.task);

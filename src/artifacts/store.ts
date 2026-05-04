@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "nod
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { z } from "zod";
 import { getDb } from "../router/router-db.js";
+import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 const ARTIFACT_ID_PATTERN = /^art_[a-z0-9]+_[a-z0-9]+$/;
@@ -286,6 +287,21 @@ function normalizeTags(tags?: string[]): string[] {
   return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))].sort();
 }
 
+function syncArtifactTagsToCanonical(artifactIdValue: string, tags: string[]): void {
+  replaceMirroredTagSlugsForAsset({
+    assetType: "artifact",
+    assetId: artifactIdValue,
+    tags,
+    source: "artifacts.tags_json",
+    createdBy: "artifacts.store",
+    metadata: { mirrored: true },
+    definitionMetadata: {
+      source: "artifacts.tags_json",
+      mirrored: true,
+    },
+  });
+}
+
 function artifactId(): string {
   return `art_${Date.now().toString(36)}_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
 }
@@ -348,6 +364,7 @@ function ingestFile(path: string): {
 }
 
 function rowToArtifact(row: ArtifactRow): ArtifactRecord {
+  const tags = [...new Set([...parseTags(row.tags_json), ...canonicalTagSlugsForAsset("artifact", row.id)])].sort();
   return {
     id: row.id,
     kind: row.kind,
@@ -385,7 +402,7 @@ function rowToArtifact(row: ArtifactRow): ArtifactRecord {
     ...(row.lineage_json ? { lineage: parseJsonObject(row.lineage_json) } : {}),
     ...(row.input_json ? { input: parseJsonValue(row.input_json) } : {}),
     ...(row.output_json ? { output: parseJsonValue(row.output_json) } : {}),
-    tags: parseTags(row.tags_json),
+    tags,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.deleted_at !== null ? { deletedAt: row.deleted_at } : {}),
@@ -526,6 +543,7 @@ export function createArtifact(input: z.input<typeof ArtifactInputSchema>): Arti
     message: "Artifact created",
     source: "artifacts.store",
   });
+  syncArtifactTagsToCanonical(id, tags);
   const artifact = getArtifact(id);
   if (!artifact) throw new Error(`Artifact insert failed: ${id}`);
   return artifact;
@@ -555,8 +573,14 @@ export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecor
     params.push(options.taskId);
   }
   if (options.tag) {
-    where.push("tags_json LIKE ?");
-    params.push(`%"${options.tag}"%`);
+    const canonicalIds = canonicalAssetIdsForTag("artifact", options.tag) ?? [];
+    const tagPredicates = ["EXISTS (SELECT 1 FROM json_each(artifacts.tags_json) WHERE value = ?)"];
+    params.push(options.tag);
+    if (canonicalIds.length > 0) {
+      tagPredicates.push(`id IN (${canonicalIds.map(() => "?").join(", ")})`);
+      params.push(...canonicalIds);
+    }
+    where.push(`(${tagPredicates.join(" OR ")})`);
   }
   const limit = Math.max(1, Math.min(500, options.limit ?? 50));
   const sql = `SELECT * FROM artifacts ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC LIMIT ?`;
@@ -665,6 +689,10 @@ export function updateArtifact(
       now,
       id,
     );
+
+  if (providedKeys.has("tags")) {
+    syncArtifactTagsToCanonical(id, normalizeTags(parsed.tags));
+  }
 
   insertArtifactEvent(id, "updated", { updates: [...providedKeys].sort() }, options.actor, {
     status: parsed.status,

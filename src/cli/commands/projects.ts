@@ -88,6 +88,15 @@ function parseLastSignalAt(value?: string): number | undefined {
   return parsed;
 }
 
+function parseTagSlug(value: string | undefined): string | undefined {
+  const slug = value?.trim().toLowerCase();
+  if (!slug) return undefined;
+  if (!/^[a-z0-9._:-]+$/.test(slug)) {
+    fail(`Invalid tag slug: ${value}. Use [a-z0-9._:-].`);
+  }
+  return slug;
+}
+
 function resolveActor(): { createdBy?: string; createdByAgentId?: string; createdBySessionName?: string } {
   const ctx = getContext();
   return {
@@ -487,6 +496,11 @@ function formatWorkflowStatusCounts(details: NonNullable<ReturnType<typeof getPr
   return segments.length > 0 ? segments.join(", ") : "none";
 }
 
+function formatProjectTagSlugs(details: NonNullable<ReturnType<typeof getProjectDetails>>): string {
+  const tags = details.tags ?? [];
+  return tags.map((tag) => tag.tagSlug).join(", ") || "-";
+}
+
 function formatProjectRuntimeHotspot(operational: ProjectOperationalSurface | null | undefined): string {
   if (!operational) {
     return "none";
@@ -582,6 +596,7 @@ function printProject(details: NonNullable<ReturnType<typeof getProjectDetails>>
   console.log(`Hypothesis:  ${details.project.hypothesis}`);
   console.log(`Next step:   ${details.project.nextStep}`);
   console.log(`Hot path:    ${formatProjectRuntimeHotspot(details.operational)}`);
+  console.log(`Tags:        ${formatProjectTagSlugs(details)}`);
 
   console.log("\nWorkflows:");
   if (details.linkedWorkflows.length === 0) {
@@ -638,6 +653,7 @@ function printProjectStatus(details: NonNullable<ReturnType<typeof getProjectDet
     console.log(`Counts:    ${formatWorkflowStatusCounts(details)}`);
   }
   console.log(`Signal:    ${formatTimestamp(details.project.lastSignalAt)}`);
+  console.log(`Tags:      ${formatProjectTagSlugs(details)}`);
   console.log(`Lead:      ${formatProjectRuntimeLead(details.operational)}`);
   console.log(`Next:      ${details.project.nextStep}`);
   if (details.workflowAggregate?.primaryWorkflowRunId) {
@@ -893,13 +909,23 @@ export class ProjectCommands {
   @Command({ name: "list", description: "List projects" })
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      const normalizedTagSlug = parseTagSlug(tagSlug);
       const projects = listProjects({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
+        ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       });
-      const payload = { total: projects.length, projects };
+      const payload = {
+        total: projects.length,
+        filters: {
+          status: status ? normalizeProjectStatus(status) : null,
+          tagSlug: normalizedTagSlug ?? null,
+        },
+        projects,
+      };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
@@ -912,6 +938,7 @@ export class ProjectCommands {
             `${project.slug}`,
             project.status,
             `${project.linkCount} links`,
+            `tags ${(project.tags ?? []).map((tag) => tag.tagSlug).join(",") || "-"}`,
             `signal ${formatTimestamp(project.lastSignalAt)}`,
             `next ${compact(project.nextStep, 40)}`,
           ].join(" :: ");
@@ -963,13 +990,23 @@ export class ProjectCommands {
   @Command({ name: "next", description: "List projects as an operational next-work surface" })
   next(
     @Option({ flags: "--status <status>", description: "Filter by project status" }) status?: string,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
+      const normalizedTagSlug = parseTagSlug(tagSlug);
       const entries = listProjectStatusEntries({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
+        ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       });
-      const payload = { total: entries.length, projects: entries };
+      const payload = {
+        total: entries.length,
+        filters: {
+          status: status ? normalizeProjectStatus(status) : null,
+          tagSlug: normalizedTagSlug ?? null,
+        },
+        projects: entries,
+      };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));

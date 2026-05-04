@@ -73,6 +73,9 @@ import {
   type AccountPendingEntry,
 } from "../../contacts.js";
 import { listSessions, deleteSession } from "../../router/sessions.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../../tags/service.js";
+import type { TagBinding } from "../../tags/types.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import { formatInspectionSection, printInspectionField } from "../inspection-output.js";
 
@@ -278,18 +281,32 @@ function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean):
   }
 }
 
-function printRouteList(name?: string): void {
+function filterRoutesByTag(routes: ListedRoute[], tagSlug?: string): ListedRoute[] {
+  return filterItemsByCanonicalTag(routes, "route", tagSlug, (route) => String(route.id));
+}
+
+function listRouteTags(routeId: string | number): TagBinding[] {
+  return searchTagBindingsForSelector({ selector: { target: `route:${String(routeId)}` } }).bindings;
+}
+
+function listInstanceTags(name: string): TagBinding[] {
+  return searchTagBindingsForSelector({ selector: { instance: name } }).bindings;
+}
+
+function printRouteList(name?: string, tagSlug?: string): void {
   if (name) {
     requireInstance(name);
-    const routes = dbListRoutes(name);
+    const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
 
     if (routes.length === 0) {
-      console.log(`No routes for instance "${name}".`);
+      console.log(
+        tagSlug ? `No routes tagged "${tagSlug}" for instance "${name}".` : `No routes for instance "${name}".`,
+      );
       console.log(`\nAdd a route: ravi instances routes add ${name} <pattern> <agent>`);
       return;
     }
 
-    console.log(`\nRoutes for: ${name}\n`);
+    console.log(tagSlug ? `\nRoutes for: ${name} tagged ${tagSlug}\n` : `\nRoutes for: ${name}\n`);
     printRouteTable(routes, false);
     console.log(`\n  Total: ${routes.length}`);
     console.log(`  Show one: ravi routes show ${name} "<pattern>"`);
@@ -298,14 +315,14 @@ function printRouteList(name?: string): void {
     return;
   }
 
-  const routes = dbListRoutes();
+  const routes = filterRoutesByTag(dbListRoutes(), tagSlug);
   if (routes.length === 0) {
-    console.log("No routes configured.");
+    console.log(tagSlug ? `No routes tagged "${tagSlug}".` : "No routes configured.");
     console.log(`\nAdd one: ravi instances routes add <instance> <pattern> <agent>`);
     return;
   }
 
-  console.log("\nRoutes across all instances:\n");
+  console.log(tagSlug ? `\nRoutes across all instances tagged ${tagSlug}:\n` : "\nRoutes across all instances:\n");
   printRouteTable(routes, true);
   console.log(`\n  Total: ${routes.length}`);
   console.log(`  Show one: ravi routes show <instance> "<pattern>"`);
@@ -313,15 +330,19 @@ function printRouteList(name?: string): void {
   console.log(`  Mutate:   ravi instances routes add <instance> <pattern> <agent>`);
 }
 
-function buildRouteListPayload(name?: string) {
+function buildRouteListPayload(name?: string, tagSlug?: string) {
   if (name) {
     requireInstance(name);
   }
-  const routes = dbListRoutes(name);
+  const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
   return {
     instance: name ?? null,
+    filter: { tagSlug: tagSlug?.trim() || null },
     total: routes.length,
-    routes,
+    routes: routes.map((route) => ({
+      ...route,
+      tags: listRouteTags(route.id),
+    })),
   };
 }
 
@@ -337,6 +358,8 @@ function printRouteDetails(name: string, pattern: string): void {
   console.log(`  DM Scope:  ${route.dmScope ?? "(inherits)"}`);
   console.log(`  Session:   ${route.session ?? "(auto)"}`);
   console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
+  const routeTags = listRouteTags(route.id);
+  console.log(`  Tags:      ${routeTags.length > 0 ? routeTags.map((tag) => tag.tagSlug).join(", ") : "-"}`);
   console.log(`\n  Explain live routing: ravi routes explain ${name} "${pattern}"`);
   console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
 }
@@ -348,7 +371,10 @@ function buildRouteDetailsPayload(name: string, pattern: string) {
   return {
     instance: name,
     pattern,
-    route,
+    route: {
+      ...route,
+      tags: listRouteTags(route.id),
+    },
   };
 }
 
@@ -515,8 +541,11 @@ export class InstancesCommands {
   // list
   // --------------------------------------------------------------------------
   @Command({ name: "list", description: "List all instances" })
-  async list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    const instances = dbListInstances();
+  async list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical instance tag" }) tagSlug?: string,
+  ) {
+    const instances = filterItemsByCanonicalTag(dbListInstances(), "instance", tagSlug, (inst) => inst.name);
     const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
     // Try to enrich with omni status
@@ -532,9 +561,11 @@ export class InstancesCommands {
     }
 
     const payload = {
+      filter: { tagSlug: tagSlug?.trim() || null },
       total: instances.length,
       instances: instances.map((inst) => ({
         ...inst,
+        tags: listInstanceTags(inst.name),
         raviStatus: inst.enabled === false ? "disabled" : "enabled",
         live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
       })),
@@ -544,7 +575,7 @@ export class InstancesCommands {
     if (asJson) {
       printJson(payload);
     } else if (instances.length === 0) {
-      console.log("No registered instances configured.");
+      console.log(tagSlug ? `No registered instances tagged "${tagSlug}".` : "No registered instances configured.");
       if (ignoredOmniInstanceIds.length > 0) {
         console.log("\nIgnored unknown omni instanceIds:\n");
         for (const instanceId of ignoredOmniInstanceIds) {
@@ -609,6 +640,7 @@ export class InstancesCommands {
     const payload = {
       instance: {
         ...inst,
+        tags: listInstanceTags(inst.name),
         raviStatus: inst.enabled === false ? "disabled" : "enabled",
       },
       routes,
@@ -625,6 +657,12 @@ export class InstancesCommands {
       printInspectionField("Agent", inst.agent ?? "(default)", CONFIG_DB_META);
       printInspectionField("DM Policy", inst.dmPolicy, CONFIG_DB_META);
       printInspectionField("Group Policy", inst.groupPolicy, CONFIG_DB_META);
+      const instanceTags = listInstanceTags(inst.name);
+      printInspectionField(
+        "Tags",
+        instanceTags.length > 0 ? instanceTags.map((tag) => tag.tagSlug).join(", ") : "-",
+        CONFIG_DB_META,
+      );
       if (inst.dmScope) printInspectionField("DM Scope", inst.dmScope, CONFIG_DB_META);
       if (inst.defaults && Object.keys(inst.defaults).length > 0) {
         printInspectionField("Defaults", JSON.stringify(inst.defaults), CONFIG_DB_META);
@@ -1306,12 +1344,13 @@ export class RoutesCommands {
   list(
     @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical route tag" }) tagSlug?: string,
   ) {
-    const payload = buildRouteListPayload(name);
+    const payload = buildRouteListPayload(name, tagSlug);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name);
+      printRouteList(name, tagSlug);
     }
     return payload;
   }
@@ -1366,12 +1405,13 @@ export class InstancesRoutesCommands {
   list(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical route tag" }) tagSlug?: string,
   ) {
-    const payload = buildRouteListPayload(name);
+    const payload = buildRouteListPayload(name, tagSlug);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name);
+      printRouteList(name, tagSlug);
     }
     return payload;
   }

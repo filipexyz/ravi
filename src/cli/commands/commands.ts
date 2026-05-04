@@ -11,6 +11,7 @@ import {
   type RaviCommandRecord,
 } from "../../commands/index.js";
 import type { AgentConfig } from "../../router/types.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -93,17 +94,26 @@ export class RaviCommandsCommands {
   list(
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical command tag" }) tagSlug?: string,
   ) {
     const agent = resolveAgent(agentId);
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
+    const tagFilter = tagSlug?.trim() || null;
+    const commands = filterItemsByCanonicalTag(
+      registry.commands,
+      "command",
+      tagFilter ?? undefined,
+      (command) => command.id,
+    );
     const payload = {
-      total: registry.commands.length,
+      total: commands.length,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       agent: { id: agent.id, cwd: agent.cwd },
       locations: {
         agent: registry.agentCommandsDir ?? null,
         global: registry.globalCommandsDir,
       },
-      commands: registry.commands.map((command) => serializeCommand(command)),
+      commands: commands.map((command) => serializeCommand(command)),
       issues: registry.issues.map(serializeIssue),
     };
 
@@ -111,12 +121,12 @@ export class RaviCommandsCommands {
       printJson(payload);
       return payload;
     }
-    if (registry.commands.length === 0) {
+    if (commands.length === 0) {
       console.log("No Ravi commands found.");
       return payload;
     }
-    console.log(`Ravi commands (${registry.commands.length}):`);
-    for (const command of registry.commands) {
+    console.log(`Ravi commands (${commands.length}):`);
+    for (const command of commands) {
       printCommandSummary(command);
     }
     if (registry.issues.length > 0) {

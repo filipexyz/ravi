@@ -11,6 +11,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));

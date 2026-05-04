@@ -3,7 +3,10 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 afterAll(() => mock.restore());
 
 const actualCliContextModule = await import("../context.js");
+const actualTagsModule = await import("../../tags/index.js");
 const createCalls: Array<Record<string, unknown>> = [];
+const listCalls: Array<Record<string, unknown>> = [];
+const tagAttachCalls: Array<Record<string, unknown>> = [];
 
 const runtimeContext = {
   contextId: "ctx_123",
@@ -52,11 +55,25 @@ mock.module("../../insights/index.js", () => ({
       comments: [],
     };
   },
-  dbListInsights: () => [],
+  dbListInsights: (query: Record<string, unknown>) => {
+    listCalls.push(query);
+    return [];
+  },
   dbGetInsight: () => null,
   dbSearchInsights: () => [],
   dbUpsertInsightLink: () => ({}),
   dbAddInsightComment: () => ({}),
+}));
+
+mock.module("../../tags/index.js", () => ({
+  ...actualTagsModule,
+  attachTagSlugsToAsset: (input: { tags: string[] }) => {
+    tagAttachCalls.push(input as unknown as Record<string, unknown>);
+    return input.tags.map((tag) => ({ tagSlug: tag.trim().toLowerCase() }));
+  },
+  canonicalAssetIdsForTag: (assetType: string, tag?: string) =>
+    assetType === "insight" && tag?.trim() ? ["ins-123"] : undefined,
+  canonicalTagSlugsForAsset: () => ["needs.review"],
 }));
 
 const { InsightCommands } = await import("./insights.js");
@@ -64,6 +81,8 @@ const { InsightCommands } = await import("./insights.js");
 describe("InsightCommands create", () => {
   beforeEach(() => {
     createCalls.length = 0;
+    listCalls.length = 0;
+    tagAttachCalls.length = 0;
   });
 
   it("captures runtime context for author/origin and auto-links the current session and agent", () => {
@@ -102,5 +121,55 @@ describe("InsightCommands create", () => {
         expect.objectContaining({ targetType: "agent", targetId: "dev" }),
       ]),
     );
+  });
+
+  it("attaches canonical tags when creating insights", () => {
+    new InsightCommands().create(
+      "Tag the operational learning for later filtering.",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      ["needs.review,ops.memory"],
+    );
+
+    expect(tagAttachCalls[0]).toMatchObject({
+      assetType: "insight",
+      assetId: "ins-123",
+      tags: ["needs.review", "ops.memory"],
+      source: "insights.cli",
+      createdBy: "task-8a0dc2ed-work",
+    });
+  });
+
+  it("filters insights through canonical tag asset ids", () => {
+    new InsightCommands().list(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "needs.review",
+      undefined,
+      "10",
+      true,
+    );
+
+    expect(listCalls[0]).toMatchObject({
+      insightIds: ["ins-123"],
+      limit: 10,
+    });
   });
 });

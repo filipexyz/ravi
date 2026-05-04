@@ -32,6 +32,9 @@ import {
 } from "../../runtime/agent-instructions.js";
 import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
 import type { AgentConfig } from "../../router/types.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../../tags/service.js";
+import type { TagBinding } from "../../tags/types.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -74,6 +77,7 @@ interface DebugSessionSummary {
   totalTokens?: number;
   contextTokens?: number;
   compactionCount?: number;
+  tags: TagBinding[];
   createdAt: number;
   updatedAt: number;
 }
@@ -89,10 +93,34 @@ interface AgentInstructionSyncSummary {
 type AgentJsonSummary = AgentConfig & {
   isDefault: boolean;
   effectiveProvider: string;
+  tags: TagBinding[];
 };
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function formatTagSlugs(tags: TagBinding[]): string {
+  return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
+}
+
+function listAgentTags(agentId: string): TagBinding[] {
+  return searchTagBindingsForSelector({ selector: { agent: agentId } }).bindings;
+}
+
+function listSessionTagsForSummary(session: { sessionKey: string; name?: string | null }): TagBinding[] {
+  const ids = [session.name, session.sessionKey].filter((value): value is string => Boolean(value?.trim()));
+  const seen = new Set<string>();
+  const tags: TagBinding[] = [];
+  for (const id of ids) {
+    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+      const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tags.push(binding);
+    }
+  }
+  return tags;
 }
 
 function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSummary {
@@ -100,6 +128,7 @@ function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSumm
     ...agent,
     isDefault: agent.id === defaultAgent,
     effectiveProvider: agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID,
+    tags: listAgentTags(agent.id),
   };
 }
 
@@ -150,6 +179,7 @@ function buildDebugSessionSummary(session: {
     ...(session.compactionCount !== undefined && session.compactionCount !== null
       ? { compactionCount: session.compactionCount }
       : {}),
+    tags: listSessionTagsForSummary(session),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
   };
@@ -205,14 +235,26 @@ function parseTranscriptEntries(raw: string): { parsedEntries: Record<string, un
 })
 export class AgentsCommands {
   @Command({ name: "list", description: "List all agents" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical tag slug" }) tagSlug?: string,
+  ) {
     const ctx = getScopeContext();
-    const agents = filterVisibleAgents(ctx, getAllAgents());
+    const agents = filterItemsByCanonicalTag(
+      filterVisibleAgents(ctx, getAllAgents()),
+      "agent",
+      tagSlug,
+      (agent) => agent.id,
+    );
     const config = loadRouterConfig();
+    const agentRows = agents.map((agent) => buildAgentJson(agent, config.defaultAgent));
     const payload = {
       total: agents.length,
       defaultAgent: config.defaultAgent,
-      agents: agents.map((agent) => buildAgentJson(agent, config.defaultAgent)),
+      filters: {
+        tag: tagSlug?.trim() || null,
+      },
+      agents: agentRows,
     };
 
     if (asJson) {
@@ -222,15 +264,15 @@ export class AgentsCommands {
       console.log("\nCreate an agent: ravi agents create <id> <cwd>");
     } else {
       console.log("\nAgents:\n");
-      console.log("  ID              CWD");
-      console.log("  --------------  ---------------------------");
+      console.log("  ID              CWD                          TAGS");
+      console.log("  --------------  ---------------------------  ---------------------------");
 
-      for (const agent of agents) {
+      for (const agent of agentRows) {
         const isDefault = agent.id === config.defaultAgent;
         const id = (agent.id + (isDefault ? " *" : "")).padEnd(14);
-        const cwd = agent.cwd;
+        const cwd = agent.cwd.padEnd(27);
 
-        console.log(`  ${id}  ${cwd}`);
+        console.log(`  ${id}  ${cwd}  ${formatTagSlugs(agent.tags)}`);
       }
 
       console.log(`\n  Total: ${agents.length} (* = default)`);
@@ -275,6 +317,7 @@ export class AgentsCommands {
       console.log(`  Matrix:        ${agent.matrixAccount || "-"}`);
 
       console.log(`  Spec Mode:     ${agent.specMode ? "enabled" : "disabled"}`);
+      console.log(`  Tags:          ${formatTagSlugs(payload.agent.tags)}`);
       console.log(`  Permissions:   ravi permissions list --subject agent:${agent.id}`);
 
       if (agent.remote) {

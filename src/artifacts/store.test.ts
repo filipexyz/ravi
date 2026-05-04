@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
 import {
   appendArtifactEvent,
   attachArtifact,
@@ -51,7 +52,20 @@ describe("artifact store", () => {
 
     const listed = listArtifacts({ session: "dev", tag: "image" });
     expect(listed.map((item) => item.id)).toEqual([artifact.id]);
-  });
+
+    const mirroredBindings = dbFindTagBindings({ assetType: "artifact", assetId: artifact.id });
+    expect(mirroredBindings.map((binding) => binding.tagSlug).sort()).toEqual(["generated", "image"]);
+    expect(mirroredBindings.map((binding) => binding.source)).toEqual(["artifacts.tags_json", "artifacts.tags_json"]);
+
+    attachTagSlugsToAsset({
+      assetType: "artifact",
+      assetId: artifact.id,
+      tags: ["evidence"],
+      source: "test",
+      createdBy: "test",
+    });
+    expect(listArtifacts({ tag: "evidence" }).map((item) => item.id)).toEqual([artifact.id]);
+  }, 15_000);
 
   it("edits metadata and attaches artifacts to arbitrary targets", () => {
     const artifact = createArtifact({
@@ -72,6 +86,9 @@ describe("artifact store", () => {
 
     const retagged = updateArtifact(artifact.id, { tags: ["review"] });
     expect(retagged.tags).toEqual(["review"]);
+    expect(
+      dbFindTagBindings({ assetType: "artifact", assetId: artifact.id }).map((binding) => binding.tagSlug),
+    ).toEqual(["review"]);
 
     const link = attachArtifact(artifact.id, "task", "task-123", "evidence", { required: true });
     expect(link).toMatchObject({ targetType: "task", targetId: "task-123", relation: "evidence" });

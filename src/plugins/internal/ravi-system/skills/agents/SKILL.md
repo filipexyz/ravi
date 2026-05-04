@@ -35,7 +35,7 @@ Providers built-in atuais:
 | Provider | Uso esperado | Modelo |
 |----------|--------------|--------|
 | `claude` | Runtime default e mais completo para agents com hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
-| `codex` | Runtime por subprocess/RPC com dynamic tools do Ravi e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
+| `codex` | Runtime por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
 | `pi` | Runtime por Pi coding agent em RPC, bom para agentes rápidos/dev e providers externos. | Use `provider/model`, ex: `kimi-coding/kimi-for-coding` ou `openai/gpt-4.1-mini`. |
 
 Comandos comuns:

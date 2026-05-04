@@ -164,6 +164,29 @@ describe("Observation Plane", () => {
     });
   });
 
+  it("allows ordinary tags as observer rule selectors", () => {
+    const tag = dbCreateTagDefinition({
+      slug: "ordinary-watch",
+      label: "Ordinary Watch",
+    });
+
+    expect(
+      dbUpsertObserverRule({
+        id: "ordinary-watch-rule",
+        scope: "tag",
+        tagTargetType: "session",
+        tagSlug: tag.slug,
+        observerAgentId: "observer",
+        observerRole: "ordinary-watch",
+        observerMode: "summarize",
+      }),
+    ).toMatchObject({
+      scope: "tag",
+      tagSlug: "ordinary-watch",
+      observerRole: "ordinary-watch",
+    });
+  });
+
   it("preserves disabled observer rules across ordinary upserts", () => {
     const disabled = dbUpsertObserverRule({
       id: "disabled-quality",

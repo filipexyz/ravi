@@ -52,6 +52,11 @@ import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permis
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
 const CONTACT_DB_META = { source: "contact-db", freshness: "persisted" } as const;
+const CONTACT_TAGS_META = {
+  source: "contact-db",
+  freshness: "persisted",
+  via: "tag-bindings+contacts_v2",
+} as const;
 const ROUTE_RESOLVER_META = { source: "resolver", freshness: "derived-now", via: "route-lookup" } as const;
 const SESSION_LOOKUP_META = { source: "session-db", freshness: "derived-now", via: "identity-lookup" } as const;
 
@@ -720,7 +725,7 @@ export class ContactsCommands {
     printInspectionField("Agent", getRouteAgent(contact) || "-", ROUTE_RESOLVER_META, { labelWidth: 15 });
     printInspectionField("Session", getSessionName(contact) || "-", SESSION_LOOKUP_META, { labelWidth: 15 });
     printInspectionField("Mode", contact.reply_mode || "auto", CONTACT_DB_META, { labelWidth: 15 });
-    printInspectionField("Tags", contact.tags.length > 0 ? contact.tags.join(", ") : "-", CONTACT_DB_META, {
+    printInspectionField("Tags", contact.tags.length > 0 ? contact.tags.join(", ") : "-", CONTACT_TAGS_META, {
       labelWidth: 15,
     });
     printInspectionField(

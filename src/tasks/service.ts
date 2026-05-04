@@ -114,6 +114,9 @@ import type {
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
 import { dbGetSetting } from "../router/router-db.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../tags/service.js";
+import type { TagBinding } from "../tags/types.js";
 
 const TASK_EVENT_PREFIX = "ravi.task";
 const TASK_STATUSES = ["open", "dispatched", "in_progress", "blocked", "done", "failed"] as const;
@@ -207,6 +210,74 @@ function resolveDispatchTaskReportTarget(input: DispatchTaskInput): DispatchTask
       callerSessionName: input.assignedBySessionName,
     }),
   };
+}
+
+function normalizeCanonicalTagSlug(value: string): string {
+  const slug = value.trim().toLowerCase();
+  if (!slug) {
+    throw new Error("Tag slug is required.");
+  }
+  if (!/^[a-z0-9._:-]+$/.test(slug)) {
+    throw new Error(`Invalid tag slug: ${value}. Use [a-z0-9._:-].`);
+  }
+  return slug;
+}
+
+function normalizeTagSlugs(values?: string[]): string[] {
+  return [
+    ...new Set(
+      (values ?? [])
+        .flatMap((value) => value.split(","))
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map(normalizeCanonicalTagSlug),
+    ),
+  ];
+}
+
+function syncTaskCanonicalTags(task: TaskRecord, profile: ResolvedTaskProfile, input: CreateTaskInput): void {
+  const actor = input.createdBy ?? input.createdBySessionName ?? input.createdByAgentId ?? "task-runtime";
+  const profileTagSlugs = normalizeTagSlugs(profile.defaultTags);
+  if (profileTagSlugs.length > 0) {
+    const metadata = {
+      profileId: profile.id,
+      profileVersion: profile.version,
+      profileSource: profile.source,
+    };
+    attachTagSlugsToAsset({
+      assetType: "profile",
+      assetId: profile.id,
+      tags: profileTagSlugs,
+      source: "task_profile.defaultTags",
+      kind: "system",
+      definitionMetadata: { source: "task_profile.defaultTags" },
+      metadata,
+      createdBy: actor,
+    });
+    attachTagSlugsToAsset({
+      assetType: "task",
+      assetId: task.id,
+      tags: profileTagSlugs,
+      source: "task_profile.defaultTags",
+      kind: "system",
+      definitionMetadata: { source: "task_profile.defaultTags" },
+      metadata,
+      createdBy: actor,
+    });
+  }
+
+  const createTagSlugs = normalizeTagSlugs(input.tagSlugs);
+  if (createTagSlugs.length > 0) {
+    attachTagSlugsToAsset({
+      assetType: "task",
+      assetId: task.id,
+      tags: createTagSlugs,
+      source: "task.create",
+      kind: "user",
+      definitionMetadata: { source: "task.create" },
+      createdBy: actor,
+    });
+  }
 }
 export const TASK_STREAM_TOPIC_PATTERNS = ["ravi.task.>"] as const;
 export const TASK_STREAM_COMMAND_NAMES = [
@@ -444,6 +515,7 @@ const TaskCreateCommandArgsSchema = TaskStreamActorSchema.extend({
   reportToSessionName: z.string().trim().min(1).optional(),
   reportEvents: z.array(z.enum(TASK_REPORT_EVENTS)).min(1).optional(),
   parentTaskId: z.string().trim().min(1).optional(),
+  tagSlugs: z.array(z.string().trim().min(1)).optional(),
   createdByAgentId: z.string().trim().min(1).optional(),
   createdBySessionName: z.string().trim().min(1).optional(),
   agentId: z.string().trim().min(1).optional(),
@@ -1736,6 +1808,7 @@ export async function executeTaskStreamCommand(
         ...(args.reportToSessionName ? { reportToSessionName: args.reportToSessionName } : {}),
         ...(args.reportEvents ? { reportEvents: args.reportEvents } : {}),
         ...(args.parentTaskId ? { parentTaskId: args.parentTaskId } : {}),
+        ...(args.tagSlugs ? { tagSlugs: args.tagSlugs } : {}),
         ...(args.runtimeOverride ? { runtimeOverride: args.runtimeOverride } : {}),
         createdBy: args.createdBy ?? resolveTaskCommandActor(args.actor, options.actor),
         createdByAgentId: args.createdByAgentId,
@@ -2119,6 +2192,7 @@ export function createTask(input: CreateTaskInput): {
       task = eventResult.task;
       relatedEvents.push({ task: eventResult.task, event: eventResult.event });
     }
+    syncTaskCanonicalTags(task, resolvedProfile, resolvedInput);
     return { task, event: created.event, relatedEvents };
   } catch (error) {
     dbDeleteTask(created.task.id);
@@ -2134,6 +2208,7 @@ export function listTasks(options: ListTasksOptions = {}): TaskRecord[] {
 export function getTaskDetails(taskId: string): {
   task: TaskRecord | null;
   taskProfile: ResolvedTaskProfile | null;
+  tags: TagBinding[];
   project: ProjectTaskSurface | null;
   parentTask: TaskRecord | null;
   childTasks: TaskRecord[];
@@ -2151,6 +2226,7 @@ export function getTaskDetails(taskId: string): {
   return {
     task: surfacedTask?.task ?? null,
     taskProfile: surfacedTask?.profile ?? null,
+    tags: surfacedTask ? searchTagBindingsForSelector({ selector: { task: surfacedTask.task.id } }).bindings : [],
     project: surfacedTask ? getTaskProjectSurface(surfacedTask.task.id) : null,
     parentTask,
     childTasks: surfacedTask

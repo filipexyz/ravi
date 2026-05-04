@@ -31,6 +31,8 @@ import {
   dbReportTaskProgress,
   dbUnarchiveTask,
 } from "./task-db.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
+import { detachTagFromSelector, searchTagBindingsForSelector } from "../tags/service.js";
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -44,7 +46,16 @@ beforeEach(async () => {
 afterEach(async () => {
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
-    if (id) dbDeleteTask(id);
+    if (id) {
+      for (const binding of searchTagBindingsForSelector({ selector: { task: id } }).bindings) {
+        detachTagFromSelector({
+          slug: binding.tagSlug,
+          selector: { task: id },
+          actor: "task-db-test",
+        });
+      }
+      dbDeleteTask(id);
+    }
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
@@ -323,6 +334,16 @@ describe("task-db", () => {
         limit: 1,
       }).map((task) => task.id),
     ).toEqual([child.task.id]);
+
+    attachTagSlugsToAsset({
+      assetType: "task",
+      assetId: child.task.id,
+      tags: ["Ops.Team"],
+      source: "task-db.test",
+      createdBy: "test",
+    });
+    expect(dbListTasks({ tagSlug: "Ops.Team" }).map((task) => task.id)).toEqual([child.task.id]);
+    expect(dbListTasks({ tagSlug: "missing.tag" })).toEqual([]);
   });
 
   it("filters and paginates task lists by stable updated cursor", () => {

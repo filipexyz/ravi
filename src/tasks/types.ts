@@ -429,6 +429,7 @@ export interface CreateTaskInput {
   parentTaskId?: string;
   dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;
+  tagSlugs?: string[];
 }
 
 export interface DispatchTaskInput {
@@ -502,6 +503,7 @@ export interface ListTasksOptions {
   rootTaskId?: string;
   onlyRootTasks?: boolean;
   profileId?: string;
+  tagSlug?: string;
   query?: string;
   limit?: number;
   updatedSince?: number;

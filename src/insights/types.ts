@@ -97,6 +97,7 @@ export interface InsightListQuery {
   authorSessionName?: string;
   linkType?: InsightLinkTargetType;
   linkId?: string;
+  insightIds?: string[];
   text?: string;
   limit?: number;
 }

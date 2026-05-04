@@ -10,7 +10,6 @@ capabilities:
 tags:
   - tags
   - classification
-  - policy
   - runtime
 applies_to:
   - src/tags
@@ -35,9 +34,11 @@ normative: true
 
 Tags are Ravi's shared classification layer for operational assets.
 
-A tag can start as metadata, but once another subsystem references it as a
-selector, it becomes a policy input. That transition MUST be explicit,
-explainable, and auditable.
+Tags are inert labels. They do not carry behavior, roles, or policy state by
+themselves.
+
+When another subsystem references a tag as a selector, the stored consumer rule
+owns the behavior. That consumer MUST be explicit, explainable, and auditable.
 
 The goal is to let main, operators, agents, observers, automations, and CLIs ask
 questions such as:
@@ -144,7 +145,8 @@ Recommended namespace families:
 - `state.*` - current activity/state classification.
 - `tier.*` - operational importance.
 - `risk.*` - risk or sensitivity class.
-- `policy.*` - explicit policy marker.
+- `policy.*` - optional naming convention for labels often consumed by policy
+  rules; the slug prefix has no behavior by itself.
 - `task.*` - task-specific classification.
 - `project.*` - project-specific classification.
 - `contact.*` - CRM relationship classification.
@@ -219,8 +221,8 @@ External/local tags MAY be mirrored into the unified registry, but the mirror
 MUST preserve provenance so operators can tell whether the tag came from Ravi,
 frontmatter, a provider, or a migration.
 
-If a local tag influences Ravi behavior, it SHOULD be promoted or bridged to
-`tag_bindings` before becoming policy.
+If a local tag influences Ravi behavior, it SHOULD be mirrored or bridged to
+`tag_bindings` before an explicit consumer references it.
 
 ## Domain Responsibilities
 
@@ -237,6 +239,35 @@ Every domain that adopts tags MUST document:
 The tag registry owns storage and generic query behavior. Domains own their own
 semantics.
 
+## Target Registry
+
+Generic tag writes MUST go through a central target registry instead of
+duplicating resolution logic inside each CLI command.
+
+Each target registry descriptor MUST define:
+
+- canonical `asset_type`;
+- preferred CLI flag name;
+- how user input is normalized to canonical `asset_id`;
+- how target existence is validated for attach;
+- whether orphan lookup is allowed for search/detach cleanup.
+
+`attach` MUST require an existing target unless a future domain spec explicitly
+declares a virtual asset type.
+
+`search` and `detach` MAY resolve missing targets to raw canonical ids so stale
+bindings can be inspected and removed after the source asset was pruned.
+
+Adding a new asset type SHOULD require adding one descriptor and any optional
+domain-specific CLI alias. The generic CLI MUST also support a descriptor-driven
+selector:
+
+```bash
+ravi tags attach <slug> --target <asset-type>:<asset-id>
+ravi tags detach <slug> --target <asset-type>:<asset-id>
+ravi tags search --target <asset-type>:<asset-id>
+```
+
 ## CLI Surface
 
 The generic CLI SHOULD support:
@@ -248,6 +279,7 @@ ravi tags show <slug>
 ravi tags attach <slug> --<asset-type> <id>
 ravi tags detach <slug> --<asset-type> <id>
 ravi tags search [--tag <slug>] [--<asset-type> <id>]
+ravi tags search --target <asset-type>:<asset-id>
 ```
 
 The generic CLI MUST avoid unbounded noisy output by supporting filters and
@@ -280,7 +312,7 @@ At minimum, audit records SHOULD include:
 - timestamp;
 - reason when supplied.
 
-Policy consumers SHOULD include the matching tag in their own event payloads.
+Behavior consumers SHOULD include the matching tag in their own event payloads.
 
 ## Migration
 
@@ -299,7 +331,7 @@ Migration SHOULD happen domain by domain:
 ## Invariants
 
 - Tags MUST have one canonical internal registry.
-- Internal policy tags MUST be explainable before they affect behavior.
+- Tag-driven policy consumers MUST be explainable before they affect behavior.
 - Inheritance MUST be opt-in per consumer.
 - Tag slugs MUST be stable; labels/descriptions may change.
 - Tag bindings MUST be idempotent.

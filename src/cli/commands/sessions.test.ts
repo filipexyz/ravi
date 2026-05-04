@@ -206,6 +206,17 @@ mock.module("../../runtime/context-registry.js", () => ({
   revokeAgentRuntimeContextsForSession: () => [],
 }));
 
+mock.module("../../tags/helpers.js", () => ({
+  canonicalAssetIdsForTag: () => undefined,
+  filterItemsByCanonicalTag: <T>(items: T[]) => items,
+}));
+
+mock.module("../../tags/service.js", () => ({
+  searchTagBindingsForSelector: () => ({
+    bindings: [],
+  }),
+}));
+
 const { SessionCommands } = await import("./sessions.js");
 const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
 

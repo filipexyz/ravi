@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
+import { canonicalAssetIdsForTag, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { toDevinApiId, type DevinSession, type DevinSessionAttachment, type DevinSessionMessage } from "./client.js";
 
@@ -265,6 +266,26 @@ function rowToSession(row: DevinSessionRow): DevinSessionRecord {
   };
 }
 
+function syncDevinRemoteTagsToCanonical(devinId: string, tags: readonly string[]): void {
+  replaceMirroredTagSlugsForAsset({
+    assetType: "devin_session",
+    assetId: devinId,
+    tags,
+    source: "devin.remote_tags",
+    createdBy: "devin.store",
+    metadata: {
+      mirrored: true,
+      external: true,
+      provider: "devin",
+    },
+    definitionMetadata: {
+      source: "devin.remote_tags",
+      external: true,
+      provider: "devin",
+    },
+  });
+}
+
 function rowToMessage(row: DevinMessageRow): StoredDevinMessage {
   return {
     devinId: row.devin_id,
@@ -376,6 +397,7 @@ export function upsertDevinSession(session: DevinSession, options: UpsertDevinSe
 
   const stored = getDevinSession(devinId);
   if (!stored) throw new Error(`Failed to store Devin session: ${devinId}`);
+  syncDevinRemoteTagsToCanonical(stored.devinId, stored.tags);
   return stored;
 }
 
@@ -396,8 +418,14 @@ export function listDevinSessions(options: ListDevinSessionRecordsOptions = {}):
     params.push(options.status.trim());
   }
   if (options.tag?.trim()) {
-    where.push("tags_json LIKE ?");
-    params.push(`%"${options.tag.trim()}"%`);
+    const canonicalIds = canonicalAssetIdsForTag("devin_session", options.tag) ?? [];
+    const tagPredicates = ["EXISTS (SELECT 1 FROM json_each(devin_sessions.tags_json) WHERE value = ?)"];
+    params.push(options.tag.trim());
+    if (canonicalIds.length > 0) {
+      tagPredicates.push(`devin_id IN (${canonicalIds.map(() => "?").join(", ")})`);
+      params.push(...canonicalIds);
+    }
+    where.push(`(${tagPredicates.join(" OR ")})`);
   }
   const limit = Math.max(1, Math.min(500, options.limit ?? 50));
   const rows = getDevinDb()

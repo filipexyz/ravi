@@ -8,6 +8,7 @@ import {
   dbListInsights,
   dbSearchInsights,
 } from "../../insights/index.js";
+import { attachTagSlugsToAsset, canonicalAssetIdsForTag, canonicalTagSlugsForAsset } from "../../tags/index.js";
 import { buildOverlayInsightsPayload } from "../../whatsapp-overlay/insights.js";
 import {
   INSIGHT_CONFIDENCE,
@@ -85,6 +86,15 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function parseStringList(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .flatMap((item) => item.split(","))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 @Group({
   name: "insights",
   description: "Operational insights with explicit lineage",
@@ -113,6 +123,8 @@ export class InsightCommands {
     @Option({ flags: "--auto-context", description: "Auto-link the current runtime session and agent when present" })
     autoContext?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <tag...>", description: "Canonical tags; can be repeated or comma-separated" })
+    tags?: string[],
   ) {
     const author = resolveRuntimeActor();
     const ctx = getContext();
@@ -168,12 +180,20 @@ export class InsightCommands {
           author,
         })
       : undefined;
+    const tagBindings = attachTagSlugsToAsset({
+      assetType: "insight",
+      assetId: created.id,
+      tags: parseStringList(tags),
+      source: "insights.cli",
+      createdBy: author.name,
+    });
     const insight = createdComment ? (dbGetInsight(created.id) ?? created) : created;
 
     const payload = {
       success: true as const,
       insight,
       ...(createdComment ? { comment: createdComment } : {}),
+      tags: tagBindings.map((binding) => binding.tagSlug),
     };
 
     if (asJson) {
@@ -197,6 +217,7 @@ export class InsightCommands {
     @Option({ flags: "--session <name>", description: "Filter by linked session" }) sessionName?: string,
     @Option({ flags: "--agent <id>", description: "Filter by linked agent" }) agentId?: string,
     @Option({ flags: "--profile <id>", description: "Filter by linked profile" }) profileId?: string,
+    @Option({ flags: "--tag <tag>", description: "Filter by canonical tag" }) tag?: string,
     @Option({ flags: "--query <text>", description: "Free-text search over summaries/details/comments" })
     query?: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
@@ -220,18 +241,20 @@ export class InsightCommands {
     }
 
     const linkFilter = resolveLinkFilter({ taskId, sessionName, agentId, profileId });
+    const insightIds = canonicalAssetIdsForTag("insight", tag);
     const queryInput: InsightListQuery = {
       ...(requireInsightKind(kind) ? { kind: requireInsightKind(kind) } : {}),
       ...(requireConfidence(confidence) ? { confidence: requireConfidence(confidence) } : {}),
       ...(requireImportance(importance) ? { importance: requireImportance(importance) } : {}),
       ...(query?.trim() ? { text: query.trim() } : {}),
       ...(linkFilter.linkType && linkFilter.linkId ? linkFilter : {}),
+      ...(insightIds ? { insightIds } : {}),
       limit: parsedLimit,
     };
     const items = dbListInsights(queryInput);
     const payload = {
       count: items.length,
-      query: queryInput,
+      query: { ...queryInput, tag: tag?.trim() || undefined },
       insights: items,
     };
 
@@ -262,7 +285,8 @@ export class InsightCommands {
       fail(`Insight not found: ${id}`);
     }
 
-    const payload = { insight };
+    const tags = canonicalTagSlugsForAsset("insight", insight.id);
+    const payload = { insight, tags };
 
     if (asJson) {
       printJson(payload);
@@ -283,6 +307,9 @@ export class InsightCommands {
         for (const link of insight.links) {
           console.log(`  - ${link.targetType}: ${link.targetId}`);
         }
+      }
+      if (tags.length > 0) {
+        console.log(`\nTags: ${tags.join(", ")}`);
       }
       if (insight.comments.length > 0) {
         console.log("\nComments:");

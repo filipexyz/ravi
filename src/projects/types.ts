@@ -19,6 +19,7 @@ import type {
   WorkflowNodeRunMutationResult,
   WorkflowRunStatus,
 } from "../workflows/types.js";
+import type { TagBinding } from "../tags/types.js";
 
 export type ProjectStatus = "active" | "paused" | "blocked" | "done" | "archived";
 
@@ -57,6 +58,7 @@ export interface ProjectRecord {
 
 export interface ProjectSummary extends ProjectRecord {
   linkCount: number;
+  tags?: TagBinding[];
 }
 
 export interface ProjectWorkflowLinkSurface {
@@ -157,6 +159,7 @@ export interface ProjectResourceLink extends ProjectLink {
 
 export interface ProjectDetails {
   project: ProjectRecord;
+  tags: TagBinding[];
   links: ProjectLink[];
   linkedWorkflows: ProjectWorkflowLinkSurface[];
   workflowAggregate: ProjectWorkflowAggregate | null;
@@ -230,6 +233,7 @@ export interface UpsertProjectLinkInput {
 
 export interface ProjectListQuery {
   status?: ProjectStatus;
+  tagSlug?: string;
 }
 
 export interface ProjectLinkQuery {

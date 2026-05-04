@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it, mock } from "bun:test";
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));

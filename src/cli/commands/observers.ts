@@ -152,6 +152,18 @@ function printBinding(binding: ReturnType<typeof dbListObserverBindings>[number]
   console.log(`  Profile:  ${binding.observerProfileId ?? "default"}@${binding.observerProfileVersion ?? "current"}`);
   console.log(`  Rule:     ${binding.ruleId}`);
   console.log(`  Events:   ${binding.eventTypes.join(", ")}`);
+  if (binding.metadata?.observerPolicy) {
+    console.log(`  Policy:   ${JSON.stringify(binding.metadata.observerPolicy)}`);
+  }
+}
+
+function formatObserverSourceTag(tag: {
+  targetType: string;
+  slug: string;
+  assetId: string;
+  inherited: boolean;
+}): string {
+  return `${tag.targetType}:${tag.slug}@${tag.assetId}${tag.inherited ? " (inherited)" : " (direct)"}`;
 }
 
 function printRule(rule: ReturnType<typeof dbListObserverRules>[number]): void {
@@ -173,6 +185,11 @@ function printRule(rule: ReturnType<typeof dbListObserverRules>[number]): void {
     rule.tagSlug ? `tag=${rule.tagTargetType ?? "any"}:${rule.tagSlug}` : null,
   ].filter(Boolean);
   console.log(`  Match:    ${selectors.join(" | ") || "(all matching scope)"}`);
+  if (rule.scope === "tag" && rule.tagSlug) {
+    console.log(
+      `  Policy:   tag selector ${rule.tagTargetType ?? "any"}:${rule.tagSlug} (${rule.tagInherited ? "direct or inherited" : "direct only"})`,
+    );
+  }
 }
 
 function serializeProfile(profile: ResolvedObserverProfile): Record<string, unknown> {
@@ -557,6 +574,7 @@ export class ObserverRuleCommands {
       rules: explanation.rules.map((item) => ({
         matched: item.matched,
         reason: item.reason,
+        policyMatch: item.policyMatch ?? null,
         rule: serializeRule(item.rule),
       })),
       bindings: explanation.bindings.map(serializeBinding),
@@ -566,10 +584,11 @@ export class ObserverRuleCommands {
     } else {
       console.log(`\nObserver rule explain: ${explanation.source.sessionName}\n`);
       console.log(`Source agent: ${explanation.source.agentId}`);
-      console.log(`Tags: ${explanation.source.tags.map((tag) => `${tag.targetType}:${tag.slug}`).join(", ") || "-"}`);
+      console.log(`Tags: ${explanation.source.tags.map(formatObserverSourceTag).join(", ") || "-"}`);
       console.log("\nRules:");
       for (const item of explanation.rules) {
-        console.log(`  ${item.matched ? "✓" : "✗"} ${item.rule.id} :: ${item.reason}`);
+        const policy = item.policyMatch ? ` :: policy=${formatObserverSourceTag(item.policyMatch.matchedTag)}` : "";
+        console.log(`  ${item.matched ? "✓" : "✗"} ${item.rule.id} :: ${item.reason}${policy}`);
       }
       console.log(`\nBindings: ${explanation.bindings.length}`);
     }
@@ -584,9 +603,15 @@ export class ObserverRuleCommands {
 })
 export class ObserverProfileCommands {
   @Command({ name: "list", description: "List observer profiles" })
-  list() {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
     const profiles = listObserverProfiles();
-    if (profiles.length === 0) {
+    const payload = { total: profiles.length, profiles: profiles.map(serializeProfile) };
+    if (asJson) {
+      printJson(payload);
+    } else if (profiles.length === 0) {
       console.log("\nNo observer profiles found.\n");
     } else {
       console.log(`\nObserver profiles (${profiles.length}):\n`);
@@ -595,17 +620,26 @@ export class ObserverProfileCommands {
         console.log("");
       }
     }
-    return { total: profiles.length, profiles: profiles.map(serializeProfile) };
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one observer profile" })
-  show(@Arg("profileId", { description: "Observer profile id" }) profileId: string) {
+  show(
+    @Arg("profileId", { description: "Observer profile id" }) profileId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
     const profile = listObserverProfiles().find((item) => item.id === profileId.trim());
     if (!profile) fail(`Observer profile not found: ${profileId}`);
-    printProfile(profile);
-    console.log("");
-    console.log(profile.body.trim() || "(no profile body)");
-    return { profile: serializeProfile(profile) };
+    const payload = { profile: serializeProfile(profile), body: profile.body };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      printProfile(profile);
+      console.log("");
+      console.log(profile.body.trim() || "(no profile body)");
+    }
+    return payload;
   }
 
   @Command({ name: "preview", description: "Render an observer profile preview" })
@@ -613,21 +647,34 @@ export class ObserverProfileCommands {
     @Arg("profileId", { description: "Observer profile id" }) profileId: string,
     @Option({ flags: "--event <type>", description: "Observation event type to preview" })
     eventType?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const result = previewObserverProfile(profileId, eventType?.trim() || "message.user");
-    console.log(result.prompt);
-    return {
+    const payload = {
       profile: serializeProfile(result.profile),
       eventType: result.eventType,
       eventMarkdown: result.eventMarkdown,
       prompt: result.prompt,
     };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(result.prompt);
+    }
+    return payload;
   }
 
   @Command({ name: "validate", description: "Validate observer profiles" })
-  validate(@Arg("profileId", { required: false, description: "Optional observer profile id" }) profileId?: string) {
+  validate(
+    @Arg("profileId", { required: false, description: "Optional observer profile id" }) profileId?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
     const result = validateObserverProfiles(profileId);
-    if (result.ok) {
+    if (asJson) {
+      printJson(result);
+    } else if (result.ok) {
       console.log(`Observer profiles OK (${result.profiles.length}).`);
     } else {
       console.log("\nObserver profile errors:\n");
@@ -646,6 +693,8 @@ export class ObserverProfileCommands {
     source?: string,
     @Option({ flags: "--overwrite", description: "Overwrite existing profile files" })
     overwrite?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
   ) {
     const sourceKind = source?.trim() === "user" ? "user" : "workspace";
     const result = initObserverProfile({
@@ -653,7 +702,11 @@ export class ObserverProfileCommands {
       sourceKind,
       overwrite: overwrite === true,
     });
-    console.log(`Initialized observer profile ${profileId} at ${result.profileDir}`);
+    if (asJson) {
+      printJson(result);
+    } else {
+      console.log(`Initialized observer profile ${profileId} at ${result.profileDir}`);
+    }
     return result;
   }
 }

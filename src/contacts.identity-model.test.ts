@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import {
+  addContactTag,
   addContactIdentity,
   closeContacts,
   deleteContact,
+  findContactsByTag,
   getContact,
   getContactDetails,
   getAgentPlatformIdentity,
@@ -65,6 +67,41 @@ describe("contacts identity graph schema", () => {
       { channel: "whatsapp", normalized_platform_user_id: "lid:63295117615153" },
     ]);
     expect(linkEvents).toBeGreaterThanOrEqual(2);
+  });
+
+  it("mirrors contact tags into canonical tag bindings while keeping legacy reads working", () => {
+    upsertContact("5511999911111", "Tagged", "allowed", "manual");
+    const contact = getContact("5511999911111");
+    expect(contact).not.toBeNull();
+
+    addContactTag(contact!.id, "VIP Contact");
+
+    const updated = getContact(contact!.id);
+    expect(updated?.tags).toContain("vip-contact");
+    expect(getContactDetails(contact!.id)?.policy?.tags).toContain("vip-contact");
+    expect(findContactsByTag("VIP Contact").map((item) => item.id)).toContain(contact!.id);
+
+    const db = new Database(join(stateDir!, "ravi.db"));
+    const binding = db
+      .prepare(
+        `
+        SELECT t.slug, b.asset_type, b.asset_id, b.metadata_json
+        FROM tag_bindings b
+        JOIN tag_definitions t ON t.id = b.tag_id
+        WHERE t.slug = 'vip-contact' AND b.asset_type = 'contact' AND b.asset_id = ?
+      `,
+      )
+      .get(contact!.id) as { slug: string; asset_type: string; asset_id: string; metadata_json: string } | null;
+    db.close();
+
+    expect(binding).toMatchObject({
+      slug: "vip-contact",
+      asset_type: "contact",
+      asset_id: contact!.id,
+    });
+    expect(JSON.parse(binding!.metadata_json)).toMatchObject({
+      mirroredFrom: "contacts_v2.tags",
+    });
   });
 
   it("keeps legacy group contacts out of canonical contacts", () => {
