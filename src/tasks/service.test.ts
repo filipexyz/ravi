@@ -1752,6 +1752,34 @@ describe("task substrate contract", () => {
     expect(session?.expiresAt).toBeLessThanOrEqual(Date.now() + 2 * 60 * 60 * 1000 + 1000);
   });
 
+  it("uses short default retention for knowledge-engineer task work sessions", async () => {
+    const agentId = "knowledge-engineer-sonnet";
+    const sessionName = "task-session-knowledge-engineer-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-knowledge-engineer-agent" });
+
+    const created = createTask({
+      title: "Knowledge engineer retention",
+      instructions: "Dispatch should attach a short retention TTL to bursty research sessions.",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const beforeDispatch = Date.now();
+    await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+
+    const session = resolveSession(sessionName);
+    expect(session?.ephemeral).toBe(true);
+    expect(session?.expiresAt).toBeGreaterThanOrEqual(beforeDispatch + 5 * 60 * 1000);
+    expect(session?.expiresAt).toBeLessThanOrEqual(Date.now() + 5 * 60 * 1000 + 1000);
+  });
+
   it("fails closed when a runtime-only task dir contains an unexpected legacy TASK.md", async () => {
     const stateDir = mkdtempSync(join(tmpdir(), "ravi-task-runtime-dir-legacy-"));
     const workspaceDir = mkdtempSync(join(tmpdir(), "ravi-task-runtime-legacy-workspace-"));

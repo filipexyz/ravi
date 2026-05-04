@@ -8,6 +8,8 @@ import {
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 function createDispatcher() {
   return new RuntimeSessionDispatcher({
@@ -277,5 +279,47 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         "after_tool",
       ),
     ).toBe(false);
+  });
+});
+
+describe("RuntimeSessionDispatcher abort resolution", () => {
+  it("aborts a live runtime session by session key when the pool is keyed by session name", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-abort-");
+    try {
+      getOrCreateSession("agent:dev:test:abort-key", "dev", stateDir, { name: "abort-by-name" });
+      const dispatcher = createDispatcher();
+      let interrupted = false;
+      dispatcher.streamingSessions.set("abort-by-name", {
+        agentId: "dev",
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {
+            interrupted = true;
+          },
+        },
+        abortController: new AbortController(),
+        pendingMessages: [],
+        currentModel: "test-model",
+        toolRunning: false,
+        lastActivity: Date.now(),
+        done: false,
+        starting: false,
+        compacting: false,
+        interrupted: false,
+        turnActive: false,
+        pushMessage: null,
+        pendingWake: false,
+        onTurnComplete: null,
+        currentToolSafety: null,
+        pendingAbort: false,
+      } as RuntimeHostStreamingSession);
+
+      expect(dispatcher.abortSession({ sessionKey: "agent:dev:test:abort-key" }, { reason: "test_abort" })).toBe(true);
+      expect(dispatcher.streamingSessions.has("abort-by-name")).toBe(false);
+      expect(interrupted).toBe(true);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });

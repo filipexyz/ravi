@@ -2,7 +2,7 @@ import { configStore } from "../config-store.js";
 import { saveMessage } from "../db.js";
 import { chooseMoreUrgentBarrier, describeDeliveryBarrier, type DeliveryBarrier } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
-import { getSessionByName } from "../router/index.js";
+import { getSession, getSessionByName } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
@@ -34,6 +34,12 @@ import {
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
+import {
+  buildRuntimeSessionPoolSnapshot,
+  resolveRuntimeStreamingSession,
+  type RuntimeSessionPoolSnapshot,
+  type RuntimeStreamingSessionIdentity,
+} from "./session-pool.js";
 
 const log = logger.child("runtime:session-dispatcher");
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -69,6 +75,22 @@ export class RuntimeSessionDispatcher {
   readonly startingSessions = new Set<string>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
+
+  getRuntimeSessionPoolSnapshot(): RuntimeSessionPoolSnapshot {
+    return buildRuntimeSessionPoolSnapshot(this.streamingSessions, {
+      limit: this.options.maxConcurrentSessions,
+      pendingStarts: this.pendingStarts.length,
+    });
+  }
+
+  canAcceptRuntimePrompt(sessionName?: string): boolean {
+    if (sessionName) {
+      const streaming = this.streamingSessions.get(sessionName);
+      if (streaming && !streaming.done) return true;
+      if (this.startingSessions.has(sessionName)) return true;
+    }
+    return this.streamingSessions.size < this.options.maxConcurrentSessions;
+  }
 
   shutdownAll(): void {
     if (this.pendingStarts.length > 0) {
@@ -113,18 +135,37 @@ export class RuntimeSessionDispatcher {
     this.streamingSessions.clear();
   }
 
-  abortSession(sessionName: string, provenance: RuntimeAbortProvenance = {}): boolean {
+  abortSession(
+    sessionNameOrIdentity: string | RuntimeStreamingSessionIdentity,
+    provenance: RuntimeAbortProvenance = {},
+  ): boolean {
     const abortReason = provenance.reason ?? "explicit_abort";
+    const identity =
+      typeof sessionNameOrIdentity === "string"
+        ? { sessionName: sessionNameOrIdentity }
+        : {
+            sessionName: sessionNameOrIdentity.sessionName ?? undefined,
+            sessionKey: sessionNameOrIdentity.sessionKey ?? undefined,
+          };
+    const requestedKey = identity.sessionName ?? identity.sessionKey ?? "(unknown)";
+    const resolved = resolveRuntimeStreamingSession(this.streamingSessions, identity);
     const allNames = [...this.streamingSessions.keys()];
     log.info("abortSession called", {
-      sessionName,
+      sessionName: identity.sessionName,
+      sessionKey: identity.sessionKey,
+      resolvedName: resolved?.name,
+      requestedKey,
       allNames,
-      found: this.streamingSessions.has(sessionName),
+      found: Boolean(resolved),
       provenance,
     });
-    const session = this.streamingSessions.get(sessionName);
-    if (!session) return false;
-    const sessionEntry = getSessionByName(sessionName);
+    if (!resolved) return false;
+
+    const sessionName = resolved.name;
+    const session = resolved.session;
+    const sessionEntry =
+      getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
+    const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
 
     if (session.toolRunning && session.currentToolSafety === "unsafe") {
       log.info("Deferring abort - unsafe tool running", {
@@ -135,7 +176,7 @@ export class RuntimeSessionDispatcher {
       session.internalAbortReason = `${abortReason}_deferred`;
       session.pendingAbort = true;
       recordRuntimeTraceEvent({
-        sessionKey: sessionEntry?.sessionKey ?? sessionName,
+        sessionKey,
         sessionName,
         agentId: session.agentId,
         runId: session.traceRunId,
@@ -162,9 +203,9 @@ export class RuntimeSessionDispatcher {
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
-    recordStreamingAbortTrace(sessionName, session, abortReason, sessionEntry?.sessionKey, provenance);
-    if (sessionEntry?.sessionKey) {
-      revokeAgentRuntimeContextsForSession(sessionEntry.sessionKey, {
+    recordStreamingAbortTrace(sessionName, session, abortReason, sessionKey, provenance);
+    if (sessionKey) {
+      revokeAgentRuntimeContextsForSession(sessionKey, {
         reason: abortReason,
       });
     }
@@ -260,6 +301,31 @@ export class RuntimeSessionDispatcher {
       return;
     }
     if (dbHasActiveTaskForSession(sessionName, first.taskBarrierTaskId)) {
+      return;
+    }
+
+    if (!this.streamingSessions.has(sessionName) && !this.canAcceptRuntimePrompt(sessionName)) {
+      const snapshot = this.getRuntimeSessionPoolSnapshot();
+      log.warn("Deferred after-task session start delayed by runtime session pool backpressure", {
+        sessionName,
+        queued: queued.length,
+        active: snapshot.active,
+        limit: snapshot.limit,
+        pendingStarts: snapshot.pendingStarts,
+      });
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.queued",
+          reason: "runtime_session_pool_saturated",
+          active: snapshot.active,
+          limit: snapshot.limit,
+          pendingStarts: snapshot.pendingStarts,
+          queued: queued.length,
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit deferred start backpressure event", { sessionName, error });
+        });
       return;
     }
 

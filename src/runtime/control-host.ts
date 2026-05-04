@@ -1,7 +1,7 @@
-import { getSession, getSessionByName } from "../router/index.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeControlRequest, RuntimeControlResult } from "./types.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
+import { resolveRuntimeStreamingSession } from "./session-pool.js";
 
 const log = logger.child("bot");
 
@@ -19,48 +19,7 @@ export function resolveRuntimeControlSession(
   sessionName?: string,
   sessionKey?: string,
 ): { name: string; session: RuntimeHostStreamingSession } | null {
-  if (sessionName) {
-    const direct = streamingSessions.get(sessionName);
-    if (direct) {
-      return { name: sessionName, session: direct };
-    }
-  }
-
-  if (sessionKey) {
-    const direct = streamingSessions.get(sessionKey);
-    if (direct) {
-      return { name: sessionKey, session: direct };
-    }
-
-    const stored = getSession(sessionKey);
-    if (stored?.name) {
-      const named = streamingSessions.get(stored.name);
-      if (named) {
-        return { name: stored.name, session: named };
-      }
-    }
-  }
-
-  if (sessionName) {
-    const stored = getSessionByName(sessionName) ?? getSession(sessionName);
-    if (stored?.sessionKey) {
-      const byKey = streamingSessions.get(stored.sessionKey);
-      if (byKey) {
-        return { name: stored.name ?? stored.sessionKey, session: byKey };
-      }
-    }
-  }
-
-  if (sessionKey) {
-    for (const [name, session] of streamingSessions) {
-      const stored = getSessionByName(name);
-      if (stored?.sessionKey === sessionKey) {
-        return { name, session };
-      }
-    }
-  }
-
-  return null;
+  return resolveRuntimeStreamingSession(streamingSessions, { sessionName, sessionKey });
 }
 
 export async function replyRuntimeControlError(

@@ -1,15 +1,8 @@
 import { getContext } from "../cli/context.js";
-import { parseDurationMs } from "../cron/schedule.js";
 import { nats } from "../nats.js";
 import { getAgent } from "../router/config.js";
 import { expandHome } from "../router/resolver.js";
-import {
-  findSessionByChatId,
-  getOrCreateSession,
-  getSessionByName,
-  resolveSession,
-  setSessionEphemeral,
-} from "../router/sessions.js";
+import { findSessionByChatId, getOrCreateSession, getSessionByName, resolveSession } from "../router/sessions.js";
 import { getProjectSurfaceByWorkflowRunId, type ProjectTaskSurface } from "../projects/index.js";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../utils/config.js";
@@ -113,10 +106,21 @@ import type {
   TaskWorktreeMode,
 } from "./types.js";
 import { TASK_REPORT_EVENTS } from "./types.js";
-import { dbGetSetting } from "../router/router-db.js";
 import { attachTagSlugsToAsset } from "../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TagBinding } from "../tags/types.js";
+import { applyTaskSessionTtlForAgent } from "./session-retention.js";
+export {
+  DEFAULT_KNOWLEDGE_ENGINEER_TASK_SESSION_TTL,
+  DEFAULT_TASK_SESSION_TTL,
+  KNOWLEDGE_ENGINEER_TASK_SESSION_TTL_SETTING,
+  TASK_SESSION_TTL_SETTING,
+  applyTaskSessionTtlForAgent,
+  isKnowledgeEngineerAgent,
+  isTaskRuntimeSessionName,
+  resolveTaskSessionTtlMs,
+  shouldRefreshTaskSessionTtlOnTurnComplete,
+} from "./session-retention.js";
 
 const TASK_EVENT_PREFIX = "ravi.task";
 const TASK_STATUSES = ["open", "dispatched", "in_progress", "blocked", "done", "failed"] as const;
@@ -127,33 +131,9 @@ const TASK_RECOVERY_STATUSES: TaskStatus[] = ["dispatched", "in_progress"];
 const TASK_RECOVERY_MAX_STALE_MS = 20 * 60 * 1000;
 const TASK_REPORT_EVENT_SET = new Set<string>(TASK_REPORT_EVENTS);
 const DEFAULT_TASK_REPORT_EVENTS = [...TASK_REPORT_EVENTS] satisfies TaskReportEvent[];
-export const TASK_SESSION_TTL_SETTING = "tasks.sessionTtl";
-export const DEFAULT_TASK_SESSION_TTL = "1d";
 const log = logger.child("tasks:service");
 
 export const TASK_STREAM_SCOPE = "tasks";
-
-function parseTaskSessionTtlSetting(value: string): number | null {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized || ["off", "false", "disabled", "none", "0"].includes(normalized)) return null;
-  return parseDurationMs(normalized);
-}
-
-export function resolveTaskSessionTtlMs(): number | null {
-  const configured = dbGetSetting(TASK_SESSION_TTL_SETTING)?.trim() ?? DEFAULT_TASK_SESSION_TTL;
-  return parseTaskSessionTtlSetting(configured);
-}
-
-function applyTaskSessionTtl(session: { sessionKey: string; name?: string }): void {
-  const ttlMs = resolveTaskSessionTtlMs();
-  if (ttlMs === null) return;
-  setSessionEphemeral(session.sessionKey, ttlMs);
-  log.debug("Applied task session TTL", {
-    sessionName: session.name ?? session.sessionKey,
-    ttlMs,
-    setting: TASK_SESSION_TTL_SETTING,
-  });
-}
 
 interface TaskReportTargetResolutionOptions {
   callerSessionName?: string | null;
@@ -1333,7 +1313,7 @@ export function resolveTaskSessionContext(
   const session = getOrCreateSession(sessionKey, resolvedAgent.id, sessionCwd, {
     name: existingSession?.name ?? sessionName,
   });
-  applyTaskSessionTtl(session);
+  applyTaskSessionTtlForAgent(session, resolvedAgent.id, { source: "task.session_context" });
 
   return {
     agentId: resolvedAgent.id,
@@ -1389,7 +1369,7 @@ function prepareTaskDispatchContext(
     const session = getOrCreateSession(existingSession?.sessionKey ?? input.sessionName, resolvedAgent.id, sessionCwd, {
       name: existingSession?.name ?? input.sessionName,
     });
-    applyTaskSessionTtl(session);
+    applyTaskSessionTtlForAgent(session, resolvedAgent.id, { source: "task.dispatch_context" });
     sessionName = session.name ?? sessionName;
   }
 

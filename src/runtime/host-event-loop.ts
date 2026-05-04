@@ -16,6 +16,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
+import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
@@ -1189,6 +1190,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
           promptTooLongReset: streaming._promptTooLong ?? false,
         });
+        if (
+          shouldRefreshTaskSessionTtlOnTurnComplete({
+            sessionName,
+            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+          })
+        ) {
+          applyTaskSessionTtlForAgent(session, agent.id, { source: "runtime.turn.complete" });
+        }
 
         // Auto-reset session when prompt is too long (compact failed)
         if (streaming._promptTooLong) {

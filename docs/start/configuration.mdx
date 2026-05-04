@@ -39,6 +39,7 @@ If neither source is available, the daemon starts without channel support (no Wh
 | Variable | Default | Description |
 | --- | --- | --- |
 | `NATS_URL` | `nats://127.0.0.1:4222` | NATS server URL. The daemon retries connection up to 30 times on startup (2s intervals) |
+| `RAVI_RUNTIME_SESSION_POOL_MAX` | `60` | Maximum number of live runtime sessions this daemon can keep active at once. Saturated pools queue cold starts and checkpoint wakes until a slot is released |
 
 ### AI Services (optional)
 

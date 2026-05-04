@@ -109,11 +109,17 @@ ravi settings get tasks.sessionTtl
 ravi settings set tasks.sessionTtl 1d
 ravi settings set tasks.sessionTtl 12h
 ravi settings set tasks.sessionTtl off
+ravi settings get tasks.sessionTtl.knowledgeEngineer
+ravi settings set tasks.sessionTtl.knowledgeEngineer 5m
 ```
 
 `off`, `false`, `disabled`, `none` ou `0` desativam o TTL automático para novas
 materializações/retomadas de sessão de task. Para continuar uma task cuja sessão
 foi apagada, despache/comente a task de novo para criar uma nova sessão.
+
+Sessões de task de agents `knowledge-engineer-*` usam `tasks.sessionTtl.knowledgeEngineer`
+e default `5m`, inclusive ao completar turnos em sessões `task-*-work`, para evitar acúmulo
+de sessões runtime de pesquisa em lote.
 
 ## Built-ins Atuais
 

@@ -6,10 +6,20 @@ import { buildTaskCheckpointReminderPrompt, emitTaskEvent } from "./service.js";
 
 const log = logger.child("tasks:checkpoint-runner");
 
+export interface TaskCheckpointRunnerOptions {
+  canPublishSessionPrompt?(sessionName: string): boolean;
+}
+
 export class TaskCheckpointRunner {
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private sweeping = false;
+
+  constructor(private options: TaskCheckpointRunnerOptions = {}) {}
+
+  configure(options: TaskCheckpointRunnerOptions): void {
+    this.options = options;
+  }
 
   async start(): Promise<void> {
     if (this.running) return;
@@ -57,6 +67,14 @@ export class TaskCheckpointRunner {
             continue;
           }
 
+          if (this.options.canPublishSessionPrompt && !this.options.canPublishSessionPrompt(assignment.sessionName)) {
+            log.warn("Task checkpoint reminder delayed by runtime session pool backpressure", {
+              taskId: task.id,
+              sessionName: assignment.sessionName,
+            });
+            continue;
+          }
+
           const missed = dbRegisterTaskCheckpointMiss(task.id, assignment.id, now);
           if (!missed) {
             continue;
@@ -93,15 +111,17 @@ export class TaskCheckpointRunner {
 
 let runner: TaskCheckpointRunner | null = null;
 
-export function getTaskCheckpointRunner(): TaskCheckpointRunner {
+export function getTaskCheckpointRunner(options?: TaskCheckpointRunnerOptions): TaskCheckpointRunner {
   if (!runner) {
-    runner = new TaskCheckpointRunner();
+    runner = new TaskCheckpointRunner(options);
+  } else if (options) {
+    runner.configure(options);
   }
   return runner;
 }
 
-export async function startTaskCheckpointRunner(): Promise<void> {
-  await getTaskCheckpointRunner().start();
+export async function startTaskCheckpointRunner(options?: TaskCheckpointRunnerOptions): Promise<void> {
+  await getTaskCheckpointRunner(options).start();
 }
 
 export async function stopTaskCheckpointRunner(): Promise<void> {

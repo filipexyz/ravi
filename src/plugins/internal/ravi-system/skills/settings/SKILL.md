@@ -43,6 +43,7 @@ ravi settings delete <key>
 | `defaultDmScope` | Escopo padrão de DMs | main, per-peer, per-channel-peer, per-account-channel-peer |
 | `defaultTimezone` | Fuso horário padrão | America/Sao_Paulo, etc |
 | `tasks.sessionTtl` | TTL padrão para sessões de trabalho de tasks | duração como 1d, 12h, ou off |
+| `tasks.sessionTtl.knowledgeEngineer` | TTL para sessões de task de `knowledge-engineer-*` | duração como 5m, 1h, ou off |
 
 ## ⚠️ Settings Depreciadas (use `ravi instances`)
 
@@ -75,6 +76,8 @@ Configurar retenção de sessões de tasks:
 ravi settings get tasks.sessionTtl
 ravi settings set tasks.sessionTtl 1d
 ravi settings set tasks.sessionTtl off
+ravi settings get tasks.sessionTtl.knowledgeEngineer
+ravi settings set tasks.sessionTtl.knowledgeEngineer 5m
 ```
 
 Configurar policy por instância (forma correta):
