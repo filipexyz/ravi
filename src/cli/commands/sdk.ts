@@ -7,6 +7,12 @@ import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { emitJson } from "../../sdk/openapi/index.js";
 import { emitAll, computeRegistryHash, compareSdkSource, type EmittedSdk } from "../../sdk/client-codegen/index.js";
+import {
+  emitAllSwift,
+  compareSwiftSdkSource,
+  type EmittedSwiftSdk,
+  type GeneratedSwiftSdkFile,
+} from "../../sdk/swift-codegen/index.js";
 
 function buildSpecJson(): string {
   return emitJson(getRegistry());
@@ -22,8 +28,16 @@ function writeFileSafe(target: string, body: string): string {
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
 const DEFAULT_SDK_VERSION = "0.1.0";
 const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts"] as const;
+const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
+const GENERATED_SWIFT_FILES = [
+  "RaviClient.generated.swift",
+  "RaviTypes.generated.swift",
+  "RaviSchemas.generated.swift",
+  "RaviVersion.generated.swift",
+] as const;
 
 type GeneratedFileName = (typeof GENERATED_FILES)[number];
+type GeneratedSwiftFileName = (typeof GENERATED_SWIFT_FILES)[number];
 
 function generatedSources(version: string): EmittedSdk {
   const registry = getRegistry();
@@ -43,6 +57,27 @@ function generatedSourceMap(emitted: EmittedSdk): Record<GeneratedFileName, stri
     "schemas.ts": emitted.schemas,
     "types.ts": emitted.types,
     "version.ts": emitted.version,
+  };
+}
+
+function generatedSwiftSources(version: string): EmittedSwiftSdk {
+  const registry = getRegistry();
+  const hash = computeRegistryHash(registry);
+  return emitAllSwift(registry, {
+    version: {
+      sdkVersion: version,
+      registryHash: hash,
+      gitSha: detectGitSha(),
+    },
+  });
+}
+
+function generatedSwiftSourceMap(emitted: EmittedSwiftSdk): Record<GeneratedSwiftFileName, string> {
+  return {
+    "RaviClient.generated.swift": emitted.client,
+    "RaviTypes.generated.swift": emitted.types,
+    "RaviSchemas.generated.swift": emitted.schemas,
+    "RaviVersion.generated.swift": emitted.version,
   };
 }
 
@@ -236,6 +271,114 @@ export class SdkClientCommands {
         process.exit(1);
       }
       console.log(`SDK client artifacts are current at ${dir}.`);
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+}
+
+@Group({
+  name: "sdk.swift",
+  description: "Swift client codegen for native Ravi apps",
+  scope: "open",
+})
+export class SdkSwiftCommands {
+  @Command({
+    name: "generate",
+    description: "Generate the Ravi Swift SDK source files from the live registry",
+  })
+  generate(
+    @Option({
+      flags: "--out <path>",
+      description: "Target directory for the generated Swift files",
+      defaultValue: DEFAULT_SWIFT_OUT_DIR,
+    })
+    out: string = DEFAULT_SWIFT_OUT_DIR,
+    @Option({ flags: "--version <semver>", description: "SDK semver baked into RaviVersion.generated.swift" })
+    version?: string,
+    @Option({ flags: "--json", description: "Print the result payload as JSON" })
+    asJson?: boolean,
+  ) {
+    try {
+      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sourceMap = generatedSwiftSourceMap(sources);
+      const written: { file: GeneratedSwiftFileName; path: string; bytes: number }[] = [];
+      for (const file of GENERATED_SWIFT_FILES) {
+        const target = resolve(out, file);
+        writeFileSafe(target, sourceMap[file]);
+        written.push({ file, path: target, bytes: sourceMap[file].length });
+      }
+      const payload = { status: "written" as const, dir: resolve(out), files: written };
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else {
+        for (const w of written) {
+          console.log(`Wrote ${w.file} (${w.bytes} bytes) -> ${w.path}`);
+        }
+      }
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({
+    name: "check",
+    description: "Compare on-disk Ravi Swift SDK sources to a fresh emit; exit 1 on drift",
+  })
+  check(
+    @Option({
+      flags: "--out <path>",
+      description: "Directory containing the generated Swift files",
+      defaultValue: DEFAULT_SWIFT_OUT_DIR,
+    })
+    out: string = DEFAULT_SWIFT_OUT_DIR,
+    @Option({ flags: "--version <semver>", description: "SDK semver baked into RaviVersion.generated.swift" })
+    version?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    try {
+      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sourceMap = generatedSwiftSourceMap(sources);
+      const drift: { file: GeneratedSwiftFileName; reason: string; path: string }[] = [];
+      const dir = resolve(out);
+      for (const file of GENERATED_SWIFT_FILES) {
+        const target = resolve(out, file);
+        let stored: string;
+        try {
+          stored = readFileSync(target, "utf8");
+        } catch (error) {
+          drift.push({
+            file,
+            path: target,
+            reason: `missing on disk (${error instanceof Error ? error.message : String(error)})`,
+          });
+          continue;
+        }
+        const comparison = compareSwiftSdkSource(file as GeneratedSwiftSdkFile, stored, sourceMap[file]);
+        if (!comparison.equal) {
+          drift.push({
+            file,
+            path: target,
+            reason: comparison.reason ?? "byte mismatch",
+          });
+        }
+      }
+      const payload = { dir, drift, files: GENERATED_SWIFT_FILES };
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+        return payload;
+      }
+      if (drift.length > 0) {
+        for (const d of drift) {
+          console.error(`Swift SDK drift: ${d.file} — ${d.reason}`);
+        }
+        console.error("Re-run `ravi sdk swift generate` to refresh.");
+        process.exit(1);
+      }
+      console.log(`Swift SDK artifacts are current at ${dir}.`);
       return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));

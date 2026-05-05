@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { emitJson } from "../../sdk/openapi/index.js";
 import { getRegistry } from "../registry-snapshot.js";
-import { SdkOpenApiCommands } from "./sdk.js";
+import { SdkOpenApiCommands, SdkSwiftCommands } from "./sdk.js";
 
 function makeTmpDir(label: string): string {
   return mkdtempSync(join(tmpdir(), `ravi-sdk-${label}-`));
@@ -154,6 +154,76 @@ describe("SdkOpenApiCommands.check", () => {
     } finally {
       process.exit = original;
       capture.restore();
+    }
+  });
+});
+
+describe("SdkSwiftCommands", () => {
+  it("generates Swift SDK files and check reports no drift", () => {
+    const dir = makeTmpDir("swift-generate");
+    try {
+      const capture = captureConsole();
+      let generated: { status: string; files: { file: string; path: string }[] } | undefined;
+      try {
+        generated = new SdkSwiftCommands().generate(dir, "9.9.9", true) as {
+          status: string;
+          files: { file: string; path: string }[];
+        };
+      } finally {
+        capture.restore();
+      }
+
+      expect(generated?.status).toBe("written");
+      expect(generated?.files.map((entry) => entry.file).sort()).toEqual([
+        "RaviClient.generated.swift",
+        "RaviSchemas.generated.swift",
+        "RaviTypes.generated.swift",
+        "RaviVersion.generated.swift",
+      ]);
+      expect(readFileSync(join(dir, "RaviClient.generated.swift"), "utf8")).toContain("public final class RaviClient");
+      expect(readFileSync(join(dir, "RaviTypes.generated.swift"), "utf8")).toContain("public typealias");
+
+      const checkCapture = captureConsole();
+      let checked: { drift: unknown[] } | undefined;
+      try {
+        checked = new SdkSwiftCommands().check(dir, "9.9.9", true) as { drift: unknown[] };
+      } finally {
+        checkCapture.restore();
+      }
+      expect(checked?.drift).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("exits non-zero when generated Swift files drift", () => {
+    const dir = makeTmpDir("swift-drift");
+    try {
+      const capture = captureConsole();
+      try {
+        new SdkSwiftCommands().generate(dir, "9.9.9", true);
+      } finally {
+        capture.restore();
+      }
+      writeFileSync(join(dir, "RaviClient.generated.swift"), "// drift\n", "utf8");
+
+      const original = process.exit;
+      const checkCapture = captureConsole();
+      let exitCode: number | undefined;
+      process.exit = ((code?: number) => {
+        exitCode = code;
+        throw new Error("__exit_called__");
+      }) as typeof process.exit;
+      try {
+        expect(() => new SdkSwiftCommands().check(dir, "9.9.9")).toThrow(/__exit_called__/);
+      } finally {
+        process.exit = original;
+        checkCapture.restore();
+      }
+      expect(exitCode).toBe(1);
+      expect(checkCapture.errors.join("\n")).toMatch(/Swift SDK drift/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
