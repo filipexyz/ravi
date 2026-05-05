@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
@@ -13,6 +14,8 @@ const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipa
 const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
 const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
 const actualGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
+const actualGetSession = actualRouterSessionsModule.getSession;
+const actualUpdateProviderSession = actualRouterSessionsModule.updateProviderSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
 const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
@@ -318,6 +321,73 @@ describe("OmniConsumer channel context", () => {
         arguments: '"ativar commands"',
       },
     ]);
+  });
+
+  it("resets the runtime session and republishes an Omni message edit as a fresh prompt", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");
+    const abortRuntimeSession = mock((_sessionName: string, _provenance: RuntimeAbortProvenance) => true);
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+      abortRuntimeSession,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-edit",
+      type: "message.received",
+      payload: {
+        externalId: "msg-original-edit-1",
+        chatId: "120363424772797713@g.us",
+        from: "120363424772797713@g.us",
+        content: {
+          type: "edit",
+          text: "texto editado",
+        },
+        rawPayload: {
+          editedMessageId: "msg-original",
+          newText: "texto editado",
+          editedAt: 1778000000000,
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(abortRuntimeSession.mock.calls[0]?.[0]).toBe("dev");
+    expect(abortRuntimeSession.mock.calls[0]?.[1]).toMatchObject({
+      source: "omni",
+      action: "message.edited",
+      reason: "message_edited_restart",
+      correlationId: "msg-original-edit-1",
+      request: {
+        messageId: "msg-original",
+        editEventId: "msg-original-edit-1",
+      },
+    });
+    expect(actualGetSession(sessionKey)?.sdkSessionId).toBeUndefined();
+    expect(actualGetSession(sessionKey)?.runtimeProvider).toBeUndefined();
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("## Mensagem editada detectada pelo Omni");
+    expect(prompt.prompt).toContain("Mensagem original: msg-original");
+    expect(prompt.prompt).toContain("[Message edited]\ntexto editado");
+    expect(prompt._humanUrgent).toBe(true);
+    expect(prompt.context).toMatchObject({
+      isEditedMessage: true,
+      editedMessageId: "msg-original",
+      editEventId: "msg-original-edit-1",
+      editedAt: 1778000000000,
+    });
   });
 
   it("resolves an agent-owned platform identity as an agent actor", async () => {

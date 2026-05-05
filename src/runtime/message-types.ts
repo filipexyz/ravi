@@ -30,6 +30,10 @@ export interface MessageContext extends MessageActorMetadata {
   groupName?: string;
   groupId?: string;
   groupMembers?: string[];
+  isEditedMessage?: boolean;
+  editedMessageId?: string;
+  editedAt?: number;
+  editEventId?: string;
   isMentioned?: boolean;
   botTag?: string;
   timestamp: number;

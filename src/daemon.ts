@@ -208,6 +208,7 @@ export async function startDaemon() {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
     omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey, {
       isRuntimeSessionActive: (sessionName) => bot?.isRuntimeSessionActive(sessionName) ?? false,
+      abortRuntimeSession: (sessionName, provenance) => bot?.abortSession(sessionName, provenance) ?? false,
     });
 
     try {
