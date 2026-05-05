@@ -3,7 +3,7 @@
 // Drift is detected by `ravi sdk client check` (CI).
 
 import type { Transport } from "./transport/types.js";
-import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsShowReturn, ArtifactsUpdateReturn, ArtifactsWatchReturn, AudioGenerateReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsGroupTagReturn, ContactsGroupUntagReturn, ContactsIdentityAddReturn, ContactsIdentityRemoveReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsPendingReturn, ContactsRemoveReturn, ContactsSetReturn, ContactsTagReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, TmuxListReturn, TmuxOpenReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
+import type { AdaptersListReturn, AdaptersShowReturn, AgentsCreateReturn, AgentsDebounceReturn, AgentsDebugReturn, AgentsDeleteReturn, AgentsListReturn, AgentsResetReturn, AgentsSessionReturn, AgentsSetReturn, AgentsShowReturn, AgentsSpecModeReturn, AgentsSyncInstructionsReturn, ArtifactsArchiveReturn, ArtifactsAttachReturn, ArtifactsBlobReturn, ArtifactsCreateReturn, ArtifactsEventReturn, ArtifactsEventsReturn, ArtifactsListReturn, ArtifactsShowReturn, ArtifactsUpdateReturn, AudioGenerateReturn, CommandsListReturn, CommandsRunReturn, CommandsShowReturn, CommandsValidateReturn, ContactsAddReturn, ContactsAllowReturn, ContactsApproveReturn, ContactsBlockReturn, ContactsCheckReturn, ContactsDuplicatesReturn, ContactsFindReturn, ContactsGetReturn, ContactsGroupTagReturn, ContactsGroupUntagReturn, ContactsIdentityAddReturn, ContactsIdentityRemoveReturn, ContactsInfoReturn, ContactsLinkReturn, ContactsListReturn, ContactsMergeReturn, ContactsPendingReturn, ContactsRemoveReturn, ContactsSetReturn, ContactsTagReturn, ContactsUnlinkReturn, ContactsUntagReturn, ContextAuthorizeReturn, ContextCapabilitiesReturn, ContextCheckReturn, ContextCleanupAgentRuntimeReturn, ContextCodexBashHookReturn, ContextCredentialsAddReturn, ContextCredentialsListReturn, ContextCredentialsRemoveReturn, ContextCredentialsSetDefaultReturn, ContextInfoReturn, ContextIssueReturn, ContextLineageReturn, ContextListReturn, ContextRevokeReturn, ContextVisibilityReturn, ContextWhoamiReturn, CostsAgentReturn, CostsAgentsReturn, CostsSessionReturn, CostsSummaryReturn, CostsTopSessionsReturn, CronAddReturn, CronDisableReturn, CronEnableReturn, CronListReturn, CronRmReturn, CronRunReturn, CronSetReturn, CronShowReturn, DaemonEnvReturn, DaemonInitAdminKeyReturn, DaemonInstallReturn, DaemonLogsReturn, DaemonRestartReturn, DaemonStartReturn, DaemonStatusReturn, DaemonStopReturn, DaemonUninstallReturn, DevinAuthCheckReturn, DevinSessionsArchiveReturn, DevinSessionsAttachmentsReturn, DevinSessionsCreateReturn, DevinSessionsInsightsReturn, DevinSessionsListReturn, DevinSessionsMessagesReturn, DevinSessionsSendReturn, DevinSessionsShowReturn, DevinSessionsSyncReturn, DevinSessionsTerminateReturn, EvalRunReturn, HeartbeatDisableReturn, HeartbeatEnableReturn, HeartbeatSetReturn, HeartbeatShowReturn, HeartbeatStatusReturn, HeartbeatTriggerReturn, HooksCreateReturn, HooksDisableReturn, HooksEnableReturn, HooksListReturn, HooksRmReturn, HooksShowReturn, HooksTestReturn, ImageAtlasSplitReturn, ImageGenerateReturn, InsightsCreateReturn, InsightsListReturn, InsightsSearchReturn, InsightsShowReturn, InstancesCreateReturn, InstancesDeleteReturn, InstancesDeletedReturn, InstancesDisableReturn, InstancesDisconnectReturn, InstancesEnableReturn, InstancesGetReturn, InstancesListReturn, InstancesPendingApproveReturn, InstancesPendingListReturn, InstancesPendingRejectReturn, InstancesRestoreReturn, InstancesRoutesAddReturn, InstancesRoutesDeletedReturn, InstancesRoutesListReturn, InstancesRoutesRemoveReturn, InstancesRoutesRestoreReturn, InstancesRoutesSetReturn, InstancesRoutesShowReturn, InstancesSetReturn, InstancesShowReturn, InstancesStatusReturn, InstancesTargetReturn, MediaSendReturn, ObserversListReturn, ObserversProfilesInitReturn, ObserversProfilesListReturn, ObserversProfilesPreviewReturn, ObserversProfilesShowReturn, ObserversProfilesValidateReturn, ObserversRefreshReturn, ObserversRulesDisableReturn, ObserversRulesEnableReturn, ObserversRulesExplainReturn, ObserversRulesListReturn, ObserversRulesRmReturn, ObserversRulesSetReturn, ObserversRulesShowReturn, ObserversRulesValidateReturn, ObserversShowReturn, PermissionsCheckReturn, PermissionsClearReturn, PermissionsGrantReturn, PermissionsInitReturn, PermissionsListReturn, PermissionsRevokeReturn, PermissionsSyncReturn, ProjectsCreateReturn, ProjectsFixturesSeedReturn, ProjectsInitReturn, ProjectsLinkReturn, ProjectsListReturn, ProjectsNextReturn, ProjectsResourcesAddReturn, ProjectsResourcesImportReturn, ProjectsResourcesListReturn, ProjectsResourcesShowReturn, ProjectsShowReturn, ProjectsStatusReturn, ProjectsTasksAttachReturn, ProjectsTasksCreateReturn, ProjectsTasksDispatchReturn, ProjectsUpdateReturn, ProjectsWorkflowsAttachReturn, ProjectsWorkflowsStartReturn, ProxCallsCancelReturn, ProxCallsEventsReturn, ProxCallsProfilesConfigureReturn, ProxCallsProfilesListReturn, ProxCallsProfilesShowReturn, ProxCallsRequestReturn, ProxCallsRulesReturn, ProxCallsShowReturn, ProxCallsToolsBindReturn, ProxCallsToolsConfigureReturn, ProxCallsToolsCreateReturn, ProxCallsToolsListReturn, ProxCallsToolsRunReturn, ProxCallsToolsRunsReturn, ProxCallsToolsShowReturn, ProxCallsToolsUnbindReturn, ProxCallsTranscriptReturn, ProxCallsVoiceAgentsBindToolReturn, ProxCallsVoiceAgentsConfigureReturn, ProxCallsVoiceAgentsCreateReturn, ProxCallsVoiceAgentsListReturn, ProxCallsVoiceAgentsShowReturn, ProxCallsVoiceAgentsSyncReturn, ProxCallsVoiceAgentsUnbindToolReturn, ReactSendReturn, RoutesExplainReturn, RoutesListReturn, RoutesShowReturn, SdkClientCheckReturn, SdkClientGenerateReturn, SdkOpenapiCheckReturn, SdkOpenapiEmitReturn, SelfChatReturn, SelfContextReturn, SelfExplainReturn, SelfKnowledgeReturn, SelfPermissionsReturn, SelfRecentReturn, SelfRouteReturn, SelfWhoamiReturn, ServiceStartReturn, ServiceTuiReturn, ServiceWaReturn, SessionsAnswerReturn, SessionsAskReturn, SessionsDeleteReturn, SessionsExecuteReturn, SessionsExtendReturn, SessionsGoalReturn, SessionsInfoReturn, SessionsInformReturn, SessionsKeepReturn, SessionsListReturn, SessionsPruneReturn, SessionsReadReturn, SessionsRenameReturn, SessionsResetReturn, SessionsRuntimeFollowUpReturn, SessionsRuntimeForkReturn, SessionsRuntimeInterruptReturn, SessionsRuntimeListReturn, SessionsRuntimeReadReturn, SessionsRuntimeRollbackReturn, SessionsRuntimeSteerReturn, SessionsSendReturn, SessionsSetDisplayReturn, SessionsSetModelReturn, SessionsSetThinkingReturn, SessionsSetTtlReturn, SessionsTraceReturn, SessionsVisibilityReturn, SettingsDeleteReturn, SettingsGetReturn, SettingsListReturn, SettingsSetReturn, SkillGatesDisableReturn, SkillGatesEnableReturn, SkillGatesListReturn, SkillGatesResetReturn, SkillGatesRmReturn, SkillGatesSetReturn, SkillGatesShowReturn, SkillsInstallReturn, SkillsListReturn, SkillsShowReturn, SkillsSyncReturn, SpecsGetReturn, SpecsListReturn, SpecsNewReturn, SpecsSyncReturn, StickersAddReturn, StickersListReturn, StickersRemoveReturn, StickersSendReturn, StickersShowReturn, TagsAttachReturn, TagsCreateReturn, TagsDetachReturn, TagsListReturn, TagsSearchReturn, TagsSetReturn, TagsShowReturn, TasksArchiveReturn, TasksAutomationsAddReturn, TasksAutomationsDisableReturn, TasksAutomationsEnableReturn, TasksAutomationsListReturn, TasksAutomationsRmReturn, TasksAutomationsShowReturn, TasksBlockReturn, TasksCommentReturn, TasksCreateReturn, TasksDepsAddReturn, TasksDepsLsReturn, TasksDepsRmReturn, TasksDispatchReturn, TasksDoneReturn, TasksFailReturn, TasksListReturn, TasksProfilesInitReturn, TasksProfilesListReturn, TasksProfilesPreviewReturn, TasksProfilesShowReturn, TasksProfilesValidateReturn, TasksReportReturn, TasksShowReturn, TasksUnarchiveReturn, ToolsListReturn, ToolsManifestReturn, ToolsSchemaReturn, ToolsShowReturn, ToolsTestReturn, TranscribeFileReturn, TriggersAddReturn, TriggersDisableReturn, TriggersEnableReturn, TriggersListReturn, TriggersRmReturn, TriggersSetReturn, TriggersShowReturn, TriggersTestReturn, VideoAnalyzeReturn, WhatsappDmAckReturn, WhatsappDmReadReturn, WhatsappDmSendReturn, WhatsappGroupAddReturn, WhatsappGroupCreateReturn, WhatsappGroupDemoteReturn, WhatsappGroupDescriptionReturn, WhatsappGroupInfoReturn, WhatsappGroupInviteReturn, WhatsappGroupJoinReturn, WhatsappGroupLeaveReturn, WhatsappGroupListReturn, WhatsappGroupPromoteReturn, WhatsappGroupRemoveReturn, WhatsappGroupRenameReturn, WhatsappGroupRevokeInviteReturn, WhatsappGroupSettingsReturn, WorkflowsRunsArchiveNodeReturn, WorkflowsRunsCancelReturn, WorkflowsRunsListReturn, WorkflowsRunsReleaseReturn, WorkflowsRunsShowReturn, WorkflowsRunsSkipReturn, WorkflowsRunsStartReturn, WorkflowsRunsTaskAttachReturn, WorkflowsRunsTaskCreateReturn, WorkflowsSpecsCreateReturn, WorkflowsSpecsListReturn, WorkflowsSpecsShowReturn } from "./types.js";
 
 /**
  * `RaviClient` exposes every registry command as a typed method.
@@ -77,11 +77,13 @@ export class RaviClient {
       });
     },
     /** List all agents */
-    list: async (): Promise<AgentsListReturn> => {
+    list: async (options?: {
+      tag?: string;
+    }): Promise<AgentsListReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Reset agent session */
@@ -277,17 +279,6 @@ export class RaviClient {
         command: "update",
         body: { id, ...(options ?? {}) },
       });
-    },
-    /** Watch artifact lifecycle until a terminal status */
-    watch: async (id: string, options?: {
-      intervalMs?: string;
-      timeoutMs?: string;
-    }): Promise<ArtifactsWatchReturn> => {
-      return this.transport.call({
-        groupSegments: ["artifacts"],
-        command: "watch",
-        body: { id, ...(options ?? {}) },
-      });
     }
   };
 
@@ -307,6 +298,50 @@ export class RaviClient {
         groupSegments: ["audio"],
         command: "generate",
         body: { text, ...(options ?? {}) },
+      });
+    }
+  };
+
+  readonly commands = {
+    /** List Ravi commands */
+    list: async (options?: {
+      agent?: string;
+      tag?: string;
+    }): Promise<CommandsListReturn> => {
+      return this.transport.call({
+        groupSegments: ["commands"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Render a Ravi command into its composed prompt */
+    run: async (name: string, args: string[], options?: {
+      agent?: string;
+    }): Promise<CommandsRunReturn> => {
+      return this.transport.call({
+        groupSegments: ["commands"],
+        command: "run",
+        body: { name, args, ...(options ?? {}) },
+      });
+    },
+    /** Show one Ravi command */
+    show: async (name: string, options?: {
+      agent?: string;
+    }): Promise<CommandsShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["commands"],
+        command: "show",
+        body: { name, ...(options ?? {}) },
+      });
+    },
+    /** Validate Ravi command files */
+    validate: async (options?: {
+      agent?: string;
+    }): Promise<CommandsValidateReturn> => {
+      return this.transport.call({
+        groupSegments: ["commands"],
+        command: "validate",
+        body: { ...(options ?? {}) },
       });
     }
   };
@@ -646,6 +681,14 @@ export class RaviClient {
         body: { contextId, ...(options ?? {}) },
       });
     },
+    /** Show the current context session visibility */
+    visibility: async (): Promise<ContextVisibilityReturn> => {
+      return this.transport.call({
+        groupSegments: ["context"],
+        command: "visibility",
+        body: {},
+      });
+    },
     /** Resolve the current runtime context */
     whoami: async (): Promise<ContextWhoamiReturn> => {
       return this.transport.call({
@@ -746,11 +789,13 @@ export class RaviClient {
       });
     },
     /** List all scheduled jobs */
-    list: async (): Promise<CronListReturn> => {
+    list: async (options?: {
+      tag?: string;
+    }): Promise<CronListReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Delete a job */
@@ -1119,11 +1164,13 @@ export class RaviClient {
       });
     },
     /** List configured hooks */
-    list: async (): Promise<HooksListReturn> => {
+    list: async (options?: {
+      tag?: string;
+    }): Promise<HooksListReturn> => {
       return this.transport.call({
         groupSegments: ["hooks"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Delete a hook */
@@ -1224,6 +1271,7 @@ export class RaviClient {
       linkType?: string;
       profile?: string;
       session?: string;
+      tag?: string[];
       task?: string;
     }): Promise<InsightsCreateReturn> => {
       return this.transport.call({
@@ -1243,6 +1291,7 @@ export class RaviClient {
       query?: string;
       rich?: boolean;
       session?: string;
+      tag?: string;
       task?: string;
     }): Promise<InsightsListReturn> => {
       return this.transport.call({
@@ -1334,11 +1383,13 @@ export class RaviClient {
       });
     },
     /** List all instances */
-    list: async (): Promise<InstancesListReturn> => {
+    list: async (options?: {
+      tag?: string;
+    }): Promise<InstancesListReturn> => {
       return this.transport.call({
         groupSegments: ["instances"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     pending: {
@@ -1402,11 +1453,13 @@ export class RaviClient {
         });
       },
       /** List routes for an instance */
-      list: async (name: string): Promise<InstancesRoutesListReturn> => {
+      list: async (name: string, options?: {
+        tag?: string;
+      }): Promise<InstancesRoutesListReturn> => {
         return this.transport.call({
           groupSegments: ["instances","routes"],
           command: "list",
-          body: { name },
+          body: { name, ...(options ?? {}) },
         });
       },
       /** Remove a route (soft-delete, recoverable) */
@@ -1499,6 +1552,170 @@ export class RaviClient {
         groupSegments: ["media"],
         command: "send",
         body: { filePath, ...(options ?? {}) },
+      });
+    }
+  };
+
+  readonly observers = {
+    /** List session observer bindings */
+    list: async (options?: {
+      agent?: string;
+      session?: string;
+    }): Promise<ObserversListReturn> => {
+      return this.transport.call({
+        groupSegments: ["observers"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    profiles: {
+      /** Create a Markdown observer profile scaffold */
+      init: async (profileId: string, options?: {
+        overwrite?: boolean;
+        source?: string;
+      }): Promise<ObserversProfilesInitReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","profiles"],
+          command: "init",
+          body: { profileId, ...(options ?? {}) },
+        });
+      },
+      /** List observer profiles */
+      list: async (): Promise<ObserversProfilesListReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","profiles"],
+          command: "list",
+          body: {},
+        });
+      },
+      /** Render an observer profile preview */
+      preview: async (profileId: string, options?: {
+        event?: string;
+      }): Promise<ObserversProfilesPreviewReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","profiles"],
+          command: "preview",
+          body: { profileId, ...(options ?? {}) },
+        });
+      },
+      /** Show one observer profile */
+      show: async (profileId: string): Promise<ObserversProfilesShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","profiles"],
+          command: "show",
+          body: { profileId },
+        });
+      },
+      /** Validate observer profiles */
+      validate: async (profileId?: string): Promise<ObserversProfilesValidateReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","profiles"],
+          command: "validate",
+          body: { profileId },
+        });
+      }
+    },
+    /** Apply observer rules to an existing source session */
+    refresh: async (session: string): Promise<ObserversRefreshReturn> => {
+      return this.transport.call({
+        groupSegments: ["observers"],
+        command: "refresh",
+        body: { session },
+      });
+    },
+    rules: {
+      /** Disable an observer rule */
+      disable: async (id: string): Promise<ObserversRulesDisableReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "disable",
+          body: { id },
+        });
+      },
+      /** Enable an observer rule */
+      enable: async (id: string): Promise<ObserversRulesEnableReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "enable",
+          body: { id },
+        });
+      },
+      /** Explain observer rule matching for a source session */
+      explain: async (session: string): Promise<ObserversRulesExplainReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "explain",
+          body: { session },
+        });
+      },
+      /** List observer rules */
+      list: async (): Promise<ObserversRulesListReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "list",
+          body: {},
+        });
+      },
+      /** Delete an observer rule */
+      rm: async (id: string): Promise<ObserversRulesRmReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "rm",
+          body: { id },
+        });
+      },
+      /** Create or overwrite an observer rule */
+      set: async (id: string, observerAgentId: string, options?: {
+        delivery?: string;
+        disabled?: boolean;
+        events?: string;
+        meta?: string;
+        mode?: string;
+        model?: string;
+        permissions?: string;
+        priority?: string;
+        profile?: string;
+        provider?: string;
+        role?: string;
+        scope?: string;
+        sourceAgent?: string;
+        sourceProfile?: string;
+        sourceProject?: string;
+        sourceSession?: string;
+        sourceTask?: string;
+        tag?: string;
+        tagInherited?: boolean;
+        tagTarget?: string;
+      }): Promise<ObserversRulesSetReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "set",
+          body: { id, observerAgentId, ...(options ?? {}) },
+        });
+      },
+      /** Show one observer rule */
+      show: async (id: string): Promise<ObserversRulesShowReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "show",
+          body: { id },
+        });
+      },
+      /** Validate observer rules */
+      validate: async (): Promise<ObserversRulesValidateReturn> => {
+        return this.transport.call({
+          groupSegments: ["observers","rules"],
+          command: "validate",
+          body: {},
+        });
+      }
+    },
+    /** Show one observer binding */
+    show: async (bindingId: string): Promise<ObserversShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["observers"],
+        command: "show",
+        body: { bindingId },
       });
     }
   };
@@ -1635,6 +1852,7 @@ export class RaviClient {
     /** List projects */
     list: async (options?: {
       status?: string;
+      tag?: string;
     }): Promise<ProjectsListReturn> => {
       return this.transport.call({
         groupSegments: ["projects"],
@@ -1645,6 +1863,7 @@ export class RaviClient {
     /** List projects as an operational next-work surface */
     next: async (options?: {
       status?: string;
+      tag?: string;
     }): Promise<ProjectsNextReturn> => {
       return this.transport.call({
         groupSegments: ["projects"],
@@ -1842,11 +2061,13 @@ export class RaviClient {
           });
         },
         /** List available call profiles */
-        list: async (): Promise<ProxCallsProfilesListReturn> => {
+        list: async (options?: {
+          tag?: string;
+        }): Promise<ProxCallsProfilesListReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","profiles"],
             command: "list",
-            body: {},
+            body: { ...(options ?? {}) },
           });
         },
         /** Show a call profile by ID */
@@ -1935,6 +2156,7 @@ export class RaviClient {
         /** List call tools */
         list: async (options?: {
           profile?: string;
+          tag?: string;
         }): Promise<ProxCallsToolsListReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","tools"],
@@ -2027,11 +2249,13 @@ export class RaviClient {
           });
         },
         /** List voice agents */
-        list: async (): Promise<ProxCallsVoiceAgentsListReturn> => {
+        list: async (options?: {
+          tag?: string;
+        }): Promise<ProxCallsVoiceAgentsListReturn> => {
           return this.transport.call({
             groupSegments: ["prox","calls","voice-agents"],
             command: "list",
-            body: {},
+            body: { ...(options ?? {}) },
           });
         },
         /** Show a voice agent by ID */
@@ -2088,11 +2312,13 @@ export class RaviClient {
       });
     },
     /** List routes across all instances or for one instance */
-    list: async (name?: string): Promise<RoutesListReturn> => {
+    list: async (name?: string, options?: {
+      tag?: string;
+    }): Promise<RoutesListReturn> => {
       return this.transport.call({
         groupSegments: ["routes"],
         command: "list",
-        body: { name },
+        body: { name, ...(options ?? {}) },
       });
     },
     /** Show route details */
@@ -2152,6 +2378,80 @@ export class RaviClient {
           body: { ...(options ?? {}) },
         });
       }
+    }
+  };
+
+  readonly self = {
+    /** Show the current chat binding and participants */
+    chat: async (options?: {
+      depth?: string;
+    }): Promise<SelfChatReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "chat",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Show the full current self-context packet */
+    context: async (options?: {
+      depth?: string;
+      limit?: string;
+    }): Promise<SelfContextReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "context",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Explain how Ravi resolved the current self-context */
+    explain: async (): Promise<SelfExplainReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "explain",
+        body: {},
+      });
+    },
+    /** Show current knowledge integration status for this context */
+    knowledge: async (): Promise<SelfKnowledgeReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "knowledge",
+        body: {},
+      });
+    },
+    /** Show capabilities inherited by the current context */
+    permissions: async (): Promise<SelfPermissionsReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "permissions",
+        body: {},
+      });
+    },
+    /** Show bounded recent message metadata for the current chat */
+    recent: async (options?: {
+      limit?: string;
+    }): Promise<SelfRecentReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "recent",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Show route information that led to the current session */
+    route: async (): Promise<SelfRouteReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "route",
+        body: {},
+      });
+    },
+    /** Show the current agent/session identity */
+    whoami: async (): Promise<SelfWhoamiReturn> => {
+      return this.transport.call({
+        groupSegments: ["self"],
+        command: "whoami",
+        body: {},
+      });
     }
   };
 
@@ -2235,6 +2535,20 @@ export class RaviClient {
         body: { nameOrKey, duration },
       });
     },
+    /** Inspect or mutate persisted session goal state */
+    goal: async (action: string, nameOrKey: string, objective?: string, options?: {
+      budget?: string;
+      project?: string;
+      seconds?: string;
+      task?: string;
+      tokens?: string;
+    }): Promise<SessionsGoalReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "goal",
+        body: { action, nameOrKey, objective, ...(options ?? {}) },
+      });
+    },
     /** Show unified session inspection details */
     info: async (nameOrKey: string): Promise<SessionsInfoReturn> => {
       return this.transport.call({
@@ -2268,10 +2582,25 @@ export class RaviClient {
       agent?: string;
       ephemeral?: boolean;
       live?: boolean;
+      tag?: string;
     }): Promise<SessionsListReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Prune sessions inactive for a duration (dry-run by default) */
+    prune: async (options?: {
+      agent?: string;
+      ephemeral?: boolean;
+      execute?: boolean;
+      inactiveFor?: string;
+      namePrefix?: string;
+    }): Promise<SessionsPruneReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "prune",
         body: { ...(options ?? {}) },
       });
     },
@@ -2453,6 +2782,14 @@ export class RaviClient {
         command: "trace",
         body: { nameOrKey, ...(options ?? {}) },
       });
+    },
+    /** Show runtime session visibility state */
+    visibility: async (nameOrKey: string): Promise<SessionsVisibilityReturn> => {
+      return this.transport.call({
+        groupSegments: ["sessions"],
+        command: "visibility",
+        body: { nameOrKey },
+      });
     }
   };
 
@@ -2493,6 +2830,76 @@ export class RaviClient {
     }
   };
 
+  readonly skillGates = {
+    /** Disable a skill gate rule */
+    disable: async (id: string): Promise<SkillGatesDisableReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "disable",
+        body: { id },
+      });
+    },
+    /** Enable a configured skill gate rule */
+    enable: async (id: string): Promise<SkillGatesEnableReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "enable",
+        body: { id },
+      });
+    },
+    /** List skill gate rules */
+    list: async (options?: {
+      tag?: string;
+    }): Promise<SkillGatesListReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "list",
+        body: { ...(options ?? {}) },
+      });
+    },
+    /** Delete a configured override and restore the default behavior */
+    reset: async (id: string): Promise<SkillGatesResetReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "reset",
+        body: { id },
+      });
+    },
+    /** Remove a custom gate or disable a default gate */
+    rm: async (id: string): Promise<SkillGatesRmReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "rm",
+        body: { id },
+      });
+    },
+    /** Create or overwrite a skill gate rule */
+    set: async (id: string, skill: string, options?: {
+      command?: string;
+      commandPrefix?: string;
+      commandRegex?: string;
+      groupRegex?: string;
+      pattern?: string;
+      tool?: string;
+      toolPrefix?: string;
+      toolRegex?: string;
+    }): Promise<SkillGatesSetReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "set",
+        body: { id, skill, ...(options ?? {}) },
+      });
+    },
+    /** Show one skill gate rule */
+    show: async (id: string): Promise<SkillGatesShowReturn> => {
+      return this.transport.call({
+        groupSegments: ["skill-gates"],
+        command: "show",
+        body: { id },
+      });
+    }
+  };
+
   readonly skills = {
     /** Install Ravi catalog skills or skills from an explicit source */
     install: async (name?: string, options?: {
@@ -2514,6 +2921,7 @@ export class RaviClient {
       codex?: boolean;
       installed?: boolean;
       source?: string;
+      tag?: string;
     }): Promise<SkillsListReturn> => {
       return this.transport.call({
         groupSegments: ["skills"],
@@ -2643,11 +3051,37 @@ export class RaviClient {
   };
 
   readonly tags = {
-    /** Attach a tag to an agent or session */
+    /** Attach a tag to a Ravi asset */
     attach: async (slug: string, options?: {
       agent?: string;
+      artifact?: string;
+      callProfile?: string;
+      callRequest?: string;
+      callTool?: string;
+      callVoiceAgent?: string;
+      chat?: string;
+      command?: string;
+      contact?: string;
+      cronJob?: string;
+      devinSession?: string;
+      hook?: string;
+      insight?: string;
+      instance?: string;
       meta?: string;
+      profile?: string;
+      project?: string;
+      route?: string;
       session?: string;
+      skill?: string;
+      skillGateRule?: string;
+      source?: string;
+      target?: string;
+      task?: string;
+      taskAutomation?: string;
+      trigger?: string;
+      workflowNode?: string;
+      workflowRun?: string;
+      workflowSpec?: string;
     }): Promise<TagsAttachReturn> => {
       return this.transport.call({
         groupSegments: ["tags"],
@@ -2661,6 +3095,7 @@ export class RaviClient {
       kind?: string;
       label?: string;
       meta?: string;
+      source?: string;
     }): Promise<TagsCreateReturn> => {
       return this.transport.call({
         groupSegments: ["tags"],
@@ -2668,10 +3103,36 @@ export class RaviClient {
         body: { slug, ...(options ?? {}) },
       });
     },
-    /** Detach a tag from an agent or session */
+    /** Detach a tag from a Ravi asset */
     detach: async (slug: string, options?: {
       agent?: string;
+      artifact?: string;
+      callProfile?: string;
+      callRequest?: string;
+      callTool?: string;
+      callVoiceAgent?: string;
+      chat?: string;
+      command?: string;
+      contact?: string;
+      cronJob?: string;
+      devinSession?: string;
+      hook?: string;
+      insight?: string;
+      instance?: string;
+      profile?: string;
+      project?: string;
+      route?: string;
       session?: string;
+      skill?: string;
+      skillGateRule?: string;
+      source?: string;
+      target?: string;
+      task?: string;
+      taskAutomation?: string;
+      trigger?: string;
+      workflowNode?: string;
+      workflowRun?: string;
+      workflowSpec?: string;
     }): Promise<TagsDetachReturn> => {
       return this.transport.call({
         groupSegments: ["tags"],
@@ -2680,23 +3141,70 @@ export class RaviClient {
       });
     },
     /** List tag definitions */
-    list: async (): Promise<TagsListReturn> => {
+    list: async (options?: {
+      cursor?: string;
+      kind?: string;
+      limit?: string;
+      order?: string;
+      query?: string;
+      sort?: string;
+      source?: string;
+    }): Promise<TagsListReturn> => {
       return this.transport.call({
         groupSegments: ["tags"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Search bindings by tag or asset */
     search: async (options?: {
       agent?: string;
+      artifact?: string;
+      callProfile?: string;
+      callRequest?: string;
+      callTool?: string;
+      callVoiceAgent?: string;
+      chat?: string;
+      command?: string;
+      contact?: string;
+      cronJob?: string;
+      cursor?: string;
+      devinSession?: string;
+      hook?: string;
+      insight?: string;
+      instance?: string;
+      kind?: string;
+      limit?: string;
+      order?: string;
+      profile?: string;
+      project?: string;
+      route?: string;
       session?: string;
+      skill?: string;
+      skillGateRule?: string;
+      sort?: string;
+      source?: string;
       tag?: string;
+      target?: string;
+      task?: string;
+      taskAutomation?: string;
+      trigger?: string;
+      workflowNode?: string;
+      workflowRun?: string;
+      workflowSpec?: string;
     }): Promise<TagsSearchReturn> => {
       return this.transport.call({
         groupSegments: ["tags"],
         command: "search",
         body: { ...(options ?? {}) },
+      });
+    },
+    /** Set tag definition metadata */
+    set: async (slug: string, key: string, value: string): Promise<TagsSetReturn> => {
+      return this.transport.call({
+        groupSegments: ["tags"],
+        command: "set",
+        body: { slug, key, value },
       });
     },
     /** Show one tag and its bindings */
@@ -2765,11 +3273,13 @@ export class RaviClient {
         });
       },
       /** List configured task automations */
-      list: async (): Promise<TasksAutomationsListReturn> => {
+      list: async (options?: {
+        tag?: string;
+      }): Promise<TasksAutomationsListReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","automations"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Delete a task automation */
@@ -2823,6 +3333,7 @@ export class RaviClient {
       reportEvents?: string;
       reportTo?: string;
       session?: string;
+      tag?: string[];
       thinking?: string;
       worktreeBranch?: string;
       worktreeMode?: string;
@@ -2902,16 +3413,24 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       all?: boolean;
+      allTime?: boolean;
       archived?: boolean;
+      cursor?: string;
       last?: string;
+      limit?: string;
       mine?: boolean;
+      order?: string;
       parent?: string;
       profile?: string;
       root?: string;
       roots?: boolean;
       session?: string;
+      since?: string;
+      sort?: string;
       status?: string;
+      tag?: string;
       text?: string;
+      until?: string;
     }): Promise<TasksListReturn> => {
       return this.transport.call({
         groupSegments: ["tasks"],
@@ -3000,25 +3519,6 @@ export class RaviClient {
         groupSegments: ["tasks"],
         command: "unarchive",
         body: { taskId },
-      });
-    }
-  };
-
-  readonly tmux = {
-    /** List Ravi-managed tmux sessions and windows */
-    list: async (): Promise<TmuxListReturn> => {
-      return this.transport.call({
-        groupSegments: ["tmux"],
-        command: "list",
-        body: {},
-      });
-    },
-    /** Ensure a tmux session/window exists for an agent or session */
-    open: async (agent: string, session?: string): Promise<TmuxOpenReturn> => {
-      return this.transport.call({
-        groupSegments: ["tmux"],
-        command: "open",
-        body: { agent, session },
       });
     }
   };
@@ -3113,11 +3613,13 @@ export class RaviClient {
       });
     },
     /** List all event triggers */
-    list: async (): Promise<TriggersListReturn> => {
+    list: async (options?: {
+      tag?: string;
+    }): Promise<TriggersListReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Delete a trigger */

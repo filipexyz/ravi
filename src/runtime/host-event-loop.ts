@@ -19,7 +19,11 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
-import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
+import {
+  stashPendingRuntimeMessages,
+  type RuntimeHostStreamingSession,
+  type RuntimeUserMessage,
+} from "./host-session.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
 import {
   createObservationEvent,
@@ -1366,8 +1370,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // an interrupt-during-tool_use (`[ede_diagnostic] stop_reason=tool_use`).
           // Subsequent prompts to the wedged subprocess silently no-op while the
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
-          // on the next inbound message; stashed messages are preserved by
-          // session-launcher for the next session to drain.
+          // on the next inbound message; preserve queued/current messages so the
+          // next session can drain them instead of losing the interrupted turn.
+          stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           signalTurnComplete();
           streaming.done = true;
           break;

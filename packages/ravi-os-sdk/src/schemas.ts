@@ -129,7 +129,12 @@ export const AgentsDeleteInputSchema = {
 /** JSON Schema for the input body of `agents.list`. */
 export const AgentsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical tag slug",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -633,29 +638,6 @@ export const ArtifactsUpdateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `artifacts.watch`. */
-export const ArtifactsWatchInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "id": {
-      "description": "Artifact id",
-      "type": "string"
-    },
-    "intervalMs": {
-      "description": "Polling interval in milliseconds (default: 1000)",
-      "type": "string"
-    },
-    "timeoutMs": {
-      "description": "Timeout in milliseconds (default: 300000)",
-      "type": "string"
-    }
-  },
-  "required": [
-    "id"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `audio.generate`. */
 export const AudioGenerateInputSchema = {
   "additionalProperties": false,
@@ -700,6 +682,79 @@ export const AudioGenerateInputSchema = {
   "required": [
     "text"
   ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `commands.list`. */
+export const CommandsListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical command tag",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `commands.run`. */
+export const CommandsRunInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    },
+    "args": {
+      "description": "Command arguments",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "name": {
+      "description": "Command name, with or without #",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `commands.show`. */
+export const CommandsShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    },
+    "name": {
+      "description": "Command name, with or without #",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `commands.validate`. */
+export const CommandsValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1383,6 +1438,13 @@ export const ContextRevokeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `context.visibility`. */
+export const ContextVisibilityInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `context.whoami`. */
 export const ContextWhoamiInputSchema = {
   "additionalProperties": false,
@@ -1556,7 +1618,12 @@ export const CronEnableInputSchema = {
 /** JSON Schema for the input body of `cron.list`. */
 export const CronListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical cron job tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2264,7 +2331,12 @@ export const HooksEnableInputSchema = {
 /** JSON Schema for the input body of `hooks.list`. */
 export const HooksListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical hook tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2535,6 +2607,13 @@ export const InsightsCreateInputSchema = {
       "description": "Short actionable summary",
       "type": "string"
     },
+    "tag": {
+      "description": "Canonical tags; can be repeated or comma-separated",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "task": {
       "description": "Link the insight to a task",
       "type": "string"
@@ -2585,6 +2664,10 @@ export const InsightsListInputSchema = {
     },
     "session": {
       "description": "Filter by linked session",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical tag",
       "type": "string"
     },
     "task": {
@@ -2751,7 +2834,12 @@ export const InstancesGetInputSchema = {
 /** JSON Schema for the input body of `instances.list`. */
 export const InstancesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical instance tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -2896,6 +2984,10 @@ export const InstancesRoutesListInputSchema = {
   "properties": {
     "name": {
       "description": "Instance name",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical route tag",
       "type": "string"
     }
   },
@@ -3120,6 +3212,317 @@ export const MediaSendInputSchema = {
   },
   "required": [
     "filePath"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.list`. */
+export const ObserversListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by observer agent id",
+      "type": "string"
+    },
+    "session": {
+      "description": "Filter by source session name/key",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.profiles.init`. */
+export const ObserversProfilesInitInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "overwrite": {
+      "description": "Overwrite existing profile files",
+      "type": "boolean"
+    },
+    "profileId": {
+      "description": "Observer profile id",
+      "type": "string"
+    },
+    "source": {
+      "description": "workspace|user",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.profiles.list`. */
+export const ObserversProfilesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.profiles.preview`. */
+export const ObserversProfilesPreviewInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "event": {
+      "description": "Observation event type to preview",
+      "type": "string"
+    },
+    "profileId": {
+      "description": "Observer profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.profiles.show`. */
+export const ObserversProfilesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Observer profile id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profileId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.profiles.validate`. */
+export const ObserversProfilesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "profileId": {
+      "description": "Optional observer profile id",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.refresh`. */
+export const ObserversRefreshInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "session": {
+      "description": "Source session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.disable`. */
+export const ObserversRulesDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Observer rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.enable`. */
+export const ObserversRulesEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Observer rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.explain`. */
+export const ObserversRulesExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "session": {
+      "description": "Source session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.list`. */
+export const ObserversRulesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.rm`. */
+export const ObserversRulesRmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Observer rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.set`. */
+export const ObserversRulesSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "delivery": {
+      "description": "realtime|debounce|end_of_turn|manual",
+      "type": "string"
+    },
+    "disabled": {
+      "description": "Create rule disabled",
+      "type": "boolean"
+    },
+    "events": {
+      "description": "Comma-separated observation event types",
+      "type": "string"
+    },
+    "id": {
+      "description": "Observer rule id",
+      "type": "string"
+    },
+    "meta": {
+      "description": "Free JSON metadata for the rule",
+      "type": "string"
+    },
+    "mode": {
+      "description": "observe|summarize|report",
+      "type": "string"
+    },
+    "model": {
+      "description": "Runtime model for observer execution; use 'clear' to inherit the observer agent model",
+      "type": "string"
+    },
+    "observerAgentId": {
+      "description": "Agent id for the observer session",
+      "type": "string"
+    },
+    "permissions": {
+      "description": "Comma-separated permission grants for observer",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Lower priority wins",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Observer profile id for Markdown prompt rendering; use 'clear' to use the default profile",
+      "type": "string"
+    },
+    "provider": {
+      "description": "Runtime provider id for observer execution; use 'clear' to inherit the observer agent provider",
+      "type": "string"
+    },
+    "role": {
+      "description": "Observer role. Defaults to rule id.",
+      "type": "string"
+    },
+    "scope": {
+      "description": "global|agent|session|task|profile|project|tag",
+      "type": "string"
+    },
+    "sourceAgent": {
+      "description": "Match source agent id",
+      "type": "string"
+    },
+    "sourceProfile": {
+      "description": "Match source task profile id",
+      "type": "string"
+    },
+    "sourceProject": {
+      "description": "Match source project id",
+      "type": "string"
+    },
+    "sourceSession": {
+      "description": "Match source session name/key",
+      "type": "string"
+    },
+    "sourceTask": {
+      "description": "Match source task id",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Match tag slug for scope=tag",
+      "type": "string"
+    },
+    "tagInherited": {
+      "description": "Allow inherited tag matching",
+      "type": "boolean"
+    },
+    "tagTarget": {
+      "description": "agent|session|task|project|contact|profile|any",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "observerAgentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.show`. */
+export const ObserversRulesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Observer rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.rules.validate`. */
+export const ObserversRulesValidateInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `observers.show`. */
+export const ObserversShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "bindingId": {
+      "description": "Observer binding id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "bindingId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -3437,6 +3840,10 @@ export const ProjectsListInputSchema = {
     "status": {
       "description": "Filter by status",
       "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical project tag",
+      "type": "string"
     }
   },
   "type": "object"
@@ -3448,6 +3855,10 @@ export const ProjectsNextInputSchema = {
   "properties": {
     "status": {
       "description": "Filter by project status",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical project tag",
       "type": "string"
     }
   },
@@ -3927,7 +4338,12 @@ export const ProxCallsProfilesConfigureInputSchema = {
 /** JSON Schema for the input body of `prox.calls.profiles.list`. */
 export const ProxCallsProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical call profile tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4111,6 +4527,10 @@ export const ProxCallsToolsListInputSchema = {
     "profile": {
       "description": "Filter tools by profile binding",
       "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical call tool tag",
+      "type": "string"
     }
   },
   "type": "object"
@@ -4291,7 +4711,12 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
 /** JSON Schema for the input body of `prox.calls.voice-agents.list`. */
 export const ProxCallsVoiceAgentsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical call voice agent tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4400,6 +4825,10 @@ export const RoutesListInputSchema = {
     "name": {
       "description": "Instance name (omit for all)",
       "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical route tag",
+      "type": "string"
     }
   },
   "type": "object"
@@ -4484,6 +4913,81 @@ export const SdkOpenapiEmitInputSchema = {
       "type": "boolean"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.chat`. */
+export const SelfChatInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "depth": {
+      "description": "Depth: summary, normal, or full",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.context`. */
+export const SelfContextInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "depth": {
+      "description": "Depth: summary, normal, or full",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Maximum recent messages to inspect",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.explain`. */
+export const SelfExplainInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.knowledge`. */
+export const SelfKnowledgeInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.permissions`. */
+export const SelfPermissionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.recent`. */
+export const SelfRecentInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Maximum recent messages to inspect",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.route`. */
+export const SelfRouteInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `self.whoami`. */
+export const SelfWhoamiInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -4651,6 +5155,50 @@ export const SessionsExtendInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.goal`. */
+export const SessionsGoalInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "description": "get|set|create|pause|resume|complete|clear|account",
+      "type": "string"
+    },
+    "budget": {
+      "description": "Positive token budget for set/create",
+      "type": "string"
+    },
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    },
+    "objective": {
+      "description": "Goal objective for set/create",
+      "type": "string"
+    },
+    "project": {
+      "description": "Optional project id link for set/create",
+      "type": "string"
+    },
+    "seconds": {
+      "description": "Elapsed seconds delta for account",
+      "type": "string"
+    },
+    "task": {
+      "description": "Optional task id link for set/create",
+      "type": "string"
+    },
+    "tokens": {
+      "description": "Token delta for account",
+      "type": "string"
+    }
+  },
+  "required": [
+    "action",
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `sessions.info`. */
 export const SessionsInfoInputSchema = {
   "additionalProperties": false,
@@ -4728,6 +5276,38 @@ export const SessionsListInputSchema = {
     "live": {
       "description": "Include live runtime state snapshot",
       "type": "boolean"
+    },
+    "tag": {
+      "description": "Filter by canonical session tag slug",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sessions.prune`. */
+export const SessionsPruneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "description": "Filter by agent ID",
+      "type": "string"
+    },
+    "ephemeral": {
+      "description": "Only match ephemeral sessions",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Actually delete matching sessions; default is dry-run",
+      "type": "boolean"
+    },
+    "inactiveFor": {
+      "description": "Only match sessions inactive for this duration",
+      "type": "string"
+    },
+    "namePrefix": {
+      "description": "Only match sessions whose name or key starts with prefix",
+      "type": "string"
     }
   },
   "type": "object"
@@ -5180,6 +5760,21 @@ export const SessionsTraceInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sessions.visibility`. */
+export const SessionsVisibilityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "nameOrKey": {
+      "description": "Session name or key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "nameOrKey"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `settings.delete`. */
 export const SettingsDeleteInputSchema = {
   "additionalProperties": false,
@@ -5242,6 +5837,145 @@ export const SettingsSetInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `skill-gates.disable`. */
+export const SkillGatesDisableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.enable`. */
+export const SkillGatesEnableInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.list`. */
+export const SkillGatesListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical skill gate rule tag",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.reset`. */
+export const SkillGatesResetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.rm`. */
+export const SkillGatesRmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.set`. */
+export const SkillGatesSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "command": {
+      "description": "Exact shell command",
+      "type": "string"
+    },
+    "commandPrefix": {
+      "description": "Shell command prefix",
+      "type": "string"
+    },
+    "commandRegex": {
+      "description": "Regex against shell command text",
+      "type": "string"
+    },
+    "groupRegex": {
+      "description": "Alias for --pattern",
+      "type": "string"
+    },
+    "id": {
+      "description": "Rule id. Use a default id to override it, or a new id for a custom rule.",
+      "type": "string"
+    },
+    "pattern": {
+      "description": "Regex against normalized Ravi group/tool names",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Skill name loaded by this gate",
+      "type": "string"
+    },
+    "tool": {
+      "description": "Exact runtime tool name",
+      "type": "string"
+    },
+    "toolPrefix": {
+      "description": "Runtime tool name prefix",
+      "type": "string"
+    },
+    "toolRegex": {
+      "description": "Regex against runtime tool names",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "skill"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `skill-gates.show`. */
+export const SkillGatesShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Rule id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `skills.install`. */
 export const SkillsInstallInputSchema = {
   "additionalProperties": false,
@@ -5292,6 +6026,10 @@ export const SkillsListInputSchema = {
     },
     "source": {
       "description": "List skills available in a GitHub URL, git URL or local path",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Filter by canonical skill tag",
       "type": "string"
     }
   },
@@ -5522,16 +6260,120 @@ export const TagsAttachInputSchema = {
       "description": "Target agent id",
       "type": "string"
     },
+    "artifact": {
+      "description": "Target artifact id",
+      "type": "string"
+    },
+    "callProfile": {
+      "description": "Target prox call profile id",
+      "type": "string"
+    },
+    "callRequest": {
+      "description": "Target prox call request id",
+      "type": "string"
+    },
+    "callTool": {
+      "description": "Target prox call tool id",
+      "type": "string"
+    },
+    "callVoiceAgent": {
+      "description": "Target prox call voice agent id",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Target canonical chat id",
+      "type": "string"
+    },
+    "command": {
+      "description": "Target Ravi command id",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Target contact id",
+      "type": "string"
+    },
+    "cronJob": {
+      "description": "Target cron job id",
+      "type": "string"
+    },
+    "devinSession": {
+      "description": "Target Devin session id",
+      "type": "string"
+    },
+    "hook": {
+      "description": "Target hook id",
+      "type": "string"
+    },
+    "insight": {
+      "description": "Target insight id",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Target Ravi channel instance name",
+      "type": "string"
+    },
     "meta": {
       "description": "Free JSON metadata for this binding",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Target task profile id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Target project id",
+      "type": "string"
+    },
+    "route": {
+      "description": "Target route id",
       "type": "string"
     },
     "session": {
       "description": "Target session name",
       "type": "string"
     },
+    "skill": {
+      "description": "Target skill name",
+      "type": "string"
+    },
+    "skillGateRule": {
+      "description": "Target skill gate rule id",
+      "type": "string"
+    },
     "slug": {
       "description": "Tag slug",
+      "type": "string"
+    },
+    "source": {
+      "description": "Binding provenance source",
+      "type": "string"
+    },
+    "target": {
+      "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+      "type": "string"
+    },
+    "task": {
+      "description": "Target task id",
+      "type": "string"
+    },
+    "taskAutomation": {
+      "description": "Target task automation id",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "Target trigger id",
+      "type": "string"
+    },
+    "workflowNode": {
+      "description": "Target workflow node id",
+      "type": "string"
+    },
+    "workflowRun": {
+      "description": "Target workflow run id",
+      "type": "string"
+    },
+    "workflowSpec": {
+      "description": "Target workflow spec id",
       "type": "string"
     }
   },
@@ -5565,6 +6407,10 @@ export const TagsCreateInputSchema = {
     "slug": {
       "description": "Stable tag slug",
       "type": "string"
+    },
+    "source": {
+      "description": "Tag definition provenance source",
+      "type": "string"
     }
   },
   "required": [
@@ -5581,12 +6427,116 @@ export const TagsDetachInputSchema = {
       "description": "Target agent id",
       "type": "string"
     },
+    "artifact": {
+      "description": "Target artifact id",
+      "type": "string"
+    },
+    "callProfile": {
+      "description": "Target prox call profile id",
+      "type": "string"
+    },
+    "callRequest": {
+      "description": "Target prox call request id",
+      "type": "string"
+    },
+    "callTool": {
+      "description": "Target prox call tool id",
+      "type": "string"
+    },
+    "callVoiceAgent": {
+      "description": "Target prox call voice agent id",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Target canonical chat id",
+      "type": "string"
+    },
+    "command": {
+      "description": "Target Ravi command id",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Target contact id",
+      "type": "string"
+    },
+    "cronJob": {
+      "description": "Target cron job id",
+      "type": "string"
+    },
+    "devinSession": {
+      "description": "Target Devin session id",
+      "type": "string"
+    },
+    "hook": {
+      "description": "Target hook id",
+      "type": "string"
+    },
+    "insight": {
+      "description": "Target insight id",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Target Ravi channel instance name",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Target task profile id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Target project id",
+      "type": "string"
+    },
+    "route": {
+      "description": "Target route id",
+      "type": "string"
+    },
     "session": {
       "description": "Target session name",
       "type": "string"
     },
+    "skill": {
+      "description": "Target skill name",
+      "type": "string"
+    },
+    "skillGateRule": {
+      "description": "Target skill gate rule id",
+      "type": "string"
+    },
     "slug": {
       "description": "Tag slug",
+      "type": "string"
+    },
+    "source": {
+      "description": "Detach audit/provenance source",
+      "type": "string"
+    },
+    "target": {
+      "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+      "type": "string"
+    },
+    "task": {
+      "description": "Target task id",
+      "type": "string"
+    },
+    "taskAutomation": {
+      "description": "Target task automation id",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "Target trigger id",
+      "type": "string"
+    },
+    "workflowNode": {
+      "description": "Target workflow node id",
+      "type": "string"
+    },
+    "workflowRun": {
+      "description": "Target workflow run id",
+      "type": "string"
+    },
+    "workflowSpec": {
+      "description": "Target workflow spec id",
       "type": "string"
     }
   },
@@ -5599,7 +6549,36 @@ export const TagsDetachInputSchema = {
 /** JSON Schema for the input body of `tags.list`. */
 export const TagsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "cursor": {
+      "description": "Opaque cursor returned by the previous page",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Filter by kind: system|user",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 30, max: 500)",
+      "type": "string"
+    },
+    "order": {
+      "description": "Sort direction: asc|desc",
+      "type": "string"
+    },
+    "query": {
+      "description": "Search slug, label, or description",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort field: updated|created",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by provenance source",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5611,15 +6590,164 @@ export const TagsSearchInputSchema = {
       "description": "Filter by agent id",
       "type": "string"
     },
+    "artifact": {
+      "description": "Filter by artifact id",
+      "type": "string"
+    },
+    "callProfile": {
+      "description": "Filter by prox call profile id",
+      "type": "string"
+    },
+    "callRequest": {
+      "description": "Filter by prox call request id",
+      "type": "string"
+    },
+    "callTool": {
+      "description": "Filter by prox call tool id",
+      "type": "string"
+    },
+    "callVoiceAgent": {
+      "description": "Filter by prox call voice agent id",
+      "type": "string"
+    },
+    "chat": {
+      "description": "Filter by canonical chat id",
+      "type": "string"
+    },
+    "command": {
+      "description": "Filter by Ravi command id",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact id",
+      "type": "string"
+    },
+    "cronJob": {
+      "description": "Filter by cron job id",
+      "type": "string"
+    },
+    "cursor": {
+      "description": "Opaque cursor returned by the previous page",
+      "type": "string"
+    },
+    "devinSession": {
+      "description": "Filter by Devin session id",
+      "type": "string"
+    },
+    "hook": {
+      "description": "Filter by hook id",
+      "type": "string"
+    },
+    "insight": {
+      "description": "Filter by insight id",
+      "type": "string"
+    },
+    "instance": {
+      "description": "Filter by Ravi channel instance name",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Filter by tag kind: system|user",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 30, max: 500)",
+      "type": "string"
+    },
+    "order": {
+      "description": "Sort direction: asc|desc",
+      "type": "string"
+    },
+    "profile": {
+      "description": "Filter by task profile id",
+      "type": "string"
+    },
+    "project": {
+      "description": "Filter by project id",
+      "type": "string"
+    },
+    "route": {
+      "description": "Filter by route id",
+      "type": "string"
+    },
     "session": {
       "description": "Filter by session name",
+      "type": "string"
+    },
+    "skill": {
+      "description": "Filter by skill name",
+      "type": "string"
+    },
+    "skillGateRule": {
+      "description": "Filter by skill gate rule id",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort field: updated|created",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by binding provenance source",
       "type": "string"
     },
     "tag": {
       "description": "Filter by tag slug",
       "type": "string"
+    },
+    "target": {
+      "description": "Generic target selector, e.g. task:task-123 or workflow_run:wfr-123",
+      "type": "string"
+    },
+    "task": {
+      "description": "Filter by task id",
+      "type": "string"
+    },
+    "taskAutomation": {
+      "description": "Filter by task automation id",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "Filter by trigger id",
+      "type": "string"
+    },
+    "workflowNode": {
+      "description": "Filter by workflow node id",
+      "type": "string"
+    },
+    "workflowRun": {
+      "description": "Filter by workflow run id",
+      "type": "string"
+    },
+    "workflowSpec": {
+      "description": "Filter by workflow spec id",
+      "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `tags.set`. */
+export const TagsSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "description": "Property: label, description, kind, source, metadata",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Tag slug",
+      "type": "string"
+    },
+    "value": {
+      "description": "Property value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "key",
+    "slug",
+    "value"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5780,7 +6908,12 @@ export const TasksAutomationsEnableInputSchema = {
 /** JSON Schema for the input body of `tasks.automations.list`. */
 export const TasksAutomationsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical task automation tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -5919,6 +7052,13 @@ export const TasksCreateInputSchema = {
     "session": {
       "description": "Working session name to use when auto-dispatching",
       "type": "string"
+    },
+    "tag": {
+      "description": "Attach canonical task tags; repeat or pass comma-separated slugs",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "thinking": {
       "description": "Runtime thinking: off|normal|verbose",
@@ -6103,17 +7243,33 @@ export const TasksListInputSchema = {
       "description": "Include archived and visible tasks",
       "type": "boolean"
     },
+    "allTime": {
+      "description": "Disable the default 1d updated_at window",
+      "type": "boolean"
+    },
     "archived": {
       "description": "List only archived tasks",
       "type": "boolean"
+    },
+    "cursor": {
+      "description": "Opaque cursor returned by the previous page",
+      "type": "string"
     },
     "last": {
       "description": "Number of newest tasks to show by default (default: 30; use 0 or \"all\" to disable)",
       "type": "string"
     },
+    "limit": {
+      "description": "Page size (default: 30, max: 500)",
+      "type": "string"
+    },
     "mine": {
       "description": "Filter by current agent/session context",
       "type": "boolean"
+    },
+    "order": {
+      "description": "Sort direction: asc|desc",
+      "type": "string"
     },
     "parent": {
       "description": "Filter direct children of one parent task",
@@ -6135,12 +7291,28 @@ export const TasksListInputSchema = {
       "description": "Filter by assigned session",
       "type": "string"
     },
+    "since": {
+      "description": "Lower updated_at bound: 1d, epoch ms, or ISO datetime",
+      "type": "string"
+    },
+    "sort": {
+      "description": "Sort field: updated|created",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by status",
       "type": "string"
     },
+    "tag": {
+      "description": "Filter by canonical task tag",
+      "type": "string"
+    },
     "text": {
       "description": "Free-text match across id, title, instructions, summary, blocker, profile, agent and session",
+      "type": "string"
+    },
+    "until": {
+      "description": "Upper updated_at bound: 1d, epoch ms, or ISO datetime",
       "type": "string"
     }
   },
@@ -6312,32 +7484,6 @@ export const TasksUnarchiveInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `tmux.list`. */
-export const TmuxListInputSchema = {
-  "additionalProperties": false,
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `tmux.open`. */
-export const TmuxOpenInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "agent": {
-      "description": "Agent ID",
-      "type": "string"
-    },
-    "session": {
-      "description": "Optional Ravi session name/key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "agent"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
@@ -6489,7 +7635,12 @@ export const TriggersEnableInputSchema = {
 /** JSON Schema for the input body of `triggers.list`. */
 export const TriggersListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "tag": {
+      "description": "Filter by canonical trigger tag",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -58,7 +58,9 @@ export type AgentsDeleteInput = {
 export type AgentsDeleteReturn = unknown;
 
 /** Input shape for `agents.list`. */
-export type AgentsListInput = Record<string, never>;
+export type AgentsListInput = {
+  tag?: string;
+};
 
 /** Return shape for `agents.list`. (no @Returns declared) */
 export type AgentsListReturn = unknown;
@@ -252,16 +254,6 @@ export type ArtifactsUpdateInput = {
 /** Return shape for `artifacts.update`. (no @Returns declared) */
 export type ArtifactsUpdateReturn = unknown;
 
-/** Input shape for `artifacts.watch`. */
-export type ArtifactsWatchInput = {
-  id: string;
-  intervalMs?: string;
-  timeoutMs?: string;
-};
-
-/** Return shape for `artifacts.watch`. (no @Returns declared) */
-export type ArtifactsWatchReturn = unknown;
-
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
   caption?: string;
@@ -277,6 +269,42 @@ export type AudioGenerateInput = {
 
 /** Return shape for `audio.generate`. (no @Returns declared) */
 export type AudioGenerateReturn = unknown;
+
+/** Input shape for `commands.list`. */
+export type CommandsListInput = {
+  agent?: string;
+  tag?: string;
+};
+
+/** Return shape for `commands.list`. (no @Returns declared) */
+export type CommandsListReturn = unknown;
+
+/** Input shape for `commands.run`. */
+export type CommandsRunInput = {
+  agent?: string;
+  args?: string[];
+  name: string;
+};
+
+/** Return shape for `commands.run`. (no @Returns declared) */
+export type CommandsRunReturn = unknown;
+
+/** Input shape for `commands.show`. */
+export type CommandsShowInput = {
+  agent?: string;
+  name: string;
+};
+
+/** Return shape for `commands.show`. (no @Returns declared) */
+export type CommandsShowReturn = unknown;
+
+/** Input shape for `commands.validate`. */
+export type CommandsValidateInput = {
+  agent?: string;
+};
+
+/** Return shape for `commands.validate`. (no @Returns declared) */
+export type CommandsValidateReturn = unknown;
 
 /** Input shape for `contacts.add`. */
 export type ContactsAddInput = {
@@ -600,6 +628,12 @@ export type ContextRevokeInput = {
 /** Return shape for `context.revoke`. (no @Returns declared) */
 export type ContextRevokeReturn = unknown;
 
+/** Input shape for `context.visibility`. */
+export type ContextVisibilityInput = Record<string, never>;
+
+/** Return shape for `context.visibility`. (no @Returns declared) */
+export type ContextVisibilityReturn = unknown;
+
 /** Input shape for `context.whoami`. */
 export type ContextWhoamiInput = Record<string, never>;
 
@@ -684,7 +718,9 @@ export type CronEnableInput = {
 export type CronEnableReturn = unknown;
 
 /** Input shape for `cron.list`. */
-export type CronListInput = Record<string, never>;
+export type CronListInput = {
+  tag?: string;
+};
 
 /** Return shape for `cron.list`. (no @Returns declared) */
 export type CronListReturn = unknown;
@@ -1007,7 +1043,9 @@ export type HooksEnableInput = {
 export type HooksEnableReturn = unknown;
 
 /** Input shape for `hooks.list`. */
-export type HooksListInput = Record<string, never>;
+export type HooksListInput = {
+  tag?: string;
+};
 
 /** Return shape for `hooks.list`. (no @Returns declared) */
 export type HooksListReturn = unknown;
@@ -1101,6 +1139,7 @@ export type InsightsCreateInput = {
   profile?: string;
   session?: string;
   summary: string;
+  tag?: string[];
   task?: string;
 };
 
@@ -1118,6 +1157,7 @@ export type InsightsListInput = {
   query?: string;
   rich?: boolean;
   session?: string;
+  tag?: string;
   task?: string;
 };
 
@@ -1201,7 +1241,9 @@ export type InstancesGetInput = {
 export type InstancesGetReturn = unknown;
 
 /** Input shape for `instances.list`. */
-export type InstancesListInput = Record<string, never>;
+export type InstancesListInput = {
+  tag?: string;
+};
 
 /** Return shape for `instances.list`. (no @Returns declared) */
 export type InstancesListReturn = unknown;
@@ -1268,6 +1310,7 @@ export type InstancesRoutesDeletedReturn = unknown;
 /** Input shape for `instances.routes.list`. */
 export type InstancesRoutesListInput = {
   name: string;
+  tag?: string;
 };
 
 /** Return shape for `instances.routes.list`. (no @Returns declared) */
@@ -1363,6 +1406,153 @@ export type MediaSendInput = {
 
 /** Return shape for `media.send`. (no @Returns declared) */
 export type MediaSendReturn = unknown;
+
+/** Input shape for `observers.list`. */
+export type ObserversListInput = {
+  agent?: string;
+  session?: string;
+};
+
+/** Return shape for `observers.list`. (no @Returns declared) */
+export type ObserversListReturn = unknown;
+
+/** Input shape for `observers.profiles.init`. */
+export type ObserversProfilesInitInput = {
+  overwrite?: boolean;
+  profileId: string;
+  source?: string;
+};
+
+/** Return shape for `observers.profiles.init`. (no @Returns declared) */
+export type ObserversProfilesInitReturn = unknown;
+
+/** Input shape for `observers.profiles.list`. */
+export type ObserversProfilesListInput = Record<string, never>;
+
+/** Return shape for `observers.profiles.list`. (no @Returns declared) */
+export type ObserversProfilesListReturn = unknown;
+
+/** Input shape for `observers.profiles.preview`. */
+export type ObserversProfilesPreviewInput = {
+  event?: string;
+  profileId: string;
+};
+
+/** Return shape for `observers.profiles.preview`. (no @Returns declared) */
+export type ObserversProfilesPreviewReturn = unknown;
+
+/** Input shape for `observers.profiles.show`. */
+export type ObserversProfilesShowInput = {
+  profileId: string;
+};
+
+/** Return shape for `observers.profiles.show`. (no @Returns declared) */
+export type ObserversProfilesShowReturn = unknown;
+
+/** Input shape for `observers.profiles.validate`. */
+export type ObserversProfilesValidateInput = {
+  profileId?: string;
+};
+
+/** Return shape for `observers.profiles.validate`. (no @Returns declared) */
+export type ObserversProfilesValidateReturn = unknown;
+
+/** Input shape for `observers.refresh`. */
+export type ObserversRefreshInput = {
+  session: string;
+};
+
+/** Return shape for `observers.refresh`. (no @Returns declared) */
+export type ObserversRefreshReturn = unknown;
+
+/** Input shape for `observers.rules.disable`. */
+export type ObserversRulesDisableInput = {
+  id: string;
+};
+
+/** Return shape for `observers.rules.disable`. (no @Returns declared) */
+export type ObserversRulesDisableReturn = unknown;
+
+/** Input shape for `observers.rules.enable`. */
+export type ObserversRulesEnableInput = {
+  id: string;
+};
+
+/** Return shape for `observers.rules.enable`. (no @Returns declared) */
+export type ObserversRulesEnableReturn = unknown;
+
+/** Input shape for `observers.rules.explain`. */
+export type ObserversRulesExplainInput = {
+  session: string;
+};
+
+/** Return shape for `observers.rules.explain`. (no @Returns declared) */
+export type ObserversRulesExplainReturn = unknown;
+
+/** Input shape for `observers.rules.list`. */
+export type ObserversRulesListInput = Record<string, never>;
+
+/** Return shape for `observers.rules.list`. (no @Returns declared) */
+export type ObserversRulesListReturn = unknown;
+
+/** Input shape for `observers.rules.rm`. */
+export type ObserversRulesRmInput = {
+  id: string;
+};
+
+/** Return shape for `observers.rules.rm`. (no @Returns declared) */
+export type ObserversRulesRmReturn = unknown;
+
+/** Input shape for `observers.rules.set`. */
+export type ObserversRulesSetInput = {
+  delivery?: string;
+  disabled?: boolean;
+  events?: string;
+  id: string;
+  meta?: string;
+  mode?: string;
+  model?: string;
+  observerAgentId: string;
+  permissions?: string;
+  priority?: string;
+  profile?: string;
+  provider?: string;
+  role?: string;
+  scope?: string;
+  sourceAgent?: string;
+  sourceProfile?: string;
+  sourceProject?: string;
+  sourceSession?: string;
+  sourceTask?: string;
+  tag?: string;
+  tagInherited?: boolean;
+  tagTarget?: string;
+};
+
+/** Return shape for `observers.rules.set`. (no @Returns declared) */
+export type ObserversRulesSetReturn = unknown;
+
+/** Input shape for `observers.rules.show`. */
+export type ObserversRulesShowInput = {
+  id: string;
+};
+
+/** Return shape for `observers.rules.show`. (no @Returns declared) */
+export type ObserversRulesShowReturn = unknown;
+
+/** Input shape for `observers.rules.validate`. */
+export type ObserversRulesValidateInput = Record<string, never>;
+
+/** Return shape for `observers.rules.validate`. (no @Returns declared) */
+export type ObserversRulesValidateReturn = unknown;
+
+/** Input shape for `observers.show`. */
+export type ObserversShowInput = {
+  bindingId: string;
+};
+
+/** Return shape for `observers.show`. (no @Returns declared) */
+export type ObserversShowReturn = unknown;
 
 /** Input shape for `permissions.check`. */
 export type PermissionsCheckInput = {
@@ -1488,6 +1678,7 @@ export type ProjectsLinkReturn = unknown;
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
   status?: string;
+  tag?: string;
 };
 
 /** Return shape for `projects.list`. (no @Returns declared) */
@@ -1496,6 +1687,7 @@ export type ProjectsListReturn = unknown;
 /** Input shape for `projects.next`. */
 export type ProjectsNextInput = {
   status?: string;
+  tag?: string;
 };
 
 /** Return shape for `projects.next`. (no @Returns declared) */
@@ -1678,7 +1870,9 @@ export type ProxCallsProfilesConfigureInput = {
 export type ProxCallsProfilesConfigureReturn = unknown;
 
 /** Input shape for `prox.calls.profiles.list`. */
-export type ProxCallsProfilesListInput = Record<string, never>;
+export type ProxCallsProfilesListInput = {
+  tag?: string;
+};
 
 /** Return shape for `prox.calls.profiles.list`. (no @Returns declared) */
 export type ProxCallsProfilesListReturn = unknown;
@@ -1761,6 +1955,7 @@ export type ProxCallsToolsCreateReturn = unknown;
 /** Input shape for `prox.calls.tools.list`. */
 export type ProxCallsToolsListInput = {
   profile?: string;
+  tag?: string;
 };
 
 /** Return shape for `prox.calls.tools.list`. (no @Returns declared) */
@@ -1846,7 +2041,9 @@ export type ProxCallsVoiceAgentsCreateInput = {
 export type ProxCallsVoiceAgentsCreateReturn = unknown;
 
 /** Input shape for `prox.calls.voice-agents.list`. */
-export type ProxCallsVoiceAgentsListInput = Record<string, never>;
+export type ProxCallsVoiceAgentsListInput = {
+  tag?: string;
+};
 
 /** Return shape for `prox.calls.voice-agents.list`. (no @Returns declared) */
 export type ProxCallsVoiceAgentsListReturn = unknown;
@@ -1900,6 +2097,7 @@ export type RoutesExplainReturn = unknown;
 /** Input shape for `routes.list`. */
 export type RoutesListInput = {
   name?: string;
+  tag?: string;
 };
 
 /** Return shape for `routes.list`. (no @Returns declared) */
@@ -1948,6 +2146,61 @@ export type SdkOpenapiEmitInput = {
 
 /** Return shape for `sdk.openapi.emit`. (no @Returns declared) */
 export type SdkOpenapiEmitReturn = unknown;
+
+/** Input shape for `self.chat`. */
+export type SelfChatInput = {
+  depth?: string;
+};
+
+/** Return shape for `self.chat`. (no @Returns declared) */
+export type SelfChatReturn = unknown;
+
+/** Input shape for `self.context`. */
+export type SelfContextInput = {
+  depth?: string;
+  limit?: string;
+};
+
+/** Return shape for `self.context`. (no @Returns declared) */
+export type SelfContextReturn = unknown;
+
+/** Input shape for `self.explain`. */
+export type SelfExplainInput = Record<string, never>;
+
+/** Return shape for `self.explain`. (no @Returns declared) */
+export type SelfExplainReturn = unknown;
+
+/** Input shape for `self.knowledge`. */
+export type SelfKnowledgeInput = Record<string, never>;
+
+/** Return shape for `self.knowledge`. (no @Returns declared) */
+export type SelfKnowledgeReturn = unknown;
+
+/** Input shape for `self.permissions`. */
+export type SelfPermissionsInput = Record<string, never>;
+
+/** Return shape for `self.permissions`. (no @Returns declared) */
+export type SelfPermissionsReturn = unknown;
+
+/** Input shape for `self.recent`. */
+export type SelfRecentInput = {
+  limit?: string;
+};
+
+/** Return shape for `self.recent`. (no @Returns declared) */
+export type SelfRecentReturn = unknown;
+
+/** Input shape for `self.route`. */
+export type SelfRouteInput = Record<string, never>;
+
+/** Return shape for `self.route`. (no @Returns declared) */
+export type SelfRouteReturn = unknown;
+
+/** Input shape for `self.whoami`. */
+export type SelfWhoamiInput = Record<string, never>;
+
+/** Return shape for `self.whoami`. (no @Returns declared) */
+export type SelfWhoamiReturn = unknown;
 
 /** Input shape for `service.start`. */
 export type ServiceStartInput = Record<string, never>;
@@ -2024,6 +2277,21 @@ export type SessionsExtendInput = {
 /** Return shape for `sessions.extend`. (no @Returns declared) */
 export type SessionsExtendReturn = unknown;
 
+/** Input shape for `sessions.goal`. */
+export type SessionsGoalInput = {
+  action: string;
+  budget?: string;
+  nameOrKey: string;
+  objective?: string;
+  project?: string;
+  seconds?: string;
+  task?: string;
+  tokens?: string;
+};
+
+/** Return shape for `sessions.goal`. (no @Returns declared) */
+export type SessionsGoalReturn = unknown;
+
 /** Input shape for `sessions.info`. */
 export type SessionsInfoInput = {
   nameOrKey: string;
@@ -2057,10 +2325,23 @@ export type SessionsListInput = {
   agent?: string;
   ephemeral?: boolean;
   live?: boolean;
+  tag?: string;
 };
 
 /** Return shape for `sessions.list`. (no @Returns declared) */
 export type SessionsListReturn = unknown;
+
+/** Input shape for `sessions.prune`. */
+export type SessionsPruneInput = {
+  agent?: string;
+  ephemeral?: boolean;
+  execute?: boolean;
+  inactiveFor?: string;
+  namePrefix?: string;
+};
+
+/** Return shape for `sessions.prune`. (no @Returns declared) */
+export type SessionsPruneReturn = unknown;
 
 /** Input shape for `sessions.read`. */
 export type SessionsReadInput = {
@@ -2240,6 +2521,14 @@ export type SessionsTraceInput = {
 /** Return shape for `sessions.trace`. (no @Returns declared) */
 export type SessionsTraceReturn = unknown;
 
+/** Input shape for `sessions.visibility`. */
+export type SessionsVisibilityInput = {
+  nameOrKey: string;
+};
+
+/** Return shape for `sessions.visibility`. (no @Returns declared) */
+export type SessionsVisibilityReturn = unknown;
+
 /** Input shape for `settings.delete`. */
 export type SettingsDeleteInput = {
   key: string;
@@ -2273,6 +2562,71 @@ export type SettingsSetInput = {
 /** Return shape for `settings.set`. (no @Returns declared) */
 export type SettingsSetReturn = unknown;
 
+/** Input shape for `skill-gates.disable`. */
+export type SkillGatesDisableInput = {
+  id: string;
+};
+
+/** Return shape for `skill-gates.disable`. (no @Returns declared) */
+export type SkillGatesDisableReturn = unknown;
+
+/** Input shape for `skill-gates.enable`. */
+export type SkillGatesEnableInput = {
+  id: string;
+};
+
+/** Return shape for `skill-gates.enable`. (no @Returns declared) */
+export type SkillGatesEnableReturn = unknown;
+
+/** Input shape for `skill-gates.list`. */
+export type SkillGatesListInput = {
+  tag?: string;
+};
+
+/** Return shape for `skill-gates.list`. (no @Returns declared) */
+export type SkillGatesListReturn = unknown;
+
+/** Input shape for `skill-gates.reset`. */
+export type SkillGatesResetInput = {
+  id: string;
+};
+
+/** Return shape for `skill-gates.reset`. (no @Returns declared) */
+export type SkillGatesResetReturn = unknown;
+
+/** Input shape for `skill-gates.rm`. */
+export type SkillGatesRmInput = {
+  id: string;
+};
+
+/** Return shape for `skill-gates.rm`. (no @Returns declared) */
+export type SkillGatesRmReturn = unknown;
+
+/** Input shape for `skill-gates.set`. */
+export type SkillGatesSetInput = {
+  command?: string;
+  commandPrefix?: string;
+  commandRegex?: string;
+  groupRegex?: string;
+  id: string;
+  pattern?: string;
+  skill: string;
+  tool?: string;
+  toolPrefix?: string;
+  toolRegex?: string;
+};
+
+/** Return shape for `skill-gates.set`. (no @Returns declared) */
+export type SkillGatesSetReturn = unknown;
+
+/** Input shape for `skill-gates.show`. */
+export type SkillGatesShowInput = {
+  id: string;
+};
+
+/** Return shape for `skill-gates.show`. (no @Returns declared) */
+export type SkillGatesShowReturn = unknown;
+
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;
@@ -2292,6 +2646,7 @@ export type SkillsListInput = {
   codex?: boolean;
   installed?: boolean;
   source?: string;
+  tag?: string;
 };
 
 /** Return shape for `skills.list`. (no @Returns declared) */
@@ -2401,9 +2756,35 @@ export type StickersShowReturn = unknown;
 /** Input shape for `tags.attach`. */
 export type TagsAttachInput = {
   agent?: string;
+  artifact?: string;
+  callProfile?: string;
+  callRequest?: string;
+  callTool?: string;
+  callVoiceAgent?: string;
+  chat?: string;
+  command?: string;
+  contact?: string;
+  cronJob?: string;
+  devinSession?: string;
+  hook?: string;
+  insight?: string;
+  instance?: string;
   meta?: string;
+  profile?: string;
+  project?: string;
+  route?: string;
   session?: string;
+  skill?: string;
+  skillGateRule?: string;
   slug: string;
+  source?: string;
+  target?: string;
+  task?: string;
+  taskAutomation?: string;
+  trigger?: string;
+  workflowNode?: string;
+  workflowRun?: string;
+  workflowSpec?: string;
 };
 
 /** Return shape for `tags.attach`. (no @Returns declared) */
@@ -2416,6 +2797,7 @@ export type TagsCreateInput = {
   label?: string;
   meta?: string;
   slug: string;
+  source?: string;
 };
 
 /** Return shape for `tags.create`. (no @Returns declared) */
@@ -2424,15 +2806,49 @@ export type TagsCreateReturn = unknown;
 /** Input shape for `tags.detach`. */
 export type TagsDetachInput = {
   agent?: string;
+  artifact?: string;
+  callProfile?: string;
+  callRequest?: string;
+  callTool?: string;
+  callVoiceAgent?: string;
+  chat?: string;
+  command?: string;
+  contact?: string;
+  cronJob?: string;
+  devinSession?: string;
+  hook?: string;
+  insight?: string;
+  instance?: string;
+  profile?: string;
+  project?: string;
+  route?: string;
   session?: string;
+  skill?: string;
+  skillGateRule?: string;
   slug: string;
+  source?: string;
+  target?: string;
+  task?: string;
+  taskAutomation?: string;
+  trigger?: string;
+  workflowNode?: string;
+  workflowRun?: string;
+  workflowSpec?: string;
 };
 
 /** Return shape for `tags.detach`. (no @Returns declared) */
 export type TagsDetachReturn = unknown;
 
 /** Input shape for `tags.list`. */
-export type TagsListInput = Record<string, never>;
+export type TagsListInput = {
+  cursor?: string;
+  kind?: string;
+  limit?: string;
+  order?: string;
+  query?: string;
+  sort?: string;
+  source?: string;
+};
 
 /** Return shape for `tags.list`. (no @Returns declared) */
 export type TagsListReturn = unknown;
@@ -2440,12 +2856,53 @@ export type TagsListReturn = unknown;
 /** Input shape for `tags.search`. */
 export type TagsSearchInput = {
   agent?: string;
+  artifact?: string;
+  callProfile?: string;
+  callRequest?: string;
+  callTool?: string;
+  callVoiceAgent?: string;
+  chat?: string;
+  command?: string;
+  contact?: string;
+  cronJob?: string;
+  cursor?: string;
+  devinSession?: string;
+  hook?: string;
+  insight?: string;
+  instance?: string;
+  kind?: string;
+  limit?: string;
+  order?: string;
+  profile?: string;
+  project?: string;
+  route?: string;
   session?: string;
+  skill?: string;
+  skillGateRule?: string;
+  sort?: string;
+  source?: string;
   tag?: string;
+  target?: string;
+  task?: string;
+  taskAutomation?: string;
+  trigger?: string;
+  workflowNode?: string;
+  workflowRun?: string;
+  workflowSpec?: string;
 };
 
 /** Return shape for `tags.search`. (no @Returns declared) */
 export type TagsSearchReturn = unknown;
+
+/** Input shape for `tags.set`. */
+export type TagsSetInput = {
+  key: string;
+  slug: string;
+  value: string;
+};
+
+/** Return shape for `tags.set`. (no @Returns declared) */
+export type TagsSetReturn = unknown;
 
 /** Input shape for `tags.show`. */
 export type TagsShowInput = {
@@ -2507,7 +2964,9 @@ export type TasksAutomationsEnableInput = {
 export type TasksAutomationsEnableReturn = unknown;
 
 /** Input shape for `tasks.automations.list`. */
-export type TasksAutomationsListInput = Record<string, never>;
+export type TasksAutomationsListInput = {
+  tag?: string;
+};
 
 /** Return shape for `tasks.automations.list`. (no @Returns declared) */
 export type TasksAutomationsListReturn = unknown;
@@ -2562,6 +3021,7 @@ export type TasksCreateInput = {
   reportEvents?: string;
   reportTo?: string;
   session?: string;
+  tag?: string[];
   thinking?: string;
   title: string;
   worktreeBranch?: string;
@@ -2637,16 +3097,24 @@ export type TasksFailReturn = unknown;
 export type TasksListInput = {
   agent?: string;
   all?: boolean;
+  allTime?: boolean;
   archived?: boolean;
+  cursor?: string;
   last?: string;
+  limit?: string;
   mine?: boolean;
+  order?: string;
   parent?: string;
   profile?: string;
   root?: string;
   roots?: boolean;
   session?: string;
+  since?: string;
+  sort?: string;
   status?: string;
+  tag?: string;
   text?: string;
+  until?: string;
 };
 
 /** Return shape for `tasks.list`. (no @Returns declared) */
@@ -2727,21 +3195,6 @@ export type TasksUnarchiveInput = {
 /** Return shape for `tasks.unarchive`. (no @Returns declared) */
 export type TasksUnarchiveReturn = unknown;
 
-/** Input shape for `tmux.list`. */
-export type TmuxListInput = Record<string, never>;
-
-/** Return shape for `tmux.list`. (no @Returns declared) */
-export type TmuxListReturn = unknown;
-
-/** Input shape for `tmux.open`. */
-export type TmuxOpenInput = {
-  agent: string;
-  session?: string;
-};
-
-/** Return shape for `tmux.open`. (no @Returns declared) */
-export type TmuxOpenReturn = unknown;
-
 /** Input shape for `tools.list`. */
 export type ToolsListInput = Record<string, never>;
 
@@ -2818,7 +3271,9 @@ export type TriggersEnableInput = {
 export type TriggersEnableReturn = unknown;
 
 /** Input shape for `triggers.list`. */
-export type TriggersListInput = Record<string, never>;
+export type TriggersListInput = {
+  tag?: string;
+};
 
 /** Return shape for `triggers.list`. (no @Returns declared) */
 export type TriggersListReturn = unknown;
