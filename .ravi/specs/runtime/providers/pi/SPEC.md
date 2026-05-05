@@ -92,7 +92,7 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - `set_model` backs `setModel` and must affect the next request even if no active request exists.
 - `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels.
 - `compact` is provider-native compaction and MUST emit `status: compacting` while active.
-- `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested.
+- `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested and mapped to `runtime/session-continuity/forks`.
 - `get_messages` and `get_last_assistant_text` may support `thread.read`-style controls.
 
 ## Event Mapping
@@ -150,6 +150,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST not expose restricted Ravi agents until Pi tool permission hooks are bridged to Ravi host services.
 - The provider MUST not save Pi session file paths as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Pi session file.
+- Pi native fork/clone MUST NOT flip canonical `supportsSessionFork` until file-backed parent/child state, prompt atom mapping, and replay semantics are tested.
 
 ## Pre-Implementation Requirements
 

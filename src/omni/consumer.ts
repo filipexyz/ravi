@@ -52,6 +52,13 @@ import type {
   MessageTarget,
   RaviCommandPromptMetadata,
 } from "../runtime/message-types.js";
+import {
+  actorMetadataFromMessageMetadata,
+  buildRuntimeMessageEditRebasePlan,
+  renderRuntimeMessageEditRebasePrompt,
+  summarizeRuntimeMessageEditRebasePlan,
+  type RuntimeMessageEditRebasePlan,
+} from "../runtime/session-rebase.js";
 import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
@@ -641,19 +648,33 @@ export class OmniConsumer {
           : {}),
       },
     };
+    const editOriginalMessageMeta = editInfo ? dbGetMessageMeta(editInfo.editedMessageId) : null;
+    const effectiveActorMetadata = this.resolveEditedMessageActorMetadata(sourceActorMetadata, editOriginalMessageMeta);
+    const effectiveActorType = effectiveActorMetadata.actorType ?? actorType;
+    const effectiveActorAgentId =
+      effectiveActorMetadata.actorAgentId ?? (effectiveActorType === "agent" ? actorAgentId : undefined);
+    const effectiveContactId =
+      effectiveActorMetadata.contactId ??
+      (effectiveActorType === "contact" && senderContact?.id ? senderContact.id : undefined);
+    const effectivePlatformIdentityId = effectiveActorMetadata.platformIdentityId ?? senderPlatformIdentity?.id;
+    const effectiveRawSenderId = effectiveActorMetadata.rawSenderId ?? senderPhone;
+    const effectiveNormalizedSenderId = effectiveActorMetadata.normalizedSenderId ?? normalizedSenderId;
     dbUpsertChatParticipant({
       chatId: canonicalChat.id,
-      platformIdentityId: senderPlatformIdentity?.id ?? null,
-      contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
-      agentId: actorAgentId ?? null,
-      rawPlatformUserId: senderPhone,
-      normalizedPlatformUserId: normalizedSenderId,
-      role: actorType === "agent" ? "agent" : "member",
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+      agentId: effectiveActorAgentId ?? null,
+      rawPlatformUserId: effectiveRawSenderId,
+      normalizedPlatformUserId: effectiveNormalizedSenderId,
+      role: effectiveActorType === "agent" ? "agent" : "member",
       status: "active",
       source: "inbound_message",
       metadata: {
         displayName: rawPayloadString(rawPayload, "pushName") ?? null,
         resolvedSenderId: resolvedSenderPhone,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
       },
       seenAt: msgTs,
     });
@@ -702,15 +723,15 @@ export class OmniConsumer {
       chatId: chatJid,
       threadId: threadId ?? null,
       messageId: payload.externalId ?? null,
-      canonicalChatId: sourceActorMetadata.canonicalChatId ?? null,
-      actorType: sourceActorMetadata.actorType ?? null,
-      contactId: sourceActorMetadata.contactId ?? null,
-      actorAgentId: sourceActorMetadata.actorAgentId ?? null,
-      platformIdentityId: sourceActorMetadata.platformIdentityId ?? null,
-      rawSenderId: sourceActorMetadata.rawSenderId ?? null,
-      normalizedSenderId: sourceActorMetadata.normalizedSenderId ?? null,
-      identityConfidence: sourceActorMetadata.identityConfidence ?? null,
-      identityProvenance: sourceActorMetadata.identityProvenance ?? null,
+      canonicalChatId: effectiveActorMetadata.canonicalChatId ?? null,
+      actorType: effectiveActorMetadata.actorType ?? null,
+      contactId: effectiveActorMetadata.contactId ?? null,
+      actorAgentId: effectiveActorMetadata.actorAgentId ?? null,
+      platformIdentityId: effectiveActorMetadata.platformIdentityId ?? null,
+      rawSenderId: effectiveActorMetadata.rawSenderId ?? null,
+      normalizedSenderId: effectiveActorMetadata.normalizedSenderId ?? null,
+      identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
+      identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
     const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
     dbBindSessionToChat({
@@ -723,14 +744,17 @@ export class OmniConsumer {
     });
     dbUpsertSessionParticipant({
       sessionKey: resolved.sessionKey,
-      ownerType: actorType === "agent" ? "agent" : senderContact ? "contact" : "unknown",
-      ownerId: actorType === "agent" ? (actorAgentId ?? null) : (senderContact?.id ?? null),
-      platformIdentityId: senderPlatformIdentity?.id ?? null,
-      role: actorType === "agent" ? "agent" : senderContact ? "human" : "unknown",
+      ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",
+      ownerId: effectiveActorType === "agent" ? (effectiveActorAgentId ?? null) : (effectiveContactId ?? null),
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      role: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "human" : "unknown",
       metadata: {
-        rawSenderId: senderPhone,
-        normalizedSenderId,
+        rawSenderId: effectiveRawSenderId,
+        normalizedSenderId: effectiveNormalizedSenderId,
         canonicalChatId: canonicalChat.id,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
       },
       seenAt: msgTs,
     });
@@ -753,10 +777,10 @@ export class OmniConsumer {
           senderId: senderPhone,
           resolvedSenderPhone,
           canonicalChatId: canonicalChat.id,
-          actorType,
-          contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
-          actorAgentId: actorAgentId ?? null,
-          platformIdentityId: senderPlatformIdentity?.id ?? null,
+          actorType: effectiveActorType,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+          actorAgentId: effectiveActorAgentId ?? null,
+          platformIdentityId: effectivePlatformIdentityId ?? null,
           chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },
@@ -931,15 +955,15 @@ export class OmniConsumer {
 
     if (payload.externalId && chatJid) {
       dbSaveMessageMeta(payload.externalId, chatJid, {
-        canonicalChatId: sourceActorMetadata.canonicalChatId,
-        actorType: sourceActorMetadata.actorType,
-        contactId: sourceActorMetadata.contactId,
-        agentId: sourceActorMetadata.actorAgentId,
-        platformIdentityId: sourceActorMetadata.platformIdentityId,
-        rawSenderId: sourceActorMetadata.rawSenderId,
-        normalizedSenderId: sourceActorMetadata.normalizedSenderId,
-        identityConfidence: sourceActorMetadata.identityConfidence,
-        identityProvenance: sourceActorMetadata.identityProvenance,
+        canonicalChatId: effectiveActorMetadata.canonicalChatId,
+        actorType: effectiveActorMetadata.actorType,
+        contactId: effectiveActorMetadata.contactId,
+        agentId: effectiveActorMetadata.actorAgentId,
+        platformIdentityId: effectiveActorMetadata.platformIdentityId,
+        rawSenderId: effectiveActorMetadata.rawSenderId,
+        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
+        identityConfidence: effectiveActorMetadata.identityConfidence,
+        identityProvenance: effectiveActorMetadata.identityProvenance,
         transcription: mediaResult?.transcript,
         mediaPath: mediaResult?.localPath,
         mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
@@ -996,7 +1020,7 @@ export class OmniConsumer {
       groupMembers,
       chatJid,
       event,
-      sourceActorMetadata,
+      effectiveActorMetadata,
       editInfo,
     );
 
@@ -1054,20 +1078,8 @@ export class OmniConsumer {
       chatId: chatJid,
       ...(threadId ? { threadId } : {}),
       ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
-      ...sourceActorMetadata,
+      ...effectiveActorMetadata,
     };
-
-    const editRestart = editInfo
-      ? await this.prepareEditedMessageRestart({
-          sessionName,
-          sessionKey: resolved.sessionKey,
-          agent,
-          source,
-          context,
-          editInfo,
-          agentCwd,
-        })
-      : null;
 
     const commandExpansion = await this.expandInboundRaviCommand({
       rawText,
@@ -1096,9 +1108,36 @@ export class OmniConsumer {
       replyMediaPath,
       commandExpansion.content,
     );
+    const editRebasePlan = editInfo
+      ? buildRuntimeMessageEditRebasePlan({
+          sessionName,
+          sessionKey: resolved.sessionKey,
+          agentId: agent.id,
+          chatId: chatJid,
+          editedMessageId: editInfo.editedMessageId,
+          editEventId: editInfo.editEventId,
+          editedPrompt: envelope,
+        })
+      : null;
+    const editRestart =
+      editInfo && editRebasePlan
+        ? await this.prepareEditedMessageRestart({
+            sessionName,
+            sessionKey: resolved.sessionKey,
+            agent,
+            source,
+            context,
+            editInfo,
+            agentCwd,
+            rebasePlan: editRebasePlan,
+          })
+        : null;
     const finalEnvelope =
-      editRestart && editInfo
-        ? `${this.formatEditedMessageRestartNotice(editInfo, editRestart)}\n\n${envelope}`
+      editRestart && editInfo && editRebasePlan
+        ? renderRuntimeMessageEditRebasePrompt({
+            restartNotice: this.formatEditedMessageRestartNotice(editInfo, editRestart),
+            plan: editRebasePlan,
+          })
         : envelope;
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
@@ -1300,6 +1339,7 @@ export class OmniConsumer {
     context: MessageContext;
     editInfo: MessageEditInfo;
     agentCwd: string;
+    rebasePlan: RuntimeMessageEditRebasePlan;
   }): Promise<{
     aborted: boolean;
     reset: boolean;
@@ -1310,7 +1350,7 @@ export class OmniConsumer {
         source: "omni",
         action: "message.edited",
         reason: "message_edited_restart",
-        actor: input.context.senderId,
+        actor: input.source.normalizedSenderId ?? input.context.senderId,
         correlationId: input.editInfo.editEventId,
         request: {
           messageId: input.editInfo.editedMessageId,
@@ -1337,6 +1377,7 @@ export class OmniConsumer {
           aborted,
           reset,
           workspace,
+          rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
         },
       });
     } catch (error) {
@@ -1357,6 +1398,7 @@ export class OmniConsumer {
       reset,
       workspaceState: workspace.state,
       changedFiles: workspace.changedFiles,
+      rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
     });
 
     return { aborted, reset, workspace };
@@ -1382,6 +1424,31 @@ export class OmniConsumer {
     } catch {
       return { state: "unavailable", changedFiles: 0, preview: [] };
     }
+  }
+
+  private resolveEditedMessageActorMetadata(
+    current: MessageActorMetadata,
+    originalMessageMeta: ReturnType<typeof dbGetMessageMeta>,
+  ): MessageActorMetadata {
+    const inherited = actorMetadataFromMessageMetadata(originalMessageMeta);
+    if (!inherited || (!inherited.contactId && !inherited.actorAgentId && inherited.actorType === "unknown")) {
+      return current;
+    }
+
+    return {
+      ...current,
+      ...inherited,
+      canonicalChatId: current.canonicalChatId ?? inherited.canonicalChatId,
+      identityProvenance: {
+        ...(inherited.identityProvenance ?? {}),
+        inheritedFromEditedMessageId: originalMessageMeta?.messageId,
+        editEventActor: {
+          actorType: current.actorType ?? null,
+          rawSenderId: current.rawSenderId ?? null,
+          normalizedSenderId: current.normalizedSenderId ?? null,
+        },
+      },
+    };
   }
 
   private formatEditedMessageRestartNotice(

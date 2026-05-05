@@ -36,7 +36,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Fallback transport: JSON CLI exec exists in code but the app-server path is the active rich integration.
 - Session state: thread/session id plus cwd in `RuntimeSessionState.params`.
 - Resume: supported only when stored cwd matches current cwd.
-- Fork: not supported by provider capabilities, even though native control can fork threads operationally.
+- Fork: not supported by provider capabilities, even though native control can fork threads operationally. Canonical fork requires the `runtime/session-continuity/forks` materializer to map Codex threads/turns back to Ravi prompt atoms.
 - Partial text: supported through `agent_message.delta`.
 - Dynamic tools: disabled. Ravi CLI registry commands MUST NOT be advertised as Codex native dynamic tools.
 - Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
@@ -90,6 +90,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - A native exit without terminal event MUST become recoverable `turn.failed`.
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.
 - The provider MUST sync Codex skills during `prepareSession` and include the skill catalog in provider instructions.
+- Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
 
 ## Validation
 

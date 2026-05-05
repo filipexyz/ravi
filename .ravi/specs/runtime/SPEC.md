@@ -47,6 +47,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 - `RuntimeHostServices`: Ravi-owned dynamic tools, command authorization, tool authorization, capability authorization, and user input.
 - `RuntimeHostHooks`: provider-native hook adapter when supported.
 - `RuntimeHostStreamingSession`: host-side live state for one session process/stream.
+- `RuntimeSessionContinuity`: resume, fork, rebase, and replay planning from Ravi-owned prompt atoms and provider state.
 - `RuntimeEvent`: canonical event stream consumed by the Ravi host event loop.
 - `RuntimeEventLoop`: canonical event consumer that emits NATS events, traces, tool events, responses, cost/tokens, and provider state.
 

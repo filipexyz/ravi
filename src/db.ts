@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { Database, type SQLQueryBindings } from "bun:sqlite";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { getRaviStateDir } from "./utils/paths.js";
@@ -201,6 +201,82 @@ export function countHistoryByChatIds(chatIds: string[], agentId?: string | null
  */
 export function getRecentSessionHistory(sessionId: string, limit = 50): Message[] {
   return getRecentHistory(sessionId, limit);
+}
+
+export interface MessageHistoryScope {
+  agentId?: string | null;
+  chatId?: string | null;
+}
+
+function scopedMessageWhere(scope: MessageHistoryScope, params: SQLQueryBindings[]): string {
+  const clauses: string[] = [];
+  if (scope.agentId) {
+    clauses.push("(agent_id = ? OR agent_id IS NULL)");
+    params.push(scope.agentId);
+  }
+  if (scope.chatId) {
+    clauses.push("chat_id = ?");
+    params.push(scope.chatId);
+  }
+  return clauses.length > 0 ? ` AND ${clauses.join(" AND ")}` : "";
+}
+
+export function getUserMessageBySourceMessageId(
+  sessionId: string,
+  sourceMessageId: string,
+  scope: MessageHistoryScope = {},
+): Message | null {
+  const params: SQLQueryBindings[] = [sessionId, sourceMessageId];
+  const scopeWhere = scopedMessageWhere(scope, params);
+  return (
+    (getDb()
+      .prepare(
+        `SELECT * FROM messages
+         WHERE session_id = ? AND source_message_id = ? AND role = 'user'${scopeWhere}
+         ORDER BY id ASC
+         LIMIT 1`,
+      )
+      .get(...params) as Message | null) ?? null
+  );
+}
+
+export function getMessagesBeforeMessageId(
+  sessionId: string,
+  messageId: number,
+  limit: number,
+  scope: MessageHistoryScope = {},
+): Message[] {
+  if (limit <= 0) return [];
+  const params: SQLQueryBindings[] = [sessionId, messageId];
+  const scopeWhere = scopedMessageWhere(scope, params);
+  const messages = getDb()
+    .prepare(
+      `SELECT * FROM messages
+       WHERE session_id = ? AND id < ?${scopeWhere}
+       ORDER BY id DESC
+       LIMIT ?`,
+    )
+    .all(...params, limit) as Message[];
+  return messages.reverse();
+}
+
+export function getUserMessagesAfterMessageId(
+  sessionId: string,
+  messageId: number,
+  limit: number,
+  scope: MessageHistoryScope = {},
+): Message[] {
+  if (limit <= 0) return [];
+  const params: SQLQueryBindings[] = [sessionId, messageId];
+  const scopeWhere = scopedMessageWhere(scope, params);
+  return getDb()
+    .prepare(
+      `SELECT * FROM messages
+       WHERE session_id = ? AND id > ? AND role = 'user'${scopeWhere}
+       ORDER BY id ASC
+       LIMIT ?`,
+    )
+    .all(...params, limit) as Message[];
 }
 
 /**

@@ -56,7 +56,7 @@ provider adapters and registry code.
 Important capability gates:
 
 - `supportsSessionResume`: stored runtime session state can be reused.
-- `supportsSessionFork`: thread sessions can fork from parent provider state.
+- `supportsSessionFork`: the provider can materialize a canonical Ravi fork plan for declared fork point kinds.
 - `supportsPartialText`: `text.delta` can be streamed as partial output.
 - `supportsToolHooks`: restricted tool access can be enforced by runtime/provider hooks.
 - `supportsHostSessionHooks`: host-native session hooks are available.
@@ -65,6 +65,14 @@ Important capability gates:
 - `supportsRemoteSpawn`: remote execution can be attached to the runtime session.
 - `toolAccessRequirement`: chooses whether access requires full tool+executable rights or only tool surface rights.
 - `legacyEventTopicSuffix`: compatibility-only event suffix. New consumers should read canonical runtime events.
+
+## Session Continuity And Forks
+
+Ravi owns canonical session continuity. Provider-native session ids, thread ids, files, and fork controls are materialization details.
+
+Canonical fork/rebase is defined in `.ravi/specs/runtime/session-continuity/forks`. A provider must not advertise `supportsSessionFork` just because it has a native command named fork. It must first declare and test how it maps Ravi prompt atoms, provider turns, parent/child state, replay, rollback, and persistence.
+
+Message edits require current-session rebase: replace the edited prompt atom, preserve later atoms, and materialize a provider state that reflects the rebuilt conversation.
 
 ## Start Request
 

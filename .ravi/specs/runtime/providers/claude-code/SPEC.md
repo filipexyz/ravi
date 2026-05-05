@@ -37,7 +37,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Execution mode: provider query bridge.
 - Session state: native session id in `RuntimeSessionState.params`.
 - Resume: supported.
-- Fork: supported.
+- Fork: supported only for provider-session-level native fork semantics. Arbitrary historical fork/rebase from a Ravi prompt atom requires the canonical `runtime/session-continuity/forks` planner and replay/materializer.
 - Partial text: supported through stream delta events.
 - Tool hooks: supported through provider-native hook integration.
 - Host session hooks: supported.
@@ -83,6 +83,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - A query exception MUST become recoverable `turn.failed`, not an unhandled event-loop error.
 - A provider stream that ends without a terminal result MUST become recoverable `turn.failed`.
 - `setModel` MUST update current and subsequent turns; if native live switch fails, the next query MUST still use the requested model.
+- Claude native `forkSession` MUST NOT be treated as arbitrary prompt-history fork unless the SDK exposes a tested cursor that maps to Ravi prompt atoms.
 
 ## Validation
 

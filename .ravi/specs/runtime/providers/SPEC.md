@@ -115,6 +115,20 @@ Structured capabilities every provider MUST expose:
 
 The legacy fields remain until downstream call sites are migrated. New provider decisions MUST prefer structured fields.
 
+## Canonical Fork Support
+
+Provider-native fork controls are not automatically Ravi session fork support. A provider advertises canonical fork only when it can materialize a Ravi fork plan from `runtime/session-continuity/forks`.
+
+A provider that supports canonical fork MUST declare:
+
+- supported Ravi fork point kinds, especially prompt atom boundaries.
+- whether native fork copies state without mutating the parent.
+- whether child rollback is available.
+- whether replay is structured user/assistant history or a lossy plain text transcript.
+- how the new provider state is persisted for a branch or current-session rebase.
+
+Native controls such as Codex `thread.fork` or Pi `fork`/`clone` MAY remain available through `runtimeControl` for debugging and provider operations. They MUST NOT flip `supportsSessionFork` until the canonical materializer maps provider state to Ravi prompt atoms, traces, and session persistence.
+
 ## Pre-Pi Requirements
 
 Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime surfaces:
@@ -146,7 +160,7 @@ Before implementing the Pi adapter, Ravi SHOULD harden these generic runtime sur
 - A provider that supports restricted tool access MUST route permission decisions through Ravi host services or host hooks.
 - A provider that cannot support restricted access MUST declare that through capabilities so the launcher can reject incompatible agents.
 - A provider that supports resume MUST return a `RuntimeSessionState` on `turn.complete`.
-- A provider that supports fork MUST define how parent provider state maps into the child session.
+- A provider that supports fork MUST define how parent provider state maps into the child or rebased session, including prompt atom mapping.
 - A provider that supports control MUST reject unsafe control operations while an active turn is running.
 - `turn.steer` means “inject this into the active native run”; `turn.follow_up` means “run this after the active native run would otherwise stop”. CLIs and UIs MUST expose both semantics distinctly.
 - A provider MUST NOT report a skill as loaded unless it can expose observed evidence or Ravi completed an explicit provider injection flow.
