@@ -1091,7 +1091,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             reason: streaming.internalAbortReason,
           });
           streaming.abortController.abort();
-          streamingSessions.delete(sessionName);
+          if (streamingSessions.delete(sessionName)) {
+            drainPendingStarts();
+          }
         }
         continue;
       }
@@ -1360,8 +1362,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             internalAbortReason,
             error: event.error,
           });
+          // End the session instead of `continue`: claude-code can wedge after
+          // an interrupt-during-tool_use (`[ede_diagnostic] stop_reason=tool_use`).
+          // Subsequent prompts to the wedged subprocess silently no-op while the
+          // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
+          // on the next inbound message; stashed messages are preserved by
+          // session-launcher for the next session to drain.
           signalTurnComplete();
-          continue;
+          streaming.done = true;
+          break;
         }
 
         if (streaming.agentMode !== "sentinel") {
@@ -1401,8 +1410,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.abortController.abort();
     }
 
-    streamingSessions.delete(sessionName);
-    drainPendingStarts();
+    if (streamingSessions.delete(sessionName)) {
+      drainPendingStarts();
+    }
   }
 }
 
