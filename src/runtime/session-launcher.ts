@@ -40,10 +40,8 @@ export interface StartRuntimeSessionOptions {
   prompt: RuntimeLaunchPrompt;
   configModel: string;
   instanceId: string;
-  maxConcurrentSessions: number;
   streamingSessions: Map<string, RuntimeHostStreamingSession>;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
-  pendingStarts: PendingRuntimeSessionStart[];
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
 }
@@ -75,67 +73,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     prompt,
     configModel,
     instanceId,
-    maxConcurrentSessions,
     streamingSessions,
     stashedMessages,
-    pendingStarts,
     safeEmit,
     drainPendingStarts,
   } = options;
   const runId = createSessionTraceRunId();
-
-  if (streamingSessions.size >= maxConcurrentSessions) {
-    log.warn("Session start queued - concurrency limit reached", {
-      sessionName,
-      active: streamingSessions.size,
-      queued: pendingStarts.length + 1,
-      max: maxConcurrentSessions,
-    });
-    recordRuntimeTraceEvent({
-      sessionKey: sessionName,
-      sessionName,
-      runId,
-      eventType: "dispatch.queued_busy",
-      eventGroup: "dispatch",
-      status: "queued",
-      payloadJson: {
-        reason: "concurrency_limit",
-        active: streamingSessions.size,
-        queued: pendingStarts.length + 1,
-        max: maxConcurrentSessions,
-      },
-    });
-    safeEmit(`ravi.session.${sessionName}.runtime`, {
-      type: "dispatch.queued",
-      reason: "concurrency_limit",
-      active: streamingSessions.size,
-      queued: pendingStarts.length + 1,
-      max: maxConcurrentSessions,
-      timestamp: new Date().toISOString(),
-    }).catch((error) => {
-      log.warn("Failed to emit dispatch.queued event", { sessionName, error });
-    });
-    const pendingStart: PendingRuntimeSessionStart = {
-      sessionName,
-      prompt,
-      resolve: () => {},
-      cancelled: false,
-    };
-    await new Promise<void>((resolve) => {
-      pendingStart.resolve = resolve;
-      pendingStarts.push(pendingStart);
-    });
-    if (pendingStart.cancelled) {
-      log.info("Pending session start cancelled", { sessionName });
-      return;
-    }
-    log.info("Pending session start resumed", {
-      sessionName,
-      active: streamingSessions.size,
-      queued: pendingStarts.length,
-      max: maxConcurrentSessions,
-    });
-  }
 
   const resolvedSession = resolveRuntimeSession({
     sessionName,

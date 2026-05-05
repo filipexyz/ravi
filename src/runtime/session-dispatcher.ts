@@ -71,6 +71,7 @@ export class RuntimeSessionDispatcher {
   readonly debounceStates = new Map<string, DebounceState>();
   readonly deferredAfterTaskStarts = new Map<string, RuntimeLaunchPrompt[]>();
   readonly pendingStarts: PendingRuntimeSessionStart[] = [];
+  readonly startReservations = new Set<string>();
   readonly stashedMessages = new Map<string, RuntimeUserMessage[]>();
   readonly startingSessions = new Set<string>();
 
@@ -89,7 +90,8 @@ export class RuntimeSessionDispatcher {
       if (streaming && !streaming.done) return true;
       if (this.startingSessions.has(sessionName)) return true;
     }
-    return this.streamingSessions.size < this.options.maxConcurrentSessions;
+    if (this.pendingStarts.length > 0) return false;
+    return this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions;
   }
 
   shutdownAll(): void {
@@ -117,6 +119,10 @@ export class RuntimeSessionDispatcher {
     if (this.startingSessions.size > 0) {
       log.info("Clearing session cold starts", { count: this.startingSessions.size });
       this.startingSessions.clear();
+    }
+    if (this.startReservations.size > 0) {
+      log.info("Clearing session start reservations", { count: this.startReservations.size });
+      this.startReservations.clear();
     }
 
     if (this.streamingSessions.size === 0) {
@@ -222,7 +228,7 @@ export class RuntimeSessionDispatcher {
         log.warn("Failed to emit explicit abort runtime event", { sessionName, error });
       });
     shutdownRuntimeStreamingSession(session, abortReason);
-    this.streamingSessions.delete(sessionName);
+    this.releaseRuntimeSessionSlot(sessionName);
     markRuntimeLiveIdle(sessionName, "turn interrupted");
     return true;
   }
@@ -230,6 +236,7 @@ export class RuntimeSessionDispatcher {
   async applySessionModelChange(
     sessionName: string,
     model: string,
+    options: { drainReleasedSlot?: boolean } = {},
   ): Promise<"missing" | "unchanged" | "applied" | "restart-next-turn"> {
     const streaming = this.streamingSessions.get(sessionName);
     if (!streaming || streaming.done) {
@@ -286,7 +293,7 @@ export class RuntimeSessionDispatcher {
     });
     recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionName);
     shutdownRuntimeStreamingSession(streaming, "model_change_restart");
-    this.streamingSessions.delete(sessionName);
+    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: options.drainReleasedSlot ?? true });
     return "restart-next-turn";
   }
 
@@ -432,6 +439,7 @@ export class RuntimeSessionDispatcher {
         ? prompt._runtimeProviderId
         : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
     const existing = this.streamingSessions.get(sessionName);
+    let retainReleasedSlot = false;
 
     if (existing && !existing.done) {
       if (existing.agentId !== agent.id || existing.queryHandle.provider !== requestedProvider) {
@@ -472,7 +480,8 @@ export class RuntimeSessionDispatcher {
         });
         recordStreamingTurnInterruptedTrace(sessionName, existing, restartReason, sessionEntry?.sessionKey);
         shutdownRuntimeStreamingSession(existing, restartReason);
-        this.streamingSessions.delete(sessionName);
+        this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+        retainReleasedSlot = true;
       } else {
         const requestedRuntime = resolveRuntimeForPrompt({
           sessionName,
@@ -522,16 +531,18 @@ export class RuntimeSessionDispatcher {
             sessionEntry?.sessionKey,
           );
           shutdownRuntimeStreamingSession(existing, "runtime_task_settings_change");
-          this.streamingSessions.delete(sessionName);
-          await this.startStreamingSession(sessionName, prompt);
+          this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+          await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
           return;
         }
         if (!existing.currentModel) {
           existing.currentModel = requestedModel;
         } else if (existing.currentModel !== requestedModel) {
-          const modelStatus = await this.applySessionModelChange(sessionName, requestedModel);
+          const modelStatus = await this.applySessionModelChange(sessionName, requestedModel, {
+            drainReleasedSlot: false,
+          });
           if (modelStatus === "restart-next-turn") {
-            await this.startStreamingSession(sessionName, prompt);
+            await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
             return;
           }
         }
@@ -754,7 +765,7 @@ export class RuntimeSessionDispatcher {
     }
 
     if (existing?.done) {
-      this.streamingSessions.delete(sessionName);
+      this.releaseRuntimeSessionSlot(sessionName);
     }
 
     if (!existing && this.startingSessions.has(sessionName)) {
@@ -847,35 +858,172 @@ export class RuntimeSessionDispatcher {
         deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
       },
     });
-    await this.startStreamingSession(sessionName, prompt);
+    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot });
   }
 
-  async startStreamingSession(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
+  async startStreamingSession(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    options: { retainReleasedSlot?: boolean } = {},
+  ): Promise<void> {
     this.startingSessions.add(sessionName);
+    let reserved = false;
     try {
+      reserved = await this.reserveRuntimeSessionStart(sessionName, prompt, options);
+      if (!reserved) {
+        return;
+      }
       await startRuntimeSession({
         sessionName,
         prompt,
         configModel: this.options.getConfigModel(),
         instanceId: this.options.instanceId,
-        maxConcurrentSessions: this.options.maxConcurrentSessions,
         streamingSessions: this.streamingSessions,
         stashedMessages: this.stashedMessages,
-        pendingStarts: this.pendingStarts,
         safeEmit: this.options.safeEmit,
         drainPendingStarts: () => this.drainPendingStarts(),
       });
     } finally {
       this.startingSessions.delete(sessionName);
+      if (reserved) {
+        this.releaseRuntimeSessionStartReservation(sessionName);
+      }
     }
   }
 
+  private getStartReservationCount(): number {
+    let count = 0;
+    for (const sessionName of this.startReservations) {
+      if (!this.streamingSessions.has(sessionName)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private getRuntimeSessionPoolUsedSlots(): number {
+    return this.streamingSessions.size + this.getStartReservationCount();
+  }
+
+  private hasRuntimeSessionPoolSlot(): boolean {
+    return this.getRuntimeSessionPoolUsedSlots() < this.options.maxConcurrentSessions;
+  }
+
+  private async reserveRuntimeSessionStart(
+    sessionName: string,
+    prompt: RuntimeLaunchPrompt,
+    options: { retainReleasedSlot?: boolean } = {},
+  ): Promise<boolean> {
+    if (this.startReservations.has(sessionName)) {
+      return true;
+    }
+
+    if (options.retainReleasedSlot) {
+      this.startReservations.add(sessionName);
+      return true;
+    }
+
+    if (this.pendingStarts.length > 0 || !this.hasRuntimeSessionPoolSlot()) {
+      const queued = this.pendingStarts.length + 1;
+      const reason = this.pendingStarts.length > 0 ? "pending_start_backpressure" : "concurrency_limit";
+      const reserved = this.getStartReservationCount();
+      log.warn("Session start queued - runtime session pool busy", {
+        sessionName,
+        active: this.streamingSessions.size,
+        reserved,
+        queued,
+        max: this.options.maxConcurrentSessions,
+        reason,
+      });
+      recordRuntimeTraceEvent({
+        sessionKey: sessionName,
+        sessionName,
+        eventType: "dispatch.queued_busy",
+        eventGroup: "dispatch",
+        status: "queued",
+        source: prompt.source,
+        messageId: prompt.context?.messageId,
+        payloadJson: {
+          reason,
+          active: this.streamingSessions.size,
+          reserved,
+          queued,
+          max: this.options.maxConcurrentSessions,
+          taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+          deliveryBarrier: describeDeliveryBarrier(getRuntimePromptDeliveryBarrier(prompt)),
+        },
+      });
+      this.options
+        .safeEmit(`ravi.session.${sessionName}.runtime`, {
+          type: "dispatch.queued",
+          reason,
+          active: this.streamingSessions.size,
+          reserved,
+          queued,
+          max: this.options.maxConcurrentSessions,
+          timestamp: new Date().toISOString(),
+        })
+        .catch((error) => {
+          log.warn("Failed to emit dispatch.queued event", { sessionName, error });
+        });
+
+      const pendingStart: PendingRuntimeSessionStart = {
+        sessionName,
+        prompt,
+        resolve: () => {},
+        cancelled: false,
+      };
+      await new Promise<void>((resolve) => {
+        pendingStart.resolve = resolve;
+        this.pendingStarts.push(pendingStart);
+      });
+      if (pendingStart.cancelled) {
+        log.info("Pending session start cancelled", { sessionName });
+        return false;
+      }
+      if (!this.startReservations.has(sessionName)) {
+        this.startReservations.add(sessionName);
+      }
+      log.info("Pending session start resumed", {
+        sessionName,
+        active: this.streamingSessions.size,
+        reserved: this.getStartReservationCount(),
+        queued: this.pendingStarts.length,
+        max: this.options.maxConcurrentSessions,
+      });
+      return true;
+    }
+
+    this.startReservations.add(sessionName);
+    return true;
+  }
+
+  private releaseRuntimeSessionStartReservation(sessionName: string): void {
+    const released = this.startReservations.delete(sessionName);
+    if (released && !this.streamingSessions.has(sessionName)) {
+      this.drainPendingStarts();
+    }
+  }
+
+  private releaseRuntimeSessionSlot(sessionName: string, options: { drainPendingStarts?: boolean } = {}): boolean {
+    const released = this.streamingSessions.delete(sessionName);
+    if (released && (options.drainPendingStarts ?? true)) {
+      this.drainPendingStarts();
+    }
+    return released;
+  }
+
   drainPendingStarts(): void {
-    if (this.pendingStarts.length > 0 && this.streamingSessions.size < this.options.maxConcurrentSessions) {
+    while (this.pendingStarts.length > 0 && this.hasRuntimeSessionPoolSlot()) {
       const next = this.pendingStarts.shift()!;
+      if (next.cancelled) {
+        continue;
+      }
+      this.startReservations.add(next.sessionName);
       log.info("Dequeuing pending session start", {
         sessionName: next.sessionName,
         active: this.streamingSessions.size,
+        reserved: this.getStartReservationCount(),
         queued: this.pendingStarts.length,
         max: this.options.maxConcurrentSessions,
       });
