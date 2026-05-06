@@ -10,7 +10,6 @@
 import { createHash } from "node:crypto";
 import { z, type ZodTypeAny } from "zod";
 import type { CommandRegistryEntry, RegistrySnapshot } from "../../cli/registry-snapshot.js";
-import type { SkillGateMetadata } from "../../cli/skill-gates.js";
 
 export const API_PREFIX = "/api/v1";
 
@@ -64,7 +63,6 @@ interface MetaCommand {
   args: { name: string; required: boolean; variadic: boolean; description?: string; schema: Record<string, unknown> }[];
   options: { name: string; flags: string; description?: string; schema: Record<string, unknown> }[];
   returns?: Record<string, unknown>;
-  skillGate?: SkillGateMetadata;
 }
 
 export interface RegistryMetaPayload {
@@ -100,7 +98,6 @@ export function buildMetaPayload(table: RouteTable): RegistryMetaPayload {
         schema: zodToJson(opt.schema, opt.description),
       })),
       ...(cmd.returns ? { returns: zodToJson(cmd.returns) } : {}),
-      ...(cmd.skillGate ? { skillGate: cmd.skillGate } : {}),
     });
   }
   return {
@@ -116,7 +113,7 @@ function hashRegistry(registry: RegistrySnapshot): string {
   for (const cmd of [...registry.commands]
     .filter((entry) => !entry.cliOnly)
     .sort((a, b) => (a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0))) {
-    parts.push(`${cmd.fullName}|${cmd.scope}|${cmd.args.length}|${cmd.options.length}|${cmd.skillGate?.skill ?? ""}`);
+    parts.push(`${cmd.fullName}|${cmd.scope}|${cmd.args.length}|${cmd.options.length}`);
   }
   return createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 16);
 }

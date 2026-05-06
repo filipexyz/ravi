@@ -87,7 +87,7 @@ describe("buildMetaPayload", () => {
     expect(show.args[0]?.schema).toBeDefined();
   });
 
-  it("surfaces command skill gates in registry metadata", () => {
+  it("omits runtime skill gates from gateway metadata", () => {
     @Group({ name: "tasks", description: "tasks", scope: "open" })
     class GatedTasksCommands {
       @Command({ name: "list", description: "list tasks" })
@@ -98,9 +98,6 @@ describe("buildMetaPayload", () => {
 
     const meta = buildMetaPayload(buildRouteTable(buildRegistry([GatedTasksCommands])));
     const list = meta.commands.find((cmd) => cmd.fullName === "tasks.list")!;
-    expect(list.skillGate).toMatchObject({
-      skill: "ravi-system-tasks",
-      source: "inferred",
-    });
+    expect(Object.hasOwn(list, "skillGate")).toBe(false);
   });
 });

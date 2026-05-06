@@ -26,7 +26,6 @@ import { enforceScopeCheck } from "../../permissions/scope.js";
 import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
-import { evaluateRuntimeToolSkillGate, skillGateErrorPayload } from "../../runtime/skill-gate.js";
 import {
   errorResponse,
   internalError,
@@ -120,17 +119,6 @@ export async function dispatch(
     const audit = buildAuditEvent(cmd, tool, validation.inputForAudit, true, startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
-  }
-
-  const gateDecision = evaluateRuntimeToolSkillGate({
-    context: opts.contextRecord ?? null,
-    toolName: tool,
-  });
-  if (!gateDecision.allowed) {
-    return {
-      response: errorResponse(409, "SkillRequired", skillGateErrorPayload(gateDecision)),
-      audit: null,
-    };
   }
 
   let isError = false;
