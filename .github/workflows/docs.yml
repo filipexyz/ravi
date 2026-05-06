@@ -3,7 +3,9 @@ name: Deploy Docs
 on:
   push:
     branches: [main]
-    paths: [docs/**]
+    paths:
+      - docs/**
+      - .github/workflows/docs.yml
   workflow_dispatch:
 
 jobs:
@@ -19,8 +21,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build docs
-        run: cd docs && npx mintlify build
+      - name: Export docs
+        run: |
+          cd docs
+          mkdir -p .mintlify
+          npx mintlify@4.2.549 export --output .mintlify/output.zip
+          rm -rf .mintlify/output
+          mkdir -p .mintlify/output
+          unzip -q .mintlify/output.zip -d .mintlify/output
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
