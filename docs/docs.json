@@ -78,6 +78,7 @@
           {
             "group": "Integrations",
             "pages": [
+              "guides/sdk",
               "guides/copilot"
             ]
           },
