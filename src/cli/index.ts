@@ -23,9 +23,11 @@ import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
+import { spawnDirectTui } from "./tui-launcher.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
+const projectRoot = join(__dirname, "../..");
 
 configureCliLogging();
 
@@ -102,7 +104,7 @@ program
         closeLazyConnection: true,
       },
       async () => {
-        await spawnDirectTui(session);
+        await spawnDirectTui(session, projectRoot);
       },
     );
   });
@@ -143,27 +145,3 @@ program
 
 // Parse and execute
 program.parse();
-
-async function spawnDirectTui(session: string): Promise<void> {
-  const { spawn } = await import("node:child_process");
-  const { existsSync } = await import("node:fs");
-  const projectRoot = join(__dirname, "../..");
-  const tuiPath = existsSync(join(projectRoot, "src/tui/index.tsx"))
-    ? join(projectRoot, "src/tui/index.tsx")
-    : join(projectRoot, "dist/tui/index.tsx");
-
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("bun", [tuiPath, session], {
-      stdio: "inherit",
-      env: process.env,
-    });
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if ((code ?? 0) !== 0) {
-        reject(new Error(`TUI exited with code ${code ?? 0}`));
-        return;
-      }
-      resolve();
-    });
-  });
-}
