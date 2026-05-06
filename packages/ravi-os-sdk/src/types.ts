@@ -2147,6 +2147,24 @@ export type SdkOpenapiEmitInput = {
 /** Return shape for `sdk.openapi.emit`. (no @Returns declared) */
 export type SdkOpenapiEmitReturn = unknown;
 
+/** Input shape for `sdk.swift.check`. */
+export type SdkSwiftCheckInput = {
+  out?: string;
+  version?: string;
+};
+
+/** Return shape for `sdk.swift.check`. (no @Returns declared) */
+export type SdkSwiftCheckReturn = unknown;
+
+/** Input shape for `sdk.swift.generate`. */
+export type SdkSwiftGenerateInput = {
+  out?: string;
+  version?: string;
+};
+
+/** Return shape for `sdk.swift.generate`. (no @Returns declared) */
+export type SdkSwiftGenerateReturn = unknown;
+
 /** Input shape for `self.chat`. */
 export type SelfChatInput = {
   depth?: string;

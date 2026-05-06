@@ -4916,6 +4916,40 @@ export const SdkOpenapiEmitInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `sdk.swift.check`. */
+export const SdkSwiftCheckInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "out": {
+      "default": "packages/ravi-os-swift-sdk/Sources/RaviSDK",
+      "description": "Directory containing the generated Swift files",
+      "type": "string"
+    },
+    "version": {
+      "description": "SDK semver baked into RaviVersion.generated.swift",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `sdk.swift.generate`. */
+export const SdkSwiftGenerateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "out": {
+      "default": "packages/ravi-os-swift-sdk/Sources/RaviSDK",
+      "description": "Target directory for the generated Swift files",
+      "type": "string"
+    },
+    "version": {
+      "description": "SDK semver baked into RaviVersion.generated.swift",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `self.chat`. */
 export const SelfChatInputSchema = {
   "additionalProperties": false,
