@@ -13,7 +13,7 @@ Even when a provider has rich native hooks, Ravi still needs one permission poli
 ## Important Contrast With Codex
 
 - This provider uses native hook integration for tools and approvals.
-- Codex uses app-server requests plus Ravi dynamic tools.
+- Codex uses app-server requests plus shell/CLI calls under `RAVI_CONTEXT_KEY`.
 - This provider supports spec server and plugins.
 - Codex currently does not.
 - Codex has native runtime controls.

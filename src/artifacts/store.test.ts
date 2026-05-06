@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { attachArtifact, createArtifact, getArtifactDetails, listArtifacts, updateArtifact } from "./store.js";
+import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
+import {
+  appendArtifactEvent,
+  attachArtifact,
+  createArtifact,
+  getArtifactDetails,
+  listArtifactEvents,
+  listArtifacts,
+  updateArtifact,
+} from "./store.js";
 
 let stateDir: string | null = null;
 
@@ -43,7 +52,20 @@ describe("artifact store", () => {
 
     const listed = listArtifacts({ session: "dev", tag: "image" });
     expect(listed.map((item) => item.id)).toEqual([artifact.id]);
-  });
+
+    const mirroredBindings = dbFindTagBindings({ assetType: "artifact", assetId: artifact.id });
+    expect(mirroredBindings.map((binding) => binding.tagSlug).sort()).toEqual(["generated", "image"]);
+    expect(mirroredBindings.map((binding) => binding.source)).toEqual(["artifacts.tags_json", "artifacts.tags_json"]);
+
+    attachTagSlugsToAsset({
+      assetType: "artifact",
+      assetId: artifact.id,
+      tags: ["evidence"],
+      source: "test",
+      createdBy: "test",
+    });
+    expect(listArtifacts({ tag: "evidence" }).map((item) => item.id)).toEqual([artifact.id]);
+  }, 15_000);
 
   it("edits metadata and attaches artifacts to arbitrary targets", () => {
     const artifact = createArtifact({
@@ -64,12 +86,51 @@ describe("artifact store", () => {
 
     const retagged = updateArtifact(artifact.id, { tags: ["review"] });
     expect(retagged.tags).toEqual(["review"]);
+    expect(
+      dbFindTagBindings({ assetType: "artifact", assetId: artifact.id }).map((binding) => binding.tagSlug),
+    ).toEqual(["review"]);
 
     const link = attachArtifact(artifact.id, "task", "task-123", "evidence", { required: true });
     expect(link).toMatchObject({ targetType: "task", targetId: "task-123", relation: "evidence" });
 
     const details = getArtifactDetails(artifact.id);
     expect(details?.links).toHaveLength(1);
-    expect(details?.events.map((event) => event.eventType)).toContain("artifact.attached");
+    expect(details?.events.map((event) => event.eventType)).toContain("attached");
+  });
+
+  it("stores ordered lifecycle events with status, message, source and payload", () => {
+    const artifact = createArtifact({
+      kind: "image",
+      title: "Async image",
+      status: "pending",
+    });
+
+    appendArtifactEvent(artifact.id, {
+      eventType: "started",
+      status: "running",
+      message: "Generation started",
+      source: "test",
+      payload: { provider: "openai" },
+      actor: "dev",
+    });
+    appendArtifactEvent(artifact.id, {
+      eventType: "completed",
+      status: "completed",
+      message: "Generation completed",
+      source: "test",
+      payload: { filePath: "/tmp/image.png" },
+      actor: "dev",
+    });
+
+    const events = listArtifactEvents(artifact.id);
+    expect(events.map((event) => event.eventType)).toEqual(["created", "started", "completed"]);
+    expect(events[1]).toMatchObject({
+      eventType: "started",
+      status: "running",
+      message: "Generation started",
+      source: "test",
+      actor: "dev",
+      payload: { provider: "openai" },
+    });
   });
 });

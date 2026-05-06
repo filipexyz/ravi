@@ -23,6 +23,8 @@ import type { ChannelContext, RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
+import { updateRuntimeLiveState } from "./live-state.js";
+import { ensureObserverBindingsForSession } from "./observation-plane.js";
 
 const log = logger.child("runtime:session-launcher");
 
@@ -38,10 +40,8 @@ export interface StartRuntimeSessionOptions {
   prompt: RuntimeLaunchPrompt;
   configModel: string;
   instanceId: string;
-  maxConcurrentSessions: number;
   streamingSessions: Map<string, RuntimeHostStreamingSession>;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
-  pendingStarts: PendingRuntimeSessionStart[];
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
 }
@@ -73,57 +73,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     prompt,
     configModel,
     instanceId,
-    maxConcurrentSessions,
     streamingSessions,
     stashedMessages,
-    pendingStarts,
     safeEmit,
     drainPendingStarts,
   } = options;
   const runId = createSessionTraceRunId();
-
-  if (streamingSessions.size >= maxConcurrentSessions) {
-    log.warn("Session start queued - concurrency limit reached", {
-      sessionName,
-      active: streamingSessions.size,
-      queued: pendingStarts.length + 1,
-      max: maxConcurrentSessions,
-    });
-    recordRuntimeTraceEvent({
-      sessionKey: sessionName,
-      sessionName,
-      runId,
-      eventType: "dispatch.queued_busy",
-      eventGroup: "dispatch",
-      status: "queued",
-      payloadJson: {
-        reason: "concurrency_limit",
-        active: streamingSessions.size,
-        queued: pendingStarts.length + 1,
-        max: maxConcurrentSessions,
-      },
-    });
-    const pendingStart: PendingRuntimeSessionStart = {
-      sessionName,
-      prompt,
-      resolve: () => {},
-      cancelled: false,
-    };
-    await new Promise<void>((resolve) => {
-      pendingStart.resolve = resolve;
-      pendingStarts.push(pendingStart);
-    });
-    if (pendingStart.cancelled) {
-      log.info("Pending session start cancelled", { sessionName });
-      return;
-    }
-    log.info("Pending session start resumed", {
-      sessionName,
-      active: streamingSessions.size,
-      queued: pendingStarts.length,
-      max: maxConcurrentSessions,
-    });
-  }
 
   const resolvedSession = resolveRuntimeSession({
     sessionName,
@@ -167,10 +122,46 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
     chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
     sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+    commands: prompt.commands,
   });
 
-  const runtimeResolution = resolveRuntimeForPrompt({ sessionName, prompt, session, agent, configModel });
+  const runtimeResolution = resolveRuntimeForPrompt({
+    sessionName,
+    prompt,
+    session,
+    agent,
+    configModel,
+  });
   const model = runtimeResolution.options.model ?? configModel;
+  try {
+    const observation = ensureObserverBindingsForSession({
+      sessionName,
+      session,
+      agent,
+      prompt,
+    });
+    if (observation.source && (observation.bindings.length > 0 || observation.created.length > 0)) {
+      recordRuntimeTraceEvent({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        provider: runtimeProviderId,
+        model,
+        eventType: "observation.bindings",
+        eventGroup: "observation",
+        status: "ready",
+        source: resolvedSource,
+        payloadJson: {
+          bindingIds: observation.bindings.map((binding) => binding.id),
+          createdBindingIds: observation.created.map((binding) => binding.id),
+          skipped: observation.skipped.slice(0, 20),
+        },
+      });
+    }
+  } catch (error) {
+    log.warn("Failed to ensure observer bindings", { sessionName, error });
+  }
   const abortController = new AbortController();
 
   const streamingSession: RuntimeHostStreamingSession = {
@@ -199,6 +190,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     traceRunId: runId,
   };
   streamingSessions.set(sessionName, streamingSession);
+  updateRuntimeLiveState(sessionName, {
+    activity: "thinking",
+    summary: "starting runtime",
+    agentId: agent.id,
+    runId,
+    provider: runtimeProviderId,
+    model,
+    source: resolvedSource,
+  });
 
   try {
     recordRuntimeTraceEvent({
@@ -277,7 +277,9 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         ? { runtimeSessionParams: storedRuntimeSessionParams }
         : {}),
       ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
-        ? { runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId }
+        ? {
+            runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
+          }
         : {}),
     });
     session.runtimeProvider = runtimeProviderId;
@@ -334,6 +336,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     }
     streamingSessions.delete(sessionName);
     drainPendingStarts();
+    updateRuntimeLiveState(sessionName, {
+      activity: "blocked",
+      summary: errorMessage,
+      agentId: agent.id,
+      runId,
+      provider: runtimeProviderId,
+      model,
+      source: resolvedSource,
+    });
 
     recordRuntimeTraceEvent({
       sessionKey: dbSessionKey,

@@ -46,6 +46,7 @@ printf '{"success":true,"message":"Media sent","data":{"messageId":"msg-test","s
       filePath: mediaPath,
       voiceNote: true,
       target: {
+        channel: "whatsapp-baileys",
         accountId: "bdd3db21-63ef-41b1-a48c-2fdf86df238c",
         chatId: "group:120363425628305127",
         threadId: "thread-1",

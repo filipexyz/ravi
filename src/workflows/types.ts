@@ -1,4 +1,5 @@
 import type { TaskPriority, TaskReadiness, TaskRecord, TaskWorktreeConfig } from "../tasks/types.js";
+import type { TagBinding } from "../tags/types.js";
 
 export type WorkflowNodeKind = "task" | "gate" | "approval";
 
@@ -81,6 +82,10 @@ export interface CreateWorkflowSpecInput {
   createdBySessionName?: string;
 }
 
+export interface WorkflowSpecListOptions {
+  tagSlug?: string;
+}
+
 export interface WorkflowRun {
   id: string;
   workflowSpecId: string;
@@ -103,6 +108,10 @@ export interface StartWorkflowRunInput {
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
+}
+
+export interface WorkflowRunListOptions {
+  tagSlug?: string;
 }
 
 export interface WorkflowRunEdge {
@@ -203,6 +212,11 @@ export interface WorkflowRunDetails {
   nodes: WorkflowNodeRunView[];
   edges: WorkflowRunEdge[];
   counts: WorkflowRunCounts;
+  tags: {
+    spec: TagBinding[];
+    run: TagBinding[];
+    nodes: Record<string, TagBinding[]>;
+  };
 }
 
 export interface WorkflowActorInput {

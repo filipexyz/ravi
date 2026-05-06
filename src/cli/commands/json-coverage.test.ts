@@ -9,6 +9,8 @@ const JSON_ALLOWLIST = new Set([
   // Foreground process hosts. They do not return domain data; they own a live process.
   "daemon run",
   "daemon dev",
+  // Binary streams. They return raw bytes via Response, not JSON.
+  "artifacts blob",
 ]);
 
 function hasJsonOption(options: Array<{ flags: string }>): boolean {

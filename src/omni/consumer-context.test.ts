@@ -1,9 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
+import type { MessageMetadata } from "../router/router-db.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterSessionsModule = await import("../router/sessions.js");
+const actualChatDbModule = await import("../db.js");
 const actualDbSaveMessageMeta = actualRouterDbModule.dbSaveMessageMeta;
 const actualDbGetMessageMeta = actualRouterDbModule.dbGetMessageMeta;
 const actualDbUpsertChat = actualRouterDbModule.dbUpsertChat;
@@ -11,6 +16,8 @@ const actualDbUpsertChatParticipant = actualRouterDbModule.dbUpsertChatParticipa
 const actualDbBindSessionToChat = actualRouterDbModule.dbBindSessionToChat;
 const actualDbUpsertSessionParticipant = actualRouterDbModule.dbUpsertSessionParticipant;
 const actualGetOrCreateSession = actualRouterSessionsModule.getOrCreateSession;
+const actualGetSession = actualRouterSessionsModule.getSession;
+const actualUpdateProviderSession = actualRouterSessionsModule.updateProviderSession;
 
 const promptCalls: Array<[string, Record<string, unknown>]> = [];
 const chatParticipantCalls: Array<Parameters<typeof actualDbUpsertChatParticipant>[0]> = [];
@@ -18,18 +25,9 @@ const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionPart
 const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [];
 const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
 const platformIdentityByUser = new Map<string, Record<string, unknown>>();
-const messageMetaById = new Map<
-  string,
-  {
-    messageId: string;
-    chatId: string;
-    transcription?: string;
-    mediaPath?: string;
-    mediaType?: string;
-    createdAt: number;
-  }
->();
+const messageMetaById = new Map<string, MessageMetadata>();
 let stateDir: string | null = null;
+let agentCwd = "/tmp/ravi-agent";
 
 mock.module("../nats.js", () => ({
   getNats: () => {
@@ -61,7 +59,7 @@ mock.module("../router/index.js", () => ({
     route: { pattern: "group:120363424772797713", priority: 0, session: "dev" },
     agent: {
       id: "main",
-      cwd: "/tmp/ravi-agent",
+      cwd: agentCwd,
       mode: "active",
     },
   }),
@@ -134,6 +132,10 @@ mock.module("../session-trace/channel-trace.js", () => ({
   recordRouteResolvedTrace: mock(() => ({})),
 }));
 
+mock.module("../session-trace/runtime-trace.js", () => ({
+  recordRuntimeTraceEvent: mock(() => ({})),
+}));
+
 mock.module("../utils/media.js", () => ({
   fetchOmniMedia: mock(async () => null),
   saveToAgentAttachments: mock(async () => null),
@@ -164,7 +166,8 @@ afterAll(() => {
 describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
-    actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", "/tmp/ravi-agent");
+    agentCwd = join(stateDir, "agent");
+    actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
     chatParticipantCalls.length = 0;
     sessionParticipantCalls.length = 0;
@@ -243,6 +246,170 @@ describe("OmniConsumer channel context", () => {
       groupName: "ravi - dev",
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
+    });
+  });
+
+  it("expands registered Ravi commands before building the channel envelope", async () => {
+    const commandsDir = join(agentCwd, ".ravi", "commands");
+    mkdirSync(commandsDir, { recursive: true });
+    writeFileSync(
+      join(commandsDir, "restart.md"),
+      [
+        "---",
+        "description: Restart with a reason.",
+        "arguments:",
+        "  - reason",
+        "---",
+        'Use `ravi daemon restart -m "$reason"`.',
+        "",
+      ].join("\n"),
+    );
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-command",
+      type: "message.received",
+      payload: {
+        externalId: "msg-command",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: '#restart "ativar commands"',
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("Luis Filipe:");
+    expect(prompt.prompt).toContain("## Ravi Command: #restart");
+    expect(prompt.prompt).toContain('Use `ravi daemon restart -m "ativar commands"`.');
+    expect(prompt.commands).toMatchObject([
+      {
+        id: "restart",
+        scope: "agent",
+        originalText: '#restart "ativar commands"',
+        arguments: '"ativar commands"',
+      },
+    ]);
+  });
+
+  it("resets the runtime session and republishes an Omni message edit as a rebase replay", async () => {
+    const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
+    actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");
+    actualChatDbModule.saveMessage("dev", "user", "[WhatsApp Ravi - Dev mid:msg-original] Luis: texto antigo", null, {
+      agentId: "main",
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "120363424772797713@g.us",
+      sourceMessageId: "msg-original",
+    });
+    actualChatDbModule.saveMessage("dev", "user", "[WhatsApp Ravi - Dev mid:msg-secret] Luis: senha: 132", null, {
+      agentId: "main",
+      channel: "whatsapp-baileys",
+      accountId: "main",
+      chatId: "120363424772797713@g.us",
+      sourceMessageId: "msg-secret",
+    });
+    messageMetaById.set("msg-original", {
+      messageId: "msg-original",
+      chatId: "120363424772797713@g.us",
+      canonicalChatId: "chat_ravi_dev",
+      actorType: "contact",
+      contactId: "contact_luis",
+      rawSenderId: "178035101794451",
+      normalizedSenderId: "5511947879044",
+      createdAt: Date.now(),
+    });
+    const abortRuntimeSession = mock((_sessionName: string, _provenance: RuntimeAbortProvenance) => true);
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+      abortRuntimeSession,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-edit",
+      type: "message.received",
+      payload: {
+        externalId: "msg-original-edit-1",
+        chatId: "120363424772797713@g.us",
+        from: "120363424772797713@g.us",
+        content: {
+          type: "edit",
+          text: "texto editado",
+        },
+        rawPayload: {
+          editedMessageId: "msg-original",
+          newText: "texto editado",
+          editedAt: 1778000000000,
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(abortRuntimeSession.mock.calls[0]?.[0]).toBe("dev");
+    expect(abortRuntimeSession.mock.calls[0]?.[1]).toMatchObject({
+      source: "omni",
+      action: "message.edited",
+      reason: "message_edited_restart",
+      correlationId: "msg-original-edit-1",
+      request: {
+        messageId: "msg-original",
+        editEventId: "msg-original-edit-1",
+      },
+    });
+    expect(actualGetSession(sessionKey)?.sdkSessionId).toBeUndefined();
+    expect(actualGetSession(sessionKey)?.runtimeProvider).toBeUndefined();
+    expect(promptCalls).toHaveLength(1);
+    const [, prompt] = promptCalls[0];
+    expect(prompt.prompt).toContain("## Mensagem editada detectada pelo Omni");
+    expect(prompt.prompt).toContain("## Runtime session rebase");
+    expect(prompt.prompt).toContain("Mensagem original: msg-original");
+    expect(prompt.prompt).toContain("[Message edited]\ntexto editado");
+    expect(prompt.prompt).toContain("senha: 132");
+    expect(prompt.prompt).not.toContain("texto antigo\n</message>");
+    expect(prompt._humanUrgent).toBe(true);
+    expect(prompt.context).toMatchObject({
+      isEditedMessage: true,
+      editedMessageId: "msg-original",
+      editEventId: "msg-original-edit-1",
+      editedAt: 1778000000000,
+      actorType: "contact",
+      contactId: "contact_luis",
+      rawSenderId: "178035101794451",
+      normalizedSenderId: "5511947879044",
     });
   });
 

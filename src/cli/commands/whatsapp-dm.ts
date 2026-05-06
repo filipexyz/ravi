@@ -75,21 +75,23 @@ export class WhatsAppDmCommands {
       text: cleanMessage,
     });
 
-    if (asJson) {
-      printJson({
-        status: "sent",
-        channel: "whatsapp",
-        accountId,
-        target: contactRef,
-        to: jid,
-        displayName,
-        text: cleanMessage,
-        changedCount: 1,
-      });
-      return;
-    }
+    const payload = {
+      status: "sent" as const,
+      channel: "whatsapp" as const,
+      accountId,
+      target: contactRef,
+      to: jid,
+      displayName,
+      text: cleanMessage,
+      changedCount: 1,
+    };
 
-    console.log(`✓ Message sent to ${displayName} (${jid})`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Message sent to ${displayName} (${jid})`);
+    }
+    return payload;
   }
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
@@ -109,21 +111,22 @@ export class WhatsAppDmCommands {
     let ackedMessageId: string | null = null;
 
     if (messages.length === 0) {
+      const emptyPayload = {
+        contact: contactRef,
+        displayName,
+        jid,
+        sessionId,
+        limit,
+        total: 0,
+        messages: [],
+        ackedMessageId: null,
+      };
       if (asJson) {
-        printJson({
-          contact: contactRef,
-          displayName,
-          jid,
-          sessionId,
-          limit,
-          total: 0,
-          messages: [],
-          ackedMessageId: null,
-        });
-        return;
+        printJson(emptyPayload);
+      } else {
+        console.log(`No messages found for ${displayName}`);
       }
-      console.log(`No messages found for ${displayName}`);
-      return;
+      return emptyPayload;
     }
 
     if (!asJson) {
@@ -155,18 +158,21 @@ export class WhatsAppDmCommands {
       }
     }
 
+    const payload = {
+      contact: contactRef,
+      displayName,
+      jid,
+      sessionId,
+      limit,
+      total: messages.length,
+      messages,
+      ackedMessageId,
+    };
+
     if (asJson) {
-      printJson({
-        contact: contactRef,
-        displayName,
-        jid,
-        sessionId,
-        limit,
-        total: messages.length,
-        messages,
-        ackedMessageId,
-      });
+      printJson(payload);
     }
+    return payload;
   }
 
   @Command({ name: "ack", description: "Send read receipt (blue ticks) for a specific message" })
@@ -187,20 +193,22 @@ export class WhatsAppDmCommands {
       messageIds: [messageId],
     });
 
-    if (asJson) {
-      printJson({
-        status: "acknowledged",
-        channel: "whatsapp",
-        accountId,
-        target: contactRef,
-        jid,
-        displayName,
-        messageIds: [messageId],
-        changedCount: 1,
-      });
-      return;
-    }
+    const payload = {
+      status: "acknowledged" as const,
+      channel: "whatsapp" as const,
+      accountId,
+      target: contactRef,
+      jid,
+      displayName,
+      messageIds: [messageId],
+      changedCount: 1,
+    };
 
-    console.log(`✓ Read receipt sent for ${messageId} in ${displayName}`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Read receipt sent for ${messageId} in ${displayName}`);
+    }
+    return payload;
   }
 }

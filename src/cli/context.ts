@@ -7,8 +7,9 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { getRuntimeContextFromEnv, RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { getRuntimeContextFromEnv, resolveRuntimeContext, RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
+import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
 
 /**
  * Context available to CLI tools during execution
@@ -33,12 +34,19 @@ export interface ToolContext {
   };
   /** Arbitrary metadata */
   [key: string]: unknown;
+  /** Suppress human CLI stdout when commands are executed through another surface. */
+  suppressCliOutput?: boolean;
 }
 
 /**
  * AsyncLocalStorage instance for tool context
  */
 const contextStorage = new AsyncLocalStorage<ToolContext>();
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleInfo = console.info.bind(console);
+let consoleGateInstalled = false;
+
+installContextualConsoleGate();
 
 /**
  * Run a function with tool context.
@@ -68,7 +76,12 @@ export function getContext(): ToolContext | undefined {
   if (store) return store;
 
   const env = process.env;
-  const resolvedContext = getRuntimeContextFromEnv(env);
+
+  // Resolution order:
+  //  1. RAVI_CONTEXT_KEY env var (already handled by getRuntimeContextFromEnv)
+  //  2. ~/.ravi/credentials.json `default` entry
+  //  3. Legacy RAVI_AGENT_ID / RAVI_SESSION_* fallback (TODO: remove once sdk/auth fully lands)
+  const resolvedContext = getRuntimeContextFromEnv(env) ?? resolveDefaultCredential();
   if (resolvedContext) {
     const ctx: ToolContext = {
       contextId: resolvedContext.contextId,
@@ -99,6 +112,7 @@ export function getContext(): ToolContext | undefined {
   }
 
   // Fallback: build context from legacy RAVI_* env vars (set when running via Bash in SDK)
+  // TODO(sdk/auth): drop this fallback once all callers issue runtime context-keys.
   if (!env.RAVI_SESSION_KEY && !env.RAVI_SESSION_NAME && !env.RAVI_AGENT_ID) return undefined;
 
   const ctx: ToolContext = {
@@ -140,6 +154,31 @@ export function hasContext(): boolean {
     !!process.env.RAVI_SESSION_NAME ||
     !!process.env.RAVI_AGENT_ID
   );
+}
+
+function resolveDefaultCredential(): ContextRecord | undefined {
+  let key: string | null;
+  try {
+    key = selectDefaultCredentialsKey(readCredentialsFile());
+  } catch {
+    return undefined;
+  }
+  if (!key) return undefined;
+  const record = resolveRuntimeContext(key, { touch: false });
+  return record ?? undefined;
+}
+
+function installContextualConsoleGate(): void {
+  if (consoleGateInstalled) return;
+  consoleGateInstalled = true;
+  console.log = (...args: unknown[]) => {
+    if (contextStorage.getStore()?.suppressCliOutput === true) return;
+    originalConsoleLog(...args);
+  };
+  console.info = (...args: unknown[]) => {
+    if (contextStorage.getStore()?.suppressCliOutput === true) return;
+    originalConsoleInfo(...args);
+  };
 }
 
 /**

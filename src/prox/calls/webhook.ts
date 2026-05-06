@@ -1,0 +1,389 @@
+/**
+ * prox.city Calls — Post-Call Webhook Handler
+ *
+ * Processes terminal call outcomes from ElevenLabs post-call webhooks.
+ * This handler can be wired into any HTTP route or event consumer that
+ * receives the ElevenLabs post_call_transcription or call_initiation_failure
+ * payloads.
+ *
+ * No HTTP server is created here — the daemon HTTP surface routes raw
+ * ElevenLabs payloads here after signature verification.
+ */
+
+import { getDb } from "../../router/router-db.js";
+import {
+  getCallRun,
+  getCallRequest,
+  updateCallRunStatus,
+  updateCallRequestStatus,
+  createCallEvent,
+  createCallResult,
+} from "./calls-db.js";
+import { notifyCallOrigin } from "./notify.js";
+import type { CallRunStatus, CallResultOutcome } from "./types.js";
+
+// ---------------------------------------------------------------------------
+// Payload shapes (subset of ElevenLabs webhook fields we consume)
+// ---------------------------------------------------------------------------
+
+export interface PostCallTranscriptionPayload {
+  type: "post_call_transcription";
+  conversation_id: string;
+  call_sid?: string;
+  call_successful: boolean;
+  call_duration_secs?: number;
+  transcript?: string;
+  call_summary?: string;
+  call_analysis?: Record<string, unknown>;
+  recording_url?: string;
+}
+
+export interface CallInitiationFailurePayload {
+  type: "call_initiation_failure";
+  conversation_id?: string;
+  call_sid?: string;
+  error_message?: string;
+}
+
+export type CallWebhookPayload = PostCallTranscriptionPayload | CallInitiationFailurePayload;
+
+interface EnhancedWebhookEnvelope {
+  type?: unknown;
+  data?: unknown;
+  event_timestamp?: unknown;
+}
+
+interface EnhancedTranscriptItem {
+  role?: unknown;
+  message?: unknown;
+  time_in_call_secs?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getNestedRecord(root: Record<string, unknown>, ...keys: string[]): Record<string, unknown> | undefined {
+  let current: unknown = root;
+  for (const key of keys) {
+    if (!isRecord(current)) return undefined;
+    current = current[key];
+  }
+  return isRecord(current) ? current : undefined;
+}
+
+function findCallSid(data: Record<string, unknown>): string | undefined {
+  return (
+    stringOrUndefined(data.call_sid) ??
+    stringOrUndefined(getNestedRecord(data, "metadata", "phone_call")?.call_sid) ??
+    stringOrUndefined(getNestedRecord(data, "metadata", "body")?.call_sid)
+  );
+}
+
+function formatWebhookTranscript(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (!Array.isArray(value)) return undefined;
+
+  const lines = value
+    .filter(isRecord)
+    .map((item: EnhancedTranscriptItem) => {
+      if (typeof item.message !== "string" || !item.message.trim()) return null;
+      const role = item.role === "agent" || item.role === "user" ? item.role : "unknown";
+      const time = typeof item.time_in_call_secs === "number" ? `${item.time_in_call_secs}s` : "-";
+      return `[${time}] ${role}: ${item.message.trim()}`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return lines.length ? lines.join("\n") : undefined;
+}
+
+function hasUserTranscriptMessage(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value
+        .filter(isRecord)
+        .some((item) => item.role === "user" && typeof item.message === "string" && item.message.trim())
+    : false;
+}
+
+function hasUserTranscriptText(value: string | null | undefined): boolean {
+  return Boolean(value && /(?:^|\n)(?:\[[^\]]+\]\s*)?user\s*:/i.test(value));
+}
+
+function hasCarrierOrVoicemailText(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return [
+    "celular estiver disponível",
+    "celular esta disponível",
+    "celular está disponível",
+    "indisponível",
+    "indisponivel",
+    "caixa postal",
+    "fora de área",
+    "fora de area",
+    "recado",
+    "voicemail",
+    "not available",
+    "unavailable",
+  ].some((marker) => normalized.includes(marker));
+}
+
+function inferCallAnswered(data: Record<string, unknown>, transcript: string | undefined): boolean {
+  const analysis = isRecord(data.analysis) ? data.analysis : undefined;
+  const explicit = analysis?.call_successful ?? data.call_successful;
+  const metadata = isRecord(data.metadata) ? data.metadata : undefined;
+  const joined = [
+    transcript ?? "",
+    stringOrUndefined(data.call_summary) ?? "",
+    stringOrUndefined(analysis?.transcript_summary) ?? "",
+    stringOrUndefined(analysis?.call_summary_title) ?? "",
+    stringOrUndefined(metadata?.termination_reason) ?? "",
+  ].join("\n");
+
+  if (hasCarrierOrVoicemailText(joined)) return false;
+  if (hasUserTranscriptMessage(data.transcript) || hasUserTranscriptText(transcript)) return true;
+  if (explicit === true || explicit === "success" || explicit === "true") return true;
+  if (explicit === false || explicit === "failure" || explicit === "false") return false;
+
+  return false;
+}
+
+/**
+ * Normalize both current ElevenLabs webhook envelopes (`{ type, data }`) and
+ * the older flat shape used by the first prox calls MVP into Ravi's internal
+ * call webhook payload.
+ */
+export function normalizeCallWebhookPayload(input: unknown): CallWebhookPayload | null {
+  if (!isRecord(input)) return null;
+
+  const envelope = input as EnhancedWebhookEnvelope;
+  const type = stringOrUndefined(envelope.type);
+  if (type !== "post_call_transcription" && type !== "call_initiation_failure") return null;
+
+  const data = isRecord(envelope.data) ? envelope.data : input;
+
+  if (type === "call_initiation_failure") {
+    return {
+      type,
+      conversation_id: stringOrUndefined(data.conversation_id),
+      call_sid: findCallSid(data),
+      error_message:
+        stringOrUndefined(data.error_message) ??
+        stringOrUndefined(data.failure_reason) ??
+        stringOrUndefined(getNestedRecord(data, "metadata", "body")?.error_reason),
+    };
+  }
+
+  const analysis = isRecord(data.analysis) ? data.analysis : undefined;
+  const metadata = isRecord(data.metadata) ? data.metadata : undefined;
+  const transcript = formatWebhookTranscript(data.transcript);
+  const summary =
+    stringOrUndefined(data.call_summary) ??
+    stringOrUndefined(analysis?.transcript_summary) ??
+    stringOrUndefined(analysis?.call_summary_title);
+
+  const conversationId = stringOrUndefined(data.conversation_id);
+  if (!conversationId) return null;
+
+  return {
+    type,
+    conversation_id: conversationId,
+    call_sid: findCallSid(data),
+    call_successful: inferCallAnswered(data, transcript),
+    call_duration_secs: numberOrUndefined(data.call_duration_secs) ?? numberOrUndefined(metadata?.call_duration_secs),
+    ...(transcript ? { transcript } : {}),
+    ...(summary ? { call_summary: summary } : {}),
+    ...(analysis ? { call_analysis: analysis } : {}),
+    recording_url: stringOrUndefined(data.recording_url),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
+
+function findRunByProviderIds(conversationId?: string, callSid?: string) {
+  if (!conversationId && !callSid) return null;
+
+  // Search recent runs by provider_call_id or twilio_call_sid.
+  // This is a bounded scan since runs are tied to specific requests.
+  // In a larger deployment, a dedicated index lookup would be added.
+  // For MVP, iterate recent runs.
+
+  const db = getDb();
+
+  if (conversationId) {
+    const row = db
+      .prepare("SELECT id, request_id FROM call_runs WHERE provider_call_id = ? LIMIT 1")
+      .get(conversationId) as { id: string; request_id: string } | undefined;
+    if (row) {
+      return { runId: row.id, requestId: row.request_id };
+    }
+  }
+
+  if (callSid) {
+    const row = db.prepare("SELECT id, request_id FROM call_runs WHERE twilio_call_sid = ? LIMIT 1").get(callSid) as
+      | { id: string; request_id: string }
+      | undefined;
+    if (row) {
+      return { runId: row.id, requestId: row.request_id };
+    }
+  }
+
+  return null;
+}
+
+function mapTerminalStatus(payload: CallWebhookPayload): { runStatus: CallRunStatus; outcome: CallResultOutcome } {
+  if (payload.type === "call_initiation_failure") {
+    return { runStatus: "failed", outcome: "failed_provider" };
+  }
+
+  const p = payload as PostCallTranscriptionPayload;
+
+  // `call_successful` in ElevenLabs analysis is conversational success, not
+  // technical delivery. Carrier/voicemail markers win first; otherwise any
+  // usable user transcript means the call was answered.
+  const summary = [p.call_summary ?? "", p.transcript ?? ""].join("\n").toLowerCase();
+  if (summary.includes("voicemail")) {
+    return { runStatus: "voicemail", outcome: "voicemail" };
+  }
+  if (summary.includes("caixa postal")) {
+    return { runStatus: "voicemail", outcome: "voicemail" };
+  }
+  if (summary.includes("busy")) {
+    return { runStatus: "busy", outcome: "busy" };
+  }
+  if (summary.includes("ocupado")) {
+    return { runStatus: "busy", outcome: "busy" };
+  }
+  if (
+    summary.includes("no answer") ||
+    summary.includes("no_answer") ||
+    summary.includes("not available") ||
+    summary.includes("unavailable") ||
+    summary.includes("indispon") ||
+    summary.includes("celular estiver disponível") ||
+    summary.includes("celular está disponível") ||
+    summary.includes("fora de área") ||
+    summary.includes("fora de area") ||
+    summary.includes("recado")
+  ) {
+    return { runStatus: "no_answer", outcome: "no_answer" };
+  }
+  if (p.call_successful || hasUserTranscriptText(p.transcript)) {
+    return { runStatus: "completed", outcome: "answered" };
+  }
+
+  return { runStatus: "failed", outcome: "failed_provider" };
+}
+
+/**
+ * Process a post-call webhook payload from ElevenLabs.
+ *
+ * Returns a summary of what was persisted, or null if the run could not be found.
+ */
+export function handlePostCallWebhook(payload: CallWebhookPayload): {
+  request_id: string;
+  run_id: string;
+  outcome: CallResultOutcome;
+  summary: string | null;
+} | null {
+  const conversationId = "conversation_id" in payload ? payload.conversation_id : undefined;
+  const callSid = "call_sid" in payload ? payload.call_sid : undefined;
+
+  const match = findRunByProviderIds(conversationId, callSid);
+  if (!match) return null;
+
+  const { runId, requestId } = match;
+  const run = getCallRun(runId);
+  if (!run) return null;
+
+  const request = getCallRequest(requestId);
+  if (!request) return null;
+
+  // Skip if run is already in a terminal state
+  const terminalStatuses = new Set(["completed", "no_answer", "busy", "voicemail", "failed", "canceled"]);
+  if (terminalStatuses.has(run.status)) {
+    return {
+      request_id: requestId,
+      run_id: runId,
+      outcome: run.status as CallResultOutcome,
+      summary: "already terminal",
+    };
+  }
+
+  const { runStatus, outcome } = mapTerminalStatus(payload);
+
+  const failureReason =
+    payload.type === "call_initiation_failure"
+      ? ((payload as CallInitiationFailurePayload).error_message ?? "Call initiation failed")
+      : undefined;
+
+  const transcript =
+    payload.type === "post_call_transcription" ? ((payload as PostCallTranscriptionPayload).transcript ?? null) : null;
+
+  const callSummary =
+    payload.type === "post_call_transcription"
+      ? ((payload as PostCallTranscriptionPayload).call_summary ?? null)
+      : (failureReason ?? null);
+
+  const extraction =
+    payload.type === "post_call_transcription"
+      ? ((payload as PostCallTranscriptionPayload).call_analysis ?? null)
+      : null;
+
+  // Update run
+  updateCallRunStatus(runId, runStatus, {
+    failure_reason: failureReason,
+  });
+
+  // Update request
+  const requestStatus = runStatus === "completed" ? "completed" : "failed";
+  updateCallRequestStatus(requestId, requestStatus);
+
+  // Event
+  const eventType = runStatus === "completed" ? "run.completed" : "run.failed";
+  createCallEvent({
+    request_id: requestId,
+    run_id: runId,
+    event_type: eventType,
+    status: runStatus,
+    message: callSummary ?? `Call ${runStatus}`,
+    payload_json: {
+      webhook_type: payload.type,
+      conversation_id: conversationId,
+      call_sid: callSid,
+    },
+    source: "prox.calls.webhook",
+  });
+
+  // Result
+  const result = createCallResult({
+    request_id: requestId,
+    run_id: runId,
+    outcome,
+    summary: callSummary,
+    transcript,
+    extraction_json: extraction,
+    next_action: outcome === "answered" ? "none" : "retry",
+  });
+
+  createCallEvent({
+    request_id: requestId,
+    run_id: runId,
+    event_type: "result.created",
+    status: outcome,
+    message: callSummary,
+    source: "prox.calls.webhook",
+  });
+  notifyCallOrigin(request, result, "prox.calls.webhook");
+
+  return { request_id: requestId, run_id: runId, outcome, summary: callSummary };
+}

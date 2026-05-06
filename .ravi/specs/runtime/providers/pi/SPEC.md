@@ -92,7 +92,7 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - `set_model` backs `setModel` and must affect the next request even if no active request exists.
 - `set_thinking_level` maps Ravi effort/thinking into Pi thinking levels.
 - `compact` is provider-native compaction and MUST emit `status: compacting` while active.
-- `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested.
+- `switch_session`, `new_session`, `fork`, and `clone` are provider-native controls but MUST NOT be exposed as Ravi fork/resume until session semantics are tested and mapped to `runtime/session-continuity/forks`.
 - `get_messages` and `get_last_assistant_text` may support `thread.read`-style controls.
 
 ## Event Mapping
@@ -115,6 +115,14 @@ Pi can execute tools in parallel natively, but Ravi MUST NOT advertise parallel 
 - Pi `agent_end` -> `turn.complete` when no earlier terminal event was emitted for the accepted Ravi prompt.
 
 Important: Pi `turn_end` is an internal LLM/tool-cycle boundary, not always a Ravi terminal turn. The adapter MUST emit exactly one Ravi terminal event per accepted Ravi prompt.
+
+## Skill Visibility
+
+- The Pi RPC MVP does not support Ravi plugins or Codex-style skill catalogs.
+- Current Pi state and event payloads do not expose a skill list, skill request, skill load, or skill unload event.
+- Pi sessions MUST report an empty `loadedSkills` vector unless Ravi owns an explicit skill injection flow and observes completion.
+- If the visibility payload includes skill records for Pi, their state MUST be `unknown` or non-loaded. The adapter MUST NOT infer loaded skills from appended prompt text.
+- A future Pi SDK-backed provider MAY expose richer skill/resource state. That state MUST be mapped into the canonical `runtime/skill-loading` record shape before it appears in `session-visibility`.
 
 ## Usage Mapping
 
@@ -142,6 +150,7 @@ If usage is missing on an error or abort, terminal events MUST still be emitted.
 - The provider MUST not expose restricted Ravi agents until Pi tool permission hooks are bridged to Ravi host services.
 - The provider MUST not save Pi session file paths as user-visible Ravi session names.
 - The provider MUST validate cwd before resuming a Pi session file.
+- Pi native fork/clone MUST NOT flip canonical `supportsSessionFork` until file-backed parent/child state, prompt atom mapping, and replay semantics are tested.
 
 ## Pre-Implementation Requirements
 

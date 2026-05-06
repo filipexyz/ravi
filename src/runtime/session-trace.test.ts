@@ -1,19 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateRuntimeProviderState,
+  type AgentConfig,
+  type SessionEntry,
+} from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getSessionTraceBlob, getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { recordAdapterRequestTrace } from "../session-trace/runtime-trace.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
 import { runRuntimeEventLoop } from "./host-event-loop.js";
+import { getRuntimeLiveStateForSession } from "./live-state.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
   RuntimeProviderId,
   RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
   SessionRuntimeProvider,
 } from "./types.js";
 
@@ -38,6 +46,7 @@ const capabilities: RuntimeCapabilities = {
   },
   systemPrompt: { mode: "append" },
   terminalEvents: { guarantee: "adapter" },
+  skillVisibility: { availability: "none", loadedState: "none" },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,
@@ -121,6 +130,62 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
   };
 }
 
+function makeSkillVisibility(state: "advertised" | "loaded" = "loaded"): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "trace-skill",
+        provider: PROVIDER,
+        state,
+        confidence: state === "loaded" ? "observed" : "declared",
+        source: "test",
+        loadedAt: state === "loaded" ? 123 : null,
+        lastSeenAt: 123,
+      },
+    ],
+    loadedSkills: state === "loaded" ? ["trace-skill"] : [],
+    updatedAt: 123,
+  };
+}
+
+function makeRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "ravi-system-tasks",
+        provider: "codex",
+        state: "advertised",
+        confidence: "declared",
+        source: "codex:sync",
+        evidence: [{ kind: "system-prompt", observedAt: 100, detail: "test catalog" }],
+        loadedAt: null,
+        lastSeenAt: 100,
+      },
+    ],
+    loadedSkills: [],
+    updatedAt: 100,
+  };
+}
+
+function makeLoadedRaviTaskSkillVisibility(): RuntimeSkillVisibilitySnapshot {
+  return {
+    skills: [
+      {
+        id: "ravi-system-tasks",
+        provider: "codex",
+        state: "loaded",
+        confidence: "observed",
+        source: "catalog:ravi-system/tasks",
+        evidence: [{ kind: "skill-gate", observedAt: 100, detail: "delivered by skill gate for Bash" }],
+        loadedAt: 100,
+        lastSeenAt: 100,
+      },
+    ],
+    loadedSkills: ["ravi-system-tasks"],
+    updatedAt: 100,
+  };
+}
+
 function seedAdapterTrace(streaming: RuntimeHostStreamingSession, turnId = "turn-1"): void {
   const trace = recordAdapterRequestTrace({
     sessionKey: SESSION_KEY,
@@ -179,26 +244,6 @@ async function runTraceLoop(
     drainPendingStarts: () => {},
     ...overrides,
   });
-}
-
-function makeStallingRuntimeSession(
-  streaming: RuntimeHostStreamingSession,
-  events: RuntimeEvent[],
-): RuntimeSessionHandle {
-  return {
-    provider: PROVIDER,
-    events: (async function* () {
-      for (const event of events) {
-        yield event;
-      }
-      if (!streaming.abortController.signal.aborted) {
-        await new Promise<void>((resolve) => {
-          streaming.abortController.signal.addEventListener("abort", () => resolve(), { once: true });
-        });
-      }
-    })(),
-    interrupt: async () => {},
-  };
 }
 
 describe("runtime session trace instrumentation", () => {
@@ -340,6 +385,13 @@ describe("runtime session trace instrumentation", () => {
         {
           type: "turn.complete",
           providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeSkillVisibility("loaded"),
+            },
+          },
           usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 1 },
         },
       ]),
@@ -360,6 +412,10 @@ describe("runtime session trace instrumentation", () => {
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
     expect(turn?.inputTokens).toBe(10);
     expect(turn?.outputTokens).toBe(4);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["trace-skill"]);
+    expect(
+      (getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot).loadedSkills,
+    ).toEqual(["trace-skill"]);
     expect(events[1]).toMatchObject({
       eventType: "tool.start",
       canonicalChatId: "chat_1",
@@ -367,6 +423,190 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+  });
+
+  it("resets loaded skill visibility when compaction starts", async () => {
+    const streaming = makeStreamingSession();
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeSkillVisibility("loaded"),
+    };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "status",
+          status: "compacting",
+        },
+      ]),
+      {
+        session,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual([]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "trace-skill", state: "stale" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual([]);
+    expect(emitted.some((event) => event.data.type === "skill.visibility.reset")).toBe(true);
+  });
+
+  it("marks a skill loaded when a ravi skills show command completes", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession = makeRuntimeSession([
+      {
+        type: "tool.started",
+        toolUse: {
+          id: "tool-skill",
+          name: "shell",
+          input: { command: "/bin/zsh -lc 'bin/ravi skills show tasks --json'" },
+        },
+        metadata: { turn: { id: "provider-turn" }, item: { id: "tool-skill", type: "command_execution" } },
+      },
+      {
+        type: "tool.completed",
+        toolUseId: "tool-skill",
+        toolName: "shell",
+        content: JSON.stringify({
+          skill: {
+            name: "tasks",
+            source: "catalog:ravi-system/tasks",
+            pluginName: "ravi-system",
+            skillFilePath: "skills/tasks/SKILL.md",
+            content: "---\nname: tasks\n---\n\n# Tasks\n",
+          },
+        }),
+        metadata: { turn: { id: "provider-turn" }, item: { id: "tool-skill", type: "command_execution" } },
+      },
+      {
+        type: "turn.complete",
+        providerSessionId: "provider-after",
+        session: {
+          displayId: "provider-after",
+          params: {
+            sessionId: "provider-after",
+          },
+        },
+        usage: { inputTokens: 10, outputTokens: 4 },
+      },
+    ]);
+    runtimeSession.skillVisibility = makeRaviTaskSkillVisibility();
+
+    await runTraceLoop(streaming, runtimeSession, {
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+    });
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([
+      expect.objectContaining({
+        id: "ravi-system-tasks",
+        state: "loaded",
+        confidence: "observed",
+        loadedAt: expect.any(Number),
+        evidence: expect.arrayContaining([
+          expect.objectContaining({
+            kind: "tool-call",
+            eventType: "ravi.skills.show",
+            itemId: "tool-skill",
+          }),
+        ]),
+      }),
+    ]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(emitted.some((event) => event.data.type === "skill.visibility.loaded")).toBe(true);
+  });
+
+  it("keeps skill-gate loaded state when provider turn completion reports only advertised skills", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+    session.runtimeSessionParams = {
+      sessionId: "provider-before",
+      skillVisibility: makeLoadedRaviTaskSkillVisibility(),
+    };
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeRaviTaskSkillVisibility(),
+            },
+          },
+          usage: { inputTokens: 10, outputTokens: 4 },
+        },
+      ]),
+      { session },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "ravi-system-tasks", state: "loaded" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
+  });
+
+  it("keeps externally persisted skill-gate state when in-memory session params are stale", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming);
+    const session = makeSession();
+    session.runtimeProvider = PROVIDER;
+    session.providerSessionId = "provider-before";
+    session.runtimeSessionDisplayId = "provider-before";
+
+    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+      providerSessionId: "provider-before",
+      runtimeSessionDisplayId: "provider-before",
+      runtimeSessionParams: {
+        sessionId: "provider-before",
+        skillVisibility: makeLoadedRaviTaskSkillVisibility(),
+      },
+    });
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          session: {
+            displayId: "provider-after",
+            params: {
+              sessionId: "provider-after",
+              skillVisibility: makeRaviTaskSkillVisibility(),
+            },
+          },
+          usage: { inputTokens: 10, outputTokens: 4 },
+        },
+      ]),
+      { session },
+    );
+
+    const persisted = getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot;
+    expect(persisted.loadedSkills).toEqual(["ravi-system-tasks"]);
+    expect(persisted.skills).toEqual([expect.objectContaining({ id: "ravi-system-tasks", state: "loaded" })]);
+    expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["ravi-system-tasks"]);
   });
 
   it("does not persist raw stream lifecycle events in the trace ledger", async () => {
@@ -431,76 +671,5 @@ describe("runtime session trace instrumentation", () => {
       rawEvent: { type: "error", message: "provider down" },
     });
     expect(getSessionTurn("turn-failed")?.status).toBe("failed");
-  });
-
-  it("recovers a stalled turn after a failed tool stops producing provider events", async () => {
-    const originalMessage = createQueuedRuntimeUserMessage({
-      prompt: "original prompt",
-      deliveryBarrier: "after_tool",
-    });
-    const queuedMessage = createQueuedRuntimeUserMessage({
-      prompt: "message queued while stuck",
-      deliveryBarrier: "after_tool",
-    });
-    const streaming = makeStreamingSession({
-      pendingMessages: [originalMessage, queuedMessage],
-      currentTurnPendingIds: originalMessage.pendingId ? [originalMessage.pendingId] : [],
-    });
-    seedAdapterTrace(streaming, "turn-stalled-tool");
-
-    const stashedMessages = new Map<string, typeof streaming.pendingMessages>();
-    const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
-    const recoveryPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
-    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
-
-    await runTraceLoop(
-      streaming,
-      makeStallingRuntimeSession(streaming, [
-        {
-          type: "tool.started",
-          toolUse: { id: "tool-1", name: "sessions_send", input: { session: "missing" } },
-        },
-        {
-          type: "tool.completed",
-          toolUseId: "tool-1",
-          toolName: "sessions_send",
-          content: "Session not found: missing",
-          isError: true,
-        },
-      ]),
-      {
-        streamingSessions,
-        stashedMessages,
-        failedToolStallTimeoutMs: 5,
-        stallCheckIntervalMs: 1,
-        turnStallTimeoutMs: 60_000,
-        safeEmit: async (topic, data) => {
-          runtimeEvents.push({ topic, data });
-        },
-        publishRecoveryPrompt: async (sessionName, payload) => {
-          recoveryPrompts.push({ sessionName, payload });
-        },
-      },
-    );
-
-    const eventTypes = listSessionEvents(SESSION_KEY).map((event) => event.eventType);
-    expect(eventTypes).toEqual(["adapter.request", "tool.start", "tool.end", "session.stalled", "turn.failed"]);
-    const stalled = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "session.stalled");
-    expect(stalled?.status).toBe("stalled");
-    expect(stalled?.error).toContain("Runtime turn stalled after failed tool");
-    const turn = getSessionTurn("turn-stalled-tool");
-    expect(turn?.status).toBe("failed");
-    expect(turn?.abortReason).toBe("tool_failure_stall");
-    expect(turn?.error).toContain("sessions_send");
-    expect(streaming.abortController.signal.aborted).toBe(true);
-    expect(streamingSessions.has(SESSION_NAME)).toBe(false);
-    expect(runtimeEvents.some((event) => event.data.type === "turn.failed")).toBe(true);
-    expect(recoveryPrompts).toHaveLength(1);
-    expect(recoveryPrompts[0]?.sessionName).toBe(SESSION_NAME);
-    expect(String(recoveryPrompts[0]?.payload.prompt)).toContain("Runtime recovery notice");
-    expect(String(recoveryPrompts[0]?.payload.prompt)).toContain("sessions_send");
-    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
-      "message queued while stuck",
-    ]);
   });
 });

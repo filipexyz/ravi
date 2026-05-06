@@ -94,6 +94,8 @@ function loadTaskPresenterApi() {
   }
 
   return api as {
+    normalizeTaskListItem: (item: unknown) => Record<string, unknown> | null;
+    normalizeTaskListItems: (items: unknown) => Array<Record<string, unknown>>;
     getTaskVisualProgressState: (
       task: TaskNode["task"],
       node: TaskNode,
@@ -175,6 +177,8 @@ function loadTaskPresenterApi() {
 }
 
 const {
+  normalizeTaskListItem,
+  normalizeTaskListItems,
   getTaskVisualProgressState,
   getTaskReadinessState,
   getTaskWorkflowSummary,
@@ -186,6 +190,54 @@ const {
 } = loadTaskPresenterApi();
 
 describe("whatsapp overlay task presenter", () => {
+  it("normalizes task envelopes into the task shape expected by content renderers", () => {
+    const task = normalizeTaskListItem({
+      task: {
+        id: "task-1",
+        status: "open",
+        assigneeSessionName: null,
+      },
+      activeAssignment: {
+        sessionName: "task-worker",
+        agentId: "dev",
+      },
+      visualStatus: "in_progress",
+      readiness: {
+        state: "ready",
+      },
+      launchPlan: {
+        agentId: "dev",
+      },
+    });
+
+    expect(task).toMatchObject({
+      id: "task-1",
+      status: "open",
+      activeAssignment: {
+        sessionName: "task-worker",
+        agentId: "dev",
+      },
+      visualStatus: "in_progress",
+      readiness: {
+        state: "ready",
+      },
+      launchPlan: {
+        agentId: "dev",
+      },
+    });
+  });
+
+  it("drops invalid task list entries while preserving direct tasks", () => {
+    expect(
+      normalizeTaskListItems([
+        { id: "task-direct", status: "done" },
+        { task: { id: "task-envelope", status: "open" } },
+        { task: { status: "open" } },
+        null,
+      ]).map((task) => task.id),
+    ).toEqual(["task-direct", "task-envelope"]);
+  });
+
   it("uses descendant aggregate when the parent has no own progress yet", () => {
     const node: TaskNode = {
       task: { status: "open", progress: 0 },

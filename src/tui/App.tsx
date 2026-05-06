@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/react */
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import { ChatView } from "./components/ChatView.js";
 import {
@@ -15,12 +15,11 @@ import { StatusBar } from "./components/StatusBar.js";
 import { SLASH_COMMANDS } from "./components/SlashMenu.js";
 import { useRc505Bridge } from "./hooks/useRc505Bridge.js";
 import { useNats, type TimelineEntry } from "./hooks/useNats.js";
+import { useSessionMetadata } from "./hooks/useSessionMetadata.js";
 import { resolveRuntimeDisplayLabel } from "./hooks/runtime-display.js";
 import { applyAgentRuntimeSelection } from "./runtime-config.js";
-import { dbGetAgent } from "../router/router-db.js";
-import { loadConfig } from "../utils/config.js";
 import { publish } from "../nats.js";
-import { resetSession, resolveSession } from "../router/sessions.js";
+import { resetSession } from "../router/sessions.js";
 
 const sessionName = process.argv[2] || "main";
 type ActiveView = "chat" | "cockpit";
@@ -104,52 +103,79 @@ export function App() {
     runtimeInfo,
   } = useNats(sessionName);
 
-  // Resolve current session/agent metadata directly from SQLite so the status
-  // bar reflects live provider changes without waiting for the palette list.
-  const currentSession = resolveSession(sessionName);
+  // Cached session/agent/config metadata. Refreshed on `ravi.config.changed`
+  // — see `useSessionMetadata`. Previously these were synchronous SQLite
+  // queries on every render and dominated CPU during streaming.
+  const { session: currentSession, agent, defaultModel } = useSessionMetadata(sessionName);
   const agentId = currentSession?.agentId ?? "unknown";
-  const agent = agentId === "unknown" ? null : dbGetAgent(agentId);
-  const runtimeLabel = resolveRuntimeDisplayLabel({
-    configuredProvider: agent?.provider ?? "claude",
-    runtimeProvider: runtimeInfo.provider ?? currentSession?.runtimeProvider ?? null,
-    configuredModel: currentSession?.modelOverride ?? agent?.model ?? loadConfig().model,
-    executionModel: runtimeInfo.executionModel,
-  });
-  const channelParts = [
-    currentSession?.lastChannel ?? currentSession?.channel,
-    currentSession?.chatType,
-    currentSession?.accountId,
-  ].filter(Boolean);
-  const alerts: string[] = [];
-  if (!isConnected) {
-    alerts.push("session bus disconnected");
-  }
-  if (currentSession?.abortedLastRun) {
-    alerts.push("last run aborted");
-  }
-  const cockpitStatus: CockpitStatusSnapshot = {
-    daemon: isConnected ? "reachable via NATS" : "unreachable",
-    runtime: `${runtimeLabel.provider}/${runtimeLabel.model}`,
-    channel: channelParts.length > 0 ? channelParts.join(" / ") : undefined,
-    activity: isCompacting ? "compacting" : isWorking ? "working" : isTyping ? "typing" : "idle",
-    alerts,
-    session: `${sessionName} (${agentId})`,
-  };
-  const cockpitActions: CockpitActionsSnapshot = {
-    items: [
-      { id: "reset", label: "Reset", trigger: "/reset", enabled: Boolean(currentSession?.sessionKey) },
-      { id: "model", label: "Model", trigger: "/model", enabled: Boolean(currentSession && agent) },
+
+  const runtimeLabel = useMemo(
+    () =>
+      resolveRuntimeDisplayLabel({
+        configuredProvider: agent?.provider ?? "claude",
+        runtimeProvider: runtimeInfo.provider ?? currentSession?.runtimeProvider ?? null,
+        configuredModel: currentSession?.modelOverride ?? agent?.model ?? defaultModel,
+        executionModel: runtimeInfo.executionModel,
+      }),
+    [
+      agent?.provider,
+      agent?.model,
+      runtimeInfo.provider,
+      runtimeInfo.executionModel,
+      currentSession?.runtimeProvider,
+      currentSession?.modelOverride,
+      defaultModel,
     ],
-  };
-  const activityFeed = messages.slice(-3).map(summarizeCockpitActivity);
-  if (rc505.lastEvent) {
-    activityFeed.push(truncateCockpitLine(`rc505 ${rc505.lastEvent.kind}: ${rc505.lastEvent.summary}`));
-  } else if (rc505.message) {
-    activityFeed.push(truncateCockpitLine(`rc505 bridge: ${rc505.message}`));
-  }
-  const cockpitActivity: CockpitActivitySnapshot = {
-    feed: activityFeed.slice(-4),
-  };
+  );
+
+  const channelParts = useMemo(
+    () =>
+      [
+        currentSession?.lastChannel ?? currentSession?.channel,
+        currentSession?.chatType,
+        currentSession?.accountId,
+      ].filter(Boolean) as string[],
+    [currentSession?.lastChannel, currentSession?.channel, currentSession?.chatType, currentSession?.accountId],
+  );
+
+  const alerts = useMemo(() => {
+    const out: string[] = [];
+    if (!isConnected) out.push("session bus disconnected");
+    if (currentSession?.abortedLastRun) out.push("last run aborted");
+    return out;
+  }, [isConnected, currentSession?.abortedLastRun]);
+
+  const cockpitStatus = useMemo<CockpitStatusSnapshot>(
+    () => ({
+      daemon: isConnected ? "reachable via NATS" : "unreachable",
+      runtime: `${runtimeLabel.provider}/${runtimeLabel.model}`,
+      channel: channelParts.length > 0 ? channelParts.join(" / ") : undefined,
+      activity: isCompacting ? "compacting" : isWorking ? "working" : isTyping ? "typing" : "idle",
+      alerts,
+      session: `${sessionName} (${agentId})`,
+    }),
+    [isConnected, runtimeLabel, channelParts, isCompacting, isWorking, isTyping, alerts, agentId],
+  );
+
+  const cockpitActions = useMemo<CockpitActionsSnapshot>(
+    () => ({
+      items: [
+        { id: "reset", label: "Reset", trigger: "/reset", enabled: Boolean(currentSession?.sessionKey) },
+        { id: "model", label: "Model", trigger: "/model", enabled: Boolean(currentSession && agent) },
+      ],
+    }),
+    [currentSession?.sessionKey, currentSession, agent],
+  );
+
+  const cockpitActivity = useMemo<CockpitActivitySnapshot>(() => {
+    const feed = messages.slice(-3).map(summarizeCockpitActivity);
+    if (rc505.lastEvent) {
+      feed.push(truncateCockpitLine(`rc505 ${rc505.lastEvent.kind}: ${rc505.lastEvent.summary}`));
+    } else if (rc505.message) {
+      feed.push(truncateCockpitLine(`rc505 bridge: ${rc505.message}`));
+    }
+    return { feed: feed.slice(-4) };
+  }, [messages, rc505.lastEvent, rc505.message]);
 
   useEffect(() => {
     const lastEventAt = rc505.lastEvent?.receivedAt;

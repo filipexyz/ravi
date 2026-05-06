@@ -188,7 +188,7 @@ The OmniSender (`src/omni/sender.ts`) is an HTTP client wrapping the `@omni/sdk`
 The RaviBot (`src/bot.ts`) manages Claude Agent SDK sessions. It subscribes to the `SESSION_PROMPTS` JetStream consumer and processes prompts through streaming SDK sessions.
 
 **Key properties:**
-- **Concurrency limit** — Maximum 8 concurrent sessions (`MAX_CONCURRENT_SESSIONS`). Additional prompts are queued as pending starts.
+- **Runtime session pool** — Maximum concurrent live runtime sessions is controlled by `RAVI_RUNTIME_SESSION_POOL_MAX` (default `60`). Additional prompts are queued as pending starts until a slot is released.
 - **Streaming sessions** — Each session is a persistent SDK subprocess that accepts messages via AsyncGenerator. Sessions are keyed by session name.
 - **Debounce** — Messages arriving within a configurable window are combined before processing.
 - **Message interrupts** — New messages can interrupt running sessions (waits for safe tool completion, then interrupts).

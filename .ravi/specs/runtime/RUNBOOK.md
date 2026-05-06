@@ -8,7 +8,7 @@
 4. If no `adapter.request` exists, debug dispatcher/launcher/request-builder.
 5. If `adapter.request` exists, debug provider adapter and canonical events.
 6. Check whether the turn has a terminal event: `turn.complete`, `turn.failed`, or `turn.interrupted`.
-7. If no terminal event exists, inspect tool lifecycle, raw provider events, and watchdog recovery.
+7. If no terminal event exists, inspect tool lifecycle, raw provider events, and adapter terminal-event normalization.
 8. If terminal event exists but the UI/channel is wrong, debug event loop, gateway, or delivery.
 
 ## Useful CLI
@@ -39,5 +39,5 @@ ravi events stream --only runtime
 - `adapter.request` without terminal turn means the provider handoff happened but Ravi did not receive a canonical terminal event.
 - `tool.start` without `tool.end` means the adapter or provider lost tool completion.
 - `tool.end failed` followed by no terminal event points to provider recovery/normalization issues.
-- `session.stalled` means Ravi recovered by watchdog and did not trust the provider to finish.
+- `session.stalled` is a historical trace row from the removed stalled-turn recovery path. New traces should not emit it.
 - Repeated `dispatch.queued_busy` can mean the generator is waiting on terminal completion or a delivery barrier.

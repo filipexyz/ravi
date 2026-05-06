@@ -2,11 +2,15 @@
 
 ## Why App-Server Transport
 
-The app-server transport gives Ravi structured thread, turn, item, approval, dynamic tool, and control events. That is a better fit than one-shot CLI JSON because Ravi needs persistent sessions, queueing across turns, dynamic tools, and runtime controls.
+The app-server transport gives Ravi structured thread, turn, item, approval, and control events. That is a better fit than one-shot CLI JSON because Ravi needs persistent sessions, queueing across turns, runtime controls, and traceable approval handling.
 
-## Why Dynamic Tools Go Through Ravi
+## Why Ravi Commands Stay In The CLI Path
 
-Codex can call dynamically advertised tools, but Ravi owns the tool catalog and permissions. The provider should advertise only tools the current runtime context can use and execute them through `RuntimeHostServices`.
+Ravi CLI registry commands are the operational interface for agents. Codex MUST NOT receive them as native dynamic tools, because that creates a second execution surface with different delivery, context, and reporting behavior.
+
+The model should call `ravi ...` or `bin/ravi ...` through the shell. The runtime must pass `RAVI_CONTEXT_KEY` into the Codex app-server process so those CLI calls resolve identity, permissions, approvals, and report routing through the same context path as every other Ravi CLI.
+
+If a CLI process launched from a Codex turn does not see `RAVI_CONTEXT_KEY`, the failure belongs at the runtime/tool boundary. Re-enabling Codex dynamic tools would hide that bug and split the contract again.
 
 ## Why Cwd Is Stored With Session State
 

@@ -18,6 +18,7 @@ import {
   withResolvedSkillSource,
   type RaviSkill,
 } from "../../skills/manager.js";
+import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -57,18 +58,22 @@ export class SkillsCommands {
     installed?: boolean,
     @Option({ flags: "--codex", description: "Include materialized Codex skills" }) includeCodex?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical skill tag" }) tagSlug?: string,
   ) {
-    const skills = source
+    const discovered = source
       ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
       : installed === true || includeCodex === true
         ? listInstalledSkills({ includeCodex: includeCodex === true })
         : listCatalogSkills();
+    const tagFilter = tagSlug?.trim() || null;
+    const skills = filterItemsByCanonicalTag(discovered, "skill", tagFilter ?? undefined, (skill) => skill.name);
 
     const sourceLabel = source ?? (installed === true || includeCodex === true ? "installed" : "catalog");
 
     const payload = {
       total: skills.length,
       source: sourceLabel,
+      ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       skills: skills.map((skill) => serializeSkill(skill)),
     };
 

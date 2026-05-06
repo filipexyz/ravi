@@ -38,7 +38,11 @@ export function resolveRuntimeForPrompt(options: {
     }
   })();
 
+  const promptOverride =
+    options.prompt._observation && options.prompt._runtimeModel ? { model: options.prompt._runtimeModel } : undefined;
+
   return resolveTaskRuntimeOptions({
+    promptOverride,
     task: binding?.task,
     assignment: binding?.assignment,
     profile,

@@ -1,0 +1,255 @@
+---
+title: SDK Gateway
+description: Use the generated Ravi SDK clients against the authenticated gateway.
+---
+
+## Overview
+
+Ravi exposes a typed SDK gateway under `/api/v1/*`. The gateway is generated from
+the decorated CLI registry, so SDK clients mirror Ravi commands without
+hand-maintained API wrappers.
+
+The current SDK surfaces are:
+
+- TypeScript package: `packages/ravi-os-sdk`
+- Swift package: `packages/ravi-os-swift-sdk`
+- OpenAPI snapshot: `docs/openapi.json`
+
+The source of truth is `src/cli/registry-snapshot.ts`. OpenAPI, TypeScript, and
+Swift are deterministic projections of that registry.
+
+## Start the Gateway
+
+The SDK gateway is mounted on Ravi's webhook HTTP server. The daemon starts that
+server only when an HTTP port is configured:
+
+```bash
+RAVI_HTTP_PORT=7777
+RAVI_HTTP_HOST=127.0.0.1
+```
+
+The gateway shares the same listener as webhooks. Requests go to:
+
+```text
+http://127.0.0.1:7777/api/v1/...
+```
+
+If `RAVI_HTTP_HOST` is not loopback, Ravi refuses to start unless
+`RAVI_GATEWAY_NETWORK_AUTHORIZED=1` is set. This keeps the SDK gateway private
+by default even when bearer auth is configured.
+
+Set `RAVI_SDK_GATEWAY_DISABLE=1` to disable SDK routes while leaving the HTTP
+server available for webhook handlers.
+
+## Context Keys
+
+Non-open SDK routes require a runtime context key (`rctx_*`) in the bearer auth
+header. Bootstrap the first admin key on the daemon host:
+
+```bash
+ravi daemon init-admin-key
+```
+
+For external apps, issue a narrower child context:
+
+```bash
+ravi context issue dashboard \
+  --ttl 2h \
+  --allow view:system:events,view:system:tasks \
+  --json
+```
+
+The `--allow` format is:
+
+```text
+permission:objectType:objectId
+```
+
+Examples:
+
+- `view:system:events` for the events stream
+- `view:system:tasks` for the tasks stream
+- `view:system:audit` for the audit stream
+- `access:session:ravi-web` for one session stream
+
+## TypeScript Client
+
+Install:
+
+```bash
+bun add @ravi-os/sdk
+```
+
+Create a client:
+
+```ts
+import { RaviClient, createHttpTransport } from "@ravi-os/sdk";
+
+const client = new RaviClient(
+  createHttpTransport({
+    baseUrl: "http://127.0.0.1:7777",
+    contextKey: process.env.RAVI_CONTEXT_KEY!,
+    timeoutMs: 10_000,
+  }),
+);
+
+const agents = await client.agents.list();
+```
+
+Generated method names follow the CLI shape:
+
+```ts
+await client.daemon.status();
+await client.sessions.read("ravi-web");
+await client.instances.routes.add("main", "group:120363428558776322", "ravi-web", {
+  channel: "whatsapp",
+  session: "ravi-web",
+});
+await client.sdk.client.check();
+```
+
+Kebab-case commands become camelCase methods. For example,
+`daemon init-admin-key` becomes `client.daemon.initAdminKey()`.
+
+## Wire Contract
+
+Every command call is a POST:
+
+```text
+POST /api/v1/<group-segments>/<command>
+```
+
+The request body is flat JSON. Positional arguments and options are merged at
+the top level:
+
+```json
+{
+  "name": "main",
+  "pattern": "group:120363428558776322",
+  "agent": "ravi-web",
+  "channel": "whatsapp",
+  "session": "ravi-web"
+}
+```
+
+Generated clients must not send `{ "args": ..., "options": ... }` wrappers.
+
+The HTTP transport sends:
+
+- `Authorization: Bearer <rctx_key>`
+- `x-ravi-sdk-version`
+- `x-ravi-registry-hash`
+
+## Streaming
+
+Use `@ravi-os/sdk/streaming` for server-sent event streams:
+
+```ts
+import { createStreamClient } from "@ravi-os/sdk/streaming";
+
+const stream = createStreamClient({
+  baseUrl: "http://127.0.0.1:7777",
+  contextKey: process.env.RAVI_CONTEXT_KEY!,
+});
+
+for await (const event of stream.events({ subject: "ravi.session.>", noClaude: true })) {
+  console.log(event.event, event.data);
+}
+```
+
+Available streams:
+
+| SDK method | Gateway route | Required scope |
+| --- | --- | --- |
+| `events()` | `GET /api/v1/_stream/events` | `view:system:events` |
+| `tasks()` | `GET /api/v1/_stream/tasks` | `view:system:tasks` |
+| `session(name)` | `GET /api/v1/_stream/sessions/<name>` | `access:session:<name>` |
+| `audit()` | `GET /api/v1/_stream/audit` | `view:system:audit` |
+
+Streams always require a valid context key, even when ordinary open commands do
+not.
+
+## Binary Responses
+
+Commands marked with `@Returns.binary()` return a raw `Response` on successful
+2xx calls. Error responses still map to typed SDK errors.
+
+```ts
+const response = await client.artifacts.blob("art_123");
+const bytes = await response.arrayBuffer();
+```
+
+## Error Handling
+
+All transports throw the same error hierarchy:
+
+- `RaviAuthError` for 401 responses
+- `RaviPermissionError` for 403 responses
+- `RaviValidationError` for 4xx validation failures, with `issues[]`
+- `RaviInternalError` for 5xx responses
+- `RaviTransportError` for network, timeout, or transport failures
+
+```ts
+import { RaviError, RaviValidationError } from "@ravi-os/sdk/errors";
+
+try {
+  await client.artifacts.show("missing");
+} catch (error) {
+  if (error instanceof RaviValidationError) {
+    console.error(error.issues);
+  } else if (error instanceof RaviError) {
+    console.error(error.status, error.command, error.message);
+  }
+}
+```
+
+## Codegen
+
+Regenerate the TypeScript client from the live registry:
+
+```bash
+bun run sdk:generate
+```
+
+Check committed generated files for drift:
+
+```bash
+bun run sdk:check
+```
+
+Generate the OpenAPI snapshot:
+
+```bash
+bun run docs:openapi
+```
+
+Generate the Swift SDK:
+
+```bash
+bun src/cli/index.ts sdk swift generate
+```
+
+Generated TypeScript files live in `packages/ravi-os-sdk/src`:
+
+- `client.ts`
+- `schemas.ts`
+- `types.ts`
+- `version.ts`
+
+Hand-written SDK files contain transports, error mapping, streaming helpers, and
+package integration code.
+
+## Published Exports
+
+The published TypeScript package exports:
+
+```ts
+import { RaviClient } from "@ravi-os/sdk/client";
+import { createHttpTransport } from "@ravi-os/sdk/transport/http";
+import { createStreamClient } from "@ravi-os/sdk/streaming";
+import { RaviError } from "@ravi-os/sdk/errors";
+```
+
+The repo contains an in-process transport at
+`packages/ravi-os-sdk/src/transport/in-process.ts`, but it is monorepo-internal
+and is not exported by the published package.

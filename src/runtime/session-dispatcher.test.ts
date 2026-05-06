@@ -8,11 +8,13 @@ import {
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
+import { getOrCreateSession } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
-function createDispatcher() {
+function createDispatcher(maxConcurrentSessions = 10) {
   return new RuntimeSessionDispatcher({
     instanceId: "test",
-    maxConcurrentSessions: 10,
+    maxConcurrentSessions,
     safeEmit: async () => {},
     getConfigModel: () => "test-model",
   });
@@ -196,6 +198,8 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
       done: false,
       starting: false,
       compacting: false,
+      toolRunning: false,
+      lastActivity: Date.now(),
       ...overrides,
     } as RuntimeHostStreamingSession;
   }
@@ -253,5 +257,179 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         "after_tool",
       ),
     ).toBe(false);
+  });
+
+  it("does not native steer into a stale active turn", () => {
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          lastActivity: Date.now() - 60_000,
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not native steer while a tool is still running", () => {
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          toolRunning: true,
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("RuntimeSessionDispatcher abort resolution", () => {
+  function createActiveSession(overrides: Partial<RuntimeHostStreamingSession> = {}): RuntimeHostStreamingSession {
+    return {
+      agentId: "dev",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+      },
+      abortController: new AbortController(),
+      pendingMessages: [],
+      currentModel: "test-model",
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      compacting: false,
+      interrupted: false,
+      turnActive: false,
+      pushMessage: null,
+      pendingWake: false,
+      onTurnComplete: null,
+      currentToolSafety: null,
+      pendingAbort: false,
+      ...overrides,
+    };
+  }
+
+  it("keeps new cold starts behind already queued runtime session starts", () => {
+    const dispatcher = createDispatcher(2);
+    dispatcher.pendingStarts.push({
+      sessionName: "queued",
+      prompt: { prompt: "queued" },
+      resolve: () => {},
+    });
+
+    expect(dispatcher.canAcceptRuntimePrompt("new-cold-start")).toBe(false);
+
+    dispatcher.streamingSessions.set("active", createActiveSession());
+    expect(dispatcher.canAcceptRuntimePrompt("active")).toBe(true);
+
+    dispatcher.startingSessions.add("queued");
+    expect(dispatcher.canAcceptRuntimePrompt("queued")).toBe(true);
+  });
+
+  it("aborts a live runtime session by session key when the pool is keyed by session name", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-abort-");
+    try {
+      getOrCreateSession("agent:dev:test:abort-key", "dev", stateDir, { name: "abort-by-name" });
+      const dispatcher = createDispatcher(1);
+      let interrupted = false;
+      let pendingResolved = false;
+      let secondPendingResolved = false;
+      dispatcher.pendingStarts.push({
+        sessionName: "queued-after-abort",
+        prompt: { prompt: "queued" },
+        resolve: () => {
+          pendingResolved = true;
+        },
+      });
+      dispatcher.pendingStarts.push({
+        sessionName: "second-queued-after-abort",
+        prompt: { prompt: "second queued" },
+        resolve: () => {
+          secondPendingResolved = true;
+        },
+      });
+      dispatcher.streamingSessions.set(
+        "abort-by-name",
+        createActiveSession({
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt: async () => {
+              interrupted = true;
+            },
+          },
+        }),
+      );
+
+      expect(dispatcher.abortSession({ sessionKey: "agent:dev:test:abort-key" }, { reason: "test_abort" })).toBe(true);
+      expect(dispatcher.streamingSessions.has("abort-by-name")).toBe(false);
+      expect(interrupted).toBe(true);
+      expect(pendingResolved).toBe(true);
+      expect(secondPendingResolved).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+      expect(dispatcher.startReservations.has("queued-after-abort")).toBe(true);
+      expect(dispatcher.canAcceptRuntimePrompt("fresh-cold-start")).toBe(false);
+
+      dispatcher.drainPendingStarts();
+      expect(secondPendingResolved).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("drains queued runtime starts when an external model change restarts a live session", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-change-");
+    try {
+      getOrCreateSession("agent:dev:test:model-change", "dev", stateDir, { name: "model-change-by-name" });
+      const dispatcher = createDispatcher(1);
+      let pendingResolved = false;
+      dispatcher.pendingStarts.push({
+        sessionName: "queued-after-model-change",
+        prompt: { prompt: "queued" },
+        resolve: () => {
+          pendingResolved = true;
+        },
+      });
+      dispatcher.streamingSessions.set("model-change-by-name", createActiveSession());
+
+      const result = await dispatcher.applySessionModelChange("model-change-by-name", "next-model");
+
+      expect(result).toBe("restart-next-turn");
+      expect(dispatcher.streamingSessions.has("model-change-by-name")).toBe(false);
+      expect(pendingResolved).toBe(true);
+      expect(dispatcher.pendingStarts).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("keeps queued runtime starts parked when model change caller immediately restarts the same session", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-inline-model-change-");
+    try {
+      getOrCreateSession("agent:dev:test:inline-model-change", "dev", stateDir, { name: "inline-model-change" });
+      const dispatcher = createDispatcher(1);
+      let pendingResolved = false;
+      dispatcher.pendingStarts.push({
+        sessionName: "queued-after-inline-model-change",
+        prompt: { prompt: "queued" },
+        resolve: () => {
+          pendingResolved = true;
+        },
+      });
+      dispatcher.streamingSessions.set("inline-model-change", createActiveSession());
+
+      const result = await dispatcher.applySessionModelChange("inline-model-change", "next-model", {
+        drainReleasedSlot: false,
+      });
+
+      expect(result).toBe("restart-next-turn");
+      expect(dispatcher.streamingSessions.has("inline-model-change")).toBe(false);
+      expect(pendingResolved).toBe(false);
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
   });
 });

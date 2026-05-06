@@ -19,6 +19,8 @@ import {
   dbUpdateWorkflowRun,
 } from "./workflow-db.js";
 import { dbGetActiveAssignment, dbGetTask, dbListTaskDependencies } from "../tasks/task-db.js";
+import { filterItemsByCanonicalTag } from "../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../tags/service.js";
 import type { TaskAssignment, TaskReadiness, TaskRecord, TaskStatus } from "../tasks/types.js";
 import type {
   CreateWorkflowSpecInput,
@@ -34,9 +36,11 @@ import type {
   WorkflowRunCounts,
   WorkflowRunDetails,
   WorkflowRunEdge,
+  WorkflowRunListOptions,
   WorkflowRunTaskSurface,
   WorkflowSpec,
   WorkflowSpecEdge,
+  WorkflowSpecListOptions,
   WorkflowSpecNode,
   WorkflowSpecPolicy,
 } from "./types.js";
@@ -586,8 +590,8 @@ export function createWorkflowSpec(input: CreateWorkflowSpecInput): WorkflowSpec
   return dbCreateWorkflowSpec(normalizeSpecInput(input));
 }
 
-export function listWorkflowSpecs(): WorkflowSpec[] {
-  return dbListWorkflowSpecs();
+export function listWorkflowSpecs(options: WorkflowSpecListOptions = {}): WorkflowSpec[] {
+  return filterItemsByCanonicalTag(dbListWorkflowSpecs(), "workflow_spec", options.tagSlug, (spec) => spec.id);
 }
 
 export function getWorkflowSpec(specId: string): WorkflowSpec | null {
@@ -641,8 +645,8 @@ export function startWorkflowRun(specId: string, input: StartWorkflowRunInput = 
   return getWorkflowRunDetails(run.id)!;
 }
 
-export function listWorkflowRuns(): WorkflowRun[] {
-  return dbListWorkflowRuns();
+export function listWorkflowRuns(options: WorkflowRunListOptions = {}): WorkflowRun[] {
+  return filterItemsByCanonicalTag(dbListWorkflowRuns(), "workflow_run", options.tagSlug, (run) => run.id);
 }
 
 export function getWorkflowRunDetails(runId: string): WorkflowRunDetails | null {
@@ -671,6 +675,16 @@ export function getWorkflowRunDetails(runId: string): WorkflowRunDetails | null 
     nodes,
     edges,
     counts: summarizeNodeRuns(nodeRuns),
+    tags: {
+      spec: searchTagBindingsForSelector({ selector: { workflow_spec: spec.id } }).bindings,
+      run: searchTagBindingsForSelector({ selector: { workflow_run: run.id } }).bindings,
+      nodes: Object.fromEntries(
+        nodeRuns.map((nodeRun) => [
+          nodeRun.specNodeKey,
+          searchTagBindingsForSelector({ selector: { workflow_node: nodeRun.id } }).bindings,
+        ]),
+      ),
+    },
   };
 }
 

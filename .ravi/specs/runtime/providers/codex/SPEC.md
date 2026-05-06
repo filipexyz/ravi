@@ -6,12 +6,12 @@ domain: runtime
 capabilities:
   - providers
   - codex
-  - dynamic-tools
+  - cli-context
   - runtime-control
 tags:
   - runtime
   - codex
-  - tools
+  - cli
   - app-server
 applies_to:
   - src/runtime/codex-provider.ts
@@ -27,7 +27,7 @@ normative: true
 
 ## Intent
 
-The Codex provider adapts the Codex app-server transport into Ravi's canonical runtime contract while preserving Ravi-owned permissions, dynamic tools, session state, traces, and response delivery.
+The Codex provider adapts the Codex app-server transport into Ravi's canonical runtime contract while preserving Ravi-owned permissions, CLI context, session state, traces, and response delivery.
 
 ## Current Shape
 
@@ -36,9 +36,11 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Fallback transport: JSON CLI exec exists in code but the app-server path is the active rich integration.
 - Session state: thread/session id plus cwd in `RuntimeSessionState.params`.
 - Resume: supported only when stored cwd matches current cwd.
-- Fork: not supported by provider capabilities, even though native control can fork threads operationally.
+- Fork: not supported by provider capabilities, even though native control can fork threads operationally. Canonical fork requires the `runtime/session-continuity/forks` materializer to map Codex threads/turns back to Ravi prompt atoms.
 - Partial text: supported through `agent_message.delta`.
-- Dynamic tools: supported through app-server `item/tool/call`.
+- Dynamic tools: disabled. Ravi CLI registry commands MUST NOT be advertised as Codex native dynamic tools.
+- Ravi CLI access: model-initiated Ravi operations MUST go through shell commands such as `ravi tasks ...` or `bin/ravi tasks ...` with `RAVI_CONTEXT_KEY` in the shell env.
+- Shell env bridge: the Codex app-server receives Ravi runtime env and is launched with an explicit `shell_environment_policy` that allows the shell to inherit only core shell env plus `RAVI_*`, including `RAVI_CONTEXT_KEY`.
 - Approvals: mapped into Ravi `RuntimeApprovalRequest`.
 - Runtime control: thread list/read/rollback/fork and turn steer/interrupt.
 - Tool access requirement: `tool_surface`.
@@ -55,21 +57,40 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - `turn/completed` interrupted -> `turn.interrupted`
 - `turn/completed` other status -> `turn.failed`
 - JSON-RPC approval request -> `approval.requested` / `approval.resolved`
-- JSON-RPC dynamic tool call -> synthetic `item.started` / `item.completed` plus dynamic tool response.
+- JSON-RPC dynamic tool call -> defensive synthetic `item.started` / `item.completed` plus protocol-safe semantic failure. It MUST NOT execute a Ravi CLI registry command.
+
+## Skill Visibility
+
+- Codex skills are provider-native files under the Codex skills directory. Ravi synchronizes plugin-backed skills during `prepareSession` through `syncCodexSkills`.
+- `syncCodexSkills` proves `synced`, not `loaded`.
+- The Codex system prompt catalog proves `advertised`, not `loaded`.
+- App-server `skills/list` MAY be used to refresh `available` skill metadata for one or more cwds. `skills/changed` MUST be treated as metadata invalidation and SHOULD trigger a later `skills/list` refresh when visibility needs fresh metadata.
+- `UserInput` entries with `type=skill` prove a requested skill reference. They MUST be recorded as `requested` unless a later provider signal proves the skill content was loaded.
+- Thread start/resume `instructionSources` MAY prove loaded instruction files for a thread. The adapter MAY mark a skill `loaded` only if an instruction source path is matched to a canonical `SKILL.md` path for that skill.
+- Codex currently has no stable dedicated `skill.loaded` notification in the app-server event stream. Until one exists or `instructionSources` are matched to canonical skill paths, Codex MUST expose synchronized Ravi skills as `synced`/`advertised` and keep `loadedSkills` empty.
 
 ## Invariants
 
 - The provider MUST initialize or resume one native thread before starting a turn.
 - The provider MUST NOT start overlapping turns on one app-server transport.
-- The provider MUST send Ravi dynamic tool definitions only after `prepareSession` obtains host services.
-- Dynamic tool calls MUST route through `hostServices.executeDynamicTool`.
+- The provider MUST NOT send Ravi dynamic tool definitions to Codex.
+- The provider MUST NOT route Codex app-server dynamic tool calls through `hostServices.executeDynamicTool`.
+- The provider MUST pass Ravi-owned runtime env, including `RAVI_CONTEXT_KEY`, into the Codex app-server process.
+- A reused Codex app-server process MUST be respawned before the next turn when its Ravi env signature differs from the current runtime env.
+- The provider MUST launch the Codex app-server with `shell_environment_policy.inherit=all`, `shell_environment_policy.ignore_default_excludes=true`, and an `include_only` glob allowlist that includes `RAVI_*` plus minimal core shell variables. This is required because Codex default shell env exclusions can strip env names containing `KEY`.
+- The global Codex Bash hook command MUST resolve to a stable Ravi CLI entrypoint such as `bin/ravi` or the bundled CLI, never to a test file or transient runner script.
+- The global Codex Bash hook matcher MUST cover both Codex tool names currently observed for shell execution: `Bash` and `shell`.
+- The global Codex Bash hook MUST enforce Ravi shell permissions and runtime skill gates only. It MUST NOT rely on `PreToolUse.updatedInput` to inject env because current Codex rejects unsupported updated input for this hook.
+- The shell env bridge MUST NOT print or embed `RAVI_CONTEXT_KEY` directly in user-visible command text or traces.
+- Ravi operations requested by the model MUST execute through the shell/CLI path under the current Ravi context.
 - Command/file/permission/user-input approval requests MUST route through Ravi approval handlers.
-- A dynamic tool response MUST always include normalized `content_items`; missing output MUST become text fallback.
+- An unexpected dynamic tool JSON-RPC response MUST always include normalized `contentItems`; missing output MUST become text fallback, but the semantic result MUST remain a failed tool event.
 - A completed native turn MUST produce `turn.complete` with provider session state.
 - A native interrupted turn or interrupt request MUST produce `turn.interrupted`, not `turn.failed`, unless the native process actually fails before interruption can be established.
 - A native exit without terminal event MUST become recoverable `turn.failed`.
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.
 - The provider MUST sync Codex skills during `prepareSession` and include the skill catalog in provider instructions.
+- Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
 
 ## Validation
 
@@ -81,12 +102,14 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 
 ## Known Failure Modes
 
-- Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes.
+- Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes; `contentItems` is the app-server contract.
 - Reaction-only or silent turns can finish natively but remain active in Ravi if `turn.complete` is not normalized.
-- Native raw events may continue while the logical turn is stuck; watchdog recovery should not be treated as normal completion.
+- Native raw events may continue while the logical turn is stuck; missing `turn/completed` is an adapter/runtime bug, not normal completion.
+- Synthetic and native dynamic tool item events can both appear from unexpected app-server requests; the adapter MUST dedupe canonical tool lifecycle by tool call id and keep the request non-operational.
 - The app-server transport rejects overlapping turns; dispatcher must queue/interrupt instead of yielding concurrent prompts.
 - Synthetic tool starts are needed when a completed item arrives without a previous start.
 - Cwd mismatch on stored session state must disable resume to avoid attaching to the wrong native thread.
 - Model provider/model metadata may be absent and must not break terminal persistence.
-- Dynamic tools currently return mostly text through host services; richer content paths need explicit tests.
-- Runtime control is implemented by this provider but not represented in `RuntimeCapabilities`.
+- If a shell command cannot see `RAVI_CONTEXT_KEY`, treat it as a runtime/tool-boundary bug. Do not compensate by re-enabling Codex native dynamic tools.
+- Runtime control/capability metadata regressions can break dispatcher decisions; `RuntimeCapabilities` coverage must stay aligned with provider behavior.
+- Skill sync can be mistaken for loaded state. The adapter MUST not populate `loadedSkills` from `syncCodexSkills` or prompt catalog text alone.

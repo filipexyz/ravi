@@ -3,7 +3,7 @@
  */
 
 import "reflect-metadata";
-import { Group, Command, Arg, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
@@ -35,7 +35,13 @@ import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
 import { loadConfig } from "../../utils/config.js";
 import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
-import { dbListContexts, dbListMessageMetaByChatId, type ContextRecord } from "../../router/router-db.js";
+import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
+import {
+  dbGetMessageMeta,
+  dbListContexts,
+  dbListMessageMetaByChatId,
+  type ContextRecord,
+} from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -44,8 +50,28 @@ import {
   countHistoryByChatIds,
   getRecentHistory,
   getRecentHistoryByChatIds,
+  getRecentProviderSessionHistory,
   type Message,
 } from "../../db.js";
+import {
+  buildOverlaySessionWorkspaceTimeline,
+  mergeOverlaySessionWorkspaceMessages,
+  parseOverlayTimestamp,
+  type OverlaySessionWorkspaceMessage,
+} from "../../whatsapp-overlay/model.js";
+import { getRuntimeLiveStateForSession } from "../../runtime/live-state.js";
+import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
+import {
+  accountSessionGoalUsage,
+  clearSessionGoal,
+  completeSessionGoal,
+  createSessionGoal,
+  getSessionGoal,
+  pauseActiveSessionGoal,
+  replaceSessionGoal,
+  resumeSessionGoal,
+  type SessionGoal,
+} from "../../runtime/session-goals.js";
 import {
   getScopeContext,
   isScopeEnforced,
@@ -57,6 +83,9 @@ import { formatInspectionSection, printInspectionBlock, printInspectionField } f
 import { parseSessionTraceTime, querySessionTrace, type SessionTraceQueryResult } from "../../session-trace/query.js";
 import { explainSessionTrace, type SessionTraceExplanation } from "../../session-trace/explain.js";
 import { buildCliInvocationMetadata, hashForAudit, type CliInvocationMetadata } from "../provenance.js";
+import { canonicalAssetIdsForTag } from "../../tags/helpers.js";
+import { searchTagBindingsForSelector } from "../../tags/service.js";
+import type { TagBinding } from "../../tags/types.js";
 import type {
   JsonValue,
   SessionEventRecord,
@@ -81,7 +110,37 @@ function printJsonl(payload: unknown): void {
   console.log(JSON.stringify(payload));
 }
 
-function buildSessionJson(session: SessionEntry): Record<string, unknown> {
+function formatTagSlugs(tags: TagBinding[]): string {
+  return tags.length > 0 ? tags.map((tag) => tag.tagSlug).join(", ") : "-";
+}
+
+function sessionTagLookupIds(session: Pick<SessionEntry, "name" | "sessionKey">): string[] {
+  return [session.name, session.sessionKey].filter((value): value is string => Boolean(value?.trim()));
+}
+
+function listSessionTags(session: SessionEntry): TagBinding[] {
+  const seen = new Set<string>();
+  const tags: TagBinding[] = [];
+  for (const id of sessionTagLookupIds(session)) {
+    for (const binding of searchTagBindingsForSelector({ selector: { target: `session:${id}` } }).bindings) {
+      const key = `${binding.tagSlug}:${binding.assetType}:${binding.assetId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      tags.push(binding);
+    }
+  }
+  return tags;
+}
+
+function sessionMatchesTag(session: SessionEntry, tagSlug: string | undefined): boolean {
+  const canonicalIds = canonicalAssetIdsForTag("session", tagSlug);
+  if (!canonicalIds) return true;
+  if (canonicalIds.length === 0) return false;
+  const allowed = new Set(canonicalIds);
+  return sessionTagLookupIds(session).some((id) => allowed.has(id));
+}
+
+function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {}): Record<string, unknown> {
   const runtimeId = session.providerSessionId ?? session.sdkSessionId ?? null;
   return {
     ...session,
@@ -91,6 +150,8 @@ function buildSessionJson(session: SessionEntry): Record<string, unknown> {
       session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
     ephemeral: Boolean(session.ephemeral),
     expiresAt: session.expiresAt ?? null,
+    tags: listSessionTags(session),
+    ...(options.live ? { live: getRuntimeLiveStateForSession(session) } : {}),
   };
 }
 
@@ -142,6 +203,27 @@ function printNormalizedMessages(messages: NormalizedTranscriptMessage[]): void 
 function parseReadMessageCount(countStr: string | undefined): number {
   const count = Number.parseInt(countStr ?? "20", 10);
   return Number.isFinite(count) && count > 0 ? count : 20;
+}
+
+function extractExternalMessageId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parts = value.split("_").filter(Boolean);
+  if (parts.length >= 3 && (parts[0] === "true" || parts[0] === "false")) {
+    return parts[2] ?? null;
+  }
+  return value;
+}
+
+function findTranscriptInSessionHistory(sessionName: string, externalMessageId: string): string | null {
+  const history = getRecentHistory(sessionName, 200);
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const message = history[index];
+    if (message.role !== "user") continue;
+    if (!message.content.includes(`mid:${externalMessageId}`)) continue;
+    const match = message.content.match(/\[Audio\]\s*Transcript:\s*([\s\S]+)/i);
+    if (match?.[1]) return match[1].trim();
+  }
+  return null;
 }
 
 function buildMessageMetadataChatIdVariants(chatId: string | undefined): string[] {
@@ -314,13 +396,14 @@ function buildSessionMutationAuditSnapshot(session: SessionEntry): SessionMutati
 }
 
 async function emitSessionMutationAudit(
-  operation: "reset" | "delete",
+  operation: "reset" | "delete" | "prune",
   phase: "requested" | "completed",
   payload: {
     cliInvocation: CliInvocationMetadata;
     before: SessionMutationAuditSnapshot;
     after?: SessionMutationAuditSnapshot | null;
     changed?: boolean;
+    revokedContexts?: number;
     durationMs?: number;
   },
 ): Promise<void> {
@@ -337,6 +420,7 @@ async function emitSessionMutationAudit(
       before: payload.before,
       ...(payload.after !== undefined ? { after: payload.after } : {}),
       ...(payload.changed !== undefined ? { changed: payload.changed } : {}),
+      ...(payload.revokedContexts !== undefined ? { revokedContexts: payload.revokedContexts } : {}),
       ...(payload.durationMs !== undefined ? { durationMs: payload.durationMs } : {}),
     })
     .catch(() => {});
@@ -388,6 +472,99 @@ function timeAgo(ts: number): string {
   if (days < 30) return `${days}d ago`;
   const months = Math.floor(days / 30);
   return `${months}mo ago`;
+}
+
+function normalizeOptionalFilter(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function sessionLabel(session: SessionEntry): string {
+  return session.name ?? session.sessionKey;
+}
+
+function matchesSessionPrefix(session: SessionEntry, prefix: string | undefined): boolean {
+  if (!prefix) return true;
+  const normalized = prefix.toLowerCase();
+  return (
+    session.sessionKey.toLowerCase().startsWith(normalized) ||
+    (session.name?.toLowerCase().startsWith(normalized) ?? false)
+  );
+}
+
+function buildPruneSessionJson(session: SessionEntry, now: number): Record<string, unknown> {
+  const inactiveMs = Math.max(0, now - session.updatedAt);
+  return {
+    sessionKey: session.sessionKey,
+    name: session.name ?? null,
+    label: sessionLabel(session),
+    agentId: session.agentId,
+    runtimeProvider: session.runtimeProvider ?? null,
+    updatedAt: session.updatedAt,
+    updatedAtIso: new Date(session.updatedAt).toISOString(),
+    inactiveMs,
+    inactiveFor: timeAgo(session.updatedAt),
+    createdAt: session.createdAt,
+    ephemeral: Boolean(session.ephemeral),
+    expiresAt: session.expiresAt ?? null,
+    tokenTotal:
+      session.totalTokens ?? (session.inputTokens ?? 0) + (session.outputTokens ?? 0) + (session.contextTokens ?? 0),
+  };
+}
+
+function buildSessionGoalJson(goal: SessionGoal | null): Record<string, unknown> | null {
+  if (!goal) return null;
+  return {
+    sessionKey: goal.sessionKey,
+    goalId: goal.goalId,
+    objective: goal.objective,
+    status: goal.status,
+    tokenBudget: goal.tokenBudget ?? null,
+    tokensUsed: goal.tokensUsed,
+    timeUsedSeconds: goal.timeUsedSeconds,
+    taskId: goal.taskId ?? null,
+    projectId: goal.projectId ?? null,
+    createdAt: goal.createdAt,
+    updatedAt: goal.updatedAt,
+  };
+}
+
+function parseIntegerOption(
+  value: string | undefined,
+  label: string,
+  options: { positive?: boolean } = {},
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^-?\d+$/.test(value.trim())) {
+    throw new Error(`${label} must be an integer`);
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`${label} must be a safe integer`);
+  }
+  if (options.positive ? parsed <= 0 : parsed < 0) {
+    throw new Error(options.positive ? `${label} must be positive` : `${label} must be non-negative`);
+  }
+  return parsed;
+}
+
+function printSessionGoal(goal: SessionGoal | null, session: SessionEntry): void {
+  const label = session.name ?? session.sessionKey;
+  if (!goal) {
+    console.log(`No goal set for session: ${label}`);
+    return;
+  }
+
+  console.log(`\nGoal for ${label}\n`);
+  console.log(`  Status: ${goal.status}`);
+  console.log(`  Objective: ${goal.objective}`);
+  console.log(
+    `  Tokens: ${formatTokens(goal.tokensUsed)}${goal.tokenBudget ? ` / ${formatTokens(goal.tokenBudget)}` : ""}`,
+  );
+  console.log(`  Time: ${goal.timeUsedSeconds}s`);
+  if (goal.taskId) console.log(`  Task: ${goal.taskId}`);
+  if (goal.projectId) console.log(`  Project: ${goal.projectId}`);
+  console.log();
 }
 
 function extractRuntimeTerminalError(data: Record<string, unknown>): string | undefined {
@@ -1135,6 +1312,8 @@ export class SessionCommands {
     @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
     @Option({ flags: "--ephemeral", description: "Show only ephemeral sessions" }) ephemeralOnly?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
+    @Option({ flags: "--tag <slug>", description: "Filter by canonical session tag slug" }) tagSlug?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1147,14 +1326,19 @@ export class SessionCommands {
     if (ephemeralOnly) {
       sessions = sessions.filter((s) => s.ephemeral);
     }
+    if (tagSlug?.trim()) {
+      sessions = sessions.filter((s) => sessionMatchesTag(s, tagSlug));
+    }
 
     const payload = {
       total: sessions.length,
       filters: {
         agentId: agentId ?? null,
         ephemeralOnly: Boolean(ephemeralOnly),
+        live: Boolean(includeLive),
+        tag: tagSlug?.trim() || null,
       },
-      sessions: sessions.map(buildSessionJson),
+      sessions: sessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
     };
 
     if (asJson) {
@@ -1183,10 +1367,10 @@ export class SessionCommands {
       }
     } else {
       console.log(
-        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             DISPLAY",
+        "  NAME                                  AGENT     TOKENS    ACTIVITY   TYPE       EXPIRES             TAGS             DISPLAY",
       );
       console.log(
-        "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ──────────────────",
+        "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
       );
 
       for (const s of sessions) {
@@ -1197,8 +1381,9 @@ export class SessionCommands {
         const activity = timeAgo(s.updatedAt).padEnd(9);
         const type = (s.ephemeral ? "ephemeral" : "permanent").padEnd(9);
         const expires = s.ephemeral && s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "-".padEnd(18);
+        const tags = formatTagSlugs(listSessionTags(s)).padEnd(15);
         const display = s.displayName ?? s.lastTo ?? "-";
-        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${activity}  ${type}  ${expires}  ${display}`);
+        console.log(`${ephTag}${name}  ${agent}  ${tokens}  ${activity}  ${type}  ${expires}  ${tags}  ${display}`);
       }
     }
 
@@ -1269,6 +1454,7 @@ export class SessionCommands {
     printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
     printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Thinking", s.thinkingLevel ?? "(default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField("Tags", formatTagSlugs(listSessionTags(s)), SESSION_DB_META, { labelWidth: 14 });
     printInspectionField("Runtime", s.runtimeProvider ?? "(unknown)", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
     printInspectionField("Runtime ID", s.providerSessionId ?? s.sdkSessionId ?? "(none)", RUNTIME_SNAPSHOT_META, {
       labelWidth: 14,
@@ -1357,6 +1543,171 @@ export class SessionCommands {
       adapters: relatedAdapters,
       commands: suggestedCommands,
     };
+  }
+
+  @Command({ name: "goal", description: "Inspect or mutate persisted session goal state" })
+  goal(
+    @Arg("action", { description: "get|set|create|pause|resume|complete|clear|account" }) action: string,
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Arg("objective", { description: "Goal objective for set/create", required: false }) objective?: string,
+    @Option({ flags: "--budget <tokens>", description: "Positive token budget for set/create" }) budgetStr?: string,
+    @Option({ flags: "--task <id>", description: "Optional task id link for set/create" }) taskId?: string,
+    @Option({ flags: "--project <id>", description: "Optional project id link for set/create" }) projectId?: string,
+    @Option({ flags: "--tokens <n>", description: "Token delta for account" }) tokenDeltaStr?: string,
+    @Option({ flags: "--seconds <n>", description: "Elapsed seconds delta for account" }) secondsStr?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedAction = action.trim().toLowerCase();
+    const session = this.resolveTarget(nameOrKey);
+    if (!session) return;
+
+    const mutating = normalizedAction !== "get";
+    if (mutating) {
+      const scopeCtx = getScopeContext();
+      const target = session.name ?? session.sessionKey;
+      if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, target)) {
+        fail(`Cannot modify session: ${nameOrKey}`);
+        return;
+      }
+    }
+
+    let goal: SessionGoal | null = null;
+    let changed = false;
+    const budget = parseIntegerOption(budgetStr, "budget", { positive: true });
+
+    switch (normalizedAction) {
+      case "get":
+        goal = getSessionGoal(session.sessionKey);
+        break;
+      case "set":
+        if (!objective?.trim()) {
+          fail("Goal objective is required for action: set");
+          return;
+        }
+        goal = replaceSessionGoal({
+          sessionKey: session.sessionKey,
+          objective,
+          tokenBudget: budget,
+          taskId,
+          projectId,
+        });
+        changed = true;
+        break;
+      case "create":
+        if (!objective?.trim()) {
+          fail("Goal objective is required for action: create");
+          return;
+        }
+        goal = createSessionGoal({
+          sessionKey: session.sessionKey,
+          objective,
+          tokenBudget: budget,
+          taskId,
+          projectId,
+        });
+        changed = Boolean(goal);
+        break;
+      case "pause":
+        goal = pauseActiveSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        goal = goal ?? getSessionGoal(session.sessionKey);
+        break;
+      case "resume":
+        goal = resumeSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        break;
+      case "complete":
+        goal = completeSessionGoal(session.sessionKey);
+        changed = Boolean(goal);
+        break;
+      case "clear":
+        changed = clearSessionGoal(session.sessionKey);
+        goal = null;
+        break;
+      case "account": {
+        const tokenDelta = parseIntegerOption(tokenDeltaStr, "tokens") ?? 0;
+        const timeDeltaSeconds = parseIntegerOption(secondsStr, "seconds") ?? 0;
+        const result = accountSessionGoalUsage({
+          sessionKey: session.sessionKey,
+          tokenDelta,
+          timeDeltaSeconds,
+        });
+        goal = result.goal;
+        changed = result.kind === "updated";
+        break;
+      }
+      default:
+        fail(`Unknown goal action: ${action}. Use get, set, create, pause, resume, complete, clear, or account.`);
+        return;
+    }
+
+    const payload = {
+      action: normalizedAction,
+      changed,
+      session: buildSessionJson(session),
+      goal: buildSessionGoalJson(goal),
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    if (normalizedAction === "clear") {
+      console.log(changed ? "Goal cleared." : "No goal to clear.");
+      return payload;
+    }
+
+    printSessionGoal(goal, session);
+    if (normalizedAction === "create" && !changed) {
+      console.log("Goal already exists; use `set` to replace it.");
+    }
+    return payload;
+  }
+
+  @Command({ name: "visibility", description: "Show runtime session visibility state" })
+  visibility(
+    @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    let session = resolveSession(nameOrKey);
+    if (!session) {
+      const match = findSessionByChatId(nameOrKey);
+      if (match) session = match;
+    }
+    if (!session) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, session.name ?? session.sessionKey)) {
+      fail(`Session not found: ${nameOrKey}`);
+      return;
+    }
+
+    const payload = buildRuntimeSessionVisibilityPayload(session);
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`\nSession Visibility: ${session.name ?? session.sessionKey}`);
+    printInspectionField("Session Key", payload.sessionKey, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Agent", payload.agentId, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Provider", payload.provider ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Tokens Used", payload.tokens.used ?? "-", RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Compact Count", payload.compact.count, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    printInspectionField("Loaded Skills", payload.loadedSkills.length, RUNTIME_SNAPSHOT_META, { labelWidth: 14 });
+    if (payload.skills.length > 0) {
+      console.log(`\n${formatInspectionSection(`  Skills (${payload.skills.length})`, RUNTIME_SNAPSHOT_META)}`);
+      for (const skill of payload.skills) {
+        console.log(`  - ${skill.id} :: ${skill.state} :: ${skill.confidence}`);
+        if (skill.source) console.log(`    source=${skill.source}`);
+      }
+    }
+    console.log();
+    return payload;
   }
 
   @Command({ name: "set-display", description: "Set session display label" })
@@ -1618,12 +1969,16 @@ export class SessionCommands {
     }
 
     const changed = resetSession(s.sessionKey);
+    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+      reason: "cli_session_reset",
+    });
     const afterSession = resolveSession(s.sessionKey);
     await emitSessionMutationAudit("reset", "completed", {
       cliInvocation,
       before,
       after: afterSession ? buildSessionMutationAuditSnapshot(afterSession) : null,
       changed,
+      revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
     if (asJson) {
@@ -1634,12 +1989,16 @@ export class SessionCommands {
           completed: true,
           durationMs: Date.now() - startedAt,
         },
+        revokedContexts: revokedContexts.length,
       });
       printJson(payload);
       return payload;
     }
     console.log(`Session reset: ${s.name ?? s.sessionKey}`);
     console.log("Next message will start a fresh conversation.");
+    if (revokedContexts.length > 0) {
+      console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+    }
   }
 
   @Command({ name: "delete", description: "Delete a session permanently" })
@@ -1684,12 +2043,16 @@ export class SessionCommands {
       /* session may not be active */
     }
 
+    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+      reason: "cli_session_delete",
+    });
     const changed = deleteSession(s.sessionKey);
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
       before,
       after: null,
       changed,
+      revokedContexts: revokedContexts.length,
       durationMs: Date.now() - startedAt,
     });
     if (asJson) {
@@ -1699,11 +2062,173 @@ export class SessionCommands {
           completed: true,
           durationMs: Date.now() - startedAt,
         },
+        revokedContexts: revokedContexts.length,
       });
       printJson(payload);
       return payload;
     }
     console.log(`🗑️ Session deleted: ${s.name ?? s.sessionKey}`);
+    if (revokedContexts.length > 0) {
+      console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+    }
+  }
+
+  @Command({ name: "prune", description: "Prune sessions inactive for a duration (dry-run by default)" })
+  async prune(
+    @Option({ flags: "--inactive-for <duration>", description: "Only match sessions inactive for this duration" })
+    inactiveFor?: string,
+    @Option({ flags: "--agent <id>", description: "Filter by agent ID" }) agentId?: string,
+    @Option({ flags: "--ephemeral", description: "Only match ephemeral sessions" }) ephemeralOnly?: boolean,
+    @Option({
+      flags: "--name-prefix <prefix>",
+      description: "Only match sessions whose name or key starts with prefix",
+    })
+    namePrefix?: string,
+    @Option({ flags: "--execute", description: "Actually delete matching sessions; default is dry-run" })
+    execute?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const inactiveDuration = normalizeOptionalFilter(inactiveFor);
+    if (!inactiveDuration) {
+      fail("Missing required filter: --inactive-for <duration>");
+      return;
+    }
+
+    const inactiveForMs = parseDurationMs(inactiveDuration);
+    if (!inactiveForMs || inactiveForMs <= 0) {
+      fail(`Invalid --inactive-for duration: ${inactiveDuration}. Use format like 12h, 2d, 30m`);
+      return;
+    }
+
+    const normalizedAgentId = normalizeOptionalFilter(agentId);
+    const normalizedNamePrefix = normalizeOptionalFilter(namePrefix);
+    const now = Date.now();
+    const cutoff = now - inactiveForMs;
+    let sessions = normalizedAgentId ? getSessionsByAgent(normalizedAgentId) : listSessions();
+
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx)) {
+      sessions = execute
+        ? sessions.filter((session) => canModifySession(scopeCtx, sessionLabel(session)))
+        : filterAccessibleSessions(scopeCtx, sessions);
+    }
+
+    const candidates = sessions.filter(
+      (session) =>
+        session.updatedAt <= cutoff &&
+        (!ephemeralOnly || session.ephemeral) &&
+        matchesSessionPrefix(session, normalizedNamePrefix),
+    );
+
+    const filters = {
+      inactiveFor: inactiveDuration,
+      inactiveForMs,
+      inactiveSince: cutoff,
+      inactiveSinceIso: new Date(cutoff).toISOString(),
+      agentId: normalizedAgentId ?? null,
+      ephemeralOnly: Boolean(ephemeralOnly),
+      namePrefix: normalizedNamePrefix ?? null,
+    };
+
+    const candidatePayload = candidates.map((session) => buildPruneSessionJson(session, now));
+
+    if (!execute) {
+      const payload = {
+        action: "prune",
+        dryRun: true,
+        execute: false,
+        filters,
+        scanned: sessions.length,
+        matched: candidates.length,
+        deleted: 0,
+        candidates: candidatePayload,
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Dry-run: ${candidates.length} session(s) inactive for ${inactiveDuration} would be deleted.`);
+      if (candidates.length > 0) {
+        console.log("\n  NAME                                  AGENT     INACTIVE   UPDATED             TYPE");
+        console.log("  ────────────────────────────────────  ────────  ─────────  ──────────────────  ─────────");
+        for (const session of candidates) {
+          const name = sessionLabel(session).padEnd(38);
+          const agent = session.agentId.padEnd(8);
+          const inactive = timeAgo(session.updatedAt).padEnd(9);
+          const updated = formatDate(session.updatedAt).padEnd(18);
+          const type = (session.ephemeral ? "ephemeral" : "permanent").padEnd(9);
+          console.log(`  ${name}  ${agent}  ${inactive}  ${updated}  ${type}`);
+        }
+        console.log("\nRun again with --execute to delete these sessions.");
+      }
+      return payload;
+    }
+
+    const cliInvocation = buildCliInvocationMetadata({
+      group: "sessions",
+      name: "prune",
+      tool: "sessions_prune",
+    });
+    const startedAt = Date.now();
+    const results: Array<Record<string, unknown>> = [];
+    let deletedCount = 0;
+
+    for (const session of candidates) {
+      const before = buildSessionMutationAuditSnapshot(session);
+      await emitSessionMutationAudit("prune", "requested", { cliInvocation, before });
+
+      try {
+        await nats.emit("ravi.session.abort", {
+          sessionKey: session.sessionKey,
+          sessionName: session.name,
+          source: "cli",
+          action: "sessions.prune",
+          reason: "cli_session_prune_inactive",
+          actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+          correlationId: cliInvocation.invocationId,
+        });
+      } catch {
+        /* session may not be active */
+      }
+
+      const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
+        reason: "cli_session_prune_inactive",
+      });
+      const changed = deleteSession(session.sessionKey);
+      if (changed) deletedCount += 1;
+      await emitSessionMutationAudit("prune", "completed", {
+        cliInvocation,
+        before,
+        after: null,
+        changed,
+        revokedContexts: revokedContexts.length,
+        durationMs: Date.now() - startedAt,
+      });
+
+      results.push({
+        ...buildPruneSessionJson(session, now),
+        changed,
+        revokedContexts: revokedContexts.length,
+      });
+    }
+
+    const payload = {
+      action: "prune",
+      dryRun: false,
+      execute: true,
+      filters,
+      scanned: sessions.length,
+      matched: candidates.length,
+      deleted: deletedCount,
+      results,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`Deleted ${deletedCount}/${candidates.length} session(s) inactive for ${inactiveDuration}.`);
+    return payload;
   }
 
   // ===========================================================================
@@ -2099,9 +2624,27 @@ export class SessionCommands {
     @Option({ flags: "-n, --count <count>", description: "Number of messages to show (default: 20)" })
     countStr?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--workspace",
+      description: "Return workspace projection: merged provider+chat history with flat timeline (history-only)",
+    })
+    workspace?: boolean,
+    @Option({
+      flags: "--message-id <id>",
+      description: "Return metadata for a single message (transcription, mediaType) using session history as fallback",
+    })
+    messageId?: string,
   ) {
     const session = this.resolveTarget(nameOrKey);
     if (!session) return;
+
+    if (messageId) {
+      return this.readMessageMeta(session, messageId);
+    }
+
+    if (workspace) {
+      return this.readWorkspace(session, countStr);
+    }
 
     const maxMessages = parseReadMessageCount(countStr);
     const sessionLabel = session.name ?? nameOrKey;
@@ -2259,6 +2802,102 @@ export class SessionCommands {
     printNormalizedMessages(recent);
   }
 
+  private readMessageMeta(session: SessionEntry, requestedMessageId: string): unknown {
+    const externalMessageId = extractExternalMessageId(requestedMessageId);
+    if (!externalMessageId) {
+      const payload = { ok: false, error: "Missing messageId" } as const;
+      printJson(payload);
+      return payload;
+    }
+
+    const stored = dbGetMessageMeta(externalMessageId);
+    if (stored?.transcription || stored?.mediaType) {
+      const payload = {
+        ok: true,
+        messageId: externalMessageId,
+        meta: {
+          transcription: stored.transcription ?? null,
+          mediaType: stored.mediaType ?? null,
+          createdAt: stored.createdAt,
+          source: "message-metadata" as const,
+        },
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    const sessionLabel = session.name ?? session.sessionKey;
+    const transcript = findTranscriptInSessionHistory(sessionLabel, externalMessageId);
+    if (transcript) {
+      const payload = {
+        ok: true,
+        messageId: externalMessageId,
+        meta: {
+          transcription: transcript,
+          mediaType: "audio" as const,
+          createdAt: Date.now(),
+          source: "session-history" as const,
+        },
+      };
+      printJson(payload);
+      return payload;
+    }
+
+    const payload = { ok: true, messageId: externalMessageId, meta: null };
+    printJson(payload);
+    return payload;
+  }
+
+  private readWorkspace(session: SessionEntry, countStr: string | undefined): unknown {
+    const limit = parseReadMessageCount(countStr);
+    const sessionLabel = session.name ?? session.sessionKey;
+
+    const providerHistoryMessages: OverlaySessionWorkspaceMessage[] = getRecentProviderSessionHistory(
+      sessionLabel,
+      limit,
+    ).map((message) => ({
+      id: String(message.id),
+      role: message.role,
+      content: message.content,
+      createdAt: parseOverlayTimestamp(message.created_at),
+      source: "history" as const,
+    }));
+    const recentHistoryMessages: OverlaySessionWorkspaceMessage[] = getRecentHistory(sessionLabel, limit).map(
+      (message) => ({
+        id: String(message.id),
+        role: message.role,
+        content: message.content,
+        createdAt: parseOverlayTimestamp(message.created_at),
+        source: "history" as const,
+      }),
+    );
+
+    const messages = mergeOverlaySessionWorkspaceMessages(recentHistoryMessages, providerHistoryMessages);
+    const timeline = buildOverlaySessionWorkspaceTimeline({ messages });
+
+    const historySource =
+      providerHistoryMessages.length > 0
+        ? "merged-history"
+        : recentHistoryMessages.length > 0
+          ? "recent-history"
+          : "missing";
+
+    const payload = {
+      ok: true,
+      session: buildSessionJson(session),
+      transcript: {
+        available: messages.length > 0,
+        source: historySource,
+      },
+      messages,
+      timeline,
+      historySource,
+      generatedAt: Date.now(),
+    };
+    printJson(payload);
+    return payload;
+  }
+
   @Command({
     name: "trace",
     description: "Read the SQLite session trace timeline",
@@ -2337,6 +2976,7 @@ export class SessionCommands {
     name: "debug",
     description: "Tail live runtime events for a session (defaults to current session when available)",
   })
+  @CliOnly()
   async debug(
     @Arg("nameOrKey", { description: "Session name or key", required: false }) nameOrKey?: string,
     @Option({ flags: "-t, --timeout <seconds>", description: "Stop after N seconds (default: 60)" })
@@ -2784,7 +3424,14 @@ export class SessionCommands {
               console.log("Permission denied.\n");
             } else {
               resetSession(s.sessionKey);
-              console.log("Session reset.\n");
+              const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+                reason: "cli_interactive_session_reset",
+              });
+              console.log("Session reset.");
+              if (revokedContexts.length > 0) {
+                console.log(`Revoked runtime context(s): ${revokedContexts.length}`);
+              }
+              console.log();
             }
           }
           ask();

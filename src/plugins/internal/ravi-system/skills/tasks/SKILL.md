@@ -20,6 +20,7 @@ O `task runtime` é o control plane operacional do Ravi.
 - `catálogo` = lista de profiles disponíveis
 - `artifact` = corpo real do trabalho
 - `session` = contexto de execução
+- sessões de trabalho de task são efêmeras por padrão, com retenção configurável
 
 Em frase curta:
 
@@ -95,11 +96,48 @@ Precedência por campo:
 
 Não use `ravi sessions set-model` como mecanismo interno de task. O runtime resolve model/effort/thinking no turno ligado à task por `taskBarrierTaskId`, sem mutar a sessão.
 
+## Retenção de Sessões
+
+Sessões de trabalho criadas ou retomadas por tasks recebem TTL efêmero automaticamente.
+O default é `1d`; depois disso o runner de sessões efêmeras apaga a sessão se ela
+não tiver sido mantida/estendida.
+
+Configuração:
+
+```bash
+ravi settings get tasks.sessionTtl
+ravi settings set tasks.sessionTtl 1d
+ravi settings set tasks.sessionTtl 12h
+ravi settings set tasks.sessionTtl off
+ravi settings get tasks.sessionTtl.knowledgeEngineer
+ravi settings set tasks.sessionTtl.knowledgeEngineer 5m
+```
+
+`off`, `false`, `disabled`, `none` ou `0` desativam o TTL automático para novas
+materializações/retomadas de sessão de task. Para continuar uma task cuja sessão
+foi apagada, despache/comente a task de novo para criar uma nova sessão.
+
+Sessões de task de agents `knowledge-engineer-*` usam `tasks.sessionTtl.knowledgeEngineer`
+e default `5m`, inclusive ao completar turnos em sessões `task-*-work`, para evitar acúmulo
+de sessões runtime de pesquisa em lote.
+
 ## Built-ins Atuais
 
 - `default`
   - workspace = task workspace
   - artifact primário = `TASK.md`
+- `observed-task`
+  - workspace = task workspace
+  - artifact primário = `TASK.md`
+  - protocolo = worker executa e deixa sinais claros; observer faz `report|block|done|fail`
+  - use com uma observer rule `scope=profile --source-profile observed-task --profile tasks --mode report`
+- `devin`
+  - workspace = task workspace
+  - artifact primário = `TASK.md`
+  - protocolo = delegar via `ravi devin sessions create|show|messages|insights|send|sync`
+  - use `ravi devin sessions insights <session> --json` para enxergar status rico/contagens/análise remota quando a API disponibilizar
+  - use `ravi devin sessions sync <session> --insights --artifacts --json` para registrar estado remoto com artifact
+  - uso = externalizar investigação/implementação longa mantendo o Ravi como dono da task
 
 Profiles de domínio (`brainstorm`, `content`, vídeo, runtime-only etc.) não são built-ins do sistema. Eles devem entrar como `plugin`, `workspace` ou `user`.
 
@@ -178,7 +216,9 @@ ravi tasks create --profile <id>
 -> prompt/resumo/evento vêm do profile
 -> runtime model/effort/thinking vem da task/profile/dispatch quando definido
 -> agent trabalha no artifact certo
--> ravi tasks report|block|done|fail
+-> sync de status vem do contrato do profile:
+   - `default`: worker chama `ravi tasks report|block|done|fail`
+   - `observed-task`: observer chama `ravi tasks report|block|done|fail`
 -> show/watch expõem profile + workspace + artifacts
 ```
 
@@ -187,7 +227,7 @@ ravi tasks create --profile <id>
 1. ler o `profile` efetivo
 2. ler o `artifact` primário surfaced pelo runtime
 3. seguir o protocolo do dispatch/resume
-4. sincronizar estado via `ravi tasks ...`
+4. sincronizar estado via `ravi tasks ...` somente quando o profile mandar isso
 
 Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vazar contexto de task para conversas fora da task.
 
@@ -196,6 +236,13 @@ Turnos sem `taskBarrierTaskId` não devem receber `RAVI_TASK_*`; isso evita vaza
 - trabalhar em `TASK.md`
 - manter frontmatter/corpo coerentes
 - sincronizar via `report|block|done|fail`
+
+### `observed-task`
+
+- trabalhar em `TASK.md`
+- não chamar `ravi tasks report|block|done|fail` por padrão
+- declarar progresso, blockers, conclusão e falhas claramente na resposta normal
+- deixar o observer profile `tasks` transformar esses sinais em status durável
 
 Para profiles customizados, siga o contrato pinado no snapshot da task. Não assuma que um preset de scaffold é built-in disponível no catálogo system.
 

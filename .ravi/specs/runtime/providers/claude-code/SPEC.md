@@ -37,7 +37,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Execution mode: provider query bridge.
 - Session state: native session id in `RuntimeSessionState.params`.
 - Resume: supported.
-- Fork: supported.
+- Fork: supported only for provider-session-level native fork semantics. Arbitrary historical fork/rebase from a Ravi prompt atom requires the canonical `runtime/session-continuity/forks` planner and replay/materializer.
 - Partial text: supported through stream delta events.
 - Tool hooks: supported through provider-native hook integration.
 - Host session hooks: supported.
@@ -60,6 +60,16 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - Query exception -> recoverable `turn.failed`
 - Stream end without a terminal result -> recoverable `turn.failed` (desired contract; current code must be audited when this path is changed)
 
+## Skill Visibility
+
+- Claude Code supports Ravi plugins during provider bootstrap, but plugin availability MUST NOT be interpreted as skill loaded state.
+- Claude skill visibility MUST distinguish:
+  - `available`/`advertised`: plugin or skill data was passed to the native query bridge.
+  - `requested`: a Skill tool or equivalent provider mechanism was requested.
+  - `loaded`: the adapter observed a provider-native Skill load/invocation signal or Ravi completed explicit skill injection.
+- The adapter MAY derive `loaded` from a provider tool-use event only after the Skill event shape is verified and normalized. Until then, Claude sessions MUST keep `loadedSkills` conservative.
+- Skill evidence SHOULD retain the raw provider event type, tool-use id, and canonical skill name so session visibility can explain why a skill appears as loaded.
+
 ## Invariants
 
 - The provider MUST pass Ravi `systemPromptAppend` as additional system instructions.
@@ -73,6 +83,7 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 - A query exception MUST become recoverable `turn.failed`, not an unhandled event-loop error.
 - A provider stream that ends without a terminal result MUST become recoverable `turn.failed`.
 - `setModel` MUST update current and subsequent turns; if native live switch fails, the next query MUST still use the requested model.
+- Claude native `forkSession` MUST NOT be treated as arbitrary prompt-history fork unless the SDK exposes a tested cursor that maps to Ravi prompt atoms.
 
 ## Validation
 
@@ -86,10 +97,11 @@ The Claude Code provider adapts the current default cloud execution bridge into 
 
 - Provider-native tool result is missing or malformed, leaving Ravi with `tool.start` and no `tool.end`.
 - Query throws after an interrupt and Ravi misclassifies it as a user-facing failure.
-- Provider emits text/tool events but no terminal result, leaving the generator blocked until watchdog.
+- Provider emits text/tool events but no terminal result, leaving the turn active until the adapter converts stream end into `turn.failed`.
 - Host exit-plan logic still reads a provider-specific plan directory; future providers need an explicit plan artifact/control contract instead of host hardcoding.
 - Provider-specific settings files are created during prepare but not captured as explicit runtime bootstrap state.
 - Host hooks are available here but not in Codex, which can hide permission behavior differences.
 - Runtime controls are unavailable even though the sessions CLI exposes a generic control surface.
 - Raw events lack consistent thread/turn/item metadata compared with Codex, reducing trace correlation.
 - The model catalog is alias-based and provider-specific instead of a generic provider model registry.
+- Skill loading is not yet normalized as a first-class provider event; passing plugins to Claude only proves availability/advertisement.

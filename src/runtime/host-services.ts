@@ -1,6 +1,9 @@
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
+import { logger } from "../utils/logger.js";
+
+const log = logger.child("runtime:host-services");
 import {
   checkDangerousPatterns,
   emitBashDeniedAudit,
@@ -22,11 +25,13 @@ import type {
   RuntimeDynamicToolExecutionOptions,
   RuntimeDynamicToolSpec,
   RuntimeHostServices,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeToolAccessMode,
   RuntimeToolUseAuthorizationRequest,
   RuntimeUserInputRequest,
   RuntimeCapabilities,
 } from "./types.js";
+import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -39,6 +44,7 @@ export interface RuntimeHostServicesOptions {
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
+  onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -143,7 +149,10 @@ async function authorizeRuntimeCapability(
 }
 
 async function executeRuntimeDynamicTool(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "toolContext">,
+  options: Pick<
+    RuntimeHostServicesOptions,
+    "context" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted"
+  >,
   request: RuntimeDynamicToolCallRequest,
   executionOptions?: RuntimeDynamicToolExecutionOptions,
 ): Promise<RuntimeDynamicToolCallResult> {
@@ -163,9 +172,34 @@ async function executeRuntimeDynamicTool(
     };
   }
 
+  const gateDecision = evaluateRuntimeToolSkillGate({
+    context: options.context,
+    toolName: tool.name,
+    onSkillGatePersisted: options.onSkillGatePersisted,
+  });
+  if (!gateDecision.allowed) {
+    return {
+      success: false,
+      reason: gateDecision.reason,
+      contentItems: [{ type: "inputText", text: gateDecision.reason ?? `${tool.name} requires a skill.` }],
+    };
+  }
+
   const args = normalizeDynamicToolArguments(request.arguments);
-  const result = await runWithContext(options.toolContext, () => tool.handler(args));
-  return buildRuntimeDynamicToolResult(result);
+  const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`Dynamic tool ${tool.name} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
+      DYNAMIC_TOOL_TIMEOUT_MS,
+    );
+  });
+  try {
+    const result = await Promise.race([runWithContext(options.toolContext, () => tool.handler(args)), timeoutError]);
+    return buildRuntimeDynamicToolResult(result);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 async function authorizeRuntimeDynamicToolCall(
@@ -248,6 +282,30 @@ function normalizeDynamicToolArguments(value: unknown): Record<string, unknown> 
   return value as Record<string, unknown>;
 }
 
+// Hard cap on the JSON-RPC payload we feed back to the runtime provider.
+// Codex (app-server) emits "could not find callback" warnings and drops
+// dynamic tool responses above ~1MB because the model's turn state advances
+// before the response is parsed. Our own tasks_list etc. can return many MB
+// when unfiltered. Truncate at the boundary instead.
+const DYNAMIC_TOOL_PAYLOAD_MAX_BYTES = 256_000;
+const DYNAMIC_TOOL_TRUNCATION_NOTICE =
+  "\n\n[...truncated by ravi: tool output exceeded 256KB. Re-run with a tighter filter (e.g. --last 20, --status open, --text <query>).]";
+
+function truncateContentItemText(text: string, budget: number): { text: string; truncatedBytes: number } {
+  if (Buffer.byteLength(text, "utf8") <= budget) {
+    return { text, truncatedBytes: 0 };
+  }
+  // Slice by chars conservatively (utf8 chars are <= 4 bytes); then re-check.
+  let kept = text.slice(0, budget);
+  while (Buffer.byteLength(kept, "utf8") > budget && kept.length > 0) {
+    kept = kept.slice(0, kept.length - 1024);
+  }
+  return {
+    text: kept + DYNAMIC_TOOL_TRUNCATION_NOTICE,
+    truncatedBytes: Buffer.byteLength(text, "utf8") - Buffer.byteLength(kept, "utf8"),
+  };
+}
+
 function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCallResult {
   return {
     success: result.isError !== true,
@@ -257,17 +315,26 @@ function buildRuntimeDynamicToolResult(result: ToolResult): RuntimeDynamicToolCa
 
 function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynamicToolCallContentItem[] {
   const items: RuntimeDynamicToolCallContentItem[] = [];
+  let remainingBudget = DYNAMIC_TOOL_PAYLOAD_MAX_BYTES;
   for (const item of content) {
-    if (item.type === "text") {
-      items.push({ type: "inputText", text: item.text });
+    if (item.type !== "text") continue;
+    if (remainingBudget <= 0) break;
+    const { text, truncatedBytes } = truncateContentItemText(item.text, remainingBudget);
+    if (truncatedBytes > 0) {
+      log.warn("Dynamic tool output truncated", {
+        droppedBytes: truncatedBytes,
+        keptBytes: Buffer.byteLength(text, "utf8"),
+      });
     }
+    items.push({ type: "inputText", text });
+    remainingBudget -= Buffer.byteLength(text, "utf8");
   }
 
   return items.length > 0 ? items : [{ type: "inputText", text: "(no output)" }];
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName">,
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -373,6 +440,20 @@ async function authorizeRuntimeCommandExecution(
   if (!finalDecision.allowed) {
     emitBashDeniedAudit(command, finalDecision, options.agentId);
     return { approved: false, reason: finalDecision.reason ?? "Command denied by Ravi policy." };
+  }
+
+  const gateDecision = evaluateRuntimeCommandSkillGate({
+    commandLine: command,
+    executables: parsed.executables,
+    context: options.context,
+    toolName: "Bash",
+    onSkillGatePersisted: options.onSkillGatePersisted,
+  });
+  if (!gateDecision.allowed) {
+    return {
+      approved: false,
+      reason: gateDecision.reason ?? "Command requires a skill before execution.",
+    };
   }
 
   return { approved: true, inherited, updatedInput: request.input };

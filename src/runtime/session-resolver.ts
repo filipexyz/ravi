@@ -71,7 +71,10 @@ export function resolveRuntimeSession(options: {
   }
 
   const agentCwd = expandHome(agent.cwd);
-  const runtimeProviderId: RuntimeProviderId = agent.provider ?? options.defaultRuntimeProviderId;
+  const runtimeProviderId: RuntimeProviderId =
+    options.prompt._observation && options.prompt._runtimeProviderId
+      ? options.prompt._runtimeProviderId
+      : (agent.provider ?? options.defaultRuntimeProviderId);
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 

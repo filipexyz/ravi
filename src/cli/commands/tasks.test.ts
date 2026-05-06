@@ -16,6 +16,8 @@ const failCalls: Array<Record<string, unknown>> = [];
 const listTasksCalls: Array<Record<string, unknown>> = [];
 const dependencyAddCalls: Array<Record<string, unknown>> = [];
 const dependencyRemoveCalls: Array<Record<string, unknown>> = [];
+const tagSearchCalls: Array<Record<string, unknown>> = [];
+const tagBindingOverrides = new Map<string, Array<Record<string, unknown>>>();
 const validatedAgentIds: string[] = [];
 const emittedEvents: Array<{ taskId: string; type: string }> = [];
 let subscribeImpl: (pattern?: string) => AsyncGenerator<{ data: Record<string, unknown> }> = async function* () {};
@@ -24,6 +26,11 @@ let blockResultExtra: Record<string, unknown> = {};
 let doneResultExtra: Record<string, unknown> = {};
 let queueDispatchMode: "dispatched" | "launch_planned" = "dispatched";
 const dependencySurfaceOverrides = new Map<string, Record<string, unknown>>();
+let taskActorMock: { actor?: string; agentId?: string; sessionName?: string } = {
+  actor: "dev-session",
+  agentId: "dev",
+  sessionName: "dev-session",
+};
 
 function buildMockReadiness(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -310,6 +317,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -335,6 +343,18 @@ mock.module("../../nats.js", () => ({
     subscribe: mock((pattern?: string) => subscribeImpl(pattern)),
     emit: mock(async () => {}),
     close: mock(async () => {}),
+  },
+}));
+
+mock.module("../../tags/service.js", () => ({
+  searchTagBindingsForSelector: (input: { selector?: Record<string, string> }) => {
+    tagSearchCalls.push(input);
+    const selector = input.selector ?? {};
+    const [assetType, assetId] = Object.entries(selector).find(([, value]) => Boolean(value?.trim())) ?? [];
+    return {
+      target: assetType && assetId ? { assetType, assetId, input: assetId, exists: true } : undefined,
+      bindings: assetType && assetId ? (tagBindingOverrides.get(`${assetType}:${assetId}`) ?? []) : [],
+    };
   },
 }));
 
@@ -622,7 +642,7 @@ mock.module("../../tasks/index.js", () => ({
   getDefaultTaskSessionNameForTask: (task: { id: string }) => `${task.id}-work`,
   buildTaskArtifactSummary: (task: Record<string, unknown>) => buildMockTaskArtifacts(task),
   getTaskDocPath: (task: { taskDir?: string; id: string }) => `${task.taskDir ?? "/tmp/ravi/tasks/task-cli-1"}/TASK.md`,
-  getTaskActor: () => ({ actor: "dev-session", agentId: "dev", sessionName: "dev-session" }),
+  getTaskActor: () => taskActorMock,
   getTaskDetails: () => ({
     ...taskDetailsMock,
     project: taskProjectSurfaceMock,
@@ -881,6 +901,8 @@ describe("TaskCommands create", () => {
     listTasksCalls.length = 0;
     dependencyAddCalls.length = 0;
     dependencyRemoveCalls.length = 0;
+    tagSearchCalls.length = 0;
+    tagBindingOverrides.clear();
     validatedAgentIds.length = 0;
     emittedEvents.length = 0;
     subscribeImpl = async function* () {};
@@ -889,6 +911,7 @@ describe("TaskCommands create", () => {
     doneResultExtra = {};
     queueDispatchMode = "dispatched";
     dependencySurfaceOverrides.clear();
+    taskActorMock = { actor: "dev-session", agentId: "dev", sessionName: "dev-session" };
     taskDetailsMock = {
       task: {
         id: "task-cli-1",
@@ -999,6 +1022,36 @@ describe("TaskCommands create", () => {
     });
     expect(dispatchCalls).toHaveLength(0);
     expect(emittedEvents.map((event) => event.type)).toEqual(["task.created"]);
+  });
+
+  it("fails create outside a Ravi session unless a report target is explicit", async () => {
+    taskActorMock = { actor: "luis" };
+    const commands = new TaskCommands();
+
+    await expect(
+      commands.create(
+        "Detached task",
+        "do the thing",
+        "normal",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow("Cannot infer task report target outside a Ravi session");
+
+    expect(createCalls).toHaveLength(0);
+    expect(dispatchCalls).toHaveLength(0);
   });
 
   it("fails create before task creation when the assignee agent is missing", async () => {
@@ -1208,6 +1261,43 @@ describe("TaskCommands create", () => {
     });
   });
 
+  it("normalizes and forwards canonical tags on create", async () => {
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.create(
+        "Tagged task",
+        "ship tagged work",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        ["Ops.Team,customer:vip", "ops.team"],
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      title: "Tagged task",
+      tagSlugs: ["ops.team", "customer:vip"],
+    });
+  });
+
   it("forwards explicit report configuration through dispatch", async () => {
     const commands = new TaskCommands();
     const originalLog = console.log;
@@ -1395,12 +1485,23 @@ describe("TaskCommands create", () => {
     expect(listTasksCalls).toHaveLength(1);
     expect(listTasksCalls[0]).toMatchObject({
       archiveMode: "only",
-      limit: 30,
+      limit: 31,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
     });
 
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.archiveMode).toBe("only");
     expect(payload.limit).toBe(30);
+    expect(payload.page).toMatchObject({
+      limit: 30,
+      count: 1,
+      hasMore: false,
+      sort: "updated",
+      order: "desc",
+      defaultWindow: "1d",
+    });
     expect(payload.tasks[0]).toMatchObject({
       id: "task-cli-1",
       archivedBy: "dev-session",
@@ -1496,6 +1597,88 @@ describe("TaskCommands create", () => {
     ]);
   });
 
+  it("returns page metadata and next cursor for task lists", async () => {
+    taskListMock = [
+      {
+        id: "task-cli-3",
+        title: "third task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 3,
+        updatedAt: 300,
+      },
+      {
+        id: "task-cli-2",
+        title: "second task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 2,
+        updatedAt: 200,
+      },
+      {
+        id: "task-cli-1",
+        title: "first task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 1,
+        updatedAt: 100,
+      },
+    ];
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        false,
+        false,
+        false,
+        undefined,
+        true,
+        "2",
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(listTasksCalls[0]).toMatchObject({
+      limit: 3,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
+    });
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.total).toBe(2);
+    expect(payload.tasks.map((task: { id: string }) => task.id)).toEqual(["task-cli-3", "task-cli-2"]);
+    expect(payload.items.map((task: { id: string }) => task.id)).toEqual(["task-cli-3", "task-cli-2"]);
+    expect(payload.page).toMatchObject({
+      limit: 2,
+      count: 2,
+      hasMore: true,
+      sort: "updated",
+      order: "desc",
+      defaultWindow: "1d",
+    });
+    expect(payload.page.nextCursor).toEqual(expect.any(String));
+    expect(payload.page.nextCommand).toContain("ravi tasks list --cursor");
+  });
+
   it("rejects conflicting archive filters on list", async () => {
     const commands = new TaskCommands();
     expect(() =>
@@ -1553,13 +1736,91 @@ describe("TaskCommands create", () => {
       profileId: "brainstorm",
       parentTaskId: "task-parent-1",
       query: "pipeline",
-      limit: 30,
+      limit: 31,
+      sort: "updated",
+      order: "desc",
+      updatedSince: expect.any(Number),
       archiveMode: "exclude",
     });
 
     const payload = JSON.parse(logs.join("\n"));
     expect(payload.limit).toBe(30);
     expect(payload.archiveMode).toBe("exclude");
+    expect(payload.page.defaultWindow).toBe("1d");
+  });
+
+  it("passes canonical tag filters through list and surfaces tag bindings in JSON output", async () => {
+    taskListMock = [
+      {
+        id: "task-cli-1",
+        title: "tagged task",
+        status: "open",
+        priority: "normal",
+        progress: 0,
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ];
+    tagBindingOverrides.set("task:task-cli-1", [
+      {
+        tagSlug: "ops.team",
+        assetType: "task",
+        assetId: "task-cli-1",
+        source: "task.create",
+      },
+    ]);
+
+    const commands = new TaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      await commands.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        false,
+        false,
+        false,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "Ops.Team",
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(listTasksCalls).toHaveLength(1);
+    expect(listTasksCalls[0]).toMatchObject({
+      tagSlug: "ops.team",
+      archiveMode: "exclude",
+    });
+    expect(tagSearchCalls).toContainEqual({ selector: { task: "task-cli-1" } });
+
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.filters.tagSlug).toBe("ops.team");
+    expect(payload.tasks[0].tags).toEqual([
+      expect.objectContaining({
+        tagSlug: "ops.team",
+        assetType: "task",
+        assetId: "task-cli-1",
+      }),
+    ]);
   });
 
   it("rejects conflicting parent and root filters on list", () => {

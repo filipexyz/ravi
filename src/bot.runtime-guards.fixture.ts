@@ -207,20 +207,6 @@ function createMockCodexStartRequest(hostServices: RuntimeHostServices): Partial
         permissions: permission ?? {},
       };
     },
-    dynamicTools: hostServices.listDynamicTools(),
-    handleRuntimeToolCall: (request: any) =>
-      hostServices.executeDynamicTool(request, {
-        eventData: {
-          runtimeToolCall: {
-            provider: "codex",
-            method: "item/tool/call",
-            toolName: request.toolName,
-            callId: request.callId,
-            arguments: request.arguments,
-          },
-          runtimeMetadata: request.metadata,
-        },
-      }),
   };
 }
 
@@ -563,6 +549,25 @@ mock.module("./runtime/runtime-context-store.js", () => ({
     metadata: input.metadata,
     createdAt: Date.now(),
   }),
+  getOrCreateAgentRuntimeContext: (input: {
+    agentId?: string;
+    sessionKey?: string;
+    sessionName?: string;
+    source?: { channel: string; accountId: string; chatId: string; threadId?: string };
+    capabilities?: Array<{ permission: string; objectType: string; objectId: string; source?: string }>;
+    metadata?: Record<string, unknown>;
+  }) => ({
+    contextId: "ctx_test_runtime",
+    contextKey: "rctx_test_runtime",
+    kind: "agent-runtime",
+    agentId: input.agentId,
+    sessionKey: input.sessionKey,
+    sessionName: input.sessionName,
+    source: input.source,
+    capabilities: input.capabilities ?? [],
+    metadata: input.metadata,
+    createdAt: Date.now(),
+  }),
   snapshotAgentCapabilities: () => snapshotAgentCapabilitiesImpl(),
 }));
 
@@ -573,7 +578,7 @@ mock.module("./runtime/provider-registry.js", () => ({
       providerId === "codex"
         ? {
             runtimeControl: { supported: true, operations: ["turn.steer", "turn.interrupt"] },
-            dynamicTools: { mode: "host" },
+            dynamicTools: { mode: "none" },
             execution: { mode: "subprocess-rpc" },
             sessionState: { mode: "thread-id", requiresCwdMatch: true },
             usage: { semantics: "terminal-event" },
@@ -584,6 +589,7 @@ mock.module("./runtime/provider-registry.js", () => ({
             },
             systemPrompt: { mode: "append" },
             terminalEvents: { guarantee: "adapter" },
+            skillVisibility: { availability: "codex-skills", loadedState: "instruction-sources" },
             supportsSessionResume: true,
             supportsSessionFork: false,
             supportsPartialText: false,
@@ -606,6 +612,7 @@ mock.module("./runtime/provider-registry.js", () => ({
             },
             systemPrompt: { mode: "append" },
             terminalEvents: { guarantee: "adapter" },
+            skillVisibility: { availability: "plugins", loadedState: "provider-events" },
             supportsSessionResume: true,
             supportsSessionFork: true,
             supportsPartialText: true,
@@ -705,6 +712,15 @@ function makePrompt(text: string) {
     prompt: text,
     source: { channel: "whatsapp", accountId: "main", chatId: "test" },
   };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  expect(condition()).toBe(true);
 }
 
 describe("RaviBot runtime guards", () => {
@@ -1014,7 +1030,7 @@ describe("RaviBot runtime guards", () => {
     });
   });
 
-  it("passes a Codex dynamic tool bridge that executes inherited Ravi CLI tools", async () => {
+  it("keeps Codex runtime requests free of native Ravi dynamic tools even with tool capabilities", async () => {
     activeProvider = "codex";
     snapshotAgentCapabilitiesImpl = () => [
       { permission: "use", objectType: "tool", objectId: "tools_list", source: "test" },
@@ -1025,28 +1041,11 @@ describe("RaviBot runtime guards", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     const runtimeRequest = runtimeStartCalls[0];
-    expect(runtimeRequest?.dynamicTools?.some((tool) => tool.name === "tools_list")).toBe(true);
-    expect(typeof runtimeRequest?.handleRuntimeToolCall).toBe("function");
-
-    const result = await runtimeRequest?.handleRuntimeToolCall?.({
-      toolName: "tools_list",
-      callId: "dyn_tool_test",
-      arguments: {},
-      metadata: {
-        provider: "codex",
-        source: "codex.app-server",
-        thread: { id: "thread_test" },
-        turn: { id: "turn_test" },
-        item: { id: "dyn_tool_test", type: "dynamic_tool_call" },
-      },
-    });
-
-    expect(result?.success).toBe(true);
-    expect(result?.contentItems?.[0]?.type).toBe("inputText");
-    expect(result?.contentItems?.[0]?.text).toContain("fake tools list");
+    expect(runtimeRequest?.dynamicTools).toBeUndefined();
+    expect(runtimeRequest?.handleRuntimeToolCall).toBeUndefined();
   });
 
-  it("does not advertise Codex dynamic tools outside the runtime capability snapshot", async () => {
+  it("does not advertise Codex dynamic tools without tool capabilities", async () => {
     activeProvider = "codex";
     snapshotAgentCapabilitiesImpl = () => [];
 
@@ -1054,7 +1053,8 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate("agent:main:codex-dynamic-tools-denied", makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(runtimeStartCalls[0]?.dynamicTools ?? []).toEqual([]);
+    expect(runtimeStartCalls[0]?.dynamicTools).toBeUndefined();
+    expect(runtimeStartCalls[0]?.handleRuntimeToolCall).toBeUndefined();
   });
 
   it("uses the session cwd instead of the agent default when a task/session overrides the workspace", async () => {
@@ -1502,94 +1502,90 @@ describe("RaviBot runtime guards", () => {
     const interrupted = new Promise<void>((resolve) => {
       releaseInterrupted = resolve;
     });
-    let releaseRetryPrompt: (() => void) | undefined;
-    const retryPromptSeen = new Promise<void>((resolve) => {
-      releaseRetryPrompt = resolve;
-    });
-    let releaseSecondInterrupted: (() => void) | undefined;
-    const secondInterrupted = new Promise<void>((resolve) => {
-      releaseSecondInterrupted = resolve;
+    let releaseFirstFailure: (() => void) | undefined;
+    const firstFailureSeen = new Promise<void>((resolve) => {
+      releaseFirstFailure = resolve;
     });
     let releaseFinalRetryPrompt: (() => void) | undefined;
     const finalRetryPromptSeen = new Promise<void>((resolve) => {
       releaseFinalRetryPrompt = resolve;
     });
-    let interruptCount = 0;
     const interrupt = mock(async () => {
-      interruptCount += 1;
-      if (interruptCount === 1) releaseInterrupted?.();
-      if (interruptCount === 2) releaseSecondInterrupted?.();
+      releaseInterrupted?.();
     });
 
-    runtimeStartImpl = (providerId, request) => ({
-      provider: providerId,
-      events: (async function* () {
-        const first = await request.prompt.next();
-        expect(first.value?.message.content).toBe("first");
-        yield {
-          type: "tool.started",
-          toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/a" } },
+    runtimeStartImpl = (providerId, request) => {
+      if (runtimeStartCalls.length === 1) {
+        return {
+          provider: providerId,
+          events: (async function* () {
+            const first = await request.prompt.next();
+            expect(first.value?.message.content).toBe("first");
+            yield {
+              type: "tool.started",
+              toolUse: { id: "tool-read", name: "Read", input: { file_path: "/tmp/a" } },
+            };
+            yield {
+              type: "tool.completed",
+              toolUseId: "tool-read",
+              content: "ok",
+              isError: false,
+            };
+            releaseAfterTool?.();
+            await interrupted;
+            releaseFirstFailure?.();
+            yield {
+              type: "turn.failed",
+              error: "[ede_diagnostic] stop_reason=tool_use; Error: Request was aborted.",
+              recoverable: true,
+              rawEvent: {
+                type: "result",
+                subtype: "error_during_execution",
+                errors: ["[ede_diagnostic] stop_reason=tool_use", "Error: Request was aborted."],
+              },
+            };
+          })(),
+          interrupt,
         };
-        yield {
-          type: "tool.completed",
-          toolUseId: "tool-read",
-          content: "ok",
-          isError: false,
-        };
-        releaseAfterTool?.();
-        await interrupted;
-        yield {
-          type: "turn.failed",
-          error: "[ede_diagnostic] stop_reason=tool_use; Error: Request was aborted.",
-          recoverable: true,
-          rawEvent: {
-            type: "result",
-            subtype: "error_during_execution",
-            errors: ["[ede_diagnostic] stop_reason=tool_use", "Error: Request was aborted."],
-          },
-        };
+      }
 
-        const retry = await request.prompt.next();
-        expect(retry.value?.message.content).toBe("first\n\nsecond");
-        releaseRetryPrompt?.();
-        await secondInterrupted;
-        yield {
-          type: "turn.failed",
-          error: "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null",
-          recoverable: true,
-          rawEvent: {
-            type: "result",
-            subtype: "error_during_execution",
-            errors: ["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],
-          },
-        };
-
-        const finalRetry = await request.prompt.next();
-        expect(finalRetry.value?.message.content).toBe("first\n\nsecond\n\nthird");
-        releaseFinalRetryPrompt?.();
-        yield {
-          type: "assistant.message",
-          text: "handled third",
-        };
-        yield {
-          type: "turn.complete",
-          providerSessionId: `${providerId}-session`,
-          usage: { inputTokens: 1, outputTokens: 1 },
-        };
-      })(),
-      interrupt,
-    });
+      return {
+        provider: providerId,
+        events: (async function* () {
+          const finalRetry = await request.prompt.next();
+          expect(finalRetry.value?.message.content).toBe("first\n\nsecond\n\nthird");
+          releaseFinalRetryPrompt?.();
+          yield {
+            type: "assistant.message",
+            text: "handled third",
+          };
+          yield {
+            type: "turn.complete",
+            providerSessionId: `${providerId}-session`,
+            usage: { inputTokens: 1, outputTokens: 1 },
+          };
+        })(),
+        interrupt: async () => {},
+      };
+    };
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("first"));
     await afterTool;
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("second"));
-    await retryPromptSeen;
+    await firstFailureSeen;
+    await waitFor(() =>
+      emittedEvents.some(
+        (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "turn.interrupted",
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("third"));
     await finalRetryPromptSeen;
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(interrupt).toHaveBeenCalledTimes(2);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(runtimeStartCalls).toHaveLength(2);
     const responses = emittedEvents
       .filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`)
       .map((entry) => String(entry.data?.response ?? ""));
@@ -1600,7 +1596,7 @@ describe("RaviBot runtime guards", () => {
 
     const runtimeEvents = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.runtime`);
     expect(runtimeEvents.some((entry) => entry.data?.type === "turn.failed")).toBe(false);
-    expect(runtimeEvents.filter((entry) => entry.data?.type === "turn.interrupted")).toHaveLength(2);
+    expect(runtimeEvents.filter((entry) => entry.data?.type === "turn.interrupted")).toHaveLength(1);
   });
 
   it("suppresses recoverable abort failures from explicit internal aborts", async () => {

@@ -26,7 +26,7 @@ function makeHealthyDeps() {
         hooks: {
           PreToolUse: [
             {
-              matcher: "^Bash$",
+              matcher: "^(Bash|shell)$",
               hooks: [
                 {
                   type: "command",

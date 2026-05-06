@@ -28,6 +28,8 @@ import { syncRelationsFromConfig } from "./permissions/relations.js";
 import { resolveOmniConnection } from "./omni-config.js";
 import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session-stream.js";
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
+import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
+import { hasLiveAdminContext } from "./runtime/context-registry.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -88,6 +90,7 @@ let gateway: ReturnType<typeof createGateway> | null = null;
 let sessionAdapterBus: ReturnType<typeof createSessionAdapterBus> | null = null;
 let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
+let webhookHttpServer: WebhookHttpServerHandle | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -130,6 +133,10 @@ async function shutdown(signal: string) {
 
     if (sessionAdapterBus) {
       await sessionAdapterBus.stop();
+    }
+
+    if (webhookHttpServer) {
+      await webhookHttpServer.stop();
     }
 
     // Stop omni consumer
@@ -201,6 +208,7 @@ export async function startDaemon() {
     const sender = new OmniSender(omniApiUrl, omniApiKey);
     omniConsumer = new OmniConsumer(sender, omniApiUrl, omniApiKey, {
       isRuntimeSessionActive: (sessionName) => bot?.isRuntimeSessionActive(sessionName) ?? false,
+      abortRuntimeSession: (sessionName, provenance) => bot?.abortSession(sessionName, provenance) ?? false,
     });
 
     try {
@@ -240,7 +248,9 @@ export async function startDaemon() {
     log.info("Heartbeat runner started (leader)");
     await startCronRunner();
     log.info("Cron runner started (leader)");
-    await startTaskCheckpointRunner();
+    await startTaskCheckpointRunner({
+      canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+    });
     log.info("Task checkpoint runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
@@ -248,7 +258,9 @@ export async function startDaemon() {
       log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
       await startHeartbeatRunner();
       await startCronRunner();
-      await startTaskCheckpointRunner();
+      await startTaskCheckpointRunner({
+        canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+      });
       log.info("Heartbeat, cron, and task checkpoint runners started (new leader)");
     }).catch((err) => log.error("Leadership watcher failed", err));
   }
@@ -265,6 +277,18 @@ export async function startDaemon() {
   sessionAdapterBus = createSessionAdapterBus();
   await sessionAdapterBus.start();
   log.info("Session adapter bus started");
+
+  webhookHttpServer = startWebhookHttpServerFromEnv();
+  if (webhookHttpServer) {
+    log.info("Webhook HTTP server ready", { url: webhookHttpServer.url });
+    if (!hasLiveAdminContext()) {
+      log.warn(
+        "No admin runtime context exists — gateway will reject all non-open requests until you run `ravi daemon init-admin-key`.",
+      );
+    }
+  } else {
+    log.info("Webhook HTTP server disabled (set RAVI_HTTP_PORT to enable)");
+  }
 
   log.info("Daemon ready");
 

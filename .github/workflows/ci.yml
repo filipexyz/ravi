@@ -6,6 +6,19 @@ on:
     paths-ignore:
       - "docs/**"
       - "site/**"
+      - ".ravi/**"
+      - "examples/**"
+      - "extensions/**"
+      - ".claude-plugin/**"
+      - ".markdownlint.jsonc"
+      - ".githooks/**"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/site.yml"
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "Makefile"
+      - ".env.example"
+      - "LICENSE"
   pull_request:
     branches: [main, dev]
 

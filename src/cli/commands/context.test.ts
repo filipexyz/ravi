@@ -6,6 +6,7 @@ const actualRuntimeContextRegistryModule = await import("../../runtime/context-r
 const actualRouterDbModule = await import("../../router/router-db.js");
 const actualNatsModule = await import("../../nats.js");
 const actualCliContextModule = await import("../context.js");
+const actualRouterSessionsModule = await import("../../router/sessions.js");
 
 let publishedAuditEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 let resolvedContext:
@@ -120,11 +121,24 @@ let revokedContext:
     }
   | undefined;
 let resolvedContextOptions: { touch?: boolean; readOnly?: boolean } | undefined;
+let revokedCalls: Array<{ contextId: string; options?: unknown }> = [];
+let listedSessions: Array<{ sessionKey: string }> = [];
+let commandSkillGateDecision:
+  | {
+      allowed: boolean;
+      reason?: string;
+      code?: string;
+      skill?: string;
+      skillVisibility?: unknown;
+    }
+  | undefined;
+let commandSkillGateCalls: Array<Record<string, unknown>> = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -164,18 +178,26 @@ mock.module("../../runtime/context-registry.js", () => ({
       createdAt: 3000,
       expiresAt: 4000,
     },
-  revokeRuntimeContext: (_contextId: string) =>
-    revokedContext ?? {
-      ...(fetchedContext ??
-        resolvedContext ?? {
-          contextId: "ctx_123",
-          contextKey: "rctx_123",
-          kind: "agent-runtime",
-          capabilities: [],
-          createdAt: 1000,
-        }),
-      revokedAt: 5000,
-    },
+  revokeRuntimeContext: (_contextId: string, _options?: unknown) => {
+    revokedCalls.push({ contextId: _contextId, options: _options });
+    const matchingContext = listedContexts.find((context) => context.contextId === _contextId);
+    const root =
+      revokedContext ??
+      ({
+        ...(fetchedContext ??
+          matchingContext ??
+          resolvedContext ?? {
+            contextId: "ctx_123",
+            contextKey: "rctx_123",
+            kind: "agent-runtime",
+            capabilities: [],
+            createdAt: 1000,
+          }),
+        revokedAt: 5000,
+      } as Record<string, unknown>);
+    return { context: root, cascaded: [], revokedAt: 5000 };
+  },
+  getContextLineage: (_contextId: string) => null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -185,6 +207,11 @@ mock.module("../../router/router-db.js", () => ({
     return listedContexts.find((context) => context.contextId === contextId) ?? null;
   },
   dbListContexts: () => listedContexts,
+}));
+
+mock.module("../../router/sessions.js", () => ({
+  ...actualRouterSessionsModule,
+  listSessions: () => listedSessions,
 }));
 
 mock.module("../../approval/service.js", () => ({
@@ -202,6 +229,13 @@ mock.module("../../approval/service.js", () => ({
         ],
       },
     },
+}));
+
+mock.module("../../runtime/skill-gate.js", () => ({
+  evaluateRuntimeCommandSkillGate: (input: Record<string, unknown>) => {
+    commandSkillGateCalls.push(input);
+    return commandSkillGateDecision ?? { allowed: true };
+  },
 }));
 
 mock.module("../../nats.js", () => ({
@@ -243,7 +277,11 @@ describe("ContextCommands", () => {
     listedContexts = [resolvedContext];
     revokedContext = undefined;
     resolvedContextOptions = undefined;
+    revokedCalls = [];
+    listedSessions = [{ sessionKey: "agent:dev:main" }];
     publishedAuditEvents = [];
+    commandSkillGateDecision = undefined;
+    commandSkillGateCalls = [];
   });
 
   afterEach(() => {
@@ -260,7 +298,11 @@ describe("ContextCommands", () => {
     listedContexts = [];
     revokedContext = undefined;
     resolvedContextOptions = undefined;
+    revokedCalls = [];
+    listedSessions = [];
     publishedAuditEvents = [];
+    commandSkillGateDecision = undefined;
+    commandSkillGateCalls = [];
   });
 
   it("lists contexts with visible lineage and no context key in --json mode", () => {
@@ -352,6 +394,121 @@ describe("ContextCommands", () => {
     expect(output).toContain("- ctx_child_123 :: active :: cli-runtime :: caps=1");
     expect(output).toContain("lineage=parent=ctx_123 issuedFor=sync-cli mode=explicit");
     expect(output).not.toContain("rctx_child_123");
+  });
+
+  it("dry-runs stale agent-runtime cleanup without exposing context keys", () => {
+    listedSessions = [{ sessionKey: "agent:dev:main" }];
+    listedContexts = [
+      {
+        contextId: "ctx_old",
+        contextKey: "rctx_old",
+        kind: "agent-runtime",
+        agentId: "dev",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        capabilities: [],
+        createdAt: 1000,
+        lastUsedAt: Date.now() - 3_600_001,
+      },
+      {
+        contextId: "ctx_fresh",
+        contextKey: "rctx_fresh",
+        kind: "agent-runtime",
+        agentId: "dev",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        capabilities: [],
+        createdAt: Date.now(),
+        lastUsedAt: Date.now(),
+      },
+      {
+        contextId: "ctx_cli",
+        contextKey: "rctx_cli",
+        kind: "cli-runtime",
+        agentId: "dev",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev-main",
+        capabilities: [],
+        createdAt: 1000,
+        lastUsedAt: 1000,
+      },
+    ];
+
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    try {
+      command.cleanupAgentRuntime("1h", undefined, undefined, undefined, false, true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(lines[0] ?? "{}");
+    expect(payload).toMatchObject({
+      dryRun: true,
+      candidatesCount: 1,
+      revokedCount: 0,
+    });
+    expect(payload.candidates[0]).toMatchObject({
+      context: { contextId: "ctx_old", kind: "agent-runtime" },
+      sessionExists: true,
+    });
+    expect(JSON.stringify(payload)).not.toContain("rctx_old");
+    expect(revokedCalls).toEqual([]);
+  });
+
+  it("revokes stale agent-runtime cleanup candidates only when --revoke is set", () => {
+    listedSessions = [];
+    listedContexts = [
+      {
+        contextId: "ctx_old",
+        contextKey: "rctx_old",
+        kind: "agent-runtime",
+        agentId: "dev",
+        sessionKey: "agent:dev:old",
+        sessionName: "dev-old",
+        capabilities: [],
+        createdAt: 1000,
+        lastUsedAt: Date.now() - 3_600_001,
+      },
+      {
+        contextId: "ctx_other_agent",
+        contextKey: "rctx_other_agent",
+        kind: "agent-runtime",
+        agentId: "main",
+        sessionKey: "agent:main:old",
+        sessionName: "main-old",
+        capabilities: [],
+        createdAt: 1000,
+        lastUsedAt: Date.now() - 3_600_001,
+      },
+    ];
+
+    const command = new ContextCommands();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      lines.push(String(value));
+    };
+
+    try {
+      command.cleanupAgentRuntime("1h", "dev", undefined, "test_cleanup", true, true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(lines[0] ?? "{}");
+    expect(payload).toMatchObject({
+      dryRun: false,
+      reason: "test_cleanup",
+      candidatesCount: 1,
+      revokedCount: 1,
+    });
+    expect(revokedCalls).toEqual([{ contextId: "ctx_old", options: { reason: "test_cleanup" } }]);
   });
 
   it("shows context info with lineage, source and capabilities in --json mode", () => {
@@ -579,15 +736,19 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.revoke("ctx_123", true);
+      command.revoke("ctx_123", true, undefined, true);
     } finally {
       console.log = originalLog;
     }
 
     const payload = JSON.parse(lines[0] ?? "{}");
     expect(payload).toMatchObject({
-      contextId: "ctx_123",
-      status: "revoked",
+      context: {
+        contextId: "ctx_123",
+        status: "revoked",
+        revokedAt: 5000,
+      },
+      cascaded: [],
       revokedAt: 5000,
     });
   });
@@ -658,7 +819,7 @@ describe("ContextCommands", () => {
       listedContexts = [resolvedContext];
     });
 
-    it("resolves context without touching the DB from the Bash hook path", () => {
+    it("resolves context without rewriting the shell command from the Bash hook path", () => {
       const result = callCodexBashHook({
         tool_input: {
           command: "ravi context whoami",
@@ -667,6 +828,36 @@ describe("ContextCommands", () => {
 
       expect(result).toEqual({});
       expect(resolvedContextOptions).toEqual({ touch: false, readOnly: true });
+    });
+
+    it("runs runtime skill gates from the Codex Bash hook path", () => {
+      commandSkillGateDecision = {
+        allowed: false,
+        code: "RAVI_SKILL_REQUIRED",
+        skill: "ravi-system-skill-gates",
+        reason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
+      };
+
+      const result = callCodexBashHook({
+        tool_input: {
+          command: "ravi skill-gates list",
+        },
+      });
+
+      expect(result).toMatchObject({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: "RAVI_SKILL_REQUIRED: Bash requires skill ravi-system-skill-gates.",
+        },
+      });
+      expect(commandSkillGateCalls).toEqual([
+        expect.objectContaining({
+          commandLine: "ravi skill-gates list",
+          context: resolvedContext,
+          toolName: "Bash",
+        }),
+      ]);
     });
 
     it("publishes executable deny audit events for git status", () => {

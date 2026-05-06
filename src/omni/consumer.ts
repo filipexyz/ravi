@@ -8,10 +8,13 @@
  */
 
 import { AckPolicy, DeliverPolicy, StringCodec, type JetStreamClient, type JetStreamManager } from "nats";
+import { execFile } from "node:child_process";
 import { getNats, publish, nats } from "../nats.js";
 import { publishSessionPrompt } from "./session-stream.js";
+import { expandRaviCommandPrompt, RaviCommandError } from "../commands/index.js";
 import { handleSlashCommand } from "../slash/index.js";
 import { isIgnoredOmniInstanceId } from "../router/omni-ignore.js";
+import { promisify } from "node:util";
 
 const CONSUMER_READY_TIMEOUT = 60_000; // Wait up to 60s for streams to appear
 const CONSUMER_RETRY_DELAY_MS = 2_000;
@@ -35,22 +38,39 @@ import {
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
 } from "../router/router-db.js";
+import { resetSession } from "../router/sessions.js";
 import {
   recordChannelMessageReceivedTrace,
   recordRouteResolvedTrace,
   type NormalizedSessionTraceSource,
 } from "../session-trace/channel-trace.js";
+import { recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import type { MessageActorMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
+import type {
+  MessageActorMetadata,
+  MessageContext,
+  MessageTarget,
+  RaviCommandPromptMetadata,
+} from "../runtime/message-types.js";
+import {
+  actorMetadataFromMessageMetadata,
+  buildRuntimeMessageEditRebasePlan,
+  renderRuntimeMessageEditRebasePrompt,
+  summarizeRuntimeMessageEditRebasePlan,
+  type RuntimeMessageEditRebasePlan,
+} from "../runtime/session-rebase.js";
+import type { AgentConfig } from "../router/types.js";
 import type { OmniSender } from "./sender.js";
 import { formatOmniGroupMembersForPrompt, resolveOmniGroupMetadata } from "./group-metadata-cache.js";
 import { TypingPresenceHeartbeat } from "./typing-presence.js";
 import { fetchOmniMedia, saveToAgentAttachments, MAX_AUDIO_BYTES } from "../utils/media.js";
 import { transcribeAudio } from "../transcribe/openai.js";
 import { readdir } from "node:fs/promises";
+import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 
 const log = logger.child("omni:consumer");
 const sc = StringCodec();
+const execFileAsync = promisify(execFile);
 
 function emitPendingReviewEvent(input: {
   channel: string;
@@ -123,6 +143,20 @@ interface MessageReceivedPayload {
   rawPayload?: Record<string, unknown>;
 }
 
+interface MessageEditInfo {
+  editedMessageId: string;
+  editEventId: string;
+  newText: string;
+  editedAt?: number;
+  source: "content-edit" | "raw-is-edited";
+}
+
+interface WorkspaceChangeInspection {
+  state: "clean" | "dirty" | "unavailable";
+  changedFiles: number;
+  preview: string[];
+}
+
 /** Omni instance.qr_code payload */
 interface InstanceQrCodePayload {
   instanceId: string;
@@ -182,6 +216,14 @@ function rawPayloadString(rawPayload: Record<string, unknown> | undefined, key: 
   return cleanString(rawPayload?.[key]);
 }
 
+function rawPayloadNumber(rawPayload: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = rawPayload?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 /**
  * Parse the NATS subject to get channelType and instanceId.
  * Subject format: {eventType}.{channelType}.{instanceId}
@@ -218,6 +260,7 @@ export class OmniConsumer {
       resolveGroupMetadata?: typeof resolveOmniGroupMetadata;
       formatGroupMembers?: typeof formatOmniGroupMembersForPrompt;
       isRuntimeSessionActive?: (sessionName: string) => boolean;
+      abortRuntimeSession?: (sessionName: string, provenance: RuntimeAbortProvenance) => boolean;
     } = {},
   ) {
     this.typingPresence = new TypingPresenceHeartbeat(
@@ -460,6 +503,7 @@ export class OmniConsumer {
 
     // Derive phone and group status from JIDs
     const rawPayload = payload.rawPayload as Record<string, unknown> | undefined;
+    const editInfo = this.extractMessageEditInfo(payload, rawPayload);
     // isDm: Slack uses lowercase "isDm", Discord/Telegram use "isDM"
     const rawIsDm = rawPayload?.isDm ?? rawPayload?.isDM;
     // rawPayload.isGroup: Telegram sets this explicitly
@@ -604,19 +648,33 @@ export class OmniConsumer {
           : {}),
       },
     };
+    const editOriginalMessageMeta = editInfo ? dbGetMessageMeta(editInfo.editedMessageId) : null;
+    const effectiveActorMetadata = this.resolveEditedMessageActorMetadata(sourceActorMetadata, editOriginalMessageMeta);
+    const effectiveActorType = effectiveActorMetadata.actorType ?? actorType;
+    const effectiveActorAgentId =
+      effectiveActorMetadata.actorAgentId ?? (effectiveActorType === "agent" ? actorAgentId : undefined);
+    const effectiveContactId =
+      effectiveActorMetadata.contactId ??
+      (effectiveActorType === "contact" && senderContact?.id ? senderContact.id : undefined);
+    const effectivePlatformIdentityId = effectiveActorMetadata.platformIdentityId ?? senderPlatformIdentity?.id;
+    const effectiveRawSenderId = effectiveActorMetadata.rawSenderId ?? senderPhone;
+    const effectiveNormalizedSenderId = effectiveActorMetadata.normalizedSenderId ?? normalizedSenderId;
     dbUpsertChatParticipant({
       chatId: canonicalChat.id,
-      platformIdentityId: senderPlatformIdentity?.id ?? null,
-      contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
-      agentId: actorAgentId ?? null,
-      rawPlatformUserId: senderPhone,
-      normalizedPlatformUserId: normalizedSenderId,
-      role: actorType === "agent" ? "agent" : "member",
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+      agentId: effectiveActorAgentId ?? null,
+      rawPlatformUserId: effectiveRawSenderId,
+      normalizedPlatformUserId: effectiveNormalizedSenderId,
+      role: effectiveActorType === "agent" ? "agent" : "member",
       status: "active",
       source: "inbound_message",
       metadata: {
         displayName: rawPayloadString(rawPayload, "pushName") ?? null,
         resolvedSenderId: resolvedSenderPhone,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
       },
       seenAt: msgTs,
     });
@@ -665,15 +723,15 @@ export class OmniConsumer {
       chatId: chatJid,
       threadId: threadId ?? null,
       messageId: payload.externalId ?? null,
-      canonicalChatId: sourceActorMetadata.canonicalChatId ?? null,
-      actorType: sourceActorMetadata.actorType ?? null,
-      contactId: sourceActorMetadata.contactId ?? null,
-      actorAgentId: sourceActorMetadata.actorAgentId ?? null,
-      platformIdentityId: sourceActorMetadata.platformIdentityId ?? null,
-      rawSenderId: sourceActorMetadata.rawSenderId ?? null,
-      normalizedSenderId: sourceActorMetadata.normalizedSenderId ?? null,
-      identityConfidence: sourceActorMetadata.identityConfidence ?? null,
-      identityProvenance: sourceActorMetadata.identityProvenance ?? null,
+      canonicalChatId: effectiveActorMetadata.canonicalChatId ?? null,
+      actorType: effectiveActorMetadata.actorType ?? null,
+      contactId: effectiveActorMetadata.contactId ?? null,
+      actorAgentId: effectiveActorMetadata.actorAgentId ?? null,
+      platformIdentityId: effectiveActorMetadata.platformIdentityId ?? null,
+      rawSenderId: effectiveActorMetadata.rawSenderId ?? null,
+      normalizedSenderId: effectiveActorMetadata.normalizedSenderId ?? null,
+      identityConfidence: effectiveActorMetadata.identityConfidence ?? null,
+      identityProvenance: effectiveActorMetadata.identityProvenance ?? null,
     };
     const routeId = (resolved.route as { id?: number } | undefined)?.id ?? null;
     dbBindSessionToChat({
@@ -686,14 +744,17 @@ export class OmniConsumer {
     });
     dbUpsertSessionParticipant({
       sessionKey: resolved.sessionKey,
-      ownerType: actorType === "agent" ? "agent" : senderContact ? "contact" : "unknown",
-      ownerId: actorType === "agent" ? (actorAgentId ?? null) : (senderContact?.id ?? null),
-      platformIdentityId: senderPlatformIdentity?.id ?? null,
-      role: actorType === "agent" ? "agent" : senderContact ? "human" : "unknown",
+      ownerType: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "contact" : "unknown",
+      ownerId: effectiveActorType === "agent" ? (effectiveActorAgentId ?? null) : (effectiveContactId ?? null),
+      platformIdentityId: effectivePlatformIdentityId ?? null,
+      role: effectiveActorType === "agent" ? "agent" : effectiveContactId ? "human" : "unknown",
       metadata: {
-        rawSenderId: senderPhone,
-        normalizedSenderId,
+        rawSenderId: effectiveRawSenderId,
+        normalizedSenderId: effectiveNormalizedSenderId,
         canonicalChatId: canonicalChat.id,
+        ...(editInfo && editOriginalMessageMeta
+          ? { inheritedFromEditedMessageId: editOriginalMessageMeta.messageId }
+          : {}),
       },
       seenAt: msgTs,
     });
@@ -716,10 +777,10 @@ export class OmniConsumer {
           senderId: senderPhone,
           resolvedSenderPhone,
           canonicalChatId: canonicalChat.id,
-          actorType,
-          contactId: actorType === "contact" ? (senderContact?.id ?? null) : null,
-          actorAgentId: actorAgentId ?? null,
-          platformIdentityId: senderPlatformIdentity?.id ?? null,
+          actorType: effectiveActorType,
+          contactId: effectiveActorType === "contact" ? (effectiveContactId ?? null) : null,
+          actorAgentId: effectiveActorAgentId ?? null,
+          platformIdentityId: effectivePlatformIdentityId ?? null,
           chatName: rawPayloadString(rawPayload, "chatName") ?? null,
           routePhone,
         },
@@ -894,15 +955,15 @@ export class OmniConsumer {
 
     if (payload.externalId && chatJid) {
       dbSaveMessageMeta(payload.externalId, chatJid, {
-        canonicalChatId: sourceActorMetadata.canonicalChatId,
-        actorType: sourceActorMetadata.actorType,
-        contactId: sourceActorMetadata.contactId,
-        agentId: sourceActorMetadata.actorAgentId,
-        platformIdentityId: sourceActorMetadata.platformIdentityId,
-        rawSenderId: sourceActorMetadata.rawSenderId,
-        normalizedSenderId: sourceActorMetadata.normalizedSenderId,
-        identityConfidence: sourceActorMetadata.identityConfidence,
-        identityProvenance: sourceActorMetadata.identityProvenance,
+        canonicalChatId: effectiveActorMetadata.canonicalChatId,
+        actorType: effectiveActorMetadata.actorType,
+        contactId: effectiveActorMetadata.contactId,
+        agentId: effectiveActorMetadata.actorAgentId,
+        platformIdentityId: effectiveActorMetadata.platformIdentityId,
+        rawSenderId: effectiveActorMetadata.rawSenderId,
+        normalizedSenderId: effectiveActorMetadata.normalizedSenderId,
+        identityConfidence: effectiveActorMetadata.identityConfidence,
+        identityProvenance: effectiveActorMetadata.identityProvenance,
         transcription: mediaResult?.transcript,
         mediaPath: mediaResult?.localPath,
         mediaType: mediaResult?.transcript || mediaResult?.localPath ? payload.content.type : undefined,
@@ -944,46 +1005,47 @@ export class OmniConsumer {
       });
     }
 
-    // Build message envelope text
-    const envelope = this.formatEnvelope(
+    const rawText = editInfo?.newText ?? payload.content.text ?? "";
+    const humanUrgent = isUrgentInboundText(rawText);
+    const context = this.buildContext(
       channelType,
+      effectiveAccountId,
+      instanceId,
       payload,
       isGroup,
       senderPhone,
+      resolvedSenderPhone,
       senderName,
       groupName,
+      groupMembers,
       chatJid,
-      event.timestamp,
-      threadId,
-      mediaResult,
-      replyContext,
-      replyMediaPath,
+      event,
+      effectiveActorMetadata,
+      editInfo,
     );
-    const rawText = payload.content.text ?? "";
-    const humanUrgent = isUrgentInboundText(rawText);
 
     if (agentMode === "sentinel") {
+      const sentinelEnvelope = this.formatEnvelope(
+        channelType,
+        payload,
+        isGroup,
+        senderPhone,
+        senderName,
+        groupName,
+        chatJid,
+        event.timestamp,
+        threadId,
+        mediaResult,
+        replyContext,
+        replyMediaPath,
+      );
       // Sentinel: observe silently, no typing indicator, no source
       try {
-        const sentinelEnvelope = `${envelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
+        const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
-          prompt: sentinelEnvelope,
+          prompt: sentinelPrompt,
           _humanUrgent: humanUrgent,
-          context: this.buildContext(
-            channelType,
-            effectiveAccountId,
-            instanceId,
-            payload,
-            isGroup,
-            senderPhone,
-            resolvedSenderPhone,
-            senderName,
-            groupName,
-            groupMembers,
-            chatJid,
-            event,
-            sourceActorMetadata,
-          ),
+          context,
         });
       } catch (err) {
         log.error("Failed to publish sentinel prompt", err);
@@ -1016,8 +1078,67 @@ export class OmniConsumer {
       chatId: chatJid,
       ...(threadId ? { threadId } : {}),
       ...(payload.externalId ? { sourceMessageId: payload.externalId } : {}),
-      ...sourceActorMetadata,
+      ...effectiveActorMetadata,
     };
+
+    const commandExpansion = await this.expandInboundRaviCommand({
+      rawText,
+      sessionName,
+      sessionKey: resolved.sessionKey,
+      agent,
+      source,
+      context,
+    });
+    if (commandExpansion.status === "failed") {
+      return;
+    }
+
+    const envelope = this.formatEnvelope(
+      channelType,
+      payload,
+      isGroup,
+      senderPhone,
+      senderName,
+      groupName,
+      chatJid,
+      event.timestamp,
+      threadId,
+      mediaResult,
+      replyContext,
+      replyMediaPath,
+      commandExpansion.content,
+    );
+    const editRebasePlan = editInfo
+      ? buildRuntimeMessageEditRebasePlan({
+          sessionName,
+          sessionKey: resolved.sessionKey,
+          agentId: agent.id,
+          chatId: chatJid,
+          editedMessageId: editInfo.editedMessageId,
+          editEventId: editInfo.editEventId,
+          editedPrompt: envelope,
+        })
+      : null;
+    const editRestart =
+      editInfo && editRebasePlan
+        ? await this.prepareEditedMessageRestart({
+            sessionName,
+            sessionKey: resolved.sessionKey,
+            agent,
+            source,
+            context,
+            editInfo,
+            agentCwd,
+            rebasePlan: editRebasePlan,
+          })
+        : null;
+    const finalEnvelope =
+      editRestart && editInfo && editRebasePlan
+        ? renderRuntimeMessageEditRebasePrompt({
+            restartNotice: this.formatEditedMessageRestartNotice(editInfo, editRestart),
+            plan: editRebasePlan,
+          })
+        : envelope;
 
     // Emit inbound reply event when message is a quote-reply (for approval/poll resolution)
     if (payload.replyToId && payload.content.text) {
@@ -1039,29 +1160,338 @@ export class OmniConsumer {
 
     try {
       await publishSessionPrompt(sessionName, {
-        prompt: envelope,
+        prompt: finalEnvelope,
+        commands: commandExpansion.commands,
         source,
-        _humanUrgent: humanUrgent,
-        context: this.buildContext(
-          channelType,
-          effectiveAccountId,
-          instanceId,
-          payload,
-          isGroup,
-          senderPhone,
-          resolvedSenderPhone,
-          senderName,
-          groupName,
-          groupMembers,
-          chatJid,
-          event,
-          sourceActorMetadata,
-        ),
+        _humanUrgent: humanUrgent || Boolean(editInfo),
+        context,
       });
     } catch (err) {
       log.error("Failed to publish prompt", err);
       this.clearActiveTarget(sessionName);
     }
+  }
+
+  private async expandInboundRaviCommand(input: {
+    rawText: string;
+    sessionName: string;
+    sessionKey: string;
+    agent: AgentConfig;
+    source: MessageTarget;
+    context: MessageContext;
+  }): Promise<{ status: "ready"; content?: string; commands?: RaviCommandPromptMetadata[] } | { status: "failed" }> {
+    if (!input.rawText.trimStart().startsWith("#")) {
+      return { status: "ready" };
+    }
+
+    try {
+      const expanded = expandRaviCommandPrompt(
+        {
+          prompt: input.rawText,
+          source: input.source,
+          context: input.context,
+        },
+        { agent: input.agent },
+      );
+      const commandMetadata = expanded.commands?.at(-1);
+      if (!commandMetadata) {
+        return { status: "ready" };
+      }
+
+      recordRuntimeTraceEvent({
+        sessionKey: input.sessionKey,
+        sessionName: input.sessionName,
+        agentId: input.agent.id,
+        eventType: "command.invoked",
+        eventGroup: "command",
+        status: "expanded",
+        source: input.source,
+        messageId: input.context.messageId,
+        payloadJson: commandMetadata,
+      });
+
+      return {
+        status: "ready",
+        content: expanded.prompt,
+        commands: expanded.commands,
+      };
+    } catch (error) {
+      if (error instanceof RaviCommandError) {
+        await this.emitInboundRaviCommandFailure(input, error);
+        return { status: "failed" };
+      }
+      throw error;
+    }
+  }
+
+  private async emitInboundRaviCommandFailure(
+    input: {
+      rawText: string;
+      sessionName: string;
+      sessionKey: string;
+      agent: AgentConfig;
+      source: MessageTarget;
+      context: MessageContext;
+    },
+    error: RaviCommandError,
+  ): Promise<void> {
+    recordRuntimeTraceEvent({
+      sessionKey: input.sessionKey,
+      sessionName: input.sessionName,
+      agentId: input.agent.id,
+      eventType: "command.failed",
+      eventGroup: "command",
+      status: "failed",
+      source: input.source,
+      messageId: input.context.messageId,
+      error: error.message,
+      payloadJson: {
+        code: error.code,
+        commandId: error.commandId ?? null,
+        originalText: input.rawText,
+      },
+    });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.runtime`, {
+        type: "command.failed",
+        code: error.code,
+        commandId: error.commandId ?? null,
+        error: error.message,
+        source: input.source,
+        context: input.context,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure runtime event", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
+
+    await nats
+      .emit(`ravi.session.${input.sessionName}.response`, {
+        error: error.message,
+        target: input.source,
+        _emitId: Math.random().toString(36).slice(2, 8),
+        _instanceId: input.source.instanceId,
+        _pid: process.pid,
+        _v: 2,
+      })
+      .catch((emitError) => {
+        log.warn("Failed to emit command failure response", {
+          sessionName: input.sessionName,
+          error: emitError,
+        });
+      });
+  }
+
+  private extractMessageEditInfo(
+    payload: MessageReceivedPayload,
+    rawPayload: Record<string, unknown> | undefined,
+  ): MessageEditInfo | null {
+    const editedMessageId =
+      rawPayloadString(rawPayload, "editedMessageId") ??
+      rawPayloadString(rawPayload, "targetMessageId") ??
+      rawPayloadString(rawPayload, "messageId");
+    const editedAt = rawPayloadNumber(rawPayload, "editedAt") ?? rawPayloadNumber(rawPayload, "editDate");
+
+    if (payload.content?.type === "edit") {
+      const newText =
+        cleanString(payload.content.text) ??
+        rawPayloadString(rawPayload, "newText") ??
+        rawPayloadString(rawPayload, "editedText");
+      const targetMessageId = editedMessageId ?? payload.replyToId;
+      if (!targetMessageId || !newText) return null;
+      return {
+        editedMessageId: targetMessageId,
+        editEventId: payload.externalId,
+        newText,
+        ...(editedAt ? { editedAt } : {}),
+        source: "content-edit",
+      };
+    }
+
+    if (rawPayload?.isEdited === true) {
+      const newText =
+        cleanString(payload.content?.text) ??
+        rawPayloadString(rawPayload, "newText") ??
+        rawPayloadString(rawPayload, "editedText");
+      const targetMessageId = editedMessageId ?? payload.externalId;
+      if (!targetMessageId || !newText) return null;
+      return {
+        editedMessageId: targetMessageId,
+        editEventId: payload.externalId,
+        newText,
+        ...(editedAt ? { editedAt } : {}),
+        source: "raw-is-edited",
+      };
+    }
+
+    return null;
+  }
+
+  private async prepareEditedMessageRestart(input: {
+    sessionName: string;
+    sessionKey: string;
+    agent: AgentConfig;
+    source: MessageTarget;
+    context: MessageContext;
+    editInfo: MessageEditInfo;
+    agentCwd: string;
+    rebasePlan: RuntimeMessageEditRebasePlan;
+  }): Promise<{
+    aborted: boolean;
+    reset: boolean;
+    workspace: WorkspaceChangeInspection;
+  }> {
+    const aborted =
+      this.options.abortRuntimeSession?.(input.sessionName, {
+        source: "omni",
+        action: "message.edited",
+        reason: "message_edited_restart",
+        actor: input.source.normalizedSenderId ?? input.context.senderId,
+        correlationId: input.editInfo.editEventId,
+        request: {
+          messageId: input.editInfo.editedMessageId,
+          editEventId: input.editInfo.editEventId,
+        },
+      }) ?? false;
+    const reset = resetSession(input.sessionKey);
+    const workspace = await this.inspectWorkspaceChanges(input.agentCwd);
+
+    try {
+      recordRuntimeTraceEvent({
+        sessionKey: input.sessionKey,
+        sessionName: input.sessionName,
+        agentId: input.agent.id,
+        eventType: "channel.message.edited",
+        eventGroup: "channel",
+        status: "restarted",
+        source: input.source,
+        messageId: input.editInfo.editedMessageId,
+        payloadJson: {
+          editEventId: input.editInfo.editEventId,
+          editSource: input.editInfo.source,
+          editedAt: input.editInfo.editedAt ?? null,
+          aborted,
+          reset,
+          workspace,
+          rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
+        },
+      });
+    } catch (error) {
+      log.warn("Failed to record message edit restart trace", {
+        sessionName: input.sessionName,
+        messageId: input.editInfo.editedMessageId,
+        error,
+      });
+    }
+
+    log.info("Message edit restarted runtime session", {
+      sessionName: input.sessionName,
+      sessionKey: input.sessionKey,
+      agentId: input.agent.id,
+      editedMessageId: input.editInfo.editedMessageId,
+      editEventId: input.editInfo.editEventId,
+      aborted,
+      reset,
+      workspaceState: workspace.state,
+      changedFiles: workspace.changedFiles,
+      rebase: summarizeRuntimeMessageEditRebasePlan(input.rebasePlan),
+    });
+
+    return { aborted, reset, workspace };
+  }
+
+  private async inspectWorkspaceChanges(cwd: string): Promise<WorkspaceChangeInspection> {
+    try {
+      const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 2_000,
+        maxBuffer: 64 * 1024,
+      });
+      const lines = String(stdout)
+        .split(/\r?\n/)
+        .map((line) => line.trimEnd())
+        .filter(Boolean);
+      return {
+        state: lines.length > 0 ? "dirty" : "clean",
+        changedFiles: lines.length,
+        preview: lines.slice(0, 8),
+      };
+    } catch {
+      return { state: "unavailable", changedFiles: 0, preview: [] };
+    }
+  }
+
+  private resolveEditedMessageActorMetadata(
+    current: MessageActorMetadata,
+    originalMessageMeta: ReturnType<typeof dbGetMessageMeta>,
+  ): MessageActorMetadata {
+    const inherited = actorMetadataFromMessageMetadata(originalMessageMeta);
+    if (!inherited || (!inherited.contactId && !inherited.actorAgentId && inherited.actorType === "unknown")) {
+      return current;
+    }
+
+    return {
+      ...current,
+      ...inherited,
+      canonicalChatId: current.canonicalChatId ?? inherited.canonicalChatId,
+      identityProvenance: {
+        ...(inherited.identityProvenance ?? {}),
+        inheritedFromEditedMessageId: originalMessageMeta?.messageId,
+        editEventActor: {
+          actorType: current.actorType ?? null,
+          rawSenderId: current.rawSenderId ?? null,
+          normalizedSenderId: current.normalizedSenderId ?? null,
+        },
+      },
+    };
+  }
+
+  private formatEditedMessageRestartNotice(
+    editInfo: MessageEditInfo,
+    restart: {
+      aborted: boolean;
+      reset: boolean;
+      workspace: WorkspaceChangeInspection;
+    },
+  ): string {
+    const lines = [
+      "## Mensagem editada detectada pelo Omni",
+      "",
+      `Mensagem original: ${editInfo.editedMessageId}`,
+      `Evento de edicao: ${editInfo.editEventId}`,
+      `Sessao abortada: ${restart.aborted ? "sim" : "nao havia runtime ativo"}`,
+      `Provider state resetado: ${restart.reset ? "sim" : "nao"}`,
+    ];
+
+    if (restart.workspace.state === "dirty") {
+      lines.push(
+        "",
+        `Workspace do agente tem ${restart.workspace.changedFiles} arquivo(s) com alteracoes.`,
+        "Antes de modificar arquivos novamente, peca autorizacao ao usuario para manter ou reverter essas alteracoes.",
+        "Nao reverta nada sem autorizacao explicita.",
+      );
+      if (restart.workspace.preview.length > 0) {
+        lines.push("", "Alteracoes detectadas:");
+        for (const entry of restart.workspace.preview) {
+          lines.push(`- ${entry}`);
+        }
+      }
+    } else if (restart.workspace.state === "clean") {
+      lines.push("", "Workspace do agente esta limpo. Processe a mensagem editada como substituta da anterior.");
+    } else {
+      lines.push(
+        "",
+        "Nao foi possivel verificar o workspace do agente. Antes de modificar arquivos, confira o estado local.",
+      );
+    }
+
+    lines.push("", "---", "");
+    return lines.join("\n");
   }
 
   /**
@@ -1393,6 +1823,10 @@ export class OmniConsumer {
       return content.text ?? "[message]";
     }
 
+    if (content.type === "edit") {
+      return `[Message edited]\n${content.text ?? "[message]"}`;
+    }
+
     const isAudio = content.type === "audio" || content.type === "voice";
 
     // Audio with transcript
@@ -1439,6 +1873,7 @@ export class OmniConsumer {
     mediaResult?: { localPath?: string; transcript?: string } | null,
     replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
     replyMediaPath?: string,
+    contentOverride?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -1457,7 +1892,7 @@ export class OmniConsumer {
       })
       .toLowerCase();
 
-    const content = this.formatContent(payload, mediaResult);
+    const content = contentOverride ?? this.formatContent(payload, mediaResult);
     const midTag = payload.externalId ? ` mid:${payload.externalId}` : "";
     const threadTag = threadId ? ` thread:${threadId}` : "";
 
@@ -1552,6 +1987,7 @@ export class OmniConsumer {
     chatJid: string,
     event: OmniEvent,
     actorMetadata?: MessageActorMetadata,
+    editInfo?: MessageEditInfo | null,
   ): MessageContext & { instanceId: string } {
     const groupId = isGroup ? stripJid(chatJid) : undefined;
 
@@ -1570,6 +2006,14 @@ export class OmniConsumer {
       ...(groupName ? { groupName } : {}),
       ...(groupId ? { groupId } : {}),
       ...(groupMembers && groupMembers.length > 0 ? { groupMembers } : {}),
+      ...(editInfo
+        ? {
+            isEditedMessage: true,
+            editedMessageId: editInfo.editedMessageId,
+            editEventId: editInfo.editEventId,
+            ...(editInfo.editedAt ? { editedAt: editInfo.editedAt } : {}),
+          }
+        : {}),
       timestamp: event.timestamp,
     };
   }

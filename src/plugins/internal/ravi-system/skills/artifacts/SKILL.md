@@ -48,6 +48,33 @@ Mostra:
 - links com tasks/sessões/mensagens/projetos
 - eventos de criação/edição/anexo/archive
 
+## Timeline / Lifecycle
+
+Artifacts também podem representar geração assíncrona em andamento.
+
+Estados principais:
+- `pending`
+- `running`
+- `completed`
+- `failed`
+- `archived`
+
+Ver timeline ordenada:
+
+```bash
+ravi artifacts events art_xxx --json
+```
+
+Adicionar evento manual/recovery:
+
+```bash
+ravi artifacts event art_xxx failed \
+  --status failed \
+  --message "provider timeout" \
+  --source "manual-recovery" \
+  --payload '{"reason":"timeout"}'
+```
+
 ## Editar Metadata
 
 ```bash
@@ -75,7 +102,9 @@ Archive é soft-delete: o artifact sai da listagem padrão, mas continua consult
 
 ## Integração Atual
 
-`ravi image generate` registra automaticamente um artifact `kind=image` para cada imagem gerada.
+`ravi image generate` registra automaticamente artifacts `kind=image` usando lifecycle.
+`ravi image atlas split` registra um artifact `kind=image.atlas.split` para o
+manifest e um artifact `kind=image.crop` para cada crop derivado.
 
 O registro inclui:
 - path original e cópia no blob store local
@@ -86,6 +115,18 @@ O registro inclui:
 - tokens/usage quando o provider retorna
 - input/output estruturados
 - metadata e lineage básicos
+- provenance de atlas/crop: grid, posição, parent artifact e split artifact
+
+Para geração longa, prefira:
+
+```bash
+ravi image generate "prompt" --provider openai --model gpt-image-2 --json
+```
+
+Isso retorna imediatamente `artifact_id`, `status` e comando `watch`. O worker
+atualiza eventos até `completed` ou `failed`. Quando existe contexto de chat,
+a mídia gerada é enviada automaticamente para o chat de origem; não faça polling
+por padrão, use `watch/events` só para inspeção manual/debug.
 
 ## Regra de Provider
 

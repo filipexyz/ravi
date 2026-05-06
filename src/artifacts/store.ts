@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "nod
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { z } from "zod";
 import { getDb } from "../router/router-db.js";
+import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 const ARTIFACT_ID_PATTERN = /^art_[a-z0-9]+_[a-z0-9]+$/;
@@ -79,9 +80,21 @@ export interface ArtifactEvent {
   id: number;
   artifactId: string;
   eventType: string;
+  status?: string;
+  message?: string;
+  source?: string;
   actor?: string;
   payload?: Record<string, unknown>;
   createdAt: number;
+}
+
+export interface AppendArtifactEventInput {
+  eventType: string;
+  status?: string;
+  message?: string;
+  payload?: Record<string, unknown>;
+  source?: string;
+  actor?: string;
 }
 
 interface ArtifactRow {
@@ -131,6 +144,9 @@ interface ArtifactEventRow {
   id: number;
   artifact_id: string;
   event_type: string;
+  status: string | null;
+  message: string | null;
+  source: string | null;
   actor: string | null;
   payload_json: string | null;
   created_at: number;
@@ -211,6 +227,9 @@ function ensureArtifactSchema(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
       event_type TEXT NOT NULL,
+      status TEXT,
+      message TEXT,
+      source TEXT,
       actor TEXT,
       payload_json TEXT,
       created_at INTEGER NOT NULL
@@ -230,6 +249,16 @@ function ensureArtifactSchema(): void {
 
     CREATE INDEX IF NOT EXISTS idx_artifact_links_target ON artifact_links(target_type, target_id);
   `);
+
+  ensureColumn("artifact_events", "status", "TEXT");
+  ensureColumn("artifact_events", "message", "TEXT");
+  ensureColumn("artifact_events", "source", "TEXT");
+}
+
+function ensureColumn(table: string, column: string, definition: string): void {
+  const rows = getDb().prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (rows.some((row) => row.name === column)) return;
+  getDb().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 function jsonString(value: unknown): string | null {
@@ -256,6 +285,21 @@ function parseTags(value: string | null): string[] {
 
 function normalizeTags(tags?: string[]): string[] {
   return [...new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean))].sort();
+}
+
+function syncArtifactTagsToCanonical(artifactIdValue: string, tags: string[]): void {
+  replaceMirroredTagSlugsForAsset({
+    assetType: "artifact",
+    assetId: artifactIdValue,
+    tags,
+    source: "artifacts.tags_json",
+    createdBy: "artifacts.store",
+    metadata: { mirrored: true },
+    definitionMetadata: {
+      source: "artifacts.tags_json",
+      mirrored: true,
+    },
+  });
 }
 
 function artifactId(): string {
@@ -320,6 +364,7 @@ function ingestFile(path: string): {
 }
 
 function rowToArtifact(row: ArtifactRow): ArtifactRecord {
+  const tags = [...new Set([...parseTags(row.tags_json), ...canonicalTagSlugsForAsset("artifact", row.id)])].sort();
   return {
     id: row.id,
     kind: row.kind,
@@ -357,7 +402,7 @@ function rowToArtifact(row: ArtifactRow): ArtifactRecord {
     ...(row.lineage_json ? { lineage: parseJsonObject(row.lineage_json) } : {}),
     ...(row.input_json ? { input: parseJsonValue(row.input_json) } : {}),
     ...(row.output_json ? { output: parseJsonValue(row.output_json) } : {}),
-    tags: parseTags(row.tags_json),
+    tags,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(row.deleted_at !== null ? { deletedAt: row.deleted_at } : {}),
@@ -369,6 +414,9 @@ function rowToEvent(row: ArtifactEventRow): ArtifactEvent {
     id: row.id,
     artifactId: row.artifact_id,
     eventType: row.event_type,
+    ...(row.status ? { status: row.status } : {}),
+    ...(row.message ? { message: row.message } : {}),
+    ...(row.source ? { source: row.source } : {}),
     ...(row.actor ? { actor: row.actor } : {}),
     ...(row.payload_json ? { payload: parseJsonObject(row.payload_json) } : {}),
     createdAt: row.created_at,
@@ -391,13 +439,37 @@ function insertArtifactEvent(
   eventType: string,
   payload?: Record<string, unknown>,
   actor?: string,
+  options: { status?: string; message?: string; source?: string } = {},
 ): void {
   const now = Date.now();
   getDb()
     .prepare(
-      "INSERT INTO artifact_events (artifact_id, event_type, actor, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO artifact_events (artifact_id, event_type, status, message, source, actor, payload_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
-    .run(artifactIdValue, eventType, actor ?? null, jsonString(payload), now);
+    .run(
+      artifactIdValue,
+      eventType,
+      options.status ?? null,
+      options.message ?? null,
+      options.source ?? null,
+      actor ?? null,
+      jsonString(payload),
+      now,
+    );
+}
+
+export function appendArtifactEvent(artifactIdValue: string, input: AppendArtifactEventInput): ArtifactEvent {
+  ensureArtifactSchema();
+  if (!getArtifact(artifactIdValue)) throw new Error(`Artifact not found: ${artifactIdValue}`);
+  insertArtifactEvent(artifactIdValue, input.eventType, input.payload, input.actor, {
+    status: input.status,
+    message: input.message,
+    source: input.source,
+  });
+  const events = listArtifactEvents(artifactIdValue);
+  const event = events[events.length - 1];
+  if (!event) throw new Error(`Artifact event insert failed: ${artifactIdValue}`);
+  return event;
 }
 
 export function createArtifact(input: z.input<typeof ArtifactInputSchema>): ArtifactRecord {
@@ -466,7 +538,12 @@ export function createArtifact(input: z.input<typeof ArtifactInputSchema>): Arti
       now,
     );
 
-  insertArtifactEvent(id, "artifact.created", { kind: parsed.kind, file: file ? basename(file.filePath) : null });
+  insertArtifactEvent(id, "created", { kind: parsed.kind, file: file ? basename(file.filePath) : null }, undefined, {
+    status: parsed.status,
+    message: "Artifact created",
+    source: "artifacts.store",
+  });
+  syncArtifactTagsToCanonical(id, tags);
   const artifact = getArtifact(id);
   if (!artifact) throw new Error(`Artifact insert failed: ${id}`);
   return artifact;
@@ -496,8 +573,14 @@ export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecor
     params.push(options.taskId);
   }
   if (options.tag) {
-    where.push("tags_json LIKE ?");
-    params.push(`%"${options.tag}"%`);
+    const canonicalIds = canonicalAssetIdsForTag("artifact", options.tag) ?? [];
+    const tagPredicates = ["EXISTS (SELECT 1 FROM json_each(artifacts.tags_json) WHERE value = ?)"];
+    params.push(options.tag);
+    if (canonicalIds.length > 0) {
+      tagPredicates.push(`id IN (${canonicalIds.map(() => "?").join(", ")})`);
+      params.push(...canonicalIds);
+    }
+    where.push(`(${tagPredicates.join(" OR ")})`);
   }
   const limit = Math.max(1, Math.min(500, options.limit ?? 50));
   const sql = `SELECT * FROM artifacts ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC LIMIT ?`;
@@ -607,7 +690,15 @@ export function updateArtifact(
       id,
     );
 
-  insertArtifactEvent(id, "artifact.updated", { updates: [...providedKeys].sort() }, options.actor);
+  if (providedKeys.has("tags")) {
+    syncArtifactTagsToCanonical(id, normalizeTags(parsed.tags));
+  }
+
+  insertArtifactEvent(id, "updated", { updates: [...providedKeys].sort() }, options.actor, {
+    status: parsed.status,
+    message: "Artifact updated",
+    source: "artifacts.store",
+  });
   const artifact = getArtifact(id);
   if (!artifact) throw new Error(`Artifact update failed: ${id}`);
   return artifact;
@@ -631,7 +722,10 @@ export function attachArtifact(
        DO UPDATE SET metadata_json = excluded.metadata_json`,
     )
     .run(artifactIdValue, targetType, targetId, relation, jsonString(metadata), now);
-  insertArtifactEvent(artifactIdValue, "artifact.attached", { targetType, targetId, relation });
+  insertArtifactEvent(artifactIdValue, "attached", { targetType, targetId, relation }, undefined, {
+    message: `Attached to ${targetType}:${targetId}`,
+    source: "artifacts.store",
+  });
   return {
     artifactId: artifactIdValue,
     targetType,
@@ -649,7 +743,11 @@ export function archiveArtifact(id: string, actor?: string): ArtifactRecord {
     .prepare("UPDATE artifacts SET status = 'archived', deleted_at = ?, updated_at = ? WHERE id = ?")
     .run(now, now, id);
   if (result.changes === 0) throw new Error(`Artifact not found: ${id}`);
-  insertArtifactEvent(id, "artifact.archived", undefined, actor);
+  insertArtifactEvent(id, "archived", undefined, actor, {
+    status: "archived",
+    message: "Artifact archived",
+    source: "artifacts.store",
+  });
   const artifact = getArtifact(id);
   if (!artifact) throw new Error(`Artifact archive failed: ${id}`);
   return artifact;
@@ -674,4 +772,14 @@ export function getArtifactDetails(id: string): {
       .all(id) as ArtifactEventRow[]
   ).map(rowToEvent);
   return { artifact, links, events };
+}
+
+export function listArtifactEvents(id: string): ArtifactEvent[] {
+  ensureArtifactSchema();
+  if (!getArtifact(id)) throw new Error(`Artifact not found: ${id}`);
+  return (
+    getDb()
+      .prepare("SELECT * FROM artifact_events WHERE artifact_id = ? ORDER BY created_at ASC, id ASC")
+      .all(id) as ArtifactEventRow[]
+  ).map(rowToEvent);
 }

@@ -694,7 +694,8 @@ function buildCodexHookCheck(hooksPath: string, deps: DoctorDeps): DoctorCheck {
       status: "fail",
       summary: "global Codex hooks file exists but Ravi bash governance is missing",
       details: [hooksPath],
-      fixHint: "rewrite ~/.codex/hooks.json so `PreToolUse` for `^Bash$` points at `ravi context codex-bash-hook`",
+      fixHint:
+        "rewrite ~/.codex/hooks.json so `PreToolUse` for `^(Bash|shell)$` points at `ravi context codex-bash-hook`",
       data: { path: hooksPath, exists: true, valid: false },
     };
   }
@@ -730,7 +731,7 @@ function hasRaviCodexBashHook(value: unknown): boolean {
     }
     const matcher = (group as Record<string, unknown>).matcher;
     const handlers = (group as Record<string, unknown>).hooks;
-    if (matcher !== "^Bash$" || !Array.isArray(handlers)) {
+    if (matcher !== "^(Bash|shell)$" || !Array.isArray(handlers)) {
       return false;
     }
     return handlers.some((handler) => {

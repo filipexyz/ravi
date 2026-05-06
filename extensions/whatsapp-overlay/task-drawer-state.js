@@ -14,10 +14,16 @@
     return Array.isArray(snapshot?.items) ? snapshot.items : [];
   }
 
+  function getSnapshotItemTaskId(item) {
+    return normalizeTaskId(item?.id) || normalizeTaskId(item?.task?.id);
+  }
+
   function taskExistsInSnapshot(taskId, snapshot) {
     const normalizedTaskId = normalizeTaskId(taskId);
     if (!normalizedTaskId) return false;
-    return getSnapshotItems(snapshot).some((task) => task?.id === normalizedTaskId);
+    return getSnapshotItems(snapshot).some(
+      (item) => getSnapshotItemTaskId(item) === normalizedTaskId,
+    );
   }
 
   function syncTaskDetailDrawerState(params) {

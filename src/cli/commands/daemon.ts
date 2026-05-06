@@ -5,11 +5,29 @@
 import "reflect-metadata";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import { Group, Command, Option } from "../decorators.js";
+import { Group, Command, CliOnly, Option } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
 import { isPm2Available, runPm2, isRaviRunning, getRaviPid, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
+import {
+  ADMIN_BOOTSTRAP_AGENT_ID,
+  ADMIN_BOOTSTRAP_KIND,
+  DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS,
+  createRuntimeContext,
+  listLiveAdminContexts,
+  resolveRuntimeContext,
+} from "../../runtime/context-registry.js";
+import { dbCreateAgent, dbGetAgent } from "../../router/router-db.js";
+import { grantRelation } from "../../permissions/relations.js";
+import {
+  CredentialsFileError,
+  emptyCredentialsFile,
+  getCredentialsPath,
+  readCredentialsFile,
+  upsertCredentialsEntry,
+  writeCredentialsFile,
+} from "../../runtime/credentials-store.js";
 
 const RAVI_DIR = join(homedir(), ".ravi");
 const ENV_FILE = join(RAVI_DIR, ".env");
@@ -261,19 +279,19 @@ export class DaemonCommands {
     requirePm2();
 
     if (isRaviRunning()) {
+      const payload = {
+        action: "start" as const,
+        changed: false,
+        reason: "already_running" as const,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "start",
-          changed: false,
-          reason: "already_running",
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Daemon is already running");
+        console.log(`PID: ${getRaviPid()}`);
       }
-      console.log("Daemon is already running");
-      console.log(`PID: ${getRaviPid()}`);
-      return;
+      return payload;
     }
 
     // Clean up old launchd/systemd if present
@@ -294,14 +312,15 @@ export class DaemonCommands {
     ];
     const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
 
+    const payload = {
+      action: "start" as const,
+      changed: status === 0,
+      pm2Status: status,
+      target,
+      status: buildDaemonStatusJson(),
+    };
+
     if (asJson) {
-      const payload = {
-        action: "start",
-        changed: status === 0,
-        pm2Status: status,
-        target,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
       if (status !== 0) fail("Failed to start daemon");
       return payload;
@@ -312,6 +331,7 @@ export class DaemonCommands {
     } else {
       fail("Failed to start daemon");
     }
+    return payload;
   }
 
   @Command({ name: "stop", description: "Stop the daemon" })
@@ -319,28 +339,28 @@ export class DaemonCommands {
     requirePm2();
 
     if (!isRaviRunning()) {
+      const payload = {
+        action: "stop" as const,
+        changed: false,
+        reason: "not_running" as const,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "stop",
-          changed: false,
-          reason: "not_running",
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Daemon is not running");
       }
-      console.log("Daemon is not running");
-      return;
+      return payload;
     }
 
     const { status } = asJson ? runPm2Quiet(["delete", PM2_PROCESS_NAME]) : runPm2(["delete", PM2_PROCESS_NAME]);
+    const payload = {
+      action: "stop" as const,
+      changed: status === 0,
+      pm2Status: status,
+      status: buildDaemonStatusJson(),
+    };
     if (asJson) {
-      const payload = {
-        action: "stop",
-        changed: status === 0,
-        pm2Status: status,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
       if (status !== 0) fail("Failed to stop daemon");
       return payload;
@@ -351,6 +371,7 @@ export class DaemonCommands {
     } else {
       fail("Failed to stop daemon");
     }
+    return payload;
   }
 
   @Command({ name: "restart", description: "Restart the daemon" })
@@ -392,22 +413,22 @@ export class DaemonCommands {
       });
       child.unref();
 
-      if (asJson) {
-        const payload = {
-          action: "restart",
-          mode: "handoff",
-          changed: true,
-          message,
-          build: Boolean(build),
-          target,
-          sessionName,
-        };
-        printJson(payload);
-        return payload;
-      }
+      const payload = {
+        action: "restart" as const,
+        mode: "handoff" as const,
+        changed: true,
+        message,
+        build: Boolean(build),
+        target,
+        sessionName,
+      };
 
-      console.log("Daemon restart started");
-      return;
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log("Daemon restart started");
+      }
+      return payload;
     }
 
     // Build first if requested
@@ -462,17 +483,17 @@ export class DaemonCommands {
       ];
       const { status } = asJson ? runPm2Quiet(args, { cwd: target.cwd }) : runPm2(args, undefined, { cwd: target.cwd });
       pm2Status = status;
+      const payload = {
+        action: "restart" as const,
+        changed: status === 0,
+        previousRunning,
+        pm2Status,
+        build: buildResult,
+        message,
+        target,
+        status: buildDaemonStatusJson(),
+      };
       if (asJson) {
-        const payload = {
-          action: "restart",
-          changed: status === 0,
-          previousRunning,
-          pm2Status,
-          build: buildResult,
-          message,
-          target,
-          status: buildDaemonStatusJson(),
-        };
         printJson(payload);
         if (status !== 0) fail("Failed to restart daemon");
         return payload;
@@ -482,22 +503,23 @@ export class DaemonCommands {
       } else {
         fail("Failed to restart daemon");
       }
+      return payload;
     } else {
+      const args = [
+        "start",
+        target.bundlePath,
+        "--name",
+        PM2_PROCESS_NAME,
+        "--interpreter",
+        "bun",
+        "--",
+        "daemon",
+        "run",
+      ];
       if (asJson) {
-        const args = [
-          "start",
-          target.bundlePath,
-          "--name",
-          PM2_PROCESS_NAME,
-          "--interpreter",
-          "bun",
-          "--",
-          "daemon",
-          "run",
-        ];
         const { status } = runPm2Quiet(args, { cwd: target.cwd });
         const payload = {
-          action: "restart",
+          action: "restart" as const,
           changed: status === 0,
           previousRunning,
           pm2Status: status,
@@ -510,21 +532,32 @@ export class DaemonCommands {
         if (status !== 0) fail("Failed to restart daemon");
         return payload;
       }
-      this.start();
+      const startResult = this.start();
+      const startPm2Status = startResult && "pm2Status" in startResult ? startResult.pm2Status : null;
+      return {
+        action: "restart" as const,
+        changed: startResult?.changed ?? false,
+        previousRunning,
+        pm2Status: startPm2Status,
+        build: buildResult,
+        message,
+        target,
+        status: buildDaemonStatusJson(),
+      };
     }
   }
 
   @Command({ name: "status", description: "Show daemon and infrastructure status" })
   status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    const payload = buildDaemonStatusJson();
     if (asJson) {
-      const payload = buildDaemonStatusJson();
       printJson(payload);
       return payload;
     }
 
     if (!isPm2Available()) {
       console.log("\nPM2 not installed. Install: bun add -g pm2\n");
-      return;
+      return payload;
     }
 
     const procs = getPm2Processes();
@@ -558,6 +591,7 @@ export class DaemonCommands {
     }
 
     console.log();
+    return payload;
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
@@ -573,34 +607,34 @@ export class DaemonCommands {
 
     if (path) {
       const logPath = resolvePm2OutLogPath();
+      const payload = {
+        action: "logs" as const,
+        process: PM2_PROCESS_NAME,
+        path: logPath,
+        available: Boolean(logPath),
+      };
       if (asJson) {
-        const payload = {
-          action: "logs",
-          process: PM2_PROCESS_NAME,
-          path: logPath,
-          available: Boolean(logPath),
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log(logPath || "Run 'pm2 info ravi' to find log path");
       }
-      console.log(logPath || "Run 'pm2 info ravi' to find log path");
-      return;
+      return payload;
     }
 
     if (clear) {
       const result = asJson ? runPm2Quiet(["flush", PM2_PROCESS_NAME]) : runPm2(["flush", PM2_PROCESS_NAME]);
+      const payload = {
+        action: "flush-logs" as const,
+        changed: result.status === 0,
+        pm2Status: result.status,
+        process: PM2_PROCESS_NAME,
+      };
       if (asJson) {
-        const payload = {
-          action: "flush-logs",
-          changed: result.status === 0,
-          pm2Status: result.status,
-          process: PM2_PROCESS_NAME,
-        };
         printJson(payload);
-        return payload;
+      } else {
+        console.log("Logs flushed");
       }
-      console.log("Logs flushed");
-      return;
+      return payload;
     }
 
     const lines = tail || "50";
@@ -699,18 +733,19 @@ export class DaemonCommands {
   install(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
     const result = asJson ? runPm2Quiet(["save"]) : runPm2(["save"]);
+    const payload = {
+      action: "install" as const,
+      changed: result.status === 0,
+      pm2Status: result.status,
+      startupCommand: "pm2 startup",
+    };
     if (asJson) {
-      const payload = {
-        action: "install",
-        changed: result.status === 0,
-        pm2Status: result.status,
-        startupCommand: "pm2 startup",
-      };
       printJson(payload);
-      return payload;
+    } else {
+      console.log("\nPM2 process list saved.");
+      console.log("To start on boot, run: pm2 startup");
     }
-    console.log("\nPM2 process list saved.");
-    console.log("To start on boot, run: pm2 startup");
+    return payload;
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
@@ -728,29 +763,31 @@ export class DaemonCommands {
     // Clean up old launchd/systemd if present
     this.cleanupLegacyServices({ silent: Boolean(asJson) });
 
+    const payload = {
+      action: "uninstall" as const,
+      changed: wasRunning || saveResult.status === 0,
+      wasRunning,
+      deleteStatus,
+      saveStatus: saveResult.status,
+      status: buildDaemonStatusJson(),
+    };
     if (asJson) {
-      const payload = {
-        action: "uninstall",
-        changed: wasRunning || saveResult.status === 0,
-        wasRunning,
-        deleteStatus,
-        saveStatus: saveResult.status,
-        status: buildDaemonStatusJson(),
-      };
       printJson(payload);
-      return payload;
+    } else {
+      console.log("Ravi removed from PM2");
     }
-
-    console.log("Ravi removed from PM2");
+    return payload;
   }
 
   @Command({ name: "run", description: "Run daemon in foreground (used by PM2)" })
+  @CliOnly()
   async run() {
     const { startDaemon } = await import("../../daemon.js");
     await startDaemon();
   }
 
   @Command({ name: "dev", description: "Run daemon in dev mode with auto-rebuild on file changes" })
+  @CliOnly()
   async dev() {
     const projectRoot = this.requireSourceProjectRoot();
 
@@ -843,6 +880,11 @@ ANTHROPIC_API_KEY=
 # OPENAI_API_KEY=
 # RAVI_MODEL=sonnet
 # RAVI_LOG_LEVEL=info
+
+# Webhooks HTTP server (disabled unless RAVI_HTTP_PORT is set)
+# RAVI_HTTP_HOST=127.0.0.1
+# RAVI_HTTP_PORT=4211
+# ELEVENLABS_WEBHOOK_SECRET=
 `;
       writeFileSync(ENV_FILE, defaultEnv);
       if (!asJson) {
@@ -852,7 +894,7 @@ ANTHROPIC_API_KEY=
 
     if (asJson) {
       const payload = {
-        action: "env",
+        action: "env" as const,
         path: ENV_FILE,
         existedBefore,
         created: !existedBefore,
@@ -863,11 +905,136 @@ ANTHROPIC_API_KEY=
     }
 
     const editor = process.env.EDITOR || "nano";
+    let openedEditor = true;
     try {
       execSync(`${editor} ${ENV_FILE}`, { stdio: "inherit" });
     } catch {
+      openedEditor = false;
       console.log(`Edit the file manually: ${ENV_FILE}`);
     }
+    return {
+      action: "env" as const,
+      path: ENV_FILE,
+      existedBefore,
+      created: !existedBefore,
+      openedEditor,
+    };
+  }
+
+  @Command({
+    name: "init-admin-key",
+    description: "Bootstrap the admin runtime context-key. Refuses to run if any live admin context already exists.",
+  })
+  initAdminKey(
+    @Option({ flags: "--label <name>", description: "Label for the bootstrap context (default: hostname)" })
+    label?: string,
+    @Option({
+      flags: "--print-only",
+      description: "Print the rctx key without writing it to the credentials file",
+    })
+    printOnly = false,
+    @Option({
+      flags: "--no-store",
+      description: "Alias for --print-only (do not write to ~/.ravi/credentials.json)",
+    })
+    store = true,
+    @Option({
+      flags: "--from-env",
+      description:
+        "Read RAVI_BOOTSTRAP_KEY from env. Imports it as the admin context key when the registry is empty; idempotent if it matches an existing live admin context; fails loud if it conflicts.",
+    })
+    fromEnv = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const persist = printOnly === false && store !== false;
+    const resolvedLabel = label?.trim() || hostname() || "admin";
+
+    const live = listLiveAdminContexts();
+
+    if (fromEnv) {
+      const envKey = process.env.RAVI_BOOTSTRAP_KEY?.trim();
+      if (!envKey) {
+        fail("--from-env was passed but RAVI_BOOTSTRAP_KEY is not set");
+      }
+      if (!envKey.startsWith("rctx_")) {
+        fail("RAVI_BOOTSTRAP_KEY must be an rctx_* runtime context key");
+      }
+
+      if (live.length > 0) {
+        const resolved = resolveRuntimeContext(envKey, { touch: false });
+        const matching = resolved ? live.find((ctx) => ctx.contextId === resolved.contextId) : undefined;
+        if (matching) {
+          const payload = {
+            action: "init-admin-key" as const,
+            changed: false,
+            reason: "idempotent" as const,
+            contextId: matching.contextId,
+          };
+          if (asJson) {
+            printJson(payload);
+          } else {
+            console.log(`Admin context already configured: ${matching.contextId} (idempotent).`);
+          }
+          return payload;
+        }
+        fail(
+          `RAVI_BOOTSTRAP_KEY does not match any of the ${live.length} existing live admin context(s). ` +
+            "Revoke the existing admin contexts before importing a new one.",
+        );
+      }
+
+      const created = this.createBootstrapContext({
+        label: resolvedLabel,
+        contextKey: envKey,
+      });
+      const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
+      return this.printBootstrapResult({
+        created,
+        persisted,
+        persist,
+        asJson,
+        importedFromEnv: true,
+      });
+    }
+
+    if (live.length > 0) {
+      const payload = {
+        action: "init-admin-key" as const,
+        changed: false,
+        reason: "admin_context_exists" as const,
+        existing: live.map((ctx) => ({
+          contextId: ctx.contextId,
+          label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
+          kind: ctx.kind,
+          createdAt: ctx.createdAt,
+          expiresAt: ctx.expiresAt ?? null,
+        })),
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.error("Refusing to bootstrap: a live admin context already exists.\n");
+        for (const ctx of live) {
+          const label = typeof ctx.metadata?.label === "string" ? ctx.metadata.label : "-";
+          const expires = ctx.expiresAt ? new Date(ctx.expiresAt).toISOString() : "never";
+          console.error(`  - ${ctx.contextId}  kind=${ctx.kind}  label=${label}  expires=${expires}`);
+        }
+        console.error(
+          "\nRevoke them first via 'ravi context revoke <id>' if you really intend to rotate the bootstrap key.",
+        );
+      }
+      process.exit(2);
+    }
+
+    const created = this.createBootstrapContext({ label: resolvedLabel });
+    const persisted = persist ? this.persistBootstrapCredential(created.contextKey, created.entry) : null;
+    return this.printBootstrapResult({
+      created,
+      persisted,
+      persist,
+      asJson,
+      importedFromEnv: false,
+    });
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -935,5 +1102,103 @@ ANTHROPIC_API_KEY=
         /* ignore */
       }
     }
+  }
+
+  private createBootstrapContext(input: { label: string; contextKey?: string }) {
+    if (!dbGetAgent(ADMIN_BOOTSTRAP_AGENT_ID)) {
+      dbCreateAgent({
+        id: ADMIN_BOOTSTRAP_AGENT_ID,
+        cwd: RAVI_DIR,
+      });
+    }
+
+    grantRelation("agent", ADMIN_BOOTSTRAP_AGENT_ID, "admin", "system", "*", "config:admin-bootstrap");
+
+    const issuedAt = Date.now();
+    const expiresAt = issuedAt + DEFAULT_BOOTSTRAP_CONTEXT_TTL_MS;
+    const record = createRuntimeContext({
+      kind: ADMIN_BOOTSTRAP_KIND,
+      agentId: ADMIN_BOOTSTRAP_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*", source: "config:admin-bootstrap" }],
+      metadata: {
+        label: input.label,
+        host: hostname(),
+        bootstrap: true,
+      },
+      expiresAt,
+      contextKey: input.contextKey,
+    });
+
+    const entry = {
+      context_id: record.contextId,
+      agent_id: ADMIN_BOOTSTRAP_AGENT_ID,
+      label: input.label,
+      kind: ADMIN_BOOTSTRAP_KIND,
+      issued_at: record.createdAt,
+      expires_at: record.expiresAt ?? null,
+    };
+
+    return { record, contextKey: record.contextKey, entry, expiresAt };
+  }
+
+  private persistBootstrapCredential(
+    contextKey: string,
+    entry: ReturnType<DaemonCommands["createBootstrapContext"]>["entry"],
+  ) {
+    const path = getCredentialsPath();
+    let file;
+    try {
+      file = readCredentialsFile(path) ?? emptyCredentialsFile();
+    } catch (err) {
+      if (err instanceof CredentialsFileError && err.code === "permissions_too_loose") {
+        fail(err.message);
+      }
+      throw err;
+    }
+    const next = upsertCredentialsEntry(file, contextKey, entry, { setDefault: true });
+    writeCredentialsFile(next, path);
+    return { path };
+  }
+
+  private printBootstrapResult(input: {
+    created: ReturnType<DaemonCommands["createBootstrapContext"]>;
+    persisted: { path: string } | null;
+    persist: boolean;
+    asJson: boolean;
+    importedFromEnv: boolean;
+  }) {
+    const { created, persisted, persist, asJson, importedFromEnv } = input;
+    const payload = {
+      action: "init-admin-key" as const,
+      changed: true,
+      importedFromEnv,
+      contextId: created.record.contextId,
+      contextKey: created.contextKey,
+      agentId: ADMIN_BOOTSTRAP_AGENT_ID,
+      kind: ADMIN_BOOTSTRAP_KIND,
+      label: created.entry.label,
+      expiresAt: created.expiresAt,
+      credentialsPath: persisted?.path ?? null,
+      persisted: persist,
+    };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log("\nAdmin runtime context-key issued. Save this now — it will not be shown again.\n");
+    console.log(`  rctx: ${created.contextKey}`);
+    console.log(`  context_id: ${created.record.contextId}`);
+    console.log(`  agent: ${ADMIN_BOOTSTRAP_AGENT_ID}`);
+    console.log(`  kind: ${ADMIN_BOOTSTRAP_KIND}`);
+    console.log(`  label: ${created.entry.label}`);
+    console.log(`  expires: ${new Date(created.expiresAt).toISOString()}`);
+    if (persisted) {
+      console.log(`\nWritten to ${persisted.path} (mode 0600).`);
+      console.log("Set RAVI_CONTEXT_KEY in your env or rely on the credentials default to use this key.");
+    } else {
+      console.log("\nNot persisted (printed only). Save it somewhere safe.");
+    }
+    return payload;
   }
 }

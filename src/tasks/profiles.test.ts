@@ -589,10 +589,10 @@ describe("task profile catalog", () => {
     expect(validation[0]?.valid).toBeTrue();
   });
 
-  it("keeps the system catalog limited to the default profile", () => {
+  it("keeps the expected built-in task profiles available", () => {
     const profiles = listTaskProfiles().filter((profile) => profile.sourceKind === "system");
 
-    expect(profiles.map((profile) => profile.id)).toEqual(["default"]);
+    expect(profiles.map((profile) => profile.id)).toEqual(["default", "observed-task"]);
 
     const preview = previewTaskProfile("default", {
       title: "Default profile preview",
@@ -601,6 +601,13 @@ describe("task profile catalog", () => {
     expect(preview.profile.workspaceBootstrap.mode).toBe("inherit");
     expect(preview.primaryArtifact?.kind).toBe("task-doc");
     expect(preview.primaryArtifact?.path).toContain("TASK.md");
+
+    const observedPreview = previewTaskProfile("observed-task", {
+      title: "Observed profile preview",
+    });
+
+    expect(observedPreview.rendered.dispatch).toContain("sidecar observer is responsible");
+    expect(observedPreview.rendered.dispatch).toContain("do not call `ravi tasks report`");
   });
 });
 afterAll(() => mock.restore());

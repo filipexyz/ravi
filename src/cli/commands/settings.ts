@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
 import { nats } from "../../nats.js";
+import { parseDurationMs } from "../../cron/schedule.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -96,6 +97,22 @@ const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: s
       }
     },
   },
+  "tasks.sessionTtl": {
+    description: "Default TTL for task work sessions (duration like 1d, 12h, or off)",
+    validate: (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (["off", "false", "disabled", "none", "0"].includes(normalized)) return;
+      parseDurationMs(normalized);
+    },
+  },
+  "tasks.sessionTtl.knowledgeEngineer": {
+    description: "TTL for knowledge-engineer-* task work sessions (duration like 5m, 1h, or off)",
+    validate: (value: string) => {
+      const normalized = value.trim().toLowerCase();
+      if (["off", "false", "disabled", "none", "0"].includes(normalized)) return;
+      parseDurationMs(normalized);
+    },
+  },
   "whatsapp.groupPolicy": {
     description: `WhatsApp group policy (${GROUP_POLICIES.join(", ")})`,
     validate: (value: string) => {
@@ -141,6 +158,8 @@ function knownSettingDefault(key: string): string | null {
   if (key === "defaultAgent") return "main";
   if (key === "defaultDmScope") return "per-peer";
   if (key === "image.mode") return "fast";
+  if (key === "tasks.sessionTtl") return "1d";
+  if (key === "tasks.sessionTtl.knowledgeEngineer") return "5m";
   return null;
 }
 
@@ -191,45 +210,46 @@ export class SettingsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     const settings = dbListSettings();
+    const payload = buildSettingsListPayload(showLegacy);
 
     if (asJson) {
-      printJson(buildSettingsListPayload(showLegacy));
-      return;
-    }
+      printJson(payload);
+    } else {
+      console.log("\nSettings:\n");
 
-    console.log("\nSettings:\n");
-
-    // Show known settings with their current values
-    for (const [key, meta] of Object.entries(KNOWN_SETTINGS)) {
-      const value = settings[key] ?? "(not set)";
-      console.log(`  ${key}: ${value}`);
-      console.log(`    ${meta.description}\n`);
-    }
-
-    // Hide legacy account.* keys by default so they do not compete with instances.
-    const customKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS[k]);
-    const legacyKeys = customKeys.filter((k) => isLegacyAccountSetting(k));
-    const unknownKeys = customKeys.filter((k) => !isLegacyAccountSetting(k));
-
-    if (showLegacy && legacyKeys.length > 0) {
-      console.log("  Legacy settings shadowed by instances:");
-      for (const key of legacyKeys) {
-        console.log(`    ${key}: ${settings[key]}`);
+      // Show known settings with their current values
+      for (const [key, meta] of Object.entries(KNOWN_SETTINGS)) {
+        const value = settings[key] ?? "(not set)";
+        console.log(`  ${key}: ${value}`);
+        console.log(`    ${meta.description}\n`);
       }
-      console.log();
-    } else if (legacyKeys.length > 0) {
-      console.log(
-        `  Legacy account.* settings hidden by default: ${legacyKeys.length} key(s) shadowed by instances. Use --legacy to inspect them.\n`,
-      );
-    }
 
-    if (unknownKeys.length > 0) {
-      console.log("  Custom settings:");
-      for (const key of unknownKeys) {
-        console.log(`    ${key}: ${settings[key]}`);
+      // Hide legacy account.* keys by default so they do not compete with instances.
+      const customKeys = Object.keys(settings).filter((k) => !KNOWN_SETTINGS[k]);
+      const legacyKeys = customKeys.filter((k) => isLegacyAccountSetting(k));
+      const unknownKeys = customKeys.filter((k) => !isLegacyAccountSetting(k));
+
+      if (showLegacy && legacyKeys.length > 0) {
+        console.log("  Legacy settings shadowed by instances:");
+        for (const key of legacyKeys) {
+          console.log(`    ${key}: ${settings[key]}`);
+        }
+        console.log();
+      } else if (legacyKeys.length > 0) {
+        console.log(
+          `  Legacy account.* settings hidden by default: ${legacyKeys.length} key(s) shadowed by instances. Use --legacy to inspect them.\n`,
+        );
       }
-      console.log();
+
+      if (unknownKeys.length > 0) {
+        console.log("  Custom settings:");
+        for (const key of unknownKeys) {
+          console.log(`    ${key}: ${settings[key]}`);
+        }
+        console.log();
+      }
     }
+    return payload;
   }
 
   @Command({ name: "get", description: "Get a setting value" })
@@ -239,37 +259,29 @@ export class SettingsCommands {
   ) {
     const value = dbGetSetting(key);
     const legacy = isLegacyAccountSetting(key);
+    const payload = { setting: serializeSetting(key, value) };
 
     if (asJson) {
-      printJson({ setting: serializeSetting(key, value) });
-      return;
-    }
-
-    if (value === null) {
+      printJson(payload);
+    } else if (value === null) {
       if (legacy) {
         console.log(`Legacy setting not set: ${key}`);
         console.log(`  ${legacyAccountSettingHint(key)}`);
-        return;
+      } else {
+        console.log(`Setting not set: ${key}`);
+        if (key === "defaultAgent") {
+          console.log("  Default: main");
+        } else if (key === "defaultDmScope") {
+          console.log("  Default: per-peer");
+        }
       }
-
-      console.log(`Setting not set: ${key}`);
-
-      // Show default if known
-      if (key === "defaultAgent") {
-        console.log("  Default: main");
-      } else if (key === "defaultDmScope") {
-        console.log("  Default: per-peer");
-      }
-      return;
-    }
-
-    if (legacy) {
+    } else if (legacy) {
       console.log(`Legacy setting shadowed by instances: ${key}: ${value}`);
       console.log(`  ${legacyAccountSettingHint(key)}`);
-      return;
+    } else {
+      console.log(`${key}: ${value}`);
     }
-
-    console.log(`${key}: ${value}`);
+    return payload;
   }
 
   @Command({ name: "set", description: "Set a setting value" })
@@ -303,18 +315,19 @@ export class SettingsCommands {
 
     try {
       dbSetSetting(key, value);
+      const payload = {
+        status: "set" as const,
+        target: { type: "setting" as const, key },
+        changedCount: 1,
+        setting: serializeSetting(key, value),
+      };
       if (asJson) {
-        printJson({
-          status: "set",
-          target: { type: "setting", key },
-          changedCount: 1,
-          setting: serializeSetting(key, value),
-        });
-        emitConfigChanged();
-        return;
+        printJson(payload);
+      } else {
+        console.log(`✓ ${key} set: ${value}`);
       }
-      console.log(`✓ ${key} set: ${value}`);
       emitConfigChanged();
+      return payload;
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
@@ -327,24 +340,22 @@ export class SettingsCommands {
   ) {
     const legacy = isLegacyAccountSetting(key);
     const deleted = dbDeleteSetting(key);
+    const payload = {
+      status: deleted ? ("deleted" as const) : ("not_found" as const),
+      target: { type: "setting" as const, key },
+      changedCount: deleted ? 1 : 0,
+      setting: serializeSetting(key, null),
+    };
     if (asJson) {
-      printJson({
-        status: deleted ? "deleted" : "not_found",
-        target: { type: "setting", key },
-        changedCount: deleted ? 1 : 0,
-        setting: serializeSetting(key, null),
-      });
-      if (deleted) emitConfigChanged();
-      return;
-    }
-
-    if (deleted) {
+      printJson(payload);
+    } else if (deleted) {
       console.log(
         legacy ? `\u2713 Deleted legacy setting shadowed by instances: ${key}` : `\u2713 Setting deleted: ${key}`,
       );
-      emitConfigChanged();
     } else {
       console.log(legacy ? `Legacy setting not found: ${key}` : `Setting not found: ${key}`);
     }
+    if (deleted) emitConfigChanged();
+    return payload;
   }
 }

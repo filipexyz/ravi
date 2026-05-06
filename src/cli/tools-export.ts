@@ -16,6 +16,7 @@ import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
 import { enforceScopeCheck } from "../permissions/scope.js";
+import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 
 // ============================================================================
 // Types
@@ -35,6 +36,7 @@ export interface ExportedTool {
     args: ArgMetadata[];
     options: OptionMetadata[];
     scope?: ScopeType;
+    skillGate?: SkillGateMetadata;
   };
 }
 
@@ -87,6 +89,11 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
       const normalizedGroup = groupMeta.name.replace(/\./g, "_");
 
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
+      const skillGate = resolveCommandSkillGate({
+        groupPath: groupMeta.name,
+        command: cmdMeta.name,
+        method: cmdMeta.method,
+      });
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -108,6 +115,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           args: argsMeta,
           options: optionsMeta,
           scope: effectiveScope,
+          ...(skillGate ? { skillGate } : {}),
         },
       });
     }

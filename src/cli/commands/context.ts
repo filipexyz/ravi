@@ -6,13 +6,27 @@ import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeRuntimeContext,
+  getContextLineage,
   RAVI_CONTEXT_KEY_ENV,
 } from "../../runtime/context-registry.js";
 import { dbGetContext, dbListContexts, type ContextRecord } from "../../router/router-db.js";
+import { listSessions, resolveSession } from "../../router/sessions.js";
+import { buildRuntimeSessionVisibilityPayload } from "../../runtime/session-visibility.js";
+import {
+  CredentialsFileError,
+  emptyCredentialsFile,
+  getCredentialsPath,
+  readCredentialsFile,
+  setDefaultCredentialsEntry,
+  upsertCredentialsEntry,
+  writeCredentialsFile,
+  type CredentialsFile,
+} from "../../runtime/credentials-store.js";
 import { canWithCapabilityContext } from "../../permissions/engine.js";
 import { authorizeRuntimeContext } from "../../approval/service.js";
 import type { ContextCapability } from "../../router/router-db.js";
 import { buildPreToolUseDenyResult, emitBashDeniedAudit, evaluateBashPermission } from "../../bash/hook.js";
+import { evaluateRuntimeCommandSkillGate } from "../../runtime/skill-gate.js";
 import {
   formatInspectionSection,
   printInspectionBlock,
@@ -100,6 +114,12 @@ interface ContextIssuePayload {
   env: Record<string, string>;
 }
 
+interface AgentRuntimeCleanupCandidate {
+  context: SerializedContextSummary;
+  lastSeenAt: number;
+  sessionExists: boolean;
+}
+
 @Group({
   name: "context",
   description: "Runtime context registry and introspection",
@@ -121,6 +141,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
+    return payload;
   }
 
   @Command({ name: "info", description: "Show full runtime context details without exposing the context key" })
@@ -135,6 +156,7 @@ export class ContextCommands {
 
     const payload = this.serializeContextDetail(context);
     this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Context"));
+    return payload;
   }
 
   @Command({ name: "whoami", description: "Resolve the current runtime context" })
@@ -142,6 +164,7 @@ export class ContextCommands {
     const context = this.requireResolvedContext();
     const payload = this.serializeContextDetail(context);
     this.printPayload(payload, asJson, () => this.printContextRecord(payload, RESOLVER_META, "Current Context"));
+    return payload;
   }
 
   @Command({ name: "capabilities", description: "List inherited capabilities for the current runtime context" })
@@ -157,6 +180,33 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printCapabilitiesPayload(payload));
+    return payload;
+  }
+
+  @Command({ name: "visibility", description: "Show the current context session visibility" })
+  visibility(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
+    const context = this.requireResolvedContext();
+    const session =
+      (context.sessionKey ? resolveSession(context.sessionKey) : null) ??
+      (context.sessionName ? resolveSession(context.sessionName) : null);
+    if (!session) {
+      fail("Current context is not linked to a live session.");
+    }
+
+    const payload = buildRuntimeSessionVisibilityPayload(session);
+    this.printPayload(payload, asJson, () => {
+      printInspectionField("Session Key", payload.sessionKey, RESOLVER_META);
+      printInspectionField("Agent", payload.agentId, RESOLVER_META);
+      printInspectionField("Provider", payload.provider ?? "-", RESOLVER_META);
+      printInspectionField("Loaded Skills", payload.loadedSkills.length, RESOLVER_META);
+      if (payload.skills.length > 0) {
+        console.log(`\n${formatInspectionSection(`  Skills (${payload.skills.length})`, RESOLVER_META)}`);
+        for (const skill of payload.skills) {
+          console.log(`  - ${skill.id} :: ${skill.state} :: ${skill.confidence}`);
+        }
+      }
+    });
+    return payload;
   }
 
   @Command({ name: "check", description: "Check whether the current runtime context allows an action" })
@@ -178,6 +228,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printCheckResult(payload));
+    return payload;
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
@@ -209,6 +260,7 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printAuthorizeResult(payload));
+    return payload;
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
@@ -257,16 +309,125 @@ export class ContextCommands {
     };
 
     this.printPayload(payload, asJson, () => this.printIssuedContext(payload));
+    return payload;
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
   revoke(
     @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
+    @Option({
+      flags: "--no-cascade",
+      description: "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
+    })
+    cascade = true,
+    @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
+    reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const context = revokeRuntimeContext(contextId);
-    const payload = this.serializeContextDetail(context);
-    this.printPayload(payload, asJson, () => this.printContextRecord(payload, CONTEXT_DB_META, "Revoked Context"));
+    if (cascade === false) {
+      console.error(
+        "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
+      );
+    }
+    const result = revokeRuntimeContext(contextId, { cascade, reason });
+    const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
+    this.printPayload(payload, asJson, () =>
+      this.printRevokeResult(payload.context, payload.cascaded, payload.revokedAt),
+    );
+    return payload;
+  }
+
+  @Command({
+    name: "cleanup-agent-runtime",
+    description: "Dry-run or revoke stale agent-runtime contexts left by old turn-scoped issuance",
+  })
+  cleanupAgentRuntime(
+    @Option({
+      flags: "--older-than <duration>",
+      description: "Only include contexts whose last use or creation is older than this duration (default: 1h)",
+    })
+    olderThan = "1h",
+    @Option({ flags: "--agent <agentId>", description: "Filter by agent ID" }) agentId?: string,
+    @Option({ flags: "--session <sessionKey>", description: "Filter by session key" }) sessionKey?: string,
+    @Option({ flags: "--reason <text>", description: "Revocation reason for audit metadata" })
+    reason = "agent_runtime_cleanup",
+    @Option({ flags: "--revoke", description: "Actually revoke matching contexts; omitted means dry-run" })
+    revoke = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const olderThanMs = parseDurationMs(olderThan);
+    if (olderThanMs === undefined) {
+      fail(`Invalid duration: "${olderThan}". Expected 30m, 2h or 1d`);
+    }
+
+    const now = Date.now();
+    const cutoffAt = now - olderThanMs;
+    const sessionKeys = new Set(listSessions().map((session) => session.sessionKey));
+    const candidates = dbListContexts({
+      agentId,
+      sessionKey,
+      kind: "agent-runtime",
+      includeInactive: false,
+    })
+      .filter((context) => context.kind === "agent-runtime")
+      .filter((context) => (agentId ? context.agentId === agentId : true))
+      .filter((context) => (sessionKey ? context.sessionKey === sessionKey : true))
+      .filter((context) => (context.lastUsedAt ?? context.createdAt) <= cutoffAt)
+      .map((context): AgentRuntimeCleanupCandidate => {
+        const key = context.sessionKey ?? "";
+        return {
+          context: this.serializeContextSummary(context),
+          lastSeenAt: context.lastUsedAt ?? context.createdAt,
+          sessionExists: key ? sessionKeys.has(key) : false,
+        };
+      });
+
+    const revoked = revoke
+      ? candidates.map((candidate) => {
+          const result = revokeRuntimeContext(candidate.context.contextId, { reason });
+          return this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
+        })
+      : [];
+
+    const payload = {
+      dryRun: !revoke,
+      reason: revoke ? reason : null,
+      olderThan,
+      olderThanMs,
+      cutoffAt,
+      scanned: {
+        kind: "agent-runtime",
+        agentId: agentId ?? null,
+        sessionKey: sessionKey ?? null,
+      },
+      candidatesCount: candidates.length,
+      revokedCount: revoked.length,
+      candidates,
+      revoked,
+    };
+
+    this.printPayload(payload, asJson, () => this.printAgentRuntimeCleanup(payload));
+    return payload;
+  }
+
+  @Command({ name: "lineage", description: "Show ancestor chain and descendant tree for a runtime context" })
+  lineage(
+    @Arg("contextId", { description: "Context ID to inspect" }) contextId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const lineage = getContextLineage(contextId);
+    if (!lineage) {
+      fail(`Context not found: ${contextId}`);
+    }
+
+    const payload = {
+      context: this.serializeContextDetail(lineage.context),
+      ancestors: lineage.ancestors.map((c) => this.serializeContextSummary(c)),
+      descendants: lineage.descendants.map((c) => this.serializeContextSummary(c)),
+    };
+
+    this.printPayload(payload, asJson, () => this.printLineage(payload));
+    return payload;
   }
 
   @Command({
@@ -276,6 +437,7 @@ export class ContextCommands {
   codexBashHook(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson = false) {
     const output = this.handleCodexBashHook();
     console.log(JSON.stringify(output));
+    return output;
   }
 
   private requireResolvedContext(options: { touch?: boolean; readOnly?: boolean } = {}) {
@@ -331,6 +493,15 @@ export class ContextCommands {
       if (!decision.allowed) {
         emitBashDeniedAudit(command, decision, context.agentId);
         return buildPreToolUseDenyResult(decision.reason ?? "Bash command denied by Ravi");
+      }
+
+      const gateDecision = evaluateRuntimeCommandSkillGate({
+        commandLine: command,
+        context,
+        toolName: "Bash",
+      });
+      if (!gateDecision.allowed) {
+        return buildPreToolUseDenyResult(gateDecision.reason ?? "Command requires a skill before execution.");
       }
 
       return {};
@@ -495,6 +666,92 @@ export class ContextCommands {
     ].filter((value): value is string => Boolean(value));
   }
 
+  private serializeRevokeResult(
+    context: ContextRecord,
+    cascaded: ContextRecord[],
+    revokedAt: number,
+  ): { context: SerializedContextDetail; cascaded: SerializedContextSummary[]; revokedAt: number } {
+    return {
+      context: this.serializeContextDetail(context),
+      cascaded: cascaded.map((c) => this.serializeContextSummary(c)),
+      revokedAt,
+    };
+  }
+
+  private printRevokeResult(
+    context: SerializedContextDetail,
+    cascaded: SerializedContextSummary[],
+    revokedAt: number,
+  ): void {
+    this.printContextRecord(context, CONTEXT_DB_META, "Revoked Context");
+    console.log(`\n${formatInspectionSection(`  Cascaded (${cascaded.length})`, DERIVED_META)}`);
+    if (cascaded.length === 0) {
+      console.log("    (none)");
+    } else {
+      for (const ctx of cascaded) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+    printInspectionField("Revoked At", formatTimestamp(revokedAt), DERIVED_META);
+  }
+
+  private printAgentRuntimeCleanup(payload: {
+    dryRun: boolean;
+    olderThan: string;
+    cutoffAt: number;
+    candidatesCount: number;
+    revokedCount: number;
+    candidates: AgentRuntimeCleanupCandidate[];
+  }): void {
+    const mode = payload.dryRun ? "dry-run" : "revoked";
+    console.log(`\n${formatInspectionSection(`Agent Runtime Cleanup (${mode})`, CONTEXT_DB_META)}\n`);
+    printInspectionField("Older Than", payload.olderThan, DERIVED_META);
+    printInspectionField("Cutoff", formatTimestamp(payload.cutoffAt), DERIVED_META);
+    printInspectionField("Candidates", payload.candidatesCount, CONTEXT_DB_META);
+    printInspectionField("Revoked", payload.revokedCount, DERIVED_META);
+    if (payload.candidates.length === 0) {
+      console.log("\n  (none)");
+      return;
+    }
+    console.log();
+    for (const candidate of payload.candidates) {
+      const context = candidate.context;
+      console.log(
+        `- ${context.contextId} :: agent=${context.agentId ?? "-"} session=${context.sessionName ?? context.sessionKey ?? "-"}`,
+      );
+      console.log(
+        `  lastSeen=${formatTimestamp(candidate.lastSeenAt)} sessionExists=${candidate.sessionExists ? "yes" : "no"}`,
+      );
+    }
+    if (payload.dryRun) {
+      console.log("\nRun again with --revoke to revoke these contexts.");
+    }
+  }
+
+  private printLineage(payload: {
+    context: SerializedContextDetail;
+    ancestors: SerializedContextSummary[];
+    descendants: SerializedContextSummary[];
+  }): void {
+    this.printContextRecord(payload.context, CONTEXT_DB_META, "Context Lineage");
+    console.log(`\n${formatInspectionSection(`  Ancestors (${payload.ancestors.length})`, DERIVED_META)}`);
+    if (payload.ancestors.length === 0) {
+      console.log("    (root)");
+    } else {
+      for (const ctx of payload.ancestors) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+    console.log(`\n${formatInspectionSection(`  Descendants (${payload.descendants.length})`, DERIVED_META)}`);
+    if (payload.descendants.length === 0) {
+      console.log("    (none)");
+    } else {
+      for (const ctx of payload.descendants) {
+        console.log(`    - ${ctx.contextId} :: ${ctx.kind} :: status=${ctx.status} :: agent=${ctx.agentId ?? "-"}`);
+      }
+    }
+  }
+
   private serializeContextSummary(context: ContextRecord): SerializedContextSummary {
     const lineage = this.extractLineage(context);
     return {
@@ -542,6 +799,173 @@ export class ContextCommands {
     if (context.expiresAt && context.expiresAt <= Date.now()) return "expired";
     return "active";
   }
+}
+
+interface SerializedCredentialEntry {
+  contextKey: string;
+  contextId: string;
+  agentId: string | null;
+  label: string | null;
+  kind: string | null;
+  issuedAt: number;
+  expiresAt: number | null;
+  isDefault: boolean;
+}
+
+@Group({
+  name: "context.credentials",
+  description: "Manage the local runtime context credentials store (~/.ravi/credentials.json)",
+  scope: "open",
+})
+export class ContextCredentialsCommands {
+  @Command({ name: "list", description: "List entries in the local credentials store" })
+  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    const exists = file !== null;
+    const data = file ?? emptyCredentialsFile();
+    const entries = serializeCredentialsFile(data);
+    const payload = { path, exists, default: data.default ?? null, entries };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`\nCredentials: ${path}`);
+      if (!exists) {
+        console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
+      } else {
+        console.log(`  default: ${data.default ?? "(none)"}`);
+        if (entries.length === 0) {
+          console.log("  (no entries)");
+        } else {
+          for (const entry of entries) {
+            const marker = entry.isDefault ? "*" : " ";
+            console.log(
+              `  ${marker} ${entry.contextKey} :: ${entry.kind ?? "-"} :: agent=${entry.agentId ?? "-"} label=${entry.label ?? "-"}`,
+            );
+            console.log(
+              `      contextId=${entry.contextId} issued=${formatTimestamp(entry.issuedAt)} expires=${formatTimestamp(
+                entry.expiresAt,
+              )}`,
+            );
+          }
+        }
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "add", description: "Add a runtime context-key to the local credentials store" })
+  add(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--label <label>", description: "Human label (defaults to hostname)" }) label?: string,
+    @Option({ flags: "--set-default", description: "Mark this entry as the default" }) setDefault = false,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    if (!contextKey.startsWith("rctx_")) {
+      fail(`Expected an rctx_* key, got "${contextKey.slice(0, 8)}..."`);
+    }
+    const record = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path) ?? emptyCredentialsFile();
+    const entry = {
+      context_id: record.contextId,
+      agent_id: record.agentId ?? "",
+      label: label ?? "",
+      kind: record.kind,
+      issued_at: record.createdAt,
+      expires_at: record.expiresAt ?? null,
+    };
+    const next = upsertCredentialsEntry(file, contextKey, entry, { setDefault });
+    writeCredentialsFile(next, path);
+    const payload = {
+      path,
+      default: next.default,
+      added: contextKey,
+    };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`Stored ${contextKey} in ${payload.path}${next.default === contextKey ? " (default)" : ""}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "set-default", description: "Mark a stored context-key as the default" })
+  setDefault(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    if (!file) {
+      fail(`No credentials file at ${path} — add an entry first with 'ravi context credentials add'`);
+    }
+    if (!(contextKey in file.contexts)) {
+      fail(`No credential entry for ${contextKey} — add it first with 'ravi context credentials add'`);
+    }
+    const next = setDefaultCredentialsEntry(file, contextKey);
+    writeCredentialsFile(next, path);
+    const payload = { path, default: next.default };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`Default credential set to ${contextKey}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
+  remove(
+    @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+  ) {
+    const path = getCredentialsPath();
+    const file = this.loadCredentialsOrFail(path);
+    if (!file || !(contextKey in file.contexts)) {
+      fail(`No credential entry for ${contextKey} in ${path}`);
+    }
+    const contexts = { ...file.contexts };
+    delete contexts[contextKey];
+    const nextDefault = file.default && file.default !== contextKey ? file.default : null;
+    const next: CredentialsFile = { version: file.version, default: nextDefault, contexts };
+    writeCredentialsFile(next, path);
+    const payload = { path, default: next.default, removed: contextKey };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log(`Removed ${contextKey} from ${payload.path}`);
+    }
+    return payload;
+  }
+
+  private loadCredentialsOrFail(path: string): CredentialsFile | null {
+    try {
+      return readCredentialsFile(path);
+    } catch (err) {
+      if (err instanceof CredentialsFileError) {
+        fail(err.message);
+      }
+      throw err;
+    }
+  }
+}
+
+function serializeCredentialsFile(data: CredentialsFile): SerializedCredentialEntry[] {
+  const entries: SerializedCredentialEntry[] = [];
+  for (const [contextKey, entry] of Object.entries(data.contexts ?? {})) {
+    entries.push({
+      contextKey,
+      contextId: entry.context_id,
+      agentId: entry.agent_id ?? null,
+      label: entry.label ?? null,
+      kind: entry.kind ?? null,
+      issuedAt: entry.issued_at,
+      expiresAt: entry.expires_at ?? null,
+      isDefault: data.default === contextKey,
+    });
+  }
+  return entries.sort((a, b) => b.issuedAt - a.issuedAt);
 }
 
 function formatTimestamp(value: number | null | undefined): string {

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { getDb } from "../router/router-db.js";
 import {
   dbAddTaskDependency,
   dbAddTaskComment,
@@ -30,6 +31,8 @@ import {
   dbReportTaskProgress,
   dbUnarchiveTask,
 } from "./task-db.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
+import { detachTagFromSelector, searchTagBindingsForSelector } from "../tags/service.js";
 
 const createdTaskIds: string[] = [];
 let stateDir: string | null = null;
@@ -43,7 +46,16 @@ beforeEach(async () => {
 afterEach(async () => {
   while (createdTaskIds.length > 0) {
     const id = createdTaskIds.pop();
-    if (id) dbDeleteTask(id);
+    if (id) {
+      for (const binding of searchTagBindingsForSelector({ selector: { task: id } }).bindings) {
+        detachTagFromSelector({
+          slug: binding.tagSlug,
+          selector: { task: id },
+          actor: "task-db-test",
+        });
+      }
+      dbDeleteTask(id);
+    }
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
@@ -322,6 +334,77 @@ describe("task-db", () => {
         limit: 1,
       }).map((task) => task.id),
     ).toEqual([child.task.id]);
+
+    attachTagSlugsToAsset({
+      assetType: "task",
+      assetId: child.task.id,
+      tags: ["Ops.Team"],
+      source: "task-db.test",
+      createdBy: "test",
+    });
+    expect(dbListTasks({ tagSlug: "Ops.Team" }).map((task) => task.id)).toEqual([child.task.id]);
+    expect(dbListTasks({ tagSlug: "missing.tag" })).toEqual([]);
+  });
+
+  it("filters and paginates task lists by stable updated cursor", () => {
+    const now = Date.now();
+    const old = dbCreateTask({
+      title: "Old task",
+      instructions: "Updated outside the default operational window",
+      createdBy: "test",
+    });
+    const newest = dbCreateTask({
+      title: "Newest task",
+      instructions: "Most recent task",
+      createdBy: "test",
+    });
+    const middle = dbCreateTask({
+      title: "Middle task",
+      instructions: "Second page anchor",
+      createdBy: "test",
+    });
+    const oldestVisible = dbCreateTask({
+      title: "Oldest visible task",
+      instructions: "Still inside the updated window",
+      createdBy: "test",
+    });
+    createdTaskIds.push(old.task.id, newest.task.id, middle.task.id, oldestVisible.task.id);
+
+    getDb()
+      .prepare("UPDATE tasks SET created_at = ?, updated_at = ? WHERE id = ?")
+      .run(now - 200_000_000, now - 200_000_000, old.task.id);
+    getDb()
+      .prepare("UPDATE tasks SET created_at = ?, updated_at = ? WHERE id = ?")
+      .run(now - 30_000, now - 30_000, newest.task.id);
+    getDb()
+      .prepare("UPDATE tasks SET created_at = ?, updated_at = ? WHERE id = ?")
+      .run(now - 20_000, now - 20_000, middle.task.id);
+    getDb()
+      .prepare("UPDATE tasks SET created_at = ?, updated_at = ? WHERE id = ?")
+      .run(now - 10_000, now - 10_000, oldestVisible.task.id);
+
+    const pageOne = dbListTasks({
+      updatedSince: now - 86_400_000,
+      sort: "updated",
+      order: "desc",
+      limit: 2,
+    });
+    expect(pageOne.map((task) => task.id)).toEqual([oldestVisible.task.id, middle.task.id]);
+    expect(pageOne.map((task) => task.id)).not.toContain(old.task.id);
+
+    const pageTwo = dbListTasks({
+      updatedSince: now - 86_400_000,
+      sort: "updated",
+      order: "desc",
+      limit: 2,
+      cursor: {
+        sort: "updated",
+        order: "desc",
+        value: pageOne[1].updatedAt,
+        id: pageOne[1].id,
+      },
+    });
+    expect(pageTwo.map((task) => task.id)).toEqual([newest.task.id]);
   });
 
   it("persists dependency edges, dependents, and satisfaction state", () => {

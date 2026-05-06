@@ -8,12 +8,14 @@ import {
 } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeSessionPoolSnapshot } from "./session-pool.js";
 
 const log = logger.child("runtime:prompt-subscription");
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
   getStreamingSessionCount(): number;
+  getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
   markConsumerReady(): void;
   handlePrompt(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void>;
 }
@@ -35,16 +37,24 @@ export class RuntimePromptSubscription {
       if (!this.options.isRunning()) return;
 
       if (!this.active) {
+        const runtimeSessionPool = this.options.getRuntimeSessionPoolSnapshot?.();
         log.warn("Subscriber health check: prompt subscription INACTIVE - forcing resubscribe", {
           promptsReceived: this.promptsReceived,
-          streamingSessions: this.options.getStreamingSessionCount(),
+          streamingSessions: runtimeSessionPool?.active ?? this.options.getStreamingSessionCount(),
+          runtimeSessionPoolLimit: runtimeSessionPool?.limit,
+          pendingStarts: runtimeSessionPool?.pendingStarts,
         });
+        this.emitRuntimeSessionPoolGauge(runtimeSessionPool);
         this.subscribe();
       } else {
+        const runtimeSessionPool = this.options.getRuntimeSessionPoolSnapshot?.();
         log.debug("Subscriber health check: OK", {
           promptsReceived: this.promptsReceived,
-          streamingSessions: this.options.getStreamingSessionCount(),
+          streamingSessions: runtimeSessionPool?.active ?? this.options.getStreamingSessionCount(),
+          runtimeSessionPoolLimit: runtimeSessionPool?.limit,
+          pendingStarts: runtimeSessionPool?.pendingStarts,
         });
+        this.emitRuntimeSessionPoolGauge(runtimeSessionPool);
       }
     }, healthCheckIntervalMs);
   }
@@ -95,7 +105,10 @@ export class RuntimePromptSubscription {
               const raw = sc.decode(msg.data);
               prompt = JSON.parse(raw) as RuntimeLaunchPrompt;
             } catch (err) {
-              log.error("Failed to parse session prompt", { error: err, subject: msg.subject });
+              log.error("Failed to parse session prompt", {
+                error: err,
+                subject: msg.subject,
+              });
               msg.nak();
               continue;
             }
@@ -113,11 +126,16 @@ export class RuntimePromptSubscription {
                 context: prompt.context,
                 deliveryBarrier: prompt.deliveryBarrier,
                 taskBarrierTaskId: prompt.taskBarrierTaskId,
+                commands: prompt.commands,
+                observation: prompt._observation,
                 _agentId: prompt._agentId,
                 timestamp: new Date().toISOString(),
               })
               .catch((error) => {
-                log.warn("Failed to emit prompt audit event", { sessionName, error });
+                log.warn("Failed to emit prompt audit event", {
+                  sessionName,
+                  error,
+                });
               });
             this.options.handlePrompt(sessionName, prompt).catch((err) => {
               log.error("Failed to handle prompt", err);
@@ -128,7 +146,9 @@ export class RuntimePromptSubscription {
             break;
           }
 
-          log.debug("Prompt pull window ended, renewing", { promptsReceived: this.promptsReceived });
+          log.debug("Prompt pull window ended, renewing", {
+            promptsReceived: this.promptsReceived,
+          });
         } catch (err) {
           if (!this.options.isRunning()) {
             break;
@@ -139,7 +159,9 @@ export class RuntimePromptSubscription {
             await ensureSessionPromptsStream();
             await ensureSessionConsumer(jsm);
           } else {
-            log.error("Prompt subscription error - will reconnect pull", { error: err });
+            log.error("Prompt subscription error - will reconnect pull", {
+              error: err,
+            });
           }
 
           await delay(1000);
@@ -157,6 +179,18 @@ export class RuntimePromptSubscription {
         setTimeout(() => this.subscribe(), 1000);
       }
     }
+  }
+
+  private emitRuntimeSessionPoolGauge(snapshot: RuntimeSessionPoolSnapshot | undefined): void {
+    if (!snapshot) return;
+    nats
+      .emit("ravi.runtime.session_pool.gauge", {
+        ...snapshot,
+        source: "prompt-subscription.health",
+      })
+      .catch((error) => {
+        log.warn("Failed to emit runtime session pool gauge", { error });
+      });
   }
 }
 

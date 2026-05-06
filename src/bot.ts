@@ -10,6 +10,7 @@ import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
 import { RuntimePromptSubscription } from "./runtime/prompt-subscription.js";
 import { safeEmit } from "./runtime/safe-emit.js";
 import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
+import { resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
 
 export type {
   ChannelContext,
@@ -20,8 +21,6 @@ export type {
 } from "./runtime/message-types.js";
 
 const log = logger.child("bot");
-
-const MAX_CONCURRENT_SESSIONS = 30;
 
 type StreamingSession = RuntimeHostStreamingSession;
 
@@ -48,9 +47,10 @@ export class RaviBot {
     });
     this.config = options.config;
     logger.setLevel(options.config.logLevel);
+    const maxConcurrentSessions = resolveRuntimeSessionPoolMax();
     this.sessionDispatcher = new RuntimeSessionDispatcher({
       instanceId: this.instanceId,
-      maxConcurrentSessions: MAX_CONCURRENT_SESSIONS,
+      maxConcurrentSessions,
       safeEmit,
       getConfigModel: () => this.config.model,
     });
@@ -62,6 +62,7 @@ export class RaviBot {
     this.promptSubscription = new RuntimePromptSubscription({
       isRunning: () => this.running,
       getStreamingSessionCount: () => this.streamingSessions.size,
+      getRuntimeSessionPoolSnapshot: () => this.sessionDispatcher.getRuntimeSessionPoolSnapshot(),
       markConsumerReady: () => this.markConsumerReady(),
       handlePrompt: (sessionName, prompt) => this.handlePrompt(sessionName, prompt),
     });
@@ -134,6 +135,10 @@ export class RaviBot {
     if (!session) return false;
     if (session.done) return false;
     return session.starting || session.turnActive || session.toolRunning || session.compacting;
+  }
+
+  public canAcceptRuntimePrompt(sessionName?: string): boolean {
+    return this.sessionDispatcher.canAcceptRuntimePrompt(sessionName);
   }
 
   private async handleRuntimeControlRequest(data: RuntimeControlNatsRequest): Promise<void> {

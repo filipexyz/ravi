@@ -5,6 +5,7 @@ afterAll(() => mock.restore());
 const actualRouterIndexModule = await import("../../router/index.js");
 const actualRouterSessionsModule = await import("../../router/sessions.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
+const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 
 type RuntimeEventPayload = Record<string, unknown>;
 type ResponseEventPayload = { response?: string; error?: string };
@@ -25,9 +26,11 @@ let chatHistory: Array<Record<string, unknown>> = [];
 let chatHistoryByChat: Array<Record<string, unknown>> = [];
 let messageMetadataRows: Array<Record<string, unknown>> = [];
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
+let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
 let renameSessionNameError: Error | null = null;
 let renameRouteReferencesUpdated = 0;
+const runtimeLiveStates = new Map<string, Record<string, unknown>>();
 
 function makeSubscription<T extends Record<string, unknown>>(events: T[]) {
   return (async function* () {
@@ -41,6 +44,7 @@ mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
   Scope: () => () => {},
+  CliOnly: () => () => {},
   Arg: () => () => {},
   Option: () => () => {},
 }));
@@ -89,7 +93,12 @@ mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => listedSessions,
   getSessionsByAgent: (agentId: string) => listedSessions.filter((session) => session.agentId === agentId),
-  deleteSession: () => {},
+  deleteSession: (sessionKey: string) => {
+    deletedSessionKeys.push(sessionKey);
+    listedSessions = listedSessions.filter((session) => session.sessionKey !== sessionKey);
+    if (resolvedSession?.sessionKey === sessionKey) resolvedSession = null;
+    return true;
+  },
   resetSession: () => {},
   resolveSession: () => resolvedSession,
   getOrCreateSession: () => null,
@@ -183,6 +192,31 @@ mock.module("../../transcripts.js", () => ({
   locateRuntimeTranscript: () => ({ path: null, reason: "Transcript not found" }),
 }));
 
+mock.module("../../runtime/live-state.js", () => ({
+  getRuntimeLiveStateForSession: (session: Record<string, unknown>) => {
+    const byName = typeof session.name === "string" ? runtimeLiveStates.get(session.name) : null;
+    if (byName) return byName;
+    const byKey = typeof session.sessionKey === "string" ? runtimeLiveStates.get(session.sessionKey) : null;
+    return byKey ?? null;
+  },
+}));
+
+mock.module("../../runtime/context-registry.js", () => ({
+  ...actualRuntimeContextRegistryModule,
+  revokeAgentRuntimeContextsForSession: () => [],
+}));
+
+mock.module("../../tags/helpers.js", () => ({
+  canonicalAssetIdsForTag: () => undefined,
+  filterItemsByCanonicalTag: <T>(items: T[]) => items,
+}));
+
+mock.module("../../tags/service.js", () => ({
+  searchTagBindingsForSelector: () => ({
+    bindings: [],
+  }),
+}));
+
 const { SessionCommands } = await import("./sessions.js");
 const { extractNormalizedTranscriptMessages } = await import("./sessions.js");
 
@@ -223,9 +257,11 @@ beforeEach(() => {
   chatHistoryByChat = [];
   messageMetadataRows = [];
   displayNameUpdates = [];
+  deletedSessionKeys = [];
   renameSessionNameCalls = [];
   renameSessionNameError = null;
   renameRouteReferencesUpdated = 0;
+  runtimeLiveStates.clear();
 });
 
 describe("SessionCommands wait mode", () => {
@@ -357,6 +393,114 @@ describe("SessionCommands list --json", () => {
       runtimeProvider: "codex",
       tokenTotal: 42,
     });
+    expect(payload.sessions[0]).not.toHaveProperty("live");
+  });
+
+  it("includes live runtime state when requested", () => {
+    runtimeLiveStates.set("main", {
+      activity: "thinking",
+      summary: "running",
+      updatedAt: 3000,
+      busySince: 2500,
+    });
+
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true, true);
+      }),
+    );
+
+    expect(payload.filters.live).toBe(true);
+    expect(payload.sessions[0].live).toMatchObject({
+      activity: "thinking",
+      summary: "running",
+      updatedAt: 3000,
+    });
+  });
+});
+
+describe("SessionCommands prune", () => {
+  beforeEach(() => {
+    const now = Date.now();
+    listedSessions = [
+      {
+        sessionKey: "agent:dev:stale",
+        name: "task-old-work",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "codex",
+        totalTokens: 100,
+        createdAt: now - 10 * 86_400_000,
+        updatedAt: now - 3 * 86_400_000,
+      },
+      {
+        sessionKey: "agent:dev:active-old",
+        name: "dev",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        runtimeProvider: "codex",
+        totalTokens: 200,
+        createdAt: now - 10 * 86_400_000,
+        updatedAt: now - 60_000,
+      },
+      {
+        sessionKey: "agent:main:stale",
+        name: "main-old",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        runtimeProvider: "codex",
+        totalTokens: 300,
+        createdAt: now - 5 * 86_400_000,
+        updatedAt: now - 4 * 86_400_000,
+      },
+    ];
+    natsEmits.length = 0;
+  });
+
+  it("dry-runs by default and matches inactivity from updatedAt, not createdAt", async () => {
+    const payload = JSON.parse(
+      await captureLogsAsync(async () => {
+        await new SessionCommands().prune("2d", "dev", false, undefined, false, true);
+      }),
+    );
+
+    expect(payload).toMatchObject({
+      action: "prune",
+      dryRun: true,
+      execute: false,
+      scanned: 2,
+      matched: 1,
+      deleted: 0,
+    });
+    expect(payload.candidates[0]).toMatchObject({
+      sessionKey: "agent:dev:stale",
+      name: "task-old-work",
+      agentId: "dev",
+    });
+    expect(deletedSessionKeys).toEqual([]);
+  });
+
+  it("deletes matched inactive sessions only when --execute is set", async () => {
+    const payload = JSON.parse(
+      await captureLogsAsync(async () => {
+        await new SessionCommands().prune("2d", "dev", false, "task-", true, true);
+      }),
+    );
+
+    expect(payload).toMatchObject({
+      action: "prune",
+      dryRun: false,
+      execute: true,
+      scanned: 2,
+      matched: 1,
+      deleted: 1,
+    });
+    expect(payload.results[0]).toMatchObject({
+      sessionKey: "agent:dev:stale",
+      changed: true,
+    });
+    expect(deletedSessionKeys).toEqual(["agent:dev:stale"]);
+    expect(natsEmits.some((event) => event.topic === "ravi.session.abort")).toBe(true);
   });
 });
 

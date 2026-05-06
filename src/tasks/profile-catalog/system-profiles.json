@@ -46,5 +46,53 @@
       "dispatchSummary": "The target session was instructed to edit TASK.md first, then sync through:",
       "dispatchEventMessage": "Dispatched to {{session.agentId}}/{{session.name}}. Dispatch summary surfaced here: load ravi-system-tasks and edit {{task.taskDocPath}} first, then sync via ravi tasks report|done|block|fail {{task.id}}."
     }
+  },
+  {
+    "id": "observed-task",
+    "version": "1",
+    "label": "Observed Task",
+    "description": "Doc-first task profile where a sidecar observer owns durable task status synchronization.",
+    "sessionNameTemplate": "<task-id>-work",
+    "workspaceBootstrap": {
+      "mode": "inherit",
+      "ensureTaskDir": true
+    },
+    "sync": {
+      "artifactFirst": true,
+      "taskDocument": {
+        "mode": "required"
+      }
+    },
+    "rendererHints": {
+      "label": "TASK.md + observer status",
+      "showTaskDoc": true,
+      "showWorkspace": true
+    },
+    "defaultTags": ["task.profile.observed-task", "task.observed", "task.status.observer"],
+    "inputs": [],
+    "completion": {
+      "summaryRequired": true,
+      "summaryLabel": "Summary"
+    },
+    "progress": {
+      "requireMessage": false,
+      "notes": "Durable progress is expected to be reported by an observer rule using the tasks observer profile."
+    },
+    "artifacts": [
+      {
+        "kind": "task-doc",
+        "label": "TASK.md",
+        "pathTemplate": "{{task.taskDocPath}}",
+        "primary": true
+      }
+    ],
+    "state": [],
+    "templates": {
+      "create": "## Observed Task Created\n\nTask: {{task.id}}\nTitle: {{task.title}}\nStatus: {{task.status}}\nReadiness: {{readiness.label}}\nPriority: {{task.priority}}\nProfile: {{profile.id}}@{{profile.version}}\nSurface: {{profile.rendererHints.label}}\nPrimary artifact: {{create.primaryArtifactLabel}} :: {{create.primaryArtifactPath}}\n\n## Prepare The Work Brief\n\nBefore dispatching, make the task brief explicit in the primary artifact. The worker will execute from the task context, while a sidecar observer updates durable task status from worker events.\n\nInclude:\n\n- Objective: the concrete outcome expected.\n- Context: relevant source of truth and constraints.\n- Scope in: what must be done now.\n- Scope out: what must not be done now.\n- Acceptance criteria: what proves this is done.\n- Validation plan: commands, checks, smoke tests, or review gates.\n- Handoff language: how the worker should state progress, blockers, failure, or done in normal responses.\n\n## Original Instructions\n\n{{task.instructions}}\n\n## Next\n\n{{create.nextSteps}}",
+      "dispatch": "[System] Execute: You are now responsible for Ravi task {{task.id}}.\n\nTitle: {{task.title}}\nPriority: {{task.priority}}\nWork session: {{session.name}}\nResponsible agent: {{session.agentId}}\n\nOperational context:\n- effective session cwd: {{session.cwd}}\n- contextual worktree: {{worktree.label}}\n- parent task: {{task.parentTaskId}}\n- effective profile: {{profile.id}}\n- primary artifact: {{task.taskDocPath}}\n\nObjective:\n{{task.instructions}}\n\nExecution instructions:\n- focus on doing the work; a sidecar observer is responsible for durable task status updates\n- read {{task.taskDocPath}} when it exists and keep it useful as the task artifact\n- do not call `ravi tasks report`, `ravi tasks block`, `ravi tasks done`, or `ravi tasks fail` unless the operator explicitly asks you to\n- when you make progress, state the concrete progress in your normal response\n- when blocked, state the blocker and the next human/system dependency clearly\n- when complete, state the completion summary and validation performed clearly\n- when failed, state the terminal failure reason clearly\n\nRules:\n- work in this session until done, blocked, interrupted, or failed\n- do not reply by describing the protocol\n- keep implementation and validation details concrete enough for the observer to update task state",
+      "resume": "[System] The daemon restarted. Continue observed task {{task.id}} (\"{{task.title}}\") from where you stopped.\nProgress: {{task.progress}}% | profile: {{profile.id}} | artifact: {{task.taskDocPath}}\nOperational context:\n- effective session cwd: {{session.cwd}}\n- contextual worktree: {{worktree.label}}\n\nRemember: keep doing the work and state progress/blocker/done/failure clearly in normal responses. The observer owns durable task status updates.",
+      "dispatchSummary": "The target session was instructed to execute the task and leave clear progress/blocker/done/failure signals for the observer.",
+      "dispatchEventMessage": "Dispatched observed task to {{session.agentId}}/{{session.name}}. Worker executes from {{task.taskDocPath}}; observer status sync is expected through an observer rule for profile observed-task."
+    }
   }
 ]

@@ -62,7 +62,10 @@ export class RuntimeHostSubscriptions {
             correlationId: data.correlationId,
             request: data,
           };
-          const aborted = this.options.dispatcher.abortSession(key, provenance);
+          const aborted = this.options.dispatcher.abortSession(
+            { sessionName: data.sessionName, sessionKey: data.sessionKey },
+            provenance,
+          );
           this.options
             .safeEmit(`ravi.session.${key}.runtime`, {
               type: "session.abort.received",

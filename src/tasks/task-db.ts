@@ -34,6 +34,7 @@ import {
 } from "./types.js";
 import { requireTaskProgressMessage } from "./progress-contract.js";
 import { normalizeTaskRuntimeOptions } from "./runtime-options.js";
+import { canonicalAssetIdsForTag } from "../tags/helpers.js";
 
 interface TaskRow {
   id: string;
@@ -509,6 +510,10 @@ function worktreeToColumns(worktree?: TaskWorktreeConfig): [string | null, strin
 
 function resolveTaskArchiveMode(mode?: TaskArchiveMode): TaskArchiveMode {
   return mode ?? "include";
+}
+
+function getTaskListSortColumn(sort: ListTasksOptions["sort"]): "updated_at" | "created_at" {
+  return sort === "created" ? "created_at" : "updated_at";
 }
 
 function parseTaskProfileState(raw: string | null): TaskProfileState | undefined {
@@ -1200,6 +1205,15 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     typeof options.limit === "number" && Number.isFinite(options.limit) && options.limit > 0
       ? Math.floor(options.limit)
       : null;
+  const sort = options.sort ?? options.cursor?.sort ?? "updated";
+  const order = options.order ?? options.cursor?.order ?? "desc";
+  const sortColumn = getTaskListSortColumn(sort);
+  const orderSql = order === "asc" ? "ASC" : "DESC";
+  const cursorComparator = order === "asc" ? ">" : "<";
+
+  if (options.cursor && (options.cursor.sort !== sort || options.cursor.order !== order)) {
+    throw new Error("Task list cursor sort/order does not match the requested list order.");
+  }
 
   if (options.status) {
     filters.push("status = ?");
@@ -1224,6 +1238,15 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     filters.push("profile_id = ?");
     params.push(options.profileId);
   }
+  if (options.tagSlug) {
+    const taggedTaskIds = canonicalAssetIdsForTag("task", options.tagSlug);
+    if (taggedTaskIds && taggedTaskIds.length === 0) {
+      filters.push("0 = 1");
+    } else if (taggedTaskIds) {
+      filters.push(`tasks.id IN (${taggedTaskIds.map(() => "?").join(", ")})`);
+      params.push(...taggedTaskIds);
+    }
+  }
   if (normalizedQuery) {
     filters.push("(LOWER(title) LIKE ? OR LOWER(instructions) LIKE ? OR LOWER(COALESCE(summary, '')) LIKE ?)");
     const like = `%${normalizedQuery}%`;
@@ -1233,6 +1256,18 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     filters.push("archived_at IS NULL");
   } else if (archiveMode === "only") {
     filters.push("archived_at IS NOT NULL");
+  }
+  if (typeof options.updatedSince === "number" && Number.isFinite(options.updatedSince)) {
+    filters.push("updated_at >= ?");
+    params.push(Math.floor(options.updatedSince));
+  }
+  if (typeof options.updatedUntil === "number" && Number.isFinite(options.updatedUntil)) {
+    filters.push("updated_at <= ?");
+    params.push(Math.floor(options.updatedUntil));
+  }
+  if (options.cursor) {
+    filters.push(`(${sortColumn} ${cursorComparator} ? OR (${sortColumn} = ? AND id ${cursorComparator} ?))`);
+    params.push(Math.floor(options.cursor.value), Math.floor(options.cursor.value), options.cursor.id);
   }
 
   const lineageCte = options.rootTaskId
@@ -1257,7 +1292,9 @@ export function dbListTasks(options: ListTasksOptions = {}): TaskRecord[] {
     params.push(normalizedLimit);
   }
   const rows = db
-    .prepare(`${lineageCte} SELECT * FROM tasks ${where} ORDER BY updated_at DESC${limitClause}`)
+    .prepare(
+      `${lineageCte} SELECT * FROM tasks ${where} ORDER BY ${sortColumn} ${orderSql}, id ${orderSql}${limitClause}`,
+    )
     .all(...params) as TaskRow[];
   return rows.map(rowToTask);
 }

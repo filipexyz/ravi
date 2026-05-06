@@ -1,139 +1,186 @@
 ---
 name: image
 description: |
-  Gera imagens via Gemini ou OpenAI. Use quando o usuário quiser:
+  Gera imagens via OpenAI (gpt-image-2 padrão) ou Gemini. Use quando o usuário pedir:
   - Gerar uma imagem a partir de texto
   - Editar/transformar uma imagem existente
   - Criar logos, ilustrações, arte
-  - Gerar e enviar imagem direto no chat
+  - Mockups de UI, infográficos, ads
 ---
 
-# Image Generation
+# Image
 
-Gera imagens usando o provider configurado para a sessão/instância ou passado no CLI.
-Não existe fallback automático entre providers: se OpenAI falhar, o comando falha; para usar Gemini, rode explicitamente com `--provider gemini`.
-
-## Como usar
-
-### Gerar imagem simples
-```bash
-ravi image generate "a purple cat floating in space"
-```
-
-### Gerar com OpenAI Image2
-```bash
-ravi image generate "system diagram for Ravi image generation" --provider openai --model gpt-image-2
-```
-
-### Modo quality (3 Pro — mais detalhado, mais lento)
-```bash
-ravi image generate "product photo of sneakers" --mode quality
-```
-
-### Modo fast (3.1 Flash — padrão, rápido)
-```bash
-ravi image generate "abstract art" --mode fast
-```
-
-### Editar imagem existente (source)
-```bash
-ravi image generate "remove the background and add a sunset" --source /tmp/photo.png
-```
-
-### Aspect ratio e tamanho
-```bash
-ravi image generate "instagram story background" --aspect 9:16 --size 2K
-```
-
-### Alta resolução 4K
-```bash
-ravi image generate "landscape wallpaper" --aspect 16:9 --size 4K
-```
-
-### Gerar e enviar direto no chat
-```bash
-ravi image generate "coffee shop interior" --send
-```
-
-### Salvar em diretório específico
-```bash
-ravi image generate "product mockup" -o /tmp/mockups
-```
-
-## Opções
-
-| Flag | Descrição | Default |
-|------|-----------|---------|
-| `--provider <provider>` | `gemini` ou `openai` | default da sessão/instância/config |
-| `--model <model>` | Modelo do provider (`gpt-image-2`, etc) | default configurado |
-| `--mode <type>` | `fast` (3.1 Flash) ou `quality` (3 Pro) | `fast` |
-| `--source <path>` | Imagem de referência pra edição | — |
-| `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` | auto |
-| `--size <size>` | `1K`, `2K`, `4K` | `1K` |
-| `--quality <quality>` | OpenAI: `low`, `medium`, `high`, `auto` | por mode/default |
-| `--format <format>` | OpenAI: `png`, `jpeg`, `webp` | `png` |
-| `--compression <0-100>` | OpenAI jpeg/webp compression | provider default |
-| `--background <mode>` | OpenAI: `transparent`, `opaque`, `auto` | provider default |
-| `-o, --output <dir>` | Diretório de saída | `/tmp` |
-| `--send` | Envia pro chat automaticamente | `false` |
-| `--caption <text>` | Caption ao enviar (com `--send`) | prompt |
-
-## Retorno
-
-O comando retorna o path da imagem gerada + o comando pra enviar:
-```
-✓ Image saved: /tmp/ravi-image-1234567890.png
-  Artifact: art_xxx
-  Send to chat: ravi media send "/tmp/ravi-image-1234567890.png"
-```
-
-Se usar `--send`, o Ravi envia direto via `omni send` e só considera sucesso depois que o pedido de entrega foi aceito pelo Omni. Quando existir thread/topic no contexto, ela é preservada.
-
-## Fluxo recomendado
-
-1. Rode `ravi image generate "prompt"` — gera a imagem
-2. Se precisa enviar pro chat, use `--send` ou copie o comando `ravi media send` do output
-3. Pra editar uma imagem: passe `--source` com o path da imagem original
-
-## Limitações
-
-- Modelos são preview — podem mudar
-- Requer a API key do provider selecionado no `~/.ravi/.env`
-- Prompts podem ser bloqueados por filtros de segurança
-- Source image: PNG, JPEG, WebP, GIF
-
-## Configuração
-
-- `GEMINI_API_KEY` — obrigatória, no `~/.ravi/.env`
-- `GEMINI_IMAGE_MODEL` — override do modelo (ignora --mode)
-- `OPENAI_API_KEY` — obrigatória para `--provider openai`
-- `OPENAI_IMAGE_MODEL` — override do modelo OpenAI
-- `RAVI_IMAGE_PROVIDER` / `RAVI_IMAGE_MODEL` — defaults globais por env
-
-## Artifacts
-
-Toda imagem gerada é registrada automaticamente em `ravi artifacts` com:
-
-- arquivo bruto copiado para o blob store local
-- `sha256`, tamanho e MIME
-- provider, model, prompt, duração e usage/tokens quando disponível
-- sessão, agent, canal e chat quando houver contexto Ravi
-- metadata, metrics, lineage, input e output estruturados
-
-Para inspecionar:
+## TL;DR
 
 ```bash
-ravi artifacts list --kind image
-ravi artifacts show <artifact-id> --json
+ravi image generate "<prompt>"
 ```
 
-### Default por instância
+Comportamento padrão:
+- **Async**: retorna na hora um `artifact_id`, geração roda em background
+- **Auto-send**: se a sessão tem chat de origem, a imagem é enviada lá automaticamente quando completar
+- **Lifecycle events**: a sessão é notificada de completed/failed sem precisar de polling
+- **Provider/modelo**: `openai` + `gpt-image-2` (configurável por instância)
+
+NÃO faça polling. NÃO use `--sync`. NÃO use `--send` se há chat de origem. Os eventos chegam sozinhos.
+
+## Comandos
+
+| Comando | Uso |
+|---|---|
+| `ravi image generate "prompt"` | Comando principal — gera 1 imagem |
+| `ravi image atlas split <atlas>` | Corta atlas/contact sheet em N crops |
+
+## Casos de uso
+
+### 1. Gerar imagem nova
+```bash
+ravi image generate "purple cat floating in space, cinematic lighting"
+```
+
+### 2. Editar imagem existente
+```bash
+ravi image generate "remove background, add sunset" --source /tmp/photo.png
+```
+
+### 3. Aspect ratio e tamanho
+```bash
+ravi image generate "instagram story" --aspect 9:16 --size 2K
+```
+
+### 4. Múltiplas imagens consistentes (atlas)
+Pra reduzir custo e manter estilo coerente, gere 1 atlas e divida:
+```bash
+ravi image generate "atlas 3x2 grid, 6 product variants, no gutter, no margin, photorealistic" \
+  --aspect 3:2 --size 4K
+# após completar:
+ravi image atlas split /path/to/atlas.png \
+  --cols 3 --rows 2 \
+  --names red,blue,green,yellow,black,white \
+  --send
+```
+
+`--mode raw` é o default e corta exato; use `--mode trim` apenas se o atlas saiu com gutter.
+
+## Opções principais (`generate`)
+
+| Flag | Descrição |
+|---|---|
+| `--aspect <ratio>` | `1:1`, `2:3`, `3:2`, `3:4`, `4:3`, `9:16`, `16:9`, `21:9` |
+| `--size <size>` | `1K`, `2K`, `4K` (default `1K`) |
+| `--source <path>` | Imagem de referência pra edição (PNG/JPEG/WebP/GIF) |
+| `--caption "<texto>"` | Caption ao enviar (default = prompt) |
+| `--quality <level>` | `low`, `medium`, `high`, `auto` (default `auto`) |
+| `--format <fmt>` | `png`, `jpeg`, `webp` |
+| `--background <mode>` | `transparent`, `opaque`, `auto` |
+
+### Quality lever
+- Comece com `--quality low` quando latência importa (ad iteration, mockup rápido)
+- Use `medium` ou `high` pra texto pequeno, infográfico denso, retrato close-up, identidade
+- `auto` é seguro pra maioria dos casos
+
+## Opções avançadas (raras)
+
+| Flag | Quando usar |
+|---|---|
+| `--provider gemini` | Forçar Gemini em vez de OpenAI |
+| `--model <model>` | Override do modelo do provider |
+| `--sync` | **Só** quando o script local precisa do path do arquivo |
+| `--send` | Forçar envio quando contexto não tem chat origem |
+| `-o <dir>` | Salvar em diretório específico (default `/tmp`) |
+| `--compression <0-100>` | jpeg/webp output compression |
+
+## Prompting — fundamentos do gpt-image-2
+
+Esses padrões vieram de teste em produção do OpenAI Image2. Aplique conforme a tarefa:
+
+### Estrutura + objetivo
+Escreva na ordem: **background/cena → subject → detalhes-chave → constraints**. Inclua o uso pretendido (ad, UI mock, infográfico) — isso seta o "modo" e nível de polimento. Pra prompts complexos, use seções rotuladas curtas em vez de um parágrafo longo.
+
+### Formato de prompt
+Qualquer formato funciona se a intenção for clara: prompt mínimo, parágrafo descritivo, JSON-like, instruction-style, tag-based. Pra sistemas em produção, prefira template skimmable em vez de sintaxe esperta.
+
+### Especificidade + quality cues
+Seja concreto sobre **materiais, formas, texturas e meio visual** (photo, watercolor, 3D render). Adicione "alavancas de qualidade" só quando precisar:
+- `film grain`
+- `textured brushstrokes`
+- `macro detail`
+
+Pra fotorrealismo, **inclua a palavra `photorealistic` no prompt** — isso engaja o modo fotorrealista do modelo. Alternativas: `real photograph`, `taken on a real camera`, `professional photography`, `iPhone photo`. Specs detalhadas de câmera (lens, ISO, etc) são interpretadas livremente — use mais pra look/composição que pra simulação física exata.
+
+### Composição
+- **Framing**: close-up, wide, top-down
+- **Ângulo**: eye-level, low-angle, dutch tilt
+- **Luz/mood**: soft diffuse, golden hour, high-contrast, neon
+- **Layout**: "logo top-right", "subject centered with negative space on left"
+
+Pra cenas wide, cinematic, low-light, chuva ou neon, adicione **escala, atmosfera e cor** explícitas — senão o modelo troca mood por surface realism.
+
+### Pessoas, pose e ação
+Descreva escala, body framing, olhar e interação com objetos:
+- `full body visible, feet included`
+- `child-sized relative to the table`
+- `looking down at the open book, not at the camera`
+- `hands naturally gripping the handlebars`
+
+### Constraints (o que mudar vs preservar)
+Explicite exclusões e invariantes:
+- `no watermark`, `no extra text`, `no logos/trademarks`
+- `preserve identity / geometry / layout / brand elements`
+
+Pra edits cirúrgicos: **`change only X` + `keep everything else the same`**, e repita a preserve-list em cada iteração. Se for surgical, diga também: `do not alter saturation, contrast, layout, arrows, labels, camera angle, or surrounding objects`.
+
+### Texto na imagem
+- Coloque texto literal em **aspas** ou **CAIXA ALTA**
+- Especifique tipografia: font style, size, color, placement
+- Pra palavras difíceis (nomes de marca, grafia incomum), **soletre letra-por-letra**
+- Use `--quality medium` ou `high` pra texto pequeno, painel denso, multi-font
+
+### Múltiplas imagens (compositing)
+Referencie cada input por índice e descrição:
+- `Image 1: product photo. Image 2: style reference.`
+- `Apply Image 2's style to Image 1`
+- `Put the bird from Image 1 on the elephant in Image 2`
+
+### Iterar em vez de sobrecarregar
+Comece com prompt limpo e refine com mudanças pequenas single-shot:
+- `make lighting warmer`
+- `remove the extra tree`
+- `restore the original background`
+
+Use referências como `same style as before` ou `the subject` pra leverage de contexto. Re-especifique detalhes críticos se eles começarem a deriva.
+
+## Defaults (configurar uma vez)
+
+Por instância:
 ```bash
 ravi instances set main defaults '{"image_provider":"openai","image_model":"gpt-image-2","image_quality":"auto","image_format":"png"}'
 ```
 
-### Default global
+Global:
 ```bash
 ravi settings set image.provider openai
 ravi settings set image.model gpt-image-2
 ```
+
+## Inspecionar artifacts (debug)
+
+Toda imagem é registrada em `ravi artifacts`. Pra inspeção manual:
+```bash
+ravi artifacts list --kind image
+ravi artifacts show <artifact-id> --json
+ravi artifacts events <artifact-id> --json
+```
+
+## Limitações
+- API key obrigatória no `~/.ravi/.env`: `OPENAI_API_KEY` (default) ou `GEMINI_API_KEY`
+- Prompts podem ser bloqueados por filtros de segurança
+- Modelos são preview — podem mudar comportamento
+
+## Não fazer
+
+- ❌ Polling em loop esperando o artifact
+- ❌ `--sync` sem motivo claro (trava a sessão até o provider responder)
+- ❌ `--send` quando a sessão já tem chat de origem (auto-send acontece)
+- ❌ Prompt único gigante quando dá pra iterar em passos
+- ❌ Specs de câmera ultra-precisas esperando simulação física exata

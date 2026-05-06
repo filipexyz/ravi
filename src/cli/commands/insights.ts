@@ -8,6 +8,8 @@ import {
   dbListInsights,
   dbSearchInsights,
 } from "../../insights/index.js";
+import { attachTagSlugsToAsset, canonicalAssetIdsForTag, canonicalTagSlugsForAsset } from "../../tags/index.js";
+import { buildOverlayInsightsPayload } from "../../whatsapp-overlay/insights.js";
 import {
   INSIGHT_CONFIDENCE,
   INSIGHT_IMPORTANCE,
@@ -84,6 +86,15 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function parseStringList(value: string | string[] | undefined): string[] {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .flatMap((item) => item.split(","))
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 @Group({
   name: "insights",
   description: "Operational insights with explicit lineage",
@@ -112,6 +123,8 @@ export class InsightCommands {
     @Option({ flags: "--auto-context", description: "Auto-link the current runtime session and agent when present" })
     autoContext?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--tag <tag...>", description: "Canonical tags; can be repeated or comma-separated" })
+    tags?: string[],
   ) {
     const author = resolveRuntimeActor();
     const ctx = getContext();
@@ -167,22 +180,32 @@ export class InsightCommands {
           author,
         })
       : undefined;
+    const tagBindings = attachTagSlugsToAsset({
+      assetType: "insight",
+      assetId: created.id,
+      tags: parseStringList(tags),
+      source: "insights.cli",
+      createdBy: author.name,
+    });
     const insight = createdComment ? (dbGetInsight(created.id) ?? created) : created;
 
-    if (asJson) {
-      printJson({
-        success: true,
-        insight,
-        ...(createdComment ? { comment: createdComment } : {}),
-      });
-      return insight;
-    }
+    const payload = {
+      success: true as const,
+      insight,
+      ...(createdComment ? { comment: createdComment } : {}),
+      tags: tagBindings.map((binding) => binding.tagSlug),
+    };
 
-    console.log(`✓ Insight created: ${created.id}`);
-    console.log(`  Kind:       ${created.kind}`);
-    console.log(`  Confidence: ${created.confidence}`);
-    console.log(`  Importance: ${created.importance}`);
-    console.log(`  Summary:    ${created.summary}`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Insight created: ${created.id}`);
+      console.log(`  Kind:       ${created.kind}`);
+      console.log(`  Confidence: ${created.confidence}`);
+      console.log(`  Importance: ${created.importance}`);
+      console.log(`  Summary:    ${created.summary}`);
+    }
+    return payload;
   }
 
   @Command({ name: "list", description: "List recent insights with optional filters" })
@@ -194,49 +217,62 @@ export class InsightCommands {
     @Option({ flags: "--session <name>", description: "Filter by linked session" }) sessionName?: string,
     @Option({ flags: "--agent <id>", description: "Filter by linked agent" }) agentId?: string,
     @Option({ flags: "--profile <id>", description: "Filter by linked profile" }) profileId?: string,
+    @Option({ flags: "--tag <tag>", description: "Filter by canonical tag" }) tag?: string,
     @Option({ flags: "--query <text>", description: "Free-text search over summaries/details/comments" })
     query?: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--rich",
+      description:
+        "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+    })
+    rich?: boolean,
   ) {
     const parsedLimit = Number.parseInt(limit ?? "20", 10);
     if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
       fail(`Invalid --limit: ${limit}`);
     }
 
+    if (rich) {
+      const payload = buildOverlayInsightsPayload({ limit: parsedLimit });
+      printJson(payload);
+      return payload;
+    }
+
     const linkFilter = resolveLinkFilter({ taskId, sessionName, agentId, profileId });
+    const insightIds = canonicalAssetIdsForTag("insight", tag);
     const queryInput: InsightListQuery = {
       ...(requireInsightKind(kind) ? { kind: requireInsightKind(kind) } : {}),
       ...(requireConfidence(confidence) ? { confidence: requireConfidence(confidence) } : {}),
       ...(requireImportance(importance) ? { importance: requireImportance(importance) } : {}),
       ...(query?.trim() ? { text: query.trim() } : {}),
       ...(linkFilter.linkType && linkFilter.linkId ? linkFilter : {}),
+      ...(insightIds ? { insightIds } : {}),
       limit: parsedLimit,
     };
     const items = dbListInsights(queryInput);
+    const payload = {
+      count: items.length,
+      query: { ...queryInput, tag: tag?.trim() || undefined },
+      insights: items,
+    };
 
     if (asJson) {
-      printJson({
-        count: items.length,
-        query: queryInput,
-        insights: items,
-      });
-      return items;
-    }
-
-    if (items.length === 0) {
+      printJson(payload);
+    } else if (items.length === 0) {
       console.log("No insights found.");
-      return;
+    } else {
+      console.log(`\nInsights (${items.length})\n`);
+      console.log("  ID              KIND         CONF.   IMP.    UPDATED      SUMMARY");
+      console.log("  --------------  -----------  ------  ------  ----------  --------------------------------");
+      for (const item of items) {
+        console.log(
+          `  ${item.id.padEnd(14)}  ${item.kind.padEnd(11)}  ${item.confidence.padEnd(6)}  ${item.importance.padEnd(6)}  ${formatTimestamp(item.updatedAt).padEnd(10)}  ${item.summary.slice(0, 32)}`,
+        );
+      }
     }
-
-    console.log(`\nInsights (${items.length})\n`);
-    console.log("  ID              KIND         CONF.   IMP.    UPDATED      SUMMARY");
-    console.log("  --------------  -----------  ------  ------  ----------  --------------------------------");
-    for (const item of items) {
-      console.log(
-        `  ${item.id.padEnd(14)}  ${item.kind.padEnd(11)}  ${item.confidence.padEnd(6)}  ${item.importance.padEnd(6)}  ${formatTimestamp(item.updatedAt).padEnd(10)}  ${item.summary.slice(0, 32)}`,
-      );
-    }
+    return payload;
   }
 
   @Command({ name: "show", description: "Show one insight with lineage and comments" })
@@ -249,34 +285,40 @@ export class InsightCommands {
       fail(`Insight not found: ${id}`);
     }
 
-    if (asJson) {
-      printJson({ insight });
-      return insight;
-    }
+    const tags = canonicalTagSlugsForAsset("insight", insight.id);
+    const payload = { insight, tags };
 
-    console.log(`\nInsight: ${insight.id}`);
-    console.log(`  Kind:       ${insight.kind}`);
-    console.log(`  Confidence: ${insight.confidence}`);
-    console.log(`  Importance: ${insight.importance}`);
-    console.log(`  Author:     ${insight.author.name}`);
-    console.log(`  Origin:     ${insight.origin.kind}`);
-    console.log(`  Created:    ${formatTimestamp(insight.createdAt)}`);
-    console.log(`\nSummary:\n${insight.summary}`);
-    if (insight.detail) {
-      console.log(`\nDetail:\n${insight.detail}`);
-    }
-    if (insight.links.length > 0) {
-      console.log("\nLinks:");
-      for (const link of insight.links) {
-        console.log(`  - ${link.targetType}: ${link.targetId}`);
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\nInsight: ${insight.id}`);
+      console.log(`  Kind:       ${insight.kind}`);
+      console.log(`  Confidence: ${insight.confidence}`);
+      console.log(`  Importance: ${insight.importance}`);
+      console.log(`  Author:     ${insight.author.name}`);
+      console.log(`  Origin:     ${insight.origin.kind}`);
+      console.log(`  Created:    ${formatTimestamp(insight.createdAt)}`);
+      console.log(`\nSummary:\n${insight.summary}`);
+      if (insight.detail) {
+        console.log(`\nDetail:\n${insight.detail}`);
+      }
+      if (insight.links.length > 0) {
+        console.log("\nLinks:");
+        for (const link of insight.links) {
+          console.log(`  - ${link.targetType}: ${link.targetId}`);
+        }
+      }
+      if (tags.length > 0) {
+        console.log(`\nTags: ${tags.join(", ")}`);
+      }
+      if (insight.comments.length > 0) {
+        console.log("\nComments:");
+        for (const comment of insight.comments) {
+          console.log(`  - ${comment.author.name}: ${comment.body}`);
+        }
       }
     }
-    if (insight.comments.length > 0) {
-      console.log("\nComments:");
-      for (const comment of insight.comments) {
-        console.log(`  - ${comment.author.name}: ${comment.body}`);
-      }
-    }
+    return payload;
   }
 
   @Command({ name: "search", description: "Search insights by free text" })
@@ -291,30 +333,29 @@ export class InsightCommands {
     }
 
     const items = dbSearchInsights(text.trim(), { limit: parsedLimit });
+    const payload = {
+      count: items.length,
+      query: {
+        text: text.trim(),
+        limit: parsedLimit,
+      },
+      insights: items,
+    };
+
     if (asJson) {
-      printJson({
-        count: items.length,
-        query: {
-          text: text.trim(),
-          limit: parsedLimit,
-        },
-        insights: items,
-      });
-      return items;
-    }
-
-    if (items.length === 0) {
+      printJson(payload);
+    } else if (items.length === 0) {
       console.log("No insights found.");
-      return;
+    } else {
+      console.log(`\nInsights (${items.length})\n`);
+      console.log("  ID              UPDATED      SUMMARY");
+      console.log("  --------------  ----------  --------------------------------");
+      for (const item of items) {
+        console.log(
+          `  ${item.id.padEnd(14)}  ${formatTimestamp(item.updatedAt).padEnd(10)}  ${item.summary.slice(0, 32)}`,
+        );
+      }
     }
-
-    console.log(`\nInsights (${items.length})\n`);
-    console.log("  ID              UPDATED      SUMMARY");
-    console.log("  --------------  ----------  --------------------------------");
-    for (const item of items) {
-      console.log(
-        `  ${item.id.padEnd(14)}  ${formatTimestamp(item.updatedAt).padEnd(10)}  ${item.summary.slice(0, 32)}`,
-      );
-    }
+    return payload;
   }
 }

@@ -1,10 +1,21 @@
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { syncCodexSkills } from "../plugins/codex-skills.js";
+import { logger } from "../utils/logger.js";
+import {
+  createCodexTransport,
+  resolveCodexTransportKind,
+  type CodexTransport,
+  type CodexTransportKind,
+} from "./codex-transport.js";
+
+const log = logger.child("codex");
 import { ensureAgentInstructionFiles, loadAgentWorkspaceInstructions } from "./agent-instructions.js";
+import { buildCodexSkillVisibilitySnapshot, markLoadedFromInstructionSources } from "./skill-visibility.js";
 import type {
   RuntimeApprovalEvent,
   RuntimeApprovalHandler,
@@ -33,6 +44,7 @@ import type {
   RuntimePromptMessage,
   RuntimeSessionState,
   RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
   RuntimeStartRequest,
   RuntimeStatus,
   RuntimeThreadMetadata,
@@ -48,7 +60,23 @@ const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
 const CODEX_APP_SERVER_SANDBOX = "danger-full-access";
 const RAVI_CODEX_BASH_HOOK_STATUS = "ravi codex bash permission gate";
-const RAVI_CODEX_BASH_HOOK_MATCHER = "^Bash$";
+const RAVI_CODEX_BASH_HOOK_MATCHER = "^(Bash|shell)$";
+const CODEX_APP_SERVER_ENV_KEY_PREFIXES = ["RAVI_"];
+const CODEX_APP_SERVER_ENV_KEYS = new Set(["CODEX_HOME", "PATH"]);
+const CODEX_SHELL_ENV_INCLUDE_ONLY = [
+  "RAVI_*",
+  "CODEX_HOME",
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "LANG",
+  "LC_*",
+];
 const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
   "thread.list",
   "thread.read",
@@ -59,7 +87,7 @@ const CODEX_RUNTIME_CONTROL_OPERATIONS: RuntimeControlOperation[] = [
 ];
 const CODEX_SKILL_DISCOVERY_NOTE = [
   "Ravi may install native Codex skills under ~/.codex/skills (or $CODEX_HOME/skills).",
-  "If the task clearly matches a skill, inspect that directory and follow the relevant SKILL.md files.",
+  "If the task clearly matches a skill, prefer `ravi skills show <skill-name> --json` (or repo `bin/ravi`) to inspect it, then follow the returned SKILL.md instructions.",
 ].join(" ");
 
 interface CodexCliUsage {
@@ -141,6 +169,16 @@ interface AppServerApprovalTurn {
   turnId?: string;
 }
 
+interface PendingDynamicToolResult {
+  success: boolean;
+  contentItems: RuntimeDynamicToolCallContentItem[];
+}
+
+interface CodexSkillVisibilityByCwd {
+  syncedSkillNames: string[];
+  snapshot: RuntimeSkillVisibilitySnapshot;
+}
+
 export interface CreateCodexRuntimeProviderOptions {
   transport?: CodexCliTransport;
   defaultModel?: string;
@@ -155,7 +193,7 @@ export interface CodexRuntimeProvider extends SessionRuntimeProvider {
 export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOptions = {}): CodexRuntimeProvider {
   const defaultModel = options.defaultModel ?? process.env.RAVI_CODEX_MODEL ?? DEFAULT_CODEX_MODEL;
   const syncSkills = options.syncSkills ?? syncCodexSkills;
-  const syncedSkillsByCwd = new Map<string, string[]>();
+  const skillVisibilityByCwd = new Map<string, CodexSkillVisibilityByCwd>();
 
   return {
     id: "codex",
@@ -166,7 +204,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           operations: CODEX_RUNTIME_CONTROL_OPERATIONS,
         },
         dynamicTools: {
-          mode: "host",
+          mode: "none",
         },
         execution: {
           mode: "subprocess-rpc",
@@ -189,6 +227,10 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         terminalEvents: {
           guarantee: "adapter",
         },
+        skillVisibility: {
+          availability: "codex-skills",
+          loadedState: "instruction-sources",
+        },
         supportsSessionResume: true,
         supportsSessionFork: false,
         supportsPartialText: true,
@@ -204,7 +246,11 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
       ensureAgentInstructionFiles(input.cwd);
       ensureGlobalCodexBashHookConfig();
       const syncedSkills = syncSkills(input.plugins ?? []);
-      syncedSkillsByCwd.set(input.cwd, Array.isArray(syncedSkills) ? syncedSkills : []);
+      const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
+      skillVisibilityByCwd.set(input.cwd, {
+        syncedSkillNames,
+        snapshot: buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+      });
       return input.hostServices
         ? {
             startRequest: createCodexRuntimeStartRequest(input.hostServices),
@@ -217,10 +263,18 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
         activeTurn: null,
         interrupted: false,
       };
+      const skillVisibility = skillVisibilityByCwd.get(input.cwd)?.snapshot ?? buildCodexSkillVisibilitySnapshot([]);
 
       return {
         provider: "codex",
-        events: normalizeCodexEvents(input, transport, defaultModel, state, syncedSkillsByCwd.get(input.cwd) ?? []),
+        skillVisibility,
+        events: normalizeCodexEvents(
+          input,
+          transport,
+          defaultModel,
+          state,
+          skillVisibilityByCwd.get(input.cwd)?.syncedSkillNames ?? [],
+        ),
         interrupt: async () => {
           if (!state.activeTurn) {
             return;
@@ -256,8 +310,6 @@ function createCodexRuntimeStartRequest(
 ): NonNullable<RuntimePrepareSessionResult["startRequest"]> {
   return {
     approveRuntimeRequest: createCodexApprovalHandler(hostServices),
-    dynamicTools: hostServices.listDynamicTools(),
-    handleRuntimeToolCall: createCodexDynamicToolHandler(hostServices),
   };
 }
 
@@ -274,13 +326,6 @@ function createCodexApprovalHandler(hostServices: RuntimeHostServices): RuntimeA
         return requestCodexUserInput(hostServices, request);
     }
   };
-}
-
-function createCodexDynamicToolHandler(hostServices: RuntimeHostServices): RuntimeDynamicToolCallHandler {
-  return (request) =>
-    hostServices.executeDynamicTool(request, {
-      eventData: buildCodexDynamicToolEventData(request),
-    });
 }
 
 async function authorizeCodexCommandExecution(
@@ -368,19 +413,6 @@ function buildCodexApprovalEventData(request: RuntimeApprovalRequest): Record<st
       method: request.method,
       toolName: request.toolName,
       input: truncateRuntimeEventData(request.input),
-    },
-    runtimeMetadata: request.metadata,
-  };
-}
-
-function buildCodexDynamicToolEventData(request: RuntimeDynamicToolCallRequest): Record<string, unknown> {
-  return {
-    runtimeToolCall: {
-      provider: "codex",
-      method: "item/tool/call",
-      toolName: request.toolName,
-      callId: request.callId,
-      arguments: truncateRuntimeEventData(request.arguments),
     },
     runtimeMetadata: request.metadata,
   };
@@ -523,8 +555,8 @@ async function* normalizeCodexEvents(
         resume: previousSessionId,
         systemPromptAppend,
         approveRuntimeRequest: input.approveRuntimeRequest,
-        dynamicTools: input.dynamicTools,
-        handleRuntimeToolCall: input.handleRuntimeToolCall,
+        dynamicTools: undefined,
+        handleRuntimeToolCall: undefined,
       });
 
       state.activeTurn = turn;
@@ -539,6 +571,7 @@ async function* normalizeCodexEvents(
       let activeTurnId: string | undefined;
       let lastErrorMessage: string | undefined;
       const startedToolUseIds = new Set<string>();
+      const completedToolUseIds = new Set<string>();
 
       try {
         for await (const event of turn.events) {
@@ -614,14 +647,21 @@ async function* normalizeCodexEvents(
 
             const toolStart = extractCliToolStarted(event.item);
             if (toolStart) {
-              startedToolUseIds.add(toolStart.id);
-              yield {
-                type: "tool.started",
-                toolUse: toolStart,
-                rawEvent,
-                metadata,
-              };
+              if (!startedToolUseIds.has(toolStart.id)) {
+                startedToolUseIds.add(toolStart.id);
+                yield {
+                  type: "tool.started",
+                  toolUse: toolStart,
+                  rawEvent,
+                  metadata,
+                };
+              }
             }
+            continue;
+          }
+
+          if (event.type === "tool.result_delivered") {
+            yield { type: "tool.result_delivered", toolCallId: String(event.toolCallId ?? "") };
             continue;
           }
 
@@ -649,6 +689,9 @@ async function* normalizeCodexEvents(
             const toolCompleted = extractCliToolCompleted(event.item);
             const toolUseId = toolCompleted?.toolUseId ?? toolCompleted?.syntheticStart?.id;
             if (toolCompleted?.syntheticStart && !(toolUseId && startedToolUseIds.has(toolUseId))) {
+              if (toolUseId) {
+                startedToolUseIds.add(toolUseId);
+              }
               yield {
                 type: "tool.started",
                 toolUse: toolCompleted.syntheticStart,
@@ -657,15 +700,21 @@ async function* normalizeCodexEvents(
               };
             }
             if (toolCompleted) {
-              yield {
-                type: "tool.completed",
-                toolUseId: toolCompleted.toolUseId,
-                toolName: toolCompleted.toolName,
-                content: toolCompleted.content,
-                isError: toolCompleted.isError,
-                rawEvent,
-                metadata,
-              };
+              const completionId = toolUseId ?? toolCompleted.toolUseId;
+              if (!completionId || !completedToolUseIds.has(completionId)) {
+                if (completionId) {
+                  completedToolUseIds.add(completionId);
+                }
+                yield {
+                  type: "tool.completed",
+                  toolUseId: toolCompleted.toolUseId,
+                  toolName: toolCompleted.toolName,
+                  content: toolCompleted.content,
+                  isError: toolCompleted.isError,
+                  rawEvent,
+                  metadata,
+                };
+              }
             }
             continue;
           }
@@ -712,10 +761,14 @@ async function* normalizeCodexEvents(
 
           if (event.type === "turn.completed") {
             previousSessionId = metadata.thread?.id ?? turnSessionId;
+            const skillVisibility = markLoadedFromInstructionSources(
+              buildCodexSkillVisibilitySnapshot(syncedSkillNames),
+              stringArray(event.instruction_sources),
+            );
             const terminal: RuntimeEvent = {
               type: "turn.complete",
               providerSessionId: previousSessionId,
-              session: buildCodexSessionState(previousSessionId, input.cwd),
+              session: buildCodexSessionState(previousSessionId, input.cwd, skillVisibility),
               execution: buildCodexExecutionMetadata(
                 input,
                 defaultModel,
@@ -822,16 +875,20 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   let child: ReturnType<typeof spawn> | null = null;
+  let transport: CodexTransport | null = null;
   let closed = true;
   let forcedKillTimer: ReturnType<typeof setTimeout> | null = null;
-  let stderr = "";
   let nextRequestId = 1;
   let currentThreadId: string | undefined;
+  let currentInstructionSources: string[] = [];
   let resolvedModel: string | null = null;
   let resolvedModelProvider = "openai";
   let pendingRequests = new Map<string, PendingRequest>();
+  const pendingDynamicToolResults = new Map<string, PendingDynamicToolResult>();
   let bootstrapPromise: Promise<void> | null = null;
   let activeTurn: AppServerTurnState | null = null;
+  let activeSpawnEnvSignature: string | null = null;
+  let intentionalChildRestart = false;
 
   const clearForcedKillTimer = () => {
     if (forcedKillTimer) {
@@ -840,12 +897,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   };
 
-  const currentChild = () => {
-    if (!child || closed) {
-      throw new Error("Codex app-server is not connected");
-    }
-    return child;
-  };
+  const getStderr = (): string => transport?.getStderr() ?? "";
+  const getStderrLength = (): number => transport?.getStderrOffset() ?? 0;
 
   const settleTurn = (
     turn: AppServerTurnState,
@@ -869,7 +922,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     turn.resolveResult({
       exitCode: result.exitCode ?? 0,
       signal: result.signal ?? null,
-      stderr: result.stderr ?? stderr.slice(turn.stderrOffset),
+      stderr: result.stderr ?? getStderr().slice(turn.stderrOffset),
     });
   };
 
@@ -881,98 +934,113 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   };
 
   const handleChildTermination = (exitCode: number | null, signal: NodeJS.Signals | null, error?: Error) => {
+    if (closed && child === null && transport === null) {
+      // Already cleaned up — guard against duplicate close/error events from
+      // both the child process and the websocket layer.
+      return;
+    }
     closed = true;
     clearForcedKillTimer();
     const disconnectError =
       error ?? new Error(`Codex app-server exited unexpectedly (${signal ?? exitCode ?? "unknown"})`);
     rejectPendingRequests(disconnectError);
-    if (activeTurn) {
+    if (!intentionalChildRestart && activeTurn) {
       settleTurn(
         activeTurn,
         {
           exitCode,
           signal,
-          stderr: stderr.slice(activeTurn.stderrOffset),
+          stderr: getStderr().slice(activeTurn.stderrOffset),
         },
         error ? { failQueue: error } : undefined,
       );
     }
+    if (transport) {
+      try {
+        transport.closeChannel();
+      } catch {
+        // ignore
+      }
+      transport = null;
+    }
     child = null;
+    activeSpawnEnvSignature = null;
   };
 
-  const spawnChild = (input: CodexCliTurnRequest) => {
-    ensureGlobalCodexBashHookConfig();
-    const spawned = spawn(command, ["-c", "features.codex_hooks=true", "app-server"], {
+  const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
+    if (shouldMaterializeCodexHookForCommand(command)) {
+      ensureGlobalCodexBashHookConfig();
+    }
+    // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
+    // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
+    // diagnosing silent hangs in the JSON-RPC layer.
+    const spawnEnv = {
+      ...input.env,
+      RUST_LOG: input.env?.RUST_LOG ?? input.env?.RAVI_CODEX_RUST_LOG ?? "warn",
+    };
+
+    const transportKind: CodexTransportKind = resolveCodexTransportKind(input.env);
+    const newTransport = createCodexTransport(transportKind, {
+      command,
+      baseArgs: buildCodexAppServerBaseArgs(),
       cwd: input.cwd,
-      env: input.env,
-      stdio: ["pipe", "pipe", "pipe"],
+      env: spawnEnv,
+      onMessage: (line: string) => {
+        try {
+          const parsed = JSON.parse(line) as CodexJsonRpcMessage;
+          routeAppServerMessage(parsed);
+        } catch (error) {
+          if (activeTurn) {
+            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+          }
+          newTransport.child.kill("SIGKILL");
+        }
+      },
+      onTransportError: (error) => {
+        if (activeTurn) {
+          settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
+        }
+        try {
+          newTransport.child.kill("SIGKILL");
+        } catch {
+          // child already gone
+        }
+      },
     });
 
-    child = spawned;
+    transport = newTransport;
+    child = newTransport.child;
+    activeSpawnEnvSignature = buildCodexAppServerEnvSignature(input.env);
     closed = false;
-    stderr = "";
     nextRequestId = 1;
     pendingRequests = new Map();
     clearForcedKillTimer();
 
-    spawned.stderr.setEncoding("utf8");
-    spawned.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-    });
+    log.info("codex spawn", { pid: newTransport.child.pid, transport: newTransport.kind });
 
-    spawned.stdout.setEncoding("utf8");
-    const stdoutLines = createInterface({ input: spawned.stdout });
-    stdoutLines.on("line", (line) => {
-      const value = line.trim();
-      if (!value) {
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(value) as CodexJsonRpcMessage;
-        routeAppServerMessage(parsed);
-      } catch (error) {
-        if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
-        }
-        spawned.kill("SIGKILL");
-      }
-    });
-
-    spawned.stdin.on("error", (error: NodeJS.ErrnoException) => {
-      if (error.code !== "EPIPE") {
-        if (activeTurn) {
-          settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
-        }
-        spawned.kill("SIGKILL");
-      }
-    });
-
-    spawned.on("error", (error) => {
+    newTransport.child.on("error", (error) => {
       handleChildTermination(1, null, error);
     });
 
-    spawned.on("close", (exitCode, signal) => {
+    newTransport.child.on("close", (exitCode, signal) => {
       handleChildTermination(exitCode, signal);
     });
+
+    // For WebSocket transport, we must wait for the listener to be ready
+    // before any caller attempts writeJsonRpc. Stdio resolves immediately.
+    try {
+      await newTransport.ready;
+    } catch (error) {
+      handleChildTermination(1, null, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
   };
 
   async function writeJsonRpc(message: Record<string, unknown>): Promise<void> {
-    const payload = `${JSON.stringify(message)}\n`;
-    const activeChild = currentChild();
-    const stdin = activeChild.stdin;
-    if (!stdin) {
-      throw new Error("Codex app-server stdin is unavailable");
+    if (!transport || closed) {
+      throw new Error("Codex app-server transport is not connected");
     }
-    await new Promise<void>((resolve, reject) => {
-      stdin.write(payload, (error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
-    });
+    await transport.send(JSON.stringify(message));
   }
 
   function sendRequest(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -1053,13 +1121,21 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     const response = buildCodexDynamicToolCallResponse(result);
+    const toolSucceeded = result.success === true;
+    const toolItemId = request.callId ?? `${request.toolName}-unknown`;
+    // Emit a synthetic item.completed event BEFORE writing the response. Codex's
+    // app-server has a race where TurnComplete fires `abort_pending_server_requests`
+    // which silently drops our reply ("could not find callback for String(...)" WARN).
+    // Pushing the trace event up front keeps the agent's tool lifecycle moving even
+    // when codex's native item/completed never arrives.
     activeTurn?.queue.push(
       buildDynamicToolTraceEvent("item.completed", request, {
-        success: response.success,
-        contentItems: response.content_items,
+        success: toolSucceeded,
+        contentItems: response.contentItems,
       }),
     );
     await writeJsonRpc({ jsonrpc: "2.0", id, result: response });
+    activeTurn?.queue.push({ type: "tool.result_delivered", toolCallId: toolItemId });
   }
 
   const requestTurnInterrupt = async (turn: AppServerTurnState) => {
@@ -1275,7 +1351,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       if (typeof message.method === "string") {
         void handleServerRequest(requestId, message.method, asRecord(message.params) ?? {}).catch((error) => {
           if (activeTurn) {
-            settleTurn(activeTurn, { exitCode: 1, stderr }, { failQueue: error });
+            settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
         });
         return;
@@ -1366,7 +1442,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "item/completed": {
         if (turn) {
-          const item = normalizeAppServerItem(params.item);
+          const item = applyPendingDynamicToolResult(normalizeAppServerItem(params.item), pendingDynamicToolResults);
           if (item) {
             turn.queue.push({
               type: "item.completed",
@@ -1418,6 +1494,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             usage: turn.lastUsage ?? {},
             model: resolvedModel,
             model_provider: resolvedModelProvider,
+            instruction_sources: currentInstructionSources,
           });
         } else if (status === "interrupted") {
           turn.queue.push({
@@ -1437,6 +1514,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             error: extractAppServerTurnError(completedTurn) ?? `Codex turn ${status}`,
           });
         }
+        pendingDynamicToolResults.clear();
         settleTurn(turn);
         break;
       }
@@ -1446,6 +1524,20 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   }
 
   async function ensureClient(input: CodexCliTurnRequest): Promise<void> {
+    const nextEnvSignature = buildCodexAppServerEnvSignature(input.env);
+    if (!closed && child && !bootstrapPromise && activeSpawnEnvSignature !== nextEnvSignature) {
+      log.info("codex env changed; respawning app-server", {
+        pid: child.pid,
+        envKeys: listCodexAppServerEnvSignatureKeys(input.env),
+      });
+      intentionalChildRestart = true;
+      try {
+        await close();
+      } finally {
+        intentionalChildRestart = false;
+      }
+    }
+
     if (!closed && child && !bootstrapPromise) {
       return;
     }
@@ -1455,7 +1547,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
 
     if (!child || closed) {
-      spawnChild(input);
+      await spawnChild(input);
     }
 
     bootstrapPromise = (async () => {
@@ -1490,7 +1582,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               config: { model_reasoning_effort: effort },
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: input.dynamicTools ?? null,
+              dynamicTools: null,
               personality: null,
               persistExtendedHistory: false,
             })
@@ -1504,7 +1596,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
               serviceName: null,
               baseInstructions: null,
               developerInstructions: input.systemPromptAppend || null,
-              dynamicTools: input.dynamicTools ?? null,
+              dynamicTools: null,
               personality: null,
               ephemeral: false,
               experimentalRawEvents: false,
@@ -1512,6 +1604,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             });
 
         currentThreadId = firstString(asRecord(threadResponse.thread)?.id, resumeThreadId);
+        currentInstructionSources = stringArray(threadResponse.instructionSources);
         resolvedModel = firstString(threadResponse.model, input.model) ?? null;
         resolvedModelProvider = firstString(threadResponse.modelProvider, resolvedModelProvider) ?? "openai";
       } finally {
@@ -1560,7 +1653,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
           resolveResult = resolve;
         }),
         resolveResult,
-        stderrOffset: stderr.length,
+        stderrOffset: getStderrLength(),
         approveRuntimeRequest: input.approveRuntimeRequest,
         handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
@@ -1595,7 +1688,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             collaborationMode: null,
           });
         } catch (error) {
-          settleTurn(turn, { exitCode: 1, stderr: stderr.slice(turn.stderrOffset) }, { failQueue: error });
+          settleTurn(turn, { exitCode: 1, stderr: getStderr().slice(turn.stderrOffset) }, { failQueue: error });
           if (child && !closed) {
             child.kill("SIGKILL");
           }
@@ -1619,6 +1712,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     },
     close,
   };
+}
+
+function buildCodexAppServerBaseArgs(): string[] {
+  return [
+    "-c",
+    "features.codex_hooks=true",
+    "-c",
+    "shell_environment_policy.inherit=all",
+    "-c",
+    "shell_environment_policy.ignore_default_excludes=true",
+    "-c",
+    `shell_environment_policy.include_only=${JSON.stringify(CODEX_SHELL_ENV_INCLUDE_ONLY)}`,
+  ];
 }
 
 function _createCodexCliTransport(options: { command?: string } = {}): CodexCliTransport {
@@ -1922,7 +2028,11 @@ function resolveCodexResumeId(
   return sessionId;
 }
 
-function buildCodexSessionState(sessionId: string | undefined, cwd: string): RuntimeSessionState | undefined {
+function buildCodexSessionState(
+  sessionId: string | undefined,
+  cwd: string,
+  skillVisibility: RuntimeSkillVisibilitySnapshot,
+): RuntimeSessionState | undefined {
   if (!sessionId) {
     return undefined;
   }
@@ -1931,6 +2041,7 @@ function buildCodexSessionState(sessionId: string | undefined, cwd: string): Run
     params: {
       sessionId,
       cwd,
+      skillVisibility,
     },
     displayId: sessionId,
   };
@@ -2307,6 +2418,33 @@ function normalizeAppServerItem(value: unknown): Record<string, unknown> | null 
   }
 }
 
+function applyPendingDynamicToolResult(
+  item: Record<string, unknown> | null,
+  pendingResults: Map<string, PendingDynamicToolResult>,
+): Record<string, unknown> | null {
+  if (!item || item.type !== "dynamic_tool_call") {
+    return item;
+  }
+
+  const itemId = firstString(item.id);
+  if (!itemId) {
+    return item;
+  }
+
+  const result = pendingResults.get(itemId);
+  if (!result) {
+    return item;
+  }
+
+  pendingResults.delete(itemId);
+  return {
+    ...item,
+    status: result.success ? (firstString(item.status) ?? "completed") : "failed",
+    success: result.success,
+    content_items: result.contentItems,
+  };
+}
+
 function normalizeAppServerStatus(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length === 0) {
     return undefined;
@@ -2415,11 +2553,15 @@ function buildDynamicToolCallItem(input: {
 
 function buildCodexDynamicToolCallResponse(result: RuntimeDynamicToolCallResult): {
   success: boolean;
-  content_items: RuntimeDynamicToolCallContentItem[];
+  contentItems: RuntimeDynamicToolCallContentItem[];
 } {
-  const success = result.success === true;
   const contentItems = normalizeDynamicToolCallContentItems(result.contentItems, result.reason);
-  return { success, content_items: contentItems };
+  // Codex CLI 0.125.0 accepts `success: false` by schema, but the app-server
+  // does not reliably resume the turn after a failed dynamic tool response.
+  // Keep Ravi's own semantic status on the native item/completed event, and
+  // deliver the failure text as a successful protocol response so the model can
+  // read it and continue or retry.
+  return { success: true, contentItems };
 }
 
 function normalizeDynamicToolCallContentItems(
@@ -2824,13 +2966,71 @@ function isRaviCodexHookGroup(value: unknown): boolean {
   });
 }
 
+function shouldMaterializeCodexHookForCommand(command: string): boolean {
+  const commandName = basename(command);
+  return commandName === "codex" || commandName === "codex.exe";
+}
+
 function buildRaviCodexHookCommand(): string {
+  const configuredRaviBin = process.env.RAVI_BIN?.trim();
+  if (configuredRaviBin) {
+    return [configuredRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  }
+
   const bundlePath = process.argv[1];
-  if (bundlePath) {
+  if (isRunnableRaviCliEntrypoint(bundlePath)) {
     return [process.execPath, bundlePath, "context", "codex-bash-hook"].map(shellEscape).join(" ");
   }
 
+  const sourceRaviBin = resolveSourceRaviBinPath();
+  if (sourceRaviBin) {
+    return [sourceRaviBin, "context", "codex-bash-hook"].map(shellEscape).join(" ");
+  }
+
   return ["ravi", "context", "codex-bash-hook"].map(shellEscape).join(" ");
+}
+
+function isRunnableRaviCliEntrypoint(entrypoint?: string): entrypoint is string {
+  if (!entrypoint || !existsSync(entrypoint)) {
+    return false;
+  }
+  if (/\.test\.[cm]?[jt]sx?$/.test(entrypoint)) {
+    return false;
+  }
+  return entrypoint.endsWith("/dist/bundle/index.js") || entrypoint.endsWith("/src/cli/index.ts");
+}
+
+function resolveSourceRaviBinPath(): string | null {
+  try {
+    const modulePath = fileURLToPath(import.meta.url);
+    const candidate = join(dirname(dirname(dirname(modulePath))), "bin", "ravi");
+    return existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildCodexAppServerEnvSignature(env: NodeJS.ProcessEnv): string {
+  return JSON.stringify(
+    Object.entries(env)
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+      .filter(
+        ([key]) =>
+          CODEX_APP_SERVER_ENV_KEYS.has(key) ||
+          CODEX_APP_SERVER_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
+      )
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function listCodexAppServerEnvSignatureKeys(env: NodeJS.ProcessEnv): string[] {
+  return Object.keys(env)
+    .filter(
+      (key) =>
+        CODEX_APP_SERVER_ENV_KEYS.has(key) ||
+        CODEX_APP_SERVER_ENV_KEY_PREFIXES.some((prefix) => key.startsWith(prefix)),
+    )
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function shellEscape(value: string): string {
@@ -2878,6 +3078,12 @@ function firstString(...values: Array<unknown>): string | undefined {
     }
   }
   return undefined;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
 }
 
 function toNumber(value: unknown): number {

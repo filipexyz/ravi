@@ -15,6 +15,7 @@ const capabilities: RuntimeCapabilities = {
   },
   systemPrompt: { mode: "append" },
   terminalEvents: { guarantee: "adapter" },
+  skillVisibility: { availability: "none", loadedState: "none" },
   supportsSessionResume: true,
   supportsSessionFork: true,
   supportsPartialText: true,

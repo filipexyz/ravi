@@ -90,6 +90,7 @@ export function formatTaskRuntimeOptions(options?: TaskRuntimeOptions | null): s
 }
 
 export function resolveTaskRuntimeOptions(input: {
+  promptOverride?: TaskRuntimeOptionsInput | null;
   task?: Pick<TaskRecord, "runtimeOverride"> | null;
   profile?: Pick<TaskProfileDefinition, "runtimeDefaults"> | null;
   assignment?: Pick<TaskAssignment, "runtimeOverride"> | null;
@@ -99,6 +100,7 @@ export function resolveTaskRuntimeOptions(input: {
   agentModel?: string | null;
   configModel?: string | null;
 }): TaskRuntimeResolution {
+  const promptOverride = normalizeTaskRuntimeOptions(input.promptOverride);
   const dispatchOverride = normalizeTaskRuntimeOptions(
     input.assignment?.runtimeOverride ?? input.launchPlan?.runtimeOverride,
   );
@@ -113,6 +115,7 @@ export function resolveTaskRuntimeOptions(input: {
   const configOptions = normalizeTaskRuntimeOptions({ model: input.configModel ?? undefined });
 
   const sources: Array<[TaskRuntimeOptionsSource, TaskRuntimeOptions | undefined]> = [
+    ["prompt_override", promptOverride],
     ["dispatch_override", dispatchOverride],
     ["task_override", taskOverride],
     ["profile_default", profileDefaults],

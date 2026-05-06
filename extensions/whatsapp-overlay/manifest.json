@@ -7,13 +7,17 @@
     "storage"
   ],
   "host_permissions": [
-    "https://web.whatsapp.com/*",
-    "http://127.0.0.1:4210/*",
-    "http://localhost:4210/*"
+    "https://web.whatsapp.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
+  "options_page": "options.html",
   "content_scripts": [
     {
       "matches": [

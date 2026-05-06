@@ -3,30 +3,55 @@ import { backfillProviderSessionId, saveMessage } from "../db.js";
 import { HEARTBEAT_OK } from "../heartbeat/index.js";
 import { getToolSafety } from "../hooks/tool-safety.js";
 import { nats } from "../nats.js";
-import { publishSessionPrompt } from "../omni/session-stream.js";
 import { SILENT_TOKEN } from "../prompt-builder.js";
 import {
   dbInsertCostEvent,
   deleteSession,
   getAnnounceCompaction,
+  getSession,
   updateProviderSession,
+  updateRuntimeProviderState,
   updateTokens,
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
+import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
-import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
-import type { RuntimeCapabilities, RuntimeEventMetadata, RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
+import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import {
+  stashPendingRuntimeMessages,
+  type RuntimeHostStreamingSession,
+  type RuntimeUserMessage,
+} from "./host-session.js";
+import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import {
+  createObservationEvent,
+  deliverObservationEvents,
+  getObservationDebounceMs,
+  logObservationDeliveryFailure,
+  type ObservationDeliveryPolicy,
+  type ObservationEvent,
+} from "./observation-plane.js";
+import {
+  markLoadedFromRaviSkillToolCall,
+  mergeSkillVisibilitySnapshots,
+  readSkillVisibilityFromParams,
+  resetLoadedSkillVisibilitySnapshot,
+} from "./skill-visibility.js";
+import type {
+  RuntimeCapabilities,
+  RuntimeEventMetadata,
+  RuntimeProviderId,
+  RuntimeSessionHandle,
+  RuntimeSkillVisibilitySnapshot,
+} from "./types.js";
 
 const log = logger.child("bot");
 
 const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const MAX_TURN_FAILURE_RESPONSE = 320;
-const DEFAULT_TURN_STALL_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_FAILED_TOOL_STALL_TIMEOUT_MS = 90 * 1000;
-const DEFAULT_STALL_CHECK_INTERVAL_MS = 30 * 1000;
 
 export type RuntimeSafeEmit = (topic: string, data: Record<string, unknown>) => Promise<void>;
 
@@ -37,7 +62,10 @@ function truncateOutput(output: unknown): unknown {
   if (Array.isArray(output)) {
     return output.map((item) => {
       if (item?.type === "text" && typeof item?.text === "string" && item.text.length > MAX_OUTPUT_LENGTH) {
-        return { ...item, text: item.text.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]` };
+        return {
+          ...item,
+          text: item.text.slice(0, MAX_OUTPUT_LENGTH) + `... [truncated]`,
+        };
       }
       return item;
     });
@@ -60,6 +88,11 @@ function truncateLogDetail(value: unknown, maxLength = MAX_TURN_FAILURE_LOG_DETA
   }
 
   return text.length > maxLength ? `${text.slice(0, maxLength - 15)}... [truncated]` : text;
+}
+
+function truncateLiveSummary(value: unknown, maxLength = 180): string | undefined {
+  const text = truncateLogDetail(value, maxLength)?.replace(/\s+/g, " ").trim();
+  return text || undefined;
 }
 
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -206,15 +239,6 @@ export interface RunRuntimeEventLoopOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
-  turnStallTimeoutMs?: number;
-  failedToolStallTimeoutMs?: number;
-  stallCheckIntervalMs?: number;
-  publishRecoveryPrompt?: (sessionName: string, payload: Record<string, unknown>) => Promise<void>;
-}
-
-function resolvePositiveMs(value: number | string | undefined, fallback: number): number {
-  const parsed = typeof value === "string" ? Number.parseInt(value, 10) : value;
-  return typeof parsed === "number" && Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -235,19 +259,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     safeEmit,
     drainPendingStarts,
   } = options;
-  const turnStallTimeoutMs = resolvePositiveMs(
-    options.turnStallTimeoutMs ?? process.env.RAVI_RUNTIME_TURN_STALL_MS,
-    DEFAULT_TURN_STALL_TIMEOUT_MS,
-  );
-  const failedToolStallTimeoutMs = resolvePositiveMs(
-    options.failedToolStallTimeoutMs ?? process.env.RAVI_RUNTIME_FAILED_TOOL_STALL_MS,
-    DEFAULT_FAILED_TOOL_STALL_TIMEOUT_MS,
-  );
-  const stallCheckIntervalMs = resolvePositiveMs(
-    options.stallCheckIntervalMs ?? process.env.RAVI_RUNTIME_STALL_CHECK_MS,
-    DEFAULT_STALL_CHECK_INTERVAL_MS,
-  );
-  const publishRecoveryPrompt = options.publishRecoveryPrompt ?? publishSessionPrompt;
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
   ) => {
@@ -294,190 +305,185 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   let providerRawEventCount = 0;
   let responseText = "";
+  let observationSequence = 0;
+  let observedUserTurnId: string | undefined;
+  const observationEvents: ObservationEvent[] = [];
+  const debouncedObservationEvents: ObservationEvent[] = [];
+  let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
+  const truncateObservationPreview = (value: string, maxLength = 500): string =>
+    value.length > maxLength ? `${value.slice(0, maxLength - 15)}... [truncated]` : value;
+
+  const deliverObservationBatch = (
+    events: ObservationEvent[],
+    deliveryPolicies: ObservationDeliveryPolicy[],
+    reason: string,
+  ) => {
+    if (events.length === 0) return;
+    deliverObservationEvents({
+      sourceSessionName: sessionName,
+      sourceSession: session,
+      agentId: agent.id,
+      events,
+      deliveryPolicies,
+      runId,
+    }).catch((error) =>
+      logObservationDeliveryFailure(error, {
+        sessionName,
+        sessionKey: session.sessionKey,
+        runId,
+        eventCount: events.length,
+        deliveryPolicies,
+        reason,
+      }),
+    );
+  };
+
+  const drainDebouncedObservationEvents = () => {
+    debounceObservationTimer = undefined;
+    const batch = debouncedObservationEvents.splice(0, debouncedObservationEvents.length);
+    deliverObservationBatch(batch, ["debounce"], "debounce");
+  };
+
+  const scheduleDebouncedObservationEvent = (event: ObservationEvent) => {
+    const debounceMs = getObservationDebounceMs({
+      sourceSessionName: sessionName,
+      sourceSession: session,
+      agentId: agent.id,
+      eventTypes: [event.type],
+    });
+    if (debounceMs === null) return;
+    debouncedObservationEvents.push(event);
+    if (debounceObservationTimer !== undefined) {
+      clearTimeout(debounceObservationTimer);
+    }
+    debounceObservationTimer = setTimeout(drainDebouncedObservationEvents, debounceMs);
+    debounceObservationTimer.unref?.();
+  };
+
+  const pushObservationEvent = (
+    type: string,
+    input: {
+      payload?: Record<string, unknown>;
+      preview?: string;
+      turnId?: string;
+    } = {},
+  ) => {
+    const event = createObservationEvent({
+      runId,
+      sequence: ++observationSequence,
+      type,
+      turnId: input.turnId ?? streaming.currentTraceTurnId,
+      preview: input.preview,
+      payload: input.payload,
+    });
+    observationEvents.push(event);
+    deliverObservationBatch([event], ["realtime"], "realtime");
+    scheduleDebouncedObservationEvent(event);
+  };
+  const currentTurnPromptText = (): string | undefined => {
+    const pendingIds = new Set(streaming.currentTurnPendingIds ?? []);
+    if (pendingIds.size === 0) return undefined;
+    const messages = streaming.pendingMessages.filter(
+      (message) => message.pendingId && pendingIds.has(message.pendingId),
+    );
+    const text = messages
+      .map((message) => message.message.content)
+      .join("\n\n")
+      .trim();
+    return text || undefined;
+  };
+  const ensureCurrentTurnUserObservation = () => {
+    const turnId = streaming.currentTraceTurnId;
+    if (!turnId || observedUserTurnId === turnId) return;
+    const text = currentTurnPromptText();
+    if (!text) return;
+    observedUserTurnId = turnId;
+    pushObservationEvent("message.user", {
+      turnId,
+      preview: truncateObservationPreview(text),
+      payload: {
+        chars: text.length,
+        pendingIds: streaming.currentTurnPendingIds ?? [],
+      },
+    });
+  };
+  const flushObservationEvents = (terminalType: string, payload: Record<string, unknown>) => {
+    ensureCurrentTurnUserObservation();
+    pushObservationEvent(terminalType, {
+      payload,
+      preview: terminalType,
+    });
+    const batch = observationEvents.splice(0, observationEvents.length);
+    deliverObservationBatch(batch, ["end_of_turn"], "end_of_turn");
+  };
+  updateRuntimeLiveState(sessionName, {
+    activity: "thinking",
+    summary: "runtime active",
+    agentId: agent.id,
+    runId,
+    provider: runtimeSession.provider,
+    model,
+    source: streaming.currentSource,
+    skills: runtimeSession.skillVisibility?.skills,
+    loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
+  });
+  const STUCK_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
+  // Tight timeout for the well-known codex bug: after we deliver a tool result,
+  // codex's app-server occasionally drops the JSON-RPC callback and never asks
+  // the model for the next step. The agent can't make progress until we abort.
+  // 3 minutes is enough for legitimate xhigh thinking on most workloads while
+  // recovering quickly from the silent hang.
+  // Override via `RAVI_RUNTIME_PROVIDER_INACTIVITY_MS`.
+  const PROVIDER_INACTIVITY_TIMEOUT_MS = Math.max(
+    30_000,
+    Number(process.env.RAVI_RUNTIME_PROVIDER_INACTIVITY_MS) || 3 * 60 * 1000,
+  );
+  let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
+  let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearProviderInactivityWatch = () => {
+    if (providerInactivityTimer !== undefined) {
+      clearTimeout(providerInactivityTimer);
+      providerInactivityTimer = undefined;
+    }
+  };
+  const armProviderInactivityWatch = () => {
+    clearProviderInactivityWatch();
+    providerInactivityTimer = setTimeout(() => {
+      providerInactivityTimer = undefined;
+      log.warn("Provider inactive after tool result — aborting session", {
+        sessionName,
+        timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
+      });
+      safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "provider.inactive",
+        timeoutMs: PROVIDER_INACTIVITY_TIMEOUT_MS,
+        sessionName,
+      }).catch(() => {});
+      if (!streaming.abortController.signal.aborted) {
+        streaming.internalAbortReason = "provider_inactive";
+        streaming.abortController.abort();
+      }
+    }, PROVIDER_INACTIVITY_TIMEOUT_MS);
+  };
   const clearActiveToolState = () => {
+    if (toolStuckTimer !== undefined) {
+      clearTimeout(toolStuckTimer);
+      toolStuckTimer = undefined;
+    }
     streaming.toolRunning = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
+    streaming.currentToolInput = undefined;
     streaming.toolStartTime = undefined;
     streaming.currentToolSafety = null;
   };
   const signalTurnComplete = () => {
+    clearProviderInactivityWatch();
     if (streaming.onTurnComplete) {
       streaming.onTurnComplete();
       streaming.onTurnComplete = null;
     }
   };
-  const removeCurrentTurnPendingMessages = () => {
-    const yieldedIds = new Set(streaming.currentTurnPendingIds ?? []);
-    if (yieldedIds.size === 0) {
-      return;
-    }
-    streaming.pendingMessages = streaming.pendingMessages.filter((message) => {
-      return !message.pendingId || !yieldedIds.has(message.pendingId);
-    });
-  };
-  const summarizeToolFailure = (): string | null => {
-    const failure = streaming.lastToolFailure;
-    if (!failure) {
-      return null;
-    }
-    const detail = truncateLogDetail(failure.output, 700);
-    const tool = failure.toolName ?? "unknown";
-    return detail ? `${tool}: ${detail}` : tool;
-  };
-  const buildRecoveryPrompt = (input: {
-    kind: "tool_failure" | "turn_inactivity";
-    elapsedMs: number;
-    timeoutMs: number;
-  }): string => {
-    const seconds = Math.round(input.elapsedMs / 1000);
-    const timeoutSeconds = Math.round(input.timeoutMs / 1000);
-    const reason =
-      input.kind === "tool_failure"
-        ? `a tool failed and the provider emitted no further terminal event for ${seconds}s`
-        : `the provider emitted no runtime event for ${seconds}s while a turn was active`;
-    const toolFailure = summarizeToolFailure();
-    const toolLine = toolFailure ? ` Last failed tool: ${toolFailure}` : "";
-    return `[System] Inform: Runtime recovery notice. The previous turn was marked failed because ${reason} (limit ${timeoutSeconds}s). The stuck provider process was stopped without resetting this session. Continue using only this session's durable history; assume any already-recorded tool calls may have executed and do not repeat side effects blindly.${toolLine}`;
-  };
-  const recoverStalledTurn = async (input: {
-    kind: "tool_failure" | "turn_inactivity";
-    elapsedMs: number;
-    timeoutMs: number;
-  }) => {
-    if (streaming.done || streaming.stallRecoveryRequested) {
-      return;
-    }
-    streaming.stallRecoveryRequested = true;
-    const abortReason = input.kind === "tool_failure" ? "tool_failure_stall" : "turn_inactivity_stall";
-    const error =
-      input.kind === "tool_failure"
-        ? `Runtime turn stalled after failed tool: ${summarizeToolFailure() ?? "unknown"}`
-        : "Runtime turn stalled after provider inactivity";
-
-    streaming.done = true;
-    streaming.starting = false;
-    streaming.turnActive = false;
-    streaming.internalAbortReason = abortReason;
-
-    log.warn("Runtime turn stalled - recovering without session reset", {
-      sessionName,
-      kind: input.kind,
-      elapsedMs: input.elapsedMs,
-      timeoutMs: input.timeoutMs,
-      tool: streaming.lastToolFailure?.toolName ?? null,
-      pendingMessages: streaming.pendingMessages.length,
-    });
-
-    recordTraceEvent({
-      turnId: streaming.currentTraceTurnId,
-      provider: runtimeSession.provider,
-      model,
-      eventType: "session.stalled",
-      eventGroup: "session",
-      status: "stalled",
-      source: streaming.currentSource,
-      error,
-      payloadJson: {
-        reason: abortReason,
-        kind: input.kind,
-        elapsedMs: input.elapsedMs,
-        timeoutMs: input.timeoutMs,
-        lastToolFailure: streaming.lastToolFailure
-          ? {
-              at: streaming.lastToolFailure.at,
-              toolId: streaming.lastToolFailure.toolId ?? null,
-              toolName: streaming.lastToolFailure.toolName ?? null,
-              output: streaming.lastToolFailure.output ?? null,
-              metadata: streaming.lastToolFailure.metadata,
-            }
-          : null,
-      },
-    });
-    recordTerminalTraceOnce({
-      status: "failed",
-      eventType: "turn.failed",
-      error,
-      abortReason,
-      completedAt: Date.now(),
-      payloadJson: {
-        recoverable: true,
-        reason: abortReason,
-        kind: input.kind,
-        elapsedMs: input.elapsedMs,
-        timeoutMs: input.timeoutMs,
-      },
-    });
-
-    await safeEmit(`ravi.session.${sessionName}.runtime`, {
-      type: "turn.failed",
-      provider: runtimeSession.provider,
-      error,
-      recoverable: true,
-      reason: abortReason,
-      sessionName,
-      ...(streaming.currentSource ? { _source: streaming.currentSource } : {}),
-      timestamp: new Date().toISOString(),
-    }).catch((emitError) => {
-      log.warn("Failed to emit stalled turn failure event", { sessionName, error: emitError });
-    });
-
-    removeCurrentTurnPendingMessages();
-    if (streaming.pendingMessages.length > 0) {
-      stashedMessages.set(
-        sessionName,
-        streaming.pendingMessages.map((message) => ({ ...message })),
-      );
-    }
-
-    const recoveryPrompt = buildRecoveryPrompt(input);
-    signalTurnComplete();
-    if (streaming.pushMessage) {
-      streaming.pushMessage(null);
-      streaming.pushMessage = null;
-    }
-    streamingSessions.delete(sessionName);
-    drainPendingStarts();
-
-    await runtimeSession.interrupt().catch((interruptError) => {
-      log.warn("Failed to interrupt stalled runtime", { sessionName, error: interruptError });
-    });
-    if (!streaming.abortController.signal.aborted) {
-      streaming.abortController.abort();
-    }
-
-    await publishRecoveryPrompt(sessionName, {
-      prompt: recoveryPrompt,
-      source: streaming.currentSource,
-      deliveryBarrier: "after_tool",
-      _agentId: agent.id,
-    }).catch((publishError) => {
-      log.warn("Failed to publish stalled turn recovery prompt", { sessionName, error: publishError });
-    });
-
-    clearInterval(watchdog);
-  };
-
-  const watchdog = setInterval(() => {
-    if (streaming.done || streaming.stallRecoveryRequested || !streaming.turnActive) {
-      return;
-    }
-    if (streaming.toolRunning || streaming.compacting) {
-      return;
-    }
-
-    const elapsed = Date.now() - streaming.lastActivity;
-    const hasFailedTool = Boolean(streaming.lastToolFailure);
-    const timeoutMs = hasFailedTool ? failedToolStallTimeoutMs : turnStallTimeoutMs;
-    if (elapsed > timeoutMs) {
-      void recoverStalledTurn({
-        kind: hasFailedTool ? "tool_failure" : "turn_inactivity",
-        elapsedMs: elapsed,
-        timeoutMs,
-      });
-    }
-  }, stallCheckIntervalMs);
-  watchdog.unref?.();
 
   const emitLegacyProviderEvent = async (event: Record<string, unknown>) => {
     const legacyEventTopicSuffix = runtimeCapabilities.legacyEventTopicSuffix;
@@ -500,9 +506,89 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
+  const patchLiveState = (
+    input: Parameters<typeof updateRuntimeLiveState>[1],
+    skillVisibility?: RuntimeSkillVisibilitySnapshot,
+  ) =>
+    updateRuntimeLiveState(sessionName, {
+      ...input,
+      ...(skillVisibility
+        ? {
+            skills: skillVisibility.skills,
+            loadedSkills: skillVisibility.loadedSkills,
+          }
+        : {}),
+    });
+
+  const runtimeSkillVisibilityFromParams = (params: Record<string, unknown> | undefined) => {
+    if (isRecord(params?.skillVisibility)) {
+      return readSkillVisibilityFromParams(params);
+    }
+    if (isRecord(session.runtimeSessionParams?.skillVisibility)) {
+      return readSkillVisibilityFromParams(session.runtimeSessionParams);
+    }
+    return runtimeSession.skillVisibility;
+  };
+
+  const refreshRuntimeSessionParamsFromDb = () => {
+    const freshSession = getSession(session.sessionKey);
+    if (freshSession?.runtimeSessionParams) {
+      session.runtimeSessionParams = freshSession.runtimeSessionParams;
+    }
+  };
+
+  const mergeRuntimeSessionParams = (
+    params: Record<string, unknown> | undefined,
+  ): Record<string, unknown> | undefined => {
+    if (!isRecord(session.runtimeSessionParams?.skillVisibility) && !isRecord(params?.skillVisibility)) {
+      return params;
+    }
+    const storedSkillVisibility = isRecord(session.runtimeSessionParams?.skillVisibility)
+      ? readSkillVisibilityFromParams(session.runtimeSessionParams)
+      : undefined;
+    const incomingSkillVisibility = isRecord(params?.skillVisibility)
+      ? readSkillVisibilityFromParams(params)
+      : undefined;
+    const skillVisibility = mergeSkillVisibilitySnapshots(storedSkillVisibility, incomingSkillVisibility);
+    return {
+      ...(params ?? {}),
+      skillVisibility,
+    };
+  };
+
+  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
+    const runtimeSessionParams: Record<string, unknown> = {
+      ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
+      skillVisibility,
+    };
+    const persistedSessionId =
+      session.runtimeSessionDisplayId ??
+      session.providerSessionId ??
+      session.sdkSessionId ??
+      (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+
+    session.runtimeSessionParams = runtimeSessionParams;
+    runtimeSession.skillVisibility = skillVisibility;
+    if (persistedSessionId) {
+      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+        runtimeSessionParams,
+        runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
+      });
+    } else {
+      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+        runtimeSessionParams,
+      });
+    }
+    return runtimeSessionParams;
+  };
+
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
     const emitId = Math.random().toString(36).slice(2, 8);
-    log.info("Emitting response", { sessionName, emitId, textLen: text.length });
+    log.info("Emitting response", {
+      sessionName,
+      emitId,
+      textLen: text.length,
+    });
     await nats.emit(`ravi.session.${sessionName}.response`, {
       response: text,
       target: streaming.agentMode === "sentinel" ? undefined : streaming.currentSource,
@@ -534,11 +620,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   try {
     for await (const event of runtimeSession.events) {
-      if (streaming.done || streaming.stallRecoveryRequested) {
+      if (streaming.done) {
         break;
       }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
+
+      // Any event from the provider counts as activity — reset the inactivity watchdog.
+      // The watchdog is only armed after tool.result_delivered, so this is a no-op otherwise.
+      if (providerInactivityTimer !== undefined && event.type !== "tool.result_delivered") {
+        armProviderInactivityWatch();
+      }
 
       const logLevel = event.type === "text.delta" ? "debug" : "info";
       log[logLevel]("Runtime event", {
@@ -549,6 +641,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
+        updateRuntimeLiveState(sessionName, {
+          activity: "streaming",
+          summary: truncateLiveSummary(event.text) || "streaming",
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          source: streaming.currentSource,
+        });
         queueChunkEmit(event.text, event.metadata);
         continue;
       }
@@ -572,7 +673,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const status = event.status;
         const wasCompacting = streaming.compacting;
         streaming.compacting = status === "compacting";
-        log.info("Compaction status", { sessionName, compacting: streaming.compacting });
+        log.info("Compaction status", {
+          sessionName,
+          compacting: streaming.compacting,
+        });
         recordTraceEvent({
           turnId: streaming.currentTraceTurnId,
           provider: runtimeSession.provider,
@@ -587,6 +691,36 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           },
         });
+        let statusSkillVisibility: RuntimeSkillVisibilitySnapshot | undefined;
+        if (streaming.compacting && !wasCompacting) {
+          // Re-read runtimeSessionParams from DB before compaction reset so any skill gate marks
+          // written during this turn (by persistSkillGateVisibility) are not lost.
+          refreshRuntimeSessionParamsFromDb();
+          statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
+            runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
+          );
+          persistRuntimeSkillVisibility(statusSkillVisibility);
+          await emitRuntimeEvent({
+            type: "skill.visibility.reset",
+            provider: runtimeSession.provider,
+            reason: "compact",
+            skillVisibility: statusSkillVisibility,
+            metadata: event.metadata,
+          });
+        }
+
+        patchLiveState(
+          {
+            activity: streaming.compacting ? "compacting" : "thinking",
+            summary: streaming.compacting ? "compacting" : "runtime active",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          },
+          statusSkillVisibility,
+        );
 
         if (getAnnounceCompaction() && streaming.currentSource && streaming.agentMode !== "sentinel") {
           if (streaming.compacting && !wasCompacting) {
@@ -602,11 +736,47 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.toolRunning = true;
         streaming.currentToolId = event.toolUse.id;
         streaming.currentToolName = event.toolUse.name;
+        streaming.currentToolInput = event.toolUse.input;
         streaming.toolStartTime = Date.now();
+        log.info("Tool started", {
+          sessionName,
+          tool: event.toolUse.name,
+          toolId: event.toolUse.id,
+        });
+        // Arm stuck-tool watchdog: if tool.completed never fires within the window, abort the session.
+        if (toolStuckTimer !== undefined) clearTimeout(toolStuckTimer);
+        toolStuckTimer = setTimeout(() => {
+          toolStuckTimer = undefined;
+          const stuckTool = streaming.currentToolName ?? "unknown";
+          log.warn("Tool stuck — aborting session", {
+            sessionName,
+            tool: stuckTool,
+            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
+          });
+          safeEmit(`ravi.session.${sessionName}.runtime`, {
+            type: "tool.stuck",
+            tool: stuckTool,
+            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
+            sessionName,
+          }).catch(() => {});
+          if (!streaming.abortController.signal.aborted) {
+            streaming.internalAbortReason = "stuck_tool";
+            streaming.abortController.abort();
+          }
+        }, STUCK_TOOL_TIMEOUT_MS);
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
         );
+        ensureCurrentTurnUserObservation();
+        pushObservationEvent("tool.start", {
+          preview: event.toolUse.name,
+          payload: {
+            toolId: event.toolUse.id,
+            toolName: event.toolUse.name,
+            safety: streaming.currentToolSafety,
+          },
+        });
         recordTraceEvent({
           turnId: streaming.currentTraceTurnId,
           provider: runtimeSession.provider,
@@ -635,6 +805,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           agentId: agent.id,
           metadata: event.metadata,
         }).catch((err) => log.warn("Failed to emit tool start", { error: err }));
+        updateRuntimeLiveState(sessionName, {
+          activity: "thinking",
+          summary: `${event.toolUse.name} running`,
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          toolName: event.toolUse.name,
+          source: streaming.currentSource,
+        });
         continue;
       }
 
@@ -655,14 +835,28 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
           if (streaming.interrupted) {
             // Turn was interrupted - discard response
-            log.info("Discarding interrupted response", { sessionName, textLen: messageText.length });
+            log.info("Discarding interrupted response", {
+              sessionName,
+              textLen: messageText.length,
+            });
           } else if (!messageText) {
             // After stripping SILENT_TOKEN, nothing left
             log.info("Silent response (stripped)", { sessionName });
             await emitLegacyProviderEvent({ type: "silent" });
-            await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
+            await emitRuntimeEvent({
+              type: "silent",
+              provider: runtimeSession.provider,
+            });
           } else {
             responseText += messageText;
+            ensureCurrentTurnUserObservation();
+            pushObservationEvent("message.assistant", {
+              preview: truncateObservationPreview(messageText),
+              payload: {
+                chars: messageText.length,
+                metadata: event.metadata ?? null,
+              },
+            });
             recordTraceEvent({
               turnId: streaming.currentTraceTurnId,
               provider: runtimeSession.provider,
@@ -679,24 +873,46 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
             const trimmed = messageText.trim().toLowerCase();
             if (trimmed === "prompt is too long") {
-              log.warn("Prompt too long - will auto-reset session", { sessionName });
+              log.warn("Prompt too long - will auto-reset session", {
+                sessionName,
+              });
               streaming._promptTooLong = true;
               await emitLegacyProviderEvent({ type: "silent" });
-              await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
+              await emitRuntimeEvent({
+                type: "silent",
+                provider: runtimeSession.provider,
+              });
             } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
               log.info("Heartbeat OK", { sessionName });
               await emitLegacyProviderEvent({ type: "silent" });
-              await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
+              await emitRuntimeEvent({
+                type: "silent",
+                provider: runtimeSession.provider,
+              });
             } else if (
               trimmed === "no response requested." ||
               trimmed === "no response requested" ||
               trimmed === "no response needed." ||
               trimmed === "no response needed"
             ) {
-              log.info("Silent response (no response requested)", { sessionName });
+              log.info("Silent response (no response requested)", {
+                sessionName,
+              });
               await emitLegacyProviderEvent({ type: "silent" });
-              await emitRuntimeEvent({ type: "silent", provider: runtimeSession.provider });
+              await emitRuntimeEvent({
+                type: "silent",
+                provider: runtimeSession.provider,
+              });
             } else {
+              updateRuntimeLiveState(sessionName, {
+                activity: "streaming",
+                summary: truncateLiveSummary(messageText) || "response",
+                agentId: agent.id,
+                runId,
+                provider: runtimeSession.provider,
+                model,
+                source: streaming.currentSource,
+              });
               await emitResponse(messageText, event.metadata);
             }
           }
@@ -705,11 +921,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       // Handle tool results
+      if (event.type === "tool.result_delivered") {
+        // Tool handler finished and result was sent to the runtime provider.
+        // The provider is now responsible (model thinking). Clear the stuck-tool watchdog.
+        if (toolStuckTimer !== undefined) {
+          clearTimeout(toolStuckTimer);
+          toolStuckTimer = undefined;
+        }
+        // Arm provider inactivity watchdog: catches cases where the provider
+        // (e.g. codex's API call to OpenAI) hangs silently with no further events.
+        armProviderInactivityWatch();
+      }
+
       if (event.type === "tool.completed") {
         const durationMs = streaming.toolStartTime ? Date.now() - streaming.toolStartTime : undefined;
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
+        const toolInput = streaming.currentToolInput;
         const output = truncateOutput(event.content);
+        ensureCurrentTurnUserObservation();
+        pushObservationEvent("tool.end", {
+          preview: toolName,
+          payload: {
+            toolId,
+            toolName,
+            isError: event.isError ?? false,
+            durationMs,
+          },
+        });
         recordTraceEvent({
           turnId: streaming.currentTraceTurnId,
           provider: runtimeSession.provider,
@@ -740,6 +979,67 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           agentId: agent.id,
           metadata: event.metadata,
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
+        updateRuntimeLiveState(sessionName, {
+          activity: event.isError ? "blocked" : "thinking",
+          summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          toolName,
+          source: streaming.currentSource,
+        });
+
+        if (!event.isError) {
+          const previousSkillVisibility =
+            runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined);
+          const nextSkillVisibility = markLoadedFromRaviSkillToolCall(previousSkillVisibility, {
+            provider: runtimeSession.provider,
+            toolName,
+            toolInput,
+            output: event.content,
+            metadata: event.metadata,
+          });
+          if (nextSkillVisibility !== previousSkillVisibility) {
+            persistRuntimeSkillVisibility(nextSkillVisibility);
+            patchLiveState(
+              {
+                activity: "thinking",
+                summary: `${toolName} completed`,
+                agentId: agent.id,
+                runId,
+                provider: runtimeSession.provider,
+                model,
+                toolName,
+                source: streaming.currentSource,
+              },
+              nextSkillVisibility,
+            );
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "skill.visibility.loaded",
+              eventGroup: "runtime",
+              status: "complete",
+              payloadJson: {
+                toolId,
+                toolName,
+                loadedSkills: nextSkillVisibility.loadedSkills,
+                skillVisibility: nextSkillVisibility,
+                metadata: event.metadata,
+              },
+              preview: nextSkillVisibility.loadedSkills.join(", "),
+            });
+            await emitRuntimeEvent({
+              type: "skill.visibility.loaded",
+              provider: runtimeSession.provider,
+              skillVisibility: nextSkillVisibility,
+              loadedSkills: nextSkillVisibility.loadedSkills,
+              metadata: event.metadata,
+            });
+          }
+        }
 
         streaming.lastToolFailure = event.isError
           ? {
@@ -764,7 +1064,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               streaming.pendingMessages.map((message) => ({ ...message })),
             );
           }
-          log.info("Executing deferred abort after unsafe tool completed", { sessionName });
+          log.info("Executing deferred abort after unsafe tool completed", {
+            sessionName,
+          });
           streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
           recordTraceEvent({
             turnId: streaming.currentTraceTurnId,
@@ -789,8 +1091,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               deferred: true,
             },
           });
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: streaming.internalAbortReason,
+          });
           streaming.abortController.abort();
-          streamingSessions.delete(sessionName);
+          if (streamingSessions.delete(sessionName)) {
+            drainPendingStarts();
+          }
         }
         continue;
       }
@@ -814,7 +1121,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
-        const runtimeSessionParams = event.session?.params ?? undefined;
+        // Skill gates can be persisted by the Codex Bash hook in a separate process.
+        // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
+        refreshRuntimeSessionParamsFromDb();
+        const runtimeSessionParams = mergeRuntimeSessionParams(event.session?.params ?? undefined);
+        const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
         const persistedSessionId =
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
@@ -877,10 +1188,31 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             promptTooLongReset: streaming._promptTooLong ?? false,
           },
         });
+        flushObservationEvents("turn.complete", {
+          provider: runtimeSession.provider,
+          usage: event.usage,
+          costUsd: cost?.totalCost ?? null,
+          responseChars: responseText.trim().length,
+          providerSessionIdAfter: persistedSessionId ?? event.providerSessionId ?? null,
+          promptTooLongReset: streaming._promptTooLong ?? false,
+        });
+        if (
+          shouldRefreshTaskSessionTtlOnTurnComplete({
+            sessionName,
+            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+          })
+        ) {
+          applyTaskSessionTtlForAgent(session, agent.id, { source: "runtime.turn.complete" });
+        }
 
         // Auto-reset session when prompt is too long (compact failed)
         if (streaming._promptTooLong) {
-          log.warn("Auto-resetting session due to 'Prompt is too long'", { sessionName });
+          log.warn("Auto-resetting session due to 'Prompt is too long'", {
+            sessionName,
+          });
+          revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: "prompt_too_long_reset",
+          });
           deleteSession(session.sessionKey);
           streaming._promptTooLong = false;
 
@@ -919,6 +1251,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.pendingAbort = false;
         streaming.turnActive = false;
         clearTraceTurnState();
+        patchLiveState(
+          {
+            activity: "idle",
+            summary: "turn complete",
+            agentId: agent.id,
+            runId,
+            provider: runtimeSession.provider,
+            model,
+            source: streaming.currentSource,
+          },
+          terminalSkillVisibility,
+        );
 
         // Signal generator to continue (it will clear or keep queue based on interrupted flag)
         signalTurnComplete();
@@ -936,12 +1280,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             rawEvent: summarizeRuntimeFailureRawEvent(event.rawEvent) ?? null,
           },
         });
+        flushObservationEvents("turn.interrupt", {
+          provider: runtimeSession.provider,
+          reason: streaming.internalAbortReason ?? "provider_interrupted",
+          metadata: event.metadata ?? null,
+        });
         streaming.interrupted = true;
         responseText = "";
         clearActiveToolState();
         streaming.lastToolFailure = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
+        markRuntimeLiveIdle(sessionName, "turn interrupted");
         signalTurnComplete();
         continue;
       }
@@ -974,7 +1324,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata,
           });
         } else {
-          await emitRuntimeEvent({ ...event, provider: runtimeSession.provider });
+          await emitRuntimeEvent({
+            ...event,
+            provider: runtimeSession.provider,
+          });
         }
         recordTerminalTraceOnce({
           status: suppressedRecoverable ? "interrupted" : "failed",
@@ -989,6 +1342,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             metadata: event.metadata ?? null,
           },
         });
+        flushObservationEvents(suppressedRecoverable ? "turn.interrupt" : "turn.failed", {
+          provider: runtimeSession.provider,
+          recoverable: event.recoverable ?? true,
+          suppressedRecoverable,
+          error: suppressedRecoverable ? null : event.error,
+          abortReason: suppressedRecoverable ? (internalAbortReason ?? "recoverable_interrupt_failure") : null,
+        });
 
         responseText = "";
         clearActiveToolState();
@@ -999,26 +1359,43 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         if (suppressedRecoverable) {
+          markRuntimeLiveIdle(sessionName, "turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
             internalAbortReason,
             error: event.error,
           });
+          // End the session instead of `continue`: claude-code can wedge after
+          // an interrupt-during-tool_use (`[ede_diagnostic] stop_reason=tool_use`).
+          // Subsequent prompts to the wedged subprocess silently no-op while the
+          // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
+          // on the next inbound message; preserve queued/current messages so the
+          // next session can drain them instead of losing the interrupted turn.
+          stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
           signalTurnComplete();
-          continue;
+          streaming.done = true;
+          break;
         }
 
         if (streaming.agentMode !== "sentinel") {
           await emitResponse(formatUserFacingTurnFailure(event.error));
         }
+        updateRuntimeLiveState(sessionName, {
+          activity: "blocked",
+          summary: truncateLiveSummary(event.error) || "turn failed",
+          agentId: agent.id,
+          runId,
+          provider: runtimeSession.provider,
+          model,
+          source: streaming.currentSource,
+        });
 
         signalTurnComplete();
       }
     }
   } finally {
     log.info("Streaming session ended", { runId, sessionName });
-    clearInterval(watchdog);
 
     streaming.done = true;
     streaming.starting = false;
@@ -1038,7 +1415,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streaming.abortController.abort();
     }
 
-    streamingSessions.delete(sessionName);
-    drainPendingStarts();
+    if (streamingSessions.delete(sessionName)) {
+      drainPendingStarts();
+    }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }

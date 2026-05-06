@@ -8,7 +8,7 @@ process.stdout.write(
     body: {
       scope: "overlay.whatsapp",
       topicPatterns: ["ravi.session.>"],
-      capabilities: ["snapshot.open", "ping", "placeholder.outline"],
+      capabilities: ["snapshot.open", "ping"],
       protocolVersion: 1,
     },
   })}\n`,
@@ -47,7 +47,7 @@ process.stdin.on("data", (chunk) => {
         body: {
           scope: "overlay.whatsapp",
           topicPatterns: ["ravi.session.>"],
-          capabilities: ["snapshot.open", "ping", "placeholder.outline"],
+          capabilities: ["snapshot.open", "ping"],
           protocolVersion: 1,
         },
       });
@@ -72,7 +72,7 @@ process.stdin.on("data", (chunk) => {
             pid: process.pid,
             startedAt: new Date().toISOString(),
           },
-          capabilities: ["snapshot.open", "ping", "placeholder.outline"],
+          capabilities: ["snapshot.open", "ping"],
         },
       });
       write({
@@ -104,35 +104,6 @@ process.stdin.on("data", (chunk) => {
         },
       });
       continue;
-    }
-
-    if (input.body?.name === "placeholder.outline") {
-      write({
-        v: 1,
-        type: "event",
-        id: "evt_outline",
-        ts: new Date().toISOString(),
-        source: "fixture.stream",
-        topic: "overlay.whatsapp.command.requested",
-        cursor: "local:2",
-        body: {
-          commandId: input.id,
-          name: "placeholder.outline",
-          args: input.body.args ?? {},
-        },
-      });
-      write({
-        v: 1,
-        type: "ack",
-        id: "ack_outline",
-        ts: new Date().toISOString(),
-        source: "fixture.stream",
-        body: {
-          commandId: input.id,
-          ok: true,
-          result: { accepted: true, emitted: "overlay.whatsapp.command.requested" },
-        },
-      });
     }
 
     if (input.body?.name === "fail") {

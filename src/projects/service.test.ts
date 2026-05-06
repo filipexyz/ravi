@@ -15,6 +15,8 @@ import {
 } from "./index.js";
 import { createWorkflowSpec, startWorkflowRun } from "../workflows/index.js";
 import { dbDeleteTask, getCanonicalTaskDir, getTaskDetails } from "../tasks/index.js";
+import { attachTagSlugsToAsset } from "../tags/helpers.js";
+import { detachTagFromSelector, searchTagBindingsForSelector } from "../tags/service.js";
 import { rmSync } from "node:fs";
 
 const createdProjectIds: string[] = [];
@@ -34,6 +36,13 @@ afterEach(() => {
   while (createdProjectIds.length > 0) {
     const projectId = createdProjectIds.pop();
     if (projectId) {
+      for (const binding of searchTagBindingsForSelector({ selector: { project: projectId } }).bindings) {
+        detachTagFromSelector({
+          slug: binding.tagSlug,
+          selector: { project: projectId },
+          actor: "projects-test",
+        });
+      }
       db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
     }
   }
@@ -127,6 +136,43 @@ describe("projects service", () => {
 
     const listed = listProjects();
     expect(listed.find((entry) => entry.id === project.id)?.linkCount).toBe(1);
+  });
+
+  it("filters project lists by canonical tags and surfaces tag bindings", () => {
+    const tagged = createProject({
+      title: "Tagged Alignment",
+      summary: "Should appear in tag filtered lists",
+      hypothesis: "Tags group project surfaces",
+      nextStep: "Keep tag filtering canonical",
+    });
+    const untagged = createProject({
+      title: "Untagged Alignment",
+      summary: "Should not appear in tag filtered lists",
+      hypothesis: "No tag binding",
+      nextStep: "Stay outside filtered lists",
+    });
+    createdProjectIds.push(tagged.id, untagged.id);
+
+    attachTagSlugsToAsset({
+      assetType: "project",
+      assetId: tagged.slug,
+      tags: ["Ops.Team"],
+      source: "projects.service.test",
+      createdBy: "projects-test",
+    });
+
+    const listed = listProjects({ tagSlug: "Ops.Team" });
+    expect(listed.map((project) => project.slug)).toEqual([tagged.slug]);
+    expect(listed[0].tags?.map((tag) => tag.tagSlug)).toEqual(["ops.team"]);
+
+    const details = getProjectDetails(tagged.id);
+    expect(details?.tags).toContainEqual(
+      expect.objectContaining({
+        tagSlug: "ops.team",
+        assetType: "project",
+        assetId: tagged.slug,
+      }),
+    );
   });
 
   it("lists and resolves resource links with typed metadata", () => {

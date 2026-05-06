@@ -72,7 +72,7 @@ function makeStartRequest(messages: string[], overrides: Partial<RuntimeStartReq
     cwd: "/tmp/ravi-codex",
     abortController: new AbortController(),
     systemPromptAppend: "",
-    env: { PATH: process.env.PATH ?? "" },
+    env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TRANSPORT: "stdio" },
     ...overrides,
   };
 }
@@ -91,6 +91,8 @@ function findEventsByType<T extends RuntimeEvent["type"]>(
 ): Array<Extract<RuntimeEvent, { type: T }>> {
   return events.filter((event): event is Extract<RuntimeEvent, { type: T }> => event.type === type);
 }
+
+const CODEX_DYNAMIC_TOOL_DISABLED_TEXT = "No Ravi dynamic tool handler is available for this Codex request.";
 
 describe("createCodexRuntimeProvider", () => {
   it("synchronizes plugin-backed skills during provider bootstrap", () => {
@@ -132,7 +134,7 @@ describe("createCodexRuntimeProvider", () => {
       const preToolUse = Array.isArray(payload?.hooks?.PreToolUse) ? payload.hooks.PreToolUse : [];
       const raviHookGroup = preToolUse.find(
         (group: any) =>
-          group?.matcher === "^Bash$" &&
+          group?.matcher === "^(Bash|shell)$" &&
           Array.isArray(group?.hooks) &&
           group.hooks.some((handler: any) => handler?.statusMessage === "ravi codex bash permission gate"),
       );
@@ -140,6 +142,7 @@ describe("createCodexRuntimeProvider", () => {
       expect(raviHookGroup).toBeDefined();
       expect(raviHookGroup.hooks[0]?.command).toContain("context");
       expect(raviHookGroup.hooks[0]?.command).toContain("codex-bash-hook");
+      expect(raviHookGroup.hooks[0]?.command).not.toContain(".test.");
     } finally {
       if (originalHome === undefined) {
         delete process.env.HOME;
@@ -149,13 +152,8 @@ describe("createCodexRuntimeProvider", () => {
     }
   });
 
-  it("builds Codex-local start handlers from generic runtime host services", async () => {
+  it("keeps CLI registry commands out of Codex dynamic tools", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-provider-"));
-    const toolSpec = {
-      name: "tools_list",
-      description: "List tools",
-      inputSchema: { type: "object" },
-    };
     const capabilityRequests: Array<Parameters<RuntimeHostServices["authorizeCapability"]>[0]> = [];
     const hostServices: RuntimeHostServices = {
       authorizeCapability: async (request) => {
@@ -173,7 +171,9 @@ describe("createCodexRuntimeProvider", () => {
         updatedInput: request.input,
       }),
       requestUserInput: async () => ({ approved: true, answers: { choice: "A" } }),
-      listDynamicTools: () => [toolSpec],
+      listDynamicTools: () => {
+        throw new Error("Codex provider must not advertise Ravi CLI commands as native dynamic tools.");
+      },
       executeDynamicTool: async (request) => ({
         success: true,
         contentItems: [{ type: "inputText", text: `ran ${request.toolName}` }],
@@ -188,7 +188,8 @@ describe("createCodexRuntimeProvider", () => {
       hostServices,
     });
 
-    expect(prepared?.startRequest?.dynamicTools).toEqual([toolSpec]);
+    expect(prepared?.startRequest?.dynamicTools).toBeUndefined();
+    expect(prepared?.startRequest?.handleRuntimeToolCall).toBeUndefined();
     await expect(
       prepared?.startRequest?.approveRuntimeRequest?.({
         kind: "permission",
@@ -205,20 +206,9 @@ describe("createCodexRuntimeProvider", () => {
       objectType: "tool",
       objectId: "Bash",
     });
-
-    await expect(
-      prepared?.startRequest?.handleRuntimeToolCall?.({
-        toolName: "tools_list",
-        callId: "call_1",
-        arguments: {},
-      }),
-    ).resolves.toMatchObject({
-      success: true,
-      contentItems: [{ type: "inputText", text: "ran tools_list" }],
-    });
   });
 
-  it("passes dynamic tools when bootstrapping a resumed app-server thread", async () => {
+  it("does not pass dynamic tools when bootstrapping a resumed app-server thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-resume-tools-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
     const requestsPath = join(cwd, "thread-requests.jsonl");
@@ -294,7 +284,163 @@ rl.on("line", (line) => {
     expect(threadRequests).toHaveLength(1);
     expect(threadRequests[0]?.method).toBe("thread/resume");
     expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
-    expect(threadRequests[0]?.params.dynamicTools).toEqual([toolSpec]);
+    expect(threadRequests[0]?.params.dynamicTools).toBeNull();
+  });
+
+  it("passes Ravi runtime env to the Codex app-server process", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const envPath = join(cwd, "env.json");
+    const argsPath = join(cwd, "args.json");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));
+writeFileSync(${JSON.stringify(envPath)}, JSON.stringify({
+  RAVI_CONTEXT_KEY: process.env.RAVI_CONTEXT_KEY,
+  RAVI_SESSION_NAME: process.env.RAVI_SESSION_NAME,
+  RAVI_AGENT_ID: process.env.RAVI_AGENT_ID,
+}));
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    send({ id: message.id, result: { thread: { id: "thread_env" }, model: "gpt-5.4", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_env", turn: { id: "turn_env", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_env", turn: { id: "turn_env", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["env"], {
+        cwd,
+        env: {
+          PATH: process.env.PATH ?? "",
+          RAVI_CODEX_TRANSPORT: "stdio",
+          RAVI_CONTEXT_KEY: "rctx_test_env",
+          RAVI_SESSION_NAME: "dev",
+          RAVI_AGENT_ID: "dev",
+        },
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(1);
+    expect(JSON.parse(readFileSync(envPath, "utf8"))).toEqual({
+      RAVI_CONTEXT_KEY: "rctx_test_env",
+      RAVI_SESSION_NAME: "dev",
+      RAVI_AGENT_ID: "dev",
+    });
+    const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+    expect(args).toContain("features.codex_hooks=true");
+    expect(args).toContain("shell_environment_policy.inherit=all");
+    expect(args).toContain("shell_environment_policy.ignore_default_excludes=true");
+    expect(args).toContain(
+      'shell_environment_policy.include_only=["RAVI_*","CODEX_HOME","PATH","HOME","USER","LOGNAME","SHELL","TMPDIR","TMP","TEMP","LANG","LC_*"]',
+    );
+  });
+
+  it("respawns the app-server when Ravi runtime env changes between turns", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-env-refresh-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const envPath = join(cwd, "env.jsonl");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+appendFileSync(${JSON.stringify(envPath)}, JSON.stringify({
+  RAVI_CONTEXT_KEY: process.env.RAVI_CONTEXT_KEY,
+  RAVI_SESSION_NAME: process.env.RAVI_SESSION_NAME,
+}) + "\\n");
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({ id: message.id, result: { thread: { id: "thread_env_refresh" }, model: "gpt-5.4", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "turn/started", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "inProgress" } } });
+    send({ jsonrpc: "2.0", method: "turn/completed", params: { threadId: "thread_env_refresh", turn: { id: "turn_env_refresh", status: "completed" } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const env = {
+      PATH: process.env.PATH ?? "",
+      RAVI_CODEX_TRANSPORT: "stdio",
+      RAVI_CONTEXT_KEY: "rctx_first",
+      RAVI_SESSION_NAME: "dev",
+    };
+    async function* prompt() {
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: "first" },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+      env.RAVI_CONTEXT_KEY = "rctx_second";
+      yield {
+        type: "user" as const,
+        message: { role: "user" as const, content: "second" },
+        session_id: "",
+        parent_tool_use_id: null,
+      };
+    }
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        prompt: prompt(),
+        cwd,
+        env,
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(2);
+    expect(
+      readFileSync(envPath, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line).RAVI_CONTEXT_KEY),
+    ).toEqual(["rctx_first", "rctx_second"]);
   });
 
   it("maps CLI completion events and composes prompts with system instructions", async () => {
@@ -339,7 +485,14 @@ rl.on("line", (line) => {
     expect(completions).toHaveLength(1);
     expect(completions[0]?.providerSessionId).toBe("thread_1");
     expect(completions[0]?.session).toEqual({
-      params: { sessionId: "thread_1", cwd: "/tmp/ravi-codex" },
+      params: {
+        sessionId: "thread_1",
+        cwd: "/tmp/ravi-codex",
+        skillVisibility: expect.objectContaining({
+          skills: [],
+          loadedSkills: [],
+        }),
+      },
       displayId: "thread_1",
     });
     expect(completions[0]?.execution).toEqual({
@@ -554,12 +707,73 @@ rl.on("line", (line) => {
     });
 
     const session = provider.startSession(makeStartRequest(["hello"]));
-    await collectEvents(session.events);
+    const events = await collectEvents(session.events);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.systemPromptAppend).toContain("Ravi synchronized these Codex skills for this session:");
     expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-events");
     expect(calls[0]?.systemPromptAppend).toContain("- ravi-system-agents-manager");
+    expect(session.skillVisibility?.loadedSkills).toEqual([]);
+    expect(session.skillVisibility?.skills.map((skill) => skill.id)).toEqual([
+      "ravi-system-agents-manager",
+      "ravi-system-events",
+    ]);
+
+    const completion = findEventsByType(events, "turn.complete")[0];
+    const skillVisibility = completion?.session?.params?.skillVisibility as any;
+    expect(skillVisibility.loadedSkills).toEqual([]);
+    expect(skillVisibility.skills.map((skill: any) => skill.state)).toEqual(["advertised", "advertised"]);
+  });
+
+  it("marks Codex skills loaded from app-server instruction sources", async () => {
+    const codexHome = mkdtempSync(join(tmpdir(), "ravi-codex-skills-"));
+    const originalCodexHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = codexHome;
+
+    try {
+      const { transport } = createMockTransport([
+        () => ({
+          events: (async function* () {
+            yield { type: "thread.started", thread_id: "thread_skill_sources" };
+            yield { type: "turn.started" };
+            yield {
+              type: "turn.completed",
+              usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 },
+              instruction_sources: [join(codexHome, "skills", "ravi-system-events", "SKILL.md")],
+            };
+          })(),
+        }),
+      ]);
+
+      const provider = createCodexRuntimeProvider({
+        transport: transport as any,
+        defaultModel: "gpt-5",
+        syncSkills: () => ["ravi-system-events", "ravi-system-agents-manager"],
+      });
+
+      provider.prepareSession?.({
+        agentId: "main",
+        cwd: "/tmp/ravi-codex",
+        plugins: [{ type: "local", path: "/tmp/ravi/plugins/ravi-system" }],
+      });
+
+      const session = provider.startSession(makeStartRequest(["hello"]));
+      const events = await collectEvents(session.events);
+      const completion = findEventsByType(events, "turn.complete")[0];
+      const skillVisibility = completion?.session?.params?.skillVisibility as any;
+
+      expect(skillVisibility.loadedSkills).toEqual(["ravi-system-events"]);
+      expect(skillVisibility.skills).toEqual([
+        expect.objectContaining({ id: "ravi-system-agents-manager", state: "advertised", confidence: "declared" }),
+        expect.objectContaining({ id: "ravi-system-events", state: "loaded", confidence: "observed" }),
+      ]);
+    } finally {
+      if (originalCodexHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = originalCodexHome;
+      }
+    }
   });
 
   it("maps agent message delta events into runtime text.delta chunks", async () => {
@@ -990,7 +1204,7 @@ rl.on("line", (line) => {
       makeStartRequest([], {
         cwd,
         abortController,
-        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath, RAVI_CODEX_TRANSPORT: "stdio" },
         prompt: (async function* () {
           yield {
             type: "user" as const,
@@ -1131,7 +1345,7 @@ rl.on("line", (line) => {
       makeStartRequest([], {
         cwd,
         abortController,
-        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath },
+        env: { PATH: process.env.PATH ?? "", RAVI_CODEX_TEST_LOG: logPath, RAVI_CODEX_TRANSPORT: "stdio" },
         prompt: (async function* () {
           yield {
             type: "user" as const,
@@ -1385,7 +1599,7 @@ rl.on("line", (line) => {
     expect(approvalResponses.input_req.answers).toEqual({ choice: "A" });
   });
 
-  it("routes app-server dynamic tool calls through the runtime tool handler", async () => {
+  it("rejects unexpected app-server dynamic tool calls without native CLI execution", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
     writeFileSync(
@@ -1401,6 +1615,22 @@ const send = (message) => {
 let toolResponse;
 const finishIfReady = () => {
   if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "dyn_tool_1",
+        type: "dynamicToolCall",
+        tool: "tools_list",
+        arguments: { verbose: true },
+        success: toolResponse.success,
+        contentItems: toolResponse.contentItems,
+        status: "completed",
+        parentItemId: "turn_tool",
+      },
+    },
+  });
   send({
     jsonrpc: "2.0",
     method: "item/completed",
@@ -1426,8 +1656,8 @@ rl.on("line", (line) => {
   if (message.id && !message.method) {
     if (message.id === "tool_req") {
       if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
-      if (!Array.isArray(message.result?.content_items)) throw new Error("tool response must use content_items");
-      if (message.result?.contentItems) throw new Error("tool response must not use contentItems");
+      if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
+      if (message.result?.content_items) throw new Error("tool response must not use content_items");
     }
     toolResponse = message.result;
     finishIfReady();
@@ -1473,17 +1703,12 @@ rl.on("line", (line) => {
     );
     chmodSync(command, 0o755);
 
-    const toolRequests: Array<Parameters<NonNullable<RuntimeStartRequest["handleRuntimeToolCall"]>>[0]> = [];
     const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
     const session = provider.startSession(
       makeStartRequest(["tool"], {
         cwd,
-        handleRuntimeToolCall: async (request) => {
-          toolRequests.push(request);
-          return {
-            success: true,
-            contentItems: [{ type: "inputText", text: "tool output" }],
-          };
+        handleRuntimeToolCall: async () => {
+          throw new Error("Codex provider must not execute Ravi CLI commands through native dynamic tools.");
         },
       }),
     );
@@ -1493,14 +1718,6 @@ rl.on("line", (line) => {
     const toolStarted = findEventsByType(events, "tool.started");
     const toolCompleted = findEventsByType(events, "tool.completed");
 
-    expect(toolRequests).toHaveLength(1);
-    expect(toolRequests[0]?.toolName).toBe("tools_list");
-    expect(toolRequests[0]?.callId).toBe("dyn_tool_1");
-    expect(toolRequests[0]?.arguments).toEqual({ verbose: true });
-    expect(toolRequests[0]?.metadata?.source).toBe("codex.app-server");
-    expect(toolRequests[0]?.metadata?.thread?.id).toBe("thread_tool");
-    expect(toolRequests[0]?.metadata?.turn?.id).toBe("turn_tool");
-    expect(toolRequests[0]?.metadata?.item?.id).toBe("dyn_tool_1");
     expect(toolStarted[0]?.toolUse).toEqual({
       id: "dyn_tool_1",
       name: "tools_list",
@@ -1509,11 +1726,262 @@ rl.on("line", (line) => {
     expect(toolStarted[0]?.metadata?.item?.type).toBe("dynamic_tool_call");
     expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_1");
     expect(toolCompleted[0]?.toolName).toBe("tools_list");
-    expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: "tool output" }]);
-    expect(toolCompleted[0]?.isError).toBe(false);
+    expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }]);
+    expect(toolCompleted[0]?.isError).toBe(true);
     expect(response).toEqual({
       success: true,
-      content_items: [{ type: "inputText", text: "tool output" }],
+      contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
+    });
+  });
+
+  it("emits synthetic tool completion immediately so the agent never hangs when codex's item/completed never arrives", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-no-complete-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+let toolResponse;
+const finishIfReady = () => {
+  if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_tool_no_complete",
+        type: "agentMessage",
+        text: JSON.stringify(toolResponse),
+        status: "completed",
+        parentItemId: "turn_tool_no_complete",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_tool_no_complete", turn: { id: "turn_tool_no_complete", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    toolResponse = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: {
+        thread: { id: "thread_tool_no_complete", title: "Tool thread without completion" },
+        model: "gpt-5.4",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({
+      jsonrpc: "2.0",
+      method: "thread/started",
+      params: { thread: { id: "thread_tool_no_complete", title: "Tool thread without completion" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_tool_no_complete", turn: { id: "turn_tool_no_complete", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "tool_req_no_complete",
+      method: "item/tool/call",
+      params: {
+        callId: "dyn_tool_no_complete_1",
+        threadId: "thread_tool_no_complete",
+        turnId: "turn_tool_no_complete",
+        tool: "tools_list",
+        arguments: { verbose: false },
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["tool"], {
+        cwd,
+        handleRuntimeToolCall: async () => {
+          throw new Error("Codex provider must not execute Ravi CLI commands through native dynamic tools.");
+        },
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+    const toolStarted = findEventsByType(events, "tool.started");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+
+    expect(toolStarted[0]?.toolUse).toEqual({
+      id: "dyn_tool_no_complete_1",
+      name: "tools_list",
+      input: { verbose: false },
+    });
+    // Synthetic tool.completed must fire even when codex never emits item/completed
+    // for the dynamic_tool_call item — otherwise codex's `could not find callback`
+    // race leaves the agent stuck on a dangling tool.started forever.
+    expect(toolCompleted).toHaveLength(1);
+    expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_no_complete_1");
+    expect(toolCompleted[0]?.isError).toBe(true);
+    expect(response).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
+    });
+  });
+
+  it("answers unexpected app-server dynamic tool calls with protocol success and semantic failure", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-tool-call-fail-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { createInterface } from "node:readline";
+
+const rl = createInterface({ input: process.stdin });
+const send = (message) => {
+  process.stdout.write(JSON.stringify(message) + "\\n");
+};
+
+let toolResponse;
+const finishIfReady = () => {
+  if (!toolResponse) return;
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "dyn_tool_fail_1",
+        type: "dynamicToolCall",
+        tool: "tasks_list",
+        arguments: { last: "10" },
+        success: toolResponse.success,
+        contentItems: toolResponse.contentItems,
+        status: "completed",
+        parentItemId: "turn_tool_fail",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "item/completed",
+    params: {
+      item: {
+        id: "msg_tool_fail",
+        type: "agentMessage",
+        text: JSON.stringify(toolResponse),
+        status: "completed",
+        parentItemId: "turn_tool_fail",
+      },
+    },
+  });
+  send({
+    jsonrpc: "2.0",
+    method: "turn/completed",
+    params: { threadId: "thread_tool_fail", turn: { id: "turn_tool_fail", status: "completed" } },
+  });
+};
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && !message.method) {
+    if (message.id === "tool_req_fail") {
+      if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
+      if (message.result?.success !== true) throw new Error("failed tool responses must stay protocol-successful");
+      if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
+    }
+    toolResponse = message.result;
+    finishIfReady();
+    return;
+  }
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") {
+    return;
+  }
+  if (message.id && (message.method === "thread/start" || message.method === "thread/resume")) {
+    send({
+      id: message.id,
+      result: { thread: { id: "thread_tool_fail", title: "Tool fail thread" }, model: "gpt-5.4", modelProvider: "openai" },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    send({ id: message.id, result: {} });
+    send({ jsonrpc: "2.0", method: "thread/started", params: { thread: { id: "thread_tool_fail", title: "Tool fail thread" } } });
+    send({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: { threadId: "thread_tool_fail", turn: { id: "turn_tool_fail", status: "inProgress" } },
+    });
+    send({
+      jsonrpc: "2.0",
+      id: "tool_req_fail",
+      method: "item/tool/call",
+      params: {
+        callId: "dyn_tool_fail_1",
+        threadId: "thread_tool_fail",
+        turnId: "turn_tool_fail",
+        tool: "tasks_list",
+        arguments: { last: "10" },
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest(["tool"], {
+        cwd,
+        handleRuntimeToolCall: async () => {
+          throw new Error("Codex provider must not execute Ravi CLI commands through native dynamic tools.");
+        },
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const response = JSON.parse(findEventsByType(events, "assistant.message")[0]?.text ?? "{}");
+    const toolCompleted = findEventsByType(events, "tool.completed");
+
+    expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_fail_1");
+    expect(toolCompleted[0]?.toolName).toBe("tasks_list");
+    expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }]);
+    expect(toolCompleted[0]?.isError).toBe(true);
+    expect(response).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }],
     });
   });
 

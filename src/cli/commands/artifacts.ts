@@ -3,17 +3,26 @@
  */
 
 import "reflect-metadata";
-import { Arg, Command, Group, Option } from "../decorators.js";
+import { file as bunFile } from "bun";
+import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import {
   archiveArtifact,
+  appendArtifactEvent,
   attachArtifact,
   createArtifact,
   getArtifactDetails,
+  listArtifactEvents,
   listArtifacts,
   updateArtifact,
+  type ArtifactEvent,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
+import {
+  buildOverlayArtifactsPayload,
+  normalizeLifecycle,
+  resolveArtifactBlob,
+} from "../../whatsapp-overlay/artifacts.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -96,6 +105,20 @@ function summarizeArtifact(artifact: ArtifactRecord): Record<string, unknown> {
     createdAt: artifact.createdAt,
     updatedAt: artifact.updatedAt,
     deletedAt: artifact.deletedAt ?? null,
+  };
+}
+
+function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
+  return {
+    id: event.id,
+    artifactId: event.artifactId,
+    eventType: event.eventType,
+    status: event.status ?? null,
+    message: event.message ?? null,
+    source: event.source ?? null,
+    actor: event.actor ?? null,
+    payload: event.payload ?? null,
+    createdAt: event.createdAt,
   };
 }
 
@@ -188,7 +211,37 @@ export class ArtifactsCommands {
     @Option({ flags: "--limit <n>", description: "Max artifacts to list (default: 50)" }) limit?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--rich",
+      description:
+        "Return rich projection with stats and per-item lineage (task/session/agent refs). Honors --kind/--session/--task/--limit/--lifecycle/--agent; ignores --tag/--include-deleted.",
+    })
+    rich?: boolean,
+    @Option({
+      flags: "--lifecycle <type>",
+      description: "Filter rich projection by lifecycle: active|archived|stale",
+    })
+    lifecycle?: string,
+    @Option({ flags: "--agent <id>", description: "Filter rich projection by agent id" })
+    agentId?: string,
   ) {
+    if (rich) {
+      const normalizedLifecycle = lifecycle?.trim() ? normalizeLifecycle(lifecycle.trim()) : null;
+      if (lifecycle?.trim() && !normalizedLifecycle) {
+        fail(`Invalid --lifecycle: ${lifecycle}. Use active|archived|stale.`);
+      }
+      const payload = buildOverlayArtifactsPayload({
+        ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+        ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
+        ...(kind?.trim() ? { kind: kind.trim() } : {}),
+        ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
+        ...(session?.trim() ? { sessionId: session.trim() } : {}),
+        ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
+      });
+      printJson(payload);
+      return payload;
+    }
+
     const artifacts = listArtifacts({
       ...(kind?.trim() ? { kind } : {}),
       ...(session?.trim() ? { session } : {}),
@@ -343,5 +396,76 @@ export class ArtifactsCommands {
       console.log(`✓ Artifact archived: ${artifact.id}`);
     }
     return payload;
+  }
+
+  @Command({ name: "event", description: "Append an artifact lifecycle event" })
+  event(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Arg("eventType", { description: "Event type, e.g. started, completed, failed" }) eventType: string,
+    @Option({ flags: "--status <status>", description: "Lifecycle status for this event" }) status?: string,
+    @Option({ flags: "--message <text>", description: "Human-readable event message" }) message?: string,
+    @Option({ flags: "--source <source>", description: "Event source" }) source?: string,
+    @Option({ flags: "--payload <json>", description: "Structured event payload JSON object" }) payload?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ctx = contextDefaults();
+    const artifact = status?.trim() ? updateArtifact(id, { status }, { actor: ctx.agentId }) : undefined;
+    const event = appendArtifactEvent(id, {
+      eventType,
+      ...(status?.trim() ? { status } : {}),
+      ...(message?.trim() ? { message } : {}),
+      ...(source?.trim() ? { source } : {}),
+      ...(payload ? { payload: parseJsonObject(payload, "--payload") } : {}),
+      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+    });
+    const result = { success: true, event, ...(artifact ? { artifact } : {}) };
+    if (asJson) {
+      printJson(result);
+    } else {
+      console.log(`✓ Artifact event appended: ${event.eventType}`);
+    }
+    return result;
+  }
+
+  @Command({ name: "events", description: "List artifact lifecycle events" })
+  events(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const events = listArtifactEvents(id);
+      const payload = { artifactId: id, total: events.length, events: events.map(summarizeEvent) };
+      if (asJson) {
+        printJson(payload);
+      } else if (events.length === 0) {
+        console.log("No artifact events found.");
+      } else {
+        for (const event of events) {
+          console.log(
+            `${new Date(event.createdAt).toISOString()} ${event.eventType}${event.status ? ` [${event.status}]` : ""}${
+              event.message ? ` — ${event.message}` : ""
+            }`,
+          );
+        }
+      }
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  @Command({ name: "blob", description: "Stream raw artifact bytes" })
+  @Returns.binary()
+  async blob(@Arg("id", { description: "Artifact id" }) id: string): Promise<Response> {
+    const result = await resolveArtifactBlob({ artifactId: id });
+    if (!result.ok) {
+      return Response.json({ ok: false, error: result.error, code: result.code }, { status: result.status });
+    }
+    const headers = {
+      "Content-Type": result.mimeType,
+      "Content-Length": String(result.sizeBytes),
+      "Cache-Control": "private, max-age=60",
+    };
+    return new Response(bunFile(result.path), { headers });
   }
 }

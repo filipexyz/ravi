@@ -1,6 +1,6 @@
 import type { DeliveryBarrier } from "../delivery-barriers.js";
 import type { SessionEntry } from "../router/index.js";
-import type { MessageActorMetadata } from "./message-types.js";
+import type { MessageActorMetadata, RaviCommandPromptMetadata } from "./message-types.js";
 import type {
   RuntimeEventMetadata,
   RuntimeEffort,
@@ -24,6 +24,7 @@ export interface RuntimeMessageTarget extends MessageActorMetadata {
 export interface RuntimeUserMessage extends RuntimePromptMessage {
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
+  commands?: RaviCommandPromptMetadata[];
   pendingId?: string;
   queuedAt?: number;
 }
@@ -58,6 +59,7 @@ export interface RuntimeHostStreamingSession {
   toolRunning: boolean;
   currentToolId?: string;
   currentToolName?: string;
+  currentToolInput?: unknown;
   toolStartTime?: number;
   lastToolFailure?: {
     at: number;
@@ -99,8 +101,6 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
-  /** Prevents duplicate recovery for the same stuck runtime process. */
-  stallRecoveryRequested?: boolean;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}

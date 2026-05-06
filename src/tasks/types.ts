@@ -29,6 +29,7 @@ export type TaskRuntimeEffort = RuntimeEffort;
 export type TaskRuntimeThinking = "off" | "normal" | "verbose";
 
 export type TaskRuntimeOptionsSource =
+  | "prompt_override"
   | "dispatch_override"
   | "task_override"
   | "profile_default"
@@ -428,6 +429,7 @@ export interface CreateTaskInput {
   parentTaskId?: string;
   dependsOnTaskIds?: string[];
   worktree?: TaskWorktreeConfig;
+  tagSlugs?: string[];
 }
 
 export interface DispatchTaskInput {
@@ -482,6 +484,17 @@ export interface TaskCommentInput {
   body: string;
 }
 
+export type TaskListSort = "updated" | "created";
+
+export type TaskListOrder = "asc" | "desc";
+
+export interface TaskListCursor {
+  sort: TaskListSort;
+  order: TaskListOrder;
+  value: number;
+  id: string;
+}
+
 export interface ListTasksOptions {
   status?: TaskStatus;
   agentId?: string;
@@ -490,7 +503,13 @@ export interface ListTasksOptions {
   rootTaskId?: string;
   onlyRootTasks?: boolean;
   profileId?: string;
+  tagSlug?: string;
   query?: string;
   limit?: number;
+  updatedSince?: number;
+  updatedUntil?: number;
+  sort?: TaskListSort;
+  order?: TaskListOrder;
+  cursor?: TaskListCursor;
   archiveMode?: TaskArchiveMode;
 }

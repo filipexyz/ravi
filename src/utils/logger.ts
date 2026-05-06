@@ -145,7 +145,13 @@ class Logger {
       if (v !== undefined && v !== null) {
         const val = typeof v === "string" ? v : JSON.stringify(v);
         const maxLength =
-          k === "stack" || k.endsWith("Stack") || k === "failureDetails" || k === "rawEventErrors"
+          k === "stack" ||
+          k.endsWith("Stack") ||
+          k === "failureDetails" ||
+          k === "rawEventErrors" ||
+          k === "line" ||
+          k === "chunk" ||
+          k === "sql"
             ? TERMINAL_LONG_VALUE_LIMIT
             : TERMINAL_DEFAULT_VALUE_LIMIT;
         const truncated = val.length > maxLength ? val.slice(0, maxLength - 3) + "..." : val;

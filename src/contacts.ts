@@ -3,6 +3,13 @@ import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { getRaviStateDir } from "./utils/paths.js";
+import {
+  attachTagSlugsToAsset,
+  canonicalAssetIdsForTag,
+  canonicalTagSlugsForAsset,
+  replaceMirroredTagSlugsForAsset,
+} from "./tags/helpers.js";
+import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 
 // Re-export normalize functions for backwards compatibility
 export {
@@ -349,6 +356,109 @@ function parseJsonValue(value: string | null): unknown {
   }
 }
 
+function normalizeCanonicalTagSlug(value: string): string | null {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || null;
+}
+
+function legacyContactTagsFromJson(value: string | null): string[] {
+  return (parseJsonArray(value)?.filter((tag): tag is string => typeof tag === "string" && tag.trim() !== "") ??
+    []) as string[];
+}
+
+function getCanonicalContactTagSlugs(contactId: string): string[] {
+  return canonicalTagSlugsForAsset("contact", contactId);
+}
+
+function mergeTagLists(...lists: string[][]): string[] {
+  return [...new Set(lists.flat().filter((tag) => tag.trim() !== ""))];
+}
+
+function attachCanonicalContactTag(contactId: string, tag: string, source: string): string | null {
+  const slug = normalizeCanonicalTagSlug(tag);
+  if (!slug) return null;
+  const [binding] = attachTagSlugsToAsset({
+    assetType: "contact",
+    assetId: contactId,
+    tags: [slug],
+    source,
+    createdBy: "contacts",
+    definitionMetadata: {
+      source: "contacts",
+      migration: "legacy-contact-tags",
+      originalTag: tag,
+    },
+    metadata: {
+      mirroredFrom: "contacts_v2.tags",
+      originalTag: tag,
+    },
+  });
+  return binding?.tagSlug ?? slug;
+}
+
+function syncCanonicalContactTags(contactId: string, tags: string[]): void {
+  const slugs = tags.map((tag) => normalizeCanonicalTagSlug(tag)).filter((tag): tag is string => tag !== null);
+  replaceMirroredTagSlugsForAsset({
+    assetType: "contact",
+    assetId: contactId,
+    tags: slugs,
+    source: "contacts_v2.tags",
+    createdBy: "contacts",
+    definitionMetadata: {
+      source: "contacts",
+      migration: "legacy-contact-tags",
+    },
+    metadata: {
+      mirroredFrom: "contacts_v2.tags",
+    },
+  });
+}
+
+function deleteCanonicalContactTagBindings(contactId: string): void {
+  for (const binding of searchTagBindingsForSelector({ selector: { target: `contact:${contactId}` } }).bindings) {
+    detachTagFromSelector({
+      slug: binding.tagSlug,
+      selector: { target: `contact:${contactId}` },
+      source: binding.source,
+      actor: "contacts",
+    });
+  }
+}
+
+function moveCanonicalContactTagBindings(sourceContactId: string, targetContactId: string): void {
+  for (const binding of searchTagBindingsForSelector({ selector: { target: `contact:${sourceContactId}` } }).bindings) {
+    attachTagSlugsToAsset({
+      assetType: "contact",
+      assetId: targetContactId,
+      tags: [binding.tagSlug],
+      source: binding.source,
+      createdBy: binding.createdBy ?? "contacts",
+      metadata: {
+        ...(binding.metadata ?? {}),
+        source: binding.metadata?.source ?? "contact_merge",
+        mergedFromContactId: sourceContactId,
+      },
+    });
+    detachTagFromSelector({
+      slug: binding.tagSlug,
+      selector: { target: `contact:${sourceContactId}` },
+      source: "contact_merge",
+      actor: "contacts",
+    });
+  }
+}
+
+function contactTags(contactId: string, legacyTagsJson: string | null): string[] {
+  const legacySlugs = legacyContactTagsFromJson(legacyTagsJson)
+    .map((tag) => normalizeCanonicalTagSlug(tag))
+    .filter((tag): tag is string => tag !== null);
+  return mergeTagLists(legacySlugs, getCanonicalContactTagSlugs(contactId));
+}
+
 function legacyIdentityIsGroup(platform: string, value: string): boolean {
   return platform === "whatsapp_group" || normalizePhone(value).startsWith("group:");
 }
@@ -517,6 +627,7 @@ function deleteContactProjection(database: Database, contactId: string): void {
   database.prepare("DELETE FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?").run(contactId);
   database.prepare("DELETE FROM contact_policies WHERE contact_id = ?").run(contactId);
   database.prepare("DELETE FROM contacts WHERE id = ?").run(contactId);
+  deleteCanonicalContactTagBindings(contactId);
 }
 
 function moveCanonicalPlatformIdentities(
@@ -590,6 +701,7 @@ function syncContactProjection(database: Database, contactId: string): void {
     mappedIdentities.find((entry) => entry.mapped.channel === "phone")?.mapped.normalizedValue ?? null;
   const legacyNotes = parseJsonObject(row.notes);
   const legacyTags = parseJsonArray(row.tags);
+  const legacyContactTags = legacyContactTagsFromJson(row.tags);
   const metadata = {
     legacy: {
       sourceTable: "contacts_v2",
@@ -652,6 +764,8 @@ function syncContactProjection(database: Database, contactId: string): void {
       row.created_at,
       row.updated_at,
     );
+
+  syncCanonicalContactTags(row.id, legacyContactTags);
 
   const projectedIdentityKeys = new Set(
     mappedIdentities.map((entry) => `${entry.mapped.channel}\x1f\x1f${entry.mapped.normalizedValue}`),
@@ -1039,7 +1153,7 @@ function rowToContact(row: ContactV2Row): Contact {
     status: (row.status ?? "allowed") as ContactStatus,
     agent_id: row.agent_id,
     reply_mode: (row.reply_mode ?? "auto") as ReplyMode,
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags: contactTags(row.id, row.tags),
     notes: row.notes ? JSON.parse(row.notes) : {},
     opt_out: (row.opt_out ?? 0) === 1,
     source: (row.source as ContactSource) ?? null,
@@ -1097,7 +1211,7 @@ function rowToContactPolicy(row: ContactPolicyRow): ContactPolicy {
     replyMode: (row.reply_mode ?? "auto") as ReplyMode,
     allowedAgents: parseJsonArray(row.allowed_agents_json) as string[] | null,
     optOut: row.opt_out === 1,
-    tags: (parseJsonArray(row.tags_json) as string[] | null) ?? [],
+    tags: contactTags(row.contact_id, row.tags_json),
     notes: parseJsonObject(row.notes_json) ?? {},
     source: (row.source as ContactSource) ?? null,
     lastInboundAt: row.last_inbound_at,
@@ -1897,8 +2011,28 @@ export function updateContact(
  * Find contacts by tag
  */
 export function findContactsByTag(tag: string): Contact[] {
-  const rows = getStatements().findByTag.all(tag) as ContactV2Row[];
-  return rows.map(rowToContact);
+  const contactsById = new Map<string, Contact>();
+  const addRows = (rows: ContactV2Row[]) => {
+    for (const row of rows) {
+      const contact = rowToContact(row);
+      contactsById.set(contact.id, contact);
+    }
+  };
+
+  addRows(getStatements().findByTag.all(tag) as ContactV2Row[]);
+  const normalizedSlug = normalizeCanonicalTagSlug(tag);
+  if (normalizedSlug && normalizedSlug !== tag) {
+    addRows(getStatements().findByTag.all(normalizedSlug) as ContactV2Row[]);
+  }
+
+  if (normalizedSlug) {
+    for (const contactId of canonicalAssetIdsForTag("contact", normalizedSlug) ?? []) {
+      const contact = getContactById(contactId);
+      if (contact) contactsById.set(contact.id, contact);
+    }
+  }
+
+  return [...contactsById.values()].sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
 }
 
 /**
@@ -1937,13 +2071,22 @@ export function addContactTag(phone: string, tag: string): void {
     throw new Error(`Contact not found: ${phone}`);
   }
 
-  if (!contact.tags.includes(tag)) {
-    const tags = [...contact.tags, tag];
+  const canonicalSlug = attachCanonicalContactTag(contact.id, tag, "contacts.addContactTag");
+  if (!canonicalSlug) return;
+  const row = database.prepare("SELECT tags FROM contacts_v2 WHERE id = ?").get(contact.id) as
+    | { tags: string | null }
+    | undefined;
+  const legacyTags = legacyContactTagsFromJson(row?.tags ?? null);
+  const legacySlugs = new Set(
+    legacyTags.map((existing) => normalizeCanonicalTagSlug(existing)).filter((slug): slug is string => slug !== null),
+  );
+  if (!legacySlugs.has(canonicalSlug)) {
+    const tags = [...legacyTags, canonicalSlug];
     database
       .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
       .run(JSON.stringify(tags), contact.id);
-    syncContactProjection(database, contact.id);
   }
+  syncContactProjection(database, contact.id);
 }
 
 /**
@@ -1956,7 +2099,21 @@ export function removeContactTag(phone: string, tag: string): void {
     throw new Error(`Contact not found: ${phone}`);
   }
 
-  const tags = contact.tags.filter((t) => t !== tag);
+  const row = database.prepare("SELECT tags FROM contacts_v2 WHERE id = ?").get(contact.id) as
+    | { tags: string | null }
+    | undefined;
+  const canonicalSlug = normalizeCanonicalTagSlug(tag);
+  const tags = legacyContactTagsFromJson(row?.tags ?? null).filter(
+    (t) => !canonicalSlug || normalizeCanonicalTagSlug(t) !== canonicalSlug,
+  );
+  if (canonicalSlug) {
+    detachTagFromSelector({
+      slug: canonicalSlug,
+      selector: { target: `contact:${contact.id}` },
+      source: "contacts.removeContactTag",
+      actor: "contacts",
+    });
+  }
   database
     .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(tags), contact.id);
@@ -2376,6 +2533,7 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     // Move identities from source → target
     statements.moveIdentities.run(targetId, sourceId);
     movedCanonicalIdentityIds = moveCanonicalPlatformIdentities(database, sourceId, targetId);
+    moveCanonicalContactTagBindings(sourceId, targetId);
 
     // Merge best data: prefer target, fill blanks from source
     const updates: string[] = [];
@@ -2476,7 +2634,9 @@ export function autoLinkIdentities(phoneValue: string, lidValue: string): void {
 }
 
 // ============================================================================
-// Group Tags — per-group tags stored in notes.groupTags
+// Legacy group tags — per-group tags stored in notes.groupTags.
+// Removal target: chat_participants.metadata_json or a participant annotation
+// table once group labels are owned by the chat model instead of group-as-contact.
 // ============================================================================
 
 /**

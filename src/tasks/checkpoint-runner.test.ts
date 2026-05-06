@@ -7,11 +7,21 @@ const emittedEvents: Array<{ topic: string; data: Record<string, unknown> }> = [
 const publishCalls: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 
 mock.module("../nats.js", () => ({
+  connectNats: mock(async () => {}),
+  closeNats: mock(async () => {}),
+  ensureConnected: mock(async () => ({})),
   getNats: mock(() => ({})),
+  isExplicitConnect: mock(() => false),
+  publish: mock(async (topic: string, data: Record<string, unknown>) => {
+    emittedEvents.push({ topic, data });
+  }),
+  subscribe: mock(async function* () {}),
   nats: {
     emit: mock(async (topic: string, data: Record<string, unknown>) => {
       emittedEvents.push({ topic, data });
     }),
+    subscribe: mock(async function* () {}),
+    close: mock(async () => {}),
   },
 }));
 
@@ -40,6 +50,40 @@ afterEach(async () => {
   }
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+});
+
+describe("task checkpoint runner backpressure", () => {
+  it("does not publish a missed checkpoint reminder when runtime session pool is saturated", async () => {
+    const created = createTask({
+      title: "Checkpoint backpressure",
+      instructions: "Do not reanimate work sessions while the runtime session pool is saturated.",
+      createdBy: "test",
+      checkpointIntervalMs: 5000,
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = dbDispatchTask(created.task.id, {
+      agentId: "dev",
+      sessionName: `${created.task.id}-work`,
+      assignedBy: "test",
+    });
+
+    const runner = new TaskCheckpointRunner({
+      canPublishSessionPrompt: () => false,
+    });
+    await runner.start();
+    try {
+      const reminders = await runner.sweep(dispatched.assignment.checkpointDueAt! + 1);
+      expect(reminders).toBe(0);
+    } finally {
+      await runner.stop();
+    }
+
+    expect(publishCalls).toHaveLength(0);
+    expect(dbListTaskEvents(created.task.id).map((event) => event.type)).not.toContain("task.checkpoint.missed");
+    const assignment = dbGetActiveAssignment(created.task.id)!;
+    expect(assignment.checkpointOverdueCount ?? 0).toBe(0);
+  });
 });
 
 describe.skip("task checkpoint runner", () => {

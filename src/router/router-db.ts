@@ -274,6 +274,52 @@ interface SettingRow {
   updated_at: number;
 }
 
+interface SkillGateRuleRow {
+  id: string;
+  skill: string | null;
+  disabled: number;
+  pattern: string | null;
+  group_regex: string | null;
+  tool: string | null;
+  tool_prefix: string | null;
+  tool_regex: string | null;
+  command: string | null;
+  command_prefix: string | null;
+  command_regex: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DbSkillGateRule {
+  id: string;
+  skill?: string;
+  disabled: boolean;
+  pattern?: string;
+  groupRegex?: string;
+  tool?: string;
+  toolPrefix?: string;
+  toolRegex?: string;
+  command?: string;
+  commandPrefix?: string;
+  commandRegex?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DbSkillGateRuleInput {
+  id: string;
+  skill?: string | null;
+  disabled?: boolean;
+  pattern?: string | null;
+  groupRegex?: string | null;
+  tool?: string | null;
+  toolPrefix?: string | null;
+  toolRegex?: string | null;
+  command?: string | null;
+  commandPrefix?: string | null;
+  commandRegex?: string | null;
+}
+
 interface MatrixAccountRow {
   username: string;
   user_id: string;
@@ -439,6 +485,67 @@ export interface ListContextsOptions {
 }
 
 // ============================================================================
+// Slow Query Instrumentation
+// ============================================================================
+
+const SLOW_QUERY_WARN_MS = Number(process.env.RAVI_DB_SLOW_QUERY_WARN_MS ?? 250);
+const SLOW_QUERY_ERROR_MS = Number(process.env.RAVI_DB_SLOW_QUERY_ERROR_MS ?? 5000);
+const SLOW_QUERY_DISABLED = process.env.RAVI_DB_SLOW_QUERY_DISABLE === "1";
+
+function shortSql(sql: string): string {
+  const collapsed = sql.replace(/\s+/g, " ").trim();
+  return collapsed.length > 200 ? `${collapsed.slice(0, 200)}…` : collapsed;
+}
+
+function reportSlowQuery(elapsed: number, method: string, sql: string): void {
+  if (elapsed >= SLOW_QUERY_ERROR_MS) {
+    log.error("very slow db query (possible lock contention)", { ms: elapsed, method, sql: shortSql(sql) });
+  } else if (elapsed >= SLOW_QUERY_WARN_MS) {
+    log.warn("slow db query", { ms: elapsed, method, sql: shortSql(sql) });
+  }
+}
+
+function instrumentSlowQueries(db: Database): void {
+  if (SLOW_QUERY_DISABLED) return;
+
+  const originalPrepare = db.prepare.bind(db);
+  // @ts-expect-error: replacing method with a wrapper of identical signature
+  db.prepare = (sql: string) => {
+    const stmt = originalPrepare(sql);
+    const proxy = new Proxy(stmt, {
+      get(target, prop, receiver) {
+        const value = Reflect.get(target, prop, receiver);
+        if (
+          typeof value === "function" &&
+          (prop === "run" || prop === "get" || prop === "all" || prop === "iterate" || prop === "values")
+        ) {
+          return (...args: unknown[]) => {
+            const start = Date.now();
+            try {
+              return (value as (...a: unknown[]) => unknown).apply(target, args);
+            } finally {
+              reportSlowQuery(Date.now() - start, String(prop), sql);
+            }
+          };
+        }
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    return proxy;
+  };
+
+  const originalExec = db.exec.bind(db);
+  db.exec = (sql: string, ...rest: unknown[]) => {
+    const start = Date.now();
+    try {
+      return originalExec(sql, ...(rest as []));
+    } finally {
+      reportSlowQuery(Date.now() - start, "exec", sql);
+    }
+  };
+}
+
+// ============================================================================
 // Lazy Database Initialization
 // ============================================================================
 
@@ -495,13 +602,25 @@ function getDb(): Database {
   }
 
   const db = new Database(nextDbPath);
+  instrumentSlowQueries(db);
   routerDbState.db = db;
   routerDbState.dbPath = nextDbPath;
 
-  // WAL mode for concurrent read/write access (CLI + daemon)
+  // WAL mode for concurrent read/write access (CLI + daemon).
   db.exec("PRAGMA journal_mode = WAL");
-  // Wait up to 5s for locks to clear instead of failing immediately
+  // Wait up to 5s for locks to clear instead of failing immediately.
   db.exec("PRAGMA busy_timeout = 5000");
+  // synchronous=NORMAL halves fsync count vs FULL while remaining crash-safe in
+  // WAL mode (only the WAL is fsynced per commit; the DB file is fsynced at
+  // checkpoint). This is the single biggest knob to mitigate disk-pressure
+  // induced lock spirals.
+  db.exec("PRAGMA synchronous = NORMAL");
+  // 64MB page cache (default ~2MB). Most reads hit cache; reduces disk pressure.
+  db.exec("PRAGMA cache_size = -64000");
+  // Temp tables & sort scratch in RAM.
+  db.exec("PRAGMA temp_store = MEMORY");
+  // 256MB memory-mapped read window. Hot queries become page-cache hits.
+  db.exec("PRAGMA mmap_size = 268435456");
 
   // Enable foreign keys before schema creation
   db.exec("PRAGMA foreign_keys = ON");
@@ -541,6 +660,23 @@ function getDb(): Database {
       updated_at INTEGER NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS skill_gate_rules (
+      id TEXT PRIMARY KEY,
+      skill TEXT,
+      disabled INTEGER NOT NULL DEFAULT 0 CHECK(disabled IN (0,1)),
+      pattern TEXT,
+      group_regex TEXT,
+      tool TEXT,
+      tool_prefix TEXT,
+      tool_regex TEXT,
+      command TEXT,
+      command_prefix TEXT,
+      command_regex TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_skill_gate_rules_disabled ON skill_gate_rules(disabled);
+
     CREATE TABLE IF NOT EXISTS sessions (
       session_key TEXT PRIMARY KEY,
       name TEXT,
@@ -575,6 +711,23 @@ function getDb(): Database {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS session_goals (
+      session_key TEXT PRIMARY KEY REFERENCES sessions(session_key) ON DELETE CASCADE,
+      goal_id TEXT NOT NULL,
+      objective TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('active','paused','budget_limited','complete')),
+      token_budget INTEGER,
+      tokens_used INTEGER NOT NULL DEFAULT 0,
+      time_used_seconds INTEGER NOT NULL DEFAULT 0,
+      task_id TEXT,
+      project_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_session_goals_status ON session_goals(status);
+    CREATE INDEX IF NOT EXISTS idx_session_goals_task ON session_goals(task_id);
+    CREATE INDEX IF NOT EXISTS idx_session_goals_project ON session_goals(project_id);
 
     CREATE TABLE IF NOT EXISTS chats (
       id TEXT PRIMARY KEY,
@@ -706,6 +859,8 @@ function getDb(): Database {
       media_type TEXT,
       created_at INTEGER NOT NULL
     );
+    -- TTL pruning hot path (DELETE FROM message_metadata WHERE created_at < ?)
+    CREATE INDEX IF NOT EXISTS idx_message_metadata_created ON message_metadata(created_at);
 
     -- Cost tracking: granular per-turn cost events
     CREATE TABLE IF NOT EXISTS cost_events (
@@ -727,6 +882,32 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_cost_events_agent ON cost_events(agent_id);
     CREATE INDEX IF NOT EXISTS idx_cost_events_session ON cost_events(session_key);
     CREATE INDEX IF NOT EXISTS idx_cost_events_created ON cost_events(created_at);
+
+    -- Daily aggregated metrics. Source of truth for historical reporting AND
+    -- the gate that allows TTL pruning of session_events / cost_events: a date
+    -- without a row here cannot be pruned. UPSERT-friendly: re-running the
+    -- rollup for a day overwrites the previous aggregation.
+    CREATE TABLE IF NOT EXISTS daily_metrics (
+      agent_id              TEXT NOT NULL,
+      date                  TEXT NOT NULL,           -- YYYY-MM-DD (UTC)
+      model                 TEXT NOT NULL,
+      input_tokens          INTEGER NOT NULL DEFAULT 0,
+      output_tokens         INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      total_cost_usd        REAL    NOT NULL DEFAULT 0,
+      cost_event_count      INTEGER NOT NULL DEFAULT 0,
+      turns_complete        INTEGER NOT NULL DEFAULT 0,
+      turns_failed          INTEGER NOT NULL DEFAULT 0,
+      turns_interrupted     INTEGER NOT NULL DEFAULT 0,
+      tool_calls            INTEGER NOT NULL DEFAULT 0,
+      tool_errors           INTEGER NOT NULL DEFAULT 0,
+      total_duration_ms     INTEGER NOT NULL DEFAULT 0,
+      rolled_up_at          INTEGER NOT NULL,
+      PRIMARY KEY (agent_id, date, model)
+    );
+    CREATE INDEX IF NOT EXISTS idx_daily_metrics_date ON daily_metrics(date);
+    CREATE INDEX IF NOT EXISTS idx_daily_metrics_agent_date ON daily_metrics(agent_id, date DESC);
 
     -- Session trace: append-only session inspection ledger
     CREATE TABLE IF NOT EXISTS session_events (
@@ -770,6 +951,12 @@ function getDb(): Database {
       ON session_events(session_name, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_run_seq
       ON session_events(run_id, seq);
+    -- Hot path: SELECT COALESCE(MAX(seq), 0) + 1 FROM session_events WHERE session_key = ?
+    CREATE INDEX IF NOT EXISTS idx_session_events_key_seq
+      ON session_events(session_key, seq DESC);
+    -- TTL pruning: DELETE FROM session_events WHERE timestamp < ?
+    CREATE INDEX IF NOT EXISTS idx_session_events_timestamp
+      ON session_events(timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_turn_seq
       ON session_events(turn_id, seq);
     CREATE INDEX IF NOT EXISTS idx_session_events_type_time
@@ -849,6 +1036,9 @@ function getDb(): Database {
 
     CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_kind
       ON session_trace_blobs(kind, created_at);
+    -- TTL pruning: DELETE FROM session_trace_blobs WHERE created_at < ?
+    CREATE INDEX IF NOT EXISTS idx_session_trace_blobs_created
+      ON session_trace_blobs(created_at);
 
     -- Instances: central config entity (one per omni connection)
     CREATE TABLE IF NOT EXISTS instances (
@@ -1389,6 +1579,7 @@ function getDb(): Database {
       ts         INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id, ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 
     CREATE TABLE IF NOT EXISTS router_meta (
       key        TEXT PRIMARY KEY,
@@ -2283,6 +2474,11 @@ interface PreparedStatements {
   getSetting: Statement;
   deleteSetting: Statement;
   listSettings: Statement;
+  // Skill gate rules
+  upsertSkillGateRule: Statement;
+  getSkillGateRule: Statement;
+  deleteSkillGateRule: Statement;
+  listSkillGateRules: Statement;
   // Matrix accounts
   upsertMatrixAccount: Statement;
   getMatrixAccount: Statement;
@@ -2321,6 +2517,7 @@ interface PreparedStatements {
   listContexts: Statement;
   touchContext: Statement;
   revokeContext: Statement;
+  updateContextRuntimeState: Statement;
   updateContextCapabilities: Statement;
   deleteContext: Statement;
 }
@@ -2414,6 +2611,30 @@ function getStatements(): PreparedStatements {
     getSetting: database.prepare("SELECT * FROM settings WHERE key = ?"),
     deleteSetting: database.prepare("DELETE FROM settings WHERE key = ?"),
     listSettings: database.prepare("SELECT * FROM settings ORDER BY key"),
+
+    // Skill gate rules
+    upsertSkillGateRule: database.prepare(`
+      INSERT INTO skill_gate_rules (
+        id, skill, disabled, pattern, group_regex, tool, tool_prefix, tool_regex,
+        command, command_prefix, command_regex, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        skill = excluded.skill,
+        disabled = excluded.disabled,
+        pattern = excluded.pattern,
+        group_regex = excluded.group_regex,
+        tool = excluded.tool,
+        tool_prefix = excluded.tool_prefix,
+        tool_regex = excluded.tool_regex,
+        command = excluded.command,
+        command_prefix = excluded.command_prefix,
+        command_regex = excluded.command_regex,
+        updated_at = excluded.updated_at
+    `),
+    getSkillGateRule: database.prepare("SELECT * FROM skill_gate_rules WHERE id = ?"),
+    deleteSkillGateRule: database.prepare("DELETE FROM skill_gate_rules WHERE id = ?"),
+    listSkillGateRules: database.prepare("SELECT * FROM skill_gate_rules ORDER BY id"),
 
     // Matrix accounts
     upsertMatrixAccount: database.prepare(`
@@ -2531,6 +2752,14 @@ function getStatements(): PreparedStatements {
     listContexts: database.prepare("SELECT * FROM contexts ORDER BY created_at DESC"),
     touchContext: database.prepare("UPDATE contexts SET last_used_at = ? WHERE context_id = ?"),
     revokeContext: database.prepare("UPDATE contexts SET revoked_at = ? WHERE context_id = ?"),
+    updateContextRuntimeState: database.prepare(`
+      UPDATE contexts SET
+        session_name = ?,
+        source_json = ?,
+        metadata_json = ?,
+        last_used_at = ?
+      WHERE context_id = ?
+    `),
     updateContextCapabilities: database.prepare(`
       UPDATE contexts SET
         capabilities_json = ?,
@@ -3052,6 +3281,16 @@ export function dbGetRoute(pattern: string, accountId: string): (RouteConfig & {
 }
 
 /**
+ * Get an active route by its durable config id.
+ */
+export function dbGetRouteById(id: number): (RouteConfig & { id: number }) | null {
+  const row = getDb().prepare("SELECT * FROM routes WHERE id = ? AND deleted_at IS NULL").get(id) as
+    | RouteRow
+    | undefined;
+  return row ? rowToRoute(row) : null;
+}
+
+/**
  * List routes, optionally filtered by account
  */
 export function dbListRoutes(accountId?: string): (RouteConfig & { id: number })[] {
@@ -3219,6 +3458,83 @@ export function dbListSettings(): Record<string, string> {
     result[row.key] = row.value;
   }
   return result;
+}
+
+// ============================================================================
+// Skill Gate Rule CRUD
+// ============================================================================
+
+function cleanOptionalText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function rowToSkillGateRule(row: SkillGateRuleRow): DbSkillGateRule {
+  return {
+    id: row.id,
+    ...(row.skill !== null ? { skill: row.skill } : {}),
+    disabled: row.disabled === 1,
+    ...(row.pattern !== null ? { pattern: row.pattern } : {}),
+    ...(row.group_regex !== null ? { groupRegex: row.group_regex } : {}),
+    ...(row.tool !== null ? { tool: row.tool } : {}),
+    ...(row.tool_prefix !== null ? { toolPrefix: row.tool_prefix } : {}),
+    ...(row.tool_regex !== null ? { toolRegex: row.tool_regex } : {}),
+    ...(row.command !== null ? { command: row.command } : {}),
+    ...(row.command_prefix !== null ? { commandPrefix: row.command_prefix } : {}),
+    ...(row.command_regex !== null ? { commandRegex: row.command_regex } : {}),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function dbListSkillGateRules(): DbSkillGateRule[] {
+  const s = getStatements();
+  return (s.listSkillGateRules.all() as SkillGateRuleRow[]).map(rowToSkillGateRule);
+}
+
+export function dbGetSkillGateRule(id: string): DbSkillGateRule | null {
+  const s = getStatements();
+  const row = s.getSkillGateRule.get(id) as SkillGateRuleRow | undefined;
+  return row ? rowToSkillGateRule(row) : null;
+}
+
+export function dbUpsertSkillGateRule(input: DbSkillGateRuleInput): DbSkillGateRule {
+  const id = cleanOptionalText(input.id);
+  if (!id) {
+    throw new Error("Skill gate rule id is required.");
+  }
+
+  const s = getStatements();
+  const existing = dbGetSkillGateRule(id);
+  const now = Date.now();
+  s.upsertSkillGateRule.run(
+    id,
+    cleanOptionalText(input.skill),
+    input.disabled === true ? 1 : 0,
+    cleanOptionalText(input.pattern),
+    cleanOptionalText(input.groupRegex),
+    cleanOptionalText(input.tool),
+    cleanOptionalText(input.toolPrefix),
+    cleanOptionalText(input.toolRegex),
+    cleanOptionalText(input.command),
+    cleanOptionalText(input.commandPrefix),
+    cleanOptionalText(input.commandRegex),
+    existing?.createdAt ?? now,
+    now,
+  );
+  log.info("Upserted skill gate rule", { id, disabled: input.disabled === true });
+  return dbGetSkillGateRule(id)!;
+}
+
+export function dbDeleteSkillGateRule(id: string): boolean {
+  const cleanId = cleanOptionalText(id);
+  if (!cleanId) {
+    return false;
+  }
+
+  const s = getStatements();
+  s.deleteSkillGateRule.run(cleanId);
+  return getDbChanges() > 0;
 }
 
 // ============================================================================
@@ -3435,14 +3751,136 @@ export function dbTouchContext(contextId: string, lastUsedAt = Date.now()): void
   s.touchContext.run(lastUsedAt, contextId);
 }
 
-export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
-  const s = getStatements();
-  const existing = dbGetContext(contextId);
-  if (!existing) {
+export function dbUpdateContextRuntimeState(
+  contextId: string,
+  input: {
+    sessionName?: string;
+    source?: ContextSource;
+    metadata?: Record<string, unknown>;
+  },
+  lastUsedAt = Date.now(),
+): ContextRecord {
+  if (!dbGetContext(contextId)) {
     throw new Error(`Context not found: ${contextId}`);
   }
-  s.revokeContext.run(revokedAt, contextId);
+  const source = input.source === undefined ? undefined : ContextSourceSchema.parse(input.source);
+  const metadata = input.metadata === undefined ? undefined : z.record(z.string(), z.unknown()).parse(input.metadata);
+  const s = getStatements();
+  s.updateContextRuntimeState.run(
+    input.sessionName ?? null,
+    source ? JSON.stringify(source) : null,
+    metadata ? JSON.stringify(metadata) : null,
+    lastUsedAt,
+    contextId,
+  );
   return dbGetContext(contextId)!;
+}
+
+export interface RevokeContextOptions {
+  revokedAt?: number;
+  cascade?: boolean;
+  reason?: string;
+}
+
+export interface RevokeContextResult {
+  context: ContextRecord;
+  cascaded: ContextRecord[];
+  revokedAt: number;
+}
+
+/**
+ * Revoke a context. By default cascades to all descendants (children whose
+ * `metadata.parentContextId` chains back to this context) within one
+ * transaction; the same `revokedAt` timestamp is applied to every record.
+ *
+ * Pass `cascade: false` only when rotating a parent without invalidating
+ * already-issued workers. The CLI surface should require an opt-in flag and
+ * emit a warning before calling this with cascade disabled.
+ */
+export function dbRevokeContextCascade(contextId: string, options: RevokeContextOptions = {}): RevokeContextResult {
+  const root = dbGetContext(contextId);
+  if (!root) {
+    throw new Error(`Context not found: ${contextId}`);
+  }
+  const revokedAt = options.revokedAt ?? Date.now();
+  const cascade = options.cascade !== false;
+  const s = getStatements();
+
+  const targets: ContextRecord[] = [root];
+  if (cascade) {
+    const allRows = s.listContexts.all() as ContextRow[];
+    const all = allRows.map((row) => rowToContext(row));
+    const childrenByParent = new Map<string, ContextRecord[]>();
+    for (const ctx of all) {
+      const parentId = typeof ctx.metadata?.parentContextId === "string" ? ctx.metadata.parentContextId : null;
+      if (!parentId) continue;
+      const list = childrenByParent.get(parentId) ?? [];
+      list.push(ctx);
+      childrenByParent.set(parentId, list);
+    }
+
+    const visited = new Set<string>([root.contextId]);
+    const queue: string[] = [root.contextId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const children = childrenByParent.get(current) ?? [];
+      for (const child of children) {
+        if (visited.has(child.contextId)) continue;
+        visited.add(child.contextId);
+        targets.push(child);
+        queue.push(child.contextId);
+      }
+    }
+  }
+
+  const db = getDb();
+  const reasonNote = options.reason?.trim();
+  const reasonKey = "revocationReason";
+  const cascadeKey = "cascadedFrom";
+  const cascadeFlagKey = "revokedViaCascade";
+  const cascadeRootKey = "cascadeRootContextId";
+
+  db.transaction(() => {
+    for (const target of targets) {
+      // Skip if already revoked at the same or earlier timestamp (idempotency).
+      if (target.revokedAt && target.revokedAt <= revokedAt) {
+        // Still update metadata if a reason or cascade flag should be set.
+      }
+      const metadata: Record<string, unknown> = { ...(target.metadata ?? {}) };
+      if (reasonNote) {
+        metadata[reasonKey] = reasonNote;
+      }
+      if (target.contextId !== root.contextId) {
+        metadata[cascadeFlagKey] = true;
+        metadata[cascadeRootKey] = root.contextId;
+        const chain = Array.isArray(metadata[cascadeKey]) ? (metadata[cascadeKey] as unknown[]) : [];
+        if (!chain.includes(root.contextId)) {
+          chain.push(root.contextId);
+        }
+        metadata[cascadeKey] = chain;
+      }
+
+      db.prepare(`UPDATE contexts SET revoked_at = ?, metadata_json = ? WHERE context_id = ?`).run(
+        revokedAt,
+        JSON.stringify(metadata),
+        target.contextId,
+      );
+    }
+  })();
+
+  const finalRoot = dbGetContext(contextId)!;
+  const cascaded: ContextRecord[] = [];
+  for (const target of targets) {
+    if (target.contextId === root.contextId) continue;
+    const refreshed = dbGetContext(target.contextId);
+    if (refreshed) cascaded.push(refreshed);
+  }
+  return { context: finalRoot, cascaded, revokedAt };
+}
+
+export function dbRevokeContext(contextId: string, revokedAt = Date.now()): ContextRecord {
+  const result = dbRevokeContextCascade(contextId, { revokedAt, cascade: false });
+  return result.context;
 }
 
 export function dbUpdateContextCapabilities(contextId: string, capabilities: ContextCapability[]): ContextRecord {
@@ -3794,6 +4232,10 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_TRACE_BLOBS_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
+const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 /**
  * Delete message metadata older than 7 days.
@@ -3814,6 +4256,107 @@ export function dbCleanupExpiredSessions(): number {
   const s = getStatements();
   s.cleanupExpiredSessions.run(Date.now());
   return getDbChanges();
+}
+
+export interface DbPruneResult {
+  messageMetadata: number;
+  sessionEvents: number;
+  sessionTraceBlobs: number;
+  auditLog: number;
+  costEvents: number;
+  expiredSessions: number;
+  vacuumed: boolean;
+  vacuumedBytesReclaimed?: number;
+  walCheckpointed: boolean;
+}
+
+export interface DbPruneOptions {
+  vacuum?: boolean;
+  dryRun?: boolean;
+  walCheckpoint?: boolean;
+}
+
+/**
+ * Prune stale rows from large tables.
+ *
+ * In dry-run mode, returns the row counts that WOULD be deleted (no writes).
+ *
+ * In live mode, runs each delete in its own transaction so a slow path doesn't
+ * block subsequent prunes if the daemon is under load. After pruning, optionally
+ * runs `PRAGMA wal_checkpoint(PASSIVE)` to drain the WAL and `VACUUM` to reclaim
+ * file space (rewrites the file — slow but reclaims megabytes).
+ */
+export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
+  const db = getDb();
+  const now = Date.now();
+  const result: DbPruneResult = {
+    messageMetadata: 0,
+    sessionEvents: 0,
+    sessionTraceBlobs: 0,
+    auditLog: 0,
+    costEvents: 0,
+    expiredSessions: 0,
+    vacuumed: false,
+    walCheckpointed: false,
+  };
+
+  if (options.dryRun) {
+    const count = (sql: string, threshold: number): number =>
+      Number((db.prepare(sql).get(threshold) as { c: number }).c ?? 0);
+    result.messageMetadata = count(
+      "SELECT COUNT(*) AS c FROM message_metadata WHERE created_at < ?",
+      now - MESSAGE_META_TTL_MS,
+    );
+    result.sessionEvents = count(
+      "SELECT COUNT(*) AS c FROM session_events WHERE timestamp < ?",
+      now - SESSION_EVENTS_TTL_MS,
+    );
+    result.sessionTraceBlobs = count(
+      "SELECT COUNT(*) AS c FROM session_trace_blobs WHERE created_at < ?",
+      now - SESSION_TRACE_BLOBS_TTL_MS,
+    );
+    result.auditLog = count("SELECT COUNT(*) AS c FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
+    result.costEvents = count("SELECT COUNT(*) AS c FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
+    result.expiredSessions = count(
+      "SELECT COUNT(*) AS c FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?",
+      now,
+    );
+    return result;
+  }
+
+  // Each delete runs in its own implicit transaction. We deliberately don't
+  // wrap them in a single BEGIN/COMMIT — a long single transaction is a worse
+  // lock-contention risk than several short ones.
+  const runDelete = (sql: string, threshold: number): number => {
+    db.prepare(sql).run(threshold);
+    return getDbChanges();
+  };
+
+  result.messageMetadata = runDelete("DELETE FROM message_metadata WHERE created_at < ?", now - MESSAGE_META_TTL_MS);
+  result.sessionEvents = runDelete("DELETE FROM session_events WHERE timestamp < ?", now - SESSION_EVENTS_TTL_MS);
+  result.sessionTraceBlobs = runDelete(
+    "DELETE FROM session_trace_blobs WHERE created_at < ?",
+    now - SESSION_TRACE_BLOBS_TTL_MS,
+  );
+  result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
+  result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
+  result.expiredSessions = dbCleanupExpiredSessions();
+
+  if (options.walCheckpoint) {
+    db.exec("PRAGMA wal_checkpoint(PASSIVE)");
+    result.walCheckpointed = true;
+  }
+
+  if (options.vacuum) {
+    const before = (db.query("PRAGMA page_count").get() as { page_count: number }).page_count;
+    const pageSize = (db.query("PRAGMA page_size").get() as { page_size: number }).page_size;
+    db.exec("VACUUM");
+    const after = (db.query("PRAGMA page_count").get() as { page_count: number }).page_count;
+    result.vacuumed = true;
+    result.vacuumedBytesReclaimed = Math.max(0, (before - after) * pageSize);
+  }
+
+  return result;
 }
 
 // ============================================================================
