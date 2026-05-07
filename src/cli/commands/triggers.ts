@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
@@ -44,6 +45,8 @@ export class TriggersCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical trigger tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching triggers to skip (default: 0)" }) offset?: string,
   ) {
     let triggers = dbListTriggers();
 
@@ -54,16 +57,28 @@ export class TriggersCommands {
     }
     const tagFilter = tagSlug?.trim() || null;
     triggers = filterItemsByCanonicalTag(triggers, "trigger", tagFilter ?? undefined, (trigger) => trigger.id);
+    const page = paginateCliItems(triggers, { limit, offset });
+    const pageTriggers = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "triggers", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageTriggers.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
 
     const payload = {
-      total: triggers.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      triggers: triggers.map(serializeTrigger),
+      items: pageTriggers.map(serializeTrigger),
+      triggers: pageTriggers.map(serializeTrigger),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (triggers.length === 0) {
+    } else if (pageTriggers.length === 0) {
       console.log("\nNo triggers configured.\n");
       console.log("Usage:");
       console.log(
@@ -81,7 +96,7 @@ export class TriggersCommands {
       console.log("  ID        NAME                      ENABLED  TOPIC                           FIRES");
       console.log("  --------  ------------------------  -------  ------------------------------  -----");
 
-      for (const t of triggers) {
+      for (const t of pageTriggers) {
         const id = t.id.padEnd(8);
         const name = t.name.slice(0, 24).padEnd(24);
         const enabled = (t.enabled ? "yes" : "no").padEnd(7);
@@ -91,7 +106,13 @@ export class TriggersCommands {
         console.log(`  ${id}  ${name}  ${enabled}  ${topic}  ${fires}`);
       }
 
-      console.log(`\n  Total: ${triggers.length} triggers`);
+      console.log(
+        `\n  Total: ${page.total} triggers (${pageTriggers.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
       console.log("\nUsage:");
       console.log("  ravi triggers show <id>     # Show trigger details");
       console.log("  ravi triggers test <id>     # Test trigger with fake event");

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../../session-control.js";
 import { publishSessionPrompt } from "../../omni/session-stream.js";
@@ -1314,6 +1315,8 @@ export class SessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--live", description: "Include live runtime state snapshot" }) includeLive?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical session tag slug" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -1329,16 +1332,35 @@ export class SessionCommands {
     if (tagSlug?.trim()) {
       sessions = sessions.filter((s) => sessionMatchesTag(s, tagSlug));
     }
+    const page = paginateCliItems(sessions, { limit, offset });
+    const pageSessions = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "sessions", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageSessions.length,
+      total: page.total,
+      options: [
+        "--agent",
+        agentId,
+        ephemeralOnly ? "--ephemeral" : null,
+        includeLive ? "--live" : null,
+        "--tag",
+        tagSlug?.trim() || null,
+      ],
+    });
 
     const payload = {
-      total: sessions.length,
+      total: page.total,
+      pagination,
       filters: {
         agentId: agentId ?? null,
         ephemeralOnly: Boolean(ephemeralOnly),
         live: Boolean(includeLive),
         tag: tagSlug?.trim() || null,
       },
-      sessions: sessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      items: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      sessions: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
     };
 
     if (asJson) {
@@ -1346,19 +1368,21 @@ export class SessionCommands {
       return payload;
     }
 
-    if (sessions.length === 0) {
+    if (pageSessions.length === 0) {
       console.log(agentId ? `No sessions for agent: ${agentId}` : "No sessions found.");
       return payload;
     }
 
     const label = agentId ? `Sessions for ${agentId}` : ephemeralOnly ? "Ephemeral sessions" : "All sessions";
-    console.log(`\n${label} (${sessions.length}):\n`);
+    console.log(
+      `\n${label} (${pageSessions.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+    );
 
     if (ephemeralOnly) {
       console.log("  NAME                                  AGENT     EXPIRES AT          DISPLAY");
       console.log("  ────────────────────────────────────  ────────  ──────────────────  ──────────────────");
 
-      for (const s of sessions) {
+      for (const s of pageSessions) {
         const name = (s.name ?? s.sessionKey).padEnd(38);
         const agent = (s.agentId ?? "-").padEnd(8);
         const expires = s.expiresAt ? formatDate(s.expiresAt).padEnd(18) : "never".padEnd(18);
@@ -1373,7 +1397,7 @@ export class SessionCommands {
         "  ────────────────────────────────────  ────────  ────────  ─────────  ─────────  ──────────────────  ───────────────  ──────────────────",
       );
 
-      for (const s of sessions) {
+      for (const s of pageSessions) {
         const ephTag = s.ephemeral ? "⏳" : "  ";
         const name = (s.name ?? s.sessionKey).padEnd(36);
         const agent = (s.agentId ?? "-").padEnd(8);
@@ -1387,6 +1411,10 @@ export class SessionCommands {
       }
     }
 
+    if (pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
     console.log();
     return payload;
   }

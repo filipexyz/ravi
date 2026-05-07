@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import {
   dbCreateHook,
@@ -179,18 +180,32 @@ export class HooksCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical hook tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching hooks to skip (default: 0)" }) offset?: string,
   ) {
     const tagFilter = tagSlug?.trim() || null;
     const hooks = filterItemsByCanonicalTag(dbListHooks(), "hook", tagFilter ?? undefined, (hook) => hook.id);
+    const page = paginateCliItems(hooks, { limit, offset });
+    const pageHooks = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "hooks", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageHooks.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
     const payload = {
-      total: hooks.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      hooks: hooks.map(serializeHook),
+      items: pageHooks.map(serializeHook),
+      hooks: pageHooks.map(serializeHook),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (hooks.length === 0) {
+    } else if (pageHooks.length === 0) {
       console.log("\nNo hooks configured.\n");
       console.log("Usage:");
       console.log(
@@ -205,7 +220,7 @@ export class HooksCommands {
       console.log(
         "  --------  ------------------------  -------  ------------  ----------------------  -----------------",
       );
-      for (const hook of hooks) {
+      for (const hook of pageHooks) {
         const id = hook.id.padEnd(8);
         const name = hook.name.slice(0, 24).padEnd(24);
         const enabled = (hook.enabled ? "yes" : "no").padEnd(7);
@@ -214,7 +229,13 @@ export class HooksCommands {
         const action = hook.actionType;
         console.log(`  ${id}  ${name}  ${enabled}  ${event}  ${scope}  ${action}`);
       }
-      console.log(`\n  Total: ${hooks.length} hooks`);
+      console.log(
+        `\n  Total: ${page.total} hooks (${pageHooks.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
       console.log("\nUsage:");
       console.log("  ravi hooks show <id>");
       console.log("  ravi hooks test <id>");

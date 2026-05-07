@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { getScopeContext, isScopeEnforced, canAccessResource } from "../../permissions/scope.js";
 import { getAgent } from "../../router/config.js";
@@ -93,6 +94,9 @@ export class CronCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical cron job tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching cron jobs to skip (default: 0)" })
+    offset?: string,
   ) {
     let jobs = dbListCronJobs();
 
@@ -103,16 +107,28 @@ export class CronCommands {
     }
     const tagFilter = tagSlug?.trim() || null;
     jobs = filterItemsByCanonicalTag(jobs, "cron_job", tagFilter ?? undefined, (job) => job.id);
+    const page = paginateCliItems(jobs, { limit, offset });
+    const pageJobs = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "cron", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageJobs.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
 
     const payload = {
-      total: jobs.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      jobs: jobs.map(serializeCronJob),
+      items: pageJobs.map(serializeCronJob),
+      jobs: pageJobs.map(serializeCronJob),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (jobs.length === 0) {
+    } else if (pageJobs.length === 0) {
       console.log("\nNo cron jobs configured.\n");
       console.log("Usage:");
       console.log('  ravi cron add "Daily Report" --cron "0 9 * * *" --message "Generate report"');
@@ -122,7 +138,7 @@ export class CronCommands {
       console.log("  ID        NAME                      ENABLED  SCHEDULE                 NEXT RUN");
       console.log("  --------  ------------------------  -------  -----------------------  --------------------");
 
-      for (const job of jobs) {
+      for (const job of pageJobs) {
         const id = job.id.padEnd(8);
         const name = job.name.slice(0, 24).padEnd(24);
         const enabled = (job.enabled ? "yes" : "no").padEnd(7);
@@ -136,7 +152,13 @@ export class CronCommands {
         console.log(`  ${id}  ${name}  ${enabled}  ${schedule}  ${nextRun}`);
       }
 
-      console.log(`\n  Total: ${jobs.length} jobs`);
+      console.log(
+        `\n  Total: ${page.total} jobs (${pageJobs.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
       console.log("\nUsage:");
       console.log("  ravi cron show <id>     # Show job details");
       console.log("  ravi cron run <id>      # Manually run job");

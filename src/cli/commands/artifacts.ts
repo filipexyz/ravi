@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { file as bunFile } from "bun";
 import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
   archiveArtifact,
   appendArtifactEvent,
@@ -13,7 +14,7 @@ import {
   createArtifact,
   getArtifactDetails,
   listArtifactEvents,
-  listArtifacts,
+  listArtifactsPage,
   updateArtifact,
   type ArtifactEvent,
   type ArtifactRecord,
@@ -208,7 +209,9 @@ export class ArtifactsCommands {
     @Option({ flags: "--session <nameOrKey>", description: "Filter by session key or name" }) session?: string,
     @Option({ flags: "--task <id>", description: "Filter by task id" }) taskId?: string,
     @Option({ flags: "--tag <tag>", description: "Filter by tag" }) tag?: string,
-    @Option({ flags: "--limit <n>", description: "Max artifacts to list (default: 50)" }) limit?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500; rich max: 200)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching artifacts to skip (default: 0)" })
+    offset?: string,
     @Option({ flags: "--include-deleted", description: "Include archived/deleted artifacts" }) includeDeleted?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
@@ -219,7 +222,7 @@ export class ArtifactsCommands {
     rich?: boolean,
     @Option({
       flags: "--lifecycle <type>",
-      description: "Filter rich projection by lifecycle: active|archived|stale",
+      description: "Filter rich projection by lifecycle: pending|running|completed|failed|archived",
     })
     lifecycle?: string,
     @Option({ flags: "--agent <id>", description: "Filter rich projection by agent id" })
@@ -228,10 +231,11 @@ export class ArtifactsCommands {
     if (rich) {
       const normalizedLifecycle = lifecycle?.trim() ? normalizeLifecycle(lifecycle.trim()) : null;
       if (lifecycle?.trim() && !normalizedLifecycle) {
-        fail(`Invalid --lifecycle: ${lifecycle}. Use active|archived|stale.`);
+        fail(`Invalid --lifecycle: ${lifecycle}. Use pending|running|completed|failed|archived.`);
       }
       const payload = buildOverlayArtifactsPayload({
         ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+        ...(offset ? { offset: parseCliListOffset(offset) } : {}),
         ...(normalizedLifecycle ? { lifecycle: normalizedLifecycle } : {}),
         ...(kind?.trim() ? { kind: kind.trim() } : {}),
         ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
@@ -242,16 +246,43 @@ export class ArtifactsCommands {
       return payload;
     }
 
-    const artifacts = listArtifacts({
-      ...(kind?.trim() ? { kind } : {}),
-      ...(session?.trim() ? { session } : {}),
-      ...(taskId?.trim() ? { taskId } : {}),
-      ...(tag?.trim() ? { tag } : {}),
-      ...(limit ? { limit: parseInteger(limit, "--limit") } : {}),
+    const pageLimit = parseCliListLimit(limit);
+    const pageOffset = parseCliListOffset(offset);
+    const filterOptions = {
+      ...(kind?.trim() ? { kind: kind.trim() } : {}),
+      ...(session?.trim() ? { session: session.trim() } : {}),
+      ...(taskId?.trim() ? { taskId: taskId.trim() } : {}),
+      ...(tag?.trim() ? { tag: tag.trim() } : {}),
       includeDeleted: includeDeleted === true,
+    };
+    const page = listArtifactsPage({
+      ...filterOptions,
+      limit: pageLimit,
+      offset: pageOffset,
+    });
+    const artifacts = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "artifacts", "list"],
+      limit: pageLimit,
+      offset: pageOffset,
+      returned: artifacts.length,
+      total: page.total,
+      options: [
+        "--kind",
+        kind?.trim() || null,
+        "--session",
+        session?.trim() || null,
+        "--task",
+        taskId?.trim() || null,
+        "--tag",
+        tag?.trim() || null,
+        includeDeleted ? "--include-deleted" : null,
+      ],
     });
     const payload = {
-      total: artifacts.length,
+      total: page.total,
+      pagination,
+      items: artifacts.map(summarizeArtifact),
       artifacts: artifacts.map(summarizeArtifact),
     };
     if (asJson) {
@@ -259,9 +290,16 @@ export class ArtifactsCommands {
     } else if (artifacts.length === 0) {
       console.log("No artifacts found.");
     } else {
+      console.log(
+        `Artifacts (${artifacts.length} returned of ${page.total}, limit ${pageLimit}, offset ${pageOffset}):`,
+      );
       for (const artifact of artifacts) {
         const label = artifact.title ?? artifact.summary ?? artifact.filePath ?? artifact.uri ?? artifact.kind;
         console.log(`${artifact.id} — ${artifact.kind} — ${label}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;

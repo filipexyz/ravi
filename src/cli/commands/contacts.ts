@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
@@ -225,6 +226,8 @@ export class ContactsCommands {
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) filterStatus?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
   ) {
     let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
 
@@ -239,17 +242,31 @@ export class ContactsCommands {
       });
     }
 
+    const page = paginateCliItems(contacts, { limit, offset });
+    const pageContacts = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "contacts", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageContacts.length,
+      total: page.total,
+      options: ["--status", filterStatus],
+    });
+
     const payload = {
       filter: { status: filterStatus ?? null },
       counts: summarizeContacts(contacts),
-      contacts: contacts.map((contact) => serializeContact(contact)),
+      total: page.total,
+      pagination,
+      items: pageContacts.map((contact) => serializeContact(contact)),
+      contacts: pageContacts.map((contact) => serializeContact(contact)),
     };
     if (asJson) {
       printJson(payload);
       return payload;
     }
 
-    if (contacts.length === 0) {
+    if (pageContacts.length === 0) {
       console.log("No contacts registered.");
       console.log("\nAdd a contact: ravi contacts add <phone> [name]");
       return payload;
@@ -260,7 +277,7 @@ export class ContactsCommands {
     console.log(
       "  --  ----------  --------------------  --------------  -------------------  ---------------------------",
     );
-    for (const contact of contacts) {
+    for (const contact of pageContacts) {
       const icon = statusIcon(contact.status);
       const id = contact.id.padEnd(10);
       const name = (contact.name || "-").slice(0, 20).padEnd(20);
@@ -274,8 +291,12 @@ export class ContactsCommands {
     const blocked = contacts.filter((c) => c.status === "blocked").length;
     const discovered = contacts.filter((c) => c.status === "discovered").length;
     console.log(
-      `\n  Total: ${contacts.length} (${allowed} allowed, ${pending} pending, ${blocked} blocked, ${discovered} discovered)`,
+      `\n  Total: ${contacts.length} (${pageContacts.length} returned, limit ${page.limit}, offset ${page.offset}; ${allowed} allowed, ${pending} pending, ${blocked} blocked, ${discovered} discovered)`,
     );
+    if (pagination.nextCommand) {
+      console.log("\n  Next page:");
+      console.log(`    ${pagination.nextCommand}`);
+    }
     return payload;
   }
 

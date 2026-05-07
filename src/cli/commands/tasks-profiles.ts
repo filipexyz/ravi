@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   createTaskWorktreeConfig,
   initTaskProfileScaffold,
@@ -73,22 +74,41 @@ function summarizePrimaryArtifacts(profile: {
 })
 export class TaskProfileCommands {
   @Command({ name: "list", description: "List resolved task profiles from all catalog sources" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching profiles to skip (default: 0)" }) offset?: string,
+  ) {
     const profiles = listTaskProfiles();
-    const payload = { total: profiles.length, profiles };
+    const page = paginateCliItems(profiles, { limit, offset });
+    const pageProfiles = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "tasks", "profiles", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageProfiles.length,
+      total: page.total,
+    });
+    const payload = { total: page.total, pagination, items: pageProfiles, profiles: pageProfiles };
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-    } else if (profiles.length === 0) {
+    } else if (pageProfiles.length === 0) {
       console.log("\nNo task profiles found.\n");
     } else {
-      console.log(`\nTask profiles (${profiles.length})\n`);
+      console.log(
+        `\nTask profiles (${pageProfiles.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset})\n`,
+      );
       console.log("  ID                  VERSION  SOURCE     WORKSPACE                SURFACE");
       console.log("  ------------------  -------  ---------  -----------------------  ------------------------------");
-      for (const profile of profiles) {
+      for (const profile of pageProfiles) {
         console.log(
           `  ${profile.id.padEnd(18)}  ${profile.version.padEnd(7)}  ${profile.sourceKind.padEnd(9)}  ${formatWorkspaceBootstrap(profile).slice(0, 23).padEnd(23)}  ${profile.rendererHints.label.slice(0, 30)}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
       console.log("");
     }

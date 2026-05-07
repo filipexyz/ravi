@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   createSpec,
   getSpecContext,
@@ -32,23 +33,40 @@ export class SpecsCommands {
     @Option({ flags: "--domain <domain>", description: "Filter by domain" }) domain?: string,
     @Option({ flags: "--kind <kind>", description: "Filter by kind: domain|capability|feature" }) kind?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching specs to skip (default: 0)" }) offset?: string,
   ) {
     try {
       const specs = listSpecs({
         ...(domain?.trim() ? { domain: domain.trim() } : {}),
         ...(kind?.trim() ? { kind: normalizeSpecKind(kind) } : {}),
       });
-      const payload = { total: specs.length, specs };
+      const page = paginateCliItems(specs, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "specs", "list"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--domain", domain?.trim() || null, "--kind", kind?.trim() || null],
+      });
+      const payload = { total: page.total, pagination, items: page.items, specs: page.items };
       if (asJson) {
         printJson(payload);
         return payload;
       }
 
-      if (specs.length === 0) {
+      if (page.items.length === 0) {
         console.log("No specs found.");
       } else {
-        console.log(`Specs (${specs.length}):`);
-        for (const spec of specs) printSpecSummary(spec);
+        console.log(
+          `Specs (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):`,
+        );
+        for (const spec of page.items) printSpecSummary(spec);
+        if (pagination.nextCommand) {
+          console.log("\nNext page:");
+          console.log(`  ${pagination.nextCommand}`);
+        }
       }
       return payload;
     } catch (error) {

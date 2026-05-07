@@ -975,7 +975,7 @@ describe("ProjectCommands", () => {
     }
 
     const output = logs.join("\n");
-    expect(output).toContain("Project resources (1):");
+    expect(output).toContain("Project resources (1 returned of 1, limit 50, offset 0):");
     expect(output).toContain("resource:worktree :: ravi.bot worktree :: /tmp/ravi.bot");
     expect(output).toContain("Resource plink-resource-1");
     expect(output).toContain("Locator:    /tmp/ravi.bot");

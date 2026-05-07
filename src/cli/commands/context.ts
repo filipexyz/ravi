@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   issueRuntimeContext,
   resolveRuntimeContextOrThrow,
@@ -133,14 +134,33 @@ export class ContextCommands {
     @Option({ flags: "--kind <kind>", description: "Filter by context kind" }) kind?: string,
     @Option({ flags: "--all", description: "Include revoked and expired contexts" }) includeInactive = false,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching contexts to skip (default: 0)" }) offset?: string,
   ) {
     const contexts = dbListContexts({ agentId, sessionKey, kind, includeInactive });
+    const page = paginateCliItems(contexts, { limit, offset });
+    const pageContexts = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "context", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageContexts.length,
+      total: page.total,
+      options: ["--agent", agentId, "--session", sessionKey, "--kind", kind, includeInactive ? "--all" : null],
+    });
     const payload = {
-      count: contexts.length,
-      contexts: contexts.map((context) => this.serializeContextSummary(context)),
+      count: page.total,
+      total: page.total,
+      pagination,
+      items: pageContexts.map((context) => this.serializeContextSummary(context)),
+      contexts: pageContexts.map((context) => this.serializeContextSummary(context)),
     };
 
     this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
+    if (!asJson && pagination.nextCommand) {
+      console.log("\nNext page:");
+      console.log(`  ${pagination.nextCommand}`);
+    }
     return payload;
   }
 
@@ -819,13 +839,34 @@ interface SerializedCredentialEntry {
 })
 export class ContextCredentialsCommands {
   @Command({ name: "list", description: "List entries in the local credentials store" })
-  list(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
+  list(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching credential entries to skip (default: 0)" })
+    offset?: string,
+  ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
     const exists = file !== null;
     const data = file ?? emptyCredentialsFile();
     const entries = serializeCredentialsFile(data);
-    const payload = { path, exists, default: data.default ?? null, entries };
+    const page = paginateCliItems(entries, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "context", "credentials", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const payload = {
+      path,
+      exists,
+      default: data.default ?? null,
+      total: page.total,
+      pagination,
+      items: page.items,
+      entries: page.items,
+    };
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
@@ -835,10 +876,10 @@ export class ContextCredentialsCommands {
         console.log("  (file not yet written; run 'ravi daemon init-admin-key' or 'ravi context credentials add')");
       } else {
         console.log(`  default: ${data.default ?? "(none)"}`);
-        if (entries.length === 0) {
+        if (page.items.length === 0) {
           console.log("  (no entries)");
         } else {
-          for (const entry of entries) {
+          for (const entry of page.items) {
             const marker = entry.isDefault ? "*" : " ";
             console.log(
               `  ${marker} ${entry.contextKey} :: ${entry.kind ?? "-"} :: agent=${entry.agentId ?? "-"} label=${entry.label ?? "-"}`,
@@ -848,6 +889,10 @@ export class ContextCredentialsCommands {
                 entry.expiresAt,
               )}`,
             );
+          }
+          if (pagination.nextCommand) {
+            console.log("\nNext page:");
+            console.log(`  ${pagination.nextCommand}`);
           }
         }
       }

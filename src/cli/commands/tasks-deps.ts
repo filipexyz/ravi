@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   addTaskDependency,
   emitTaskEvent,
@@ -102,6 +103,9 @@ export class TaskDependencyCommands {
   ls(
     @Arg("taskId", { description: "Task id to inspect" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching dependency edges to skip (default: 0)" })
+    offset?: string,
   ) {
     const details = getTaskDetails(taskId);
     if (!details.task) {
@@ -109,12 +113,29 @@ export class TaskDependencyCommands {
     }
 
     const dependencySurface = getTaskDependencySurface(details.task, details.activeAssignment);
+    const edges = [
+      ...dependencySurface.dependencies.map((dependency) => ({ ...dependency, direction: "dependency" as const })),
+      ...dependencySurface.dependents.map((dependent) => ({ ...dependent, direction: "dependent" as const })),
+    ];
+    const page = paginateCliItems(edges, { limit, offset });
+    const dependencies = page.items.filter((edge) => edge.direction === "dependency");
+    const dependents = page.items.filter((edge) => edge.direction === "dependent");
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "tasks", "deps", "ls", taskId],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
     const payload = {
       taskId,
+      total: page.total,
+      pagination,
       readiness: dependencySurface.readiness,
       launchPlan: dependencySurface.launchPlan,
-      dependencies: dependencySurface.dependencies,
-      dependents: dependencySurface.dependents,
+      items: page.items,
+      dependencies,
+      dependents,
     };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
@@ -126,10 +147,10 @@ export class TaskDependencyCommands {
       );
 
       console.log("\nDependencies:");
-      if (dependencySurface.dependencies.length === 0) {
+      if (dependencies.length === 0) {
         console.log("  - none");
       } else {
-        for (const dependency of dependencySurface.dependencies) {
+        for (const dependency of dependencies) {
           const satisfaction = dependency.satisfied ? `done @ ${formatTime(dependency.satisfiedAt)}` : "pending";
           console.log(
             `  - ${dependency.relatedTaskId} :: ${formatStatus(dependency.relatedTaskStatus)} :: ${dependency.relatedTaskProgress}% :: ${satisfaction} :: ${dependency.relatedTaskTitle}`,
@@ -138,15 +159,20 @@ export class TaskDependencyCommands {
       }
 
       console.log("\nDependents:");
-      if (dependencySurface.dependents.length === 0) {
+      if (dependents.length === 0) {
         console.log("  - none");
       } else {
-        for (const dependent of dependencySurface.dependents) {
+        for (const dependent of dependents) {
           const satisfaction = dependent.satisfied ? `done @ ${formatTime(dependent.satisfiedAt)}` : "pending";
           console.log(
             `  - ${dependent.relatedTaskId} :: ${formatStatus(dependent.relatedTaskStatus)} :: ${dependent.relatedTaskProgress}% :: ${satisfaction} :: ${dependent.relatedTaskTitle}`,
           );
         }
+      }
+
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
 
       if (dependencySurface.dependencies.length === 0 && dependencySurface.dependents.length === 0) {

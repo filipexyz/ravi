@@ -14,6 +14,14 @@ export type SdkJsonSchema = Record<string, unknown>;
 export const AdaptersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching adapters to skip (default: 0)",
+      "type": "string"
+    },
     "session": {
       "description": "Filter by session key",
       "type": "string"
@@ -130,6 +138,14 @@ export const AgentsDeleteInputSchema = {
 export const AgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching agents to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical tag slug",
       "type": "string"
@@ -485,11 +501,15 @@ export const ArtifactsListInputSchema = {
       "type": "string"
     },
     "lifecycle": {
-      "description": "Filter rich projection by lifecycle: active|archived|stale",
+      "description": "Filter rich projection by lifecycle: pending|running|completed|failed|archived",
       "type": "string"
     },
     "limit": {
-      "description": "Max artifacts to list (default: 50)",
+      "description": "Page size (default: 50, max: 500; rich max: 200)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching artifacts to skip (default: 0)",
       "type": "string"
     },
     "rich": {
@@ -691,6 +711,14 @@ export const CommandsListInputSchema = {
   "properties": {
     "agent": {
       "description": "Resolve agent-scoped commands for this agent",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching commands to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -1034,6 +1062,14 @@ export const ContactsLinkInputSchema = {
 export const ContactsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contacts to skip (default: 0)",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by status",
       "type": "string"
@@ -1299,7 +1335,16 @@ export const ContextCredentialsAddInputSchema = {
 /** JSON Schema for the input body of `context.credentials.list`. */
 export const ContextCredentialsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching credential entries to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -1404,6 +1449,14 @@ export const ContextListInputSchema = {
     },
     "kind": {
       "description": "Filter by context kind",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contexts to skip (default: 0)",
       "type": "string"
     },
     "session": {
@@ -1619,6 +1672,14 @@ export const CronEnableInputSchema = {
 export const CronListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching cron jobs to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical cron job tag",
       "type": "string"
@@ -1980,6 +2041,10 @@ export const DevinSessionsListInputSchema = {
       "description": "Max sessions to show (default: 20)",
       "type": "string"
     },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
+      "type": "string"
+    },
     "remote": {
       "description": "Fetch remote sessions and update local cache",
       "type": "boolean"
@@ -2332,6 +2397,14 @@ export const HooksEnableInputSchema = {
 export const HooksListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching hooks to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical hook tag",
       "type": "string"
@@ -2650,6 +2723,10 @@ export const InsightsListInputSchema = {
       "description": "Result limit",
       "type": "string"
     },
+    "offset": {
+      "description": "Number of matching insights to skip (default: 0)",
+      "type": "string"
+    },
     "profile": {
       "description": "Filter by linked profile",
       "type": "string"
@@ -2835,6 +2912,14 @@ export const InstancesGetInputSchema = {
 export const InstancesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching instances to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical instance tag",
       "type": "string"
@@ -2871,8 +2956,16 @@ export const InstancesPendingApproveInputSchema = {
 export const InstancesPendingListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching pending entries to skip (default: 0)",
       "type": "string"
     }
   },
@@ -2982,8 +3075,16 @@ export const InstancesRoutesDeletedInputSchema = {
 export const InstancesRoutesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching routes to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -3224,6 +3325,14 @@ export const ObserversListInputSchema = {
       "description": "Filter by observer agent id",
       "type": "string"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer bindings to skip (default: 0)",
+      "type": "string"
+    },
     "session": {
       "description": "Filter by source session name/key",
       "type": "string"
@@ -3258,7 +3367,16 @@ export const ObserversProfilesInitInputSchema = {
 /** JSON Schema for the input body of `observers.profiles.list`. */
 export const ObserversProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3371,7 +3489,16 @@ export const ObserversRulesExplainInputSchema = {
 /** JSON Schema for the input body of `observers.rules.list`. */
 export const ObserversRulesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching observer rules to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -3613,8 +3740,16 @@ export const PermissionsInitInputSchema = {
 export const PermissionsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "object": {
       "description": "Filter by object (e.g., group:contacts)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching relations to skip (default: 0)",
       "type": "string"
     },
     "relation": {
@@ -3837,6 +3972,14 @@ export const ProjectsLinkInputSchema = {
 export const ProjectsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching projects to skip (default: 0)",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by status",
       "type": "string"
@@ -3956,6 +4099,14 @@ export const ProjectsResourcesImportInputSchema = {
 export const ProjectsResourcesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching resources to skip (default: 0)",
+      "type": "string"
+    },
     "project": {
       "description": "Project id or slug",
       "type": "string"
@@ -4339,6 +4490,14 @@ export const ProxCallsProfilesConfigureInputSchema = {
 export const ProxCallsProfilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching call profiles to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical call profile tag",
       "type": "string"
@@ -4524,6 +4683,14 @@ export const ProxCallsToolsCreateInputSchema = {
 export const ProxCallsToolsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching call tools to skip (default: 0)",
+      "type": "string"
+    },
     "profile": {
       "description": "Filter tools by profile binding",
       "type": "string"
@@ -4712,6 +4879,14 @@ export const ProxCallsVoiceAgentsCreateInputSchema = {
 export const ProxCallsVoiceAgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching voice agents to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical call voice agent tag",
       "type": "string"
@@ -4822,8 +4997,16 @@ export const RoutesExplainInputSchema = {
 export const RoutesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "name": {
       "description": "Instance name (omit for all)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching routes to skip (default: 0)",
       "type": "string"
     },
     "tag": {
@@ -5307,9 +5490,17 @@ export const SessionsListInputSchema = {
       "description": "Show only ephemeral sessions",
       "type": "boolean"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
     "live": {
       "description": "Include live runtime state snapshot",
       "type": "boolean"
+    },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
+      "type": "string"
     },
     "tag": {
       "description": "Filter by canonical session tag slug",
@@ -5846,6 +6037,14 @@ export const SettingsListInputSchema = {
     "legacy": {
       "description": "Show legacy account.* settings shadowed by instances",
       "type": "boolean"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching settings to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -5905,6 +6104,14 @@ export const SkillGatesEnableInputSchema = {
 export const SkillGatesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching skill gate rules to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical skill gate rule tag",
       "type": "string"
@@ -6058,6 +6265,14 @@ export const SkillsListInputSchema = {
       "description": "List operator-installed skills instead of the Ravi catalog",
       "type": "boolean"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching skills to skip (default: 0)",
+      "type": "string"
+    },
     "source": {
       "description": "List skills available in a GitHub URL, git URL or local path",
       "type": "string"
@@ -6130,6 +6345,14 @@ export const SpecsListInputSchema = {
     },
     "kind": {
       "description": "Filter by kind: domain|capability|feature",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching specs to skip (default: 0)",
       "type": "string"
     }
   },
@@ -6221,7 +6444,16 @@ export const StickersAddInputSchema = {
 /** JSON Schema for the input body of `stickers.list`. */
 export const StickersListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching stickers to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -6943,6 +7175,14 @@ export const TasksAutomationsEnableInputSchema = {
 export const TasksAutomationsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching automations to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical task automation tag",
       "type": "string"
@@ -7145,6 +7385,14 @@ export const TasksDepsAddInputSchema = {
 export const TasksDepsLsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching dependency edges to skip (default: 0)",
+      "type": "string"
+    },
     "taskId": {
       "description": "Task id to inspect",
       "type": "string"
@@ -7380,7 +7628,16 @@ export const TasksProfilesInitInputSchema = {
 /** JSON Schema for the input body of `tasks.profiles.list`. */
 export const TasksProfilesListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching profiles to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7521,7 +7778,16 @@ export const TasksUnarchiveInputSchema = {
 /** JSON Schema for the input body of `tools.list`. */
 export const ToolsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching tools to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -7670,6 +7936,14 @@ export const TriggersEnableInputSchema = {
 export const TriggersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching triggers to skip (default: 0)",
+      "type": "string"
+    },
     "tag": {
       "description": "Filter by canonical trigger tag",
       "type": "string"
@@ -8030,6 +8304,14 @@ export const WhatsappGroupListInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching groups to skip (default: 0)",
+      "type": "string"
     }
   },
   "type": "object"
@@ -8193,7 +8475,16 @@ export const WorkflowsRunsCancelInputSchema = {
 /** JSON Schema for the input body of `workflows.runs.list`. */
 export const WorkflowsRunsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching workflow runs to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -8367,7 +8658,16 @@ export const WorkflowsSpecsCreateInputSchema = {
 /** JSON Schema for the input body of `workflows.specs.list`. */
 export const WorkflowsSpecsListInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching workflow specs to skip (default: 0)",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

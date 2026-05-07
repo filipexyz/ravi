@@ -4,6 +4,7 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { z } from "zod";
 import { getDb } from "../router/router-db.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
+import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { getRaviStateDir } from "../utils/paths.js";
 
 const ARTIFACT_ID_PATTERN = /^art_[a-z0-9]+_[a-z0-9]+$/;
@@ -165,10 +166,15 @@ export interface ListArtifactsOptions {
   kind?: string;
   session?: string;
   taskId?: string;
+  agentId?: string;
+  lifecycle?: string;
   tag?: string;
   limit?: number;
+  offset?: number;
   includeDeleted?: boolean;
 }
+
+export type ArtifactListPage = ListPage<ArtifactRecord>;
 
 function ensureArtifactSchema(): void {
   const db = getDb();
@@ -555,11 +561,11 @@ export function getArtifact(id: string): ArtifactRecord | null {
   return row ? rowToArtifact(row) : null;
 }
 
-export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecord[] {
-  ensureArtifactSchema();
+function artifactWhere(options: ListArtifactsOptions): { where: string[]; params: Array<string | number> } {
   const where: string[] = [];
   const params: Array<string | number> = [];
-  if (!options.includeDeleted) where.push("deleted_at IS NULL");
+  const lifecycle = options.lifecycle?.trim().toLowerCase();
+  if (!options.includeDeleted && lifecycle !== "archived") where.push("deleted_at IS NULL");
   if (options.kind) {
     where.push("kind = ?");
     params.push(options.kind);
@@ -572,6 +578,10 @@ export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecor
     where.push("task_id = ?");
     params.push(options.taskId);
   }
+  if (options.agentId) {
+    where.push("agent_id = ?");
+    params.push(options.agentId);
+  }
   if (options.tag) {
     const canonicalIds = canonicalAssetIdsForTag("artifact", options.tag) ?? [];
     const tagPredicates = ["EXISTS (SELECT 1 FROM json_each(artifacts.tags_json) WHERE value = ?)"];
@@ -582,12 +592,45 @@ export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecor
     }
     where.push(`(${tagPredicates.join(" OR ")})`);
   }
-  const limit = Math.max(1, Math.min(500, options.limit ?? 50));
-  const sql = `SELECT * FROM artifacts ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at DESC LIMIT ?`;
-  const rows = getDb()
-    .prepare(sql)
-    .all(...params, limit) as ArtifactRow[];
-  return rows.map(rowToArtifact);
+  if (lifecycle) {
+    const completedStatuses = "'completed', 'done', 'succeeded', 'success'";
+    const failedStatuses = "'failed', 'error', 'errored'";
+    const pendingStatuses = "'pending', 'queued', 'waiting'";
+    const archivedStatuses = "'archived', 'deleted'";
+    const terminalStatuses = `${completedStatuses}, ${failedStatuses}, ${pendingStatuses}, ${archivedStatuses}`;
+    if (lifecycle === "archived") {
+      where.push(`(deleted_at IS NOT NULL OR lower(status) IN (${archivedStatuses}))`);
+    } else if (lifecycle === "completed") {
+      where.push(`deleted_at IS NULL AND lower(status) IN (${completedStatuses})`);
+    } else if (lifecycle === "failed") {
+      where.push(`deleted_at IS NULL AND lower(status) IN (${failedStatuses})`);
+    } else if (lifecycle === "pending") {
+      where.push(`deleted_at IS NULL AND lower(status) IN (${pendingStatuses})`);
+    } else if (lifecycle === "running") {
+      where.push(`deleted_at IS NULL AND (trim(status) = '' OR lower(status) NOT IN (${terminalStatuses}))`);
+    }
+  }
+  return { where, params };
+}
+
+export function listArtifactsPage(options: ListArtifactsOptions = {}): ArtifactListPage {
+  ensureArtifactSchema();
+  const db = getDb();
+  const { where, params } = artifactWhere(options);
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const total = countRows({ db, table: "artifacts", where, params });
+  const sql = `SELECT * FROM artifacts ${buildSqlWhereClause(where)} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  const rows = db.prepare(sql).all(...params, limit, offset) as ArtifactRow[];
+  return {
+    items: rows.map(rowToArtifact),
+    total,
+    limit,
+    offset,
+  };
+}
+
+export function listArtifacts(options: ListArtifactsOptions = {}): ArtifactRecord[] {
+  return listArtifactsPage(options).items;
 }
 
 export function updateArtifact(

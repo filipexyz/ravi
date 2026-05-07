@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   attachProjectTask,
   attachProjectWorkflowRun,
@@ -911,6 +912,8 @@ export class ProjectCommands {
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching projects to skip (default: 0)" }) offset?: string,
   ) {
     try {
       const normalizedTagSlug = parseTagSlug(tagSlug);
@@ -918,22 +921,35 @@ export class ProjectCommands {
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
         ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       });
+      const page = paginateCliItems(projects, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "projects", "list"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--status", status, "--tag", normalizedTagSlug],
+      });
       const payload = {
-        total: projects.length,
+        total: page.total,
+        pagination,
         filters: {
           status: status ? normalizeProjectStatus(status) : null,
           tagSlug: normalizedTagSlug ?? null,
         },
-        projects,
+        items: page.items,
+        projects: page.items,
       };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
-      } else if (projects.length === 0) {
+      } else if (page.items.length === 0) {
         console.log("\nNo projects found.\n");
       } else {
-        console.log(`\nProjects (${projects.length}):\n`);
-        for (const project of projects) {
+        console.log(
+          `\nProjects (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+        );
+        for (const project of page.items) {
           const line = [
             `${project.slug}`,
             project.status,
@@ -943,6 +959,10 @@ export class ProjectCommands {
             `next ${compact(project.nextStep, 40)}`,
           ].join(" :: ");
           console.log(`- ${line}`);
+        }
+        if (pagination.nextCommand) {
+          console.log("\nNext page:");
+          console.log(`  ${pagination.nextCommand}`);
         }
       }
       return payload;
@@ -1370,22 +1390,40 @@ export class ProjectResourceCommands {
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--type <type>", description: "Optional resource type filter" }) resourceType?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching resources to skip (default: 0)" })
+    offset?: string,
   ) {
     try {
       const resources = listProjectResourceLinks(
         projectRef,
         resourceType?.trim() ? requireResourceType(resourceType) : undefined,
       );
-      const payload = { total: resources.length, resources };
+      const page = paginateCliItems(resources, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "projects", "resources", "list", projectRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--type", resourceType?.trim() || null],
+      });
+      const payload = { total: page.total, pagination, items: page.items, resources: page.items };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
-      } else if (resources.length === 0) {
+      } else if (page.items.length === 0) {
         console.log("\nNo resource links found.\n");
       } else {
-        console.log(`\nProject resources (${resources.length}):\n`);
-        for (const resource of resources) {
+        console.log(
+          `\nProject resources (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+        );
+        for (const resource of page.items) {
           console.log(`- ${resource.id} :: ${describeLink(resource)}`);
+        }
+        if (pagination.nextCommand) {
+          console.log("\nNext page:");
+          console.log(`  ${pagination.nextCommand}`);
         }
       }
       return payload;

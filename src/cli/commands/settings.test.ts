@@ -112,8 +112,9 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Legacy settings shadowed by instances:");
+    expect(output).toContain("Settings (13 returned of 13, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
+    expect(output).toContain("section: legacy");
   });
 
   it("labels legacy reads as shadowed by instances", () => {

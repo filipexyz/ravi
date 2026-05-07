@@ -10,6 +10,7 @@ import {
   getArtifactDetails,
   listArtifactEvents,
   listArtifacts,
+  listArtifactsPage,
   updateArtifact,
 } from "./store.js";
 
@@ -132,5 +133,19 @@ describe("artifact store", () => {
       actor: "dev",
       payload: { provider: "openai" },
     });
+  });
+
+  it("paginates artifact lists while exposing the filtered total", () => {
+    const first = createArtifact({ kind: "image", title: "First", status: "completed", agentId: "main" });
+    const second = createArtifact({ kind: "image", title: "Second", status: "completed", agentId: "main" });
+    createArtifact({ kind: "report", title: "Other", status: "completed", agentId: "other" });
+
+    const page = listArtifactsPage({ kind: "image", agentId: "main", lifecycle: "completed", limit: 1, offset: 1 });
+
+    expect(page.total).toBe(2);
+    expect(page.limit).toBe(1);
+    expect(page.offset).toBe(1);
+    expect(page.items).toHaveLength(1);
+    expect([first.id, second.id]).toContain(page.items[0]?.id);
   });
 });

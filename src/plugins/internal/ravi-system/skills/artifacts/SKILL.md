@@ -33,9 +33,25 @@ ravi artifacts create image \
 ```bash
 ravi artifacts list
 ravi artifacts list --kind image
-ravi artifacts list --session dev --limit 20
+ravi artifacts list --session dev --limit 50 --offset 0
 ravi artifacts list --task task-123 --json
+ravi artifacts list --rich --json --limit 50 --offset 0
 ```
+
+Listagens seguem o contrato padrao de paginacao do Ravi:
+
+- `total`: total filtrado no ledger, nao apenas a pagina atual
+- `pagination.limit`: tamanho da pagina aplicada
+- `pagination.offset`: posicao inicial da pagina
+- `pagination.returned`: itens retornados nesta pagina
+- `pagination.hasMore`: se existe proxima pagina
+- `pagination.nextCommand`: comando pronto para a proxima pagina quando existir
+- `items`: lista canonica para agentes consumirem
+- `artifacts`: alias de compatibilidade
+
+Para agentes: nunca assuma que `items.length` e o universo completo. Use
+`pagination.total`/`pagination.hasMore` e execute `pagination.nextCommand`
+quando precisar continuar.
 
 ## Ver Detalhes
 

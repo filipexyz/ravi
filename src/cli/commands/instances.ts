@@ -30,6 +30,7 @@ import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
 import { Group, Command, CliOnly, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { nats } from "../../nats.js";
 import { createOmniClient } from "../../omni/client.js";
 import {
@@ -293,12 +294,27 @@ function listInstanceTags(name: string): TagBinding[] {
   return searchTagBindingsForSelector({ selector: { instance: name } }).bindings;
 }
 
-function printRouteList(name?: string, tagSlug?: string): void {
+function printRouteList(
+  name?: string,
+  tagSlug?: string,
+  limit?: string,
+  offset?: string,
+  baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
+): void {
   if (name) {
     requireInstance(name);
     const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
+    const page = paginateCliItems(routes, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand,
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--tag", tagSlug?.trim() || null],
+    });
 
-    if (routes.length === 0) {
+    if (page.items.length === 0) {
       console.log(
         tagSlug ? `No routes tagged "${tagSlug}" for instance "${name}".` : `No routes for instance "${name}".`,
       );
@@ -307,8 +323,12 @@ function printRouteList(name?: string, tagSlug?: string): void {
     }
 
     console.log(tagSlug ? `\nRoutes for: ${name} tagged ${tagSlug}\n` : `\nRoutes for: ${name}\n`);
-    printRouteTable(routes, false);
-    console.log(`\n  Total: ${routes.length}`);
+    printRouteTable(page.items, false);
+    console.log(`\n  Total: ${page.total} (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`);
+    if (pagination.nextCommand) {
+      console.log("\n  Next page:");
+      console.log(`    ${pagination.nextCommand}`);
+    }
     console.log(`  Show one: ravi routes show ${name} "<pattern>"`);
     console.log(`  Explain:  ravi routes explain ${name} "<pattern>"`);
     console.log(`  Mutate:   ravi instances routes set ${name} "<pattern>" <key> <value>`);
@@ -316,30 +336,63 @@ function printRouteList(name?: string, tagSlug?: string): void {
   }
 
   const routes = filterRoutesByTag(dbListRoutes(), tagSlug);
-  if (routes.length === 0) {
+  const page = paginateCliItems(routes, { limit, offset });
+  const pagination = buildCliOffsetPagination({
+    baseCommand,
+    limit: page.limit,
+    offset: page.offset,
+    returned: page.items.length,
+    total: page.total,
+    options: ["--tag", tagSlug?.trim() || null],
+  });
+  if (page.items.length === 0) {
     console.log(tagSlug ? `No routes tagged "${tagSlug}".` : "No routes configured.");
     console.log(`\nAdd one: ravi instances routes add <instance> <pattern> <agent>`);
     return;
   }
 
   console.log(tagSlug ? `\nRoutes across all instances tagged ${tagSlug}:\n` : "\nRoutes across all instances:\n");
-  printRouteTable(routes, true);
-  console.log(`\n  Total: ${routes.length}`);
+  printRouteTable(page.items, true);
+  console.log(`\n  Total: ${page.total} (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`);
+  if (pagination.nextCommand) {
+    console.log("\n  Next page:");
+    console.log(`    ${pagination.nextCommand}`);
+  }
   console.log(`  Show one: ravi routes show <instance> "<pattern>"`);
   console.log(`  Explain:  ravi routes explain <instance> "<pattern>"`);
   console.log(`  Mutate:   ravi instances routes add <instance> <pattern> <agent>`);
 }
 
-function buildRouteListPayload(name?: string, tagSlug?: string) {
+function buildRouteListPayload(
+  name?: string,
+  tagSlug?: string,
+  limit?: string,
+  offset?: string,
+  baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
+) {
   if (name) {
     requireInstance(name);
   }
   const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
+  const page = paginateCliItems(routes, { limit, offset });
+  const pagination = buildCliOffsetPagination({
+    baseCommand,
+    limit: page.limit,
+    offset: page.offset,
+    returned: page.items.length,
+    total: page.total,
+    options: ["--tag", tagSlug?.trim() || null],
+  });
   return {
     instance: name ?? null,
     filter: { tagSlug: tagSlug?.trim() || null },
-    total: routes.length,
-    routes: routes.map((route) => ({
+    total: page.total,
+    pagination,
+    items: page.items.map((route) => ({
+      ...route,
+      tags: listRouteTags(route.id),
+    })),
+    routes: page.items.map((route) => ({
       ...route,
       tags: listRouteTags(route.id),
     })),
@@ -544,8 +597,21 @@ export class InstancesCommands {
   async list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical instance tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching instances to skip (default: 0)" })
+    offset?: string,
   ) {
     const instances = filterItemsByCanonicalTag(dbListInstances(), "instance", tagSlug, (inst) => inst.name);
+    const page = paginateCliItems(instances, { limit, offset });
+    const pageInstances = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "instances", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageInstances.length,
+      total: page.total,
+      options: ["--tag", tagSlug?.trim() || null],
+    });
     const ignoredOmniInstanceIds = getIgnoredOmniInstanceIds();
 
     // Try to enrich with omni status
@@ -562,8 +628,15 @@ export class InstancesCommands {
 
     const payload = {
       filter: { tagSlug: tagSlug?.trim() || null },
-      total: instances.length,
-      instances: instances.map((inst) => ({
+      total: page.total,
+      pagination,
+      items: pageInstances.map((inst) => ({
+        ...inst,
+        tags: listInstanceTags(inst.name),
+        raviStatus: inst.enabled === false ? "disabled" : "enabled",
+        live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
+      })),
+      instances: pageInstances.map((inst) => ({
         ...inst,
         tags: listInstanceTags(inst.name),
         raviStatus: inst.enabled === false ? "disabled" : "enabled",
@@ -574,7 +647,7 @@ export class InstancesCommands {
 
     if (asJson) {
       printJson(payload);
-    } else if (instances.length === 0) {
+    } else if (pageInstances.length === 0) {
       console.log(tagSlug ? `No registered instances tagged "${tagSlug}".` : "No registered instances configured.");
       if (ignoredOmniInstanceIds.length > 0) {
         console.log("\nIgnored unknown omni instanceIds:\n");
@@ -591,7 +664,7 @@ export class InstancesCommands {
         "  -------------------- ------------- --------------- --------- ------------ ------------ ----------",
       );
 
-      for (const inst of instances) {
+      for (const inst of pageInstances) {
         const status = inst.instanceId
           ? omniStatus[inst.instanceId]?.isConnected
             ? "connected"
@@ -603,7 +676,13 @@ export class InstancesCommands {
           `  ${inst.name.padEnd(20)} ${inst.channel.padEnd(13)} ${(inst.agent ?? "-").padEnd(15)} ${(inst.enabled === false ? "disabled" : "enabled").padEnd(9)} ${inst.dmPolicy.padEnd(12)} ${inst.groupPolicy.padEnd(12)} ${label}`,
         );
       }
-      console.log(`\n  Total: ${instances.length}`);
+      console.log(
+        `\n  Total: ${page.total} (${pageInstances.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
 
       if (ignoredOmniInstanceIds.length > 0) {
         console.log("\nIgnored unknown omni instanceIds:\n");
@@ -1345,12 +1424,14 @@ export class RoutesCommands {
     @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical route tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching routes to skip (default: 0)" }) offset?: string,
   ) {
-    const payload = buildRouteListPayload(name, tagSlug);
+    const payload = buildRouteListPayload(name, tagSlug, limit, offset);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name, tagSlug);
+      printRouteList(name, tagSlug, limit, offset);
     }
     return payload;
   }
@@ -1406,12 +1487,15 @@ export class InstancesRoutesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical route tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching routes to skip (default: 0)" }) offset?: string,
   ) {
-    const payload = buildRouteListPayload(name, tagSlug);
+    const baseCommand = ["ravi", "instances", "routes", "list", name];
+    const payload = buildRouteListPayload(name, tagSlug, limit, offset, baseCommand);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name, tagSlug);
+      printRouteList(name, tagSlug, limit, offset, baseCommand);
     }
     return payload;
   }
@@ -1722,18 +1806,32 @@ export class InstancesPendingCommands {
   list(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching pending entries to skip (default: 0)" })
+    offset?: string,
   ) {
     if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
     const pending = listAccountPending(name);
-    const pendingContacts = pending.filter((entry) => entry.pendingKind === "contact");
-    const pendingChats = pending.filter((entry) => entry.pendingKind === "chat");
+    const page = paginateCliItems(pending, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "instances", "pending", "list", name],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+    });
+    const pendingContacts = page.items.filter((entry) => entry.pendingKind === "contact");
+    const pendingChats = page.items.filter((entry) => entry.pendingKind === "chat");
+    const allPendingContacts = pending.filter((entry) => entry.pendingKind === "contact");
+    const allPendingChats = pending.filter((entry) => entry.pendingKind === "chat");
 
     const payload = {
       instance: name,
-      total: pending.length,
+      total: page.total,
+      pagination,
       counts: {
-        contacts: pendingContacts.length,
-        chats: pendingChats.length,
+        contacts: allPendingContacts.length,
+        chats: allPendingChats.length,
       },
       contacts: pendingContacts.map((p) => ({
         ...p,
@@ -1744,7 +1842,12 @@ export class InstancesPendingCommands {
         type: p.chatType,
         routePattern: normalizePendingChatPattern(p),
       })),
-      pending: pending.map((p) => ({
+      items: page.items.map((p) => ({
+        ...p,
+        type: p.chatType,
+        ...(p.pendingKind === "chat" ? { routePattern: normalizePendingChatPattern(p) } : {}),
+      })),
+      pending: page.items.map((p) => ({
         ...p,
         type: p.chatType,
         ...(p.pendingKind === "chat" ? { routePattern: normalizePendingChatPattern(p) } : {}),
@@ -1753,7 +1856,7 @@ export class InstancesPendingCommands {
 
     if (asJson) {
       printJson(payload);
-    } else if (pending.length === 0) {
+    } else if (page.items.length === 0) {
       console.log(`No pending contacts or chats for instance "${name}".`);
     } else {
       if (pendingContacts.length > 0) {
@@ -1774,7 +1877,13 @@ export class InstancesPendingCommands {
           console.log(`  ${pattern.padEnd(39)}  ${p.chatType.padEnd(6)}  ${p.name ?? "-"}`);
         }
       }
-      console.log(`\n  Total: ${pending.length}`);
+      console.log(
+        `\n  Total: ${page.total} (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`,
+      );
+      if (pagination.nextCommand) {
+        console.log("\n  Next page:");
+        console.log(`    ${pagination.nextCommand}`);
+      }
       console.log(`\n  Approve contact: ravi instances pending approve ${name} <phone>`);
       console.log(`  Approve chat:    ravi instances pending approve ${name} <chat> --agent <agent>`);
     }

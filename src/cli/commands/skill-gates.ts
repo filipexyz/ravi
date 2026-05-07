@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { isDefaultSkillGateRuleId, listDefaultSkillGateRules, type DefaultSkillGateRule } from "../skill-gates.js";
 import {
   dbDeleteSkillGateRule,
@@ -163,6 +164,9 @@ export class SkillGatesCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill gate rule tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching skill gate rules to skip (default: 0)" })
+    offset?: string,
   ) {
     const tagFilter = tagSlug?.trim() || null;
     const effective = filterItemsByCanonicalTag(
@@ -171,22 +175,37 @@ export class SkillGatesCommands {
       tagFilter ?? undefined,
       (rule) => rule.id,
     );
+    const page = paginateCliItems(effective, { limit, offset });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "skill-gates", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--tag", tagFilter],
+    });
     const payload = {
-      total: effective.length,
+      total: page.total,
+      pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       configuredTotal: dbListSkillGateRules().length,
-      rules: effective.map(serializeEffectiveRule),
+      items: page.items.map(serializeEffectiveRule),
+      rules: page.items.map(serializeEffectiveRule),
     };
 
     if (asJson) {
       printJson(payload);
-    } else if (effective.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("No skill gate rules configured.");
     } else {
       console.log("\nSkill gates:\n");
-      for (const rule of effective) {
+      for (const rule of page.items) {
         printRule(rule);
         console.log("");
+      }
+      if (pagination.nextCommand) {
+        console.log("Next page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
     }
     return payload;

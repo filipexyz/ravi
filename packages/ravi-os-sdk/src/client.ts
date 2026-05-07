@@ -19,6 +19,8 @@ export class RaviClient {
   readonly adapters = {
     /** List session adapters with health and bind state */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       session?: string;
       status?: string;
     }): Promise<AdaptersListReturn> => {
@@ -78,6 +80,8 @@ export class RaviClient {
     },
     /** List all agents */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<AgentsListReturn> => {
       return this.transport.call({
@@ -228,6 +232,7 @@ export class RaviClient {
       kind?: string;
       lifecycle?: string;
       limit?: string;
+      offset?: string;
       rich?: boolean;
       session?: string;
       tag?: string;
@@ -306,6 +311,8 @@ export class RaviClient {
     /** List Ravi commands */
     list: async (options?: {
       agent?: string;
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<CommandsListReturn> => {
       return this.transport.call({
@@ -473,6 +480,8 @@ export class RaviClient {
     },
     /** List all contacts */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       status?: string;
     }): Promise<ContactsListReturn> => {
       return this.transport.call({
@@ -605,11 +614,14 @@ export class RaviClient {
         });
       },
       /** List entries in the local credentials store */
-      list: async (): Promise<ContextCredentialsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ContextCredentialsListReturn> => {
         return this.transport.call({
           groupSegments: ["context","credentials"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Remove a stored context-key from the credentials store */
@@ -662,6 +674,8 @@ export class RaviClient {
       agent?: string;
       all?: boolean;
       kind?: string;
+      limit?: string;
+      offset?: string;
       session?: string;
     }): Promise<ContextListReturn> => {
       return this.transport.call({
@@ -790,6 +804,8 @@ export class RaviClient {
     },
     /** List all scheduled jobs */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<CronListReturn> => {
       return this.transport.call({
@@ -992,6 +1008,7 @@ export class RaviClient {
       /** List local or remote Devin sessions */
       list: async (options?: {
         limit?: string;
+        offset?: string;
         remote?: boolean;
         status?: string;
         tag?: string;
@@ -1165,6 +1182,8 @@ export class RaviClient {
     },
     /** List configured hooks */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<HooksListReturn> => {
       return this.transport.call({
@@ -1287,6 +1306,7 @@ export class RaviClient {
       importance?: string;
       kind?: string;
       limit?: string;
+      offset?: string;
       profile?: string;
       query?: string;
       rich?: boolean;
@@ -1384,6 +1404,8 @@ export class RaviClient {
     },
     /** List all instances */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<InstancesListReturn> => {
       return this.transport.call({
@@ -1404,11 +1426,14 @@ export class RaviClient {
         });
       },
       /** List pending contacts and chats for an instance */
-      list: async (name: string): Promise<InstancesPendingListReturn> => {
+      list: async (name: string, options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<InstancesPendingListReturn> => {
         return this.transport.call({
           groupSegments: ["instances","pending"],
           command: "list",
-          body: { name },
+          body: { name, ...(options ?? {}) },
         });
       },
       /** Reject and remove a pending contact or chat */
@@ -1454,6 +1479,8 @@ export class RaviClient {
       },
       /** List routes for an instance */
       list: async (name: string, options?: {
+        limit?: string;
+        offset?: string;
         tag?: string;
       }): Promise<InstancesRoutesListReturn> => {
         return this.transport.call({
@@ -1560,6 +1587,8 @@ export class RaviClient {
     /** List session observer bindings */
     list: async (options?: {
       agent?: string;
+      limit?: string;
+      offset?: string;
       session?: string;
     }): Promise<ObserversListReturn> => {
       return this.transport.call({
@@ -1581,11 +1610,14 @@ export class RaviClient {
         });
       },
       /** List observer profiles */
-      list: async (): Promise<ObserversProfilesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ObserversProfilesListReturn> => {
         return this.transport.call({
           groupSegments: ["observers","profiles"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Render an observer profile preview */
@@ -1649,11 +1681,14 @@ export class RaviClient {
         });
       },
       /** List observer rules */
-      list: async (): Promise<ObserversRulesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<ObserversRulesListReturn> => {
         return this.transport.call({
           groupSegments: ["observers","rules"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Delete an observer rule */
@@ -1757,7 +1792,9 @@ export class RaviClient {
     },
     /** List relations */
     list: async (options?: {
+      limit?: string;
       object?: string;
+      offset?: string;
       relation?: string;
       source?: string;
       subject?: string;
@@ -1851,6 +1888,8 @@ export class RaviClient {
     },
     /** List projects */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       status?: string;
       tag?: string;
     }): Promise<ProjectsListReturn> => {
@@ -1902,6 +1941,8 @@ export class RaviClient {
       },
       /** List resource links for a project */
       list: async (project: string, options?: {
+        limit?: string;
+        offset?: string;
         type?: string;
       }): Promise<ProjectsResourcesListReturn> => {
         return this.transport.call({
@@ -2062,6 +2103,8 @@ export class RaviClient {
         },
         /** List available call profiles */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           tag?: string;
         }): Promise<ProxCallsProfilesListReturn> => {
           return this.transport.call({
@@ -2155,6 +2198,8 @@ export class RaviClient {
         },
         /** List call tools */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           profile?: string;
           tag?: string;
         }): Promise<ProxCallsToolsListReturn> => {
@@ -2250,6 +2295,8 @@ export class RaviClient {
         },
         /** List voice agents */
         list: async (options?: {
+          limit?: string;
+          offset?: string;
           tag?: string;
         }): Promise<ProxCallsVoiceAgentsListReturn> => {
           return this.transport.call({
@@ -2313,6 +2360,8 @@ export class RaviClient {
     },
     /** List routes across all instances or for one instance */
     list: async (name?: string, options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<RoutesListReturn> => {
       return this.transport.call({
@@ -2605,7 +2654,9 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       ephemeral?: boolean;
+      limit?: string;
       live?: boolean;
+      offset?: string;
       tag?: string;
     }): Promise<SessionsListReturn> => {
       return this.transport.call({
@@ -2837,6 +2888,8 @@ export class RaviClient {
     /** List live settings (legacy account.* hidden by default) */
     list: async (options?: {
       legacy?: boolean;
+      limit?: string;
+      offset?: string;
     }): Promise<SettingsListReturn> => {
       return this.transport.call({
         groupSegments: ["settings"],
@@ -2873,6 +2926,8 @@ export class RaviClient {
     },
     /** List skill gate rules */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<SkillGatesListReturn> => {
       return this.transport.call({
@@ -2944,6 +2999,8 @@ export class RaviClient {
     list: async (options?: {
       codex?: boolean;
       installed?: boolean;
+      limit?: string;
+      offset?: string;
       source?: string;
       tag?: string;
     }): Promise<SkillsListReturn> => {
@@ -2989,6 +3046,8 @@ export class RaviClient {
     list: async (options?: {
       domain?: string;
       kind?: string;
+      limit?: string;
+      offset?: string;
     }): Promise<SpecsListReturn> => {
       return this.transport.call({
         groupSegments: ["specs"],
@@ -3036,11 +3095,14 @@ export class RaviClient {
       });
     },
     /** List stickers in the typed catalog */
-    list: async (): Promise<StickersListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<StickersListReturn> => {
       return this.transport.call({
         groupSegments: ["stickers"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Remove a sticker catalog entry */
@@ -3298,6 +3360,8 @@ export class RaviClient {
       },
       /** List configured task automations */
       list: async (options?: {
+        limit?: string;
+        offset?: string;
         tag?: string;
       }): Promise<TasksAutomationsListReturn> => {
         return this.transport.call({
@@ -3379,11 +3443,14 @@ export class RaviClient {
         });
       },
       /** List gating dependencies and dependents for a task */
-      ls: async (taskId: string): Promise<TasksDepsLsReturn> => {
+      ls: async (taskId: string, options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<TasksDepsLsReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","deps"],
           command: "ls",
-          body: { taskId },
+          body: { taskId, ...(options ?? {}) },
         });
       },
       /** Remove one gating dependency from a task */
@@ -3475,11 +3542,14 @@ export class RaviClient {
         });
       },
       /** List resolved task profiles from all catalog sources */
-      list: async (): Promise<TasksProfilesListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<TasksProfilesListReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","profiles"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Render a profile preview with the resolved template context */
@@ -3549,11 +3619,14 @@ export class RaviClient {
 
   readonly tools = {
     /** List all available CLI tools */
-    list: async (): Promise<ToolsListReturn> => {
+    list: async (options?: {
+      limit?: string;
+      offset?: string;
+    }): Promise<ToolsListReturn> => {
       return this.transport.call({
         groupSegments: ["tools"],
         command: "list",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Export tools as JSON manifest */
@@ -3638,6 +3711,8 @@ export class RaviClient {
     },
     /** List all event triggers */
     list: async (options?: {
+      limit?: string;
+      offset?: string;
       tag?: string;
     }): Promise<TriggersListReturn> => {
       return this.transport.call({
@@ -3814,6 +3889,8 @@ export class RaviClient {
       /** List all groups the bot participates in */
       list: async (options?: {
         account?: string;
+        limit?: string;
+        offset?: string;
       }): Promise<WhatsappGroupListReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -3893,11 +3970,14 @@ export class RaviClient {
         });
       },
       /** List workflow runs */
-      list: async (): Promise<WorkflowsRunsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<WorkflowsRunsListReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","runs"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Release a manual node transition or gate */
@@ -3971,11 +4051,14 @@ export class RaviClient {
         });
       },
       /** List workflow specs */
-      list: async (): Promise<WorkflowsSpecsListReturn> => {
+      list: async (options?: {
+        limit?: string;
+        offset?: string;
+      }): Promise<WorkflowsSpecsListReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","specs"],
           command: "list",
-          body: {},
+          body: { ...(options ?? {}) },
         });
       },
       /** Show one workflow spec */

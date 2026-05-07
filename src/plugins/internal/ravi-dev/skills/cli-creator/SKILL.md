@@ -45,6 +45,24 @@ Ao criar um novo CLI:
 - UX, stack e storage: `references/ux-stack-e-storage.md`
 - Context key e runtime Ravi: `references/context-key.md`
 
+## Paginacao Padrao
+
+Comandos `list` que podem crescer devem expor o contrato padrao:
+
+- `total`: total filtrado, nao apenas o tamanho da pagina atual
+- `pagination.limit`
+- `pagination.offset`
+- `pagination.returned`
+- `pagination.hasMore`
+- `pagination.nextCommand`
+- `items`: lista canonica para agentes consumirem
+
+Na implementacao, use os helpers genericos de `src/utils/pagination.ts` para
+normalizar `limit`/`offset`, contar linhas e montar `nextCommand`. Evite criar
+contadores acoplados ao dominio como `countFoo`; o store do dominio deve expor
+uma pagina padrao, por exemplo `{ items, total, limit, offset }`, usando
+`countRows(...)` por baixo.
+
 ## Sinais de Implementacao Ruim
 
 Pare e corrija se encontrar:
@@ -52,6 +70,7 @@ Pare e corrija se encontrar:
 - CLI desenhado a partir do parser, sem problema claramente definido
 - comandos vagos ou dependentes de conhecimento implicito
 - help sem exemplos reais ou sem proximo passo
+- listagens sem `total`/`pagination.hasMore` ou com contador especifico por dominio
 - banco generico sem ownership claro do dominio
 - CLI externo tentando reconstruir identidade sem `RAVI_CONTEXT_KEY`
 - agente tentando compensar lacunas de uma ferramenta mal desenhada

@@ -4,6 +4,8 @@
 
 /** Input shape for `adapters.list`. */
 export type AdaptersListInput = {
+  limit?: string;
+  offset?: string;
   session?: string;
   status?: string;
 };
@@ -59,6 +61,8 @@ export type AgentsDeleteReturn = unknown;
 
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -205,6 +209,7 @@ export type ArtifactsListInput = {
   kind?: string;
   lifecycle?: string;
   limit?: string;
+  offset?: string;
   rich?: boolean;
   session?: string;
   tag?: string;
@@ -273,6 +278,8 @@ export type AudioGenerateReturn = unknown;
 /** Input shape for `commands.list`. */
 export type CommandsListInput = {
   agent?: string;
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -434,6 +441,8 @@ export type ContactsLinkReturn = unknown;
 
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
+  limit?: string;
+  offset?: string;
   status?: string;
 };
 
@@ -559,7 +568,10 @@ export type ContextCredentialsAddInput = {
 export type ContextCredentialsAddReturn = unknown;
 
 /** Input shape for `context.credentials.list`. */
-export type ContextCredentialsListInput = Record<string, never>;
+export type ContextCredentialsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `context.credentials.list`. (no @Returns declared) */
 export type ContextCredentialsListReturn = unknown;
@@ -612,6 +624,8 @@ export type ContextListInput = {
   agent?: string;
   all?: boolean;
   kind?: string;
+  limit?: string;
+  offset?: string;
   session?: string;
 };
 
@@ -719,6 +733,8 @@ export type CronEnableReturn = unknown;
 
 /** Input shape for `cron.list`. */
 export type CronListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -888,6 +904,7 @@ export type DevinSessionsInsightsReturn = unknown;
 /** Input shape for `devin.sessions.list`. */
 export type DevinSessionsListInput = {
   limit?: string;
+  offset?: string;
   remote?: boolean;
   status?: string;
   tag?: string;
@@ -1044,6 +1061,8 @@ export type HooksEnableReturn = unknown;
 
 /** Input shape for `hooks.list`. */
 export type HooksListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1153,6 +1172,7 @@ export type InsightsListInput = {
   importance?: string;
   kind?: string;
   limit?: string;
+  offset?: string;
   profile?: string;
   query?: string;
   rich?: boolean;
@@ -1242,6 +1262,8 @@ export type InstancesGetReturn = unknown;
 
 /** Input shape for `instances.list`. */
 export type InstancesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1260,7 +1282,9 @@ export type InstancesPendingApproveReturn = unknown;
 
 /** Input shape for `instances.pending.list`. */
 export type InstancesPendingListInput = {
+  limit?: string;
   name: string;
+  offset?: string;
 };
 
 /** Return shape for `instances.pending.list`. (no @Returns declared) */
@@ -1309,7 +1333,9 @@ export type InstancesRoutesDeletedReturn = unknown;
 
 /** Input shape for `instances.routes.list`. */
 export type InstancesRoutesListInput = {
+  limit?: string;
   name: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1410,6 +1436,8 @@ export type MediaSendReturn = unknown;
 /** Input shape for `observers.list`. */
 export type ObserversListInput = {
   agent?: string;
+  limit?: string;
+  offset?: string;
   session?: string;
 };
 
@@ -1427,7 +1455,10 @@ export type ObserversProfilesInitInput = {
 export type ObserversProfilesInitReturn = unknown;
 
 /** Input shape for `observers.profiles.list`. */
-export type ObserversProfilesListInput = Record<string, never>;
+export type ObserversProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `observers.profiles.list`. (no @Returns declared) */
 export type ObserversProfilesListReturn = unknown;
@@ -1490,7 +1521,10 @@ export type ObserversRulesExplainInput = {
 export type ObserversRulesExplainReturn = unknown;
 
 /** Input shape for `observers.rules.list`. */
-export type ObserversRulesListInput = Record<string, never>;
+export type ObserversRulesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `observers.rules.list`. (no @Returns declared) */
 export type ObserversRulesListReturn = unknown;
@@ -1593,7 +1627,9 @@ export type PermissionsInitReturn = unknown;
 
 /** Input shape for `permissions.list`. */
 export type PermissionsListInput = {
+  limit?: string;
   object?: string;
+  offset?: string;
   relation?: string;
   source?: string;
   subject?: string;
@@ -1677,6 +1713,8 @@ export type ProjectsLinkReturn = unknown;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
+  limit?: string;
+  offset?: string;
   status?: string;
   tag?: string;
 };
@@ -1722,6 +1760,8 @@ export type ProjectsResourcesImportReturn = unknown;
 
 /** Input shape for `projects.resources.list`. */
 export type ProjectsResourcesListInput = {
+  limit?: string;
+  offset?: string;
   project: string;
   type?: string;
 };
@@ -1871,6 +1911,8 @@ export type ProxCallsProfilesConfigureReturn = unknown;
 
 /** Input shape for `prox.calls.profiles.list`. */
 export type ProxCallsProfilesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -1954,6 +1996,8 @@ export type ProxCallsToolsCreateReturn = unknown;
 
 /** Input shape for `prox.calls.tools.list`. */
 export type ProxCallsToolsListInput = {
+  limit?: string;
+  offset?: string;
   profile?: string;
   tag?: string;
 };
@@ -2042,6 +2086,8 @@ export type ProxCallsVoiceAgentsCreateReturn = unknown;
 
 /** Input shape for `prox.calls.voice-agents.list`. */
 export type ProxCallsVoiceAgentsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2096,7 +2142,9 @@ export type RoutesExplainReturn = unknown;
 
 /** Input shape for `routes.list`. */
 export type RoutesListInput = {
+  limit?: string;
   name?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2342,7 +2390,9 @@ export type SessionsKeepReturn = unknown;
 export type SessionsListInput = {
   agent?: string;
   ephemeral?: boolean;
+  limit?: string;
   live?: boolean;
+  offset?: string;
   tag?: string;
 };
 
@@ -2566,6 +2616,8 @@ export type SettingsGetReturn = unknown;
 /** Input shape for `settings.list`. */
 export type SettingsListInput = {
   legacy?: boolean;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `settings.list`. (no @Returns declared) */
@@ -2598,6 +2650,8 @@ export type SkillGatesEnableReturn = unknown;
 
 /** Input shape for `skill-gates.list`. */
 export type SkillGatesListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -2663,6 +2717,8 @@ export type SkillsInstallReturn = unknown;
 export type SkillsListInput = {
   codex?: boolean;
   installed?: boolean;
+  limit?: string;
+  offset?: string;
   source?: string;
   tag?: string;
 };
@@ -2699,6 +2755,8 @@ export type SpecsGetReturn = unknown;
 export type SpecsListInput = {
   domain?: string;
   kind?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `specs.list`. (no @Returns declared) */
@@ -2738,7 +2796,10 @@ export type StickersAddInput = {
 export type StickersAddReturn = unknown;
 
 /** Input shape for `stickers.list`. */
-export type StickersListInput = Record<string, never>;
+export type StickersListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `stickers.list`. (no @Returns declared) */
 export type StickersListReturn = unknown;
@@ -2983,6 +3044,8 @@ export type TasksAutomationsEnableReturn = unknown;
 
 /** Input shape for `tasks.automations.list`. */
 export type TasksAutomationsListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -3061,6 +3124,8 @@ export type TasksDepsAddReturn = unknown;
 
 /** Input shape for `tasks.deps.ls`. */
 export type TasksDepsLsInput = {
+  limit?: string;
+  offset?: string;
   taskId: string;
 };
 
@@ -3149,7 +3214,10 @@ export type TasksProfilesInitInput = {
 export type TasksProfilesInitReturn = unknown;
 
 /** Input shape for `tasks.profiles.list`. */
-export type TasksProfilesListInput = Record<string, never>;
+export type TasksProfilesListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `tasks.profiles.list`. (no @Returns declared) */
 export type TasksProfilesListReturn = unknown;
@@ -3214,7 +3282,10 @@ export type TasksUnarchiveInput = {
 export type TasksUnarchiveReturn = unknown;
 
 /** Input shape for `tools.list`. */
-export type ToolsListInput = Record<string, never>;
+export type ToolsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `tools.list`. (no @Returns declared) */
 export type ToolsListReturn = unknown;
@@ -3290,6 +3361,8 @@ export type TriggersEnableReturn = unknown;
 
 /** Input shape for `triggers.list`. */
 export type TriggersListInput = {
+  limit?: string;
+  offset?: string;
   tag?: string;
 };
 
@@ -3451,6 +3524,8 @@ export type WhatsappGroupLeaveReturn = unknown;
 /** Input shape for `whatsapp.group.list`. */
 export type WhatsappGroupListInput = {
   account?: string;
+  limit?: string;
+  offset?: string;
 };
 
 /** Return shape for `whatsapp.group.list`. (no @Returns declared) */
@@ -3524,7 +3599,10 @@ export type WorkflowsRunsCancelInput = {
 export type WorkflowsRunsCancelReturn = unknown;
 
 /** Input shape for `workflows.runs.list`. */
-export type WorkflowsRunsListInput = Record<string, never>;
+export type WorkflowsRunsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `workflows.runs.list`. (no @Returns declared) */
 export type WorkflowsRunsListReturn = unknown;
@@ -3600,7 +3678,10 @@ export type WorkflowsSpecsCreateInput = {
 export type WorkflowsSpecsCreateReturn = unknown;
 
 /** Input shape for `workflows.specs.list`. */
-export type WorkflowsSpecsListInput = Record<string, never>;
+export type WorkflowsSpecsListInput = {
+  limit?: string;
+  offset?: string;
+};
 
 /** Return shape for `workflows.specs.list`. (no @Returns declared) */
 export type WorkflowsSpecsListReturn = unknown;

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
 import { createArtifact } from "../../artifacts/store.js";
 import {
   createDevinClientFromEnv,
@@ -405,38 +406,74 @@ export class DevinSessionCommands {
     @Option({ flags: "--status <status>", description: "Filter local sessions by status" }) status?: string,
     @Option({ flags: "--tag <tag>", description: "Filter sessions by tag" }) tag?: string,
     @Option({ flags: "--limit <n>", description: "Max sessions to show (default: 20)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const max = parsePositiveInteger(limit, "--limit") ?? 20;
+    const pageOffset = parseCliListOffset(offset);
     if (remote) {
       const client = createDevinClientFromEnv();
-      const page = await client.listSessions({
-        first: Math.min(max, 200),
+      const remotePage = await client.listSessions({
+        first: Math.min(max + pageOffset, 200),
         tags: tag?.trim() ? [tag.trim()] : undefined,
       });
-      const sessions = page.items.map((item) => upsertDevinSession(item, { lastSyncedAt: Date.now() }));
+      const sessions = remotePage.items.map((item) => upsertDevinSession(item, { lastSyncedAt: Date.now() }));
+      const page = paginateCliItems(sessions, { limit: max, offset: pageOffset }, { defaultLimit: 20 });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "devin", "sessions", "list"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: remotePage.total ?? sessions.length,
+        options: ["--remote", "--status", status?.trim() || null, "--tag", tag?.trim() || null],
+      });
       const payload = {
         source: "remote",
-        total: page.total ?? sessions.length,
-        hasNextPage: page.has_next_page ?? false,
-        sessions: sessions.map(summarizeSession),
+        total: remotePage.total ?? sessions.length,
+        pagination,
+        hasNextPage: pagination.hasMore || (remotePage.has_next_page ?? false),
+        items: page.items.map(summarizeSession),
+        sessions: page.items.map(summarizeSession),
       };
       if (asJson) {
         printJson(payload);
       } else {
-        for (const session of sessions) printSession(session);
+        for (const session of page.items) printSession(session);
+        if (pagination.nextCommand) {
+          console.log("\nNext page:");
+          console.log(`  ${pagination.nextCommand}`);
+        }
       }
       return payload;
     }
 
-    const sessions = listDevinSessions({ status, tag, limit: max });
-    const payload = { source: "local", total: sessions.length, sessions: sessions.map(summarizeSession) };
+    const sessions = listDevinSessions({ status, tag, limit: 500 });
+    const page = paginateCliItems(sessions, { limit: max, offset: pageOffset }, { defaultLimit: 20 });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "devin", "sessions", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--status", status?.trim() || null, "--tag", tag?.trim() || null],
+    });
+    const payload = {
+      source: "local",
+      total: page.total,
+      pagination,
+      items: page.items.map(summarizeSession),
+      sessions: page.items.map(summarizeSession),
+    };
     if (asJson) {
       printJson(payload);
-    } else if (sessions.length === 0) {
+    } else if (page.items.length === 0) {
       console.log("No local Devin sessions found.");
     } else {
-      for (const session of sessions) printSession(session);
+      for (const session of page.items) printSession(session);
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
     }
     return payload;
   }

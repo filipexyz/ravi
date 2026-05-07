@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, Group, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { formatDurationMs, parseDurationMs } from "../../cron/schedule.js";
 import {
   TASK_AUTOMATION_EVENTS,
@@ -130,6 +131,9 @@ export class TaskAutomationCommands {
   list(
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical task automation tag" }) tagSlug?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching automations to skip (default: 0)" })
+    offset?: string,
   ) {
     const automations = filterItemsByCanonicalTag(
       listTaskAutomations(),
@@ -137,11 +141,27 @@ export class TaskAutomationCommands {
       tagSlug,
       (automation) => automation.id,
     );
-    const payload = { total: automations.length, filters: { tag: tagSlug?.trim() || null }, automations };
+    const page = paginateCliItems(automations, { limit, offset });
+    const pageAutomations = page.items;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "tasks", "automations", "list"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: pageAutomations.length,
+      total: page.total,
+      options: ["--tag", tagSlug?.trim() || null],
+    });
+    const payload = {
+      total: page.total,
+      pagination,
+      filters: { tag: tagSlug?.trim() || null },
+      items: pageAutomations,
+      automations: pageAutomations,
+    };
 
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
-    } else if (automations.length === 0) {
+    } else if (pageAutomations.length === 0) {
       console.log("\nNo task automations configured.\n");
       console.log("Usage:");
       console.log(
@@ -153,12 +173,16 @@ export class TaskAutomationCommands {
       console.log(
         "  --------  -------  ----------------------------------  -------------------  -----  ------------------------------",
       );
-      for (const automation of automations) {
+      for (const automation of pageAutomations) {
         const events = automation.eventTypes.join(",").slice(0, 34).padEnd(34);
         const target = `${automation.profileId ?? "(inherit)"}/${automation.agentId ?? "open"}`.padEnd(19);
         console.log(
           `  ${automation.id.padEnd(8)}  ${(automation.enabled ? "yes" : "no").padEnd(7)}  ${events}  ${target}  ${String(automation.fireCount).padEnd(5)}  ${automation.name.slice(0, 30)}`,
         );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
       }
       console.log("");
     }
