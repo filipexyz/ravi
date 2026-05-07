@@ -72,6 +72,11 @@ async function transcribeChunk(provider: TranscribeProvider, buffer: Buffer, mim
   return response.text;
 }
 
+function isAudioTooShortError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /audio file is too short|minimum audio length/i.test(message);
+}
+
 /**
  * Transcribe audio using Groq (preferred) or OpenAI.
  * Automatically chunks audio longer than 10 minutes.
@@ -114,7 +119,21 @@ export async function transcribeAudio(buffer: Buffer, mimetype: string): Promise
       size: chunk.buffer.length,
       startSec: chunk.startSec,
     });
-    const text = await transcribeChunk(provider, chunk.buffer, mimetype);
+    let text = "";
+    try {
+      text = await transcribeChunk(provider, chunk.buffer, chunk.mimetype ?? mimetype);
+    } catch (err) {
+      if (isAudioTooShortError(err)) {
+        log.warn("Skipping too-short audio chunk rejected by provider", {
+          index: i,
+          startSec: chunk.startSec,
+          duration: chunk.duration,
+          error: err,
+        });
+        continue;
+      }
+      throw err;
+    }
     if (text.trim()) {
       texts.push(text.trim());
     }
