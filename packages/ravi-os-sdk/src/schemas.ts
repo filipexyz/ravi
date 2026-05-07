@@ -1098,6 +1098,122 @@ export const ContactsMergeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.metadata.list`. */
+export const ContactsMetadataListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching metadata entries to skip (default: 0)",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scoped context",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.metadata.remove`. */
+export const ContactsMetadataRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "key": {
+      "description": "Namespaced metadata key",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context, e.g. project:ravi-web",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "key"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.metadata.set`. */
+export const ContactsMetadataSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "key": {
+      "description": "Namespaced metadata key",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context, e.g. project:ravi-web",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    },
+    "value": {
+      "description": "JSON value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "key",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.note`. */
+export const ContactsNoteInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Scoped context for this note",
+      "type": "string"
+    },
+    "source": {
+      "description": "Event source (default: cli)",
+      "type": "string"
+    },
+    "text": {
+      "description": "Note text",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "text"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.pending`. */
 export const ContactsPendingInputSchema = {
   "additionalProperties": false,
@@ -1166,6 +1282,37 @@ export const ContactsTagInputSchema = {
   "required": [
     "contact",
     "tag"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.timeline`. */
+export const ContactsTimelineInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "event": {
+      "description": "Filter by event type",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching events to skip (default: 0)",
+      "type": "string"
+    },
+    "scope": {
+      "description": "Filter by scoped context",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

@@ -458,6 +458,51 @@ export type ContactsMergeInput = {
 /** Return shape for `contacts.merge`. (no @Returns declared) */
 export type ContactsMergeReturn = unknown;
 
+/** Input shape for `contacts.metadata.list`. */
+export type ContactsMetadataListInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+};
+
+/** Return shape for `contacts.metadata.list`. (no @Returns declared) */
+export type ContactsMetadataListReturn = unknown;
+
+/** Input shape for `contacts.metadata.remove`. */
+export type ContactsMetadataRemoveInput = {
+  contact: string;
+  key: string;
+  scope?: string;
+  source?: string;
+};
+
+/** Return shape for `contacts.metadata.remove`. (no @Returns declared) */
+export type ContactsMetadataRemoveReturn = unknown;
+
+/** Input shape for `contacts.metadata.set`. */
+export type ContactsMetadataSetInput = {
+  contact: string;
+  key: string;
+  scope?: string;
+  source?: string;
+  value: string;
+};
+
+/** Return shape for `contacts.metadata.set`. (no @Returns declared) */
+export type ContactsMetadataSetReturn = unknown;
+
+/** Input shape for `contacts.note`. */
+export type ContactsNoteInput = {
+  contact: string;
+  scope?: string;
+  source?: string;
+  text: string;
+};
+
+/** Return shape for `contacts.note`. (no @Returns declared) */
+export type ContactsNoteReturn = unknown;
+
 /** Input shape for `contacts.pending`. */
 export type ContactsPendingInput = {
   account?: string;
@@ -492,6 +537,18 @@ export type ContactsTagInput = {
 
 /** Return shape for `contacts.tag`. (no @Returns declared) */
 export type ContactsTagReturn = unknown;
+
+/** Input shape for `contacts.timeline`. */
+export type ContactsTimelineInput = {
+  contact: string;
+  event?: string;
+  limit?: string;
+  offset?: string;
+  scope?: string;
+};
+
+/** Return shape for `contacts.timeline`. (no @Returns declared) */
+export type ContactsTimelineReturn = unknown;
 
 /** Input shape for `contacts.unlink`. */
 export type ContactsUnlinkInput = {

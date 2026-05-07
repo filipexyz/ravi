@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
-import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import { nats } from "../../nats.js";
 
 /** Notify gateway that config changed */
@@ -35,11 +35,19 @@ import {
   unlinkContactIdentity,
   mergeContacts,
   getContactDetails,
+  listContactEvents,
+  addContactNote,
+  listContactMetadata,
+  setContactMetadata,
+  removeContactMetadata,
   setContactKind,
   listDuplicateContacts,
   setGroupTag,
   removeGroupTag,
   type Contact,
+  type ContactContextEntry,
+  type ContactEvent,
+  type ContactEventScopeType,
   type ContactStatus,
   type ReplyMode,
   type ContactSource,
@@ -204,6 +212,39 @@ function parseAgentIds(agentIds?: string): string[] | null {
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean);
+}
+
+function parseScopeOption(scope?: string): { scopeType?: ContactEventScopeType; scopeId?: string } {
+  const raw = scope?.trim();
+  if (!raw) return {};
+  const separator = raw.indexOf(":");
+  if (separator <= 0 || separator === raw.length - 1) {
+    fail("--scope must use <type:id>, e.g. chat:chat_123 or project:ravi-web");
+  }
+  return {
+    scopeType: raw.slice(0, separator) as ContactEventScopeType,
+    scopeId: raw.slice(separator + 1),
+  };
+}
+
+function parseJsonArgument(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch (error) {
+    fail(`Invalid JSON value: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function formatContactEventScope(event: Pick<ContactEvent, "scopeType" | "scopeId">): string {
+  return event.scopeType === "global" ? "global" : `${event.scopeType}:${event.scopeId ?? "-"}`;
+}
+
+function serializeContactEvent(event: ContactEvent) {
+  return event;
+}
+
+function serializeContactContextEntry(entry: ContactContextEntry) {
+  return entry;
 }
 
 function summarizeContacts(contacts: Contact[]) {
@@ -802,6 +843,103 @@ export class ContactsCommands {
   }
 
   @Scope("open")
+  @Command({ name: "timeline", description: "Show contact timeline events" })
+  timeline(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching events to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--scope <type:id>", description: "Filter by scoped context" }) scope?: string,
+    @Option({ flags: "--event <type>", description: "Filter by event type" }) eventType?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const scopeFilter = parseScopeOption(scope);
+    try {
+      const pageLimit = parseCliListLimit(limit);
+      const pageOffset = parseCliListOffset(offset);
+      const page = listContactEvents(contactRef, {
+        limit: pageLimit,
+        offset: pageOffset,
+        ...scopeFilter,
+        eventType: eventType?.trim() || null,
+      });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "contacts", "timeline", contactRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--scope", scope?.trim() || null, "--event", eventType?.trim() || null],
+      });
+      const payload = {
+        contactId: page.contactId,
+        target: contactRef,
+        total: page.total,
+        pagination,
+        items: page.items.map(serializeContactEvent),
+        events: page.items.map(serializeContactEvent),
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      if (page.items.length === 0) {
+        console.log(`No timeline events found for: ${contactRef}`);
+        return payload;
+      }
+      console.log(
+        `\nContact timeline (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const event of page.items) {
+        console.log(`- ${event.createdAt} :: ${event.eventType} :: ${formatContactEventScope(event)}`);
+        if (event.source) console.log(`  source: ${event.source}`);
+        if (event.payload !== null) console.log(`  payload: ${JSON.stringify(event.payload)}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "note", description: "Append a note to a contact timeline" })
+  note(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Arg("text", { description: "Note text" }) text: string,
+    @Option({ flags: "--source <source>", description: "Event source (default: cli)" }) source?: string,
+    @Option({ flags: "--scope <type:id>", description: "Scoped context for this note" }) scope?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const scopeInput = parseScopeOption(scope);
+    try {
+      const event = addContactNote(contactRef, text, {
+        ...scopeInput,
+        source: source?.trim() || "cli",
+        actorType: "user",
+        confidence: 1,
+      });
+      const payload = {
+        status: "note_added" as const,
+        target: contactRef,
+        event: serializeContactEvent(event),
+        changedCount: 1,
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        console.log(`✓ Note added: ${event.contactId} ${formatContactEventScope(event)}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("open")
   @Command({ name: "find", description: "Find contacts by tag or search query" })
   find(
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
@@ -1154,6 +1292,139 @@ export class ContactsCommands {
         console.log(`✓ Merged: ${source.id} → ${target.id} (${result.merged} identities moved)`);
       }
       emitConfigChanged();
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+}
+
+@Group({
+  name: "contacts.metadata",
+  description: "Scoped contact metadata",
+})
+export class ContactsMetadataCommands {
+  @Scope("open")
+  @Command({ name: "list", description: "List current scoped metadata for a contact" })
+  list(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--scope <type:id>", description: "Filter by scoped context" }) scope?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching metadata entries to skip (default: 0)" })
+    offset?: string,
+  ) {
+    const scopeInput = parseScopeOption(scope);
+    try {
+      const entries = listContactMetadata(contactRef, scopeInput);
+      const page = paginateCliItems(entries, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "contacts", "metadata", "list", contactRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--scope", scope?.trim() || null],
+      });
+      const payload = {
+        target: contactRef,
+        total: page.total,
+        pagination,
+        items: page.items.map(serializeContactContextEntry),
+        metadata: page.items.map(serializeContactContextEntry),
+      };
+      if (asJson) {
+        printJson(payload);
+      } else if (page.items.length === 0) {
+        console.log(`No contact metadata found for: ${contactRef}`);
+      } else {
+        console.log(
+          `\nContact metadata (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+        );
+        for (const entry of page.items) {
+          const scopeLabel = entry.scopeType === "global" ? "global" : `${entry.scopeType}:${entry.scopeId ?? "-"}`;
+          console.log(`- ${scopeLabel} :: ${entry.key} = ${JSON.stringify(entry.value)}`);
+        }
+        if (pagination.nextCommand) {
+          console.log("\nNext page:");
+          console.log(`  ${pagination.nextCommand}`);
+        }
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "set", description: "Set scoped metadata for a contact" })
+  set(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Arg("key", { description: "Namespaced metadata key" }) key: string,
+    @Arg("value", { description: "JSON value" }) value: string,
+    @Option({ flags: "--scope <type:id>", description: "Scoped context, e.g. project:ravi-web" }) scope?: string,
+    @Option({ flags: "--source <source>", description: "Event source (default: cli)" }) source?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const scopeInput = parseScopeOption(scope);
+    const jsonValue = parseJsonArgument(value);
+    try {
+      const entry = setContactMetadata(contactRef, key, jsonValue, {
+        ...scopeInput,
+        source: source?.trim() || "cli",
+        actorType: "user",
+        confidence: 1,
+      });
+      const payload = {
+        status: "metadata_set" as const,
+        target: contactRef,
+        metadata: serializeContactContextEntry(entry),
+        changedCount: 1,
+      };
+      if (asJson) {
+        printJson(payload);
+      } else {
+        const scopeLabel = entry.scopeType === "global" ? "global" : `${entry.scopeType}:${entry.scopeId ?? "-"}`;
+        console.log(`✓ Metadata set: ${entry.contactId} ${scopeLabel} ${entry.key}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "remove", description: "Remove scoped metadata from a contact" })
+  remove(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Arg("key", { description: "Namespaced metadata key" }) key: string,
+    @Option({ flags: "--scope <type:id>", description: "Scoped context, e.g. project:ravi-web" }) scope?: string,
+    @Option({ flags: "--source <source>", description: "Event source (default: cli)" }) source?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const scopeInput = parseScopeOption(scope);
+    try {
+      const result = removeContactMetadata(contactRef, key, {
+        ...scopeInput,
+        source: source?.trim() || "cli",
+        actorType: "user",
+        confidence: 1,
+      });
+      const payload = {
+        status: result.removed ? ("metadata_removed" as const) : ("not_found" as const),
+        target: contactRef,
+        key,
+        previous: result.previous ? serializeContactContextEntry(result.previous) : null,
+        event: result.event ? serializeContactEvent(result.event) : null,
+        changedCount: result.removed ? 1 : 0,
+      };
+      if (asJson) {
+        printJson(payload);
+      } else if (result.removed) {
+        console.log(`✓ Metadata removed: ${contactRef} ${key}`);
+      } else {
+        console.log(`Metadata not found: ${contactRef} ${key}`);
+      }
       return payload;
     } catch (err: any) {
       fail(err.message);

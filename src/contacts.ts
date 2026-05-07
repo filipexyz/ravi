@@ -10,6 +10,7 @@ import {
   replaceMirroredTagSlugsForAsset,
 } from "./tags/helpers.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
+import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
 
 // Re-export normalize functions for backwards compatibility
 export {
@@ -29,6 +30,7 @@ let dbPath: string | null = null;
 let stmts: ReturnType<typeof createStatements> | null = null;
 
 const IDENTITY_PROJECTION_BACKFILL_KEY = "identity_projection_backfill_v1";
+const CONTACT_EVENT_SCOPE_TYPES = new Set(["global", "domain", "project", "chat", "session", "org", "agent", "task"]);
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
@@ -308,6 +310,57 @@ function initializeIdentitySchema(database: Database): void {
       ON identity_link_events(platform_identity_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_identity_link_events_target
       ON identity_link_events(target_owner_type, target_owner_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS contact_events (
+      id TEXT PRIMARY KEY,
+      contact_id TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'global'
+        CHECK(scope_type IN ('global', 'domain', 'project', 'chat', 'session', 'org', 'agent', 'task')),
+      scope_id TEXT,
+      source TEXT,
+      actor_type TEXT CHECK(actor_type IS NULL OR actor_type IN ('user', 'agent', 'system', 'contact', 'unknown')),
+      actor_id TEXT,
+      platform_identity_id TEXT,
+      chat_id TEXT,
+      session_key TEXT,
+      message_id TEXT,
+      task_id TEXT,
+      artifact_id TEXT,
+      confidence REAL,
+      payload_json TEXT,
+      evidence_json TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      effective_at TEXT,
+      CHECK(scope_type = 'global' OR scope_id IS NOT NULL)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contact_events_contact_created
+      ON contact_events(contact_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_contact_events_scope_contact
+      ON contact_events(scope_type, scope_id, contact_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_contact_events_type_contact
+      ON contact_events(event_type, contact_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS contact_contexts (
+      contact_id TEXT NOT NULL,
+      scope_type TEXT NOT NULL DEFAULT 'global'
+        CHECK(scope_type IN ('global', 'domain', 'project', 'chat', 'session', 'org', 'agent', 'task')),
+      scope_id TEXT NOT NULL DEFAULT '',
+      key TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      source TEXT,
+      confidence REAL,
+      updated_by_type TEXT,
+      updated_by_id TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (contact_id, scope_type, scope_id, key),
+      CHECK(scope_type = 'global' OR scope_id <> '')
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_contact_contexts_contact_scope
+      ON contact_contexts(contact_id, scope_type, scope_id);
 
     CREATE TABLE IF NOT EXISTS contacts_meta (
       key TEXT PRIMARY KEY,
@@ -899,6 +952,8 @@ function generateId(): string {
 export type ContactStatus = "allowed" | "pending" | "blocked" | "discovered";
 export type ReplyMode = "auto" | "mention";
 export type ContactSource = "inbound" | "outbound" | "manual" | "discovered";
+export type ContactEventScopeType = "global" | "domain" | "project" | "chat" | "session" | "org" | "agent" | "task";
+export type ContactEventActorType = "user" | "agent" | "system" | "contact" | "unknown";
 
 export interface ContactIdentity {
   platform: string;
@@ -968,6 +1023,93 @@ export interface ContactDetails {
   policy: ContactPolicy | null;
   duplicateCandidates: DuplicateCandidate[];
   legacyContact: Contact | null;
+}
+
+export interface ContactEventRefs {
+  platformIdentityId?: string | null;
+  chatId?: string | null;
+  sessionKey?: string | null;
+  messageId?: string | null;
+  taskId?: string | null;
+  artifactId?: string | null;
+}
+
+export interface CreateContactEventInput extends ContactEventRefs {
+  contactRef: string;
+  eventType: string;
+  scopeType?: ContactEventScopeType | string | null;
+  scopeId?: string | null;
+  source?: string | null;
+  actorType?: ContactEventActorType | null;
+  actorId?: string | null;
+  confidence?: number | null;
+  payload?: unknown;
+  evidence?: unknown;
+  effectiveAt?: string | null;
+}
+
+export interface ContactEvent {
+  id: string;
+  contactId: string;
+  eventType: string;
+  scopeType: ContactEventScopeType;
+  scopeId: string | null;
+  source: string | null;
+  actorType: ContactEventActorType | null;
+  actorId: string | null;
+  platformIdentityId: string | null;
+  chatId: string | null;
+  sessionKey: string | null;
+  messageId: string | null;
+  taskId: string | null;
+  artifactId: string | null;
+  confidence: number | null;
+  payload: unknown;
+  evidence: unknown;
+  createdAt: string;
+  effectiveAt: string | null;
+}
+
+export interface ListContactEventsOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  scopeType?: ContactEventScopeType | string | null;
+  scopeId?: string | null;
+  eventType?: string | null;
+}
+
+export interface ContactEventsPage extends ListPage<ContactEvent> {
+  contactId: string;
+}
+
+export interface ContactMetadataMutationOptions {
+  scopeType?: ContactEventScopeType | string | null;
+  scopeId?: string | null;
+  source?: string | null;
+  actorType?: ContactEventActorType | null;
+  actorId?: string | null;
+  confidence?: number | null;
+  evidence?: unknown;
+}
+
+export interface ContactContextEntry {
+  contactId: string;
+  scopeType: ContactEventScopeType;
+  scopeId: string | null;
+  key: string;
+  value: unknown;
+  source: string | null;
+  confidence: number | null;
+  updatedByType: string | null;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ContactMetadataRemoveResult {
+  removed: boolean;
+  previous: ContactContextEntry | null;
+  event: ContactEvent | null;
 }
 
 export interface Contact {
@@ -1048,6 +1190,42 @@ interface PlatformIdentityRow {
   link_reason: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ContactEventRow {
+  id: string;
+  contact_id: string;
+  event_type: string;
+  scope_type: ContactEventScopeType;
+  scope_id: string | null;
+  source: string | null;
+  actor_type: ContactEventActorType | null;
+  actor_id: string | null;
+  platform_identity_id: string | null;
+  chat_id: string | null;
+  session_key: string | null;
+  message_id: string | null;
+  task_id: string | null;
+  artifact_id: string | null;
+  confidence: number | null;
+  payload_json: string | null;
+  evidence_json: string | null;
+  created_at: string;
+  effective_at: string | null;
+}
+
+interface ContactContextRow {
+  contact_id: string;
+  scope_type: ContactEventScopeType;
+  scope_id: string;
+  key: string;
+  value_json: string;
+  source: string | null;
+  confidence: number | null;
+  updated_by_type: string | null;
+  updated_by_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -1217,6 +1395,84 @@ function rowToContactPolicy(row: ContactPolicyRow): ContactPolicy {
     lastInboundAt: row.last_inbound_at,
     lastOutboundAt: row.last_outbound_at,
     interactionCount: row.interaction_count ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function normalizeContactEventScope(
+  scopeType?: ContactEventScopeType | string | null,
+  scopeId?: string | null,
+): { scopeType: ContactEventScopeType; scopeId: string | null; storageScopeId: string } {
+  const resolvedScopeType = (scopeType?.trim().toLowerCase() || "global") as ContactEventScopeType;
+  if (!CONTACT_EVENT_SCOPE_TYPES.has(resolvedScopeType)) {
+    throw new Error(`Invalid contact event scope type: ${scopeType}`);
+  }
+  const resolvedScopeId = scopeId?.trim() || null;
+  if (resolvedScopeType !== "global" && !resolvedScopeId) {
+    throw new Error(`scope_id is required for contact event scope ${resolvedScopeType}`);
+  }
+  if (resolvedScopeType === "global" && resolvedScopeId) {
+    throw new Error("scope_id must be empty when contact event scope is global");
+  }
+  return {
+    scopeType: resolvedScopeType,
+    scopeId: resolvedScopeId,
+    storageScopeId: resolvedScopeId ?? "",
+  };
+}
+
+function normalizeContactEventType(eventType: string): string {
+  const normalized = eventType.trim();
+  if (!normalized) throw new Error("Contact event type is required");
+  return normalized;
+}
+
+function normalizeContactContextKey(key: string): string {
+  const normalized = key.trim();
+  if (!normalized) throw new Error("Contact metadata key is required");
+  return normalized;
+}
+
+function normalizeContactEventActorType(actorType?: ContactEventActorType | null): ContactEventActorType | null {
+  return actorType ?? null;
+}
+
+function rowToContactEvent(row: ContactEventRow): ContactEvent {
+  return {
+    id: row.id,
+    contactId: row.contact_id,
+    eventType: row.event_type,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    source: row.source,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    platformIdentityId: row.platform_identity_id,
+    chatId: row.chat_id,
+    sessionKey: row.session_key,
+    messageId: row.message_id,
+    taskId: row.task_id,
+    artifactId: row.artifact_id,
+    confidence: row.confidence,
+    payload: parseJsonValue(row.payload_json),
+    evidence: parseJsonValue(row.evidence_json),
+    createdAt: row.created_at,
+    effectiveAt: row.effective_at,
+  };
+}
+
+function rowToContactContext(row: ContactContextRow): ContactContextEntry {
+  return {
+    contactId: row.contact_id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id || null,
+    key: row.key,
+    value: parseJsonValue(row.value_json),
+    source: row.source,
+    confidence: row.confidence,
+    updatedByType: row.updated_by_type,
+    updatedById: row.updated_by_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1428,6 +1684,283 @@ export function getContactDetails(
   return null;
 }
 
+function resolveCanonicalContactId(database: Database, contactRef: string): string | null {
+  const legacyContact = resolveContact(contactRef);
+  if (legacyContact) {
+    if (isLegacyGroupOnlyContact(legacyContact)) return null;
+    if (!contactProjectionIsCurrent(database, legacyContact)) {
+      syncContactProjection(database, legacyContact.id);
+    }
+    return legacyContact.id;
+  }
+
+  if (getCanonicalContactById(database, contactRef)) return contactRef;
+
+  const identity = findPlatformIdentityByRef(database, contactRef);
+  if (identity?.owner_type === "contact" && identity.owner_id) return identity.owner_id;
+
+  return null;
+}
+
+type InsertContactEventInput = Omit<CreateContactEventInput, "contactRef"> & { contactId: string };
+
+function insertContactEvent(database: Database, input: InsertContactEventInput): ContactEvent {
+  const scope = normalizeContactEventScope(input.scopeType, input.scopeId);
+  const eventType = normalizeContactEventType(input.eventType);
+  const id = `ce_${generateId()}`;
+  const payloadJson = input.payload === undefined ? null : JSON.stringify(input.payload);
+  const evidenceJson = input.evidence === undefined ? null : JSON.stringify(input.evidence);
+
+  database
+    .prepare(
+      `
+      INSERT INTO contact_events (
+        id, contact_id, event_type, scope_type, scope_id, source, actor_type, actor_id,
+        platform_identity_id, chat_id, session_key, message_id, task_id, artifact_id,
+        confidence, payload_json, evidence_json, effective_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(
+      id,
+      input.contactId,
+      eventType,
+      scope.scopeType,
+      scope.scopeId,
+      input.source?.trim() || null,
+      normalizeContactEventActorType(input.actorType),
+      input.actorId?.trim() || null,
+      input.platformIdentityId?.trim() || null,
+      input.chatId?.trim() || null,
+      input.sessionKey?.trim() || null,
+      input.messageId?.trim() || null,
+      input.taskId?.trim() || null,
+      input.artifactId?.trim() || null,
+      input.confidence ?? null,
+      payloadJson,
+      evidenceJson,
+      input.effectiveAt?.trim() || null,
+    );
+
+  const row = database.prepare("SELECT * FROM contact_events WHERE id = ?").get(id) as ContactEventRow | undefined;
+  if (!row) throw new Error(`Contact event not found after insert: ${id}`);
+  return rowToContactEvent(row);
+}
+
+export function createContactEvent(input: CreateContactEventInput): ContactEvent {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, input.contactRef);
+  if (!contactId) throw new Error(`Contact not found: ${input.contactRef}`);
+  return insertContactEvent(database, { ...input, contactId });
+}
+
+export function listContactEvents(contactRef: string, options: ListContactEventsOptions = {}): ContactEventsPage {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) throw new Error(`Contact not found: ${contactRef}`);
+
+  const where = ["contact_id = ?"];
+  const params: Array<string | number> = [contactId];
+  if (options.scopeType || options.scopeId) {
+    const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
+    where.push("scope_type = ?");
+    params.push(scope.scopeType);
+    if (scope.scopeType === "global") {
+      where.push("scope_id IS NULL");
+    } else {
+      where.push("scope_id = ?");
+      params.push(scope.scopeId!);
+    }
+  }
+  if (options.eventType?.trim()) {
+    where.push("event_type = ?");
+    params.push(options.eventType.trim());
+  }
+
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const total = countRows({ db: database, table: "contact_events", where, params });
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM contact_events
+      ${buildSqlWhereClause(where)}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as ContactEventRow[];
+
+  return {
+    contactId,
+    total,
+    limit,
+    offset,
+    items: rows.map(rowToContactEvent),
+  };
+}
+
+export function addContactNote(
+  contactRef: string,
+  text: string,
+  options: ContactMetadataMutationOptions = {},
+): ContactEvent {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("Contact note text is required");
+  return createContactEvent({
+    contactRef,
+    eventType: "profile.note_added",
+    scopeType: options.scopeType,
+    scopeId: options.scopeId,
+    source: options.source ?? "cli",
+    actorType: options.actorType ?? "user",
+    actorId: options.actorId ?? null,
+    confidence: options.confidence ?? 1,
+    payload: { text: trimmed },
+    evidence: options.evidence,
+  });
+}
+
+export function listContactMetadata(
+  contactRef: string,
+  options: { scopeType?: ContactEventScopeType | string | null; scopeId?: string | null } = {},
+): ContactContextEntry[] {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) throw new Error(`Contact not found: ${contactRef}`);
+
+  const where = ["contact_id = ?"];
+  const params: string[] = [contactId];
+  if (options.scopeType || options.scopeId) {
+    const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
+    where.push("scope_type = ?", "scope_id = ?");
+    params.push(scope.scopeType, scope.storageScopeId);
+  }
+
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM contact_contexts
+      ${buildSqlWhereClause(where)}
+      ORDER BY scope_type, scope_id, key
+    `,
+    )
+    .all(...params) as ContactContextRow[];
+  return rows.map(rowToContactContext);
+}
+
+export function setContactMetadata(
+  contactRef: string,
+  key: string,
+  value: unknown,
+  options: ContactMetadataMutationOptions = {},
+): ContactContextEntry {
+  if (value === undefined) throw new Error("Contact metadata value must be JSON-serializable");
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) throw new Error(`Contact not found: ${contactRef}`);
+  const normalizedKey = normalizeContactContextKey(key);
+  const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
+  const valueJson = JSON.stringify(value);
+
+  const txn = database.transaction(() => {
+    const previous = database
+      .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+      .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
+    database
+      .prepare(
+        `
+        INSERT INTO contact_contexts (
+          contact_id, scope_type, scope_id, key, value_json, source, confidence,
+          updated_by_type, updated_by_id, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(contact_id, scope_type, scope_id, key) DO UPDATE SET
+          value_json = excluded.value_json,
+          source = excluded.source,
+          confidence = excluded.confidence,
+          updated_by_type = excluded.updated_by_type,
+          updated_by_id = excluded.updated_by_id,
+          updated_at = datetime('now')
+      `,
+      )
+      .run(
+        contactId,
+        scope.scopeType,
+        scope.storageScopeId,
+        normalizedKey,
+        valueJson,
+        options.source?.trim() || "cli",
+        options.confidence ?? 1,
+        options.actorType ?? "user",
+        options.actorId?.trim() || null,
+      );
+    insertContactEvent(database, {
+      contactId,
+      eventType: "profile.metadata_set",
+      scopeType: scope.scopeType,
+      scopeId: scope.scopeId,
+      source: options.source ?? "cli",
+      actorType: options.actorType ?? "user",
+      actorId: options.actorId ?? null,
+      confidence: options.confidence ?? 1,
+      payload: {
+        key: normalizedKey,
+        value,
+        previousValue: previous ? parseJsonValue(previous.value_json) : null,
+      },
+      evidence: options.evidence,
+    });
+  });
+  txn();
+
+  const row = database
+    .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+    .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
+  if (!row) throw new Error(`Contact metadata not found after set: ${normalizedKey}`);
+  return rowToContactContext(row);
+}
+
+export function removeContactMetadata(
+  contactRef: string,
+  key: string,
+  options: ContactMetadataMutationOptions = {},
+): ContactMetadataRemoveResult {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) throw new Error(`Contact not found: ${contactRef}`);
+  const normalizedKey = normalizeContactContextKey(key);
+  const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
+  let previous: ContactContextEntry | null = null;
+  let event: ContactEvent | null = null;
+
+  const txn = database.transaction(() => {
+    const previousRow = database
+      .prepare("SELECT * FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+      .get(contactId, scope.scopeType, scope.storageScopeId, normalizedKey) as ContactContextRow | undefined;
+    if (!previousRow) return;
+    previous = rowToContactContext(previousRow);
+    database
+      .prepare("DELETE FROM contact_contexts WHERE contact_id = ? AND scope_type = ? AND scope_id = ? AND key = ?")
+      .run(contactId, scope.scopeType, scope.storageScopeId, normalizedKey);
+    event = insertContactEvent(database, {
+      contactId,
+      eventType: "profile.metadata_removed",
+      scopeType: scope.scopeType,
+      scopeId: scope.scopeId,
+      source: options.source ?? "cli",
+      actorType: options.actorType ?? "user",
+      actorId: options.actorId ?? null,
+      confidence: options.confidence ?? 1,
+      payload: { key: normalizedKey, previousValue: previous.value },
+      evidence: options.evidence,
+    });
+  });
+  txn();
+
+  return { removed: previous !== null, previous, event };
+}
+
 function findPlatformIdentityByChannelRef(
   database: Database,
   input: { channel: string; instanceId?: string | null; platformUserId: string },
@@ -1623,9 +2156,20 @@ export function setContactKind(contactRef: string, kind: "person" | "org"): Cont
   const legacyContact = resolveContact(contactRef);
   if (!legacyContact) throw new Error(`Contact not found: ${contactRef}`);
   syncContactProjection(database, legacyContact.id);
+  const previous = getCanonicalContactById(database, legacyContact.id);
   database
     .prepare("UPDATE contacts SET kind = ?, updated_at = datetime('now') WHERE id = ?")
     .run(kind, legacyContact.id);
+  if (previous?.kind !== kind) {
+    insertContactEvent(database, {
+      contactId: legacyContact.id,
+      eventType: "profile.kind_changed",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousKind: previous?.kind ?? null, kind },
+    });
+  }
   const details = getContactDetails(legacyContact.id);
   if (!details) throw new Error(`Contact is not canonical: ${legacyContact.id}`);
   return details;
@@ -1749,6 +2293,26 @@ export function upsertContact(
     values.push(existing.id);
     database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
     syncContactProjection(database, existing.id);
+    if (name !== undefined && name !== null && name !== existing.name) {
+      insertContactEvent(database, {
+        contactId: existing.id,
+        eventType: "profile.name_changed",
+        source: source ?? "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: { previousName: existing.name, name },
+      });
+    }
+    if (existing.status !== status) {
+      insertContactEvent(database, {
+        contactId: existing.id,
+        eventType: "policy.status_changed",
+        source: source ?? "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: { previousStatus: existing.status, status },
+      });
+    }
   } else {
     // Create new
     const id = generateId();
@@ -1756,6 +2320,22 @@ export function upsertContact(
     statements.insertContact.run(id, name ?? null, null, status, source ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
     syncContactProjection(database, id);
+    insertContactEvent(database, {
+      contactId: id,
+      eventType: "profile.created",
+      source: source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { identity: normalized, platform, name: name ?? null, status },
+    });
+    insertContactEvent(database, {
+      contactId: id,
+      eventType: "policy.status_changed",
+      source: source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousStatus: null, status },
+    });
   }
 }
 
@@ -1784,6 +2364,14 @@ export function savePendingContact(phone: string, name?: string | null): boolean
     statements.upsertPending.run(id, name ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
     syncContactProjection(database, id);
+    insertContactEvent(database, {
+      contactId: id,
+      eventType: "profile.created",
+      source: "inbound",
+      actorType: "system",
+      confidence: 1,
+      payload: { identity: normalized, platform, name: name ?? null, status: "pending" },
+    });
     return true;
   }
 }
@@ -1813,6 +2401,16 @@ export function setContactStatus(phone: string, status: ContactStatus): void {
   } else {
     statements.updateStatus.run(status, contact.id);
     syncContactProjection(ensureDb(), contact.id);
+    if (contact.status !== status) {
+      insertContactEvent(ensureDb(), {
+        contactId: contact.id,
+        eventType: "policy.status_changed",
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: { previousStatus: contact.status, status },
+      });
+    }
   }
 }
 
@@ -1840,6 +2438,16 @@ export function setContactReplyMode(phone: string, mode: ReplyMode): void {
   if (contact) {
     statements.updateReplyMode.run(mode, contact.id);
     syncContactProjection(ensureDb(), contact.id);
+    if (contact.reply_mode !== mode) {
+      insertContactEvent(ensureDb(), {
+        contactId: contact.id,
+        eventType: "policy.reply_mode_changed",
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: { previousReplyMode: contact.reply_mode, replyMode: mode },
+      });
+    }
   }
 }
 
@@ -1887,6 +2495,14 @@ export function saveDiscoveredContact(phone: string, name?: string | null): void
       .run(id, name ?? null);
     statements.insertIdentity.run(id, platform, normalized, 1);
     syncContactProjection(database, id);
+    insertContactEvent(database, {
+      contactId: id,
+      eventType: "profile.created",
+      source: "discovered",
+      actorType: "system",
+      confidence: 1,
+      payload: { identity: normalized, platform, name: name ?? null, status: "discovered" },
+    });
   }
 }
 
@@ -1930,6 +2546,21 @@ export function createContact(input: {
 
   statements.insertIdentity.run(id, platform, normalized, 1);
   syncContactProjection(database, id);
+  insertContactEvent(database, {
+    contactId: id,
+    eventType: "profile.created",
+    source: input.source ?? "contacts",
+    actorType: "system",
+    confidence: 1,
+    payload: {
+      identity: normalized,
+      platform,
+      name: input.name ?? null,
+      email: input.email ?? null,
+      status: input.status ?? "allowed",
+      tags: input.tags ?? [],
+    },
+  });
   return getContactById(id)!;
 }
 
@@ -2004,6 +2635,86 @@ export function updateContact(
 
   database.prepare(`UPDATE contacts_v2 SET ${fields.join(", ")} WHERE id = ?`).run(...values);
   syncContactProjection(database, contact.id);
+  if (updates.name !== undefined && updates.name !== contact.name) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.name_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousName: contact.name, name: updates.name },
+    });
+  }
+  if (updates.email !== undefined && updates.email !== contact.email) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.email_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousEmail: contact.email, email: updates.email },
+    });
+  }
+  if (updates.status !== undefined && updates.status !== contact.status) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "policy.status_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousStatus: contact.status, status: updates.status },
+    });
+  }
+  if (updates.reply_mode !== undefined && updates.reply_mode !== contact.reply_mode) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "policy.reply_mode_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousReplyMode: contact.reply_mode, replyMode: updates.reply_mode },
+    });
+  }
+  if (updates.tags !== undefined) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.metadata_set",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { key: "tags", previousValue: contact.tags, value: updates.tags },
+    });
+  }
+  if (updates.notes !== undefined) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.metadata_set",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { key: "notes", previousValue: contact.notes, value: updates.notes },
+    });
+  }
+  if (updates.opt_out !== undefined && updates.opt_out !== contact.opt_out) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "policy.opt_out_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousOptOut: contact.opt_out, optOut: updates.opt_out },
+    });
+  }
+  if (updates.allowedAgents !== undefined) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "policy.allowed_agents_changed",
+      source: updates.source ?? "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { previousAllowedAgents: contact.allowedAgents, allowedAgents: updates.allowedAgents },
+    });
+  }
   return getContactById(contact.id)!;
 }
 
@@ -2059,6 +2770,14 @@ export function mergeContactNotes(phone: string, newNotes: Record<string, unknow
     .prepare("UPDATE contacts_v2 SET notes = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(merged), contact.id);
   syncContactProjection(database, contact.id);
+  insertContactEvent(database, {
+    contactId: contact.id,
+    eventType: "profile.note_added",
+    source: "contacts",
+    actorType: "system",
+    confidence: 1,
+    payload: { notes: newNotes, previousNotes: contact.notes },
+  });
 }
 
 /**
@@ -2087,6 +2806,14 @@ export function addContactTag(phone: string, tag: string): void {
       .run(JSON.stringify(tags), contact.id);
   }
   syncContactProjection(database, contact.id);
+  insertContactEvent(database, {
+    contactId: contact.id,
+    eventType: "profile.tag_added",
+    source: "contacts",
+    actorType: "system",
+    confidence: 1,
+    payload: { tag: canonicalSlug, originalTag: tag },
+  });
 }
 
 /**
@@ -2118,6 +2845,16 @@ export function removeContactTag(phone: string, tag: string): void {
     .prepare("UPDATE contacts_v2 SET tags = ?, updated_at = datetime('now') WHERE id = ?")
     .run(JSON.stringify(tags), contact.id);
   syncContactProjection(database, contact.id);
+  if (canonicalSlug) {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.tag_removed",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { tag: canonicalSlug, originalTag: tag },
+    });
+  }
 }
 
 /**
@@ -2163,6 +2900,16 @@ export function setOptOut(phone: string, optOut: boolean): void {
       .prepare("UPDATE contacts_v2 SET opt_out = ?, updated_at = datetime('now') WHERE id = ?")
       .run(optOut ? 1 : 0, contact.id);
     syncContactProjection(database, contact.id);
+    if (contact.opt_out !== optOut) {
+      insertContactEvent(database, {
+        contactId: contact.id,
+        eventType: "policy.opt_out_changed",
+        source: "contacts",
+        actorType: "system",
+        confidence: 1,
+        payload: { previousOptOut: contact.opt_out, optOut },
+      });
+    }
   }
 }
 
@@ -2180,7 +2927,13 @@ export function getContactIdentities(contactId: string): ContactIdentity[] {
 /**
  * Add an identity to an existing contact
  */
-export function addContactIdentity(contactId: string, platform: string, value: string, isPrimary = false): void {
+export function addContactIdentity(
+  contactId: string,
+  platform: string,
+  value: string,
+  isPrimary = false,
+  options: { emitEvent?: boolean } = {},
+): void {
   const database = ensureDb();
   const statements = getStatements();
   if (legacyIdentityIsGroup(platform, value)) {
@@ -2209,6 +2962,16 @@ export function addContactIdentity(contactId: string, platform: string, value: s
 
   statements.insertIdentity.run(contactId, platform, normalized, isPrimary ? 1 : 0);
   syncContactProjection(database, contactId);
+  if (options.emitEvent !== false) {
+    insertContactEvent(database, {
+      contactId,
+      eventType: "identity.linked",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { platform, value: normalized, isPrimary },
+    });
+  }
 }
 
 /**
@@ -2236,6 +2999,14 @@ export function removeContactIdentity(platform: string, value: string): void {
         .run(existing.contact_id, mapped.channel, mapped.normalizedValue);
     }
     syncContactProjection(database, existing.contact_id);
+    insertContactEvent(database, {
+      contactId: existing.contact_id,
+      eventType: "identity.unlinked",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: { platform, value: normalized },
+    });
   }
 }
 
@@ -2394,7 +3165,7 @@ export function linkContactIdentity(
     "contact",
     contact.id,
   );
-  addContactIdentity(contact.id, mapped.legacyPlatform, mapped.legacyValue);
+  addContactIdentity(contact.id, mapped.legacyPlatform, mapped.legacyValue, false, { emitEvent: false });
   syncContactProjection(database, contact.id);
 
   const current = upsertCanonicalPlatformIdentity(database, contact.id, mapped, input);
@@ -2415,6 +3186,21 @@ export function linkContactIdentity(
       input.reason ?? "manual",
       metadataJson({ source: "contacts_cli", instanceId: current.instance_id }),
     );
+  insertContactEvent(database, {
+    contactId: contact.id,
+    eventType: "identity.linked",
+    source: "contacts",
+    actorType: "system",
+    platformIdentityId: current.id,
+    confidence: 1,
+    payload: {
+      channel: current.channel,
+      instanceId: current.instance_id,
+      platformUserId: current.platform_user_id,
+      normalizedPlatformUserId: current.normalized_platform_user_id,
+      reason: input.reason ?? "manual",
+    },
+  });
 
   const details = getContactDetails(contact.id);
   if (!details) throw new Error(`Contact is not canonical: ${contact.id}`);
@@ -2509,6 +3295,23 @@ export function unlinkContactIdentity(
       reason ?? "manual",
       metadataJson({ source: "contacts_cli", channel: row.channel }),
     );
+  if (contactId) {
+    insertContactEvent(database, {
+      contactId,
+      eventType: "identity.unlinked",
+      source: "contacts",
+      actorType: "system",
+      platformIdentityId: row.id,
+      confidence: 1,
+      payload: {
+        channel: row.channel,
+        instanceId: row.instance_id,
+        platformUserId: row.platform_user_id,
+        normalizedPlatformUserId: row.normalized_platform_user_id,
+        reason: reason ?? "manual",
+      },
+    });
+  }
 
   if (!contactId) return null;
   syncContactProjection(database, contactId);
@@ -2586,6 +3389,31 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
         targetId,
         metadataJson({ movedIdentityCount: sourceIdentities.length, movedCanonicalIdentityIds }),
       );
+    insertContactEvent(database, {
+      contactId: targetId,
+      eventType: "identity.merged",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: {
+        sourceContactId: sourceId,
+        targetContactId: targetId,
+        movedIdentityCount: sourceIdentities.length,
+        movedCanonicalIdentityIds,
+      },
+    });
+    insertContactEvent(database, {
+      contactId: sourceId,
+      eventType: "identity.merged",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: {
+        sourceContactId: sourceId,
+        targetContactId: targetId,
+        mergedIntoContactId: targetId,
+      },
+    });
   });
 
   txn();

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "ddc891670c73a76d"
+    "version": "a4c4ecac1818e7b9"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2784,6 +2784,288 @@
         ]
       }
     },
+    "/api/v1/contacts/metadata/list": {
+      "post": {
+        "operationId": "contacts.metadata.list",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching metadata entries to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Filter by scoped context",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "List current scoped metadata for a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/metadata/remove": {
+      "post": {
+        "operationId": "contacts.metadata.remove",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Namespaced metadata key",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context, e.g. project:ravi-web",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "key"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Remove scoped metadata from a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/metadata/set": {
+      "post": {
+        "operationId": "contacts.metadata.set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "key": {
+                    "description": "Namespaced metadata key",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context, e.g. project:ravi-web",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  },
+                  "value": {
+                    "description": "JSON value",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "key",
+                  "value"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Set scoped metadata for a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/note": {
+      "post": {
+        "operationId": "contacts.note",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Scoped context for this note",
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "Event source (default: cli)",
+                    "type": "string"
+                  },
+                  "text": {
+                    "description": "Note text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact",
+                  "text"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Append a note to a contact timeline",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
     "/api/v1/contacts/pending": {
       "post": {
         "operationId": "contacts.pending",
@@ -3017,6 +3299,71 @@
           }
         ],
         "summary": "Add a tag to a contact",
+        "tags": [
+          "contacts"
+        ]
+      }
+    },
+    "/api/v1/contacts/timeline": {
+      "post": {
+        "operationId": "contacts.timeline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "contact": {
+                    "description": "Contact ID or identity",
+                    "type": "string"
+                  },
+                  "event": {
+                    "description": "Filter by event type",
+                    "type": "string"
+                  },
+                  "limit": {
+                    "description": "Page size (default: 50, max: 500)",
+                    "type": "string"
+                  },
+                  "offset": {
+                    "description": "Number of matching events to skip (default: 0)",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "Filter by scoped context",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "contact"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success — no `@Returns` schema declared; payload shape is loose."
+          },
+          "400": {
+            "description": "Bad request — body failed schema validation."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        },
+        "security": [],
+        "summary": "Show contact timeline events",
         "tags": [
           "contacts"
         ]

@@ -5,14 +5,19 @@ import {
   addContactTag,
   addContactIdentity,
   closeContacts,
+  createContactEvent,
   deleteContact,
   findContactsByTag,
   getContact,
   getContactDetails,
   getAgentPlatformIdentity,
+  listContactEvents,
+  listContactMetadata,
   linkContactIdentity,
   mergeContacts,
+  removeContactMetadata,
   resolvePlatformIdentity,
+  setContactMetadata,
   unlinkContactIdentity,
   upsertAgentPlatformIdentity,
   upsertContact,
@@ -102,6 +107,99 @@ describe("contacts identity graph schema", () => {
     expect(JSON.parse(binding!.metadata_json)).toMatchObject({
       mirroredFrom: "contacts_v2.tags",
     });
+  });
+
+  it("records contact timeline events for profile, policy, tag, and identity changes", () => {
+    upsertContact("5511999912222", "Timeline", "pending", "manual");
+    const contact = getContact("5511999912222");
+    expect(contact).not.toBeNull();
+
+    addContactTag(contact!.id, "VIP Contact");
+    linkContactIdentity(contact!.id, {
+      channel: "email",
+      platformUserId: "timeline@example.com",
+      reason: "operator confirmed",
+    });
+
+    const eventTypes = listContactEvents(contact!.id, { limit: 20 }).items.map((event) => event.eventType);
+    expect(eventTypes).toContain("profile.created");
+    expect(eventTypes).toContain("policy.status_changed");
+    expect(eventTypes).toContain("profile.tag_added");
+    expect(eventTypes).toContain("identity.linked");
+  });
+
+  it("stores scoped contact metadata as current context and append-only timeline events", () => {
+    upsertContact("5511999913333", "Scoped", "allowed", "manual");
+    const contact = getContact("5511999913333");
+    expect(contact).not.toBeNull();
+
+    const entry = setContactMetadata(contact!.id, "crm.status", "lead", {
+      scopeType: "domain",
+      scopeId: "crm",
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      confidence: 0.8,
+    });
+
+    expect(entry).toMatchObject({
+      contactId: contact!.id,
+      scopeType: "domain",
+      scopeId: "crm",
+      key: "crm.status",
+      value: "lead",
+      source: "test",
+      confidence: 0.8,
+      updatedByType: "agent",
+      updatedById: "dev",
+    });
+    expect(listContactMetadata(contact!.id, { scopeType: "domain", scopeId: "crm" })).toHaveLength(1);
+
+    const removed = removeContactMetadata(contact!.id, "crm.status", {
+      scopeType: "domain",
+      scopeId: "crm",
+      source: "test",
+    });
+    expect(removed.removed).toBe(true);
+    expect(listContactMetadata(contact!.id, { scopeType: "domain", scopeId: "crm" })).toHaveLength(0);
+
+    const events = listContactEvents(contact!.id, { scopeType: "domain", scopeId: "crm", limit: 10 }).items;
+    expect(events.map((event) => event.eventType)).toContain("profile.metadata_set");
+    expect(events.map((event) => event.eventType)).toContain("profile.metadata_removed");
+  });
+
+  it("filters scoped contact timeline events without leaking across contexts", () => {
+    upsertContact("5511999914444", "Scoped Events", "allowed", "manual");
+    const contact = getContact("5511999914444");
+    expect(contact).not.toBeNull();
+
+    createContactEvent({
+      contactRef: contact!.id,
+      eventType: "context.fact_proposed",
+      scopeType: "chat",
+      scopeId: "chat-a",
+      source: "agent",
+      actorType: "agent",
+      actorId: "dev",
+      confidence: 0.5,
+      payload: { fact: "admin in this group" },
+    });
+    createContactEvent({
+      contactRef: contact!.id,
+      eventType: "context.fact_proposed",
+      scopeType: "project",
+      scopeId: "ravi-web",
+      source: "agent",
+      actorType: "agent",
+      actorId: "dev",
+      confidence: 0.5,
+      payload: { fact: "stakeholder in this project" },
+    });
+
+    const chatEvents = listContactEvents(contact!.id, { scopeType: "chat", scopeId: "chat-a" });
+    expect(chatEvents.total).toBe(1);
+    expect(chatEvents.items[0]?.scopeType).toBe("chat");
+    expect(chatEvents.items[0]?.scopeId).toBe("chat-a");
   });
 
   it("keeps legacy group contacts out of canonical contacts", () => {
