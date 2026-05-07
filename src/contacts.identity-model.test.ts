@@ -276,6 +276,11 @@ describe("contacts identity graph schema", () => {
       platformUserId: "carol@example.com",
       reason: "operator confirmed",
     });
+    setContactMetadata(contact!.id, "crm.lifecycle", "customer", {
+      scopeType: "domain",
+      scopeId: "crm",
+      source: "test",
+    });
 
     expect(deleteContact(contact!.id)).toBe(true);
 
@@ -283,11 +288,17 @@ describe("contacts identity graph schema", () => {
     const canonical = db.prepare("SELECT * FROM contacts WHERE id = ?").get(contact!.id);
     const platformIdentity = db.prepare("SELECT * FROM platform_identities WHERE owner_id = ?").get(contact!.id);
     const policy = db.prepare("SELECT * FROM contact_policies WHERE contact_id = ?").get(contact!.id);
+    const context = db.prepare("SELECT * FROM contact_contexts WHERE contact_id = ?").get(contact!.id);
+    const tombstone = db
+      .prepare("SELECT * FROM contact_events WHERE contact_id = ? AND event_type = 'profile.deleted'")
+      .get(contact!.id);
     db.close();
 
     expect(canonical).toBeNull();
     expect(platformIdentity).toBeNull();
     expect(policy).toBeNull();
+    expect(context).toBeNull();
+    expect(tombstone).not.toBeNull();
   });
 
   it("moves manual canonical platform identities when merging contacts", () => {
@@ -302,12 +313,27 @@ describe("contacts identity graph schema", () => {
       platformUserId: "person@example.com",
       reason: "operator confirmed",
     });
+    createContactEvent({
+      contactRef: source!.id,
+      eventType: "context.fact_confirmed",
+      scopeType: "project",
+      scopeId: "ravi-web",
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      confidence: 1,
+      payload: { fact: "source history survives merge" },
+    });
 
     mergeContacts(target!.id, source!.id);
 
     const details = getContactDetails("person@example.com");
     expect(details?.contact.id).toBe(target!.id);
     expect(getContact(source!.id)).toBeNull();
+    const targetEvents = listContactEvents(target!.id, { limit: 50 }).items;
+    expect(
+      targetEvents.some((event) => event.contactId === source!.id && event.eventType === "context.fact_confirmed"),
+    ).toBe(true);
   });
 
   it("stores agent-owned platform identities without creating contacts", () => {

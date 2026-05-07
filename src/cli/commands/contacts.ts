@@ -257,6 +257,25 @@ function summarizeContacts(contacts: Contact[]) {
   };
 }
 
+function assertCanReadContactTimeline(contactRef: string): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx)) return;
+
+  const contact = getContact(contactRef);
+  if (contact) {
+    const contactAgent = getRouteAgent(contact);
+    const contactSessions = contactAgent ? [{ agentId: contactAgent }] : [];
+    if (canAccessContact(scopeCtx, contact, null, contactSessions)) return;
+    fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${contact.id}`);
+  }
+
+  const details = getContactDetails(contactRef);
+  if (!details) fail(`Contact not found: ${contactRef}`);
+  const tags = details.policy?.tags ?? [];
+  if (canAccessContact(scopeCtx, { id: details.contact.id, tags }, null, [])) return;
+  fail(`Permission denied: agent:${scopeCtx.agentId} cannot read contact timeline for ${details.contact.id}`);
+}
+
 @Group({
   name: "contacts",
   description: "Contact management",
@@ -854,6 +873,7 @@ export class ContactsCommands {
   ) {
     const scopeFilter = parseScopeOption(scope);
     try {
+      assertCanReadContactTimeline(contactRef);
       const pageLimit = parseCliListLimit(limit);
       const pageOffset = parseCliListOffset(offset);
       const page = listContactEvents(contactRef, {
@@ -1316,6 +1336,7 @@ export class ContactsMetadataCommands {
   ) {
     const scopeInput = parseScopeOption(scope);
     try {
+      assertCanReadContactTimeline(contactRef);
       const entries = listContactMetadata(contactRef, scopeInput);
       const page = paginateCliItems(entries, { limit, offset });
       const pagination = buildCliOffsetPagination({

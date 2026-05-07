@@ -11,6 +11,7 @@ import {
 } from "./tags/helpers.js";
 import { detachTagFromSelector, searchTagBindingsForSelector } from "./tags/service.js";
 import { buildSqlWhereClause, countRows, normalizeLimitOffsetPage, type ListPage } from "./utils/pagination.js";
+import { nats } from "./nats.js";
 
 // Re-export normalize functions for backwards compatibility
 export {
@@ -679,6 +680,7 @@ function metadataJson(value: Record<string, unknown>): string {
 function deleteContactProjection(database: Database, contactId: string): void {
   database.prepare("DELETE FROM platform_identities WHERE owner_type = 'contact' AND owner_id = ?").run(contactId);
   database.prepare("DELETE FROM contact_policies WHERE contact_id = ?").run(contactId);
+  database.prepare("DELETE FROM contact_contexts WHERE contact_id = ?").run(contactId);
   database.prepare("DELETE FROM contacts WHERE id = ?").run(contactId);
   deleteCanonicalContactTagBindings(contactId);
 }
@@ -1462,6 +1464,46 @@ function rowToContactEvent(row: ContactEventRow): ContactEvent {
   };
 }
 
+function contactEventSubjectToken(eventType: string): string {
+  return eventType.replace(/[^A-Za-z0-9_.-]/g, "_") || "unknown";
+}
+
+function contactEventNatsPayload(event: ContactEvent, options: { minimized?: boolean } = {}): Record<string, unknown> {
+  const base = {
+    event_id: event.id,
+    event_type: event.eventType,
+    contact_id: event.contactId,
+    source: event.source,
+    scope_type: event.scopeType,
+    scope_id: event.scopeId,
+    confidence: event.confidence,
+    created_at: event.createdAt,
+    effective_at: event.effectiveAt,
+  };
+  if (options.minimized) {
+    return { ...base, actor_type: event.actorType, actor_id: null, redacted: true };
+  }
+  return {
+    ...base,
+    actor_type: event.actorType,
+    actor_id: event.actorId,
+    payload: event.payload,
+    evidence: event.evidence,
+    platform_identity_id: event.platformIdentityId,
+    chat_id: event.chatId,
+    session_key: event.sessionKey,
+    message_id: event.messageId,
+    task_id: event.taskId,
+    artifact_id: event.artifactId,
+  };
+}
+
+function emitContactTimelineEvent(event: ContactEvent): void {
+  const eventType = contactEventSubjectToken(event.eventType);
+  nats.emit(`ravi.contacts.events.${eventType}`, contactEventNatsPayload(event, { minimized: true })).catch(() => {});
+  nats.emit(`ravi.contacts.${event.contactId}.events.${eventType}`, contactEventNatsPayload(event)).catch(() => {});
+}
+
 function rowToContactContext(row: ContactContextRow): ContactContextEntry {
   return {
     contactId: row.contact_id,
@@ -1745,7 +1787,9 @@ function insertContactEvent(database: Database, input: InsertContactEventInput):
 
   const row = database.prepare("SELECT * FROM contact_events WHERE id = ?").get(id) as ContactEventRow | undefined;
   if (!row) throw new Error(`Contact event not found after insert: ${id}`);
-  return rowToContactEvent(row);
+  const event = rowToContactEvent(row);
+  emitContactTimelineEvent(event);
+  return event;
 }
 
 export function createContactEvent(input: CreateContactEventInput): ContactEvent {
@@ -1755,13 +1799,36 @@ export function createContactEvent(input: CreateContactEventInput): ContactEvent
   return insertContactEvent(database, { ...input, contactId });
 }
 
+function timelineContactIdsForQuery(database: Database, contactId: string): string[] {
+  const seen = new Set<string>([contactId]);
+  const pending = [contactId];
+
+  while (pending.length > 0) {
+    const currentId = pending.shift()!;
+    const rows = database
+      .prepare("SELECT payload_json FROM contact_events WHERE contact_id = ? AND event_type = 'identity.merged'")
+      .all(currentId) as Array<{ payload_json: string | null }>;
+
+    for (const row of rows) {
+      const payload = parseJsonObject(row.payload_json);
+      const sourceContactId = typeof payload?.sourceContactId === "string" ? payload.sourceContactId : null;
+      if (!sourceContactId || seen.has(sourceContactId)) continue;
+      seen.add(sourceContactId);
+      pending.push(sourceContactId);
+    }
+  }
+
+  return [...seen];
+}
+
 export function listContactEvents(contactRef: string, options: ListContactEventsOptions = {}): ContactEventsPage {
   const database = ensureDb();
   const contactId = resolveCanonicalContactId(database, contactRef);
   if (!contactId) throw new Error(`Contact not found: ${contactRef}`);
 
-  const where = ["contact_id = ?"];
-  const params: Array<string | number> = [contactId];
+  const contactIds = timelineContactIdsForQuery(database, contactId);
+  const where = [`contact_id IN (${contactIds.map(() => "?").join(", ")})`];
+  const params: Array<string | number> = [...contactIds];
   if (options.scopeType || options.scopeId) {
     const scope = normalizeContactEventScope(options.scopeType, options.scopeId);
     where.push("scope_type = ?");
@@ -2384,8 +2451,25 @@ export function deleteContact(phone: string): boolean {
   const statements = getStatements();
   const contact = resolveContact(phone);
   if (!contact) return false;
-  statements.deleteContact.run(contact.id);
-  deleteContactProjection(database, contact.id);
+  const txn = database.transaction(() => {
+    insertContactEvent(database, {
+      contactId: contact.id,
+      eventType: "profile.deleted",
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: {
+        contactId: contact.id,
+        name: contact.name,
+        email: contact.email,
+        status: contact.status,
+        identities: contact.identities,
+      },
+    });
+    statements.deleteContact.run(contact.id);
+    deleteContactProjection(database, contact.id);
+  });
+  txn();
   return true;
 }
 
