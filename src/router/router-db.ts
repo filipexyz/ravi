@@ -4232,8 +4232,8 @@ export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMe
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const SESSION_EVENTS_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_TRACE_BLOBS_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+const SESSION_EVENTS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — daily rollup preserves aggregate metrics
+const SESSION_TRACE_BLOBS_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days — keep blob TTL aligned with events
 const AUDIT_LOG_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 const COST_EVENTS_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
