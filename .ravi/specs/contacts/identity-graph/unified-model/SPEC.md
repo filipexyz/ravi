@@ -39,6 +39,7 @@ Ravi should expose contacts as the product surface and use an identity graph int
 ```text
 contact
   -> platform_identity[] owned by contact
+  -> contact_event[] timeline entries
 agent
   -> platform_identity[] owned by agent
 chat
@@ -49,6 +50,10 @@ session
 contact_policy
   -> contact
 ```
+
+The contact timeline capability extends this model with append-only context and audit events. Current profile, tag, metadata, and policy fields remain query projections; timeline events preserve provenance and confidence for how contact context changed.
+
+Timeline context MUST preserve scope. A contact may be `allowed` operationally, a `lead` in CRM, an `admin` in one chat, and a `stakeholder` in one project without those statuses overwriting each other.
 
 ## Data Model
 
@@ -180,6 +185,21 @@ Fields:
 - `actor_id`
 - `metadata_json`
 - `created_at`
+
+### `contact_events`
+
+Append-only contact timeline.
+
+The detailed contract lives in `contacts/timeline`, and implementations MUST preserve scope metadata on timeline entries.
+
+Unified contacts implementations SHOULD reserve a first-class place for contact events instead of treating tags, notes, metadata, and policy changes as silent overwrites.
+
+Scope fields are required to prevent context leakage:
+
+- `scope_type`: `global`, `domain`, `project`, `chat`, `session`, `org`, `agent`, `task` (or approved extension)
+- `scope_id`: mandatory when `scope_type` is not `global`
+
+Contact timeline entries SHOULD reference canonical `contact_id` plus actor metadata and raw provenance when available.
 
 ## Normalization Rules
 
@@ -351,3 +371,4 @@ Raw transport caches such as `omni_group_metadata` MAY remain after migration, b
 - `ravi contacts get <any-known-id>` returns the same canonical contact for linked identities.
 - `ravi contacts merge` moves identities, preserves policy data, and writes audit events.
 - `ravi contacts duplicates` reports candidates without destructive changes.
+- Contact tags, metadata, notes, policy changes, and agent-generated context can be explained through contact timeline events.
