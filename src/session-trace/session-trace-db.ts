@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getDb } from "../router/router-db.js";
+import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import type {
   JsonValue,
   RecordSessionBlobInput,
@@ -94,6 +95,29 @@ interface SessionTurnRow {
   completed_at: number | null;
   updated_at: number;
 }
+
+export interface ContactSessionSummary {
+  sessionKey: string;
+  sessionName: string | null;
+  agentId: string | null;
+  eventCount: number;
+  messageCount: number;
+  firstSeenAt: number | null;
+  lastSeenAt: number | null;
+  latestEventType: string | null;
+  latestPreview: string | null;
+  latestMessageId: string | null;
+}
+
+export interface ContactSessionSummaryPage extends ListPage<ContactSessionSummary> {
+  contactId: string;
+}
+
+export interface ContactSessionEventPage extends ListPage<SessionEventRecord> {
+  contactId: string;
+}
+
+const CONTACT_ACTIVITY_GROUP_SQL = "'channel', 'routing', 'prompt', 'dispatch', 'response', 'delivery', 'session'";
 
 type StoredTurn = {
   turnId: string;
@@ -663,4 +687,122 @@ export function listSessionEvents(sessionKey: string): SessionEventRecord[] {
     .prepare("SELECT * FROM session_events WHERE session_key = ? ORDER BY id ASC")
     .all(sessionKey) as SessionEventRow[];
   return rows.map(rowToSessionEvent);
+}
+
+export function listSessionEventsByContactId(
+  contactId: string,
+  options: { limit?: number | string | null; offset?: number | string | null; includeLowLevel?: boolean } = {},
+): ContactSessionEventPage {
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const db = getDb();
+  const where = options.includeLowLevel
+    ? "contact_id = ?"
+    : `contact_id = ? AND event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`;
+  const total =
+    (
+      db.prepare(`SELECT COUNT(*) AS total FROM session_events WHERE ${where}`).get(contactId) as
+        | { total: number }
+        | undefined
+    )?.total ?? 0;
+  const rows = db
+    .prepare(`SELECT * FROM session_events WHERE ${where} ORDER BY timestamp DESC, seq DESC, id DESC LIMIT ? OFFSET ?`)
+    .all(contactId, limit, offset) as SessionEventRow[];
+  return {
+    contactId,
+    total,
+    limit,
+    offset,
+    items: rows.map(rowToSessionEvent),
+  };
+}
+
+export function listContactSessionSummaries(
+  contactId: string,
+  options: { limit?: number | string | null; offset?: number | string | null; includeLowLevel?: boolean } = {},
+): ContactSessionSummaryPage {
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const db = getDb();
+  const where = options.includeLowLevel
+    ? "contact_id = ?"
+    : `contact_id = ? AND event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`;
+  const total =
+    (
+      db.prepare(`SELECT COUNT(DISTINCT session_key) AS total FROM session_events WHERE ${where}`).get(contactId) as
+        | { total: number }
+        | undefined
+    )?.total ?? 0;
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        e.session_key,
+        COALESCE(s.name, MAX(e.session_name)) AS session_name,
+        COALESCE(s.agent_id, MAX(e.agent_id)) AS agent_id,
+        COUNT(*) AS event_count,
+        COUNT(DISTINCT e.message_id) AS message_count,
+        MIN(e.timestamp) AS first_seen_at,
+        MAX(e.timestamp) AS last_seen_at,
+        (
+          SELECT e2.event_type
+          FROM session_events e2
+          WHERE ${options.includeLowLevel ? "e2.contact_id = ?" : `e2.contact_id = ? AND e2.event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`}
+            AND e2.session_key = e.session_key
+          ORDER BY e2.timestamp DESC, e2.seq DESC, e2.id DESC
+          LIMIT 1
+        ) AS latest_event_type,
+        (
+          SELECT e2.preview
+          FROM session_events e2
+          WHERE ${options.includeLowLevel ? "e2.contact_id = ?" : `e2.contact_id = ? AND e2.event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`}
+            AND e2.session_key = e.session_key
+          ORDER BY e2.timestamp DESC, e2.seq DESC, e2.id DESC
+          LIMIT 1
+        ) AS latest_preview,
+        (
+          SELECT e2.message_id
+          FROM session_events e2
+          WHERE ${options.includeLowLevel ? "e2.contact_id = ?" : `e2.contact_id = ? AND e2.event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`}
+            AND e2.session_key = e.session_key
+          ORDER BY e2.timestamp DESC, e2.seq DESC, e2.id DESC
+          LIMIT 1
+        ) AS latest_message_id
+      FROM session_events e
+      LEFT JOIN sessions s ON s.session_key = e.session_key
+      WHERE ${options.includeLowLevel ? "e.contact_id = ?" : `e.contact_id = ? AND e.event_group IN (${CONTACT_ACTIVITY_GROUP_SQL})`}
+      GROUP BY e.session_key
+      ORDER BY last_seen_at DESC, e.session_key ASC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(contactId, contactId, contactId, contactId, limit, offset) as Array<{
+    session_key: string;
+    session_name: string | null;
+    agent_id: string | null;
+    event_count: number;
+    message_count: number | null;
+    first_seen_at: number | null;
+    last_seen_at: number | null;
+    latest_event_type: string | null;
+    latest_preview: string | null;
+    latest_message_id: string | null;
+  }>;
+
+  return {
+    contactId,
+    total,
+    limit,
+    offset,
+    items: rows.map((row) => ({
+      sessionKey: row.session_key,
+      sessionName: row.session_name,
+      agentId: row.agent_id,
+      eventCount: row.event_count,
+      messageCount: row.message_count ?? 0,
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+      latestEventType: row.latest_event_type,
+      latestPreview: row.latest_preview,
+      latestMessageId: row.latest_message_id,
+    })),
+  };
 }

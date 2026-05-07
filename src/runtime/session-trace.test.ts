@@ -60,12 +60,15 @@ const capabilities: RuntimeCapabilities = {
 const source: RuntimeMessageTarget = {
   channel: "whatsapp",
   accountId: "main",
+  instanceId: "instance-1",
   chatId: "5511999999999",
   canonicalChatId: "chat_1",
   actorType: "contact",
   contactId: "contact_1",
+  platformIdentityId: "pi_contact_1",
   rawSenderId: "5511999999999@s.whatsapp.net",
   normalizedSenderId: "5511999999999",
+  identityConfidence: 1,
   identityProvenance: { source: "test" },
   sourceMessageId: "wamid-1",
 };
@@ -305,6 +308,16 @@ describe("runtime session trace instrumentation", () => {
       defaultRuntimeProviderId: "claude",
     });
 
+    expect(runtimeRequest.env).toMatchObject({
+      RAVI_INSTANCE_ID: "instance-1",
+      RAVI_CANONICAL_CHAT_ID: "chat_1",
+      RAVI_ACTOR_TYPE: "contact",
+      RAVI_CONTACT_ID: "contact_1",
+      RAVI_PLATFORM_IDENTITY_ID: "pi_contact_1",
+      RAVI_RAW_SENDER_ID: "5511999999999@s.whatsapp.net",
+      RAVI_NORMALIZED_SENDER_ID: "5511999999999",
+    });
+
     const yielded = await runtimeRequest.prompt.next();
     expect(yielded.value?.message.content).toBe("hello trace");
     streaming.done = true;
@@ -318,8 +331,10 @@ describe("runtime session trace instrumentation", () => {
       canonicalChatId: "chat_1",
       actorType: "contact",
       contactId: "contact_1",
+      platformIdentityId: "pi_contact_1",
       rawSenderId: "5511999999999@s.whatsapp.net",
       normalizedSenderId: "5511999999999",
+      identityConfidence: 1,
       identityProvenance: { source: "test" },
     });
     expect(adapterRequest?.payloadJson).toMatchObject({

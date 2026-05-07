@@ -166,6 +166,8 @@ Inbound/outbound message metadata and session events SHOULD persist actor fields
 
 This is required because a group, thread, or shared support session can contain multiple contacts and agents.
 
+The detailed contract for associating messages, session events, sessions, participants, and interaction projections to identities lives in `contacts/identity-graph/message-session-attribution`. Implementations that touch message metadata, session traces, session participants, routing actor context, or contact interaction projections MUST consult that spec.
+
 ### `identity_link_events`
 
 Append-only audit trail.

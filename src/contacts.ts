@@ -1252,6 +1252,20 @@ interface ContactPolicyRow {
 // Prepared Statements
 // ============================================================================
 
+const CONTACT_RECENCY_ORDER_SQL = `
+  CASE
+    WHEN last_inbound_at IS NOT NULL AND last_outbound_at IS NOT NULL THEN
+      CASE
+        WHEN last_inbound_at >= last_outbound_at THEN last_inbound_at
+        ELSE last_outbound_at
+      END
+    ELSE COALESCE(last_inbound_at, last_outbound_at, updated_at, created_at)
+  END DESC,
+  updated_at DESC,
+  created_at DESC,
+  id DESC
+`;
+
 function createStatements(database: Database) {
   return {
     getContactById: database.prepare("SELECT * FROM contacts_v2 WHERE id = ?"),
@@ -1264,8 +1278,10 @@ function createStatements(database: Database) {
     getIdentities: database.prepare(
       "SELECT * FROM contact_identities WHERE contact_id = ? ORDER BY is_primary DESC, created_at",
     ),
-    getAllContacts: database.prepare("SELECT * FROM contacts_v2 ORDER BY status, name, id"),
-    getContactsByStatus: database.prepare("SELECT * FROM contacts_v2 WHERE status = ? ORDER BY name, id"),
+    getAllContacts: database.prepare(`SELECT * FROM contacts_v2 ORDER BY ${CONTACT_RECENCY_ORDER_SQL}`),
+    getContactsByStatus: database.prepare(
+      `SELECT * FROM contacts_v2 WHERE status = ? ORDER BY ${CONTACT_RECENCY_ORDER_SQL}`,
+    ),
     deleteContact: database.prepare("DELETE FROM contacts_v2 WHERE id = ?"),
     deleteIdentity: database.prepare(
       "DELETE FROM contact_identities WHERE platform = ? AND identity_value = ? COLLATE NOCASE",

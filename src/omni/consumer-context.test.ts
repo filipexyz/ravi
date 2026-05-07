@@ -25,7 +25,9 @@ const sessionParticipantCalls: Array<Parameters<typeof actualDbUpsertSessionPart
 const messageMetaSaveCalls: Array<[string, string, Record<string, unknown>]> = [];
 const agentPlatformIdentityCalls: Array<Record<string, unknown>> = [];
 const platformIdentityByUser = new Map<string, Record<string, unknown>>();
+const contactByRef = new Map<string, Record<string, unknown>>();
 const messageMetaById = new Map<string, MessageMetadata>();
+const recordInboundCalls: string[] = [];
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 
@@ -83,6 +85,9 @@ mock.module("../config-store.js", () => ({
 mock.module("../contacts.js", () => ({
   isContactAllowedForAgent: () => true,
   saveAccountPending: () => false,
+  recordInbound: mock((contactRef: string) => {
+    recordInboundCalls.push(contactRef);
+  }),
   resolvePlatformIdentity: (input: { platformUserId: string }) =>
     platformIdentityByUser.get(input.platformUserId) ?? null,
   upsertAgentPlatformIdentity: mock((input: Record<string, unknown>) => {
@@ -98,7 +103,7 @@ mock.module("../contacts.js", () => ({
       confidence: 1,
     };
   }),
-  getContact: () => ({ status: "allowed" }),
+  getContact: (identity: string) => contactByRef.get(identity) ?? { status: "allowed" },
   getContactName: (identity: string) => {
     if (identity === "group:120363424772797713") return "Ravi - Dev";
     if (identity === "5511947879044") return "Luis";
@@ -174,7 +179,9 @@ describe("OmniConsumer channel context", () => {
     messageMetaSaveCalls.length = 0;
     agentPlatformIdentityCalls.length = 0;
     platformIdentityByUser.clear();
+    contactByRef.clear();
     messageMetaById.clear();
+    recordInboundCalls.length = 0;
   });
 
   afterEach(async () => {
@@ -482,6 +489,71 @@ describe("OmniConsumer channel context", () => {
       actorType: "agent",
       agentId: "dev",
       platformIdentityId: "pi_agent_sender",
+    });
+  });
+
+  it("updates inbound contact interaction when a group sender resolves to a contact", async () => {
+    contactByRef.set("contact_luis", {
+      id: "contact_luis",
+      status: "allowed",
+      name: "Luis",
+    });
+    platformIdentityByUser.set("5511947879044", {
+      id: "pi_luis",
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformUserId: "5511947879044@s.whatsapp.net",
+      normalizedPlatformUserId: "5511947879044",
+      confidence: 1,
+    });
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-contact-inbound",
+      type: "message.received",
+      payload: {
+        externalId: "msg-contact-inbound",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(recordInboundCalls).toEqual(["contact_luis"]);
+    expect(messageMetaSaveCalls[0][2]).toMatchObject({
+      actorType: "contact",
+      contactId: "contact_luis",
+      platformIdentityId: "pi_luis",
+    });
+    expect(sessionParticipantCalls[0]).toMatchObject({
+      ownerType: "contact",
+      ownerId: "contact_luis",
+      platformIdentityId: "pi_luis",
+      role: "human",
     });
   });
 

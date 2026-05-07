@@ -46,6 +46,7 @@ import {
   removeGroupTag,
   type Contact,
   type ContactContextEntry,
+  type ContactDetails,
   type ContactEvent,
   type ContactEventScopeType,
   type ContactStatus,
@@ -55,8 +56,14 @@ import {
   listAccountPendingContacts,
   listAccountPendingChats,
 } from "../../contacts.js";
-import { dbListRoutes } from "../../router/router-db.js";
+import { dbListMessageMetaByContactId, dbListRoutes, type MessageMetadata } from "../../router/router-db.js";
 import { findSessionByChatId } from "../../router/sessions.js";
+import {
+  listContactSessionSummaries,
+  listSessionEventsByContactId,
+  type ContactSessionSummary,
+} from "../../session-trace/session-trace-db.js";
+import type { SessionEventRecord } from "../../session-trace/types.js";
 import { getScopeContext, isScopeEnforced, canAccessContact } from "../../permissions/scope.js";
 import { printInspectionBlock, printInspectionField } from "../inspection-output.js";
 
@@ -245,6 +252,42 @@ function serializeContactEvent(event: ContactEvent) {
 
 function serializeContactContextEntry(entry: ContactContextEntry) {
   return entry;
+}
+
+function serializeContactMessage(message: MessageMetadata) {
+  return message;
+}
+
+function serializeContactActivityEvent(event: SessionEventRecord) {
+  return event;
+}
+
+function serializeContactSessionSummary(summary: ContactSessionSummary) {
+  return summary;
+}
+
+function formatMillis(value: number | null | undefined): string {
+  if (value == null) return "-";
+  return new Date(value).toISOString();
+}
+
+function resolveContactDetailsOrFail(
+  contactRef: string,
+  options: { includeDuplicateCandidates?: boolean } = {},
+): ContactDetails {
+  const details = getContactDetails(contactRef, options);
+  if (!details) fail(`Contact not found: ${contactRef}`);
+  return details!;
+}
+
+function metadataValue(
+  entries: ContactContextEntry[],
+  key: string,
+  scopeType = "global",
+  scopeId: string | null = null,
+) {
+  return entries.find((entry) => entry.key === key && entry.scopeType === scopeType && entry.scopeId === scopeId)
+    ?.value;
 }
 
 function summarizeContacts(contacts: Contact[]) {
@@ -919,6 +962,284 @@ export class ContactsCommands {
         console.log("\nNext page:");
         console.log(`  ${pagination.nextCommand}`);
       }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("open")
+  @Command({ name: "messages", description: "Show messages attributed to a contact" })
+  messages(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching messages to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      assertCanReadContactTimeline(contactRef);
+      const details = resolveContactDetailsOrFail(contactRef);
+      const page = dbListMessageMetaByContactId(details.contact.id, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "contacts", "messages", contactRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+      });
+      const payload = {
+        target: contactRef,
+        contactId: details.contact.id,
+        total: page.total,
+        pagination,
+        items: page.items.map(serializeContactMessage),
+        messages: page.items.map(serializeContactMessage),
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      if (page.items.length === 0) {
+        console.log(`No attributed messages found for: ${contactRef}`);
+        return payload;
+      }
+
+      console.log(
+        `\nContact messages (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const message of page.items) {
+        const label = message.transcription ?? message.mediaType ?? message.messageId;
+        console.log(`- ${formatMillis(message.createdAt)} :: ${message.chatId} :: ${label}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("open")
+  @Command({ name: "activity", description: "Show session activity attributed to a contact" })
+  activity(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching events to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--raw", description: "Include low-level runtime/tool/adapter events" }) raw?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      assertCanReadContactTimeline(contactRef);
+      const details = resolveContactDetailsOrFail(contactRef);
+      const page = listSessionEventsByContactId(details.contact.id, { limit, offset, includeLowLevel: Boolean(raw) });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "contacts", "activity", contactRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: [raw ? "--raw" : null],
+      });
+      const payload = {
+        target: contactRef,
+        contactId: details.contact.id,
+        filter: { raw: Boolean(raw) },
+        total: page.total,
+        pagination,
+        items: page.items.map(serializeContactActivityEvent),
+        events: page.items.map(serializeContactActivityEvent),
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      if (page.items.length === 0) {
+        console.log(`No attributed activity found for: ${contactRef}`);
+        return payload;
+      }
+
+      console.log(
+        `\nContact activity (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const event of page.items) {
+        const session = event.sessionName ?? event.sessionKey;
+        const preview = event.preview ? ` :: ${event.preview}` : "";
+        console.log(`- ${formatMillis(event.timestamp)} :: ${session} :: ${event.eventType}${preview}`);
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("open")
+  @Command({ name: "sessions", description: "Show session summaries attributed to a contact" })
+  sessions(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      assertCanReadContactTimeline(contactRef);
+      const details = resolveContactDetailsOrFail(contactRef);
+      const page = listContactSessionSummaries(details.contact.id, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "contacts", "sessions", contactRef],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+      });
+      const payload = {
+        target: contactRef,
+        contactId: details.contact.id,
+        total: page.total,
+        pagination,
+        items: page.items.map(serializeContactSessionSummary),
+        sessions: page.items.map(serializeContactSessionSummary),
+      };
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      if (page.items.length === 0) {
+        console.log(`No attributed sessions found for: ${contactRef}`);
+        return payload;
+      }
+
+      console.log(
+        `\nContact sessions (${page.items.length} returned of ${page.total}, limit ${page.limit}, offset ${page.offset}):\n`,
+      );
+      for (const session of page.items) {
+        const name = session.sessionName ?? session.sessionKey;
+        const latest = session.latestEventType ? ` latest=${session.latestEventType}` : "";
+        console.log(
+          `- ${formatMillis(session.lastSeenAt)} :: ${name} :: events=${session.eventCount} messages=${session.messageCount}${latest}`,
+        );
+      }
+      if (pagination.nextCommand) {
+        console.log("\nNext page:");
+        console.log(`  ${pagination.nextCommand}`);
+      }
+      return payload;
+    } catch (err: any) {
+      fail(err.message);
+    }
+  }
+
+  @Scope("open")
+  @Command({ name: "profile", description: "Show a contact profile card" })
+  profile(
+    @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--limit <n>", description: "Evidence rows per section (default: 10, max: 50)" }) limit?: string,
+  ) {
+    try {
+      assertCanReadContactTimeline(contactRef);
+      const evidenceLimit = parseCliListLimit(limit, { defaultLimit: 10, maxLimit: 50 });
+      const details = resolveContactDetailsOrFail(contactRef, { includeDuplicateCandidates: true });
+      const metadata = listContactMetadata(details.contact.id, {});
+      const timeline = listContactEvents(details.contact.id, { limit: evidenceLimit });
+      const messages = dbListMessageMetaByContactId(details.contact.id, { limit: evidenceLimit });
+      const activity = listSessionEventsByContactId(details.contact.id, { limit: evidenceLimit });
+      const sessions = listContactSessionSummaries(details.contact.id, { limit: evidenceLimit });
+      const legacyContact = getContact(details.contact.id) ?? details.legacyContact;
+      const tags = details.policy?.tags ?? legacyContact?.tags ?? [];
+      const summary = metadataValue(metadata, "profile.summary");
+      const headline = metadataValue(metadata, "profile.headline");
+      const preferredName = metadataValue(metadata, "profile.preferred_name");
+      const language = metadataValue(metadata, "profile.language");
+      const preferences = metadataValue(metadata, "communication.preferences");
+      const openLoops = metadataValue(metadata, "context.open_loops");
+      const currentFocus = metadataValue(metadata, "context.current_focus");
+      const recentTopics = metadataValue(metadata, "context.recent_topics");
+
+      const payload = {
+        target: contactRef,
+        contactId: details.contact.id,
+        card: {
+          contact: details.contact,
+          policy: details.policy,
+          platformIdentities: details.platformIdentities,
+          duplicateCandidates: details.duplicateCandidates,
+          header: {
+            displayName: details.contact.displayName ?? legacyContact?.name ?? details.contact.id,
+            preferredName: preferredName ?? null,
+            headline: headline ?? null,
+            kind: details.contact.kind,
+            status: details.policy?.status ?? legacyContact?.status ?? null,
+            tags,
+            primaryPhone: details.contact.primaryPhone,
+            primaryEmail: details.contact.primaryEmail,
+            avatarUrl: details.contact.avatarUrl,
+            lastInboundAt: details.policy?.lastInboundAt ?? legacyContact?.last_inbound_at ?? null,
+            lastOutboundAt: details.policy?.lastOutboundAt ?? legacyContact?.last_outbound_at ?? null,
+            interactionCount: details.policy?.interactionCount ?? legacyContact?.interaction_count ?? 0,
+          },
+          summary: summary ?? null,
+          preferences: {
+            language: language ?? null,
+            communication: preferences ?? null,
+          },
+          focus: {
+            current: currentFocus ?? null,
+            recentTopics: recentTopics ?? null,
+            openLoops: openLoops ?? null,
+          },
+        },
+        metadata: metadata.map(serializeContactContextEntry),
+        timeline: {
+          total: timeline.total,
+          limit: timeline.limit,
+          offset: timeline.offset,
+          items: timeline.items.map(serializeContactEvent),
+        },
+        messages: {
+          total: messages.total,
+          limit: messages.limit,
+          offset: messages.offset,
+          items: messages.items.map(serializeContactMessage),
+        },
+        sessions: {
+          total: sessions.total,
+          limit: sessions.limit,
+          offset: sessions.offset,
+          items: sessions.items.map(serializeContactSessionSummary),
+        },
+        activity: {
+          total: activity.total,
+          limit: activity.limit,
+          offset: activity.offset,
+          items: activity.items.map(serializeContactActivityEvent),
+        },
+      };
+
+      if (asJson) {
+        printJson(payload);
+        return payload;
+      }
+
+      console.log(`\nContact profile: ${payload.card.header.displayName}\n`);
+      console.log(`  id: ${details.contact.id}`);
+      console.log(`  status: ${payload.card.header.status ?? "-"}`);
+      console.log(`  tags: ${tags.length ? tags.join(", ") : "-"}`);
+      console.log(`  identities: ${details.platformIdentities.length}`);
+      console.log(`  last inbound: ${payload.card.header.lastInboundAt ?? "-"}`);
+      console.log(`  last outbound: ${payload.card.header.lastOutboundAt ?? "-"}`);
+      if (payload.card.summary) console.log(`\nSummary:\n  ${String(payload.card.summary)}`);
+      console.log(
+        `\nEvidence: ${sessions.total} sessions, ${messages.total} messages, ${activity.total} activity events, ${timeline.total} timeline events, ${metadata.length} metadata entries.`,
+      );
       return payload;
     } catch (err: any) {
       fail(err.message);

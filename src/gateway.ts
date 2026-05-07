@@ -23,11 +23,12 @@ import { recordDeliveryTrace, recordResponseEmittedTrace } from "./session-trace
 import { logger } from "./utils/logger.js";
 import type { OmniSender } from "./omni/sender.js";
 import type { OmniConsumer } from "./omni/consumer.js";
-import { getAgentPlatformIdentity } from "./contacts.js";
+import { getAgentPlatformIdentity, recordOutbound } from "./contacts.js";
 import { SessionTypingTracker } from "./gateway-typing.js";
 import { assertChannelSupportsStickers } from "./channels/capabilities.js";
 import type { StickerSendEvent } from "./stickers/send.js";
-import { dbGetSessionChatBinding, dbSaveMessageMeta, getSessionByName } from "./router/index.js";
+import { getSessionByName } from "./router/index.js";
+import { dbGetChat, dbGetSessionChatBinding, dbSaveMessageMeta } from "./router/router-db.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -358,6 +359,7 @@ export class Gateway {
     try {
       const delivered = await this.omniSender.send(instanceId, chatId, text, target.threadId);
       this.saveOutboundMessageActorMetadata(sessionName, target, instanceId, chatId, delivered.messageId);
+      this.recordOutboundContactInteraction(sessionName, target);
       this.schedulePostDeliveryPresenceRenewal(sessionName, target);
       await emitDelivery({
         status: "delivered",
@@ -422,6 +424,28 @@ export class Gateway {
       });
     } catch (error) {
       log.warn("Failed to save outbound message actor metadata", { sessionName, messageId, error });
+    }
+  }
+
+  private recordOutboundContactInteraction(sessionName: string, target: NonNullable<ResponseMessage["target"]>): void {
+    if (!target.contactId) return;
+
+    try {
+      const session = getSessionByName(sessionName);
+      const binding = session?.sessionKey ? dbGetSessionChatBinding(session.sessionKey) : null;
+      const chatId = target.canonicalChatId ?? binding?.chatId;
+      if (!chatId) return;
+
+      const chat = dbGetChat(chatId);
+      if (chat?.chatType !== "dm") return;
+
+      recordOutbound(target.contactId);
+    } catch (error) {
+      log.warn("Failed to record outbound contact interaction", {
+        sessionName,
+        contactId: target.contactId,
+        error,
+      });
     }
   }
 

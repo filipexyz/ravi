@@ -8,7 +8,9 @@ import {
   createContactEvent,
   deleteContact,
   findContactsByTag,
+  getAllContacts,
   getContact,
+  getContactsByStatus,
   getContactDetails,
   getAgentPlatformIdentity,
   listContactEvents,
@@ -72,6 +74,79 @@ describe("contacts identity graph schema", () => {
       { channel: "whatsapp", normalized_platform_user_id: "lid:63295117615153" },
     ]);
     expect(linkEvents).toBeGreaterThanOrEqual(2);
+  });
+
+  it("orders contact lists by most recent activity by default", () => {
+    const seeds = [
+      {
+        phone: "5511999910001",
+        name: "Allowed Older",
+        status: "allowed" as const,
+        lastInboundAt: "2026-04-01 10:00:00",
+        lastOutboundAt: null,
+        createdAt: "2026-04-01 09:00:00",
+        updatedAt: "2026-04-01 10:00:00",
+      },
+      {
+        phone: "5511999910002",
+        name: "Pending Outbound Latest",
+        status: "pending" as const,
+        lastInboundAt: "2026-04-03 10:00:00",
+        lastOutboundAt: "2026-04-06 08:00:00",
+        createdAt: "2026-04-03 09:00:00",
+        updatedAt: "2026-04-06 08:00:00",
+      },
+      {
+        phone: "5511999910003",
+        name: "Blocked Inbound Mid",
+        status: "blocked" as const,
+        lastInboundAt: "2026-04-05 12:00:00",
+        lastOutboundAt: null,
+        createdAt: "2026-04-05 11:00:00",
+        updatedAt: "2026-04-05 12:00:00",
+      },
+      {
+        phone: "5511999910004",
+        name: "Pending Fallback Recent",
+        status: "pending" as const,
+        lastInboundAt: null,
+        lastOutboundAt: null,
+        createdAt: "2026-04-02 09:00:00",
+        updatedAt: "2026-04-04 09:00:00",
+      },
+    ];
+
+    for (const seed of seeds) {
+      upsertContact(seed.phone, seed.name, seed.status, "manual");
+    }
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const updateContactActivity = db.prepare(`
+      UPDATE contacts_v2
+      SET last_inbound_at = ?, last_outbound_at = ?, created_at = ?, updated_at = ?
+      WHERE id = ?
+    `);
+    for (const seed of seeds) {
+      updateContactActivity.run(
+        seed.lastInboundAt,
+        seed.lastOutboundAt,
+        seed.createdAt,
+        seed.updatedAt,
+        getContact(seed.phone)!.id,
+      );
+    }
+    db.close();
+
+    expect(getAllContacts().map((contact) => contact.name)).toEqual([
+      "Pending Outbound Latest",
+      "Blocked Inbound Mid",
+      "Pending Fallback Recent",
+      "Allowed Older",
+    ]);
+    expect(getContactsByStatus("pending").map((contact) => contact.name)).toEqual([
+      "Pending Outbound Latest",
+      "Pending Fallback Recent",
+    ]);
   });
 
   it("mirrors contact tags into canonical tag bindings while keeping legacy reads working", () => {

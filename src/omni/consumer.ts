@@ -26,8 +26,10 @@ import {
   getContact,
   getContactName,
   isContactAllowedForAgent,
+  recordInbound,
   resolvePlatformIdentity,
   saveAccountPending,
+  type PlatformIdentity,
   upsertAgentPlatformIdentity,
 } from "../contacts.js";
 import {
@@ -237,6 +239,50 @@ function parseSubject(subject: string): { channelType: string; instanceId: strin
   const instanceId = parts.slice(3).join(".");
   if (!channelType || !instanceId) return null;
   return { channelType, instanceId };
+}
+
+function uniqueStrings(values: Array<string | undefined | null>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value && value.trim()))));
+}
+
+function isWhatsAppLidSender(value: string): boolean {
+  return value.trim().toLowerCase().endsWith("@lid");
+}
+
+function resolveSenderPlatformIdentity(input: {
+  channel: string;
+  instanceId: string;
+  normalizedSenderId: string;
+  rawSenderId: string;
+  rawProviderSenderId: string;
+}): PlatformIdentity | null {
+  const rawSenderIsLid = input.channel === "whatsapp" && isWhatsAppLidSender(input.rawProviderSenderId);
+  const senderIds = uniqueStrings([
+    input.normalizedSenderId,
+    input.rawSenderId,
+    rawSenderIsLid ? `lid:${input.rawSenderId}` : undefined,
+  ]);
+  const phoneFallbackIds =
+    input.channel === "whatsapp" && rawSenderIsLid && input.normalizedSenderId === input.rawSenderId
+      ? []
+      : uniqueStrings([input.normalizedSenderId, input.rawSenderId]);
+
+  const channelLookups = [
+    { channel: input.channel, instanceIds: uniqueStrings([input.instanceId, ""]), senderIds },
+    ...(input.channel === "whatsapp" ? [{ channel: "phone", instanceIds: [""], senderIds: phoneFallbackIds }] : []),
+  ];
+
+  for (const lookup of channelLookups) {
+    for (const instanceId of lookup.instanceIds) {
+      if (lookup.senderIds.length === 0) continue;
+      for (const platformUserId of lookup.senderIds) {
+        const identity = resolvePlatformIdentity({ channel: lookup.channel, instanceId, platformUserId });
+        if (identity) return identity;
+      }
+    }
+  }
+
+  return null;
 }
 
 export class OmniConsumer {
@@ -605,19 +651,13 @@ export class OmniConsumer {
       seenAt: msgTs,
     });
     const normalizedSenderId = resolvedSenderPhone || senderPhone;
-    const senderPlatformIdentity =
-      resolvePlatformIdentity({
-        channel: sessionChannel,
-        instanceId,
-        platformUserId: normalizedSenderId,
-      }) ??
-      (normalizedSenderId !== senderPhone
-        ? resolvePlatformIdentity({
-            channel: sessionChannel,
-            instanceId,
-            platformUserId: senderPhone,
-          })
-        : null);
+    const senderPlatformIdentity = resolveSenderPlatformIdentity({
+      channel: sessionChannel,
+      instanceId,
+      normalizedSenderId,
+      rawSenderId: senderPhone,
+      rawProviderSenderId: payload.from,
+    });
     const senderContact =
       senderPlatformIdentity?.ownerType === "contact" && senderPlatformIdentity.ownerId
         ? getContact(senderPlatformIdentity.ownerId)
@@ -924,6 +964,7 @@ export class OmniConsumer {
         return;
       }
     }
+    this.recordInboundContactInteraction(effectiveActorMetadata);
 
     // Resolve sender display name: pushName (from rawPayload) → contacts DB → phone
     const pushName = rawPayloadString(rawPayload, "pushName");
@@ -1449,6 +1490,18 @@ export class OmniConsumer {
         },
       },
     };
+  }
+
+  private recordInboundContactInteraction(actorMetadata: MessageActorMetadata): void {
+    if (actorMetadata.actorType !== "contact" || !actorMetadata.contactId) return;
+    try {
+      recordInbound(actorMetadata.contactId);
+    } catch (error) {
+      log.warn("Failed to record inbound contact interaction", {
+        contactId: actorMetadata.contactId,
+        error,
+      });
+    }
   }
 
   private formatEditedMessageRestartNotice(

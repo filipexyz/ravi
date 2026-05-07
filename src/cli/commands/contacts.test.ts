@@ -12,7 +12,26 @@ let routeRecords: Array<{ pattern: string; agent: string }> = [];
 let allContacts: Array<Record<string, unknown>> = [];
 let pendingContacts: Array<Record<string, unknown>> = [];
 let accountPendingEntries: Array<Record<string, unknown>> = [];
+let messageRecords: Array<Record<string, unknown>> = [];
+let activityRecords: Array<Record<string, unknown>> = [];
+let sessionSummaryRecords: Array<Record<string, unknown>> = [];
+let timelineRecords: Array<Record<string, unknown>> = [];
+let metadataRecords: Array<Record<string, unknown>> = [];
 let mergeCall: { targetId: string; sourceId: string } | null = null;
+
+function pageRecords<T>(
+  records: T[],
+  options: { limit?: string | number | null; offset?: string | number | null } = {},
+) {
+  const limit = Number(options.limit ?? 50);
+  const offset = Number(options.offset ?? 0);
+  return {
+    total: records.length,
+    limit,
+    offset,
+    items: records.slice(offset, offset + limit),
+  };
+}
 
 function findContactRecord(ref: string): Record<string, unknown> | null {
   return (
@@ -136,6 +155,17 @@ mock.module("../../contacts.js", () => ({
   },
   setContactKind: () => {},
   listDuplicateContacts: () => [],
+  listContactEvents: (contactId: string, options?: { limit?: string; offset?: string }) => ({
+    contactId,
+    ...pageRecords(
+      timelineRecords.filter((record) => record.contactId === contactId),
+      options,
+    ),
+  }),
+  listContactMetadata: (contactId: string) => metadataRecords.filter((record) => record.contactId === contactId),
+  addContactNote: () => ({}),
+  setContactMetadata: () => ({}),
+  removeContactMetadata: () => ({ removed: false, previous: null, event: null }),
   setGroupTag: () => {},
   removeGroupTag: () => {},
   listAccountPending: (account?: string) =>
@@ -167,11 +197,35 @@ mock.module("../../contacts.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
   dbListRoutes: () => routeRecords,
+  dbListMessageMetaByContactId: (contactId: string, options?: { limit?: string; offset?: string }) => ({
+    contactId,
+    ...pageRecords(
+      messageRecords.filter((record) => record.contactId === contactId),
+      options,
+    ),
+  }),
 }));
 
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   findSessionByChatId: () => sessionRecord,
+}));
+
+mock.module("../../session-trace/session-trace-db.js", () => ({
+  listSessionEventsByContactId: (contactId: string, options?: { limit?: string; offset?: string }) => ({
+    contactId,
+    ...pageRecords(
+      activityRecords.filter((record) => record.contactId === contactId),
+      options,
+    ),
+  }),
+  listContactSessionSummaries: (contactId: string, options?: { limit?: string; offset?: string }) => ({
+    contactId,
+    ...pageRecords(
+      sessionSummaryRecords.filter((record) => record.contactId === contactId),
+      options,
+    ),
+  }),
 }));
 
 mock.module("../../permissions/scope.js", () => ({
@@ -233,6 +287,11 @@ describe("ContactsCommands info", () => {
     allContacts = [contactRecord];
     pendingContacts = [];
     accountPendingEntries = [];
+    messageRecords = [];
+    activityRecords = [];
+    sessionSummaryRecords = [];
+    timelineRecords = [];
+    metadataRecords = [];
     mergeCall = null;
     sessionRecord = { name: "wa-support" };
     routeRecords = [{ pattern: "5511999999999", agent: "sales" }];
@@ -272,6 +331,114 @@ describe("ContactsCommands info", () => {
     const contacts = payload.contacts as Array<Record<string, unknown>>;
     expect(contacts).toHaveLength(1);
     expect(contacts[0].routeAgent).toBe("sales");
+  });
+
+  it("prints contact profile cards with evidence sections in --json mode", () => {
+    metadataRecords = [
+      {
+        contactId: "contact-1",
+        scopeType: "global",
+        scopeId: null,
+        key: "profile.summary",
+        value: "Primary Ravi operator",
+        source: "agent",
+        confidence: 0.9,
+        updatedByType: "agent",
+        updatedById: "contact-profiler",
+        createdAt: "2026-04-11 12:00:00",
+        updatedAt: "2026-04-11 12:00:00",
+      },
+    ];
+    messageRecords = [
+      {
+        messageId: "msg-1",
+        chatId: "chat-1",
+        contactId: "contact-1",
+        actorType: "contact",
+        transcription: "vamos melhorar contatos",
+        createdAt: 1_778_000_000_000,
+      },
+    ];
+    activityRecords = [
+      {
+        id: 1,
+        sessionKey: "agent:dev:main",
+        sessionName: "dev",
+        contactId: "contact-1",
+        eventType: "channel.message.received",
+        eventGroup: "channel",
+        timestamp: 1_778_000_000_000,
+        seq: 1,
+      },
+    ];
+    sessionSummaryRecords = [
+      {
+        contactId: "contact-1",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev",
+        agentId: "dev",
+        eventCount: 1,
+        messageCount: 1,
+        firstSeenAt: 1_778_000_000_000,
+        lastSeenAt: 1_778_000_000_000,
+        latestEventType: "channel.message.received",
+        latestPreview: "vamos melhorar contatos",
+        latestMessageId: "msg-1",
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new ContactsCommands().profile("contact-1", true);
+    });
+
+    expect(payload.contactId).toBe("contact-1");
+    expect(((payload.card as Record<string, unknown>).header as Record<string, unknown>).displayName).toBe("Alice");
+    expect((payload.card as Record<string, unknown>).summary).toBe("Primary Ravi operator");
+    expect((payload.messages as Record<string, unknown>).total).toBe(1);
+    expect((payload.messages as Record<string, unknown>).limit).toBe(10);
+    expect((payload.sessions as Record<string, unknown>).total).toBe(1);
+    expect((payload.activity as Record<string, unknown>).total).toBe(1);
+  });
+
+  it("prints contact activity, messages, and sessions in --json mode", () => {
+    messageRecords = [{ messageId: "msg-1", chatId: "chat-1", contactId: "contact-1", createdAt: 1 }];
+    activityRecords = [
+      {
+        id: 1,
+        sessionKey: "agent:dev:main",
+        sessionName: "dev",
+        contactId: "contact-1",
+        eventType: "channel.message.received",
+        eventGroup: "channel",
+        timestamp: 1,
+        seq: 1,
+      },
+    ];
+    sessionSummaryRecords = [
+      {
+        contactId: "contact-1",
+        sessionKey: "agent:dev:main",
+        sessionName: "dev",
+        agentId: "dev",
+        eventCount: 1,
+        messageCount: 1,
+        firstSeenAt: 1,
+        lastSeenAt: 1,
+        latestEventType: "channel.message.received",
+        latestPreview: null,
+        latestMessageId: "msg-1",
+      },
+    ];
+
+    const messages = captureJson(() => new ContactsCommands().messages("contact-1", undefined, undefined, true));
+    const activity = captureJson(() =>
+      new ContactsCommands().activity("contact-1", undefined, undefined, undefined, true),
+    );
+    const sessions = captureJson(() => new ContactsCommands().sessions("contact-1", undefined, undefined, true));
+
+    expect(messages.total).toBe(1);
+    expect(activity.total).toBe(1);
+    expect(sessions.total).toBe(1);
   });
 
   it("splits pending contacts from pending chats in --json mode", () => {

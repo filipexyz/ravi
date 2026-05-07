@@ -16,6 +16,7 @@ import { createHash } from "node:crypto";
 import { logger } from "../utils/logger.js";
 import { getRaviStateDir } from "../utils/paths.js";
 import { normalizePhone } from "../utils/phone.js";
+import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import type { AgentConfig, RouteConfig, DmScope } from "./types.js";
 
 const log = logger.child("router:db");
@@ -861,6 +862,8 @@ function getDb(): Database {
     );
     -- TTL pruning hot path (DELETE FROM message_metadata WHERE created_at < ?)
     CREATE INDEX IF NOT EXISTS idx_message_metadata_created ON message_metadata(created_at);
+    CREATE INDEX IF NOT EXISTS idx_message_metadata_contact_time
+      ON message_metadata(contact_id, created_at);
 
     -- Cost tracking: granular per-turn cost events
     CREATE TABLE IF NOT EXISTS cost_events (
@@ -963,6 +966,8 @@ function getDb(): Database {
       ON session_events(event_type, timestamp);
     CREATE INDEX IF NOT EXISTS idx_session_events_chat_time
       ON session_events(source_chat_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_session_events_contact_time
+      ON session_events(contact_id, timestamp);
 
     -- Omni group metadata cache: local snapshot used by prompt context.
     CREATE TABLE IF NOT EXISTS omni_group_metadata (
@@ -4108,6 +4113,48 @@ export interface MessageMetadata {
   createdAt: number;
 }
 
+interface MessageMetadataRow {
+  message_id: string;
+  chat_id: string;
+  canonical_chat_id: string | null;
+  actor_type: string | null;
+  contact_id: string | null;
+  agent_id: string | null;
+  platform_identity_id: string | null;
+  raw_sender_id: string | null;
+  normalized_sender_id: string | null;
+  identity_confidence: number | null;
+  identity_provenance_json: string | null;
+  transcription: string | null;
+  media_path: string | null;
+  media_type: string | null;
+  created_at: number;
+}
+
+export interface MessageMetadataPage extends ListPage<MessageMetadata> {
+  contactId: string;
+}
+
+function rowToMessageMetadata(row: MessageMetadataRow): MessageMetadata {
+  return {
+    messageId: row.message_id,
+    chatId: row.chat_id,
+    canonicalChatId: row.canonical_chat_id ?? undefined,
+    actorType: row.actor_type ?? undefined,
+    contactId: row.contact_id ?? undefined,
+    agentId: row.agent_id ?? undefined,
+    platformIdentityId: row.platform_identity_id ?? undefined,
+    rawSenderId: row.raw_sender_id ?? undefined,
+    normalizedSenderId: row.normalized_sender_id ?? undefined,
+    identityConfidence: row.identity_confidence ?? undefined,
+    identityProvenance: parseJsonRecord(row.identity_provenance_json),
+    transcription: row.transcription ?? undefined,
+    mediaPath: row.media_path ?? undefined,
+    mediaType: row.media_type ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
 /**
  * Store message metadata (transcription/media path).
  * Upserts — safe to call multiple times for the same message.
@@ -4155,80 +4202,38 @@ export function dbSaveMessageMeta(
  */
 export function dbGetMessageMeta(messageId: string): MessageMetadata | null {
   const s = getStatements();
-  const row = s.getMessageMeta.get(messageId) as {
-    message_id: string;
-    chat_id: string;
-    canonical_chat_id: string | null;
-    actor_type: string | null;
-    contact_id: string | null;
-    agent_id: string | null;
-    platform_identity_id: string | null;
-    raw_sender_id: string | null;
-    normalized_sender_id: string | null;
-    identity_confidence: number | null;
-    identity_provenance_json: string | null;
-    transcription: string | null;
-    media_path: string | null;
-    media_type: string | null;
-    created_at: number;
-  } | null;
-  if (!row) return null;
-  return {
-    messageId: row.message_id,
-    chatId: row.chat_id,
-    canonicalChatId: row.canonical_chat_id ?? undefined,
-    actorType: row.actor_type ?? undefined,
-    contactId: row.contact_id ?? undefined,
-    agentId: row.agent_id ?? undefined,
-    platformIdentityId: row.platform_identity_id ?? undefined,
-    rawSenderId: row.raw_sender_id ?? undefined,
-    normalizedSenderId: row.normalized_sender_id ?? undefined,
-    identityConfidence: row.identity_confidence ?? undefined,
-    identityProvenance: parseJsonRecord(row.identity_provenance_json),
-    transcription: row.transcription ?? undefined,
-    mediaPath: row.media_path ?? undefined,
-    mediaType: row.media_type ?? undefined,
-    createdAt: row.created_at,
-  };
+  const row = s.getMessageMeta.get(messageId) as MessageMetadataRow | null;
+  return row ? rowToMessageMetadata(row) : null;
 }
 
 export function dbListMessageMetaByChatId(chatId: string, limit = 50): MessageMetadata[] {
   const s = getStatements();
-  const rows = s.listMessageMetaByChatId.all(chatId, limit) as Array<{
-    message_id: string;
-    chat_id: string;
-    canonical_chat_id: string | null;
-    actor_type: string | null;
-    contact_id: string | null;
-    agent_id: string | null;
-    platform_identity_id: string | null;
-    raw_sender_id: string | null;
-    normalized_sender_id: string | null;
-    identity_confidence: number | null;
-    identity_provenance_json: string | null;
-    transcription: string | null;
-    media_path: string | null;
-    media_type: string | null;
-    created_at: number;
-  }>;
+  const rows = s.listMessageMetaByChatId.all(chatId, limit) as MessageMetadataRow[];
+  return rows.reverse().map(rowToMessageMetadata);
+}
 
-  return rows.reverse().map((row) => ({
-    messageId: row.message_id,
-    chatId: row.chat_id,
-    canonicalChatId: row.canonical_chat_id ?? undefined,
-    actorType: row.actor_type ?? undefined,
-    contactId: row.contact_id ?? undefined,
-    agentId: row.agent_id ?? undefined,
-    platformIdentityId: row.platform_identity_id ?? undefined,
-    rawSenderId: row.raw_sender_id ?? undefined,
-    normalizedSenderId: row.normalized_sender_id ?? undefined,
-    identityConfidence: row.identity_confidence ?? undefined,
-    identityProvenance: parseJsonRecord(row.identity_provenance_json),
-    transcription: row.transcription ?? undefined,
-    mediaPath: row.media_path ?? undefined,
-    mediaType: row.media_type ?? undefined,
-    createdAt: row.created_at,
-  }));
+export function dbListMessageMetaByContactId(
+  contactId: string,
+  options: { limit?: number | string | null; offset?: number | string | null } = {},
+): MessageMetadataPage {
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const db = getDb();
+  const total =
+    (
+      db.prepare("SELECT COUNT(*) AS total FROM message_metadata WHERE contact_id = ?").get(contactId) as
+        | { total: number }
+        | undefined
+    )?.total ?? 0;
+  const rows = db
+    .prepare("SELECT * FROM message_metadata WHERE contact_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+    .all(contactId, limit, offset) as MessageMetadataRow[];
+  return {
+    contactId,
+    total,
+    limit,
+    offset,
+    items: rows.map(rowToMessageMetadata),
+  };
 }
 
 const MESSAGE_META_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days

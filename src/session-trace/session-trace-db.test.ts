@@ -4,7 +4,9 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   getSessionTraceBlob,
   getSessionTurn,
+  listContactSessionSummaries,
   listSessionEvents,
+  listSessionEventsByContactId,
   recordSessionBlob,
   recordSessionEvent,
   redactJson,
@@ -134,6 +136,60 @@ describe("session trace db", () => {
     expect(event.identityProvenance).toEqual({
       source: "test",
       token: "[REDACTED]",
+    });
+  });
+
+  it("lists activity and session summaries by contact id", () => {
+    recordSessionEvent({
+      sessionKey: "agent:dev:main",
+      sessionName: "dev",
+      agentId: "dev",
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      contactId: "contact_luis",
+      messageId: "msg-1",
+      preview: "primeira",
+      timestamp: 10,
+      createdAt: 10,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:dev:main",
+      sessionName: "dev",
+      agentId: "dev",
+      eventType: "response.emitted",
+      eventGroup: "response",
+      contactId: "contact_luis",
+      preview: "segunda",
+      timestamp: 20,
+      createdAt: 20,
+    });
+    recordSessionEvent({
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      agentId: "main",
+      eventType: "channel.message.received",
+      eventGroup: "channel",
+      contactId: "contact_other",
+      timestamp: 30,
+      createdAt: 30,
+    });
+
+    const activity = listSessionEventsByContactId("contact_luis");
+    expect(activity.total).toBe(2);
+    expect(activity.items.map((event) => event.eventType)).toEqual(["response.emitted", "channel.message.received"]);
+
+    const sessions = listContactSessionSummaries("contact_luis");
+    expect(sessions.total).toBe(1);
+    expect(sessions.items[0]).toMatchObject({
+      sessionKey: "agent:dev:main",
+      sessionName: "dev",
+      agentId: "dev",
+      eventCount: 2,
+      messageCount: 1,
+      firstSeenAt: 10,
+      lastSeenAt: 20,
+      latestEventType: "response.emitted",
+      latestPreview: "segunda",
     });
   });
 
