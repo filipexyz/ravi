@@ -37,22 +37,37 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_branch || github.event.inputs.branch }}
-          fetch-depth: 2
+          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.branch }}
+          fetch-depth: 0
 
       - name: Detect publishable changes
         id: filter
-        uses: dorny/paths-filter@v3
-        with:
-          base: HEAD~1
-          filters: |
-            publish:
-              - 'src/**'
-              - 'bin/**'
-              - 'package.json'
-              - 'bun.lock'
-              - 'tsconfig.json'
-              - 'scripts/**'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch: publish forced."
+            exit 0
+          fi
+
+          BASE="$(git describe --tags --match 'v*' --abbrev=0 HEAD^ 2>/dev/null || true)"
+          if [ -z "$BASE" ]; then
+            BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          echo "Detecting publishable changes between ${BASE} and HEAD"
+          CHANGED_FILES="$(mktemp)"
+          git diff --name-only "${BASE}"..HEAD | tee "$CHANGED_FILES"
+
+          if grep -Eq '^(src/|bin/|scripts/|package\.json$|bun\.lock$|tsconfig\.json$)' "$CHANGED_FILES"; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Publishable changes detected."
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "No publishable changes detected."
+          fi
 
   version-and-publish:
     name: Version And Publish
