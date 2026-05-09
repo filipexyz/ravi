@@ -807,6 +807,7 @@ export type CrmAccountReturn = unknown;
 export type CrmAccountCreateInput = {
   contact?: string;
   domain?: string;
+  idempotencyKey?: string;
   name: string;
   owner?: string;
 };
@@ -877,6 +878,55 @@ export type CrmContactsInput = {
 /** Return shape for `crm.contacts`. (no @Returns declared) */
 export type CrmContactsReturn = unknown;
 
+/** Input shape for `crm.fact.confirm`. */
+export type CrmFactConfirmInput = {
+  fact: string;
+};
+
+/** Return shape for `crm.fact.confirm`. (no @Returns declared) */
+export type CrmFactConfirmReturn = unknown;
+
+/** Input shape for `crm.fact.list`. */
+export type CrmFactListInput = {
+  account?: string;
+  contact?: string;
+  entity?: string;
+  entityType?: string;
+  key?: string;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  status?: string;
+};
+
+/** Return shape for `crm.fact.list`. (no @Returns declared) */
+export type CrmFactListReturn = unknown;
+
+/** Input shape for `crm.fact.propose`. */
+export type CrmFactProposeInput = {
+  account?: string;
+  confidence?: string;
+  contact?: string;
+  entity: string;
+  entityType: string;
+  idempotencyKey?: string;
+  key: string;
+  opportunity?: string;
+  status?: string;
+  value: string;
+};
+
+/** Return shape for `crm.fact.propose`. (no @Returns declared) */
+export type CrmFactProposeReturn = unknown;
+
+/** Input shape for `crm.fact.reject`. */
+export type CrmFactRejectInput = {
+  fact: string;
+};
+
+/** Return shape for `crm.fact.reject`. (no @Returns declared) */
+export type CrmFactRejectReturn = unknown;
+
 /** Input shape for `crm.next`. */
 export type CrmNextInput = {
   account?: string;
@@ -898,11 +948,20 @@ export type CrmOpportunityInput = {
 /** Return shape for `crm.opportunity`. (no @Returns declared) */
 export type CrmOpportunityReturn = unknown;
 
+/** Input shape for `crm.opportunity.contacts`. */
+export type CrmOpportunityContactsInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity.contacts`. (no @Returns declared) */
+export type CrmOpportunityContactsReturn = unknown;
+
 /** Input shape for `crm.opportunity.create`. */
 export type CrmOpportunityCreateInput = {
   account?: string;
   contact?: string;
   currency?: string;
+  idempotencyKey?: string;
   owner?: string;
   stage?: string;
   title: string;
@@ -911,6 +970,18 @@ export type CrmOpportunityCreateInput = {
 
 /** Return shape for `crm.opportunity.create`. (no @Returns declared) */
 export type CrmOpportunityCreateReturn = unknown;
+
+/** Input shape for `crm.opportunity.link-contact`. */
+export type CrmOpportunityLinkContactInput = {
+  account?: string;
+  contact: string;
+  opportunity: string;
+  primary?: boolean;
+  role?: string;
+};
+
+/** Return shape for `crm.opportunity.link-contact`. (no @Returns declared) */
+export type CrmOpportunityLinkContactReturn = unknown;
 
 /** Input shape for `crm.opportunity.move`. */
 export type CrmOpportunityMoveInput = {
@@ -935,6 +1006,7 @@ export type CrmTaskCreateInput = {
   account?: string;
   contact?: string;
   due?: string;
+  idempotencyKey?: string;
   opportunity?: string;
   owner?: string;
   priority?: string;

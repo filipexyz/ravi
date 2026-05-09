@@ -1853,6 +1853,10 @@ export const CrmAccountCreateInputSchema = {
       "description": "Account domain",
       "type": "string"
     },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated account creation",
+      "type": "string"
+    },
     "name": {
       "description": "Account name",
       "type": "string"
@@ -2001,6 +2005,134 @@ export const CrmContactsInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.fact.confirm`. */
+export const CrmFactConfirmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fact": {
+      "description": "CRM fact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.list`. */
+export const CrmFactListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by CRM account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "entity": {
+      "description": "Filter by CRM entity id",
+      "type": "string"
+    },
+    "entityType": {
+      "description": "Filter by CRM entity type",
+      "type": "string"
+    },
+    "key": {
+      "description": "Filter by fact key",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching facts to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by CRM opportunity",
+      "type": "string"
+    },
+    "status": {
+      "description": "proposed|confirmed|rejected|superseded",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.propose`. */
+export const CrmFactProposeInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Related account",
+      "type": "string"
+    },
+    "confidence": {
+      "description": "Confidence between 0 and 1",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Related contact",
+      "type": "string"
+    },
+    "entity": {
+      "description": "CRM entity id",
+      "type": "string"
+    },
+    "entityType": {
+      "description": "CRM entity type",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated fact writes",
+      "type": "string"
+    },
+    "key": {
+      "description": "Fact key",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Related opportunity",
+      "type": "string"
+    },
+    "status": {
+      "description": "proposed|confirmed",
+      "type": "string"
+    },
+    "value": {
+      "description": "JSON value or plain string",
+      "type": "string"
+    }
+  },
+  "required": [
+    "entity",
+    "entityType",
+    "key",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.fact.reject`. */
+export const CrmFactRejectInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "fact": {
+      "description": "CRM fact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.next`. */
 export const CrmNextInputSchema = {
   "additionalProperties": false,
@@ -2048,6 +2180,21 @@ export const CrmOpportunityInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `crm.opportunity.contacts`. */
+export const CrmOpportunityContactsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `crm.opportunity.create`. */
 export const CrmOpportunityCreateInputSchema = {
   "additionalProperties": false,
@@ -2062,6 +2209,10 @@ export const CrmOpportunityCreateInputSchema = {
     },
     "currency": {
       "description": "Currency (default: BRL)",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated opportunity creation",
       "type": "string"
     },
     "owner": {
@@ -2083,6 +2234,38 @@ export const CrmOpportunityCreateInputSchema = {
   },
   "required": [
     "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.link-contact`. */
+export const CrmOpportunityLinkContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "primary": {
+      "description": "Mark as primary opportunity contact",
+      "type": "boolean"
+    },
+    "role": {
+      "description": "Opportunity role (default: stakeholder)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "opportunity"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -2140,6 +2323,10 @@ export const CrmTaskCreateInputSchema = {
     },
     "due": {
       "description": "Due date/time",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Deduplicate repeated task creation",
       "type": "string"
     },
     "opportunity": {
