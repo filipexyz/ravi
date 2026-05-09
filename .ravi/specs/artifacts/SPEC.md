@@ -58,6 +58,22 @@ file exists, while it is being produced, and after completion or failure.
 - Synchronous generation MAY continue to exist, but it SHOULD still use the same
   artifact lifecycle internally.
 
+## Versioning
+
+- Artifacts MAY have immutable versions.
+- A version MUST snapshot the artifact content locators that existed when the
+  version was created, including local file/blob paths, MIME type, size, hash,
+  URI, and structured manifest data when available.
+- File/blob/URI/output updates SHOULD create a new version instead of mutating
+  prior version rows.
+- Metadata-only edits SHOULD NOT create a new version unless the caller
+  explicitly requests a manual snapshot.
+- Restoring an older version MUST NOT delete or overwrite version history; it
+  MUST reapply the selected version to the current artifact and create a new
+  version representing the restore.
+- Version assets MUST use Ravi-relative asset paths and MUST NOT allow absolute
+  paths or `..` traversal segments.
+
 ## Event Types
 
 Recommended event names:
@@ -69,6 +85,8 @@ Recommended event names:
 - `provider_processing`
 - `file_saved`
 - `blob_ingested`
+- `version_created`
+- `version_restored`
 - `completed`
 - `failed`
 - `notified`
@@ -97,6 +115,10 @@ Artifact inspection SHOULD support:
 
 ```bash
 ravi artifacts show art_...
+ravi artifacts versions art_...
+ravi artifacts version art_... --version 1
+ravi artifacts snapshot art_... --label "before edit"
+ravi artifacts restore art_... --version 1
 ravi artifacts events art_...
 ravi artifacts watch art_...
 ```
@@ -111,6 +133,8 @@ ravi image generate "..." --sync
 
 - `ravi artifacts show <id> --json` MUST show status, file/blob references, and
   lineage.
+- `ravi artifacts versions <id> --json` SHOULD show immutable version snapshots
+  and their assets.
 - `ravi artifacts events <id> --json` SHOULD show the ordered timeline for the
   artifact.
 - Async image generation SHOULD return before provider completion and still

@@ -12,12 +12,17 @@ import {
   appendArtifactEvent,
   attachArtifact,
   createArtifact,
+  createArtifactVersion,
+  getArtifactVersion,
   getArtifactDetails,
   listArtifactEvents,
+  listArtifactVersions,
   listArtifactsPage,
+  restoreArtifactVersion,
   updateArtifact,
   type ArtifactEvent,
   type ArtifactRecord,
+  type ArtifactVersion,
 } from "../../artifacts/store.js";
 import {
   buildOverlayArtifactsPayload,
@@ -120,6 +125,35 @@ function summarizeEvent(event: ArtifactEvent): Record<string, unknown> {
     actor: event.actor ?? null,
     payload: event.payload ?? null,
     createdAt: event.createdAt,
+  };
+}
+
+function summarizeVersion(version: ArtifactVersion): Record<string, unknown> {
+  return {
+    id: version.id,
+    artifactId: version.artifactId,
+    versionNumber: version.versionNumber,
+    status: version.status,
+    label: version.label ?? null,
+    source: version.source,
+    createdBy: version.createdBy ?? null,
+    createdAt: version.createdAt,
+    assetCount: version.assets.length,
+    assets: version.assets.map((asset) => ({
+      id: asset.id,
+      path: asset.path,
+      role: asset.role,
+      visibility: asset.visibility,
+      uri: asset.uri ?? null,
+      filePath: asset.filePath ?? null,
+      blobPath: asset.blobPath ?? null,
+      mimeType: asset.mimeType ?? null,
+      sizeBytes: asset.sizeBytes ?? null,
+      sha256: asset.sha256 ?? null,
+      metadata: asset.metadata ?? null,
+    })),
+    manifest: version.manifest,
+    metadata: version.metadata ?? null,
   };
 }
 
@@ -323,7 +357,114 @@ export class ArtifactsCommands {
       if (artifact.filePath) console.log(`File: ${artifact.filePath}`);
       if (artifact.blobPath) console.log(`Blob: ${artifact.blobPath}`);
       console.log(`Status: ${artifact.status}`);
-      console.log(`Links: ${details.links.length} | Events: ${details.events.length}`);
+      console.log(
+        `Links: ${details.links.length} | Events: ${details.events.length} | Versions: ${details.versions.length}`,
+      );
+    }
+    return payload;
+  }
+
+  @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
+  snapshot(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--label <text>", description: "Human label for this version" }) label?: string,
+    @Option({ flags: "--status <status>", description: "Version status (default: active)" }) status?: string,
+    @Option({ flags: "--source <source>", description: "Snapshot source" }) source?: string,
+    @Option({ flags: "--message <text>", description: "Event message for the snapshot" }) message?: string,
+    @Option({ flags: "--manifest <json>", description: "Extra manifest JSON object" }) manifest?: string,
+    @Option({ flags: "--metadata <json>", description: "Version metadata JSON object" }) metadata?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const ctx = contextDefaults();
+    const version = createArtifactVersion(id, {
+      ...(label?.trim() ? { label } : {}),
+      ...(status?.trim() ? { status } : {}),
+      ...(source?.trim() ? { source } : {}),
+      ...(message?.trim() ? { message } : {}),
+      ...(manifest ? { manifest: parseJsonObject(manifest, "--manifest") } : {}),
+      ...(metadata ? { metadata: parseJsonObject(metadata, "--metadata") } : {}),
+      ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+    });
+    const payload = { success: true, version: summarizeVersion(version) };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`✓ Artifact version created: ${version.artifactId} v${version.versionNumber}`);
+    }
+    return payload;
+  }
+
+  @Command({ name: "versions", description: "List immutable versions for an artifact" })
+  versions(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const versions = listArtifactVersions(id);
+    const payload = {
+      artifactId: id,
+      total: versions.length,
+      versions: versions.map(summarizeVersion),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else if (versions.length === 0) {
+      console.log("No artifact versions found.");
+    } else {
+      for (const version of versions) {
+        console.log(`v${version.versionNumber} ${version.id} — ${version.status} — ${version.assets.length} asset(s)`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "version", description: "Show one immutable artifact version" })
+  version(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--version <n>", description: "Version number (default: latest)" }) versionNumber?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const parsedVersion = versionNumber ? parseInteger(versionNumber, "--version") : undefined;
+    const version = getArtifactVersion(id, parsedVersion);
+    if (!version) fail(`Artifact version not found: ${id}${parsedVersion ? ` v${parsedVersion}` : ""}`);
+    const payload = { artifactId: id, version: summarizeVersion(version) };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`${version.artifactId} v${version.versionNumber} — ${version.status}`);
+      for (const asset of version.assets) {
+        console.log(`  ${asset.role}: ${asset.path}${asset.sha256 ? ` (${asset.sha256.slice(0, 12)})` : ""}`);
+      }
+    }
+    return payload;
+  }
+
+  @Command({ name: "restore", description: "Restore current artifact content from an immutable version" })
+  restore(
+    @Arg("id", { description: "Artifact id" }) id: string,
+    @Option({ flags: "--version <n>", description: "Version number to restore" }) versionNumber?: string,
+    @Option({ flags: "--message <text>", description: "Event message for the restore" }) message?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    if (!versionNumber?.trim()) fail("--version is required.");
+    const parsedVersion = parseInteger(versionNumber, "--version");
+    if (parsedVersion === undefined) fail("--version is required.");
+    const ctx = contextDefaults();
+    const result = restoreArtifactVersion(id, parsedVersion, {
+      ...(ctx.agentId ? { actor: ctx.agentId } : {}),
+      ...(message?.trim() ? { message } : {}),
+    });
+    const payload = {
+      success: true,
+      artifact: summarizeArtifact(result.artifact),
+      restoredFrom: summarizeVersion(result.restoredFrom),
+      restoreVersion: summarizeVersion(result.restoreVersion),
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(
+        `✓ Artifact restored: ${id} v${result.restoredFrom.versionNumber} -> v${result.restoreVersion.versionNumber}`,
+      );
     }
     return payload;
   }

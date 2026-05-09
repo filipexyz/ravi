@@ -532,12 +532,74 @@ export const ArtifactsListInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `artifacts.restore`. */
+export const ArtifactsRestoreInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "message": {
+      "description": "Event message for the restore",
+      "type": "string"
+    },
+    "version": {
+      "description": "Version number to restore",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `artifacts.show`. */
 export const ArtifactsShowInputSchema = {
   "additionalProperties": false,
   "properties": {
     "id": {
       "description": "Artifact id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.snapshot`. */
+export const ArtifactsSnapshotInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "label": {
+      "description": "Human label for this version",
+      "type": "string"
+    },
+    "manifest": {
+      "description": "Extra manifest JSON object",
+      "type": "string"
+    },
+    "message": {
+      "description": "Event message for the snapshot",
+      "type": "string"
+    },
+    "metadata": {
+      "description": "Version metadata JSON object",
+      "type": "string"
+    },
+    "source": {
+      "description": "Snapshot source",
+      "type": "string"
+    },
+    "status": {
+      "description": "Version status (default: active)",
       "type": "string"
     }
   },
@@ -649,6 +711,40 @@ export const ArtifactsUpdateInputSchema = {
     },
     "uri": {
       "description": "Replace external URI/reference",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.version`. */
+export const ArtifactsVersionInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
+      "type": "string"
+    },
+    "version": {
+      "description": "Version number (default: latest)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.versions`. */
+export const ArtifactsVersionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "description": "Artifact id",
       "type": "string"
     }
   },

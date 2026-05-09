@@ -33,7 +33,19 @@ configureCliLogging();
 
 const program = new Command();
 
-program.name("ravi").description("Ravi Bot CLI - Claude-powered bot management").version(pkg.version);
+function isRootVersionRequest(args: string[]): boolean {
+  return args.length === 1 && (args[0] === "--version" || args[0] === "-V");
+}
+
+if (isRootVersionRequest(process.argv.slice(2))) {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+program
+  .name("ravi")
+  .description("Ravi Bot CLI - Claude-powered bot management")
+  .addHelpText("after", "\nRoot options:\n  ravi --version    Print Ravi CLI version");
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);

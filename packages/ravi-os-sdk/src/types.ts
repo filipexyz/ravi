@@ -219,6 +219,16 @@ export type ArtifactsListInput = {
 /** Return shape for `artifacts.list`. (no @Returns declared) */
 export type ArtifactsListReturn = unknown;
 
+/** Input shape for `artifacts.restore`. */
+export type ArtifactsRestoreInput = {
+  id: string;
+  message?: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.restore`. (no @Returns declared) */
+export type ArtifactsRestoreReturn = unknown;
+
 /** Input shape for `artifacts.show`. */
 export type ArtifactsShowInput = {
   id: string;
@@ -226,6 +236,20 @@ export type ArtifactsShowInput = {
 
 /** Return shape for `artifacts.show`. (no @Returns declared) */
 export type ArtifactsShowReturn = unknown;
+
+/** Input shape for `artifacts.snapshot`. */
+export type ArtifactsSnapshotInput = {
+  id: string;
+  label?: string;
+  manifest?: string;
+  message?: string;
+  metadata?: string;
+  source?: string;
+  status?: string;
+};
+
+/** Return shape for `artifacts.snapshot`. (no @Returns declared) */
+export type ArtifactsSnapshotReturn = unknown;
 
 /** Input shape for `artifacts.update`. */
 export type ArtifactsUpdateInput = {
@@ -258,6 +282,23 @@ export type ArtifactsUpdateInput = {
 
 /** Return shape for `artifacts.update`. (no @Returns declared) */
 export type ArtifactsUpdateReturn = unknown;
+
+/** Input shape for `artifacts.version`. */
+export type ArtifactsVersionInput = {
+  id: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.version`. (no @Returns declared) */
+export type ArtifactsVersionReturn = unknown;
+
+/** Input shape for `artifacts.versions`. */
+export type ArtifactsVersionsInput = {
+  id: string;
+};
+
+/** Return shape for `artifacts.versions`. (no @Returns declared) */
+export type ArtifactsVersionsReturn = unknown;
 
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
