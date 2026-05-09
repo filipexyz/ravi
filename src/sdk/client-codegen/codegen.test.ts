@@ -43,6 +43,22 @@ class ContextCredentialsCommands {
   }
 }
 
+@Group({ name: "crm", description: "CRM ops", scope: "open" })
+class CrmCommands {
+  @Command({ name: "account", description: "Show account" })
+  account(@Arg("id") _id: string) {
+    return {};
+  }
+}
+
+@Group({ name: "crm.account", description: "CRM account ops", scope: "open" })
+class CrmAccountCommands {
+  @Command({ name: "create", description: "Create account" })
+  create(@Arg("name") _name: string) {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -131,6 +147,19 @@ describe("client-codegen :: emitAll", () => {
     const { output } = emitMockSdk();
     expect(output.client).toContain("import type { ArtifactsShowReturn");
     expect(output.client).toContain('from "./types.js"');
+  });
+
+  it("disambiguates commands that are also namespace nodes", () => {
+    const registry = buildRegistry([CrmCommands, CrmAccountCommands]);
+    const output = emitAll(registry, { version: FIXED_VERSION });
+
+    expect(output.client).toContain("accountCommand: async (id: string)");
+    expect(output.client).toContain("account: {");
+    expect(output.client).toContain("create: async (name: string)");
+    expect(output.client).toContain(`groupSegments: ["crm"]`);
+    expect(output.client).toContain(`command: "account"`);
+    expect(output.client).toContain(`groupSegments: ["crm","account"]`);
+    expect(output.client).toContain(`command: "create"`);
   });
 
   it("emits version.ts with the supplied fields", () => {

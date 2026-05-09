@@ -231,6 +231,7 @@ interface NamespaceNode {
 
 function buildTree(commands: CommandRegistryEntry[]): NamespaceNode {
   const root: NamespaceNode = { kind: "namespace", path: [], children: new Map() };
+  const namespaceKeys = buildNamespaceChildKeys(commands);
   for (const cmd of commands) {
     let node = root;
     for (const segment of cmd.groupSegments) {
@@ -247,13 +248,50 @@ function buildTree(commands: CommandRegistryEntry[]): NamespaceNode {
         node = existing;
       }
     }
-    const method = methodName(cmd.command);
+    const baseMethod = methodName(cmd.command);
+    const reservedAtNode = namespaceKeys.get(namespacePathKey(node.path)) ?? new Set<string>();
+    const method = reservedAtNode.has(baseMethod)
+      ? disambiguatedIntermediateCommandName(baseMethod, reservedAtNode, node.children)
+      : baseMethod;
     if (node.children.has(method)) {
       throw new Error(`Swift codegen: duplicate method ${method} under ${cmd.groupPath}`);
     }
     node.children.set(method, { kind: "method", cmd });
   }
   return root;
+}
+
+function buildNamespaceChildKeys(commands: CommandRegistryEntry[]): Map<string, Set<string>> {
+  const byPath = new Map<string, Set<string>>();
+  for (const cmd of commands) {
+    for (let index = 0; index < cmd.groupSegments.length; index++) {
+      const parentPath = cmd.groupSegments.slice(0, index);
+      const childKey = propertyName(cmd.groupSegments[index]);
+      const pathKey = namespacePathKey(parentPath);
+      const set = byPath.get(pathKey) ?? new Set<string>();
+      set.add(childKey);
+      byPath.set(pathKey, set);
+    }
+  }
+  return byPath;
+}
+
+function namespacePathKey(path: readonly string[]): string {
+  return path.join("\u0000");
+}
+
+function disambiguatedIntermediateCommandName(
+  baseMethod: string,
+  reservedNamespaceKeys: Set<string>,
+  siblings: Map<string, NamespaceNode | MethodNode>,
+): string {
+  let candidate = `${baseMethod}Command`;
+  let suffix = 2;
+  while (reservedNamespaceKeys.has(candidate) || siblings.has(candidate)) {
+    candidate = `${baseMethod}Command${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 export function emitSwiftClient(commands: CommandRegistryEntry[]): string {

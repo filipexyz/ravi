@@ -5,22 +5,41 @@ import {
   addContactTag,
   addContactIdentity,
   closeContacts,
+  completeCrmTask,
+  createCrmAccount,
   createContactEvent,
+  createCrmEvent,
+  createCrmOpportunity,
+  createCrmTask,
+  confirmCrmFact,
   deleteContact,
   findContactsByTag,
   getAllContacts,
+  getCrmContactProfile,
+  getCrmOpportunity,
   getContact,
   getContactsByStatus,
   getContactDetails,
   getAgentPlatformIdentity,
+  linkCrmActivityParticipant,
+  linkCrmAccountContact,
+  linkCrmOpportunityContact,
+  listCrmActivityParticipants,
+  listCrmFacts,
+  listCrmNextActions,
+  listCrmOpportunityContacts,
   listContactEvents,
   listContactMetadata,
   linkContactIdentity,
   mergeContacts,
+  moveCrmOpportunityStage,
+  projectContactEventToCrmActivity,
+  proposeCrmFact,
   removeContactMetadata,
   resolvePlatformIdentity,
   setContactMetadata,
   unlinkContactIdentity,
+  updateCrmContactProfile,
   upsertAgentPlatformIdentity,
   upsertContact,
 } from "./contacts.js";
@@ -74,6 +93,584 @@ describe("contacts identity graph schema", () => {
       { channel: "whatsapp", normalized_platform_user_id: "lid:63295117615153" },
     ]);
     expect(linkEvents).toBeGreaterThanOrEqual(2);
+  });
+
+  it("initializes CRM MVP tables and keeps CRM lifecycle separate from contact policy status", () => {
+    upsertContact("5511999910101", "CRM Lead", "allowed", "manual");
+    const contact = getContact("5511999910101");
+    expect(contact).not.toBeNull();
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const objects = db
+      .prepare(
+        `
+        SELECT name, type FROM sqlite_master
+        WHERE name IN (
+          'crm_events',
+          'crm_contact_profiles',
+          'crm_accounts',
+          'crm_account_contacts',
+          'crm_opportunities',
+          'crm_tasks',
+          'crm_contact_cards',
+          'crm_next_actions',
+          'crm_opportunity_board'
+        )
+        ORDER BY name
+      `,
+      )
+      .all() as Array<{ name: string; type: string }>;
+
+    db.prepare("INSERT INTO crm_contact_profiles (contact_id, lifecycle) VALUES (?, 'lead')").run(contact!.id);
+    const row = db
+      .prepare(
+        `
+        SELECT p.lifecycle, cp.status AS policy_status
+        FROM crm_contact_profiles p
+        JOIN contact_policies cp ON cp.contact_id = p.contact_id
+        WHERE p.contact_id = ?
+      `,
+      )
+      .get(contact!.id) as { lifecycle: string; policy_status: string } | null;
+    db.close();
+
+    expect(objects.map((object) => `${object.type}:${object.name}`)).toEqual([
+      "table:crm_account_contacts",
+      "table:crm_accounts",
+      "view:crm_contact_cards",
+      "table:crm_contact_profiles",
+      "table:crm_events",
+      "view:crm_next_actions",
+      "table:crm_opportunities",
+      "view:crm_opportunity_board",
+      "table:crm_tasks",
+    ]);
+    expect(row).toEqual({ lifecycle: "lead", policy_status: "allowed" });
+  });
+
+  it("writes CRM events append-only and mirrors contact-related events into contact timeline", () => {
+    upsertContact("5511999910202", "CRM Event", "allowed", "manual");
+    const contact = getContact("5511999910202");
+    expect(contact).not.toBeNull();
+
+    const event = createCrmEvent({
+      eventType: "crm.contact_profile.updated",
+      entityType: "contact",
+      entityId: contact!.id,
+      actorType: "agent",
+      actorId: "dev",
+      source: "test",
+      confidence: 0.9,
+      payload: { lifecycle: "lead" },
+      previousPayload: { lifecycle: "unknown" },
+      evidence: { reason: "operator confirmed" },
+    });
+
+    expect(event).toMatchObject({
+      eventType: "crm.contact_profile.updated",
+      entityType: "contact",
+      entityId: contact!.id,
+      contactId: contact!.id,
+      actorType: "agent",
+      actorId: "dev",
+      source: "test",
+      confidence: 0.9,
+      payload: { lifecycle: "lead" },
+      previousPayload: { lifecycle: "unknown" },
+      evidence: { reason: "operator confirmed" },
+    });
+
+    const timelineEvents = listContactEvents(contact!.id, { scopeType: "domain", scopeId: "crm", limit: 10 }).items;
+    expect(timelineEvents).toHaveLength(1);
+    expect(timelineEvents[0]).toMatchObject({
+      eventType: "crm.contact_profile.updated",
+      contactId: contact!.id,
+      scopeType: "domain",
+      scopeId: "crm",
+      actorType: "agent",
+      actorId: "dev",
+      confidence: 0.9,
+    });
+    expect(timelineEvents[0]!.payload).toMatchObject({ crmEventId: event.id, payload: { lifecycle: "lead" } });
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    expect(() => db.prepare("UPDATE crm_events SET source = 'mutated' WHERE id = ?").run(event.id)).toThrow(
+      /append-only/,
+    );
+    expect(() => db.prepare("DELETE FROM crm_events WHERE id = ?").run(event.id)).toThrow(/append-only/);
+    db.close();
+  });
+
+  it("projects CRM service writes into current CRM rows, next actions, and contact timeline", () => {
+    upsertContact("5511999910303", "CRM Service", "allowed", "manual");
+    const contact = getContact("5511999910303");
+    expect(contact).not.toBeNull();
+
+    const profile = updateCrmContactProfile({
+      contactRef: contact!.id,
+      lifecycle: "lead",
+      relationshipHealth: "good",
+      priority: "high",
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+    });
+    expect(profile).toMatchObject({
+      contactId: contact!.id,
+      lifecycle: "lead",
+      relationshipHealth: "good",
+      priority: "high",
+    });
+    expect(listContactMetadata(contact!.id, { scopeType: "domain", scopeId: "crm" })).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: "crm.lifecycle", value: "lead" })]),
+    );
+
+    const account = createCrmAccount({ name: "Acme CRM", domain: "acme.example", source: "test" });
+    const membership = linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: contact!.id,
+      role: "sponsor",
+      isPrimary: true,
+      source: "test",
+    });
+    expect(membership).toMatchObject({ accountId: account.id, contactId: contact!.id, role: "sponsor" });
+
+    const opportunity = createCrmOpportunity({
+      title: "Pilot rollout",
+      accountId: account.id,
+      contactRef: contact!.id,
+      stageKey: "qualified",
+      valueCents: 500_000,
+      source: "test",
+    });
+    expect(opportunity).toMatchObject({
+      accountId: account.id,
+      primaryContactId: contact!.id,
+      title: "Pilot rollout",
+      valueCents: 500_000,
+    });
+
+    const moved = moveCrmOpportunityStage({ opportunityId: opportunity.id, stageRef: "proposal", source: "test" });
+    expect(moved.stageId).toBe("crm_stage_proposal");
+
+    const task = createCrmTask({
+      title: "Follow up on pilot",
+      contactRef: contact!.id,
+      accountId: account.id,
+      opportunityId: opportunity.id,
+      dueAt: "2026-05-09T10:00:00Z",
+      priority: "urgent",
+      source: "test",
+    });
+    expect(listCrmNextActions({ contactRef: contact!.id }).items[0]).toMatchObject({
+      taskId: task.id,
+      title: "Follow up on pilot",
+      priority: "urgent",
+    });
+
+    const card = getCrmContactProfile(contact!.id);
+    expect(card?.profile?.primaryAccountId).toBe(account.id);
+    expect(card?.profile?.nextTaskId).toBe(task.id);
+    expect(card?.accountMemberships).toHaveLength(1);
+    expect(card?.opportunities.map((item) => item.id)).toContain(opportunity.id);
+
+    completeCrmTask({ taskId: task.id, source: "test" });
+    expect(listCrmNextActions({ contactRef: contact!.id }).items).toHaveLength(0);
+    expect(getCrmContactProfile(contact!.id)?.profile?.nextTaskId).toBeNull();
+
+    const crmTimelineTypes = listContactEvents(contact!.id, {
+      scopeType: "domain",
+      scopeId: "crm",
+      limit: 20,
+    }).items.map((event) => event.eventType);
+    expect(crmTimelineTypes).toEqual(
+      expect.arrayContaining([
+        "crm.contact_profile.updated",
+        "crm.account_contact.linked",
+        "crm.opportunity.created",
+        "crm.opportunity.stage_changed",
+        "crm.task.created",
+        "crm.task.completed",
+      ]),
+    );
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const eventTypes = db.prepare("SELECT event_type FROM crm_events ORDER BY created_at, id").all() as Array<{
+      event_type: string;
+    }>;
+    db.close();
+    expect(eventTypes.map((event) => event.event_type)).toEqual(
+      expect.arrayContaining([
+        "crm.contact_profile.updated",
+        "crm.account.created",
+        "crm.account_contact.linked",
+        "crm.opportunity.created",
+        "crm.opportunity.stage_changed",
+        "crm.task.created",
+        "crm.task.completed",
+      ]),
+    );
+  });
+
+  it("keeps CRM primary account projections consistent when an account primary contact changes", () => {
+    upsertContact("5511999910311", "CRM Primary One", "allowed", "manual");
+    upsertContact("5511999910312", "CRM Primary Two", "allowed", "manual");
+    const first = getContact("5511999910311");
+    const second = getContact("5511999910312");
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Primary Switch Account", source: "test" });
+    linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: first!.id,
+      role: "sponsor",
+      isPrimary: true,
+      source: "test",
+    });
+    expect(getCrmContactProfile(first!.id)?.profile?.primaryAccountId).toBe(account.id);
+
+    linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: second!.id,
+      role: "sponsor",
+      isPrimary: true,
+      source: "test",
+    });
+
+    expect(getCrmContactProfile(second!.id)?.profile?.primaryAccountId).toBe(account.id);
+    expect(getCrmContactProfile(first!.id)?.profile?.primaryAccountId).toBeNull();
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const primaryRows = db
+      .prepare(
+        "SELECT contact_id FROM crm_account_contacts WHERE account_id = ? AND is_primary = 1 ORDER BY contact_id",
+      )
+      .all(account.id) as Array<{ contact_id: string }>;
+    db.close();
+    expect(primaryRows.map((row) => row.contact_id)).toEqual([second!.id]);
+  });
+
+  it("includes CRM opportunities where the contact is linked as a stakeholder", () => {
+    upsertContact("5511999910321", "CRM Opportunity Primary", "allowed", "manual");
+    upsertContact("5511999910322", "CRM Opportunity Stakeholder", "allowed", "manual");
+    const primary = getContact("5511999910321");
+    const stakeholder = getContact("5511999910322");
+    expect(primary).not.toBeNull();
+    expect(stakeholder).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Stakeholder Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Stakeholder-visible rollout",
+      accountId: account.id,
+      contactRef: primary!.id,
+      source: "test",
+    });
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    db.prepare(
+      `
+      INSERT INTO crm_opportunity_contacts (
+        id, opportunity_id, contact_id, account_id, role, source, confidence
+      )
+      VALUES ('crm_oc_test_stakeholder', ?, ?, ?, 'stakeholder', 'test', 1)
+    `,
+    ).run(opportunity.id, stakeholder!.id, account.id);
+    db.close();
+
+    expect(getCrmContactProfile(stakeholder!.id)?.opportunities.map((item) => item.id)).toContain(opportunity.id);
+  });
+
+  it("aggregates CRM account card values without multiplying by account contacts", () => {
+    upsertContact("5511999910331", "CRM Account Contact One", "allowed", "manual");
+    upsertContact("5511999910332", "CRM Account Contact Two", "allowed", "manual");
+    const first = getContact("5511999910331");
+    const second = getContact("5511999910332");
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Account Card Totals", source: "test" });
+    linkCrmAccountContact({ accountId: account.id, contactRef: first!.id, role: "sponsor", source: "test" });
+    linkCrmAccountContact({ accountId: account.id, contactRef: second!.id, role: "user", source: "test" });
+    createCrmOpportunity({
+      title: "Single open deal",
+      accountId: account.id,
+      contactRef: first!.id,
+      valueCents: 123_456,
+      source: "test",
+    });
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const card = db.prepare("SELECT * FROM crm_account_cards WHERE account_id = ?").get(account.id) as {
+      contact_count: number;
+      open_opportunity_count: number;
+      open_value_cents: number;
+    };
+    db.close();
+
+    expect(card.contact_count).toBe(2);
+    expect(card.open_opportunity_count).toBe(1);
+    expect(card.open_value_cents).toBe(123_456);
+  });
+
+  it("projects selected contact events into CRM activities without duplicating the projection", () => {
+    upsertContact("5511999910404", "CRM Activity", "allowed", "manual");
+    const contact = getContact("5511999910404");
+    expect(contact).not.toBeNull();
+
+    const note = createContactEvent({
+      contactRef: contact!.id,
+      eventType: "profile.note_added",
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      payload: { text: "Asked for pricing follow-up" },
+    });
+
+    const activity = projectContactEventToCrmActivity({ contactEventId: note.id, source: "test" });
+    const repeated = projectContactEventToCrmActivity({ contactEventId: note.id, source: "test" });
+
+    expect(activity).toMatchObject({
+      id: repeated.id,
+      activityType: "note",
+      contactId: contact!.id,
+      contactEventId: note.id,
+      summary: "Asked for pricing follow-up",
+    });
+    expect(listCrmActivityParticipants(activity.id)).toEqual([
+      expect.objectContaining({ activityId: activity.id, contactId: contact!.id, role: "subject" }),
+    ]);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const count = (
+      db.prepare("SELECT COUNT(*) AS count FROM crm_activities WHERE contact_event_id = ?").get(note.id) as {
+        count: number;
+      }
+    ).count;
+    expect(() =>
+      db
+        .prepare(
+          `
+          INSERT INTO crm_activities (
+            id, activity_type, summary, occurred_at, contact_id, contact_event_id, source, confidence
+          )
+          VALUES ('crm_act_duplicate_test', 'note', 'duplicate', datetime('now'), ?, ?, 'test', 1)
+        `,
+        )
+        .run(contact!.id, note.id),
+    ).toThrow(/UNIQUE/);
+    db.close();
+    expect(count).toBe(1);
+  });
+
+  it("links additional opportunity contacts and keeps the primary contact projection current", () => {
+    upsertContact("5511999910411", "Opportunity Buyer", "allowed", "manual");
+    upsertContact("5511999910412", "Opportunity Champion", "allowed", "manual");
+    const buyer = getContact("5511999910411");
+    const champion = getContact("5511999910412");
+    expect(buyer).not.toBeNull();
+    expect(champion).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Opportunity Contacts Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Multi-stakeholder rollout",
+      accountId: account.id,
+      contactRef: buyer!.id,
+      source: "test",
+    });
+
+    const link = linkCrmOpportunityContact({
+      opportunityId: opportunity.id,
+      contactRef: champion!.id,
+      accountId: account.id,
+      role: "champion",
+      influence: "high",
+      isPrimary: true,
+      source: "test",
+    });
+
+    expect(link).toMatchObject({
+      opportunityId: opportunity.id,
+      contactId: champion!.id,
+      accountId: account.id,
+      role: "champion",
+      isPrimary: true,
+    });
+    expect(getCrmOpportunity(opportunity.id)?.primaryContactId).toBe(champion!.id);
+    expect(listCrmOpportunityContacts(opportunity.id).map((item) => item.contactId)).toEqual(
+      expect.arrayContaining([buyer!.id, champion!.id]),
+    );
+    expect(getCrmContactProfile(champion!.id)?.profile?.primaryOpportunityId).toBe(opportunity.id);
+  });
+
+  it("stores proposed CRM facts, confirms them, and projects them onto contact profiles", () => {
+    upsertContact("5511999910413", "Fact Contact", "allowed", "manual");
+    const contact = getContact("5511999910413");
+    expect(contact).not.toBeNull();
+
+    const proposed = proposeCrmFact({
+      entityType: "contact",
+      entityId: contact!.id,
+      key: "profile.buying_role",
+      value: { role: "decision_maker" },
+      confidence: 0.6,
+      source: "test",
+      actorType: "agent",
+      actorId: "dev",
+      idempotencyKey: "fact-contact-buying-role",
+    });
+    const repeated = proposeCrmFact({
+      entityType: "contact",
+      entityId: contact!.id,
+      key: "profile.buying_role",
+      value: { role: "decision_maker" },
+      source: "test",
+      idempotencyKey: "fact-contact-buying-role",
+    });
+    expect(repeated.id).toBe(proposed.id);
+
+    const confirmed = confirmCrmFact({ factId: proposed.id, source: "test", actorType: "user", actorId: "luis" });
+    expect(confirmed).toMatchObject({
+      id: proposed.id,
+      contactId: contact!.id,
+      status: "confirmed",
+      value: { role: "decision_maker" },
+    });
+    expect(listCrmFacts({ contactRef: contact!.id, status: "confirmed" }).items.map((item) => item.id)).toContain(
+      proposed.id,
+    );
+    expect(getCrmContactProfile(contact!.id)?.facts.map((item) => item.id)).toContain(proposed.id);
+
+    const crmTimelineTypes = listContactEvents(contact!.id, {
+      scopeType: "domain",
+      scopeId: "crm",
+      limit: 20,
+    }).items.map((event) => event.eventType);
+    expect(crmTimelineTypes).toEqual(expect.arrayContaining(["crm.fact.proposed", "crm.fact.confirmed"]));
+  });
+
+  it("deduplicates CRM create mutations with idempotency keys", () => {
+    upsertContact("5511999910414", "Idempotent CRM", "allowed", "manual");
+    const contact = getContact("5511999910414");
+    expect(contact).not.toBeNull();
+
+    const firstAccount = createCrmAccount({
+      name: "Idempotent Account",
+      source: "test",
+      idempotencyKey: "idem-account",
+    });
+    const repeatedAccount = createCrmAccount({
+      name: "Idempotent Account Different Payload",
+      source: "test",
+      idempotencyKey: "idem-account",
+    });
+    expect(repeatedAccount.id).toBe(firstAccount.id);
+
+    const firstOpportunity = createCrmOpportunity({
+      title: "Idempotent Opportunity",
+      accountId: firstAccount.id,
+      contactRef: contact!.id,
+      source: "test",
+      idempotencyKey: "idem-opportunity",
+    });
+    const repeatedOpportunity = createCrmOpportunity({
+      title: "Idempotent Opportunity Different Payload",
+      accountId: firstAccount.id,
+      contactRef: contact!.id,
+      source: "test",
+      idempotencyKey: "idem-opportunity",
+    });
+    expect(repeatedOpportunity.id).toBe(firstOpportunity.id);
+
+    const firstTask = createCrmTask({
+      title: "Idempotent task",
+      contactRef: contact!.id,
+      source: "test",
+      idempotencyKey: "idem-task",
+    });
+    const repeatedTask = createCrmTask({
+      title: "Idempotent task different payload",
+      contactRef: contact!.id,
+      source: "test",
+      idempotencyKey: "idem-task",
+    });
+    expect(repeatedTask.id).toBe(firstTask.id);
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const counts = db
+      .prepare(
+        `
+        SELECT
+          (SELECT COUNT(*) FROM crm_accounts WHERE idempotency_key = 'idem-account') AS accounts,
+          (SELECT COUNT(*) FROM crm_opportunities WHERE idempotency_key = 'idem-opportunity') AS opportunities,
+          (SELECT COUNT(*) FROM crm_tasks WHERE idempotency_key = 'idem-task') AS tasks
+      `,
+      )
+      .get() as { accounts: number; opportunities: number; tasks: number };
+    db.close();
+    expect(counts).toEqual({ accounts: 1, opportunities: 1, tasks: 1 });
+  });
+
+  it("moves CRM state when contacts merge", () => {
+    upsertContact("5511999910415", "CRM Merge Source", "allowed", "manual");
+    upsertContact("5511999910416", "CRM Merge Target", "allowed", "manual");
+    const source = getContact("5511999910415");
+    const target = getContact("5511999910416");
+    expect(source).not.toBeNull();
+    expect(target).not.toBeNull();
+
+    updateCrmContactProfile({
+      contactRef: source!.id,
+      lifecycle: "qualified",
+      priority: "high",
+      source: "test",
+    });
+    const account = createCrmAccount({ name: "CRM Merge Account", source: "test" });
+    linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: source!.id,
+      role: "sponsor",
+      isPrimary: true,
+      source: "test",
+    });
+    const opportunity = createCrmOpportunity({
+      title: "CRM Merge Opportunity",
+      accountId: account.id,
+      contactRef: source!.id,
+      source: "test",
+    });
+    const task = createCrmTask({ title: "CRM Merge Follow-up", contactRef: source!.id, source: "test" });
+    const fact = proposeCrmFact({
+      entityType: "contact",
+      entityId: source!.id,
+      key: "merge.fact",
+      value: "survives",
+      source: "test",
+    });
+    const note = createContactEvent({
+      contactRef: source!.id,
+      eventType: "profile.note_added",
+      source: "test",
+      payload: { text: "merge note" },
+    });
+    const activity = projectContactEventToCrmActivity({ contactEventId: note.id, source: "test" });
+    linkCrmActivityParticipant({
+      activityId: activity.id,
+      contactRef: source!.id,
+      role: "participant",
+      source: "test",
+    });
+
+    mergeContacts(target!.id, source!.id);
+
+    const card = getCrmContactProfile(target!.id);
+    expect(card?.profile?.lifecycle).toBe("qualified");
+    expect(card?.accountMemberships.map((item) => item.accountId)).toContain(account.id);
+    expect(card?.opportunities.map((item) => item.id)).toContain(opportunity.id);
+    expect(card?.tasks.map((item) => item.id)).toContain(task.id);
+    expect(card?.facts.map((item) => item.id)).toContain(fact.id);
+    expect(listCrmActivityParticipants(activity.id).map((item) => item.contactId)).toContain(target!.id);
+    expect(getContact(source!.id)).toBeNull();
   });
 
   it("orders contact lists by most recent activity by default", () => {

@@ -44,6 +44,22 @@ class ContextCredentialsCommands {
   }
 }
 
+@Group({ name: "crm", description: "CRM ops", scope: "open" })
+class CrmCommands {
+  @Command({ name: "account", description: "Show account" })
+  account(@Arg("id") _id: string) {
+    return {};
+  }
+}
+
+@Group({ name: "crm.account", description: "CRM account ops", scope: "open" })
+class CrmAccountCommands {
+  @Command({ name: "create", description: "Create account" })
+  create(@Arg("name") _name: string) {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -115,6 +131,17 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("disambiguates commands that are also namespace nodes", () => {
+    const registry = buildRegistry([CrmCommands, CrmAccountCommands]);
+    const output = emitAllSwift(registry, { version: FIXED_VERSION });
+
+    expect(output.client).toContain("public var account: CrmAccountNamespace");
+    expect(output.client).toContain("public func accountCommand(_ id: String) async throws -> CrmAccountReturn");
+    expect(output.client).toContain("public func create(_ name: String) async throws -> CrmAccountCreateReturn");
+    expect(output.client).toContain(`groupSegments: ["crm"], command: "account"`);
+    expect(output.client).toContain(`groupSegments: ["crm","account"], command: "create"`);
   });
 
   it("emits version constants", () => {

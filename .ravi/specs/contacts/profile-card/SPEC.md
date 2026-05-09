@@ -1,10 +1,9 @@
 ---
 id: contacts/profile-card
 title: Contact Profile Card
-kind: feature
+kind: capability
 domain: contacts
-capability: timeline
-feature: profile-card
+capability: profile-card
 tags:
   - contacts
   - profile

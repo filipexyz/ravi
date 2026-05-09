@@ -313,6 +313,17 @@ export type CommandsValidateInput = {
 /** Return shape for `commands.validate`. (no @Returns declared) */
 export type CommandsValidateReturn = unknown;
 
+/** Input shape for `contacts.activity`. */
+export type ContactsActivityInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+  raw?: boolean;
+};
+
+/** Return shape for `contacts.activity`. (no @Returns declared) */
+export type ContactsActivityReturn = unknown;
+
 /** Input shape for `contacts.add`. */
 export type ContactsAddInput = {
   agent?: string;
@@ -458,6 +469,16 @@ export type ContactsMergeInput = {
 /** Return shape for `contacts.merge`. (no @Returns declared) */
 export type ContactsMergeReturn = unknown;
 
+/** Input shape for `contacts.messages`. */
+export type ContactsMessagesInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `contacts.messages`. (no @Returns declared) */
+export type ContactsMessagesReturn = unknown;
+
 /** Input shape for `contacts.metadata.list`. */
 export type ContactsMetadataListInput = {
   contact: string;
@@ -511,6 +532,16 @@ export type ContactsPendingInput = {
 /** Return shape for `contacts.pending`. (no @Returns declared) */
 export type ContactsPendingReturn = unknown;
 
+/** Input shape for `contacts.profile`. */
+export type ContactsProfileInput = {
+  contact: string;
+  includeCrm?: boolean;
+  limit?: string;
+};
+
+/** Return shape for `contacts.profile`. (no @Returns declared) */
+export type ContactsProfileReturn = unknown;
+
 /** Input shape for `contacts.remove`. */
 export type ContactsRemoveInput = {
   contact: string;
@@ -518,6 +549,16 @@ export type ContactsRemoveInput = {
 
 /** Return shape for `contacts.remove`. (no @Returns declared) */
 export type ContactsRemoveReturn = unknown;
+
+/** Input shape for `contacts.sessions`. */
+export type ContactsSessionsInput = {
+  contact: string;
+  limit?: string;
+  offset?: string;
+};
+
+/** Return shape for `contacts.sessions`. (no @Returns declared) */
+export type ContactsSessionsReturn = unknown;
 
 /** Input shape for `contacts.set`. */
 export type ContactsSetInput = {
@@ -753,6 +794,171 @@ export type CostsTopSessionsInput = {
 
 /** Return shape for `costs.top-sessions`. (no @Returns declared) */
 export type CostsTopSessionsReturn = unknown;
+
+/** Input shape for `crm.account`. */
+export type CrmAccountInput = {
+  account: string;
+};
+
+/** Return shape for `crm.account`. (no @Returns declared) */
+export type CrmAccountReturn = unknown;
+
+/** Input shape for `crm.account.create`. */
+export type CrmAccountCreateInput = {
+  contact?: string;
+  domain?: string;
+  name: string;
+  owner?: string;
+};
+
+/** Return shape for `crm.account.create`. (no @Returns declared) */
+export type CrmAccountCreateReturn = unknown;
+
+/** Input shape for `crm.account.link-contact`. */
+export type CrmAccountLinkContactInput = {
+  account: string;
+  contact: string;
+  primary?: boolean;
+  role?: string;
+};
+
+/** Return shape for `crm.account.link-contact`. (no @Returns declared) */
+export type CrmAccountLinkContactReturn = unknown;
+
+/** Input shape for `crm.account.show`. */
+export type CrmAccountShowInput = {
+  account: string;
+};
+
+/** Return shape for `crm.account.show`. (no @Returns declared) */
+export type CrmAccountShowReturn = unknown;
+
+/** Input shape for `crm.board`. */
+export type CrmBoardInput = Record<string, never>;
+
+/** Return shape for `crm.board`. (no @Returns declared) */
+export type CrmBoardReturn = unknown;
+
+/** Input shape for `crm.contact`. */
+export type CrmContactInput = {
+  contact: string;
+};
+
+/** Return shape for `crm.contact`. (no @Returns declared) */
+export type CrmContactReturn = unknown;
+
+/** Input shape for `crm.contact.set`. */
+export type CrmContactSetInput = {
+  contact: string;
+  field: string;
+  source?: string;
+  value: string;
+};
+
+/** Return shape for `crm.contact.set`. (no @Returns declared) */
+export type CrmContactSetReturn = unknown;
+
+/** Input shape for `crm.contact.show`. */
+export type CrmContactShowInput = {
+  contact: string;
+};
+
+/** Return shape for `crm.contact.show`. (no @Returns declared) */
+export type CrmContactShowReturn = unknown;
+
+/** Input shape for `crm.contacts`. */
+export type CrmContactsInput = {
+  limit?: string;
+  offset?: string;
+  owner?: string;
+  status?: string;
+};
+
+/** Return shape for `crm.contacts`. (no @Returns declared) */
+export type CrmContactsReturn = unknown;
+
+/** Input shape for `crm.next`. */
+export type CrmNextInput = {
+  account?: string;
+  contact?: string;
+  limit?: string;
+  offset?: string;
+  opportunity?: string;
+  owner?: string;
+};
+
+/** Return shape for `crm.next`. (no @Returns declared) */
+export type CrmNextReturn = unknown;
+
+/** Input shape for `crm.opportunity`. */
+export type CrmOpportunityInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity`. (no @Returns declared) */
+export type CrmOpportunityReturn = unknown;
+
+/** Input shape for `crm.opportunity.create`. */
+export type CrmOpportunityCreateInput = {
+  account?: string;
+  contact?: string;
+  currency?: string;
+  owner?: string;
+  stage?: string;
+  title: string;
+  value?: string;
+};
+
+/** Return shape for `crm.opportunity.create`. (no @Returns declared) */
+export type CrmOpportunityCreateReturn = unknown;
+
+/** Input shape for `crm.opportunity.move`. */
+export type CrmOpportunityMoveInput = {
+  lostReason?: string;
+  opportunity: string;
+  stage: string;
+};
+
+/** Return shape for `crm.opportunity.move`. (no @Returns declared) */
+export type CrmOpportunityMoveReturn = unknown;
+
+/** Input shape for `crm.opportunity.show`. */
+export type CrmOpportunityShowInput = {
+  opportunity: string;
+};
+
+/** Return shape for `crm.opportunity.show`. (no @Returns declared) */
+export type CrmOpportunityShowReturn = unknown;
+
+/** Input shape for `crm.task.create`. */
+export type CrmTaskCreateInput = {
+  account?: string;
+  contact?: string;
+  due?: string;
+  opportunity?: string;
+  owner?: string;
+  priority?: string;
+  title: string;
+};
+
+/** Return shape for `crm.task.create`. (no @Returns declared) */
+export type CrmTaskCreateReturn = unknown;
+
+/** Input shape for `crm.task.done`. */
+export type CrmTaskDoneInput = {
+  task: string;
+};
+
+/** Return shape for `crm.task.done`. (no @Returns declared) */
+export type CrmTaskDoneReturn = unknown;
+
+/** Input shape for `crm.task.show`. */
+export type CrmTaskShowInput = {
+  task: string;
+};
+
+/** Return shape for `crm.task.show`. (no @Returns declared) */
+export type CrmTaskShowReturn = unknown;
 
 /** Input shape for `cron.add`. */
 export type CronAddInput = {

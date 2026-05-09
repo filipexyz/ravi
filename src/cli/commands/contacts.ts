@@ -44,6 +44,7 @@ import {
   listDuplicateContacts,
   setGroupTag,
   removeGroupTag,
+  getCrmContactProfile,
   type Contact,
   type ContactContextEntry,
   type ContactDetails,
@@ -1143,6 +1144,8 @@ export class ContactsCommands {
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Evidence rows per section (default: 10, max: 50)" }) limit?: string,
+    @Option({ flags: "--include-crm", description: "Include CRM profile/account/opportunity/task summary" })
+    includeCrm?: boolean,
   ) {
     try {
       assertCanReadContactTimeline(contactRef);
@@ -1163,6 +1166,7 @@ export class ContactsCommands {
       const openLoops = metadataValue(metadata, "context.open_loops");
       const currentFocus = metadataValue(metadata, "context.current_focus");
       const recentTopics = metadataValue(metadata, "context.recent_topics");
+      const crm = includeCrm ? getCrmContactProfile(details.contact.id) : null;
 
       const payload = {
         target: contactRef,
@@ -1196,7 +1200,17 @@ export class ContactsCommands {
             recentTopics: recentTopics ?? null,
             openLoops: openLoops ?? null,
           },
+          crm: crm
+            ? {
+                profile: crm.profile,
+                accountMemberships: crm.accountMemberships,
+                opportunities: crm.opportunities,
+                tasks: crm.tasks,
+                nextActions: crm.nextActions,
+              }
+            : null,
         },
+        crm,
         metadata: metadata.map(serializeContactContextEntry),
         timeline: {
           total: timeline.total,

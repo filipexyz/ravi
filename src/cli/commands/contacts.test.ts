@@ -17,6 +17,7 @@ let activityRecords: Array<Record<string, unknown>> = [];
 let sessionSummaryRecords: Array<Record<string, unknown>> = [];
 let timelineRecords: Array<Record<string, unknown>> = [];
 let metadataRecords: Array<Record<string, unknown>> = [];
+let crmProfileRecord: Record<string, unknown> | null = null;
 let mergeCall: { targetId: string; sourceId: string } | null = null;
 
 function pageRecords<T>(
@@ -168,6 +169,19 @@ mock.module("../../contacts.js", () => ({
   removeContactMetadata: () => ({ removed: false, previous: null, event: null }),
   setGroupTag: () => {},
   removeGroupTag: () => {},
+  getCrmContactProfile: (contactId: string) =>
+    crmProfileRecord
+      ? {
+          contact: { id: contactId, displayName: "Alice" },
+          policy: null,
+          profile: crmProfileRecord,
+          card: null,
+          accountMemberships: [],
+          opportunities: [],
+          tasks: [],
+          nextActions: [],
+        }
+      : null,
   listAccountPending: (account?: string) =>
     accountPendingEntries
       .filter((entry) => !account || entry.accountId === account)
@@ -292,6 +306,7 @@ describe("ContactsCommands info", () => {
     sessionSummaryRecords = [];
     timelineRecords = [];
     metadataRecords = [];
+    crmProfileRecord = null;
     mergeCall = null;
     sessionRecord = { name: "wa-support" };
     routeRecords = [{ pattern: "5511999999999", agent: "sales" }];
@@ -398,6 +413,25 @@ describe("ContactsCommands info", () => {
     expect((payload.messages as Record<string, unknown>).limit).toBe(10);
     expect((payload.sessions as Record<string, unknown>).total).toBe(1);
     expect((payload.activity as Record<string, unknown>).total).toBe(1);
+  });
+
+  it("includes CRM profile data when requested", () => {
+    crmProfileRecord = {
+      contactId: "contact-1",
+      lifecycle: "lead",
+      relationshipHealth: "good",
+      priority: "high",
+      nextActionSummary: "Follow up tomorrow",
+    };
+
+    const payload = captureJson(() => {
+      new ContactsCommands().profile("contact-1", true, undefined, true);
+    });
+
+    const card = payload.card as Record<string, unknown>;
+    const crm = card.crm as Record<string, unknown>;
+    expect((crm.profile as Record<string, unknown>).lifecycle).toBe("lead");
+    expect(payload.crm as Record<string, unknown>).not.toBeNull();
   });
 
   it("prints contact activity, messages, and sessions in --json mode", () => {

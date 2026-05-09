@@ -32,6 +32,40 @@ let stmts: ReturnType<typeof createStatements> | null = null;
 
 const IDENTITY_PROJECTION_BACKFILL_KEY = "identity_projection_backfill_v1";
 const CONTACT_EVENT_SCOPE_TYPES = new Set(["global", "domain", "project", "chat", "session", "org", "agent", "task"]);
+const CRM_ENTITY_TYPES = new Set(["contact", "account", "opportunity", "task", "activity", "segment", "playbook"]);
+const CRM_EVENT_SCOPE_TYPES = new Set([
+  "global",
+  "domain",
+  "project",
+  "chat",
+  "session",
+  "agent",
+  "task",
+  "account",
+  "opportunity",
+  "org",
+  "contact",
+]);
+const CRM_OWNER_TYPES = new Set(["user", "agent", "team", "system"]);
+const CRM_CONTACT_LIFECYCLES = new Set([
+  "unknown",
+  "lead",
+  "qualified",
+  "active",
+  "onboarding",
+  "waiting",
+  "at_risk",
+  "dormant",
+  "churned",
+  "partner",
+  "vendor",
+  "internal",
+]);
+const CRM_RELATIONSHIP_HEALTHS = new Set(["unknown", "good", "neutral", "needs_attention", "at_risk"]);
+const CRM_PRIORITIES = new Set(["low", "normal", "high", "urgent"]);
+const CRM_OPPORTUNITY_STATUSES = new Set(["open", "won", "lost", "paused", "archived"]);
+const CRM_TASK_STATUSES = new Set(["open", "scheduled", "waiting", "done", "canceled", "snoozed"]);
+const CRM_FACT_STATUSES = new Set(["proposed", "confirmed", "rejected", "superseded"]);
 
 function ensureDb(): Database {
   const nextDbPath = resolveDbPath();
@@ -58,6 +92,7 @@ function ensureDb(): Database {
   migrateFromV1(database);
   ensureAllowedAgentsColumn(database);
   initializeIdentitySchema(database);
+  initializeCrmSchema(database);
   ensureIdentityProjection(database);
 
   db = database;
@@ -229,6 +264,17 @@ function ensureAllowedAgentsColumn(database: Database): void {
   }
 }
 
+function tableHasColumn(database: Database, table: string, column: string): boolean {
+  const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return columns.some((entry) => entry.name === column);
+}
+
+function ensureTableColumn(database: Database, table: string, column: string, definition: string): void {
+  if (!tableHasColumn(database, table, column)) {
+    database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
 // ============================================================================
 // Identity graph schema: canonical contacts + platform identities
 // ============================================================================
@@ -369,6 +415,698 @@ function initializeIdentitySchema(database: Database): void {
       updated_at TEXT DEFAULT (datetime('now'))
     );
   `);
+}
+
+function initializeCrmSchema(database: Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_events (
+      id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook')),
+      entity_id TEXT NOT NULL,
+
+      contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+      task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+      activity_id TEXT REFERENCES crm_activities(id) ON DELETE SET NULL,
+
+      actor_type TEXT NOT NULL DEFAULT 'system',
+      actor_id TEXT,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT,
+
+      source TEXT NOT NULL,
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      payload_json TEXT NOT NULL,
+      previous_payload_json TEXT,
+      evidence_json TEXT,
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(scope_type = 'global' OR scope_id IS NOT NULL)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_events_entity
+      ON crm_events(entity_type, entity_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_events_contact
+      ON crm_events(contact_id, created_at DESC)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_account
+      ON crm_events(account_id, created_at DESC)
+      WHERE account_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_opportunity
+      ON crm_events(opportunity_id, created_at DESC)
+      WHERE opportunity_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_events_task
+      ON crm_events(task_id, created_at DESC)
+      WHERE task_id IS NOT NULL;
+
+    DROP TRIGGER IF EXISTS trg_crm_events_no_update;
+    CREATE TRIGGER trg_crm_events_no_update
+      BEFORE UPDATE ON crm_events
+      WHEN NOT (
+        NEW.id IS OLD.id
+        AND NEW.event_type IS OLD.event_type
+        AND NEW.entity_type IS OLD.entity_type
+        AND NEW.entity_id IS OLD.entity_id
+        AND (NEW.contact_id IS OLD.contact_id OR (OLD.contact_id IS NOT NULL AND NEW.contact_id IS NULL))
+        AND (NEW.account_id IS OLD.account_id OR (OLD.account_id IS NOT NULL AND NEW.account_id IS NULL))
+        AND (NEW.opportunity_id IS OLD.opportunity_id OR (OLD.opportunity_id IS NOT NULL AND NEW.opportunity_id IS NULL))
+        AND (NEW.task_id IS OLD.task_id OR (OLD.task_id IS NOT NULL AND NEW.task_id IS NULL))
+        AND (NEW.activity_id IS OLD.activity_id OR (OLD.activity_id IS NOT NULL AND NEW.activity_id IS NULL))
+        AND NEW.actor_type IS OLD.actor_type
+        AND NEW.actor_id IS OLD.actor_id
+        AND NEW.scope_type IS OLD.scope_type
+        AND NEW.scope_id IS OLD.scope_id
+        AND NEW.source IS OLD.source
+        AND NEW.confidence IS OLD.confidence
+        AND NEW.payload_json IS OLD.payload_json
+        AND NEW.previous_payload_json IS OLD.previous_payload_json
+        AND NEW.evidence_json IS OLD.evidence_json
+        AND NEW.created_at IS OLD.created_at
+        AND (
+          (OLD.contact_id IS NOT NULL AND NEW.contact_id IS NULL)
+          OR (OLD.account_id IS NOT NULL AND NEW.account_id IS NULL)
+          OR (OLD.opportunity_id IS NOT NULL AND NEW.opportunity_id IS NULL)
+          OR (OLD.task_id IS NOT NULL AND NEW.task_id IS NULL)
+          OR (OLD.activity_id IS NOT NULL AND NEW.activity_id IS NULL)
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'crm_events is append-only');
+      END;
+
+    CREATE TRIGGER IF NOT EXISTS trg_crm_events_no_delete
+      BEFORE DELETE ON crm_events
+      BEGIN
+        SELECT RAISE(ABORT, 'crm_events is append-only');
+      END;
+
+    CREATE TABLE IF NOT EXISTS crm_contact_profiles (
+      contact_id TEXT PRIMARY KEY REFERENCES contacts(id) ON DELETE CASCADE,
+
+      lifecycle TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(lifecycle IN ('unknown', 'lead', 'qualified', 'active', 'onboarding', 'waiting', 'at_risk', 'dormant', 'churned', 'partner', 'vendor', 'internal')),
+      relationship_health TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(relationship_health IN ('unknown', 'good', 'neutral', 'needs_attention', 'at_risk')),
+      priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+      score REAL,
+      health_score REAL,
+
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
+      owner_id TEXT,
+
+      primary_account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      primary_opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+
+      lead_source TEXT,
+      persona TEXT,
+      buying_role TEXT,
+
+      last_meaningful_interaction_at TEXT,
+      next_action_at TEXT,
+      next_action_summary TEXT,
+      next_task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_contact_profiles_lifecycle
+      ON crm_contact_profiles(lifecycle, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_contact_profiles_owner
+      ON crm_contact_profiles(owner_type, owner_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_contact_profiles_next_action
+      ON crm_contact_profiles(next_action_at)
+      WHERE next_action_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS crm_accounts (
+      id TEXT PRIMARY KEY,
+      org_contact_id TEXT UNIQUE REFERENCES contacts(id) ON DELETE SET NULL,
+
+      name TEXT NOT NULL,
+      legal_name TEXT,
+      domain TEXT,
+      website_url TEXT,
+      industry TEXT,
+      size_label TEXT,
+      lifecycle TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(lifecycle IN ('unknown', 'lead', 'qualified', 'active', 'onboarding', 'waiting', 'at_risk', 'dormant', 'churned', 'partner', 'vendor', 'internal')),
+      relationship_health TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(relationship_health IN ('unknown', 'good', 'neutral', 'needs_attention', 'at_risk')),
+      priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
+      owner_id TEXT,
+
+      source TEXT NOT NULL DEFAULT 'manual',
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived_at TEXT,
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_accounts_name
+      ON crm_accounts(name);
+    CREATE INDEX IF NOT EXISTS idx_crm_accounts_domain
+      ON crm_accounts(domain)
+      WHERE domain IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_accounts_owner
+      ON crm_accounts(owner_type, owner_id, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS crm_account_contacts (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES crm_accounts(id) ON DELETE CASCADE,
+      contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+
+      role TEXT NOT NULL DEFAULT 'member',
+      title TEXT,
+      department TEXT,
+      decision_role TEXT NOT NULL DEFAULT 'unknown',
+      relationship_strength TEXT NOT NULL DEFAULT 'unknown',
+      is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0, 1)),
+      status TEXT NOT NULL DEFAULT 'active',
+
+      source TEXT NOT NULL DEFAULT 'manual',
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+
+      first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+      UNIQUE(account_id, contact_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_account_contacts_contact
+      ON crm_account_contacts(contact_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_account_contacts_account
+      ON crm_account_contacts(account_id, is_primary DESC, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS crm_pipelines (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      entity_type TEXT NOT NULL DEFAULT 'opportunity',
+      is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+      status TEXT NOT NULL DEFAULT 'active',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_pipelines_default
+      ON crm_pipelines(entity_type, is_default)
+      WHERE is_default = 1;
+
+    CREATE TABLE IF NOT EXISTS crm_pipeline_stages (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL REFERENCES crm_pipelines(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL,
+      category TEXT NOT NULL DEFAULT 'active',
+      probability REAL,
+      is_terminal INTEGER NOT NULL DEFAULT 0 CHECK(is_terminal IN (0, 1)),
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+      UNIQUE(pipeline_id, key),
+      UNIQUE(pipeline_id, sort_order)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_pipeline_stages_pipeline
+      ON crm_pipeline_stages(pipeline_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS crm_opportunities (
+      id TEXT PRIMARY KEY,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      primary_contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+
+      pipeline_id TEXT REFERENCES crm_pipelines(id) ON DELETE SET NULL,
+      stage_id TEXT REFERENCES crm_pipeline_stages(id) ON DELETE SET NULL,
+
+      title TEXT NOT NULL,
+      description TEXT,
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'won', 'lost', 'paused', 'archived')),
+      priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+
+      value_cents INTEGER,
+      currency TEXT NOT NULL DEFAULT 'BRL',
+      probability REAL,
+      expected_close_at TEXT,
+      closed_at TEXT,
+      lost_reason TEXT,
+
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
+      owner_id TEXT,
+
+      source TEXT NOT NULL DEFAULT 'manual',
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      archived_at TEXT,
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunities_account
+      ON crm_opportunities(account_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunities_contact
+      ON crm_opportunities(primary_contact_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunities_stage
+      ON crm_opportunities(pipeline_id, stage_id, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunities_owner
+      ON crm_opportunities(owner_type, owner_id, status, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS crm_opportunity_contacts (
+      id TEXT PRIMARY KEY,
+      opportunity_id TEXT NOT NULL REFERENCES crm_opportunities(id) ON DELETE CASCADE,
+      contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+
+      role TEXT NOT NULL DEFAULT 'stakeholder',
+      influence TEXT NOT NULL DEFAULT 'unknown',
+      sentiment TEXT NOT NULL DEFAULT 'unknown',
+      is_primary INTEGER NOT NULL DEFAULT 0 CHECK(is_primary IN (0, 1)),
+
+      source TEXT NOT NULL DEFAULT 'manual',
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+      UNIQUE(opportunity_id, contact_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunity_contacts_contact
+      ON crm_opportunity_contacts(contact_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_opportunity_contacts_opportunity
+      ON crm_opportunity_contacts(opportunity_id, is_primary DESC, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS crm_tasks (
+      id TEXT PRIMARY KEY,
+
+      contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+      chat_id TEXT,
+      session_key TEXT,
+
+      title TEXT NOT NULL,
+      body TEXT,
+      task_type TEXT NOT NULL DEFAULT 'follow_up',
+      status TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'scheduled', 'waiting', 'done', 'canceled', 'snoozed')),
+      priority TEXT NOT NULL DEFAULT 'normal'
+        CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+
+      due_at TEXT,
+      snoozed_until TEXT,
+      completed_at TEXT,
+      canceled_at TEXT,
+
+      owner_type TEXT CHECK(owner_type IS NULL OR owner_type IN ('user', 'agent', 'team', 'system')),
+      owner_id TEXT,
+      created_by_type TEXT NOT NULL DEFAULT 'system',
+      created_by_id TEXT,
+
+      source TEXT NOT NULL DEFAULT 'manual',
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+
+      ravi_task_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK((owner_type IS NULL AND owner_id IS NULL) OR (owner_type IS NOT NULL AND owner_id IS NOT NULL))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_tasks_due
+      ON crm_tasks(status, due_at)
+      WHERE status IN ('open', 'scheduled', 'waiting', 'snoozed');
+    CREATE INDEX IF NOT EXISTS idx_crm_tasks_contact
+      ON crm_tasks(contact_id, status, due_at)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_tasks_account
+      ON crm_tasks(account_id, status, due_at)
+      WHERE account_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_tasks_opportunity
+      ON crm_tasks(opportunity_id, status, due_at)
+      WHERE opportunity_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_tasks_owner
+      ON crm_tasks(owner_type, owner_id, status, due_at);
+
+    CREATE TABLE IF NOT EXISTS crm_activities (
+      id TEXT PRIMARY KEY,
+
+      activity_type TEXT NOT NULL,
+      title TEXT,
+      summary TEXT NOT NULL,
+      body TEXT,
+      occurred_at TEXT NOT NULL,
+
+      contact_id TEXT REFERENCES contacts(id) ON DELETE SET NULL,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE SET NULL,
+      task_id TEXT REFERENCES crm_tasks(id) ON DELETE SET NULL,
+
+      chat_id TEXT,
+      session_key TEXT,
+      message_id TEXT,
+      contact_event_id TEXT REFERENCES contact_events(id) ON DELETE SET NULL,
+      session_event_id TEXT,
+
+      actor_type TEXT NOT NULL DEFAULT 'system',
+      actor_id TEXT,
+
+      source TEXT NOT NULL,
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_activities_contact
+      ON crm_activities(contact_id, occurred_at DESC)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_activities_account
+      ON crm_activities(account_id, occurred_at DESC)
+      WHERE account_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_activities_opportunity
+      ON crm_activities(opportunity_id, occurred_at DESC)
+      WHERE opportunity_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_activities_message
+      ON crm_activities(message_id)
+      WHERE message_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_activities_contact_event_unique
+      ON crm_activities(contact_event_id)
+      WHERE contact_event_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS crm_activity_participants (
+      id TEXT PRIMARY KEY,
+      activity_id TEXT NOT NULL REFERENCES crm_activities(id) ON DELETE CASCADE,
+      contact_id TEXT REFERENCES contacts(id) ON DELETE CASCADE,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE SET NULL,
+      role TEXT NOT NULL DEFAULT 'participant',
+      actor_type TEXT,
+      actor_id TEXT,
+      source TEXT NOT NULL DEFAULT 'manual',
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(contact_id IS NOT NULL OR account_id IS NOT NULL),
+      UNIQUE(activity_id, contact_id, account_id, role)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_activity_participants_activity
+      ON crm_activity_participants(activity_id);
+    CREATE INDEX IF NOT EXISTS idx_crm_activity_participants_contact
+      ON crm_activity_participants(contact_id)
+      WHERE contact_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS crm_facts (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('contact', 'account', 'opportunity', 'task', 'activity', 'segment', 'playbook')),
+      entity_id TEXT NOT NULL,
+      contact_id TEXT REFERENCES contacts(id) ON DELETE CASCADE,
+      account_id TEXT REFERENCES crm_accounts(id) ON DELETE CASCADE,
+      opportunity_id TEXT REFERENCES crm_opportunities(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'proposed'
+        CHECK(status IN ('proposed', 'confirmed', 'rejected', 'superseded')),
+      source TEXT NOT NULL DEFAULT 'manual',
+      idempotency_key TEXT,
+      confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
+      evidence_json TEXT,
+      scope_type TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT,
+      proposed_by_type TEXT,
+      proposed_by_id TEXT,
+      confirmed_by_type TEXT,
+      confirmed_by_id TEXT,
+      supersedes_fact_id TEXT REFERENCES crm_facts(id) ON DELETE SET NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK(scope_type = 'global' OR scope_id IS NOT NULL)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_crm_facts_entity_key
+      ON crm_facts(entity_type, entity_id, key, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_crm_facts_contact_key
+      ON crm_facts(contact_id, key, status, updated_at DESC)
+      WHERE contact_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_crm_facts_scope
+      ON crm_facts(scope_type, scope_id, key, status, updated_at DESC);
+
+    DROP VIEW IF EXISTS crm_account_cards;
+
+    CREATE VIEW IF NOT EXISTS crm_contact_cards AS
+    SELECT
+      c.id AS contact_id,
+      c.display_name,
+      c.kind,
+      cp.status AS policy_status,
+      cp.reply_mode,
+      cp.tags_json,
+      p.lifecycle,
+      p.relationship_health,
+      p.priority,
+      p.owner_type,
+      p.owner_id,
+      p.primary_account_id,
+      p.primary_opportunity_id,
+      p.last_meaningful_interaction_at,
+      p.next_action_at,
+      p.next_action_summary,
+      p.next_task_id,
+      c.updated_at
+    FROM contacts c
+    LEFT JOIN contact_policies cp ON cp.contact_id = c.id
+    LEFT JOIN crm_contact_profiles p ON p.contact_id = c.id;
+
+    CREATE VIEW IF NOT EXISTS crm_next_actions AS
+    SELECT
+      t.id AS task_id,
+      t.title,
+      t.task_type,
+      t.status,
+      t.priority,
+      t.due_at,
+      t.contact_id,
+      c.display_name AS contact_name,
+      t.account_id,
+      a.name AS account_name,
+      t.opportunity_id,
+      o.title AS opportunity_title,
+      t.owner_type,
+      t.owner_id
+    FROM crm_tasks t
+    LEFT JOIN contacts c ON c.id = t.contact_id
+    LEFT JOIN crm_accounts a ON a.id = t.account_id
+    LEFT JOIN crm_opportunities o ON o.id = t.opportunity_id
+    WHERE t.status IN ('open', 'scheduled', 'waiting', 'snoozed')
+    ORDER BY
+      CASE t.priority
+        WHEN 'urgent' THEN 0
+        WHEN 'high' THEN 1
+        WHEN 'normal' THEN 2
+        ELSE 3
+      END,
+      t.due_at ASC;
+
+    CREATE VIEW IF NOT EXISTS crm_opportunity_board AS
+    SELECT
+      o.id AS opportunity_id,
+      o.title,
+      o.status,
+      o.priority,
+      o.value_cents,
+      o.currency,
+      o.probability,
+      o.expected_close_at,
+      o.pipeline_id,
+      ps.key AS stage_key,
+      ps.name AS stage_name,
+      ps.sort_order AS stage_order,
+      o.account_id,
+      a.name AS account_name,
+      o.primary_contact_id,
+      c.display_name AS primary_contact_name,
+      o.owner_type,
+      o.owner_id,
+      o.updated_at
+    FROM crm_opportunities o
+    LEFT JOIN crm_pipeline_stages ps ON ps.id = o.stage_id
+    LEFT JOIN crm_accounts a ON a.id = o.account_id
+    LEFT JOIN contacts c ON c.id = o.primary_contact_id
+    WHERE o.status = 'open'
+    ORDER BY ps.sort_order ASC, o.updated_at DESC;
+
+    CREATE VIEW IF NOT EXISTS crm_account_cards AS
+    SELECT
+      a.id AS account_id,
+      a.org_contact_id,
+      a.name,
+      a.domain,
+      a.lifecycle,
+      a.relationship_health,
+      a.priority,
+      a.owner_type,
+      a.owner_id,
+      COALESCE(ac.contact_count, 0) AS contact_count,
+      COALESCE(oo.open_opportunity_count, 0) AS open_opportunity_count,
+      COALESCE(oo.open_value_cents, 0) AS open_value_cents,
+      a.updated_at
+    FROM crm_accounts a
+    LEFT JOIN (
+      SELECT account_id, COUNT(DISTINCT contact_id) AS contact_count
+      FROM crm_account_contacts
+      GROUP BY account_id
+    ) ac ON ac.account_id = a.id
+    LEFT JOIN (
+      SELECT account_id, COUNT(*) AS open_opportunity_count, SUM(COALESCE(value_cents, 0)) AS open_value_cents
+      FROM crm_opportunities
+      WHERE status = 'open' AND archived_at IS NULL
+      GROUP BY account_id
+    ) oo ON oo.account_id = a.id;
+  `);
+
+  ensureTableColumn(database, "crm_events", "idempotency_key", "TEXT");
+  ensureTableColumn(database, "crm_accounts", "idempotency_key", "TEXT");
+  ensureTableColumn(database, "crm_opportunities", "idempotency_key", "TEXT");
+  ensureTableColumn(database, "crm_tasks", "idempotency_key", "TEXT");
+  ensureTableColumn(database, "crm_activities", "idempotency_key", "TEXT");
+  database.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_events_idempotency_key
+      ON crm_events(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_accounts_idempotency_key
+      ON crm_accounts(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_opportunities_idempotency_key
+      ON crm_opportunities(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_tasks_idempotency_key
+      ON crm_tasks(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_activities_idempotency_key
+      ON crm_activities(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_facts_idempotency_key
+      ON crm_facts(idempotency_key)
+      WHERE idempotency_key IS NOT NULL;
+
+    DROP TRIGGER IF EXISTS trg_crm_events_no_update;
+    CREATE TRIGGER trg_crm_events_no_update
+      BEFORE UPDATE ON crm_events
+      WHEN NOT (
+        NEW.id IS OLD.id
+        AND NEW.event_type IS OLD.event_type
+        AND NEW.entity_type IS OLD.entity_type
+        AND NEW.entity_id IS OLD.entity_id
+        AND (NEW.contact_id IS OLD.contact_id OR (OLD.contact_id IS NOT NULL AND NEW.contact_id IS NULL))
+        AND (NEW.account_id IS OLD.account_id OR (OLD.account_id IS NOT NULL AND NEW.account_id IS NULL))
+        AND (NEW.opportunity_id IS OLD.opportunity_id OR (OLD.opportunity_id IS NOT NULL AND NEW.opportunity_id IS NULL))
+        AND (NEW.task_id IS OLD.task_id OR (OLD.task_id IS NOT NULL AND NEW.task_id IS NULL))
+        AND (NEW.activity_id IS OLD.activity_id OR (OLD.activity_id IS NOT NULL AND NEW.activity_id IS NULL))
+        AND NEW.actor_type IS OLD.actor_type
+        AND NEW.actor_id IS OLD.actor_id
+        AND NEW.scope_type IS OLD.scope_type
+        AND NEW.scope_id IS OLD.scope_id
+        AND NEW.source IS OLD.source
+        AND NEW.idempotency_key IS OLD.idempotency_key
+        AND NEW.confidence IS OLD.confidence
+        AND NEW.payload_json IS OLD.payload_json
+        AND NEW.previous_payload_json IS OLD.previous_payload_json
+        AND NEW.evidence_json IS OLD.evidence_json
+        AND NEW.created_at IS OLD.created_at
+        AND (
+          (OLD.contact_id IS NOT NULL AND NEW.contact_id IS NULL)
+          OR (OLD.account_id IS NOT NULL AND NEW.account_id IS NULL)
+          OR (OLD.opportunity_id IS NOT NULL AND NEW.opportunity_id IS NULL)
+          OR (OLD.task_id IS NOT NULL AND NEW.task_id IS NULL)
+          OR (OLD.activity_id IS NOT NULL AND NEW.activity_id IS NULL)
+        )
+      )
+      BEGIN
+        SELECT RAISE(ABORT, 'crm_events is append-only');
+      END;
+  `);
+
+  database
+    .prepare(
+      `
+      INSERT INTO crm_pipelines (id, name, entity_type, is_default, status, metadata_json)
+      VALUES ('crm_pipeline_default', 'Default Sales Pipeline', 'opportunity', 1, 'active', ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        entity_type = excluded.entity_type,
+        is_default = excluded.is_default,
+        status = excluded.status,
+        updated_at = datetime('now')
+    `,
+    )
+    .run(metadataJson({ source: "crm_schema_seed" }));
+
+  const defaultStages = [
+    { key: "new", name: "New", sortOrder: 10, category: "new", probability: 0.1, terminal: 0 },
+    { key: "qualified", name: "Qualified", sortOrder: 20, category: "active", probability: 0.35, terminal: 0 },
+    { key: "proposal", name: "Proposal", sortOrder: 30, category: "active", probability: 0.6, terminal: 0 },
+    { key: "negotiation", name: "Negotiation", sortOrder: 40, category: "waiting", probability: 0.8, terminal: 0 },
+    { key: "won", name: "Won", sortOrder: 90, category: "terminal_won", probability: 1, terminal: 1 },
+    { key: "lost", name: "Lost", sortOrder: 100, category: "terminal_lost", probability: 0, terminal: 1 },
+  ];
+  const insertStage = database.prepare(`
+    INSERT INTO crm_pipeline_stages (
+      id, pipeline_id, key, name, sort_order, category, probability, is_terminal, metadata_json
+    )
+    VALUES (?, 'crm_pipeline_default', ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(pipeline_id, key) DO UPDATE SET
+      name = excluded.name,
+      sort_order = excluded.sort_order,
+      category = excluded.category,
+      probability = excluded.probability,
+      is_terminal = excluded.is_terminal,
+      updated_at = datetime('now')
+  `);
+  for (const stage of defaultStages) {
+    insertStage.run(
+      `crm_stage_${stage.key}`,
+      stage.key,
+      stage.name,
+      stage.sortOrder,
+      stage.category,
+      stage.probability,
+      stage.terminal,
+      metadataJson({ source: "crm_schema_seed" }),
+    );
+  }
 }
 
 function stableId(prefix: string, parts: Array<string | null | undefined>): string {
@@ -956,6 +1694,38 @@ export type ReplyMode = "auto" | "mention";
 export type ContactSource = "inbound" | "outbound" | "manual" | "discovered";
 export type ContactEventScopeType = "global" | "domain" | "project" | "chat" | "session" | "org" | "agent" | "task";
 export type ContactEventActorType = "user" | "agent" | "system" | "contact" | "unknown";
+export type CrmEntityType = "contact" | "account" | "opportunity" | "task" | "activity" | "segment" | "playbook";
+export type CrmActorType = "user" | "agent" | "team" | "system" | "contact" | "unknown";
+export type CrmOwnerType = "user" | "agent" | "team" | "system";
+export type CrmContactLifecycle =
+  | "unknown"
+  | "lead"
+  | "qualified"
+  | "active"
+  | "onboarding"
+  | "waiting"
+  | "at_risk"
+  | "dormant"
+  | "churned"
+  | "partner"
+  | "vendor"
+  | "internal";
+export type CrmRelationshipHealth = "unknown" | "good" | "neutral" | "needs_attention" | "at_risk";
+export type CrmPriority = "low" | "normal" | "high" | "urgent";
+export type CrmOpportunityStatus = "open" | "won" | "lost" | "paused" | "archived";
+export type CrmTaskStatus = "open" | "scheduled" | "waiting" | "done" | "canceled" | "snoozed";
+export type CrmScopeType =
+  | "global"
+  | "domain"
+  | "project"
+  | "chat"
+  | "session"
+  | "agent"
+  | "task"
+  | "account"
+  | "opportunity"
+  | "org"
+  | "contact";
 
 export interface ContactIdentity {
   platform: string;
@@ -1082,6 +1852,545 @@ export interface ListContactEventsOptions {
 
 export interface ContactEventsPage extends ListPage<ContactEvent> {
   contactId: string;
+}
+
+export interface CreateCrmEventInput {
+  eventType: string;
+  entityType: CrmEntityType | string;
+  entityId: string;
+  contactId?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  taskId?: string | null;
+  activityId?: string | null;
+  actorType?: CrmActorType | string | null;
+  actorId?: string | null;
+  scopeType?: CrmScopeType | string | null;
+  scopeId?: string | null;
+  source: string;
+  idempotencyKey?: string | null;
+  confidence?: number | null;
+  payload?: unknown;
+  previousPayload?: unknown;
+  evidence?: unknown;
+  contactEventType?: string | null;
+  emitContactEvent?: boolean;
+}
+
+export interface CrmEvent {
+  id: string;
+  eventType: string;
+  entityType: CrmEntityType;
+  entityId: string;
+  contactId: string | null;
+  accountId: string | null;
+  opportunityId: string | null;
+  taskId: string | null;
+  activityId: string | null;
+  actorType: string;
+  actorId: string | null;
+  scopeType: CrmScopeType;
+  scopeId: string | null;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  payload: unknown;
+  previousPayload: unknown;
+  evidence: unknown;
+  createdAt: string;
+}
+
+export interface CrmMutationOptions {
+  source?: string | null;
+  actorType?: CrmActorType | string | null;
+  actorId?: string | null;
+  confidence?: number | null;
+  evidence?: unknown;
+  scopeType?: CrmScopeType | string | null;
+  scopeId?: string | null;
+  idempotencyKey?: string | null;
+}
+
+export interface CrmContactProfile {
+  contactId: string;
+  lifecycle: CrmContactLifecycle;
+  relationshipHealth: CrmRelationshipHealth;
+  priority: CrmPriority;
+  score: number | null;
+  healthScore: number | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  primaryAccountId: string | null;
+  primaryOpportunityId: string | null;
+  leadSource: string | null;
+  persona: string | null;
+  buyingRole: string | null;
+  lastMeaningfulInteractionAt: string | null;
+  nextActionAt: string | null;
+  nextActionSummary: string | null;
+  nextTaskId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpdateCrmContactProfileInput extends CrmMutationOptions {
+  contactRef: string;
+  lifecycle?: CrmContactLifecycle | string | null;
+  relationshipHealth?: CrmRelationshipHealth | string | null;
+  priority?: CrmPriority | string | null;
+  score?: number | null;
+  healthScore?: number | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  primaryAccountId?: string | null;
+  primaryOpportunityId?: string | null;
+  leadSource?: string | null;
+  persona?: string | null;
+  buyingRole?: string | null;
+  lastMeaningfulInteractionAt?: string | null;
+  nextActionAt?: string | null;
+  nextActionSummary?: string | null;
+  nextTaskId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CrmAccount {
+  id: string;
+  orgContactId: string | null;
+  name: string;
+  legalName: string | null;
+  domain: string | null;
+  websiteUrl: string | null;
+  industry: string | null;
+  sizeLabel: string | null;
+  lifecycle: CrmContactLifecycle;
+  relationshipHealth: CrmRelationshipHealth;
+  priority: CrmPriority;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+export interface CreateCrmAccountInput extends CrmMutationOptions {
+  name: string;
+  orgContactRef?: string | null;
+  legalName?: string | null;
+  domain?: string | null;
+  websiteUrl?: string | null;
+  industry?: string | null;
+  sizeLabel?: string | null;
+  lifecycle?: CrmContactLifecycle | string | null;
+  relationshipHealth?: CrmRelationshipHealth | string | null;
+  priority?: CrmPriority | string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CrmAccountContact {
+  id: string;
+  accountId: string;
+  contactId: string;
+  role: string;
+  title: string | null;
+  department: string | null;
+  decisionRole: string;
+  relationshipStrength: string;
+  isPrimary: boolean;
+  status: string;
+  source: string;
+  confidence: number;
+  evidence: unknown;
+  metadata: Record<string, unknown>;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LinkCrmAccountContactInput extends CrmMutationOptions {
+  accountId: string;
+  contactRef: string;
+  role?: string | null;
+  title?: string | null;
+  department?: string | null;
+  decisionRole?: string | null;
+  relationshipStrength?: string | null;
+  isPrimary?: boolean | null;
+  status?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CrmPipelineStage {
+  id: string;
+  pipelineId: string;
+  key: string;
+  name: string;
+  sortOrder: number;
+  category: string;
+  probability: number | null;
+  isTerminal: boolean;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrmOpportunity {
+  id: string;
+  accountId: string | null;
+  primaryContactId: string | null;
+  pipelineId: string | null;
+  stageId: string | null;
+  title: string;
+  description: string | null;
+  status: CrmOpportunityStatus;
+  priority: CrmPriority;
+  valueCents: number | null;
+  currency: string;
+  probability: number | null;
+  expectedCloseAt: string | null;
+  closedAt: string | null;
+  lostReason: string | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  evidence: unknown;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+}
+
+export interface CreateCrmOpportunityInput extends CrmMutationOptions {
+  title: string;
+  accountId?: string | null;
+  contactRef?: string | null;
+  pipelineId?: string | null;
+  stageId?: string | null;
+  stageKey?: string | null;
+  description?: string | null;
+  status?: CrmOpportunityStatus | string | null;
+  priority?: CrmPriority | string | null;
+  valueCents?: number | null;
+  currency?: string | null;
+  probability?: number | null;
+  expectedCloseAt?: string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface CrmOpportunityContact {
+  id: string;
+  opportunityId: string;
+  contactId: string;
+  accountId: string | null;
+  role: string;
+  influence: string;
+  sentiment: string;
+  isPrimary: boolean;
+  source: string;
+  confidence: number;
+  evidence: unknown;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LinkCrmOpportunityContactInput extends CrmMutationOptions {
+  opportunityId: string;
+  contactRef: string;
+  accountId?: string | null;
+  role?: string | null;
+  influence?: string | null;
+  sentiment?: string | null;
+  isPrimary?: boolean | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface MoveCrmOpportunityStageInput extends CrmMutationOptions {
+  opportunityId: string;
+  stageRef: string;
+  lostReason?: string | null;
+}
+
+export interface CrmTask {
+  id: string;
+  contactId: string | null;
+  accountId: string | null;
+  opportunityId: string | null;
+  chatId: string | null;
+  sessionKey: string | null;
+  title: string;
+  body: string | null;
+  taskType: string;
+  status: CrmTaskStatus;
+  priority: CrmPriority;
+  dueAt: string | null;
+  snoozedUntil: string | null;
+  completedAt: string | null;
+  canceledAt: string | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  createdByType: string;
+  createdById: string | null;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  evidence: unknown;
+  metadata: Record<string, unknown>;
+  raviTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCrmTaskInput extends CrmMutationOptions {
+  title: string;
+  contactRef?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  chatId?: string | null;
+  sessionKey?: string | null;
+  body?: string | null;
+  taskType?: string | null;
+  status?: CrmTaskStatus | string | null;
+  priority?: CrmPriority | string | null;
+  dueAt?: string | null;
+  snoozedUntil?: string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  createdByType?: string | null;
+  createdById?: string | null;
+  metadata?: Record<string, unknown> | null;
+  raviTaskId?: string | null;
+}
+
+export interface CompleteCrmTaskInput extends CrmMutationOptions {
+  taskId: string;
+}
+
+export interface CrmNextAction {
+  taskId: string;
+  title: string;
+  taskType: string;
+  status: CrmTaskStatus;
+  priority: CrmPriority;
+  dueAt: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  accountId: string | null;
+  accountName: string | null;
+  opportunityId: string | null;
+  opportunityTitle: string | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+}
+
+export interface ListCrmNextActionsOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  contactRef?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+}
+
+export interface CrmContactCard {
+  contactId: string;
+  displayName: string | null;
+  kind: "person" | "org";
+  policyStatus: ContactStatus | null;
+  replyMode: ReplyMode | null;
+  tags: string[];
+  lifecycle: CrmContactLifecycle | null;
+  relationshipHealth: CrmRelationshipHealth | null;
+  priority: CrmPriority | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  primaryAccountId: string | null;
+  primaryOpportunityId: string | null;
+  lastMeaningfulInteractionAt: string | null;
+  nextActionAt: string | null;
+  nextActionSummary: string | null;
+  nextTaskId: string | null;
+  updatedAt: string;
+}
+
+export interface ListCrmContactCardsOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  lifecycle?: CrmContactLifecycle | string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+}
+
+export interface CrmContactProfileCard {
+  contact: CanonicalContact;
+  policy: ContactPolicy | null;
+  profile: CrmContactProfile | null;
+  card: CrmContactCard | null;
+  accountMemberships: Array<CrmAccountContact & { account: CrmAccount | null }>;
+  opportunities: CrmOpportunity[];
+  tasks: CrmTask[];
+  nextActions: CrmNextAction[];
+  facts: CrmFact[];
+}
+
+export interface CrmAccountDetail {
+  account: CrmAccount;
+  contacts: Array<CrmAccountContact & { contact: CanonicalContact | null }>;
+  opportunities: CrmOpportunity[];
+  tasks: CrmTask[];
+}
+
+export interface CrmOpportunityBoardCard {
+  opportunityId: string;
+  title: string;
+  status: CrmOpportunityStatus;
+  priority: CrmPriority;
+  valueCents: number | null;
+  currency: string;
+  probability: number | null;
+  expectedCloseAt: string | null;
+  pipelineId: string | null;
+  stageKey: string | null;
+  stageName: string | null;
+  stageOrder: number | null;
+  accountId: string | null;
+  accountName: string | null;
+  primaryContactId: string | null;
+  primaryContactName: string | null;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  updatedAt: string;
+}
+
+export interface ProjectContactEventToCrmActivityInput extends CrmMutationOptions {
+  contactEventId: string;
+  activityType?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  body?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  taskId?: string | null;
+}
+
+export interface CrmActivity {
+  id: string;
+  activityType: string;
+  title: string | null;
+  summary: string;
+  body: string | null;
+  occurredAt: string;
+  contactId: string | null;
+  accountId: string | null;
+  opportunityId: string | null;
+  taskId: string | null;
+  chatId: string | null;
+  sessionKey: string | null;
+  messageId: string | null;
+  contactEventId: string | null;
+  sessionEventId: string | null;
+  actorType: string;
+  actorId: string | null;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  evidence: unknown;
+  payload: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrmActivityParticipant {
+  id: string;
+  activityId: string;
+  contactId: string | null;
+  accountId: string | null;
+  role: string;
+  actorType: string | null;
+  actorId: string | null;
+  source: string;
+  confidence: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LinkCrmActivityParticipantInput extends CrmMutationOptions {
+  activityId: string;
+  contactRef?: string | null;
+  accountId?: string | null;
+  role?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export type CrmFactStatus = "proposed" | "confirmed" | "rejected" | "superseded";
+
+export interface CrmFact {
+  id: string;
+  entityType: CrmEntityType;
+  entityId: string;
+  contactId: string | null;
+  accountId: string | null;
+  opportunityId: string | null;
+  key: string;
+  value: unknown;
+  status: CrmFactStatus;
+  source: string;
+  idempotencyKey: string | null;
+  confidence: number;
+  evidence: unknown;
+  scopeType: CrmScopeType;
+  scopeId: string | null;
+  proposedByType: string | null;
+  proposedById: string | null;
+  confirmedByType: string | null;
+  confirmedById: string | null;
+  supersedesFactId: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProposeCrmFactInput extends CrmMutationOptions {
+  entityType: CrmEntityType | string;
+  entityId: string;
+  key: string;
+  value: unknown;
+  status?: CrmFactStatus | string | null;
+  contactRef?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  supersedesFactId?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface UpdateCrmFactStatusInput extends CrmMutationOptions {
+  factId: string;
+}
+
+export interface ListCrmFactsOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  entityType?: CrmEntityType | string | null;
+  entityId?: string | null;
+  contactRef?: string | null;
+  accountId?: string | null;
+  opportunityId?: string | null;
+  status?: CrmFactStatus | string | null;
+  key?: string | null;
 }
 
 export interface ContactMetadataMutationOptions {
@@ -1216,6 +2525,313 @@ interface ContactEventRow {
   evidence_json: string | null;
   created_at: string;
   effective_at: string | null;
+}
+
+interface CrmEventRow {
+  id: string;
+  event_type: string;
+  entity_type: CrmEntityType;
+  entity_id: string;
+  contact_id: string | null;
+  account_id: string | null;
+  opportunity_id: string | null;
+  task_id: string | null;
+  activity_id: string | null;
+  actor_type: string;
+  actor_id: string | null;
+  scope_type: CrmScopeType;
+  scope_id: string | null;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  payload_json: string;
+  previous_payload_json: string | null;
+  evidence_json: string | null;
+  created_at: string;
+}
+
+interface CrmContactProfileRow {
+  contact_id: string;
+  lifecycle: CrmContactLifecycle;
+  relationship_health: CrmRelationshipHealth;
+  priority: CrmPriority;
+  score: number | null;
+  health_score: number | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  primary_account_id: string | null;
+  primary_opportunity_id: string | null;
+  lead_source: string | null;
+  persona: string | null;
+  buying_role: string | null;
+  last_meaningful_interaction_at: string | null;
+  next_action_at: string | null;
+  next_action_summary: string | null;
+  next_task_id: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmAccountRow {
+  id: string;
+  org_contact_id: string | null;
+  name: string;
+  legal_name: string | null;
+  domain: string | null;
+  website_url: string | null;
+  industry: string | null;
+  size_label: string | null;
+  lifecycle: CrmContactLifecycle;
+  relationship_health: CrmRelationshipHealth;
+  priority: CrmPriority;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+interface CrmAccountContactRow {
+  id: string;
+  account_id: string;
+  contact_id: string;
+  role: string;
+  title: string | null;
+  department: string | null;
+  decision_role: string;
+  relationship_strength: string;
+  is_primary: number;
+  status: string;
+  source: string;
+  confidence: number;
+  evidence_json: string | null;
+  metadata_json: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmPipelineStageRow {
+  id: string;
+  pipeline_id: string;
+  key: string;
+  name: string;
+  sort_order: number;
+  category: string;
+  probability: number | null;
+  is_terminal: number;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmOpportunityRow {
+  id: string;
+  account_id: string | null;
+  primary_contact_id: string | null;
+  pipeline_id: string | null;
+  stage_id: string | null;
+  title: string;
+  description: string | null;
+  status: CrmOpportunityStatus;
+  priority: CrmPriority;
+  value_cents: number | null;
+  currency: string;
+  probability: number | null;
+  expected_close_at: string | null;
+  closed_at: string | null;
+  lost_reason: string | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  evidence_json: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+}
+
+interface CrmOpportunityContactRow {
+  id: string;
+  opportunity_id: string;
+  contact_id: string;
+  account_id: string | null;
+  role: string;
+  influence: string;
+  sentiment: string;
+  is_primary: number;
+  source: string;
+  confidence: number;
+  evidence_json: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmTaskRow {
+  id: string;
+  contact_id: string | null;
+  account_id: string | null;
+  opportunity_id: string | null;
+  chat_id: string | null;
+  session_key: string | null;
+  title: string;
+  body: string | null;
+  task_type: string;
+  status: CrmTaskStatus;
+  priority: CrmPriority;
+  due_at: string | null;
+  snoozed_until: string | null;
+  completed_at: string | null;
+  canceled_at: string | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  created_by_type: string;
+  created_by_id: string | null;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  evidence_json: string | null;
+  metadata_json: string;
+  ravi_task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmNextActionRow {
+  task_id: string;
+  title: string;
+  task_type: string;
+  status: CrmTaskStatus;
+  priority: CrmPriority;
+  due_at: string | null;
+  contact_id: string | null;
+  contact_name: string | null;
+  account_id: string | null;
+  account_name: string | null;
+  opportunity_id: string | null;
+  opportunity_title: string | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+}
+
+interface CrmContactCardRow {
+  contact_id: string;
+  display_name: string | null;
+  kind: "person" | "org";
+  policy_status: ContactStatus | null;
+  reply_mode: ReplyMode | null;
+  tags_json: string | null;
+  lifecycle: CrmContactLifecycle | null;
+  relationship_health: CrmRelationshipHealth | null;
+  priority: CrmPriority | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  primary_account_id: string | null;
+  primary_opportunity_id: string | null;
+  last_meaningful_interaction_at: string | null;
+  next_action_at: string | null;
+  next_action_summary: string | null;
+  next_task_id: string | null;
+  updated_at: string;
+}
+
+interface CrmOpportunityBoardRow {
+  opportunity_id: string;
+  title: string;
+  status: CrmOpportunityStatus;
+  priority: CrmPriority;
+  value_cents: number | null;
+  currency: string;
+  probability: number | null;
+  expected_close_at: string | null;
+  pipeline_id: string | null;
+  stage_key: string | null;
+  stage_name: string | null;
+  stage_order: number | null;
+  account_id: string | null;
+  account_name: string | null;
+  primary_contact_id: string | null;
+  primary_contact_name: string | null;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  updated_at: string;
+}
+
+interface CrmActivityRow {
+  id: string;
+  activity_type: string;
+  title: string | null;
+  summary: string;
+  body: string | null;
+  occurred_at: string;
+  contact_id: string | null;
+  account_id: string | null;
+  opportunity_id: string | null;
+  task_id: string | null;
+  chat_id: string | null;
+  session_key: string | null;
+  message_id: string | null;
+  contact_event_id: string | null;
+  session_event_id: string | null;
+  actor_type: string;
+  actor_id: string | null;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  evidence_json: string | null;
+  payload_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmActivityParticipantRow {
+  id: string;
+  activity_id: string;
+  contact_id: string | null;
+  account_id: string | null;
+  role: string;
+  actor_type: string | null;
+  actor_id: string | null;
+  source: string;
+  confidence: number;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface CrmFactRow {
+  id: string;
+  entity_type: CrmEntityType;
+  entity_id: string;
+  contact_id: string | null;
+  account_id: string | null;
+  opportunity_id: string | null;
+  key: string;
+  value_json: string;
+  status: CrmFactStatus;
+  source: string;
+  idempotency_key: string | null;
+  confidence: number;
+  evidence_json: string | null;
+  scope_type: CrmScopeType;
+  scope_id: string | null;
+  proposed_by_type: string | null;
+  proposed_by_id: string | null;
+  confirmed_by_type: string | null;
+  confirmed_by_id: string | null;
+  supersedes_fact_id: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ContactContextRow {
@@ -1456,6 +3072,72 @@ function normalizeContactEventActorType(actorType?: ContactEventActorType | null
   return actorType ?? null;
 }
 
+function normalizeCrmEventType(eventType: string): string {
+  const normalized = eventType.trim();
+  if (!normalized) throw new Error("CRM event type is required");
+  return normalized;
+}
+
+function normalizeCrmEntityType(entityType: string): CrmEntityType {
+  const normalized = entityType.trim().toLowerCase();
+  if (!CRM_ENTITY_TYPES.has(normalized)) {
+    throw new Error(`Invalid CRM entity type: ${entityType}`);
+  }
+  return normalized as CrmEntityType;
+}
+
+function normalizeCrmScope(
+  scopeType?: CrmScopeType | string | null,
+  scopeId?: string | null,
+): { scopeType: CrmScopeType; scopeId: string | null } {
+  const resolvedScopeType = (scopeType?.trim().toLowerCase() || "global") as CrmScopeType;
+  if (!CRM_EVENT_SCOPE_TYPES.has(resolvedScopeType)) {
+    throw new Error(`Invalid CRM event scope type: ${scopeType}`);
+  }
+  const resolvedScopeId = scopeId?.trim() || null;
+  if (resolvedScopeType !== "global" && !resolvedScopeId) {
+    throw new Error(`scope_id is required for CRM event scope ${resolvedScopeType}`);
+  }
+  if (resolvedScopeType === "global" && resolvedScopeId) {
+    throw new Error("scope_id must be empty when CRM event scope is global");
+  }
+  return { scopeType: resolvedScopeType, scopeId: resolvedScopeId };
+}
+
+function normalizeCrmConfidence(confidence?: number | null): number {
+  const resolved = confidence ?? 1;
+  if (!Number.isFinite(resolved) || resolved < 0 || resolved > 1) {
+    throw new Error("CRM event confidence must be between 0 and 1");
+  }
+  return resolved;
+}
+
+function normalizeCrmActorType(actorType?: CrmActorType | string | null): string {
+  return actorType?.trim() || "system";
+}
+
+function crmEventJson(value: unknown, fallback: unknown = null): string | null {
+  if (value === undefined) {
+    return fallback === null ? null : JSON.stringify(fallback);
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeCrmIdempotencyKey(value?: string | null): string | null {
+  return normalizeOptionalText(value);
+}
+
+function getCrmEventRowByIdempotencyKey(database: Database, idempotencyKey: string): CrmEventRow | null {
+  const row = database.prepare("SELECT * FROM crm_events WHERE idempotency_key = ?").get(idempotencyKey) as
+    | CrmEventRow
+    | undefined;
+  return row ?? null;
+}
+
+function getCrmFactStatus(value?: CrmFactStatus | string | null, fallback: CrmFactStatus = "proposed"): CrmFactStatus {
+  return normalizeCrmEnum<CrmFactStatus>(value, CRM_FACT_STATUSES, fallback);
+}
+
 function rowToContactEvent(row: ContactEventRow): ContactEvent {
   return {
     id: row.id,
@@ -1477,6 +3159,413 @@ function rowToContactEvent(row: ContactEventRow): ContactEvent {
     evidence: parseJsonValue(row.evidence_json),
     createdAt: row.created_at,
     effectiveAt: row.effective_at,
+  };
+}
+
+function rowToCrmEvent(row: CrmEventRow): CrmEvent {
+  return {
+    id: row.id,
+    eventType: row.event_type,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    opportunityId: row.opportunity_id,
+    taskId: row.task_id,
+    activityId: row.activity_id,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    payload: parseJsonValue(row.payload_json),
+    previousPayload: parseJsonValue(row.previous_payload_json),
+    evidence: parseJsonValue(row.evidence_json),
+    createdAt: row.created_at,
+  };
+}
+
+function normalizeCrmEnum<T extends string>(value: string | null | undefined, allowed: Set<string>, fallback: T): T {
+  const normalized = value?.trim().toLowerCase() || fallback;
+  if (!allowed.has(normalized)) {
+    throw new Error(`Invalid CRM value: ${value}`);
+  }
+  return normalized as T;
+}
+
+function normalizeOptionalCrmOwner(input: {
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  previousOwnerType?: CrmOwnerType | null;
+  previousOwnerId?: string | null;
+}): { ownerType: CrmOwnerType | null; ownerId: string | null } {
+  const ownerType =
+    input.ownerType === undefined
+      ? (input.previousOwnerType ?? null)
+      : input.ownerType === null || input.ownerType.trim() === ""
+        ? null
+        : normalizeCrmEnum<CrmOwnerType>(input.ownerType, CRM_OWNER_TYPES, "system");
+  const ownerId =
+    input.ownerId === undefined
+      ? (input.previousOwnerId ?? null)
+      : input.ownerId === null || input.ownerId.trim() === ""
+        ? null
+        : input.ownerId.trim();
+
+  if ((ownerType === null) !== (ownerId === null)) {
+    throw new Error("CRM owner_type and owner_id must be set or cleared together");
+  }
+  return { ownerType, ownerId };
+}
+
+function normalizeOptionalText(value: string | null | undefined, previous: string | null = null): string | null {
+  if (value === undefined) return previous;
+  const trimmed = value?.trim() || "";
+  return trimmed ? trimmed : null;
+}
+
+function normalizeRequiredText(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${label} is required`);
+  return trimmed;
+}
+
+function normalizeOptionalNumber(value: number | null | undefined, label: string, previous: number | null = null) {
+  if (value === undefined) return previous;
+  if (value === null) return null;
+  if (!Number.isFinite(value)) throw new Error(`${label} must be a finite number`);
+  return value;
+}
+
+function normalizeProbability(value: number | null | undefined, previous: number | null = null): number | null {
+  const resolved = normalizeOptionalNumber(value, "probability", previous);
+  if (resolved !== null && (resolved < 0 || resolved > 1)) {
+    throw new Error("probability must be between 0 and 1");
+  }
+  return resolved;
+}
+
+function normalizeMetadataObject(
+  value: Record<string, unknown> | null | undefined,
+  previous = "{}",
+): Record<string, unknown> {
+  if (value === undefined) return parseJsonObject(previous) ?? {};
+  return value ?? {};
+}
+
+function jsonObject(value: Record<string, unknown> | null | undefined): string {
+  return JSON.stringify(value ?? {});
+}
+
+function rowToCrmContactProfile(row: CrmContactProfileRow): CrmContactProfile {
+  return {
+    contactId: row.contact_id,
+    lifecycle: row.lifecycle,
+    relationshipHealth: row.relationship_health,
+    priority: row.priority,
+    score: row.score,
+    healthScore: row.health_score,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    primaryAccountId: row.primary_account_id,
+    primaryOpportunityId: row.primary_opportunity_id,
+    leadSource: row.lead_source,
+    persona: row.persona,
+    buyingRole: row.buying_role,
+    lastMeaningfulInteractionAt: row.last_meaningful_interaction_at,
+    nextActionAt: row.next_action_at,
+    nextActionSummary: row.next_action_summary,
+    nextTaskId: row.next_task_id,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmAccount(row: CrmAccountRow): CrmAccount {
+  return {
+    id: row.id,
+    orgContactId: row.org_contact_id,
+    name: row.name,
+    legalName: row.legal_name,
+    domain: row.domain,
+    websiteUrl: row.website_url,
+    industry: row.industry,
+    sizeLabel: row.size_label,
+    lifecycle: row.lifecycle,
+    relationshipHealth: row.relationship_health,
+    priority: row.priority,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  };
+}
+
+function rowToCrmAccountContact(row: CrmAccountContactRow): CrmAccountContact {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    contactId: row.contact_id,
+    role: row.role,
+    title: row.title,
+    department: row.department,
+    decisionRole: row.decision_role,
+    relationshipStrength: row.relationship_strength,
+    isPrimary: row.is_primary === 1,
+    status: row.status,
+    source: row.source,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmPipelineStage(row: CrmPipelineStageRow): CrmPipelineStage {
+  return {
+    id: row.id,
+    pipelineId: row.pipeline_id,
+    key: row.key,
+    name: row.name,
+    sortOrder: row.sort_order,
+    category: row.category,
+    probability: row.probability,
+    isTerminal: row.is_terminal === 1,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmOpportunity(row: CrmOpportunityRow): CrmOpportunity {
+  return {
+    id: row.id,
+    accountId: row.account_id,
+    primaryContactId: row.primary_contact_id,
+    pipelineId: row.pipeline_id,
+    stageId: row.stage_id,
+    title: row.title,
+    description: row.description,
+    status: row.status,
+    priority: row.priority,
+    valueCents: row.value_cents,
+    currency: row.currency,
+    probability: row.probability,
+    expectedCloseAt: row.expected_close_at,
+    closedAt: row.closed_at,
+    lostReason: row.lost_reason,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    archivedAt: row.archived_at,
+  };
+}
+
+function rowToCrmOpportunityContact(row: CrmOpportunityContactRow): CrmOpportunityContact {
+  return {
+    id: row.id,
+    opportunityId: row.opportunity_id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    role: row.role,
+    influence: row.influence,
+    sentiment: row.sentiment,
+    isPrimary: row.is_primary === 1,
+    source: row.source,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmTask(row: CrmTaskRow): CrmTask {
+  return {
+    id: row.id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    opportunityId: row.opportunity_id,
+    chatId: row.chat_id,
+    sessionKey: row.session_key,
+    title: row.title,
+    body: row.body,
+    taskType: row.task_type,
+    status: row.status,
+    priority: row.priority,
+    dueAt: row.due_at,
+    snoozedUntil: row.snoozed_until,
+    completedAt: row.completed_at,
+    canceledAt: row.canceled_at,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    createdByType: row.created_by_type,
+    createdById: row.created_by_id,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    raviTaskId: row.ravi_task_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmNextAction(row: CrmNextActionRow): CrmNextAction {
+  return {
+    taskId: row.task_id,
+    title: row.title,
+    taskType: row.task_type,
+    status: row.status,
+    priority: row.priority,
+    dueAt: row.due_at,
+    contactId: row.contact_id,
+    contactName: row.contact_name,
+    accountId: row.account_id,
+    accountName: row.account_name,
+    opportunityId: row.opportunity_id,
+    opportunityTitle: row.opportunity_title,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+  };
+}
+
+function rowToCrmContactCard(row: CrmContactCardRow): CrmContactCard {
+  return {
+    contactId: row.contact_id,
+    displayName: row.display_name,
+    kind: row.kind,
+    policyStatus: row.policy_status,
+    replyMode: row.reply_mode,
+    tags: legacyContactTagsFromJson(row.tags_json),
+    lifecycle: row.lifecycle,
+    relationshipHealth: row.relationship_health,
+    priority: row.priority,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    primaryAccountId: row.primary_account_id,
+    primaryOpportunityId: row.primary_opportunity_id,
+    lastMeaningfulInteractionAt: row.last_meaningful_interaction_at,
+    nextActionAt: row.next_action_at,
+    nextActionSummary: row.next_action_summary,
+    nextTaskId: row.next_task_id,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmOpportunityBoardCard(row: CrmOpportunityBoardRow): CrmOpportunityBoardCard {
+  return {
+    opportunityId: row.opportunity_id,
+    title: row.title,
+    status: row.status,
+    priority: row.priority,
+    valueCents: row.value_cents,
+    currency: row.currency,
+    probability: row.probability,
+    expectedCloseAt: row.expected_close_at,
+    pipelineId: row.pipeline_id,
+    stageKey: row.stage_key,
+    stageName: row.stage_name,
+    stageOrder: row.stage_order,
+    accountId: row.account_id,
+    accountName: row.account_name,
+    primaryContactId: row.primary_contact_id,
+    primaryContactName: row.primary_contact_name,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmActivity(row: CrmActivityRow): CrmActivity {
+  return {
+    id: row.id,
+    activityType: row.activity_type,
+    title: row.title,
+    summary: row.summary,
+    body: row.body,
+    occurredAt: row.occurred_at,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    opportunityId: row.opportunity_id,
+    taskId: row.task_id,
+    chatId: row.chat_id,
+    sessionKey: row.session_key,
+    messageId: row.message_id,
+    contactEventId: row.contact_event_id,
+    sessionEventId: row.session_event_id,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    payload: parseJsonValue(row.payload_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmActivityParticipant(row: CrmActivityParticipantRow): CrmActivityParticipant {
+  return {
+    id: row.id,
+    activityId: row.activity_id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    role: row.role,
+    actorType: row.actor_type,
+    actorId: row.actor_id,
+    source: row.source,
+    confidence: row.confidence,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmFact(row: CrmFactRow): CrmFact {
+  return {
+    id: row.id,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    contactId: row.contact_id,
+    accountId: row.account_id,
+    opportunityId: row.opportunity_id,
+    key: row.key,
+    value: parseJsonValue(row.value_json),
+    status: row.status,
+    source: row.source,
+    idempotencyKey: row.idempotency_key,
+    confidence: row.confidence,
+    evidence: parseJsonValue(row.evidence_json),
+    scopeType: row.scope_type,
+    scopeId: row.scope_id,
+    proposedByType: row.proposed_by_type,
+    proposedById: row.proposed_by_id,
+    confirmedByType: row.confirmed_by_type,
+    confirmedById: row.confirmed_by_id,
+    supersedesFactId: row.supersedes_fact_id,
+    metadata: parseJsonObject(row.metadata_json) ?? {},
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -1813,6 +3902,1892 @@ export function createContactEvent(input: CreateContactEventInput): ContactEvent
   const contactId = resolveCanonicalContactId(database, input.contactRef);
   if (!contactId) throw new Error(`Contact not found: ${input.contactRef}`);
   return insertContactEvent(database, { ...input, contactId });
+}
+
+function crmActorTypeToContactActor(actorType: string): ContactEventActorType {
+  if (actorType === "user" || actorType === "agent" || actorType === "system" || actorType === "contact") {
+    return actorType;
+  }
+  return actorType === "unknown" ? "unknown" : "system";
+}
+
+function insertCrmEvent(database: Database, input: CreateCrmEventInput): CrmEvent {
+  const eventType = normalizeCrmEventType(input.eventType);
+  const entityType = normalizeCrmEntityType(input.entityType);
+  const entityId = input.entityId.trim();
+  if (!entityId) throw new Error("CRM event entity_id is required");
+
+  const source = input.source.trim();
+  if (!source) throw new Error("CRM event source is required");
+
+  const contactId = input.contactId?.trim() || (entityType === "contact" ? entityId : null);
+  const accountId = input.accountId?.trim() || (entityType === "account" ? entityId : null);
+  const opportunityId = input.opportunityId?.trim() || (entityType === "opportunity" ? entityId : null);
+  const taskId = input.taskId?.trim() || (entityType === "task" ? entityId : null);
+  const activityId = input.activityId?.trim() || (entityType === "activity" ? entityId : null);
+  const actorType = normalizeCrmActorType(input.actorType);
+  const actorId = input.actorId?.trim() || null;
+  const scope = normalizeCrmScope(input.scopeType, input.scopeId);
+  const confidence = normalizeCrmConfidence(input.confidence);
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existing = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+    if (existing) return rowToCrmEvent(existing);
+  }
+  const id = `crm_evt_${generateId()}`;
+  const payloadJson = crmEventJson(input.payload, {}) ?? "{}";
+  const previousPayloadJson = crmEventJson(input.previousPayload);
+  const evidenceJson = crmEventJson(input.evidence);
+
+  database
+    .prepare(
+      `
+      INSERT INTO crm_events (
+        id, event_type, entity_type, entity_id, contact_id, account_id, opportunity_id, task_id, activity_id,
+        actor_type, actor_id, scope_type, scope_id, source, idempotency_key, confidence, payload_json, previous_payload_json,
+        evidence_json
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(
+      id,
+      eventType,
+      entityType,
+      entityId,
+      contactId,
+      accountId,
+      opportunityId,
+      taskId,
+      activityId,
+      actorType,
+      actorId,
+      scope.scopeType,
+      scope.scopeId,
+      source,
+      idempotencyKey,
+      confidence,
+      payloadJson,
+      previousPayloadJson,
+      evidenceJson,
+    );
+
+  const row = database.prepare("SELECT * FROM crm_events WHERE id = ?").get(id) as CrmEventRow | undefined;
+  if (!row) throw new Error(`CRM event not found after insert: ${id}`);
+  const event = rowToCrmEvent(row);
+
+  if (contactId && input.emitContactEvent !== false) {
+    insertContactEvent(database, {
+      contactId,
+      eventType: input.contactEventType?.trim() || eventType,
+      scopeType: "domain",
+      scopeId: "crm",
+      source,
+      actorType: crmActorTypeToContactActor(actorType),
+      actorId,
+      confidence,
+      taskId,
+      payload: {
+        crmEventId: id,
+        crmEventType: eventType,
+        entityType,
+        entityId,
+        contactId,
+        accountId,
+        opportunityId,
+        taskId,
+        activityId,
+        payload: input.payload ?? {},
+      },
+      evidence: {
+        crmEventId: id,
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        previousPayload: input.previousPayload ?? null,
+        evidence: input.evidence ?? null,
+      },
+    });
+  }
+
+  return event;
+}
+
+export function createCrmEvent(input: CreateCrmEventInput): CrmEvent {
+  const database = ensureDb();
+  const txn = database.transaction(() => insertCrmEvent(database, input));
+  return txn();
+}
+
+function crmMutationSource(options: CrmMutationOptions): string {
+  return options.source?.trim() || "api";
+}
+
+function resolveRequiredCanonicalContactId(database: Database, contactRef: string, label = "Contact"): string {
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) throw new Error(`${label} not found: ${contactRef}`);
+  return contactId;
+}
+
+function getCrmContactProfileRow(database: Database, contactId: string): CrmContactProfileRow | null {
+  const row = database.prepare("SELECT * FROM crm_contact_profiles WHERE contact_id = ?").get(contactId) as
+    | CrmContactProfileRow
+    | undefined;
+  return row ?? null;
+}
+
+function getCrmAccountRow(database: Database, accountRef: string): CrmAccountRow | null {
+  const row = database
+    .prepare("SELECT * FROM crm_accounts WHERE id = ? OR org_contact_id = ? LIMIT 1")
+    .get(accountRef, accountRef) as CrmAccountRow | undefined;
+  return row ?? null;
+}
+
+function getCrmOpportunityRow(database: Database, opportunityId: string): CrmOpportunityRow | null {
+  const row = database.prepare("SELECT * FROM crm_opportunities WHERE id = ?").get(opportunityId) as
+    | CrmOpportunityRow
+    | undefined;
+  return row ?? null;
+}
+
+function getCrmTaskRow(database: Database, taskId: string): CrmTaskRow | null {
+  const row = database.prepare("SELECT * FROM crm_tasks WHERE id = ?").get(taskId) as CrmTaskRow | undefined;
+  return row ?? null;
+}
+
+function getCrmActivityRow(database: Database, activityId: string): CrmActivityRow | null {
+  const row = database.prepare("SELECT * FROM crm_activities WHERE id = ?").get(activityId) as
+    | CrmActivityRow
+    | undefined;
+  return row ?? null;
+}
+
+function requireCrmAccount(database: Database, accountId: string): CrmAccountRow {
+  const account = getCrmAccountRow(database, accountId);
+  if (!account) throw new Error(`CRM account not found: ${accountId}`);
+  return account;
+}
+
+function requireCrmOpportunity(database: Database, opportunityId: string): CrmOpportunityRow {
+  const opportunity = getCrmOpportunityRow(database, opportunityId);
+  if (!opportunity) throw new Error(`CRM opportunity not found: ${opportunityId}`);
+  return opportunity;
+}
+
+function requireCrmTask(database: Database, taskId: string): CrmTaskRow {
+  const task = getCrmTaskRow(database, taskId);
+  if (!task) throw new Error(`CRM task not found: ${taskId}`);
+  return task;
+}
+
+function requireCrmActivity(database: Database, activityId: string): CrmActivityRow {
+  const activity = getCrmActivityRow(database, activityId);
+  if (!activity) throw new Error(`CRM activity not found: ${activityId}`);
+  return activity;
+}
+
+function upsertContactContextProjection(database: Database, contactId: string, key: string, value: unknown): void {
+  database
+    .prepare(
+      `
+      INSERT INTO contact_contexts (
+        contact_id, scope_type, scope_id, key, value_json, source, confidence,
+        updated_by_type, updated_by_id, created_at, updated_at
+      )
+      VALUES (?, 'domain', 'crm', ?, ?, 'crm_projection', 1, 'system', 'crm', datetime('now'), datetime('now'))
+      ON CONFLICT(contact_id, scope_type, scope_id, key) DO UPDATE SET
+        value_json = excluded.value_json,
+        source = excluded.source,
+        confidence = excluded.confidence,
+        updated_by_type = excluded.updated_by_type,
+        updated_by_id = excluded.updated_by_id,
+        updated_at = datetime('now')
+    `,
+    )
+    .run(contactId, key, JSON.stringify(value));
+}
+
+function projectCrmContactProfileMetadata(database: Database, profile: CrmContactProfile): void {
+  upsertContactContextProjection(database, profile.contactId, "crm.lifecycle", profile.lifecycle);
+  upsertContactContextProjection(database, profile.contactId, "crm.relationship_health", profile.relationshipHealth);
+  upsertContactContextProjection(database, profile.contactId, "crm.priority", profile.priority);
+  upsertContactContextProjection(
+    database,
+    profile.contactId,
+    "crm.owner",
+    profile.ownerType && profile.ownerId ? { type: profile.ownerType, id: profile.ownerId } : null,
+  );
+  upsertContactContextProjection(
+    database,
+    profile.contactId,
+    "crm.primary_account",
+    profile.primaryAccountId ? { id: profile.primaryAccountId } : null,
+  );
+  upsertContactContextProjection(
+    database,
+    profile.contactId,
+    "crm.primary_opportunity",
+    profile.primaryOpportunityId ? { id: profile.primaryOpportunityId } : null,
+  );
+  upsertContactContextProjection(
+    database,
+    profile.contactId,
+    "crm.next_action",
+    profile.nextTaskId || profile.nextActionAt || profile.nextActionSummary
+      ? {
+          taskId: profile.nextTaskId,
+          at: profile.nextActionAt,
+          summary: profile.nextActionSummary,
+        }
+      : null,
+  );
+}
+
+function profileEventPayload(profile: CrmContactProfile): Record<string, unknown> {
+  return {
+    contactId: profile.contactId,
+    lifecycle: profile.lifecycle,
+    relationshipHealth: profile.relationshipHealth,
+    priority: profile.priority,
+    score: profile.score,
+    healthScore: profile.healthScore,
+    ownerType: profile.ownerType,
+    ownerId: profile.ownerId,
+    primaryAccountId: profile.primaryAccountId,
+    primaryOpportunityId: profile.primaryOpportunityId,
+    leadSource: profile.leadSource,
+    persona: profile.persona,
+    buyingRole: profile.buyingRole,
+    lastMeaningfulInteractionAt: profile.lastMeaningfulInteractionAt,
+    nextActionAt: profile.nextActionAt,
+    nextActionSummary: profile.nextActionSummary,
+    nextTaskId: profile.nextTaskId,
+    metadata: profile.metadata,
+  };
+}
+
+export function updateCrmContactProfile(input: UpdateCrmContactProfileInput): CrmContactProfile {
+  const database = ensureDb();
+  const contactId = resolveRequiredCanonicalContactId(database, input.contactRef);
+  if (input.primaryAccountId) requireCrmAccount(database, input.primaryAccountId);
+  if (input.primaryOpportunityId) requireCrmOpportunity(database, input.primaryOpportunityId);
+  if (input.nextTaskId) requireCrmTask(database, input.nextTaskId);
+
+  let profile: CrmContactProfile | null = null;
+  const txn = database.transaction(() => {
+    const previousRow = getCrmContactProfileRow(database, contactId);
+    const previous = previousRow ? rowToCrmContactProfile(previousRow) : null;
+    const owner = normalizeOptionalCrmOwner({
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      previousOwnerType: previous?.ownerType ?? null,
+      previousOwnerId: previous?.ownerId ?? null,
+    });
+    const lifecycle =
+      input.lifecycle === null
+        ? "unknown"
+        : normalizeCrmEnum<CrmContactLifecycle>(
+            input.lifecycle,
+            CRM_CONTACT_LIFECYCLES,
+            previous?.lifecycle ?? "unknown",
+          );
+    const relationshipHealth =
+      input.relationshipHealth === null
+        ? "unknown"
+        : normalizeCrmEnum<CrmRelationshipHealth>(
+            input.relationshipHealth,
+            CRM_RELATIONSHIP_HEALTHS,
+            previous?.relationshipHealth ?? "unknown",
+          );
+    const priority =
+      input.priority === null
+        ? "normal"
+        : normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, previous?.priority ?? "normal");
+    const metadata = normalizeMetadataObject(input.metadata, previousRow?.metadata_json ?? "{}");
+
+    database
+      .prepare(
+        `
+        INSERT INTO crm_contact_profiles (
+          contact_id, lifecycle, relationship_health, priority, score, health_score,
+          owner_type, owner_id, primary_account_id, primary_opportunity_id,
+          lead_source, persona, buying_role, last_meaningful_interaction_at,
+          next_action_at, next_action_summary, next_task_id, metadata_json,
+          created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(contact_id) DO UPDATE SET
+          lifecycle = excluded.lifecycle,
+          relationship_health = excluded.relationship_health,
+          priority = excluded.priority,
+          score = excluded.score,
+          health_score = excluded.health_score,
+          owner_type = excluded.owner_type,
+          owner_id = excluded.owner_id,
+          primary_account_id = excluded.primary_account_id,
+          primary_opportunity_id = excluded.primary_opportunity_id,
+          lead_source = excluded.lead_source,
+          persona = excluded.persona,
+          buying_role = excluded.buying_role,
+          last_meaningful_interaction_at = excluded.last_meaningful_interaction_at,
+          next_action_at = excluded.next_action_at,
+          next_action_summary = excluded.next_action_summary,
+          next_task_id = excluded.next_task_id,
+          metadata_json = excluded.metadata_json,
+          updated_at = datetime('now')
+      `,
+      )
+      .run(
+        contactId,
+        lifecycle,
+        relationshipHealth,
+        priority,
+        normalizeOptionalNumber(input.score, "score", previous?.score ?? null),
+        normalizeOptionalNumber(input.healthScore, "health_score", previous?.healthScore ?? null),
+        owner.ownerType,
+        owner.ownerId,
+        input.primaryAccountId === undefined
+          ? (previous?.primaryAccountId ?? null)
+          : normalizeOptionalText(input.primaryAccountId),
+        input.primaryOpportunityId === undefined
+          ? (previous?.primaryOpportunityId ?? null)
+          : normalizeOptionalText(input.primaryOpportunityId),
+        normalizeOptionalText(input.leadSource, previous?.leadSource ?? null),
+        normalizeOptionalText(input.persona, previous?.persona ?? null),
+        normalizeOptionalText(input.buyingRole, previous?.buyingRole ?? null),
+        normalizeOptionalText(input.lastMeaningfulInteractionAt, previous?.lastMeaningfulInteractionAt ?? null),
+        normalizeOptionalText(input.nextActionAt, previous?.nextActionAt ?? null),
+        normalizeOptionalText(input.nextActionSummary, previous?.nextActionSummary ?? null),
+        input.nextTaskId === undefined ? (previous?.nextTaskId ?? null) : normalizeOptionalText(input.nextTaskId),
+        jsonObject(metadata),
+      );
+
+    const nextRow = getCrmContactProfileRow(database, contactId);
+    if (!nextRow) throw new Error(`CRM contact profile not found after update: ${contactId}`);
+    profile = rowToCrmContactProfile(nextRow);
+    projectCrmContactProfileMetadata(database, profile);
+    insertCrmEvent(database, {
+      eventType: "crm.contact_profile.updated",
+      entityType: "contact",
+      entityId: contactId,
+      contactId,
+      source: crmMutationSource(input),
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: input.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: profileEventPayload(profile),
+      previousPayload: previous ? profileEventPayload(previous) : null,
+    });
+  });
+  txn();
+  if (!profile) throw new Error(`CRM contact profile not updated: ${contactId}`);
+  return profile;
+}
+
+export function getCrmContactProfile(contactRef: string): CrmContactProfileCard | null {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId) return null;
+  const details = getContactDetailsByCanonicalId(database, contactId, { includeDuplicateCandidates: false });
+  if (!details) return null;
+  const profileRow = getCrmContactProfileRow(database, contactId);
+  const profile = profileRow ? rowToCrmContactProfile(profileRow) : null;
+  const cardRow = database.prepare("SELECT * FROM crm_contact_cards WHERE contact_id = ?").get(contactId) as
+    | CrmContactCardRow
+    | undefined;
+  const accountMembershipRows = database
+    .prepare("SELECT * FROM crm_account_contacts WHERE contact_id = ? ORDER BY is_primary DESC, updated_at DESC")
+    .all(contactId) as CrmAccountContactRow[];
+  const opportunities = database
+    .prepare(
+      `
+      SELECT DISTINCT o.*
+      FROM crm_opportunities o
+      LEFT JOIN crm_opportunity_contacts oc ON oc.opportunity_id = o.id AND oc.contact_id = ?
+      WHERE o.archived_at IS NULL
+        AND (o.primary_contact_id = ? OR oc.contact_id IS NOT NULL)
+      ORDER BY o.updated_at DESC
+    `,
+    )
+    .all(contactId, contactId) as CrmOpportunityRow[];
+  const tasks = database
+    .prepare("SELECT * FROM crm_tasks WHERE contact_id = ? ORDER BY created_at DESC, id DESC LIMIT 50")
+    .all(contactId) as CrmTaskRow[];
+  return {
+    contact: details.contact,
+    policy: details.policy,
+    profile,
+    card: cardRow ? rowToCrmContactCard(cardRow) : null,
+    accountMemberships: accountMembershipRows.map((membership) => {
+      const account = getCrmAccountRow(database, membership.account_id);
+      return { ...rowToCrmAccountContact(membership), account: account ? rowToCrmAccount(account) : null };
+    }),
+    opportunities: opportunities.map(rowToCrmOpportunity),
+    tasks: tasks.map(rowToCrmTask),
+    nextActions: listCrmNextActions({ contactRef: contactId, limit: 20 }).items,
+    facts: listCrmFacts({ contactRef: contactId, limit: 20 }).items,
+  };
+}
+
+export function listCrmContactCards(options: ListCrmContactCardsOptions = {}): ListPage<CrmContactCard> {
+  const database = ensureDb();
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (options.lifecycle?.trim()) {
+    where.push("COALESCE(lifecycle, 'unknown') = ?");
+    params.push(normalizeCrmEnum<CrmContactLifecycle>(options.lifecycle, CRM_CONTACT_LIFECYCLES, "unknown"));
+  }
+  if (options.ownerType || options.ownerId) {
+    const owner = normalizeOptionalCrmOwner({ ownerType: options.ownerType, ownerId: options.ownerId });
+    where.push("owner_type = ?", "owner_id = ?");
+    params.push(owner.ownerType!, owner.ownerId!);
+  }
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const total = countRows({ db: database, table: "crm_contact_cards", where, params });
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_contact_cards
+      ${buildSqlWhereClause(where)}
+      ORDER BY COALESCE(next_action_at, updated_at) DESC, display_name, contact_id
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as CrmContactCardRow[];
+  return { total, limit, offset, items: rows.map(rowToCrmContactCard) };
+}
+
+export function createCrmAccount(input: CreateCrmAccountInput): CrmAccount {
+  const database = ensureDb();
+  const name = normalizeRequiredText(input.name, "CRM account name");
+  const orgContactId = input.orgContactRef
+    ? resolveRequiredCanonicalContactId(database, input.orgContactRef, "Organization contact")
+    : null;
+  if (orgContactId) {
+    const org = getCanonicalContactById(database, orgContactId);
+    if (org?.kind !== "org") throw new Error(`CRM account org contact must have kind='org': ${orgContactId}`);
+  }
+  const owner = normalizeOptionalCrmOwner({ ownerType: input.ownerType, ownerId: input.ownerId });
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existingRow = database.prepare("SELECT * FROM crm_accounts WHERE idempotency_key = ?").get(idempotencyKey) as
+      | CrmAccountRow
+      | undefined;
+    if (existingRow) return rowToCrmAccount(existingRow);
+    const existingEvent = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+    if (existingEvent?.entity_type === "account") {
+      const row = getCrmAccountRow(database, existingEvent.entity_id);
+      if (row) return rowToCrmAccount(row);
+    }
+  }
+  const accountId = `crm_acc_${generateId()}`;
+  let account: CrmAccount | null = null;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_accounts (
+          id, org_contact_id, name, legal_name, domain, website_url, industry, size_label,
+          lifecycle, relationship_health, priority, owner_type, owner_id,
+          source, idempotency_key, confidence, metadata_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+      )
+      .run(
+        accountId,
+        orgContactId,
+        name,
+        normalizeOptionalText(input.legalName),
+        normalizeOptionalText(input.domain)?.toLowerCase() ?? null,
+        normalizeOptionalText(input.websiteUrl),
+        normalizeOptionalText(input.industry),
+        normalizeOptionalText(input.sizeLabel),
+        normalizeCrmEnum<CrmContactLifecycle>(input.lifecycle, CRM_CONTACT_LIFECYCLES, "unknown"),
+        normalizeCrmEnum<CrmRelationshipHealth>(input.relationshipHealth, CRM_RELATIONSHIP_HEALTHS, "unknown"),
+        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+        owner.ownerType,
+        owner.ownerId,
+        crmMutationSource(input),
+        idempotencyKey,
+        normalizeCrmConfidence(input.confidence),
+        jsonObject(input.metadata),
+      );
+    const row = getCrmAccountRow(database, accountId);
+    if (!row) throw new Error(`CRM account not found after create: ${accountId}`);
+    account = rowToCrmAccount(row);
+    insertCrmEvent(database, {
+      eventType: "crm.account.created",
+      entityType: "account",
+      entityId: accountId,
+      accountId,
+      contactId: orgContactId,
+      source: account.source,
+      idempotencyKey,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: account.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: account,
+    });
+  });
+  txn();
+  if (!account) throw new Error(`CRM account not created: ${accountId}`);
+  return account;
+}
+
+function refreshCrmContactPrimaryAccount(
+  database: Database,
+  contactId: string,
+  preferredAccountId?: string | null,
+): void {
+  let nextAccountId: string | null = null;
+  if (preferredAccountId) {
+    const preferred = database
+      .prepare(
+        `
+        SELECT account_id FROM crm_account_contacts
+        WHERE contact_id = ? AND account_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, account_id
+        LIMIT 1
+      `,
+      )
+      .get(contactId, preferredAccountId) as { account_id: string } | undefined;
+    nextAccountId = preferred?.account_id ?? null;
+  }
+  if (!nextAccountId) {
+    const fallback = database
+      .prepare(
+        `
+        SELECT account_id FROM crm_account_contacts
+        WHERE contact_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, account_id
+        LIMIT 1
+      `,
+      )
+      .get(contactId) as { account_id: string } | undefined;
+    nextAccountId = fallback?.account_id ?? null;
+  }
+
+  if (nextAccountId) {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_contact_profiles (contact_id, primary_account_id, created_at, updated_at)
+        VALUES (?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(contact_id) DO UPDATE SET
+          primary_account_id = excluded.primary_account_id,
+          updated_at = datetime('now')
+      `,
+      )
+      .run(contactId, nextAccountId);
+  } else {
+    database
+      .prepare(
+        `
+        UPDATE crm_contact_profiles
+        SET primary_account_id = NULL, updated_at = datetime('now')
+        WHERE contact_id = ? AND primary_account_id IS NOT NULL
+      `,
+      )
+      .run(contactId);
+  }
+
+  const profileRow = getCrmContactProfileRow(database, contactId);
+  if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
+}
+
+export function getCrmAccount(accountRef: string): CrmAccountDetail | null {
+  const database = ensureDb();
+  const accountRow = getCrmAccountRow(database, accountRef);
+  if (!accountRow) return null;
+  const contacts = database
+    .prepare("SELECT * FROM crm_account_contacts WHERE account_id = ? ORDER BY is_primary DESC, updated_at DESC")
+    .all(accountRow.id) as CrmAccountContactRow[];
+  const opportunities = database
+    .prepare("SELECT * FROM crm_opportunities WHERE account_id = ? ORDER BY updated_at DESC")
+    .all(accountRow.id) as CrmOpportunityRow[];
+  const tasks = database
+    .prepare("SELECT * FROM crm_tasks WHERE account_id = ? ORDER BY created_at DESC, id DESC LIMIT 50")
+    .all(accountRow.id) as CrmTaskRow[];
+  return {
+    account: rowToCrmAccount(accountRow),
+    contacts: contacts.map((membership) => ({
+      ...rowToCrmAccountContact(membership),
+      contact: getCanonicalContactById(database, membership.contact_id),
+    })),
+    opportunities: opportunities.map(rowToCrmOpportunity),
+    tasks: tasks.map(rowToCrmTask),
+  };
+}
+
+export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAccountContact {
+  const database = ensureDb();
+  const account = requireCrmAccount(database, input.accountId);
+  const contactId = resolveRequiredCanonicalContactId(database, input.contactRef);
+  const contact = getCanonicalContactById(database, contactId);
+  if (contact?.kind === "org") throw new Error("CRM account memberships require a person contact");
+  const role = normalizeOptionalText(input.role) ?? "member";
+  const id = stableId("crm_ac", [account.id, contactId, role]);
+  let membership: CrmAccountContact | null = null;
+  const txn = database.transaction(() => {
+    const previous = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+      | CrmAccountContactRow
+      | undefined;
+    const affectedContactIds = new Set<string>([contactId]);
+    if (input.isPrimary) {
+      const previousPrimaryRows = database
+        .prepare("SELECT DISTINCT contact_id FROM crm_account_contacts WHERE account_id = ? AND is_primary = 1")
+        .all(account.id) as Array<{ contact_id: string }>;
+      for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
+      database.prepare("UPDATE crm_account_contacts SET is_primary = 0 WHERE account_id = ?").run(account.id);
+    } else if (input.isPrimary === false && previous?.is_primary) {
+      affectedContactIds.add(previous.contact_id);
+    }
+    const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
+    database
+      .prepare(
+        `
+        INSERT INTO crm_account_contacts (
+          id, account_id, contact_id, role, title, department, decision_role,
+          relationship_strength, is_primary, status, source, confidence,
+          evidence_json, metadata_json, first_seen_at, last_seen_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), datetime('now'), datetime('now'))
+        ON CONFLICT(account_id, contact_id, role) DO UPDATE SET
+          title = excluded.title,
+          department = excluded.department,
+          decision_role = excluded.decision_role,
+          relationship_strength = excluded.relationship_strength,
+          is_primary = excluded.is_primary,
+          status = excluded.status,
+          source = excluded.source,
+          confidence = excluded.confidence,
+          evidence_json = excluded.evidence_json,
+          metadata_json = excluded.metadata_json,
+          last_seen_at = datetime('now'),
+          updated_at = datetime('now')
+      `,
+      )
+      .run(
+        id,
+        account.id,
+        contactId,
+        role,
+        normalizeOptionalText(input.title, previous?.title ?? null),
+        normalizeOptionalText(input.department, previous?.department ?? null),
+        normalizeOptionalText(input.decisionRole, previous?.decision_role ?? "unknown") ?? "unknown",
+        normalizeOptionalText(input.relationshipStrength, previous?.relationship_strength ?? "unknown") ?? "unknown",
+        nextIsPrimary,
+        normalizeOptionalText(input.status, previous?.status ?? "active") ?? "active",
+        crmMutationSource(input),
+        normalizeCrmConfidence(input.confidence),
+        crmEventJson(input.evidence),
+        jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
+      );
+    const row = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+      | CrmAccountContactRow
+      | undefined;
+    if (!row) throw new Error(`CRM account membership not found after link: ${id}`);
+    const linkedMembership = rowToCrmAccountContact(row);
+    membership = linkedMembership;
+    for (const affectedContactId of affectedContactIds) {
+      refreshCrmContactPrimaryAccount(
+        database,
+        affectedContactId,
+        affectedContactId === contactId && linkedMembership.isPrimary ? account.id : null,
+      );
+    }
+    insertCrmEvent(database, {
+      eventType: "crm.account_contact.linked",
+      entityType: "account",
+      entityId: account.id,
+      contactId,
+      accountId: account.id,
+      source: linkedMembership.source,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: linkedMembership.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: linkedMembership,
+      previousPayload: previous ? rowToCrmAccountContact(previous) : null,
+    });
+  });
+  txn();
+  if (!membership) throw new Error(`CRM account membership not linked: ${id}`);
+  return membership;
+}
+
+function resolveCrmStage(database: Database, stageRef?: string | null, pipelineId?: string | null): CrmPipelineStage {
+  const resolvedPipelineId = pipelineId?.trim() || "crm_pipeline_default";
+  const ref = stageRef?.trim();
+  const row = ref
+    ? (database
+        .prepare(
+          `
+          SELECT * FROM crm_pipeline_stages
+          WHERE pipeline_id = ? AND (id = ? OR key = ?)
+          LIMIT 1
+        `,
+        )
+        .get(resolvedPipelineId, ref, ref) as CrmPipelineStageRow | undefined)
+    : (database
+        .prepare("SELECT * FROM crm_pipeline_stages WHERE pipeline_id = ? ORDER BY sort_order LIMIT 1")
+        .get(resolvedPipelineId) as CrmPipelineStageRow | undefined);
+  if (!row) throw new Error(`CRM pipeline stage not found: ${ref ?? "default"}`);
+  return rowToCrmPipelineStage(row);
+}
+
+function opportunityStatusForStage(stage: CrmPipelineStage, fallback: CrmOpportunityStatus): CrmOpportunityStatus {
+  if (stage.category === "terminal_won") return "won";
+  if (stage.category === "terminal_lost") return "lost";
+  if (fallback === "won" || fallback === "lost") return "open";
+  return fallback;
+}
+
+export function createCrmOpportunity(input: CreateCrmOpportunityInput): CrmOpportunity {
+  const database = ensureDb();
+  const title = normalizeRequiredText(input.title, "CRM opportunity title");
+  const accountId = normalizeOptionalText(input.accountId);
+  const contactId = input.contactRef ? resolveRequiredCanonicalContactId(database, input.contactRef) : null;
+  if (!accountId && !contactId) throw new Error("CRM opportunity requires an account or contact target");
+  if (accountId) requireCrmAccount(database, accountId);
+  const stage = resolveCrmStage(database, input.stageId ?? input.stageKey, input.pipelineId);
+  const owner = normalizeOptionalCrmOwner({ ownerType: input.ownerType, ownerId: input.ownerId });
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existingRow = database
+      .prepare("SELECT * FROM crm_opportunities WHERE idempotency_key = ?")
+      .get(idempotencyKey) as CrmOpportunityRow | undefined;
+    if (existingRow) return rowToCrmOpportunity(existingRow);
+    const existingEvent = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+    if (existingEvent?.entity_type === "opportunity") {
+      const row = getCrmOpportunityRow(database, existingEvent.entity_id);
+      if (row) return rowToCrmOpportunity(row);
+    }
+  }
+  const opportunityId = `crm_opp_${generateId()}`;
+  let opportunity: CrmOpportunity | null = null;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_opportunities (
+          id, account_id, primary_contact_id, pipeline_id, stage_id, title, description,
+          status, priority, value_cents, currency, probability, expected_close_at,
+          owner_type, owner_id, source, idempotency_key, confidence, evidence_json, metadata_json,
+          created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+      )
+      .run(
+        opportunityId,
+        accountId,
+        contactId,
+        stage.pipelineId,
+        stage.id,
+        title,
+        normalizeOptionalText(input.description),
+        normalizeCrmEnum<CrmOpportunityStatus>(
+          input.status,
+          CRM_OPPORTUNITY_STATUSES,
+          opportunityStatusForStage(stage, "open"),
+        ),
+        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+        input.valueCents ?? null,
+        normalizeOptionalText(input.currency) ?? "BRL",
+        normalizeProbability(input.probability, stage.probability),
+        normalizeOptionalText(input.expectedCloseAt),
+        owner.ownerType,
+        owner.ownerId,
+        crmMutationSource(input),
+        idempotencyKey,
+        normalizeCrmConfidence(input.confidence),
+        crmEventJson(input.evidence),
+        jsonObject(input.metadata),
+      );
+    const row = requireCrmOpportunity(database, opportunityId);
+    opportunity = rowToCrmOpportunity(row);
+    if (contactId) {
+      database
+        .prepare(
+          `
+          INSERT OR IGNORE INTO crm_opportunity_contacts (
+            id, opportunity_id, contact_id, account_id, role, is_primary,
+            source, confidence, evidence_json, metadata_json, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, 'stakeholder', 1, ?, ?, ?, '{}', datetime('now'), datetime('now'))
+        `,
+        )
+        .run(
+          stableId("crm_oc", [opportunityId, contactId, "stakeholder"]),
+          opportunityId,
+          contactId,
+          accountId,
+          opportunity.source,
+          opportunity.confidence,
+          crmEventJson(input.evidence),
+        );
+      database
+        .prepare(
+          `
+          INSERT INTO crm_contact_profiles (contact_id, primary_opportunity_id, created_at, updated_at)
+          VALUES (?, ?, datetime('now'), datetime('now'))
+          ON CONFLICT(contact_id) DO UPDATE SET primary_opportunity_id = COALESCE(primary_opportunity_id, excluded.primary_opportunity_id), updated_at = datetime('now')
+        `,
+        )
+        .run(contactId, opportunityId);
+      const profileRow = getCrmContactProfileRow(database, contactId);
+      if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
+    }
+    insertCrmEvent(database, {
+      eventType: "crm.opportunity.created",
+      entityType: "opportunity",
+      entityId: opportunityId,
+      contactId,
+      accountId,
+      opportunityId,
+      source: opportunity.source,
+      idempotencyKey,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: opportunity.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: opportunity,
+    });
+  });
+  txn();
+  if (!opportunity) throw new Error(`CRM opportunity not created: ${opportunityId}`);
+  return opportunity;
+}
+
+function refreshCrmContactPrimaryOpportunity(
+  database: Database,
+  contactId: string,
+  preferredOpportunityId?: string | null,
+): void {
+  let nextOpportunityId: string | null = null;
+  if (preferredOpportunityId) {
+    const preferred = database
+      .prepare(
+        `
+        SELECT opportunity_id FROM crm_opportunity_contacts
+        WHERE contact_id = ? AND opportunity_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, opportunity_id
+        LIMIT 1
+      `,
+      )
+      .get(contactId, preferredOpportunityId) as { opportunity_id: string } | undefined;
+    nextOpportunityId = preferred?.opportunity_id ?? null;
+  }
+  if (!nextOpportunityId) {
+    const fallback = database
+      .prepare(
+        `
+        SELECT opportunity_id FROM crm_opportunity_contacts
+        WHERE contact_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, opportunity_id
+        LIMIT 1
+      `,
+      )
+      .get(contactId) as { opportunity_id: string } | undefined;
+    nextOpportunityId = fallback?.opportunity_id ?? null;
+  }
+
+  if (nextOpportunityId) {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_contact_profiles (contact_id, primary_opportunity_id, created_at, updated_at)
+        VALUES (?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(contact_id) DO UPDATE SET
+          primary_opportunity_id = excluded.primary_opportunity_id,
+          updated_at = datetime('now')
+      `,
+      )
+      .run(contactId, nextOpportunityId);
+  } else {
+    database
+      .prepare(
+        `
+        UPDATE crm_contact_profiles
+        SET primary_opportunity_id = NULL, updated_at = datetime('now')
+        WHERE contact_id = ? AND primary_opportunity_id IS NOT NULL
+      `,
+      )
+      .run(contactId);
+  }
+
+  const profileRow = getCrmContactProfileRow(database, contactId);
+  if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
+}
+
+function refreshCrmOpportunityPrimaryContact(
+  database: Database,
+  opportunityId: string,
+  preferredContactId?: string | null,
+): string | null {
+  let nextContactId: string | null = null;
+  if (preferredContactId) {
+    const preferred = database
+      .prepare(
+        `
+        SELECT contact_id FROM crm_opportunity_contacts
+        WHERE opportunity_id = ? AND contact_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, contact_id
+        LIMIT 1
+      `,
+      )
+      .get(opportunityId, preferredContactId) as { contact_id: string } | undefined;
+    nextContactId = preferred?.contact_id ?? null;
+  }
+  if (!nextContactId) {
+    const fallback = database
+      .prepare(
+        `
+        SELECT contact_id FROM crm_opportunity_contacts
+        WHERE opportunity_id = ? AND is_primary = 1
+        ORDER BY updated_at DESC, contact_id
+        LIMIT 1
+      `,
+      )
+      .get(opportunityId) as { contact_id: string } | undefined;
+    nextContactId = fallback?.contact_id ?? null;
+  }
+  database
+    .prepare("UPDATE crm_opportunities SET primary_contact_id = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(nextContactId, opportunityId);
+  return nextContactId;
+}
+
+export function linkCrmOpportunityContact(input: LinkCrmOpportunityContactInput): CrmOpportunityContact {
+  const database = ensureDb();
+  const opportunity = requireCrmOpportunity(database, input.opportunityId);
+  const contactId = resolveRequiredCanonicalContactId(database, input.contactRef);
+  const accountId = normalizeOptionalText(input.accountId) ?? opportunity.account_id;
+  if (accountId) requireCrmAccount(database, accountId);
+  const role = normalizeOptionalText(input.role) ?? "stakeholder";
+  const id = stableId("crm_oc", [opportunity.id, contactId, role]);
+  let link: CrmOpportunityContact | null = null;
+  const txn = database.transaction(() => {
+    const previous = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+      | CrmOpportunityContactRow
+      | undefined;
+    const affectedContactIds = new Set<string>([contactId]);
+    if (input.isPrimary) {
+      const previousPrimaryRows = database
+        .prepare("SELECT DISTINCT contact_id FROM crm_opportunity_contacts WHERE opportunity_id = ? AND is_primary = 1")
+        .all(opportunity.id) as Array<{ contact_id: string }>;
+      for (const row of previousPrimaryRows) affectedContactIds.add(row.contact_id);
+      database
+        .prepare("UPDATE crm_opportunity_contacts SET is_primary = 0 WHERE opportunity_id = ?")
+        .run(opportunity.id);
+    } else if (input.isPrimary === false && previous?.is_primary) {
+      affectedContactIds.add(previous.contact_id);
+    }
+    const nextIsPrimary = input.isPrimary === undefined ? (previous?.is_primary ?? 0) : input.isPrimary ? 1 : 0;
+    database
+      .prepare(
+        `
+        INSERT INTO crm_opportunity_contacts (
+          id, opportunity_id, contact_id, account_id, role, influence, sentiment, is_primary,
+          source, confidence, evidence_json, metadata_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        ON CONFLICT(opportunity_id, contact_id, role) DO UPDATE SET
+          account_id = excluded.account_id,
+          influence = excluded.influence,
+          sentiment = excluded.sentiment,
+          is_primary = excluded.is_primary,
+          source = excluded.source,
+          confidence = excluded.confidence,
+          evidence_json = excluded.evidence_json,
+          metadata_json = excluded.metadata_json,
+          updated_at = datetime('now')
+      `,
+      )
+      .run(
+        id,
+        opportunity.id,
+        contactId,
+        accountId,
+        role,
+        normalizeOptionalText(input.influence, previous?.influence ?? "unknown") ?? "unknown",
+        normalizeOptionalText(input.sentiment, previous?.sentiment ?? "unknown") ?? "unknown",
+        nextIsPrimary,
+        crmMutationSource(input),
+        normalizeCrmConfidence(input.confidence),
+        crmEventJson(input.evidence),
+        jsonObject(normalizeMetadataObject(input.metadata, previous?.metadata_json ?? "{}")),
+      );
+    if (nextIsPrimary === 1) {
+      refreshCrmOpportunityPrimaryContact(database, opportunity.id, contactId);
+    } else if (previous?.is_primary) {
+      const fallbackContactId = refreshCrmOpportunityPrimaryContact(database, opportunity.id);
+      if (fallbackContactId) affectedContactIds.add(fallbackContactId);
+    }
+    for (const affectedContactId of affectedContactIds) {
+      refreshCrmContactPrimaryOpportunity(
+        database,
+        affectedContactId,
+        affectedContactId === contactId && nextIsPrimary === 1 ? opportunity.id : null,
+      );
+    }
+    const row = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+      | CrmOpportunityContactRow
+      | undefined;
+    if (!row) throw new Error(`CRM opportunity contact not found after link: ${id}`);
+    link = rowToCrmOpportunityContact(row);
+    insertCrmEvent(database, {
+      eventType: "crm.opportunity_contact.linked",
+      entityType: "opportunity",
+      entityId: opportunity.id,
+      contactId,
+      accountId,
+      opportunityId: opportunity.id,
+      source: link.source,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: link.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: link,
+      previousPayload: previous ? rowToCrmOpportunityContact(previous) : null,
+    });
+  });
+  txn();
+  if (!link) throw new Error(`CRM opportunity contact not linked: ${id}`);
+  return link;
+}
+
+export function listCrmOpportunityContacts(opportunityId: string): CrmOpportunityContact[] {
+  const database = ensureDb();
+  requireCrmOpportunity(database, opportunityId);
+  const rows = database
+    .prepare(
+      "SELECT * FROM crm_opportunity_contacts WHERE opportunity_id = ? ORDER BY is_primary DESC, updated_at DESC",
+    )
+    .all(opportunityId) as CrmOpportunityContactRow[];
+  return rows.map(rowToCrmOpportunityContact);
+}
+
+export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): CrmOpportunity {
+  const database = ensureDb();
+  const previous = requireCrmOpportunity(database, input.opportunityId);
+  const stage = resolveCrmStage(database, input.stageRef, previous.pipeline_id ?? "crm_pipeline_default");
+  const nextStatus = opportunityStatusForStage(stage, previous.status);
+  let opportunity: CrmOpportunity | null = null;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        UPDATE crm_opportunities
+        SET pipeline_id = ?, stage_id = ?, status = ?, closed_at = ?, lost_reason = ?, updated_at = datetime('now')
+        WHERE id = ?
+      `,
+      )
+      .run(
+        stage.pipelineId,
+        stage.id,
+        nextStatus,
+        nextStatus === "won" || nextStatus === "lost" ? new Date().toISOString() : null,
+        nextStatus === "lost" ? (normalizeOptionalText(input.lostReason) ?? previous.lost_reason) : null,
+        previous.id,
+      );
+    const next = requireCrmOpportunity(database, previous.id);
+    opportunity = rowToCrmOpportunity(next);
+    insertCrmEvent(database, {
+      eventType: "crm.opportunity.stage_changed",
+      entityType: "opportunity",
+      entityId: previous.id,
+      contactId: previous.primary_contact_id,
+      accountId: previous.account_id,
+      opportunityId: previous.id,
+      source: crmMutationSource(input),
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: input.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: { opportunity, stage },
+      previousPayload: { opportunity: rowToCrmOpportunity(previous), stageId: previous.stage_id },
+    });
+    if (previous.status !== next.status) {
+      insertCrmEvent(database, {
+        eventType: "crm.opportunity.status_changed",
+        entityType: "opportunity",
+        entityId: previous.id,
+        contactId: previous.primary_contact_id,
+        accountId: previous.account_id,
+        opportunityId: previous.id,
+        source: crmMutationSource(input),
+        actorType: input.actorType,
+        actorId: input.actorId,
+        confidence: input.confidence,
+        evidence: input.evidence,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        payload: { status: next.status, closedAt: next.closed_at, lostReason: next.lost_reason },
+        previousPayload: { status: previous.status, closedAt: previous.closed_at, lostReason: previous.lost_reason },
+      });
+    }
+  });
+  txn();
+  if (!opportunity) throw new Error(`CRM opportunity not moved: ${input.opportunityId}`);
+  return opportunity;
+}
+
+export function getCrmOpportunity(opportunityId: string): CrmOpportunity | null {
+  const row = getCrmOpportunityRow(ensureDb(), opportunityId);
+  return row ? rowToCrmOpportunity(row) : null;
+}
+
+export function listCrmOpportunityBoard(): CrmOpportunityBoardCard[] {
+  const rows = ensureDb().prepare("SELECT * FROM crm_opportunity_board").all() as CrmOpportunityBoardRow[];
+  return rows.map(rowToCrmOpportunityBoardCard);
+}
+
+function refreshCrmContactNextAction(database: Database, contactId: string): void {
+  const next = database
+    .prepare(
+      `
+      SELECT * FROM crm_next_actions
+      WHERE contact_id = ?
+      ORDER BY
+        CASE priority
+          WHEN 'urgent' THEN 0
+          WHEN 'high' THEN 1
+          WHEN 'normal' THEN 2
+          ELSE 3
+        END,
+        due_at IS NULL,
+        due_at ASC,
+        task_id ASC
+      LIMIT 1
+    `,
+    )
+    .get(contactId) as CrmNextActionRow | undefined;
+  database
+    .prepare(
+      `
+      INSERT INTO crm_contact_profiles (
+        contact_id, next_action_at, next_action_summary, next_task_id, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(contact_id) DO UPDATE SET
+        next_action_at = excluded.next_action_at,
+        next_action_summary = excluded.next_action_summary,
+        next_task_id = excluded.next_task_id,
+        updated_at = datetime('now')
+    `,
+    )
+    .run(contactId, next?.due_at ?? null, next?.title ?? null, next?.task_id ?? null);
+  const profileRow = getCrmContactProfileRow(database, contactId);
+  if (profileRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(profileRow));
+}
+
+export function createCrmTask(input: CreateCrmTaskInput): CrmTask {
+  const database = ensureDb();
+  const title = normalizeRequiredText(input.title, "CRM task title");
+  const opportunity = input.opportunityId ? requireCrmOpportunity(database, input.opportunityId) : null;
+  const contactId = input.contactRef
+    ? resolveRequiredCanonicalContactId(database, input.contactRef)
+    : (opportunity?.primary_contact_id ?? null);
+  const accountId = normalizeOptionalText(input.accountId) ?? opportunity?.account_id ?? null;
+  if (accountId) requireCrmAccount(database, accountId);
+  if (!contactId && !accountId && !input.opportunityId && !input.chatId && !input.sessionKey) {
+    throw new Error("CRM task requires contact, account, opportunity, chat, or session target");
+  }
+  const owner = normalizeOptionalCrmOwner({ ownerType: input.ownerType, ownerId: input.ownerId });
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existingRow = database.prepare("SELECT * FROM crm_tasks WHERE idempotency_key = ?").get(idempotencyKey) as
+      | CrmTaskRow
+      | undefined;
+    if (existingRow) return rowToCrmTask(existingRow);
+    const existingEvent = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+    if (existingEvent?.entity_type === "task") {
+      const row = getCrmTaskRow(database, existingEvent.entity_id);
+      if (row) return rowToCrmTask(row);
+    }
+  }
+  const taskId = `crm_task_${generateId()}`;
+  let task: CrmTask | null = null;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_tasks (
+          id, contact_id, account_id, opportunity_id, chat_id, session_key, title, body,
+          task_type, status, priority, due_at, snoozed_until, owner_type, owner_id,
+          created_by_type, created_by_id, source, idempotency_key, confidence, evidence_json, metadata_json,
+          ravi_task_id, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+      )
+      .run(
+        taskId,
+        contactId,
+        accountId,
+        input.opportunityId ?? null,
+        normalizeOptionalText(input.chatId),
+        normalizeOptionalText(input.sessionKey),
+        title,
+        normalizeOptionalText(input.body),
+        normalizeOptionalText(input.taskType) ?? "follow_up",
+        normalizeCrmEnum<CrmTaskStatus>(input.status, CRM_TASK_STATUSES, "open"),
+        normalizeCrmEnum<CrmPriority>(input.priority, CRM_PRIORITIES, "normal"),
+        normalizeOptionalText(input.dueAt),
+        normalizeOptionalText(input.snoozedUntil),
+        owner.ownerType,
+        owner.ownerId,
+        normalizeOptionalText(input.createdByType) ?? normalizeCrmActorType(input.actorType),
+        normalizeOptionalText(input.createdById) ?? normalizeOptionalText(input.actorId),
+        crmMutationSource(input),
+        idempotencyKey,
+        normalizeCrmConfidence(input.confidence),
+        crmEventJson(input.evidence),
+        jsonObject(input.metadata),
+        normalizeOptionalText(input.raviTaskId),
+      );
+    const row = requireCrmTask(database, taskId);
+    task = rowToCrmTask(row);
+    if (contactId) refreshCrmContactNextAction(database, contactId);
+    insertCrmEvent(database, {
+      eventType: "crm.task.created",
+      entityType: "task",
+      entityId: taskId,
+      contactId,
+      accountId,
+      opportunityId: input.opportunityId ?? null,
+      taskId,
+      source: task.source,
+      idempotencyKey,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: task.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: task,
+    });
+  });
+  txn();
+  if (!task) throw new Error(`CRM task not created: ${taskId}`);
+  return task;
+}
+
+export function completeCrmTask(input: CompleteCrmTaskInput): CrmTask {
+  const database = ensureDb();
+  const previous = requireCrmTask(database, input.taskId);
+  let task: CrmTask | null = rowToCrmTask(previous);
+  if (previous.status === "done") return task;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        UPDATE crm_tasks
+        SET status = 'done', completed_at = datetime('now'), updated_at = datetime('now')
+        WHERE id = ?
+      `,
+      )
+      .run(previous.id);
+    const row = requireCrmTask(database, previous.id);
+    task = rowToCrmTask(row);
+    if (row.contact_id) refreshCrmContactNextAction(database, row.contact_id);
+    insertCrmEvent(database, {
+      eventType: "crm.task.completed",
+      entityType: "task",
+      entityId: previous.id,
+      contactId: previous.contact_id,
+      accountId: previous.account_id,
+      opportunityId: previous.opportunity_id,
+      taskId: previous.id,
+      source: crmMutationSource(input),
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: input.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: task,
+      previousPayload: rowToCrmTask(previous),
+    });
+  });
+  txn();
+  if (!task) throw new Error(`CRM task not completed: ${input.taskId}`);
+  return task;
+}
+
+export function getCrmTask(taskId: string): CrmTask | null {
+  const row = getCrmTaskRow(ensureDb(), taskId);
+  return row ? rowToCrmTask(row) : null;
+}
+
+export function listCrmNextActions(options: ListCrmNextActionsOptions = {}): ListPage<CrmNextAction> {
+  const database = ensureDb();
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (options.contactRef?.trim()) {
+    where.push("contact_id = ?");
+    params.push(resolveRequiredCanonicalContactId(database, options.contactRef));
+  }
+  if (options.accountId?.trim()) {
+    where.push("account_id = ?");
+    params.push(options.accountId.trim());
+  }
+  if (options.opportunityId?.trim()) {
+    where.push("opportunity_id = ?");
+    params.push(options.opportunityId.trim());
+  }
+  if (options.ownerType || options.ownerId) {
+    const owner = normalizeOptionalCrmOwner({ ownerType: options.ownerType, ownerId: options.ownerId });
+    where.push("owner_type = ?", "owner_id = ?");
+    params.push(owner.ownerType!, owner.ownerId!);
+  }
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
+  const total = countRows({ db: database, table: "crm_next_actions", where, params });
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_next_actions
+      ${buildSqlWhereClause(where)}
+      ORDER BY
+        CASE priority
+          WHEN 'urgent' THEN 0
+          WHEN 'high' THEN 1
+          WHEN 'normal' THEN 2
+          ELSE 3
+        END,
+        due_at IS NULL,
+        due_at ASC,
+        task_id ASC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as CrmNextActionRow[];
+  return { total, limit, offset, items: rows.map(rowToCrmNextAction) };
+}
+
+function getCrmFactRow(database: Database, factId: string): CrmFactRow | null {
+  const row = database.prepare("SELECT * FROM crm_facts WHERE id = ?").get(factId) as CrmFactRow | undefined;
+  return row ?? null;
+}
+
+function requireCrmFact(database: Database, factId: string): CrmFactRow {
+  const fact = getCrmFactRow(database, factId);
+  if (!fact) throw new Error(`CRM fact not found: ${factId}`);
+  return fact;
+}
+
+function resolveCrmFactTarget(
+  database: Database,
+  input: Pick<ProposeCrmFactInput, "entityType" | "entityId" | "contactRef" | "accountId" | "opportunityId">,
+): {
+  entityType: CrmEntityType;
+  entityId: string;
+  contactId: string | null;
+  accountId: string | null;
+  opportunityId: string | null;
+} {
+  const entityType = normalizeCrmEntityType(input.entityType);
+  const rawEntityId = normalizeRequiredText(input.entityId, "CRM fact entity id");
+  let entityId = rawEntityId;
+  let contactId = input.contactRef ? resolveRequiredCanonicalContactId(database, input.contactRef) : null;
+  let accountId = normalizeOptionalText(input.accountId);
+  let opportunityId = normalizeOptionalText(input.opportunityId);
+
+  if (entityType === "contact") {
+    contactId = contactId ?? resolveRequiredCanonicalContactId(database, rawEntityId);
+    entityId = contactId;
+  } else if (entityType === "account") {
+    const account = requireCrmAccount(database, accountId ?? rawEntityId);
+    accountId = account.id;
+    entityId = account.id;
+    contactId = contactId ?? account.org_contact_id;
+  } else if (entityType === "opportunity") {
+    const opportunity = requireCrmOpportunity(database, opportunityId ?? rawEntityId);
+    opportunityId = opportunity.id;
+    entityId = opportunity.id;
+    contactId = contactId ?? opportunity.primary_contact_id;
+    accountId = accountId ?? opportunity.account_id;
+  } else if (entityType === "task") {
+    const task = requireCrmTask(database, rawEntityId);
+    entityId = task.id;
+    contactId = contactId ?? task.contact_id;
+    accountId = accountId ?? task.account_id;
+    opportunityId = opportunityId ?? task.opportunity_id;
+  } else if (entityType === "activity") {
+    const activity = requireCrmActivity(database, rawEntityId);
+    entityId = activity.id;
+    contactId = contactId ?? activity.contact_id;
+    accountId = accountId ?? activity.account_id;
+    opportunityId = opportunityId ?? activity.opportunity_id;
+  } else {
+    if (contactId === null && input.contactRef)
+      contactId = resolveRequiredCanonicalContactId(database, input.contactRef);
+    if (accountId) requireCrmAccount(database, accountId);
+    if (opportunityId) requireCrmOpportunity(database, opportunityId);
+  }
+
+  return { entityType, entityId, contactId, accountId, opportunityId };
+}
+
+function normalizeCrmFactKey(key: string): string {
+  const normalized = key.trim();
+  if (!normalized) throw new Error("CRM fact key is required");
+  return normalized;
+}
+
+export function proposeCrmFact(input: ProposeCrmFactInput): CrmFact {
+  const database = ensureDb();
+  if (input.value === undefined) throw new Error("CRM fact value must be JSON-serializable");
+  const target = resolveCrmFactTarget(database, input);
+  const key = normalizeCrmFactKey(input.key);
+  const status = getCrmFactStatus(input.status, "proposed");
+  const scope = normalizeCrmScope(input.scopeType, input.scopeId);
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existingRow = database.prepare("SELECT * FROM crm_facts WHERE idempotency_key = ?").get(idempotencyKey) as
+      | CrmFactRow
+      | undefined;
+    if (existingRow) return rowToCrmFact(existingRow);
+    const existingEvent = getCrmEventRowByIdempotencyKey(database, idempotencyKey);
+    if (existingEvent?.event_type.startsWith("crm.fact.")) {
+      const payload = parseJsonObject(existingEvent.payload_json);
+      const factIdFromEvent = typeof payload?.id === "string" ? payload.id : null;
+      const row = factIdFromEvent ? getCrmFactRow(database, factIdFromEvent) : null;
+      if (row) return rowToCrmFact(row);
+    }
+  }
+
+  const factId = `crm_fact_${generateId()}`;
+  let fact: CrmFact | null = null;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        INSERT INTO crm_facts (
+          id, entity_type, entity_id, contact_id, account_id, opportunity_id,
+          key, value_json, status, source, idempotency_key, confidence, evidence_json,
+          scope_type, scope_id, proposed_by_type, proposed_by_id, confirmed_by_type, confirmed_by_id,
+          supersedes_fact_id, metadata_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+      )
+      .run(
+        factId,
+        target.entityType,
+        target.entityId,
+        target.contactId,
+        target.accountId,
+        target.opportunityId,
+        key,
+        JSON.stringify(input.value),
+        status,
+        crmMutationSource(input),
+        idempotencyKey,
+        normalizeCrmConfidence(input.confidence),
+        crmEventJson(input.evidence),
+        scope.scopeType,
+        scope.scopeId,
+        normalizeCrmActorType(input.actorType),
+        normalizeOptionalText(input.actorId),
+        status === "confirmed" ? normalizeCrmActorType(input.actorType) : null,
+        status === "confirmed" ? normalizeOptionalText(input.actorId) : null,
+        normalizeOptionalText(input.supersedesFactId),
+        jsonObject(input.metadata),
+      );
+    const row = requireCrmFact(database, factId);
+    fact = rowToCrmFact(row);
+    insertCrmEvent(database, {
+      eventType: `crm.fact.${status}`,
+      entityType: target.entityType,
+      entityId: target.entityId,
+      contactId: target.contactId,
+      accountId: target.accountId,
+      opportunityId: target.opportunityId,
+      source: fact.source,
+      idempotencyKey,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: fact.confidence,
+      evidence: input.evidence,
+      scopeType: scope.scopeType,
+      scopeId: scope.scopeId,
+      payload: fact,
+    });
+  });
+  txn();
+  if (!fact) throw new Error(`CRM fact not created: ${factId}`);
+  return fact;
+}
+
+function updateCrmFactStatus(input: UpdateCrmFactStatusInput, status: Exclude<CrmFactStatus, "proposed">): CrmFact {
+  const database = ensureDb();
+  const previous = requireCrmFact(database, input.factId);
+  let fact: CrmFact | null = rowToCrmFact(previous);
+  if (previous.status === status) return fact;
+  const txn = database.transaction(() => {
+    database
+      .prepare(
+        `
+        UPDATE crm_facts
+        SET status = ?,
+            confirmed_by_type = CASE WHEN ? = 'confirmed' THEN ? ELSE confirmed_by_type END,
+            confirmed_by_id = CASE WHEN ? = 'confirmed' THEN ? ELSE confirmed_by_id END,
+            updated_at = datetime('now')
+        WHERE id = ?
+      `,
+      )
+      .run(
+        status,
+        status,
+        normalizeCrmActorType(input.actorType),
+        status,
+        normalizeOptionalText(input.actorId),
+        previous.id,
+      );
+    const row = requireCrmFact(database, previous.id);
+    fact = rowToCrmFact(row);
+    insertCrmEvent(database, {
+      eventType: `crm.fact.${status}`,
+      entityType: previous.entity_type,
+      entityId: previous.entity_id,
+      contactId: previous.contact_id,
+      accountId: previous.account_id,
+      opportunityId: previous.opportunity_id,
+      source: crmMutationSource(input),
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: input.confidence ?? previous.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType ?? previous.scope_type,
+      scopeId: input.scopeId ?? previous.scope_id,
+      payload: fact,
+      previousPayload: rowToCrmFact(previous),
+    });
+  });
+  txn();
+  if (!fact) throw new Error(`CRM fact not updated: ${input.factId}`);
+  return fact;
+}
+
+export function confirmCrmFact(input: string | UpdateCrmFactStatusInput): CrmFact {
+  return updateCrmFactStatus(typeof input === "string" ? { factId: input } : input, "confirmed");
+}
+
+export function rejectCrmFact(input: string | UpdateCrmFactStatusInput): CrmFact {
+  return updateCrmFactStatus(typeof input === "string" ? { factId: input } : input, "rejected");
+}
+
+export function supersedeCrmFact(input: string | UpdateCrmFactStatusInput): CrmFact {
+  return updateCrmFactStatus(typeof input === "string" ? { factId: input } : input, "superseded");
+}
+
+export function listCrmFacts(options: ListCrmFactsOptions = {}): ListPage<CrmFact> {
+  const database = ensureDb();
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (options.entityType?.trim()) {
+    where.push("entity_type = ?");
+    params.push(normalizeCrmEntityType(options.entityType));
+  }
+  if (options.entityId?.trim()) {
+    where.push("entity_id = ?");
+    params.push(options.entityId.trim());
+  }
+  if (options.contactRef?.trim()) {
+    where.push("contact_id = ?");
+    params.push(resolveRequiredCanonicalContactId(database, options.contactRef));
+  }
+  if (options.accountId?.trim()) {
+    where.push("account_id = ?");
+    params.push(options.accountId.trim());
+  }
+  if (options.opportunityId?.trim()) {
+    where.push("opportunity_id = ?");
+    params.push(options.opportunityId.trim());
+  }
+  if (options.status?.trim()) {
+    where.push("status = ?");
+    params.push(getCrmFactStatus(options.status));
+  }
+  if (options.key?.trim()) {
+    where.push("key = ?");
+    params.push(normalizeCrmFactKey(options.key));
+  }
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 25, maxLimit: 500 });
+  const total = countRows({ db: database, table: "crm_facts", where, params });
+  const rows = database
+    .prepare(
+      `
+      SELECT * FROM crm_facts
+      ${buildSqlWhereClause(where)}
+      ORDER BY updated_at DESC, created_at DESC, id DESC
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as CrmFactRow[];
+  return { total, limit, offset, items: rows.map(rowToCrmFact) };
+}
+
+function contactEventActivityType(eventType: string): string {
+  if (eventType === "profile.note_added") return "note";
+  if (eventType.startsWith("interaction.message")) return "message";
+  if (eventType.startsWith("interaction.call")) return "call";
+  if (eventType.startsWith("crm.task")) return "task";
+  if (eventType.startsWith("crm.opportunity")) return "opportunity_update";
+  if (eventType.startsWith("crm.contact_profile") || eventType.startsWith("profile.")) return "profile_update";
+  return "note";
+}
+
+function contactEventSummary(event: ContactEvent): string {
+  const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
+  const text = typeof payload.text === "string" ? payload.text.trim() : "";
+  if (text) return text;
+  const nestedPayload =
+    payload.payload && typeof payload.payload === "object" ? (payload.payload as Record<string, unknown>) : {};
+  const title = typeof nestedPayload.title === "string" ? nestedPayload.title.trim() : "";
+  if (title) return title;
+  return event.eventType;
+}
+
+export function projectContactEventToCrmActivity(input: ProjectContactEventToCrmActivityInput): CrmActivity {
+  const database = ensureDb();
+  const eventRow = database.prepare("SELECT * FROM contact_events WHERE id = ?").get(input.contactEventId) as
+    | ContactEventRow
+    | undefined;
+  if (!eventRow) throw new Error(`Contact event not found: ${input.contactEventId}`);
+  const event = rowToContactEvent(eventRow);
+  if (input.accountId) requireCrmAccount(database, input.accountId);
+  if (input.opportunityId) requireCrmOpportunity(database, input.opportunityId);
+  if (input.taskId) requireCrmTask(database, input.taskId);
+
+  const idempotencyKey = normalizeCrmIdempotencyKey(input.idempotencyKey);
+  if (idempotencyKey) {
+    const existingRow = database
+      .prepare("SELECT * FROM crm_activities WHERE idempotency_key = ?")
+      .get(idempotencyKey) as CrmActivityRow | undefined;
+    if (existingRow) return rowToCrmActivity(existingRow);
+  }
+  const activityId = `crm_act_${generateId()}`;
+  let activity: CrmActivity | null = null;
+  const txn = database.transaction(() => {
+    const existing = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
+      | CrmActivityRow
+      | undefined;
+    if (existing) {
+      activity = rowToCrmActivity(existing);
+      return;
+    }
+
+    database
+      .prepare(
+        `
+        INSERT OR IGNORE INTO crm_activities (
+          id, activity_type, title, summary, body, occurred_at,
+          contact_id, account_id, opportunity_id, task_id, chat_id, session_key,
+          message_id, contact_event_id, session_event_id, actor_type, actor_id,
+          source, idempotency_key, confidence, evidence_json, payload_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `,
+      )
+      .run(
+        activityId,
+        normalizeOptionalText(input.activityType) ?? contactEventActivityType(event.eventType),
+        normalizeOptionalText(input.title),
+        normalizeOptionalText(input.summary) ?? contactEventSummary(event),
+        normalizeOptionalText(input.body),
+        event.effectiveAt ?? event.createdAt,
+        event.contactId,
+        normalizeOptionalText(input.accountId),
+        normalizeOptionalText(input.opportunityId),
+        normalizeOptionalText(input.taskId),
+        event.chatId,
+        event.sessionKey,
+        event.messageId,
+        event.id,
+        null,
+        event.actorType ?? "unknown",
+        event.actorId,
+        crmMutationSource(input),
+        idempotencyKey,
+        input.confidence ?? event.confidence ?? 1,
+        crmEventJson(input.evidence ?? event.evidence),
+        JSON.stringify({
+          contactEventId: event.id,
+          contactEventType: event.eventType,
+          payload: event.payload,
+        }),
+      );
+    const row = database.prepare("SELECT * FROM crm_activities WHERE contact_event_id = ?").get(event.id) as
+      | CrmActivityRow
+      | undefined;
+    if (!row) throw new Error(`CRM activity not found after projection: ${activityId}`);
+    const projectedActivity = rowToCrmActivity(row);
+    activity = projectedActivity;
+    if (row.id !== activityId) return;
+    insertCrmEvent(database, {
+      eventType: "crm.activity.logged",
+      entityType: "activity",
+      entityId: activityId,
+      contactId: event.contactId,
+      accountId: projectedActivity.accountId,
+      opportunityId: projectedActivity.opportunityId,
+      taskId: projectedActivity.taskId,
+      activityId,
+      source: projectedActivity.source,
+      idempotencyKey,
+      actorType: input.actorType ?? event.actorType,
+      actorId: input.actorId ?? event.actorId,
+      confidence: projectedActivity.confidence,
+      evidence: input.evidence ?? event.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: projectedActivity,
+      emitContactEvent: false,
+    });
+    upsertCrmActivityParticipant(database, {
+      activityId: projectedActivity.id,
+      contactId: event.contactId,
+      accountId: projectedActivity.accountId,
+      role: "subject",
+      actorType: event.actorType,
+      actorId: event.actorId,
+      source: projectedActivity.source,
+      confidence: projectedActivity.confidence,
+      metadata: { sourceContactEventId: event.id },
+    });
+  });
+  txn();
+  if (!activity) throw new Error(`CRM activity not projected: ${activityId}`);
+  return activity;
+}
+
+function upsertCrmActivityParticipant(
+  database: Database,
+  input: {
+    activityId: string;
+    contactId?: string | null;
+    accountId?: string | null;
+    role?: string | null;
+    actorType?: string | null;
+    actorId?: string | null;
+    source: string;
+    confidence?: number | null;
+    metadata?: Record<string, unknown> | null;
+  },
+): CrmActivityParticipantRow {
+  const contactId = input.contactId?.trim() || null;
+  const accountId = input.accountId?.trim() || null;
+  if (!contactId && !accountId) throw new Error("CRM activity participant requires contact or account target");
+  const role = normalizeOptionalText(input.role) ?? "participant";
+  const id = stableId("crm_ap", [input.activityId, contactId, accountId, role]);
+  database
+    .prepare(
+      `
+      INSERT INTO crm_activity_participants (
+        id, activity_id, contact_id, account_id, role, actor_type, actor_id,
+        source, confidence, metadata_json, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET
+        contact_id = excluded.contact_id,
+        account_id = excluded.account_id,
+        role = excluded.role,
+        actor_type = excluded.actor_type,
+        actor_id = excluded.actor_id,
+        source = excluded.source,
+        confidence = excluded.confidence,
+        metadata_json = excluded.metadata_json,
+        updated_at = datetime('now')
+    `,
+    )
+    .run(
+      id,
+      input.activityId,
+      contactId,
+      accountId,
+      role,
+      input.actorType?.trim() || null,
+      input.actorId?.trim() || null,
+      input.source,
+      normalizeCrmConfidence(input.confidence),
+      jsonObject(input.metadata),
+    );
+  const row = database.prepare("SELECT * FROM crm_activity_participants WHERE id = ?").get(id) as
+    | CrmActivityParticipantRow
+    | undefined;
+  if (!row) throw new Error(`CRM activity participant not found after link: ${id}`);
+  return row;
+}
+
+export function linkCrmActivityParticipant(input: LinkCrmActivityParticipantInput): CrmActivityParticipant {
+  const database = ensureDb();
+  const activity = requireCrmActivity(database, input.activityId);
+  const contactId = input.contactRef ? resolveRequiredCanonicalContactId(database, input.contactRef) : null;
+  const accountId = normalizeOptionalText(input.accountId);
+  if (accountId) requireCrmAccount(database, accountId);
+  let participant: CrmActivityParticipant | null = null;
+  const txn = database.transaction(() => {
+    const row = upsertCrmActivityParticipant(database, {
+      activityId: activity.id,
+      contactId,
+      accountId,
+      role: input.role,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      source: crmMutationSource(input),
+      confidence: input.confidence,
+      metadata: input.metadata,
+    });
+    participant = rowToCrmActivityParticipant(row);
+    insertCrmEvent(database, {
+      eventType: "crm.activity_participant.linked",
+      entityType: "activity",
+      entityId: activity.id,
+      contactId,
+      accountId,
+      opportunityId: activity.opportunity_id,
+      taskId: activity.task_id,
+      activityId: activity.id,
+      source: participant.source,
+      actorType: input.actorType,
+      actorId: input.actorId,
+      confidence: participant.confidence,
+      evidence: input.evidence,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      payload: participant,
+    });
+  });
+  txn();
+  if (!participant) throw new Error(`CRM activity participant not linked: ${input.activityId}`);
+  return participant;
+}
+
+export function listCrmActivityParticipants(activityId: string): CrmActivityParticipant[] {
+  const database = ensureDb();
+  requireCrmActivity(database, activityId);
+  const rows = database
+    .prepare("SELECT * FROM crm_activity_participants WHERE activity_id = ? ORDER BY role, created_at, id")
+    .all(activityId) as CrmActivityParticipantRow[];
+  return rows.map(rowToCrmActivityParticipant);
 }
 
 function timelineContactIdsForQuery(database: Database, contactId: string): string[] {
@@ -3418,6 +7393,272 @@ export function unlinkContactIdentity(
   return getContactDetails(contactId);
 }
 
+function crmPriorityRank(priority: CrmPriority | null): number {
+  if (priority === "urgent") return 4;
+  if (priority === "high") return 3;
+  if (priority === "normal") return 2;
+  if (priority === "low") return 1;
+  return 0;
+}
+
+function mergeCrmContactProfiles(database: Database, sourceId: string, targetId: string): void {
+  const sourceRow = getCrmContactProfileRow(database, sourceId);
+  if (!sourceRow) return;
+  const targetRow = getCrmContactProfileRow(database, targetId);
+  if (!targetRow) {
+    database
+      .prepare(
+        `
+        UPDATE crm_contact_profiles
+        SET contact_id = ?, metadata_json = ?, updated_at = datetime('now')
+        WHERE contact_id = ?
+      `,
+      )
+      .run(
+        targetId,
+        jsonObject({ ...(parseJsonObject(sourceRow.metadata_json) ?? {}), mergedFromContactId: sourceId }),
+        sourceId,
+      );
+    const movedRow = getCrmContactProfileRow(database, targetId);
+    if (movedRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(movedRow));
+    return;
+  }
+
+  const source = rowToCrmContactProfile(sourceRow);
+  const target = rowToCrmContactProfile(targetRow);
+  const nextPriority =
+    crmPriorityRank(source.priority) > crmPriorityRank(target.priority) ? source.priority : target.priority;
+  database
+    .prepare(
+      `
+      UPDATE crm_contact_profiles
+      SET lifecycle = ?,
+          relationship_health = ?,
+          priority = ?,
+          score = COALESCE(score, ?),
+          health_score = COALESCE(health_score, ?),
+          owner_type = COALESCE(owner_type, ?),
+          owner_id = COALESCE(owner_id, ?),
+          primary_account_id = COALESCE(primary_account_id, ?),
+          primary_opportunity_id = COALESCE(primary_opportunity_id, ?),
+          lead_source = COALESCE(lead_source, ?),
+          persona = COALESCE(persona, ?),
+          buying_role = COALESCE(buying_role, ?),
+          last_meaningful_interaction_at = CASE
+            WHEN last_meaningful_interaction_at IS NULL THEN ?
+            WHEN ? IS NULL THEN last_meaningful_interaction_at
+            WHEN ? > last_meaningful_interaction_at THEN ?
+            ELSE last_meaningful_interaction_at
+          END,
+          next_action_at = COALESCE(next_action_at, ?),
+          next_action_summary = COALESCE(next_action_summary, ?),
+          next_task_id = COALESCE(next_task_id, ?),
+          metadata_json = ?,
+          updated_at = datetime('now')
+      WHERE contact_id = ?
+    `,
+    )
+    .run(
+      target.lifecycle === "unknown" ? source.lifecycle : target.lifecycle,
+      target.relationshipHealth === "unknown" ? source.relationshipHealth : target.relationshipHealth,
+      nextPriority,
+      source.score,
+      source.healthScore,
+      source.ownerType,
+      source.ownerId,
+      source.primaryAccountId,
+      source.primaryOpportunityId,
+      source.leadSource,
+      source.persona,
+      source.buyingRole,
+      source.lastMeaningfulInteractionAt,
+      source.lastMeaningfulInteractionAt,
+      source.lastMeaningfulInteractionAt,
+      source.lastMeaningfulInteractionAt,
+      source.nextActionAt,
+      source.nextActionSummary,
+      source.nextTaskId,
+      jsonObject({ ...source.metadata, ...target.metadata, mergedContactIds: [sourceId] }),
+      targetId,
+    );
+  database.prepare("DELETE FROM crm_contact_profiles WHERE contact_id = ?").run(sourceId);
+  const mergedRow = getCrmContactProfileRow(database, targetId);
+  if (mergedRow) projectCrmContactProfileMetadata(database, rowToCrmContactProfile(mergedRow));
+}
+
+function mergeCrmAccountContacts(database: Database, sourceId: string, targetId: string): void {
+  const rows = database
+    .prepare("SELECT * FROM crm_account_contacts WHERE contact_id = ?")
+    .all(sourceId) as CrmAccountContactRow[];
+  for (const row of rows) {
+    const existing = database
+      .prepare("SELECT * FROM crm_account_contacts WHERE account_id = ? AND contact_id = ? AND role = ?")
+      .get(row.account_id, targetId, row.role) as CrmAccountContactRow | undefined;
+    if (existing) {
+      database
+        .prepare(
+          `
+          UPDATE crm_account_contacts
+          SET title = COALESCE(title, ?),
+              department = COALESCE(department, ?),
+              decision_role = CASE WHEN decision_role = 'unknown' THEN ? ELSE decision_role END,
+              relationship_strength = CASE WHEN relationship_strength = 'unknown' THEN ? ELSE relationship_strength END,
+              is_primary = MAX(is_primary, ?),
+              status = CASE WHEN status = 'active' OR ? = 'active' THEN 'active' ELSE status END,
+              confidence = MAX(confidence, ?),
+              evidence_json = COALESCE(evidence_json, ?),
+              metadata_json = ?,
+              last_seen_at = datetime('now'),
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(
+          row.title,
+          row.department,
+          row.decision_role,
+          row.relationship_strength,
+          row.is_primary,
+          row.status,
+          row.confidence,
+          row.evidence_json,
+          jsonObject({
+            ...(parseJsonObject(row.metadata_json) ?? {}),
+            ...(parseJsonObject(existing.metadata_json) ?? {}),
+          }),
+          existing.id,
+        );
+      database.prepare("DELETE FROM crm_account_contacts WHERE id = ?").run(row.id);
+    } else {
+      database
+        .prepare("UPDATE crm_account_contacts SET id = ?, contact_id = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(stableId("crm_ac", [row.account_id, targetId, row.role]), targetId, row.id);
+    }
+  }
+  refreshCrmContactPrimaryAccount(database, targetId);
+}
+
+function mergeCrmOpportunityContacts(database: Database, sourceId: string, targetId: string): void {
+  const rows = database
+    .prepare("SELECT * FROM crm_opportunity_contacts WHERE contact_id = ?")
+    .all(sourceId) as CrmOpportunityContactRow[];
+  for (const row of rows) {
+    const existing = database
+      .prepare("SELECT * FROM crm_opportunity_contacts WHERE opportunity_id = ? AND contact_id = ? AND role = ?")
+      .get(row.opportunity_id, targetId, row.role) as CrmOpportunityContactRow | undefined;
+    if (existing) {
+      database
+        .prepare(
+          `
+          UPDATE crm_opportunity_contacts
+          SET account_id = COALESCE(account_id, ?),
+              influence = CASE WHEN influence = 'unknown' THEN ? ELSE influence END,
+              sentiment = CASE WHEN sentiment = 'unknown' THEN ? ELSE sentiment END,
+              is_primary = MAX(is_primary, ?),
+              confidence = MAX(confidence, ?),
+              evidence_json = COALESCE(evidence_json, ?),
+              metadata_json = ?,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(
+          row.account_id,
+          row.influence,
+          row.sentiment,
+          row.is_primary,
+          row.confidence,
+          row.evidence_json,
+          jsonObject({
+            ...(parseJsonObject(row.metadata_json) ?? {}),
+            ...(parseJsonObject(existing.metadata_json) ?? {}),
+          }),
+          existing.id,
+        );
+      database.prepare("DELETE FROM crm_opportunity_contacts WHERE id = ?").run(row.id);
+    } else {
+      database
+        .prepare(
+          "UPDATE crm_opportunity_contacts SET id = ?, contact_id = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .run(stableId("crm_oc", [row.opportunity_id, targetId, row.role]), targetId, row.id);
+    }
+    if (row.is_primary === 1) refreshCrmOpportunityPrimaryContact(database, row.opportunity_id, targetId);
+  }
+  database
+    .prepare(
+      "UPDATE crm_opportunities SET primary_contact_id = ?, updated_at = datetime('now') WHERE primary_contact_id = ?",
+    )
+    .run(targetId, sourceId);
+  refreshCrmContactPrimaryOpportunity(database, targetId);
+}
+
+function mergeCrmActivityParticipants(database: Database, sourceId: string, targetId: string): void {
+  const rows = database
+    .prepare("SELECT * FROM crm_activity_participants WHERE contact_id = ?")
+    .all(sourceId) as CrmActivityParticipantRow[];
+  for (const row of rows) {
+    const nextId = stableId("crm_ap", [row.activity_id, targetId, row.account_id, row.role]);
+    const existing = database.prepare("SELECT * FROM crm_activity_participants WHERE id = ?").get(nextId) as
+      | CrmActivityParticipantRow
+      | undefined;
+    if (existing) {
+      database
+        .prepare(
+          `
+          UPDATE crm_activity_participants
+          SET confidence = MAX(confidence, ?),
+              metadata_json = ?,
+              updated_at = datetime('now')
+          WHERE id = ?
+        `,
+        )
+        .run(
+          row.confidence,
+          jsonObject({
+            ...(parseJsonObject(row.metadata_json) ?? {}),
+            ...(parseJsonObject(existing.metadata_json) ?? {}),
+          }),
+          existing.id,
+        );
+      database.prepare("DELETE FROM crm_activity_participants WHERE id = ?").run(row.id);
+    } else {
+      database
+        .prepare(
+          "UPDATE crm_activity_participants SET id = ?, contact_id = ?, updated_at = datetime('now') WHERE id = ?",
+        )
+        .run(nextId, targetId, row.id);
+    }
+  }
+}
+
+function mergeCrmContactData(database: Database, sourceId: string, targetId: string): void {
+  mergeCrmContactProfiles(database, sourceId, targetId);
+  mergeCrmAccountContacts(database, sourceId, targetId);
+  mergeCrmOpportunityContacts(database, sourceId, targetId);
+  mergeCrmActivityParticipants(database, sourceId, targetId);
+  database
+    .prepare("UPDATE crm_tasks SET contact_id = ?, updated_at = datetime('now') WHERE contact_id = ?")
+    .run(targetId, sourceId);
+  database
+    .prepare("UPDATE crm_activities SET contact_id = ?, updated_at = datetime('now') WHERE contact_id = ?")
+    .run(targetId, sourceId);
+  database
+    .prepare(
+      `
+      UPDATE crm_facts
+      SET contact_id = ?,
+          entity_id = CASE WHEN entity_type = 'contact' AND entity_id = ? THEN ? ELSE entity_id END,
+          updated_at = datetime('now')
+      WHERE contact_id = ? OR (entity_type = 'contact' AND entity_id = ?)
+    `,
+    )
+    .run(targetId, sourceId, targetId, sourceId, sourceId);
+  refreshCrmContactPrimaryAccount(database, targetId);
+  refreshCrmContactPrimaryOpportunity(database, targetId);
+  refreshCrmContactNextAction(database, targetId);
+}
+
 /**
  * Merge two contacts: move all identities from source to target, delete source
  */
@@ -3437,6 +7678,7 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
     statements.moveIdentities.run(targetId, sourceId);
     movedCanonicalIdentityIds = moveCanonicalPlatformIdentities(database, sourceId, targetId);
     moveCanonicalContactTagBindings(sourceId, targetId);
+    mergeCrmContactData(database, sourceId, targetId);
 
     // Merge best data: prefer target, fill blanks from source
     const updates: string[] = [];
@@ -3512,6 +7754,21 @@ export function mergeContacts(targetId: string, sourceId: string): { merged: num
         sourceContactId: sourceId,
         targetContactId: targetId,
         mergedIntoContactId: targetId,
+      },
+    });
+    insertCrmEvent(database, {
+      eventType: "crm.contact.merged",
+      entityType: "contact",
+      entityId: targetId,
+      contactId: targetId,
+      source: "contacts",
+      actorType: "system",
+      confidence: 1,
+      payload: {
+        sourceContactId: sourceId,
+        targetContactId: targetId,
+        movedIdentityCount: sourceIdentities.length,
+        movedCanonicalIdentityIds,
       },
     });
   });

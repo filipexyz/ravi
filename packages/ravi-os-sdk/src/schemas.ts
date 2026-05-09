@@ -786,6 +786,33 @@ export const CommandsValidateInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.activity`. */
+export const ContactsActivityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching events to skip (default: 0)",
+      "type": "string"
+    },
+    "raw": {
+      "description": "Include low-level runtime/tool/adapter events",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.add`. */
 export const ContactsAddInputSchema = {
   "additionalProperties": false,
@@ -1098,6 +1125,29 @@ export const ContactsMergeInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.messages`. */
+export const ContactsMessagesInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching messages to skip (default: 0)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.metadata.list`. */
 export const ContactsMetadataListInputSchema = {
   "additionalProperties": false,
@@ -1226,12 +1276,58 @@ export const ContactsPendingInputSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `contacts.profile`. */
+export const ContactsProfileInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "includeCrm": {
+      "description": "Include CRM profile/account/opportunity/task summary",
+      "type": "boolean"
+    },
+    "limit": {
+      "description": "Evidence rows per section (default: 10, max: 50)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `contacts.remove`. */
 export const ContactsRemoveInputSchema = {
   "additionalProperties": false,
   "properties": {
     "contact": {
       "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `contacts.sessions`. */
+export const ContactsSessionsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching sessions to skip (default: 0)",
       "type": "string"
     }
   },
@@ -1727,6 +1823,375 @@ export const CostsTopSessionsInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account`. */
+export const CrmAccountInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID or org contact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.create`. */
+export const CrmAccountCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Organization contact ID",
+      "type": "string"
+    },
+    "domain": {
+      "description": "Account domain",
+      "type": "string"
+    },
+    "name": {
+      "description": "Account name",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.link-contact`. */
+export const CrmAccountLinkContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "primary": {
+      "description": "Mark as primary account contact",
+      "type": "boolean"
+    },
+    "role": {
+      "description": "Membership role (default: member)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account",
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.account.show`. */
+export const CrmAccountShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID or org contact ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "account"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.board`. */
+export const CrmBoardInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact`. */
+export const CrmContactInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact.set`. */
+export const CrmContactSetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "field": {
+      "description": "CRM field",
+      "type": "string"
+    },
+    "source": {
+      "description": "Mutation source (default: cli)",
+      "type": "string"
+    },
+    "value": {
+      "description": "Field value, '-' to clear nullable fields",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact",
+    "field",
+    "value"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contact.show`. */
+export const CrmContactShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contact"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.contacts`. */
+export const CrmContactsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching contacts to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by CRM lifecycle",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.next`. */
+export const CrmNextInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Filter by account",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Filter by contact",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 25, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching actions to skip (default: 0)",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "Filter by opportunity",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity`. */
+export const CrmOpportunityInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.create`. */
+export const CrmOpportunityCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "currency": {
+      "description": "Currency (default: BRL)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Pipeline stage key or ID",
+      "type": "string"
+    },
+    "title": {
+      "description": "Opportunity title",
+      "type": "string"
+    },
+    "value": {
+      "description": "Opportunity value in cents",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.move`. */
+export const CrmOpportunityMoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "lostReason": {
+      "description": "Lost reason when moving to lost",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Pipeline stage key or ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity",
+    "stage"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.opportunity.show`. */
+export const CrmOpportunityShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "opportunity"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.create`. */
+export const CrmTaskCreateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "CRM account ID",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact ID or identity",
+      "type": "string"
+    },
+    "due": {
+      "description": "Due date/time",
+      "type": "string"
+    },
+    "opportunity": {
+      "description": "CRM opportunity ID",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Owner, e.g. agent:main",
+      "type": "string"
+    },
+    "priority": {
+      "description": "low|normal|high|urgent",
+      "type": "string"
+    },
+    "title": {
+      "description": "Task title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.done`. */
+export const CrmTaskDoneInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.task.show`. */
+export const CrmTaskShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "task": {
+      "description": "CRM task ID",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

@@ -13,6 +13,7 @@ export * from "./commands.js";
 export * from "./contacts.js";
 export * from "./context.js";
 export * from "./costs.js";
+export * from "./crm.js";
 export * from "./cron.js";
 export * from "./daemon.js";
 export * from "./db.js";
