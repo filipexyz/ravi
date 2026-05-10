@@ -152,12 +152,15 @@ export type ArtifactsBlobReturn = Response;
 
 /** Input shape for `artifacts.create`. */
 export type ArtifactsCreateInput = {
+  assetBase?: string;
+  basePath?: string;
   command?: string;
   costUsd?: string;
   durationMs?: string;
+  entrypoint?: string;
   input?: string;
   inputTokens?: string;
-  kind: string;
+  kind?: string;
   lineage?: string;
   message?: string;
   metadata?: string;
@@ -218,6 +221,43 @@ export type ArtifactsListInput = {
 
 /** Return shape for `artifacts.list`. (no @Returns declared) */
 export type ArtifactsListReturn = unknown;
+
+/** Input shape for `artifacts.publish`. */
+export type ArtifactsPublishInput = {
+  artifactVersion?: string;
+  assetBase?: string;
+  basePath?: string;
+  console?: string;
+  description?: string;
+  entrypoint?: string;
+  idempotencyKey?: string;
+  name?: string;
+  noActivate?: boolean;
+  project?: string;
+  reason?: string;
+  replaceRelease?: boolean;
+  route?: string;
+  site?: string;
+  slug?: string;
+  target: string;
+  uploadSession?: string;
+  visibility?: string;
+};
+
+/** Return shape for `artifacts.publish`. (no @Returns declared) */
+export type ArtifactsPublishReturn = unknown;
+
+/** Input shape for `artifacts.release.activate`. */
+export type ArtifactsReleaseActivateInput = {
+  console?: string;
+  id: string;
+  release?: string;
+  site?: string;
+  version?: string;
+};
+
+/** Return shape for `artifacts.release.activate`. (no @Returns declared) */
+export type ArtifactsReleaseActivateReturn = unknown;
 
 /** Input shape for `artifacts.restore`. */
 export type ArtifactsRestoreInput = {

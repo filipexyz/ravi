@@ -330,6 +330,14 @@ export const ArtifactsBlobInputSchema = {
 export const ArtifactsCreateInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "assetBase": {
+      "description": "Package asset base intent when --path is a directory",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent when --path is a directory",
+      "type": "string"
+    },
     "command": {
       "description": "Command that produced the artifact",
       "type": "string"
@@ -342,6 +350,10 @@ export const ArtifactsCreateInputSchema = {
       "description": "Generation duration in milliseconds",
       "type": "string"
     },
+    "entrypoint": {
+      "description": "Package entrypoint when --path is a directory",
+      "type": "string"
+    },
     "input": {
       "description": "Raw/structured input JSON",
       "type": "string"
@@ -351,7 +363,7 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     },
     "kind": {
-      "description": "Artifact kind, e.g. image, audio, report, trace",
+      "description": "Optional semantic artifact kind, e.g. image, report, trace",
       "type": "string"
     },
     "lineage": {
@@ -387,7 +399,7 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     },
     "path": {
-      "description": "Local file to ingest into artifact blob storage",
+      "description": "Local file or directory to ingest into artifact blob storage",
       "type": "string"
     },
     "prompt": {
@@ -427,9 +439,6 @@ export const ArtifactsCreateInputSchema = {
       "type": "string"
     }
   },
-  "required": [
-    "kind"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -529,6 +538,121 @@ export const ArtifactsListInputSchema = {
       "type": "string"
     }
   },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.publish`. */
+export const ArtifactsPublishInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "artifactVersion": {
+      "description": "Local artifact version number (default: latest)",
+      "type": "string"
+    },
+    "assetBase": {
+      "description": "Package asset base intent",
+      "type": "string"
+    },
+    "basePath": {
+      "description": "Package base path intent",
+      "type": "string"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "description": {
+      "description": "Published artifact description",
+      "type": "string"
+    },
+    "entrypoint": {
+      "description": "Package entrypoint path",
+      "type": "string"
+    },
+    "idempotencyKey": {
+      "description": "Idempotency key for Console retries",
+      "type": "string"
+    },
+    "name": {
+      "description": "Published artifact name",
+      "type": "string"
+    },
+    "noActivate": {
+      "default": true,
+      "description": "Create publish records without activating a site release",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Console project id or slug",
+      "type": "string"
+    },
+    "reason": {
+      "description": "Release reason sent to Console",
+      "type": "string"
+    },
+    "replaceRelease": {
+      "description": "Replace the full active route map instead of merging",
+      "type": "boolean"
+    },
+    "route": {
+      "description": "Site route path to mount the artifact at",
+      "type": "string"
+    },
+    "site": {
+      "description": "Console site id or slug to release to",
+      "type": "string"
+    },
+    "slug": {
+      "description": "Published artifact slug",
+      "type": "string"
+    },
+    "target": {
+      "description": "Local artifact id, file, or directory",
+      "type": "string"
+    },
+    "uploadSession": {
+      "description": "Use an existing Console upload session",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Requested visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `artifacts.release.activate`. */
+export const ArtifactsReleaseActivateInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "id": {
+      "description": "Local artifact id",
+      "type": "string"
+    },
+    "release": {
+      "description": "Explicit Console release id to activate",
+      "type": "string"
+    },
+    "site": {
+      "description": "Console site id or slug, required when --release is not recorded locally",
+      "type": "string"
+    },
+    "version": {
+      "description": "Local artifact version whose recorded release should be activated",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
