@@ -7,6 +7,7 @@ capabilities:
   - agent-first-ux
   - machine-json
   - listing-contracts
+  - cloud-auth
 tags:
   - cli
   - agents
@@ -39,3 +40,5 @@ agent to recover from when output is large.
 - Commands that can grow with system history SHOULD support pagination,
   filtering, and sorting.
 - Dangerous or expensive full-history scans MUST require explicit flags.
+- Cloud authentication rules for linking local Ravi to a Console-compatible
+  service live in `cli/cloud-auth`.

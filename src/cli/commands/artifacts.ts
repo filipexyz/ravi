@@ -29,6 +29,7 @@ import {
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "../../whatsapp-overlay/artifacts.js";
+import { CloudAuthError, formatCloudAuthError } from "../../cloud-auth/errors.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -631,6 +632,31 @@ export class ArtifactsCommands {
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  @Command({ name: "publish", description: "Publish an artifact to a Console-compatible cloud endpoint" })
+  publish(
+    @Arg("target", { description: "Local artifact id or local path" }) target: string,
+    @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
+    @Option({ flags: "--visibility <visibility>", description: "Requested visibility: private|unlisted|public" })
+    visibility?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    void target;
+    void project;
+    void visibility;
+    void consoleUrl;
+    const error = new CloudAuthError(
+      "CLOUD_PUBLISH_NOT_IMPLEMENTED",
+      "Cloud artifact publish is not implemented in ravi.bot yet. The local auth client is available, but publish/upload waits for the Console publish contract.",
+    );
+    if (asJson) {
+      printJson(formatCloudAuthError(error));
+    } else {
+      console.error(`${error.code}: ${error.message}`);
+    }
+    process.exit(error.exitCode);
   }
 
   @Command({ name: "blob", description: "Stream raw artifact bytes" })

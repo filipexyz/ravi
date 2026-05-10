@@ -21,6 +21,7 @@ import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
+import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
@@ -98,6 +99,73 @@ program
         closeLazyConnection: true,
       },
       () => runUpdate(options),
+    );
+  });
+
+program
+  .command("login")
+  .description("Link this local Ravi CLI to a Console-compatible endpoint")
+  .option("--console <url>", "Console base URL", "https://console.ravi.bot")
+  .option("--json", "Print raw JSON result")
+  .option("--no-open", "Do not open a browser")
+  .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
+  .option("--timeout-seconds <seconds>", "Maximum login polling time", "300")
+  .option("--interval-seconds <seconds>", "Login polling interval")
+  .action(
+    async (options: {
+      console?: string;
+      json?: boolean;
+      open?: boolean;
+      poll?: boolean;
+      timeoutSeconds?: string;
+      intervalSeconds?: string;
+    }) => {
+      await runWithCliAudit(
+        {
+          group: "_root",
+          name: "login",
+          tool: "root_login",
+          input: options,
+          closeLazyConnection: true,
+        },
+        () => runCloudAuthRootCommand(options.json, () => runLogin(options)),
+      );
+    },
+  );
+
+program
+  .command("whoami")
+  .description("Show the linked Ravi Cloud CLI identity")
+  .option("--console <url>", "Console base URL")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { console?: string; json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "whoami",
+        tool: "root_whoami",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runWhoami(options)),
+    );
+  });
+
+program
+  .command("logout")
+  .description("Remove local Ravi Cloud CLI credentials and revoke them in Console when possible")
+  .option("--console <url>", "Console base URL")
+  .option("--json", "Print raw JSON result")
+  .action(async (options: { console?: string; json?: boolean }) => {
+    await runWithCliAudit(
+      {
+        group: "_root",
+        name: "logout",
+        tool: "root_logout",
+        input: options,
+        closeLazyConnection: true,
+      },
+      () => runCloudAuthRootCommand(options.json, () => runLogout(options)),
     );
   });
 
