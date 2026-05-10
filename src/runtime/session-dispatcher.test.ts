@@ -5,6 +5,7 @@ import {
   canUseNativeRuntimeSteer,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
+import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
@@ -403,6 +404,74 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
+  });
+
+  it("releases task runtime sessions when task terminal events are emitted", async () => {
+    const dispatcher = createDispatcher(1);
+    let interrupted = false;
+    let pendingResolved = false;
+    dispatcher.streamingSessions.set(
+      "task-release-work",
+      createActiveSession({
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {
+            interrupted = true;
+          },
+        },
+      }),
+    );
+    dispatcher.pendingStarts.push({
+      sessionName: "queued-after-task-release",
+      prompt: { prompt: "queued" },
+      resolve: () => {
+        pendingResolved = true;
+      },
+    });
+
+    const runtime = new RuntimeHostSubscriptions({
+      isRunning: () => true,
+      dispatcher,
+      safeEmit: async () => {},
+    });
+
+    await runtime.handleTaskEventForRuntime({
+      taskId: "task-release",
+      assigneeSessionName: "task-release-work",
+      event: { id: 42, type: "task.done", sessionName: "main" },
+    });
+
+    expect(dispatcher.streamingSessions.has("task-release-work")).toBe(false);
+    expect(interrupted).toBe(true);
+    expect(pendingResolved).toBe(true);
+    expect(dispatcher.pendingStarts).toHaveLength(0);
+  });
+
+  it("releases blocked task runtime sessions without aborting normal sessions", async () => {
+    const dispatcher = createDispatcher(2);
+    dispatcher.streamingSessions.set("task-blocked-work", createActiveSession());
+    dispatcher.streamingSessions.set("main", createActiveSession());
+
+    const runtime = new RuntimeHostSubscriptions({
+      isRunning: () => true,
+      dispatcher,
+      safeEmit: async () => {},
+    });
+
+    await runtime.handleTaskEventForRuntime({
+      taskId: "task-blocked",
+      assigneeSessionName: "task-blocked-work",
+      event: { type: "task.blocked", sessionName: "main" },
+    });
+    await runtime.handleTaskEventForRuntime({
+      taskId: "task-human",
+      assigneeSessionName: "main",
+      event: { type: "task.done", sessionName: "main" },
+    });
+
+    expect(dispatcher.streamingSessions.has("task-blocked-work")).toBe(false);
+    expect(dispatcher.streamingSessions.has("main")).toBe(true);
   });
 
   it("keeps queued runtime starts parked when model change caller immediately restarts the same session", async () => {

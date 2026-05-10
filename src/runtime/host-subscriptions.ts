@@ -8,6 +8,7 @@ import {
 } from "./control-host.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import type { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { isTaskRuntimeSessionName } from "../tasks/session-retention.js";
 
 const log = logger.child("runtime:host-subscriptions");
 
@@ -16,6 +17,21 @@ export interface RuntimeHostSubscriptionsOptions {
   dispatcher: RuntimeSessionDispatcher;
   safeEmit: RuntimeSafeEmit;
 }
+
+interface RuntimeTaskEventPayload {
+  type?: string;
+  taskId?: string;
+  assigneeSessionName?: string | null;
+  assigneeAgentId?: string | null;
+  task?: { title?: string | null; summary?: string | null };
+  event?: {
+    id?: number;
+    type?: string;
+    sessionName?: string | null;
+  };
+}
+
+const TASK_RUNTIME_RELEASE_EVENTS = new Set(["task.done", "task.failed", "task.blocked"]);
 
 export class RuntimeHostSubscriptions {
   constructor(private readonly options: RuntimeHostSubscriptionsOptions) {}
@@ -32,6 +48,57 @@ export class RuntimeHostSubscriptions {
       streamingSessions: this.options.dispatcher.streamingSessions,
       safeEmit: this.options.safeEmit,
     });
+  }
+
+  async handleTaskEventForRuntime(data: RuntimeTaskEventPayload): Promise<void> {
+    const type = trimString(data.event?.type ?? data.type);
+    const assigneeSessionName = trimString(data.assigneeSessionName);
+    const eventSessionName = trimString(data.event?.sessionName);
+    const releaseSessionName = resolveTaskRuntimeReleaseSessionName({
+      taskId: data.taskId,
+      assigneeSessionName,
+      eventSessionName,
+    });
+    const deliverableSessionName =
+      type === "task.done" || type === "task.failed"
+        ? (assigneeSessionName ?? eventSessionName)
+        : (eventSessionName ?? assigneeSessionName);
+
+    if (type && TASK_RUNTIME_RELEASE_EVENTS.has(type) && releaseSessionName) {
+      const reason = type === "task.blocked" ? "task_blocked_release" : "task_terminal_release";
+      const aborted = this.options.dispatcher.abortSession(
+        { sessionName: releaseSessionName },
+        {
+          source: "task_event",
+          action: "task.runtime.release",
+          reason,
+          actor: eventSessionName,
+          correlationId: buildTaskEventCorrelationId(data),
+          request: {
+            taskId: data.taskId,
+            eventType: type,
+            eventId: data.event?.id,
+            assigneeSessionName,
+            eventSessionName,
+          },
+        },
+      );
+      await this.options.safeEmit(`ravi.session.${releaseSessionName}.runtime`, {
+        type: "task.runtime.release",
+        taskId: data.taskId,
+        taskEventType: type,
+        eventId: data.event?.id,
+        sessionName: releaseSessionName,
+        aborted,
+        reason,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if ((type === "task.done" || type === "task.failed") && deliverableSessionName) {
+      await this.options.dispatcher.startDeferredAfterTaskSessionIfDeliverable(deliverableSessionName);
+      this.options.dispatcher.wakeStreamingSessionIfDeliverable(deliverableSessionName);
+    }
   }
 
   private async replyRuntimeControlError(replyTopic: string | undefined, error: string): Promise<void> {
@@ -147,24 +214,7 @@ export class RuntimeHostSubscriptions {
       try {
         for await (const event of nats.subscribe("ravi.task.*.event")) {
           if (!this.options.isRunning()) break;
-          const data = event.data as {
-            type?: string;
-            taskId?: string;
-            assigneeSessionName?: string | null;
-            assigneeAgentId?: string | null;
-            task?: { title?: string | null; summary?: string | null };
-            event?: { type?: string; sessionName?: string | null };
-          };
-          const type = data.event?.type ?? data.type;
-          const sessionName =
-            type === "task.done" || type === "task.failed"
-              ? (data.assigneeSessionName ?? data.event?.sessionName ?? undefined)
-              : (data.event?.sessionName ?? data.assigneeSessionName ?? undefined);
-
-          if ((type === "task.done" || type === "task.failed") && sessionName) {
-            await this.options.dispatcher.startDeferredAfterTaskSessionIfDeliverable(sessionName);
-            this.options.dispatcher.wakeStreamingSessionIfDeliverable(sessionName);
-          }
+          await this.handleTaskEventForRuntime(event.data as RuntimeTaskEventPayload);
         }
       } catch (err) {
         if (!this.options.isRunning()) break;
@@ -177,4 +227,34 @@ export class RuntimeHostSubscriptions {
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveTaskRuntimeReleaseSessionName(input: {
+  taskId?: string | null;
+  assigneeSessionName?: string;
+  eventSessionName?: string;
+}): string | undefined {
+  const candidates = [input.assigneeSessionName, input.eventSessionName].filter((value): value is string =>
+    Boolean(value),
+  );
+  for (const candidate of candidates) {
+    if (isTaskRuntimeSessionName(candidate)) {
+      return candidate;
+    }
+    if (input.taskId && candidate.startsWith(`${input.taskId}-`)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
+function buildTaskEventCorrelationId(data: RuntimeTaskEventPayload): string | undefined {
+  const taskId = trimString(data.taskId);
+  if (!taskId) return undefined;
+  return data.event?.id !== undefined ? `${taskId}:${data.event.id}` : taskId;
+}
+
+function trimString(value: string | null | undefined): string | undefined {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || undefined;
 }
