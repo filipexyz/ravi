@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Pre-push hook: mirror CI locally before remote failures.
+
+set -euo pipefail
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun is required for pre-push checks." >&2
+  exit 1
+fi
+
+echo "Running pre-push checks..."
+
+echo "Checking generated SDK drift..."
+if ! bun run sdk:check; then
+  echo ""
+  echo "SDK drift detected. Regenerating generated client files..."
+  if ! bun run sdk:generate; then
+    echo "Failed to regenerate SDK client." >&2
+    exit 1
+  fi
+  echo ""
+  echo "Generated SDK client changed. Review and commit these files, then push again:"
+  echo "  packages/ravi-os-sdk/src/client.ts"
+  echo "  packages/ravi-os-sdk/src/schemas.ts"
+  echo "  packages/ravi-os-sdk/src/types.ts"
+  echo "  packages/ravi-os-sdk/src/version.ts"
+  exit 1
+fi
+
+echo "Running build..."
+bun run build
+
+echo "Running typecheck..."
+bun run typecheck
+
+echo "Running tests..."
+bun run test
+
+echo "Pre-push checks passed."

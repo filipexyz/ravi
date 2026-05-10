@@ -111,6 +111,18 @@ The project uses git hooks via `.githooks/`:
 bun run prepare   # Configure git to use .githooks/ directory
 ```
 
+The pre-push hook mirrors the CI quality gate locally:
+
+```bash
+bun run sdk:check
+bun run build
+bun run typecheck
+bun run test
+```
+
+If the generated SDK is stale, the hook runs `bun run sdk:generate`, leaves the
+generated files in the worktree, and blocks the push until they are committed.
+
 Never use `--no-verify` on commits or pushes.
 
 ## Project Structure
