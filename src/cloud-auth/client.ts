@@ -249,9 +249,22 @@ export function normalizeConsoleUrl(value: string): string {
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new CloudAuthError("PAYLOAD_INVALID", `Invalid Console URL protocol: ${parsed.protocol}. Use http or https.`);
   }
+  if (parsed.protocol === "http:" && !isAllowedInsecureConsoleUrl(parsed)) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Insecure Console URL is only allowed for localhost. Use https or set RAVI_ALLOW_INSECURE_CONSOLE_URL=true for development.",
+    );
+  }
   parsed.hash = "";
   parsed.search = "";
   return parsed.toString().replace(/\/+$/, "");
+}
+
+function isAllowedInsecureConsoleUrl(url: URL) {
+  if (process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL === "true") return true;
+  return (
+    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]"
+  );
 }
 
 export function credentialsFromConsoleResponse(

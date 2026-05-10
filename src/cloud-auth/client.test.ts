@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { ConsoleApiClient, getMeWithAutoRefresh, refreshCredentialsForStore } from "./client.js";
+import { ConsoleApiClient, getMeWithAutoRefresh, normalizeConsoleUrl, refreshCredentialsForStore } from "./client.js";
 import { CloudAuthError } from "./errors.js";
 import type { CloudCredentials } from "./types.js";
 
@@ -11,6 +11,24 @@ interface FetchCall {
 }
 
 describe("ConsoleApiClient", () => {
+  it("only allows insecure console URLs for local development", () => {
+    const previous = process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL;
+    try {
+      delete process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL;
+      expect(normalizeConsoleUrl("http://localhost:3000")).toBe("http://localhost:3000");
+      expect(() => normalizeConsoleUrl("http://console.example")).toThrow(CloudAuthError);
+
+      process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL = "true";
+      expect(normalizeConsoleUrl("http://console.example")).toBe("http://console.example");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL;
+      } else {
+        process.env.RAVI_ALLOW_INSECURE_CONSOLE_URL = previous;
+      }
+    }
+  });
+
   it("calls the Console CLI auth endpoints with JSON and bearer auth", async () => {
     const calls: FetchCall[] = [];
     const fetchImpl = mock(async (url: string, init?: RequestInit) => {
