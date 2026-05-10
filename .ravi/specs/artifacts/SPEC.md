@@ -34,6 +34,20 @@ file exists, while it is being produced, and after completion or failure.
 
 ## Invariants
 
+- Artifact `kind` is a semantic classification, not the artifact storage
+  primitive. It MUST NOT be required from the human CLI create flow.
+- Generic artifact creation SHOULD work without an explicit `kind`; the system
+  MAY store a conservative fallback kind such as `artifact` for compatibility.
+- Callers MAY provide `kind` explicitly when they need semantic filtering,
+  task-profile matching, or producer-specific classification.
+- Content shape MUST be derived from the content itself. A single local file,
+  local directory/package, URI-only reference, and structured output are content
+  shapes, not mandatory artifact kinds.
+- Local directory/package ingestion MUST copy package files into the artifact
+  blob store and MUST reject symlinks, traversal paths, hidden path segments, and
+  reserved `_ravi` segments.
+- Publishability MUST be determined from version assets and manifests, not from
+  `artifact.kind`.
 - Artifact creation for long-running generation SHOULD happen before provider
   execution starts.
 - Async generation MUST return an `artifact_id` immediately once the handle is
@@ -114,6 +128,8 @@ Expected immediate result:
 Artifact inspection SHOULD support:
 
 ```bash
+ravi artifacts create --path ./output
+ravi artifacts create --path ./output --kind report
 ravi artifacts show art_...
 ravi artifacts versions art_...
 ravi artifacts version art_... --version 1

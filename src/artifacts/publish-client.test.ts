@@ -8,6 +8,7 @@ import type { CloudCredentials } from "../cloud-auth/types.js";
 import { createIsolatedRaviState, cleanupIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createArtifact,
+  createArtifactPackage,
   createArtifactVersion,
   getArtifactDetails,
   listArtifactEvents,
@@ -131,6 +132,7 @@ describe("artifact publish client", () => {
   });
 
   it("creates an upload session, uploads direct files, and finalizes through the Console API", async () => {
+    stateDir = await createIsolatedRaviState("ravi-publish-artifacts-test-");
     const dir = await tempDir();
     await writeFile(join(dir, "index.html"), "<h1>Hello</h1>");
     await writeFile(join(dir, "app.js"), "console.log('hi');");
@@ -148,6 +150,11 @@ describe("artifact publish client", () => {
           { path: "app.js", stagingKey: "uploads/upl_123/app.js" },
           { path: "index.html", stagingKey: "uploads/upl_123/index.html" },
         ],
+      });
+      expect(input.source).toMatchObject({
+        tool: "ravi artifacts publish",
+        target: "local_artifact",
+        versionNumber: 1,
       });
       return {
         artifact: { id: "art_123" },
@@ -223,6 +230,15 @@ describe("artifact publish client", () => {
       artifact: { id: "art_123" },
       url: "https://example.test/guide",
     });
+    expect(result.localSync).toMatchObject({
+      status: "recorded",
+      versionNumber: 1,
+      eventType: "published",
+    });
+    expect(result.localSync.status).toBe("recorded");
+    if (result.localSync.status === "recorded") {
+      expect(getArtifactDetails(result.localSync.artifactId)?.artifact.kind).toBe("artifact");
+    }
     expect(result.uploadSession).toEqual({ id: "upl_123" });
     expect(uploads.map((upload) => upload.url).sort()).toEqual([
       "https://upload.example/app.js",
@@ -256,7 +272,6 @@ describe("artifact publish client", () => {
     await writeFile(appFile, "console.log('published');");
 
     const artifact = createArtifact({
-      kind: "page",
       title: "Local Page",
       summary: "Local artifact summary",
       filePath: firstFile,
@@ -380,13 +395,90 @@ describe("artifact publish client", () => {
     });
   });
 
+  it("publishes a local directory package artifact from stored blobs", async () => {
+    stateDir = await createIsolatedRaviState("ravi-publish-artifacts-test-");
+    const packageDir = join(stateDir, "site");
+    await mkdir(join(packageDir, "assets"), { recursive: true });
+    await writeFile(join(packageDir, "index.html"), "<h1>Stored package</h1>");
+    await writeFile(join(packageDir, "assets", "app.js"), "console.log('stored');");
+
+    const packageArtifact = createArtifactPackage({
+      rootPath: packageDir,
+      artifact: {
+        title: "Stored Site",
+        summary: "Stored local directory package",
+      },
+    });
+    await rm(packageDir, { recursive: true, force: true });
+
+    const finalize = mock(async (input: Record<string, unknown>) => {
+      expect(input.artifact).toMatchObject({
+        name: "Stored Site",
+        description: "Stored local directory package",
+        localArtifactId: packageArtifact.artifact.id,
+      });
+      expect(input.packageManifest).toMatchObject({
+        entrypoint: "index.html",
+        files: [{ path: "assets/app.js" }, { path: "index.html" }],
+      });
+      expect(input.source).toMatchObject({
+        target: "local_artifact",
+        artifactId: packageArtifact.artifact.id,
+        versionId: packageArtifact.version.id,
+        versionNumber: 1,
+      });
+      return {
+        artifact: { id: "cloud_art_pkg" },
+        artifactVersion: { id: "cloud_ver_pkg", versionNumber: 1 },
+        publish: { id: "pub_pkg", status: "completed", siteId: "site_pkg" },
+        release: { id: "rel_pkg", releaseNumber: 1, siteId: "site_pkg" },
+        site: { id: "site_pkg", defaultHostname: "stored.ravi.page" },
+        routes: [{ id: "route_pkg", path: "/", artifactVersionId: "cloud_ver_pkg" }],
+        url: "https://stored.ravi.page/",
+      };
+    });
+    const client = {
+      me: mock(async () => ({ user: { email: "dev@example.test" } })),
+      createPageUploadSession: mock(async (input: Record<string, unknown>) => {
+        expect(input.packageManifest).toMatchObject({
+          entrypoint: "index.html",
+          files: [{ path: "assets/app.js" }, { path: "index.html" }],
+        });
+        return {
+          uploadSession: { id: "upl_pkg" },
+          uploadPolicy: { directUpload: false },
+        };
+      }),
+      finalizeArtifactPublish: finalize,
+    } as unknown as ConsoleApiClient;
+
+    const result = await publishArtifactToConsole(
+      packageArtifact.artifact.id,
+      { project: "proj", site: "docs", route: "/" },
+      {
+        client,
+        readCredentials: () => makeCredentials(),
+        writeCredentials: () => {},
+        deleteCredentials: () => {},
+      },
+    );
+
+    expect(result.upload).toEqual({ attempted: 0, skipped: 2 });
+    expect(result.url).toBe("https://stored.ravi.page/");
+    expect(result.localSync).toMatchObject({
+      status: "recorded",
+      artifactId: packageArtifact.artifact.id,
+      versionNumber: 1,
+    });
+    expect(finalize).toHaveBeenCalledTimes(1);
+  });
+
   it("activates a previously published local artifact version without re-uploading files", async () => {
     stateDir = await createIsolatedRaviState("ravi-publish-artifacts-test-");
     const file = join(stateDir, "index.html");
     await writeFile(file, "<h1>Version one</h1>");
 
     const artifact = createArtifact({
-      kind: "page",
       title: "Local Page",
     });
     const version = createArtifactVersion(artifact.id, {
@@ -501,7 +593,6 @@ describe("artifact publish client", () => {
     await writeFile(secondFile, "<h1>Version two</h1>");
 
     const artifact = createArtifact({
-      kind: "page",
       title: "Local Page",
       summary: "Original summary",
       filePath: firstFile,
@@ -560,12 +651,12 @@ describe("artifact publish client", () => {
 
   it("rejects local artifact assets without publishable local files before upload or finalize", async () => {
     stateDir = await createIsolatedRaviState("ravi-publish-artifacts-test-");
-    const uriOnly = createArtifact({ kind: "page", title: "URI only" });
+    const uriOnly = createArtifact({ title: "URI only" });
     createArtifactVersion(uriOnly.id, {
       manifest: { entrypoint: "index.html" },
       assets: [{ path: "index.html", uri: "https://example.test/index.html", mimeType: "text/html" }],
     });
-    const missingLocal = createArtifact({ kind: "page", title: "Missing local" });
+    const missingLocal = createArtifact({ title: "Missing local" });
     createArtifactVersion(missingLocal.id, {
       manifest: { entrypoint: "index.html" },
       assets: [{ path: "index.html", filePath: join(stateDir, "missing.html"), mimeType: "text/html" }],

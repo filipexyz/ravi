@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { attachTagSlugsToAsset, dbFindTagBindings } from "../tags/index.js";
@@ -7,6 +7,7 @@ import {
   appendArtifactEvent,
   attachArtifact,
   createArtifact,
+  createArtifactPackage,
   createArtifactVersion,
   getArtifactDetails,
   getArtifactVersion,
@@ -71,6 +72,16 @@ describe("artifact store", () => {
     });
     expect(listArtifacts({ tag: "evidence" }).map((item) => item.id)).toEqual([artifact.id]);
   }, 15_000);
+
+  it("defaults artifact kind when no semantic kind is provided", () => {
+    const artifact = createArtifact({
+      title: "Untyped note",
+      summary: "Created without requiring a kind",
+    });
+
+    expect(artifact.kind).toBe("artifact");
+    expect(getArtifactDetails(artifact.id)?.artifact.kind).toBe("artifact");
+  });
 
   it("edits metadata and attaches artifacts to arbitrary targets", () => {
     const artifact = createArtifact({
@@ -188,6 +199,76 @@ describe("artifact store", () => {
     const latest = getArtifactVersion(artifact.id);
     expect(latest?.versionNumber).toBe(2);
     expect(latest?.assets[0]?.blobPath).toBe(updated.blobPath);
+  });
+
+  it("creates a local package artifact from a directory with immutable version assets", () => {
+    const packageDir = join(stateDir!, "site");
+    mkdirSync(join(packageDir, "assets"), { recursive: true });
+    writeFileSync(join(packageDir, "index.html"), "<h1>Hello</h1>");
+    writeFileSync(join(packageDir, "assets", "app.js"), "console.log('hello');");
+
+    const result = createArtifactPackage({
+      rootPath: packageDir,
+      artifact: {
+        title: "Site Artifact",
+        summary: "Local package",
+        tags: ["site"],
+      },
+    });
+
+    expect(result.artifact.id.startsWith("art_")).toBe(true);
+    expect(result.artifact.kind).toBe("artifact");
+    expect(result.artifact.filePath).toBeUndefined();
+    expect(result.artifact.blobPath).toBeUndefined();
+    expect(result.package).toMatchObject({
+      entrypoint: "index.html",
+      fileCount: 2,
+      isDirectory: true,
+    });
+    expect(result.version.versionNumber).toBe(1);
+    expect(result.version.manifest).toMatchObject({
+      entrypoint: "index.html",
+      package: { fileCount: 2, entrypoint: "index.html" },
+    });
+    expect(result.version.assets.map((asset) => asset.path)).toEqual(["index.html", "assets/app.js"]);
+    expect(result.version.assets.find((asset) => asset.path === "index.html")).toMatchObject({
+      role: "primary",
+      visibility: "inherit",
+    });
+    expect(result.version.assets.every((asset) => asset.blobPath && existsSync(asset.blobPath))).toBe(true);
+
+    rmSync(packageDir, { recursive: true, force: true });
+    const latest = getArtifactVersion(result.artifact.id);
+    expect(latest?.assets.map((asset) => asset.path)).toEqual(["index.html", "assets/app.js"]);
+    expect(latest?.assets.every((asset) => asset.blobPath && existsSync(asset.blobPath))).toBe(true);
+  });
+
+  it("rejects unsafe local package paths", () => {
+    const hiddenDir = join(stateDir!, "hidden-package");
+    mkdirSync(hiddenDir, { recursive: true });
+    writeFileSync(join(hiddenDir, "index.html"), "<h1>Hello</h1>");
+    writeFileSync(join(hiddenDir, ".env"), "SECRET=1");
+
+    expect(() =>
+      createArtifactPackage({
+        rootPath: hiddenDir,
+        artifact: { title: "Hidden package" },
+      }),
+    ).toThrow(/Invalid artifact package asset path/);
+
+    const symlinkDir = join(stateDir!, "symlink-package");
+    const outsideFile = join(stateDir!, "outside.txt");
+    mkdirSync(symlinkDir, { recursive: true });
+    writeFileSync(join(symlinkDir, "index.html"), "<h1>Hello</h1>");
+    writeFileSync(outsideFile, "outside");
+    symlinkSync(outsideFile, join(symlinkDir, "linked.txt"));
+
+    expect(() =>
+      createArtifactPackage({
+        rootPath: symlinkDir,
+        artifact: { title: "Symlink package" },
+      }),
+    ).toThrow(/symlink/);
   });
 
   it("restores an old version as a new audit-preserving version", () => {

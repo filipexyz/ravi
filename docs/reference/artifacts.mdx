@@ -8,7 +8,7 @@ It stores durable outputs and their context so agents can inspect, reuse, edit, 
 
 Each artifact can carry:
 
-- identity: `id`, `kind`, `title`, `summary`, `status`, `tags`
+- identity: `id`, optional semantic `kind`, `title`, `summary`, `status`, `tags`
 - file data: original path, blob-store copy, MIME type, size, `sha256`
 - generation context: provider, model, prompt, command, duration, tokens, and known cost when explicitly available
 - Ravi context: session, agent, task, run, turn, channel, account, chat, message
@@ -20,7 +20,7 @@ Each artifact can carry:
 ## Commands
 
 ```bash
-ravi artifacts create image --path /tmp/image.png --provider openai --model gpt-image-2
+ravi artifacts create --path /tmp/image.png --kind image --provider openai --model gpt-image-2
 ravi artifacts list --kind image
 ravi artifacts show art_xxx --json
 ravi artifacts versions art_xxx --json

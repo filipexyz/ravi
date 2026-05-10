@@ -24,7 +24,7 @@ Expected:
 ## Offline Artifact Smoke
 
 ```bash
-ravi artifacts create file --path /tmp/example.txt --json
+ravi artifacts create --path /tmp/example.txt --json
 ravi artifacts versions <artifact-id> --json
 ```
 
@@ -44,4 +44,3 @@ Expected:
 - manifest is sent with relative asset paths;
 - response includes cloud artifact id and version id;
 - safe server errors retain stable codes.
-

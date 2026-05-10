@@ -9,6 +9,8 @@ import { CloudAuthError } from "../cloud-auth/errors.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../cloud-auth/storage.js";
 import type { CloudCredentials } from "../cloud-auth/types.js";
 import {
+  createArtifact,
+  createArtifactPackage,
   listArtifactEvents,
   getArtifactDetails,
   getArtifactVersion,
@@ -164,7 +166,8 @@ export async function publishArtifactToConsole(
     throw new CloudAuthError("PAYLOAD_INVALID", "Missing --project. Console upload sessions require a project ref.");
   }
 
-  const packageBuild = await buildArtifactPackageManifest(target, publishOptions);
+  const publishTarget = await preparePublishTarget(target, publishOptions);
+  const packageBuild = await buildArtifactPackageManifest(publishTarget, publishOptions);
   const uploadSessionId = publishOptions.uploadSession;
   const uploadSessionResult = uploadSessionId
     ? { uploadSession: { id: uploadSessionId }, uploadPolicy: { directUpload: false } }
@@ -255,6 +258,46 @@ export async function publishArtifactToConsole(
     uploadSessionId: resolvedUploadSessionId,
   });
   return result;
+}
+
+async function preparePublishTarget(target: string, options: ArtifactPublishOptions): Promise<string> {
+  if (isLocalArtifactId(target)) return target;
+
+  const rootPath = resolve(target);
+  let originalStat: Awaited<ReturnType<typeof lstat>>;
+  try {
+    originalStat = await lstat(rootPath);
+  } catch {
+    return target;
+  }
+  if (originalStat.isSymbolicLink()) return target;
+
+  const rootRealPath = await realpath(rootPath);
+  const rootStat = await lstat(rootRealPath);
+  if (rootStat.isDirectory()) {
+    const result = createArtifactPackage({
+      rootPath: rootRealPath,
+      artifact: {
+        title: options.name ?? defaultArtifactName(target),
+        ...(options.description ? { summary: options.description } : {}),
+      },
+      ...(options.entrypoint ? { entrypoint: options.entrypoint } : {}),
+      ...(options.basePath ? { basePath: options.basePath } : {}),
+      ...(options.assetBase ? { assetBase: options.assetBase } : {}),
+    });
+    return result.artifact.id;
+  }
+
+  if (rootStat.isFile()) {
+    const artifact = createArtifact({
+      title: options.name ?? defaultArtifactName(target),
+      ...(options.description ? { summary: options.description } : {}),
+      filePath: rootRealPath,
+    });
+    return artifact.id;
+  }
+
+  return target;
 }
 
 export async function activateArtifactReleaseInConsole(

@@ -17,9 +17,10 @@ Ele registra o arquivo bruto, metadata, métricas, lineage e relações com sess
 ## Criar Artifact
 
 ```bash
-ravi artifacts create image \
+ravi artifacts create \
   --title "Diagrama Ravi Artifacts" \
   --path /tmp/diagram.png \
+  --kind image \
   --provider openai \
   --model gpt-image-2 \
   --duration-ms 32000 \

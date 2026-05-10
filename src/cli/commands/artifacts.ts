@@ -4,6 +4,8 @@
 
 import "reflect-metadata";
 import { file as bunFile } from "bun";
+import { statSync } from "node:fs";
+import { resolve } from "node:path";
 import { Arg, Command, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
@@ -12,6 +14,7 @@ import {
   appendArtifactEvent,
   attachArtifact,
   createArtifact,
+  createArtifactPackage,
   createArtifactVersion,
   getArtifactVersion,
   getArtifactDetails,
@@ -233,6 +236,14 @@ function objectSummary(value: unknown): Record<string, string> {
   return typeof id === "string" ? { id } : {};
 }
 
+function isDirectoryPath(path: string): boolean {
+  try {
+    return statSync(resolve(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 @Group({
   name: "artifacts",
   description: "Generic artifact ledger and lineage tools",
@@ -241,11 +252,18 @@ function objectSummary(value: unknown): Record<string, string> {
 export class ArtifactsCommands {
   @Command({ name: "create", description: "Create a generic Ravi artifact record" })
   create(
-    @Arg("kind", { description: "Artifact kind, e.g. image, audio, report, trace" }) kind: string,
+    @Option({ flags: "--kind <kind>", description: "Optional semantic artifact kind, e.g. image, report, trace" })
+    kind?: string,
     @Option({ flags: "--title <text>", description: "Human title" }) title?: string,
     @Option({ flags: "--summary <text>", description: "Human summary" }) summary?: string,
-    @Option({ flags: "--path <path>", description: "Local file to ingest into artifact blob storage" })
+    @Option({ flags: "--path <path>", description: "Local file or directory to ingest into artifact blob storage" })
     filePath?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint when --path is a directory" })
+    entrypoint?: string,
+    @Option({ flags: "--base-path <path>", description: "Package base path intent when --path is a directory" })
+    basePath?: string,
+    @Option({ flags: "--asset-base <path>", description: "Package asset base intent when --path is a directory" })
+    assetBase?: string,
     @Option({ flags: "--uri <uri>", description: "External URI/reference" }) uri?: string,
     @Option({ flags: "--mime <type>", description: "MIME type override" }) mimeType?: string,
     @Option({ flags: "--provider <provider>", description: "Provider that produced the artifact" }) provider?: string,
@@ -270,8 +288,8 @@ export class ArtifactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ctx = contextDefaults();
-    const artifact = createArtifact({
-      kind,
+    const artifactInput = {
+      ...(kind?.trim() ? { kind } : {}),
       ...(title?.trim() ? { title } : {}),
       ...(summary?.trim() ? { summary } : {}),
       ...(filePath?.trim() ? { filePath } : {}),
@@ -301,14 +319,40 @@ export class ArtifactsCommands {
       ...(input ? { input: parseJsonValue(input, "--input") } : {}),
       ...(output ? { output: parseJsonValue(output, "--output") } : {}),
       tags: parseCsv(tags) ?? [],
-    });
+    };
 
-    const payload = { success: true, artifact };
+    const packageResult =
+      filePath?.trim() && isDirectoryPath(filePath)
+        ? createArtifactPackage({
+            rootPath: filePath,
+            artifact: artifactInput,
+            ...(entrypoint?.trim() ? { entrypoint } : {}),
+            ...(basePath?.trim() ? { basePath } : {}),
+            ...(assetBase?.trim() ? { assetBase } : {}),
+            ...(ctx.agentId ? { createdBy: ctx.agentId } : {}),
+          })
+        : null;
+    const artifact = packageResult?.artifact ?? createArtifact(artifactInput);
+
+    const payload = {
+      success: true,
+      artifact,
+      ...(packageResult
+        ? {
+            version: summarizeVersion(packageResult.version),
+            package: packageResult.package,
+          }
+        : {}),
+    };
     if (asJson) {
       printJson(payload);
     } else {
       console.log(`✓ Artifact created: ${artifact.id}`);
       if (artifact.blobPath) console.log(`  Blob: ${artifact.blobPath}`);
+      if (packageResult) {
+        console.log(`  Version: v${packageResult.version.versionNumber}`);
+        console.log(`  Package: ${packageResult.package.fileCount} files, ${packageResult.package.entrypoint}`);
+      }
     }
     return payload;
   }

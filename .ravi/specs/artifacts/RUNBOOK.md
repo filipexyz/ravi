@@ -26,9 +26,10 @@ ravi artifacts events <artifact_id> --json
    recovery action.
 
 ```bash
-ravi artifacts create image \
+ravi artifacts create \
   --path /path/to/file.png \
   --session <session> \
+  --kind image \
   --tags generated,image,recovered \
   --title "Recovered generated image" \
   --summary "Manually registered after generation completed outside the artifact lifecycle."

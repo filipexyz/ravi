@@ -1,6 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { getDb } from "../router/router-db.js";
 import { canonicalAssetIdsForTag, canonicalTagSlugsForAsset, replaceMirroredTagSlugsForAsset } from "../tags/index.js";
@@ -16,7 +25,10 @@ const VERSIONABLE_UPDATE_KEYS = new Set(["blobPath", "filePath", "mimeType", "ou
 export const ArtifactInputSchema = z
   .object({
     id: z.string().regex(ARTIFACT_ID_PATTERN).optional(),
-    kind: z.string().regex(KIND_PATTERN, "Artifact kind must start with a letter and use safe identifier chars"),
+    kind: z
+      .string()
+      .regex(KIND_PATTERN, "Artifact kind must start with a letter and use safe identifier chars")
+      .default("artifact"),
     title: z.string().trim().min(1).max(200).optional(),
     summary: z.string().trim().min(1).max(2000).optional(),
     status: z.string().trim().min(1).max(80).default("active"),
@@ -173,6 +185,28 @@ export interface ArtifactVersion {
 }
 
 export type CreateArtifactVersionInput = z.input<typeof ArtifactVersionInputSchema>;
+
+export interface CreateArtifactPackageInput {
+  rootPath: string;
+  artifact: z.input<typeof ArtifactInputSchema>;
+  entrypoint?: string;
+  basePath?: string;
+  assetBase?: string;
+  createdBy?: string;
+}
+
+export interface CreateArtifactPackageResult {
+  artifact: ArtifactRecord;
+  version: ArtifactVersion;
+  package: {
+    rootPath: string;
+    entrypoint: string;
+    fileCount: number;
+    sizeBytes: number;
+    sha256: string;
+    isDirectory: true;
+  };
+}
 
 export interface RestoreArtifactVersionResult {
   artifact: ArtifactRecord;
@@ -508,6 +542,15 @@ function normalizeVersionAssetPath(path: string): string {
   return normalized;
 }
 
+function normalizePackageAssetPath(path: string): string {
+  const normalized = normalizeVersionAssetPath(path);
+  const parts = normalized.split("/");
+  if (parts.some((part) => part.startsWith(".")) || parts.includes("_ravi")) {
+    throw new Error(`Invalid artifact package asset path: ${path}`);
+  }
+  return normalized;
+}
+
 function ingestFile(path: string): {
   filePath: string;
   blobPath: string;
@@ -539,6 +582,58 @@ function ingestFile(path: string): {
     sizeBytes: stat.size,
     sha256,
   };
+}
+
+function collectPackageFiles(rootRealPath: string): Array<{ absolutePath: string; packagePath: string }> {
+  const files: Array<{ absolutePath: string; packagePath: string }> = [];
+
+  function visit(dir: string): void {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === ".DS_Store" || entry.name === ".git") continue;
+      const absolutePath = resolve(dir, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Refusing to create artifact package from symlink: ${relative(rootRealPath, absolutePath)}`);
+      }
+      const resolvedPath = realpathSync(absolutePath);
+      if (resolvedPath !== rootRealPath && !resolvedPath.startsWith(`${rootRealPath}${sep}`)) {
+        throw new Error(`Refusing to create artifact package from path outside root: ${absolutePath}`);
+      }
+      if (entry.isDirectory()) {
+        visit(resolvedPath);
+      } else if (entry.isFile()) {
+        files.push({
+          absolutePath: resolvedPath,
+          packagePath: normalizePackageAssetPath(relative(rootRealPath, resolvedPath).split(sep).join("/")),
+        });
+      }
+    }
+  }
+
+  visit(rootRealPath);
+  files.sort((left, right) => left.packagePath.localeCompare(right.packagePath));
+  return files;
+}
+
+function resolvePackageEntrypoint(files: Array<{ packagePath: string }>, entrypoint: string | undefined): string {
+  const normalized = entrypoint ? normalizePackageAssetPath(entrypoint) : "index.html";
+  if (!files.some((file) => file.packagePath === normalized)) {
+    throw new Error(`Artifact package entrypoint is not included in files: ${normalized}`);
+  }
+  return normalized;
+}
+
+function packageManifestHash(files: Array<{ packagePath: string; sha256: string; sizeBytes: number }>): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        files.map((file) => ({
+          path: file.packagePath,
+          sha256: file.sha256,
+          sizeBytes: file.sizeBytes,
+        })),
+      ),
+    )
+    .digest("hex");
 }
 
 function rowToArtifact(row: ArtifactRow): ArtifactRecord {
@@ -1084,6 +1179,103 @@ export function createArtifact(input: z.input<typeof ArtifactInputSchema>): Arti
     });
   }
   return artifact;
+}
+
+export function createArtifactPackage(input: CreateArtifactPackageInput): CreateArtifactPackageResult {
+  ensureArtifactSchema();
+  const rootPath = resolve(input.rootPath);
+  if (!existsSync(rootPath)) {
+    throw new Error(`Artifact package path not found: ${rootPath}`);
+  }
+  if (lstatSync(rootPath).isSymbolicLink()) {
+    throw new Error(`Refusing to create artifact package from symlink root: ${rootPath}`);
+  }
+  const rootRealPath = realpathSync(rootPath);
+  const rootStat = statSync(rootRealPath);
+  if (!rootStat.isDirectory()) {
+    throw new Error(`Artifact package path is not a directory: ${rootRealPath}`);
+  }
+
+  const files = collectPackageFiles(rootRealPath);
+  if (files.length === 0) {
+    throw new Error(`Artifact package directory is empty: ${rootRealPath}`);
+  }
+  const entrypoint = resolvePackageEntrypoint(files, input.entrypoint);
+  const ingested = files.map((file) => ({
+    ...file,
+    ...ingestFile(file.absolutePath),
+  }));
+  const fileCount = ingested.length;
+  const sizeBytes = ingested.reduce((total, file) => total + file.sizeBytes, 0);
+  const packageHash = packageManifestHash(ingested);
+  const packageSummary = {
+    rootPath: rootRealPath,
+    entrypoint,
+    ...(input.basePath ? { basePath: input.basePath } : {}),
+    ...(input.assetBase ? { assetBase: input.assetBase } : {}),
+    fileCount,
+    sizeBytes,
+    sha256: packageHash,
+    isDirectory: true as const,
+  };
+  const {
+    filePath: _filePath,
+    blobPath: _blobPath,
+    mimeType: _mimeType,
+    sizeBytes: _sizeBytes,
+    sha256: _sha256,
+    uri: _uri,
+    output: _output,
+    metadata,
+    lineage,
+    ...artifactInput
+  } = input.artifact;
+
+  const artifact = createArtifact({
+    ...artifactInput,
+    metadata: {
+      ...(metadata ?? {}),
+      package: packageSummary,
+    },
+    lineage: {
+      ...(lineage ?? {}),
+      package: {
+        sourcePath: rootRealPath,
+        fileCount,
+        sha256: packageHash,
+      },
+    },
+  });
+  const version = createArtifactVersion(artifact.id, {
+    source: "artifacts.store.package",
+    message: "Initial artifact package version created",
+    ...(input.createdBy ? { createdBy: input.createdBy } : {}),
+    manifest: {
+      entrypoint,
+      ...(input.basePath ? { basePath: input.basePath } : {}),
+      ...(input.assetBase ? { assetBase: input.assetBase } : {}),
+      package: packageSummary,
+    },
+    metadata: {
+      package: packageSummary,
+    },
+    assets: ingested.map((file) => ({
+      path: file.packagePath,
+      role: file.packagePath === entrypoint ? "primary" : "asset",
+      visibility: "inherit",
+      filePath: file.filePath,
+      blobPath: file.blobPath,
+      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+      sizeBytes: file.sizeBytes,
+      sha256: file.sha256,
+    })),
+  });
+
+  return {
+    artifact,
+    version,
+    package: packageSummary,
+  };
 }
 
 function mergePublishMetadata(

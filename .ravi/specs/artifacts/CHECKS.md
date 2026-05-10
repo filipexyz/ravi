@@ -14,7 +14,7 @@ Expected:
 ## Manual Registration Smoke
 
 ```bash
-ravi artifacts create image \
+ravi artifacts create \
   --path /tmp/example.png \
   --session main \
   --tags generated,image,test \
@@ -24,8 +24,18 @@ ravi artifacts create image \
 
 Expected:
 - artifact id is returned
+- artifact kind defaults internally without requiring a positional type
 - file is copied into artifact blob storage
 - `ravi artifacts show <id> --json` resolves the record
+
+Optional semantic classification remains available:
+
+```bash
+ravi artifacts create --kind image --path /tmp/example.png --json
+```
+
+Expected:
+- returned artifact has `kind=image`
 
 ## Async Regression
 
