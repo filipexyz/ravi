@@ -29,7 +29,8 @@ import {
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "../../whatsapp-overlay/artifacts.js";
-import { CloudAuthError, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { activateArtifactReleaseInConsole, publishArtifactToConsole } from "../../artifacts/publish-client.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -156,6 +157,80 @@ function summarizeVersion(version: ArtifactVersion): Record<string, unknown> {
     manifest: version.manifest,
     metadata: version.metadata ?? null,
   };
+}
+
+function printPublishResult(result: {
+  artifact: unknown;
+  artifactVersion: unknown;
+  publish: unknown;
+  release: unknown;
+  routes: unknown[];
+  url: string | null;
+  upload: { attempted: number; skipped: number };
+  localSync?: {
+    status: string;
+    artifactId?: string;
+    versionNumber?: number;
+    error?: string;
+  };
+}): void {
+  const artifact = objectSummary(result.artifact);
+  const version = objectSummary(result.artifactVersion);
+  const publish = objectSummary(result.publish);
+  const release = objectSummary(result.release);
+
+  console.log("✓ Artifact publish finalized");
+  if (artifact.id) console.log(`  Artifact: ${artifact.id}`);
+  if (version.id) console.log(`  Version:  ${version.id}`);
+  if (publish.id) console.log(`  Publish:  ${publish.id}`);
+  if (release.id) console.log(`  Release:  ${release.id}`);
+  if (result.routes.length > 0) console.log(`  Routes:   ${result.routes.length}`);
+  console.log(`  Upload:   ${result.upload.attempted} direct, ${result.upload.skipped} staged`);
+  console.log(`  URL:      ${result.url ?? "not returned by Console"}`);
+  if (result.localSync?.status === "recorded") {
+    console.log(
+      `  Local:    recorded on ${result.localSync.artifactId ?? "artifact"} v${result.localSync.versionNumber ?? "?"}`,
+    );
+  } else if (result.localSync?.status === "failed") {
+    console.log(`  Local:    remote published, but local sync failed: ${result.localSync.error ?? "unknown error"}`);
+  }
+}
+
+function printReleaseActivationResult(result: {
+  release: unknown;
+  site: unknown;
+  routes: unknown[];
+  url: string | null;
+  localSync?: {
+    status: string;
+    artifactId?: string;
+    versionNumber?: number;
+    error?: string;
+  };
+}): void {
+  const release = objectSummary(result.release);
+  const site = objectSummary(result.site);
+
+  console.log("✓ Artifact release activated");
+  if (site.id) console.log(`  Site:     ${site.id}`);
+  if (release.id) console.log(`  Release:  ${release.id}`);
+  if (result.routes.length > 0) console.log(`  Routes:   ${result.routes.length}`);
+  console.log(`  URL:      ${result.url ?? "not returned by Console"}`);
+  if (result.localSync?.status === "recorded") {
+    console.log(
+      `  Local:    recorded on ${result.localSync.artifactId ?? "artifact"}${
+        result.localSync.versionNumber ? ` v${result.localSync.versionNumber}` : ""
+      }`,
+    );
+  } else if (result.localSync?.status === "failed") {
+    console.log(`  Local:    release activated, but local sync failed: ${result.localSync.error ?? "unknown error"}`);
+  }
+}
+
+function objectSummary(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const id = (value as Record<string, unknown>).id;
+  return typeof id === "string" ? { id } : {};
 }
 
 @Group({
@@ -634,29 +709,74 @@ export class ArtifactsCommands {
     }
   }
 
-  @Command({ name: "publish", description: "Publish an artifact to a Console-compatible cloud endpoint" })
-  publish(
-    @Arg("target", { description: "Local artifact id or local path" }) target: string,
+  @Command({ name: "publish", description: "Publish a local artifact package through a Console-compatible endpoint" })
+  async publish(
+    @Arg("target", { description: "Local artifact id, file, or directory" }) target: string,
     @Option({ flags: "--project <project>", description: "Console project id or slug" }) project?: string,
-    @Option({ flags: "--visibility <visibility>", description: "Requested visibility: private|unlisted|public" })
+    @Option({ flags: "--site <site>", description: "Console site id or slug to release to" }) site?: string,
+    @Option({ flags: "--route <path>", description: "Site route path to mount the artifact at" }) route?: string,
+    @Option({ flags: "--visibility <visibility>", description: "Requested visibility: private|protected_link|public" })
     visibility?: string,
+    @Option({ flags: "--name <name>", description: "Published artifact name" }) name?: string,
+    @Option({ flags: "--slug <slug>", description: "Published artifact slug" }) slug?: string,
+    @Option({ flags: "--description <text>", description: "Published artifact description" }) description?: string,
+    @Option({ flags: "--entrypoint <path>", description: "Package entrypoint path" }) entrypoint?: string,
+    @Option({ flags: "--artifact-version <n>", description: "Local artifact version number (default: latest)" })
+    artifactVersion?: string,
+    @Option({ flags: "--base-path <path>", description: "Package base path intent" }) basePath?: string,
+    @Option({ flags: "--asset-base <path>", description: "Package asset base intent" }) assetBase?: string,
+    @Option({ flags: "--upload-session <id>", description: "Use an existing Console upload session" })
+    uploadSession?: string,
+    @Option({ flags: "--idempotency-key <key>", description: "Idempotency key for Console retries" })
+    idempotencyKey?: string,
+    @Option({ flags: "--reason <text>", description: "Release reason sent to Console" }) reason?: string,
+    @Option({ flags: "--replace-release", description: "Replace the full active route map instead of merging" })
+    replaceRelease?: boolean,
+    @Option({ flags: "--no-activate", description: "Create publish records without activating a site release" })
+    activate?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    void target;
-    void project;
-    void visibility;
-    void consoleUrl;
-    const error = new CloudAuthError(
-      "CLOUD_PUBLISH_NOT_IMPLEMENTED",
-      "Cloud artifact publish is not implemented in ravi.bot yet. The local auth client is available, but publish/upload waits for the Console publish contract.",
-    );
-    if (asJson) {
-      printJson(formatCloudAuthError(error));
-    } else {
-      console.error(`${error.code}: ${error.message}`);
+    try {
+      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+      const result = await publishArtifactToConsole(target, {
+        project,
+        site,
+        route,
+        visibility,
+        name,
+        slug,
+        description,
+        entrypoint,
+        artifactVersion: parsedArtifactVersion,
+        basePath,
+        assetBase,
+        uploadSession,
+        idempotencyKey,
+        reason,
+        replaceRelease,
+        activate,
+        console: consoleUrl,
+        json: asJson,
+      });
+      if (asJson) {
+        printJson(result);
+      } else {
+        printPublishResult(result);
+      }
+      return result;
+    } catch (error) {
+      const cloudError = cloudAuthErrorFromUnknown(error);
+      if (asJson) {
+        printJson(formatCloudAuthError(cloudError));
+      } else {
+        console.error(`${cloudError.code}: ${cloudError.message}`);
+        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
+          console.error("Next: run `ravi login`.");
+        }
+      }
+      process.exit(cloudError.exitCode);
     }
-    process.exit(error.exitCode);
   }
 
   @Command({ name: "blob", description: "Stream raw artifact bytes" })
@@ -672,5 +792,59 @@ export class ArtifactsCommands {
       "Cache-Control": "private, max-age=60",
     };
     return new Response(bunFile(result.path), { headers });
+  }
+}
+
+@Group({
+  name: "artifacts.release",
+  description: "Manage hosted artifact releases",
+  scope: "open",
+})
+export class ArtifactReleaseCommands {
+  @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
+  async activate(
+    @Arg("id", { description: "Local artifact id" }) id: string,
+    @Option({
+      flags: "--version <n>",
+      description: "Local artifact version whose recorded release should be activated",
+    })
+    artifactVersion?: string,
+    @Option({ flags: "--release <id>", description: "Explicit Console release id to activate" })
+    release?: string,
+    @Option({
+      flags: "--site <site>",
+      description: "Console site id or slug, required when --release is not recorded locally",
+    })
+    site?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--version") : undefined;
+      const result = await activateArtifactReleaseInConsole(id, {
+        artifactVersion: parsedArtifactVersion,
+        release,
+        site,
+        console: consoleUrl,
+        json: asJson,
+      });
+      if (asJson) {
+        printJson(result);
+      } else {
+        printReleaseActivationResult(result);
+      }
+      return result;
+    } catch (error) {
+      const cloudError = cloudAuthErrorFromUnknown(error);
+      if (asJson) {
+        printJson(formatCloudAuthError(cloudError));
+      } else {
+        console.error(`${cloudError.code}: ${cloudError.message}`);
+        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
+          console.error("Next: run `ravi login`.");
+        }
+      }
+      process.exit(cloudError.exitCode);
+    }
   }
 }

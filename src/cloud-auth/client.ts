@@ -82,6 +82,32 @@ export class ConsoleApiClient {
     return this.requestJson<ConsoleMeResponse>("GET", "/api/cli/me", undefined, accessToken);
   }
 
+  async createPageUploadSession(
+    input: PageUploadSessionCreateInput,
+    accessToken: string,
+  ): Promise<PageUploadSessionCreateResponse> {
+    return this.requestJson<PageUploadSessionCreateResponse>(
+      "POST",
+      "/api/cli/artifacts/upload-sessions",
+      input,
+      accessToken,
+    );
+  }
+
+  async finalizeArtifactPublish(
+    input: ArtifactPublishFinalizeInput,
+    accessToken: string,
+  ): Promise<ArtifactPublishFinalizeResponse> {
+    return this.requestJson<ArtifactPublishFinalizeResponse>("POST", "/api/cli/artifacts/publish", input, accessToken);
+  }
+
+  async activatePageSiteRelease(
+    input: PageSiteReleaseActivateInput,
+    accessToken: string,
+  ): Promise<PageSiteReleaseActivateResponse> {
+    return this.requestJson<PageSiteReleaseActivateResponse>("POST", "/api/cli/artifacts/publish", input, accessToken);
+  }
+
   async requestJson<T>(method: string, path: string, body?: unknown, accessToken?: string): Promise<T> {
     const headers: Record<string, string> = {
       Accept: "application/json",
@@ -133,6 +159,85 @@ export class ConsoleApiClient {
     return (payload ?? {}) as T;
   }
 }
+
+export interface PageUploadSessionCreateInput {
+  projectRef: string;
+  siteRef?: string | null;
+  idempotencyKey?: string | null;
+  packageManifest?: {
+    entrypoint?: string;
+    basePath?: string;
+    assetBase?: string;
+    files: Array<{
+      path: string;
+      sha256?: string | null;
+      sizeBytes?: number | null;
+      contentType?: string | null;
+      stagingKey?: string | null;
+      cache?: string;
+    }>;
+  };
+  uploadPolicy?: Record<string, unknown>;
+}
+
+export interface PageUploadSessionCreateResponse {
+  uploadSession: Record<string, unknown>;
+  uploadPolicy: Record<string, unknown>;
+}
+
+export interface ArtifactPublishFinalizeInput {
+  uploadSessionId: string;
+  idempotencyKey?: string | null;
+  artifact?: {
+    id?: string | null;
+    slug?: string | null;
+    name?: string | null;
+    description?: string | null;
+    localArtifactId?: string | null;
+  };
+  packageManifest: {
+    entrypoint?: string;
+    basePath?: string;
+    assetBase?: string;
+    files: Array<{
+      path: string;
+      sha256?: string | null;
+      sizeBytes?: number | null;
+      contentType?: string | null;
+      stagingKey?: string | null;
+      cache?: string;
+    }>;
+  };
+  publish?: {
+    siteRef: string;
+    activate?: boolean;
+    route?: {
+      path?: string;
+      matchType?: string;
+      priority?: number;
+      visibility?: string;
+    };
+    routes?: Array<{
+      path: string;
+      matchType?: string;
+      priority?: number;
+      visibility?: string;
+    }>;
+    replaceRelease?: boolean;
+    reason?: string | null;
+    visibility?: string;
+  };
+  source?: Record<string, unknown>;
+}
+
+export type ArtifactPublishFinalizeResponse = Record<string, unknown>;
+
+export interface PageSiteReleaseActivateInput {
+  siteRef: string;
+  releaseId: string;
+}
+
+export type PageSiteReleaseActivateResponse = Record<string, unknown>;
 
 export function normalizeConsoleUrl(value: string): string {
   let parsed: URL;

@@ -132,6 +132,15 @@ export interface AppendArtifactEventInput {
   actor?: string;
 }
 
+export interface RecordArtifactPublishStateInput extends AppendArtifactEventInput {
+  metadataSummary?: Record<string, unknown>;
+}
+
+export interface RecordArtifactPublishStateResult {
+  artifact: ArtifactRecord;
+  event: ArtifactEvent;
+}
+
 export interface ArtifactVersionAsset {
   id: string;
   versionId: string;
@@ -972,6 +981,28 @@ export function appendArtifactEvent(artifactIdValue: string, input: AppendArtifa
   return event;
 }
 
+export function recordArtifactPublishState(
+  artifactIdValue: string,
+  input: RecordArtifactPublishStateInput,
+): RecordArtifactPublishStateResult {
+  ensureArtifactSchema();
+  const current = getArtifact(artifactIdValue);
+  if (!current) throw new Error(`Artifact not found: ${artifactIdValue}`);
+
+  if (input.metadataSummary) {
+    const now = Date.now();
+    const metadata = mergePublishMetadata(current.metadata ?? {}, input.metadataSummary);
+    getDb()
+      .prepare("UPDATE artifacts SET metadata_json = ?, updated_at = ? WHERE id = ?")
+      .run(jsonString(metadata) ?? "{}", now, artifactIdValue);
+  }
+
+  const event = appendArtifactEvent(artifactIdValue, input);
+  const artifact = getArtifact(artifactIdValue);
+  if (!artifact) throw new Error(`Artifact publish state update failed: ${artifactIdValue}`);
+  return { artifact, event };
+}
+
 export function createArtifact(input: z.input<typeof ArtifactInputSchema>): ArtifactRecord {
   ensureArtifactSchema();
   const parsed = ArtifactInputSchema.parse(input);
@@ -1053,6 +1084,29 @@ export function createArtifact(input: z.input<typeof ArtifactInputSchema>): Arti
     });
   }
   return artifact;
+}
+
+function mergePublishMetadata(
+  current: Record<string, unknown>,
+  summary: Record<string, unknown>,
+): Record<string, unknown> {
+  const cloud = parseRecord(current.cloud);
+  const publish = parseRecord(cloud.publish);
+  return {
+    ...current,
+    cloud: {
+      ...cloud,
+      publish: {
+        ...publish,
+        current: summary,
+        updatedAt: summary.syncedAt ?? new Date().toISOString(),
+      },
+    },
+  };
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 export function getArtifact(id: string): ArtifactRecord | null {

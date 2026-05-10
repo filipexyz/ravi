@@ -136,6 +136,69 @@ describe("ConsoleApiClient", () => {
     ]);
   });
 
+  it("creates artifact upload sessions through the CLI bearer endpoint", async () => {
+    const calls: FetchCall[] = [];
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async (url, init) => {
+        calls.push(recordFetchCall(url, init));
+        return jsonResponse({
+          uploadSession: { id: "upl_123" },
+          uploadPolicy: { directUpload: false },
+        });
+      },
+    });
+
+    const result = await client.createPageUploadSession(
+      {
+        projectRef: "proj_123",
+        siteRef: "docs",
+        idempotencyKey: "idem_123",
+        packageManifest: {
+          entrypoint: "index.html",
+          files: [
+            {
+              path: "index.html",
+              sha256: "abc123",
+              sizeBytes: 2,
+              contentType: "text/html; charset=utf-8",
+            },
+          ],
+        },
+      },
+      "access-secret",
+    );
+
+    expect(result.uploadSession).toEqual({ id: "upl_123" });
+    expect(calls).toMatchObject([
+      {
+        url: "https://console.example/api/cli/artifacts/upload-sessions",
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: "Bearer access-secret",
+        },
+        body: {
+          projectRef: "proj_123",
+          siteRef: "docs",
+          idempotencyKey: "idem_123",
+          packageManifest: {
+            entrypoint: "index.html",
+            files: [
+              {
+                path: "index.html",
+                sha256: "abc123",
+                sizeBytes: 2,
+                contentType: "text/html; charset=utf-8",
+              },
+            ],
+          },
+        },
+      },
+    ]);
+  });
+
   it("maps Console safe error codes into CloudAuthError", async () => {
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",
