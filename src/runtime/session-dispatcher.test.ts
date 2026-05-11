@@ -11,11 +11,13 @@ import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { querySessionTrace } from "../session-trace/query.js";
 
-function createDispatcher(maxConcurrentSessions = 10) {
+function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
   return new RuntimeSessionDispatcher({
     instanceId: "test",
     maxConcurrentSessions,
+    interactiveReservedSessions,
     safeEmit: async () => {},
     getConfigModel: () => "test-model",
   });
@@ -319,13 +321,104 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       resolve: () => {},
     });
 
+    dispatcher.streamingSessions.set("first", createActiveSession());
+    dispatcher.streamingSessions.set("active", createActiveSession());
     expect(dispatcher.canAcceptRuntimePrompt("new-cold-start")).toBe(false);
 
-    dispatcher.streamingSessions.set("active", createActiveSession());
     expect(dispatcher.canAcceptRuntimePrompt("active")).toBe(true);
 
-    dispatcher.startingSessions.add("queued");
+    dispatcher.pendingStartSessions.add("queued");
     expect(dispatcher.canAcceptRuntimePrompt("queued")).toBe(true);
+  });
+
+  it("keeps pending pool starts separate from actual cold starts and traces the canonical session key", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-pending-start-");
+    try {
+      getOrCreateSession("agent:dev:test:pending-start", "dev", stateDir, { name: "pending-start-by-name" });
+      const dispatcher = createDispatcher(1);
+      dispatcher.streamingSessions.set("active", createActiveSession());
+
+      const firstStart = dispatcher.handlePromptImmediate("pending-start-by-name", {
+        prompt: "first",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "group:123",
+          sourceMessageId: "m1",
+          actorType: "contact",
+        },
+        context: {
+          channelId: "whatsapp",
+          channelName: "WhatsApp",
+          accountId: "main",
+          chatId: "group:123",
+          messageId: "m1",
+          senderId: "u1",
+          isGroup: true,
+          timestamp: Date.now(),
+          actorType: "contact",
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(dispatcher.pendingStarts).toHaveLength(1);
+      expect(dispatcher.pendingStartSessions.has("pending-start-by-name")).toBe(true);
+      expect(dispatcher.startingSessions.has("pending-start-by-name")).toBe(false);
+
+      await dispatcher.handlePromptImmediate("pending-start-by-name", {
+        prompt: "second",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "group:123",
+          sourceMessageId: "m2",
+          actorType: "contact",
+        },
+        context: {
+          channelId: "whatsapp",
+          channelName: "WhatsApp",
+          accountId: "main",
+          chatId: "group:123",
+          messageId: "m2",
+          senderId: "u1",
+          isGroup: true,
+          timestamp: Date.now(),
+          actorType: "contact",
+        },
+      });
+
+      expect(dispatcher.stashedMessages.get("pending-start-by-name")).toHaveLength(1);
+
+      const trace = querySessionTrace({
+        sessionKey: "agent:dev:test:pending-start",
+        sessionName: "pending-start-by-name",
+        only: "dispatch",
+      });
+      const queued = trace.events.filter((event) => event.eventType === "dispatch.queued_busy");
+      expect(queued.map((event) => event.sessionKey)).toEqual([
+        "agent:dev:test:pending-start",
+        "agent:dev:test:pending-start",
+      ]);
+      expect(queued.map((event) => (event.payloadJson as { reason?: string } | null)?.reason)).toEqual([
+        "concurrency_limit",
+        "pending_start_backpressure",
+      ]);
+
+      dispatcher.shutdownAll();
+      await firstStart;
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("reserves pool capacity for interactive starts over background task starts", () => {
+    const dispatcher = createDispatcher(3, 1);
+    dispatcher.streamingSessions.set("task-one-work", createActiveSession());
+    dispatcher.streamingSessions.set("task-two-work", createActiveSession());
+
+    expect(dispatcher.canAcceptRuntimePrompt("task-three-work")).toBe(false);
+    expect(dispatcher.canAcceptRuntimePrompt("main:group:123")).toBe(true);
   });
 
   it("aborts a live runtime session by session key when the pool is keyed by session name", async () => {

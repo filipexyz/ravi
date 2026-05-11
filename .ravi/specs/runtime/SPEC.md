@@ -39,6 +39,7 @@ The runtime abstraction exists so new execution engines can be added without cop
 ## Current Abstractions
 
 - `RuntimeSessionDispatcher`: queueing, debounce, active-session reuse, interruption, restart decisions, concurrency, task delivery barriers.
+- `RuntimeSessionPool`: global live runtime pool with explicit pending-start backpressure, class-aware capacity, and traceable admission decisions.
 - `RuntimeSessionLauncher`: session/agent/provider resolution, user-message persistence, task runtime resolution, request build, provider start, event-loop handoff.
 - `RuntimeStartRequest`: provider-facing start contract.
 - `RuntimeSessionHandle`: live provider handle, event stream, interrupt, optional model switch, optional native control.
@@ -73,6 +74,9 @@ The runtime abstraction exists so new execution engines can be added without cop
 - Tool start/end lifecycle MUST be recorded through canonical `tool.started` and `tool.completed` events.
 - Runtime permissions MUST flow through Ravi host services or host hooks. Providers MUST NOT create a parallel permission model.
 - `adapter.request` trace MUST be recorded before provider handoff, including prompt hashes, system prompt hashes, model, provider, resume/fork state, delivery barrier, source, and capability summary.
+- Runtime pool backpressure MUST be represented as its own dispatch state. A session waiting for a pool slot MUST NOT be reported as an in-flight cold start until a slot has actually been reserved.
+- Dispatch trace rows MUST use the canonical `session_key` when a session row exists. `session_name` MAY be included as a secondary lookup field, but MUST NOT replace the canonical key.
+- Background starts such as task and observation sessions MUST NOT be able to consume all runtime start capacity when interactive channel sessions are waiting. The dispatcher SHOULD reserve a small configurable capacity lane for interactive sessions.
 - Stalled-turn watchdog recovery MUST NOT be used. Missing terminal events are provider/adapter bugs and MUST be fixed at that boundary.
 - New providers MUST add provider contract tests, event normalization tests, and runtime capability matrix coverage before live use.
 

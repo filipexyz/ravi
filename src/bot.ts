@@ -10,7 +10,7 @@ import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
 import { RuntimePromptSubscription } from "./runtime/prompt-subscription.js";
 import { safeEmit } from "./runtime/safe-emit.js";
 import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
-import { resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
+import { resolveRuntimeInteractiveReservedSlots, resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
 
 export type {
   ChannelContext,
@@ -48,9 +48,11 @@ export class RaviBot {
     this.config = options.config;
     logger.setLevel(options.config.logLevel);
     const maxConcurrentSessions = resolveRuntimeSessionPoolMax();
+    const interactiveReservedSessions = resolveRuntimeInteractiveReservedSlots(undefined, maxConcurrentSessions);
     this.sessionDispatcher = new RuntimeSessionDispatcher({
       instanceId: this.instanceId,
       maxConcurrentSessions,
+      interactiveReservedSessions,
       safeEmit,
       getConfigModel: () => this.config.model,
     });
