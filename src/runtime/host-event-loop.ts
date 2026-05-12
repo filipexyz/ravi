@@ -163,6 +163,10 @@ function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<s
   return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
+function runtimeEventLogLevel(eventType: string): "debug" | "info" {
+  return eventType === "text.delta" || eventType === "provider.raw" || eventType === "status" ? "debug" : "info";
+}
+
 function isRecoverableInterruptionFailure(event: {
   error?: string;
   recoverable?: boolean;
@@ -632,7 +636,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         armProviderInactivityWatch();
       }
 
-      const logLevel = event.type === "text.delta" ? "debug" : "info";
+      const logLevel = runtimeEventLogLevel(event.type);
       log[logLevel]("Runtime event", {
         runId,
         seq: providerRawEventCount,
@@ -672,11 +676,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "status") {
         const status = event.status;
         const wasCompacting = streaming.compacting;
-        streaming.compacting = status === "compacting";
-        log.info("Compaction status", {
-          sessionName,
-          compacting: streaming.compacting,
-        });
+        streaming.compacting = status === "compacting" ? true : status === "idle" ? false : streaming.compacting;
+        const compactionChanged = streaming.compacting !== wasCompacting;
+        if (status === "compacting" || compactionChanged) {
+          log.info("Compaction status", {
+            sessionName,
+            status,
+            compacting: streaming.compacting,
+          });
+        } else {
+          log.debug("Runtime status", {
+            sessionName,
+            status,
+            compacting: streaming.compacting,
+          });
+        }
         recordTraceEvent({
           turnId: streaming.currentTraceTurnId,
           provider: runtimeSession.provider,

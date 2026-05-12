@@ -102,6 +102,11 @@ function formatDimParts(parts: (string | undefined)[]): string {
   return compact.length > 0 ? ` ${c.dim}${compact.join(" ")}${c.reset}` : "";
 }
 
+export function isLowSignalRuntimeEvent(topic: string, data: Record<string, unknown>): boolean {
+  if (!topic.includes(".runtime")) return false;
+  return data.type === "provider.raw" || data.type === "status";
+}
+
 export function formatData(data: Record<string, unknown>, topic: string): string {
   if (topic.startsWith("message.received.")) {
     const payload = data.payload as Record<string, unknown> | undefined;
@@ -576,6 +581,8 @@ export class EventsCommands {
     @Option({ flags: "--no-heartbeat", description: "Hide heartbeat events" }) noHeartbeat?: boolean,
     @Option({ flags: "--only <type>", description: "Only show: prompt, response, tool, claude, runtime, cli, audit" })
     only?: string,
+    @Option({ flags: "--runtime-verbose", description: "Show low-level runtime provider.raw/status events" })
+    runtimeVerbose?: boolean,
     @Option({ flags: "--json", description: "Print raw events as JSONL" }) asJson?: boolean,
   ) {
     const topicPattern = ">"; // NATS wildcard for all topics
@@ -586,6 +593,7 @@ export class EventsCommands {
       if (only) console.log(`  only:     ${c.cyan}${only}${c.reset}`);
       if (noClaude) console.log(`  hiding:   claude SDK events`);
       if (noHeartbeat) console.log(`  hiding:   heartbeat events`);
+      if (!runtimeVerbose) console.log(`  hiding:   low-level runtime provider.raw/status`);
       console.log(`  topic:    ${c.gray}>${c.reset}  (all)`);
       console.log(`\n${c.dim}Ctrl+C to exit${c.reset}\n`);
       console.log(`${c.dim}${"─".repeat(80)}${c.reset}`);
@@ -620,6 +628,9 @@ export class EventsCommands {
       // Apply --no-heartbeat
       if (noHeartbeat && (topic.includes("heartbeat") || (data as Record<string, unknown>)._heartbeat === true))
         continue;
+
+      // Hide provider-native noise unless explicitly debugging runtime internals.
+      if (!runtimeVerbose && isLowSignalRuntimeEvent(topic, data as Record<string, unknown>)) continue;
 
       // Always hide noisy events (omni JetStream, streaming chunks, stream_event)
       if (
