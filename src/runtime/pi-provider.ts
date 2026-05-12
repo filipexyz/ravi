@@ -236,6 +236,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       return {
         provider: "pi",
         skillVisibility,
+        concurrentInputStrategy: "native_steer",
         events: runPiTurns(input, createTransport, state, { canRestartTransport, skillVisibility }),
         interrupt: async () => {
           state.interrupted = true;

@@ -1249,8 +1249,10 @@ export class RuntimeSessionDispatcher {
 }
 
 export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
-  const piPreTurnQueue =
-    session.queryHandle.provider === "pi" &&
+  const supportsNativeSteer =
+    session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
+  const nativeSteerPreTurnQueue =
+    supportsNativeSteer &&
     !session.turnActive &&
     !session.pushMessage &&
     session.pendingMessages.length > 0 &&
@@ -1260,8 +1262,8 @@ export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, b
 
   return (
     barrier === "after_tool" &&
-    Boolean(session.queryHandle.control) &&
-    (session.turnActive || piPreTurnQueue) &&
+    supportsNativeSteer &&
+    (session.turnActive || nativeSteerPreTurnQueue) &&
     activeTurnIsFresh &&
     !session.done &&
     !session.starting &&

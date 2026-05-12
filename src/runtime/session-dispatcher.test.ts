@@ -195,6 +195,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         provider: "pi",
         events: (async function* () {})(),
         interrupt: async () => {},
+        concurrentInputStrategy: "native_steer",
         control: async () => ({ ok: true, operation: "turn.steer", state: { provider: "pi", activeTurn: true } }),
       },
       turnActive: true,
@@ -210,10 +211,22 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
   it("uses native steer for active Pi after-tool prompts when the provider exposes control", () => {
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(true);
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
+  });
+
+  it("keeps Codex on the host interrupt path even when runtime control exists", () => {
     expect(
       canUseNativeRuntimeSteer(
         createStreamingSession({
-          queryHandle: { provider: "codex", events: (async function* () {})(), interrupt: async () => {} },
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+            control: async () => ({
+              ok: true,
+              operation: "turn.steer",
+              state: { provider: "codex", activeTurn: true },
+            }),
+          },
         }),
         "after_tool",
       ),

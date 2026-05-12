@@ -268,6 +268,8 @@ export interface RuntimeControlCapabilities {
   operations: RuntimeControlOperation[];
 }
 
+export type RuntimeConcurrentInputStrategy = "interrupt" | "native_steer";
+
 export interface RuntimeDynamicToolCapabilities {
   mode: RuntimeDynamicToolMode;
 }
@@ -508,6 +510,11 @@ export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
   events: AsyncIterable<RuntimeEvent>;
   skillVisibility?: RuntimeSkillVisibilitySnapshot;
+  /**
+   * Strategy for concurrent interactive prompts after a live handle exists.
+   * The default is Ravi queue + interrupt; native steering must opt in explicitly.
+   */
+  concurrentInputStrategy?: RuntimeConcurrentInputStrategy;
   interrupt(): Promise<void>;
   setModel?(model: string): Promise<void>;
   control?(request: RuntimeControlRequest): Promise<RuntimeControlResult>;

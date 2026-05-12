@@ -42,7 +42,7 @@ A provider MAY implement:
 - `setModel(model)`: live model switch.
 - `control(request)`: provider-native runtime controls such as thread read, fork, rollback, steer, or interrupt.
 
-The host dispatcher MAY route a concurrent human prompt through `control({ operation: "turn.steer" })` when the active handle supports runtime control and the delivery barrier is `after_tool`. If control fails or is unsupported, the host MUST fall back to the normal Ravi queue/interruption path without losing the prompt.
+The host dispatcher MAY route a concurrent human prompt through `control({ operation: "turn.steer" })` only when the live handle explicitly opts into native concurrent input steering and the delivery barrier is `after_tool`. If control fails, is unsupported, or the handle did not opt in, the host MUST fall back to the normal Ravi queue/interruption path without losing the prompt.
 
 Host-side debounce and provider-native steering are different layers:
 
@@ -50,7 +50,7 @@ Host-side debounce and provider-native steering are different layers:
 - Runtime `pendingMessages` is the host delivery queue used after a session handle exists.
 - Provider-native `turn.steer` is a control operation for injecting an additional prompt into an existing native run.
 
-Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST NOT disable debounce unless the agent/channel config says so.
+Adapters with native steering MAY bypass Ravi `pendingMessages` for interactive `after_tool` messages after a live handle exists, but MUST opt in through the runtime handle and MUST NOT disable debounce unless the agent/channel config says so. Handles that only expose generic runtime control default to Ravi queue + interrupt semantics.
 
 ## Model Selectors
 
