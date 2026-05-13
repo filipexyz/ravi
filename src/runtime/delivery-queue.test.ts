@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { createQueuedRuntimeUserMessage, createRuntimeMessageGenerator } from "./delivery-queue.js";
+import {
+  createQueuedRuntimeUserMessage,
+  createRuntimeMessageGenerator,
+  shouldInterruptRuntimeForIncoming,
+} from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
@@ -102,6 +106,31 @@ describe("runtime delivery queue", () => {
         senderId: "user-1",
       },
       _agentId: "e2-filipe",
+    });
+  });
+
+  it("does not request provider interrupt while the runtime is between turns", () => {
+    const session = makeStreamingSession({
+      turnActive: false,
+      pushMessage: null,
+      pendingMessages: [createQueuedRuntimeUserMessage({ prompt: "continua" })],
+    });
+
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "after_tool")).toEqual({
+      interrupt: false,
+      reason: "idle_gap",
+    });
+  });
+
+  it("still requests provider interrupt for active text generation", () => {
+    const session = makeStreamingSession({
+      turnActive: true,
+      pushMessage: null,
+    });
+
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "after_tool")).toEqual({
+      interrupt: true,
+      reason: "response",
     });
   });
 });

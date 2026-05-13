@@ -44,6 +44,7 @@ import {
 
 const log = logger.child("runtime:session-dispatcher");
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
+const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
 interface DebounceState {
   messages: RuntimeLaunchPrompt[];
@@ -722,6 +723,10 @@ export class RuntimeSessionDispatcher {
               .catch((error) => {
                 log.warn("Failed to emit dispatch.queued event", { sessionName, error });
               });
+            if (decision.reason === "idle_gap") {
+              wakeRuntimeSessionIfDeliverable(sessionName, this.streamingSessions);
+              this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
+            }
           } else {
             nats
               .emit(`ravi.session.${sessionName}.runtime`, {
@@ -1197,6 +1202,83 @@ export class RuntimeSessionDispatcher {
     }
   }
 
+  private scheduleIdleGapRecovery(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    sessionKey = sessionName,
+  ): void {
+    if (session.idleGapRecoveryTimer) {
+      return;
+    }
+
+    session.idleGapRecoveryTimer = setTimeout(() => {
+      session.idleGapRecoveryTimer = undefined;
+      void this.recoverIdleGapSession(sessionName, session, sessionKey).catch((error) => {
+        log.warn("Failed to recover idle-gap runtime session", { sessionName, error });
+      });
+    }, IDLE_GAP_RECOVERY_MS);
+    session.idleGapRecoveryTimer.unref?.();
+  }
+
+  private async recoverIdleGapSession(
+    sessionName: string,
+    session: RuntimeHostStreamingSession,
+    sessionKey = sessionName,
+  ): Promise<void> {
+    const current = this.streamingSessions.get(sessionName);
+    if (current !== session) {
+      return;
+    }
+    if (
+      current.done ||
+      current.turnActive ||
+      current.pushMessage ||
+      current.starting ||
+      current.compacting ||
+      current.toolRunning ||
+      !hasDeliverableRuntimeMessages(sessionName, current)
+    ) {
+      return;
+    }
+
+    const restartPrompt = buildStashedRestartPrompt(current.pendingMessages);
+    if (!restartPrompt) {
+      return;
+    }
+
+    log.warn("Recovering idle-gap runtime session", {
+      sessionName,
+      provider: current.queryHandle.provider,
+      queueSize: current.pendingMessages.length,
+      timeoutMs: IDLE_GAP_RECOVERY_MS,
+    });
+
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: current.agentId,
+      runId: current.traceRunId,
+      turnId: current.currentTraceTurnId,
+      provider: current.queryHandle.provider,
+      model: current.currentModel,
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source: current.currentSource,
+      payloadJson: {
+        reason: "idle_gap_stuck",
+        queueSize: current.pendingMessages.length,
+        timeoutMs: IDLE_GAP_RECOVERY_MS,
+      },
+    });
+
+    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages);
+    recordStreamingTurnInterruptedTrace(sessionName, current, "idle_gap_stuck", sessionKey, "aborted");
+    shutdownRuntimeStreamingSession(current, "idle_gap_stuck");
+    this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
+    await this.restartStashedSession(sessionName, "idle_gap_stuck");
+  }
+
   private async tryNativeRuntimeSteer(
     sessionName: string,
     existing: RuntimeHostStreamingSession,
@@ -1287,6 +1369,7 @@ export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, b
     session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
   const nativeSteerPreTurnQueue =
     supportsNativeSteer &&
+    session.queryHandle.provider !== "codex" &&
     !session.turnActive &&
     !session.pushMessage &&
     session.pendingMessages.length > 0 &&

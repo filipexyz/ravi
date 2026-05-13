@@ -113,11 +113,14 @@ export function shouldInterruptRuntimeForIncoming(
   if (session.starting) {
     return { interrupt: false, reason: "starting" };
   }
-  if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
-    return { interrupt: false, reason: "active_task" };
-  }
   if (session.compacting) {
     return { interrupt: false, reason: "compacting" };
+  }
+  if (!session.turnActive) {
+    return { interrupt: false, reason: "idle_gap" };
+  }
+  if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
+    return { interrupt: false, reason: "active_task" };
   }
   if (session.toolRunning) {
     if (barrier !== "immediate_interrupt") {
@@ -212,6 +215,10 @@ export async function* createRuntimeMessageGenerator({
       session.onTurnComplete = resolve;
     });
     session.turnActive = true;
+    if (session.idleGapRecoveryTimer) {
+      clearTimeout(session.idleGapRecoveryTimer);
+      session.idleGapRecoveryTimer = undefined;
+    }
     session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
 

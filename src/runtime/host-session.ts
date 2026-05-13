@@ -103,6 +103,8 @@ export interface RuntimeHostStreamingSession {
   currentTraceSystemPromptSha256?: string;
   currentTraceRequestBlobSha256?: string;
   currentTraceTurnTerminalRecorded?: boolean;
+  /** Recovery timer for the narrow state where a provider is alive but not accepting queued input. */
+  idleGapRecoveryTimer?: ReturnType<typeof setTimeout>;
 }
 
 async function* emptyRuntimeEvents(): AsyncGenerator<never> {}
@@ -136,6 +138,10 @@ export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSes
   }
   session.done = true;
   session.starting = false;
+  if (session.idleGapRecoveryTimer) {
+    clearTimeout(session.idleGapRecoveryTimer);
+    session.idleGapRecoveryTimer = undefined;
+  }
 
   session.queryHandle.interrupt().catch(() => {});
 
