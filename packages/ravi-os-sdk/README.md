@@ -1,11 +1,44 @@
 # @ravi-os/sdk
 
-Type-safe TypeScript client for the Ravi SDK gateway.
+Type-safe TypeScript SDK for controlling a Ravi runtime through the authenticated
+SDK gateway.
 
-`RaviClient` is generated from Ravi's decorated CLI registry, so the SDK mirrors
-the same command surface exposed by the gateway. The generated client stays thin:
-it builds a flat request body and delegates auth, validation, scope checks, audit,
-and HTTP details to a transport.
+Ravi is not just a model wrapper. It is a local-first runtime for long-lived
+agents: sessions, tasks, contacts, artifacts, routes, events, permissions, and
+audit all live behind one command registry. `@ravi-os/sdk` turns that registry
+into a typed client you can use from apps, dashboards, browser extensions,
+workers, tests, and internal tools.
+
+```ts
+import { RaviClient, createHttpTransport } from "@ravi-os/sdk";
+
+const ravi = new RaviClient(
+  createHttpTransport({
+    baseUrl: "http://127.0.0.1:7777",
+    contextKey: process.env.RAVI_CONTEXT_KEY!,
+  }),
+);
+
+const sessions = await ravi.sessions.list({ live: true, limit: "20" });
+const reply = await ravi.sessions.send("main", "Summarize the current work.", {
+  wait: true,
+});
+```
+
+## Why This Exists
+
+Use the SDK when you need a programmatic control plane for Ravi:
+
+- Build a dashboard that reads sessions, tasks, contacts, and runtime events.
+- Let a browser extension talk to the local Ravi daemon without shelling out.
+- Drive agents from tests or internal automation.
+- Stream live task/session/event updates into another UI.
+- Write a custom app while keeping auth, permissions, validation, and audit in
+  Ravi instead of duplicating them.
+
+The package is generated from Ravi's decorated CLI registry. If a command exists
+in the registry, the SDK gets the same shape, names, args, options, and return
+typing.
 
 ## Install
 
@@ -13,85 +46,226 @@ and HTTP details to a transport.
 bun add @ravi-os/sdk
 ```
 
-The package is ESM-only and expects a runtime with `fetch` available. That means
-modern browsers, Node 18+, Bun, Deno, and edge runtimes work with the HTTP
-transport.
+The package is ESM-only and works anywhere `fetch` is available: Bun, Node 18+,
+modern browsers, Deno, and edge runtimes.
 
-## Enable the Gateway
+## Start The Ravi Gateway
 
-The SDK talks to Ravi's HTTP server. The daemon only starts that server when an
-HTTP port is configured:
+The SDK talks to Ravi's HTTP gateway. Enable it on the daemon host:
 
 ```bash
 RAVI_HTTP_PORT=7777
 RAVI_HTTP_HOST=127.0.0.1
+ravi daemon start
 ```
 
-The SDK gateway is mounted under `/api/v1/*` on the same listener as webhooks.
-Binding to a non-loopback host requires `RAVI_GATEWAY_NETWORK_AUTHORIZED=1`.
-Set `RAVI_SDK_GATEWAY_DISABLE=1` to disable SDK routes while leaving the HTTP
-server available for other webhook handlers.
-
-## Auth
-
-Non-open routes require a runtime context key (`rctx_*`) sent as:
+The gateway is mounted under:
 
 ```text
-Authorization: Bearer <rctx_key>
+http://127.0.0.1:7777/api/v1/*
 ```
 
-Bootstrap the first admin key on the daemon host:
+By default Ravi is local-only. If you bind the gateway to a non-loopback host,
+Ravi requires:
+
+```bash
+RAVI_GATEWAY_NETWORK_AUTHORIZED=1
+```
+
+To keep the HTTP server available for webhooks while disabling SDK routes:
+
+```bash
+RAVI_SDK_GATEWAY_DISABLE=1
+```
+
+## Create A Context Key
+
+Most SDK routes require a runtime context key (`rctx_*`) in the bearer auth
+header. Bootstrap the first admin key on the daemon machine:
 
 ```bash
 ravi daemon init-admin-key
 ```
 
-For apps, issue scoped child keys instead of shipping the admin key:
+For apps, issue a narrow child key instead of shipping the admin key:
 
 ```bash
 ravi context issue dashboard \
   --ttl 2h \
-  --allow view:system:events,view:system:tasks \
+  --allow view:system:events,view:system:tasks,access:session:main \
   --json
 ```
 
-## Basic Client
+`createHttpTransport` sends the key as `Authorization: Bearer <rctx_key>`.
+
+## Create A Client
 
 ```ts
 import { RaviClient, createHttpTransport } from "@ravi-os/sdk";
 
-const client = new RaviClient(
-  createHttpTransport({
-    baseUrl: "http://127.0.0.1:7777",
-    contextKey: process.env.RAVI_CONTEXT_KEY!,
-    timeoutMs: 10_000,
-  }),
-);
-
-const agents = await client.agents.list();
-const route = await client.instances.routes.add(
-  "main",
-  "group:120363428558776322",
-  "ravi-web",
-  { channel: "whatsapp", session: "ravi-web" },
-);
+export function createRaviClient() {
+  return new RaviClient(
+    createHttpTransport({
+      baseUrl: process.env.RAVI_BASE_URL ?? "http://127.0.0.1:7777",
+      contextKey: process.env.RAVI_CONTEXT_KEY!,
+      timeoutMs: 10_000,
+    }),
+  );
+}
 ```
 
-Generated method names are camel-cased. For example:
+Deep imports are available when you want smaller bundles:
 
-- `ravi daemon init-admin-key` becomes `client.daemon.initAdminKey()`
-- `ravi instances routes add` becomes `client.instances.routes.add(...)`
-- `ravi sdk client check` becomes `client.sdk.client.check()`
+```ts
+import { RaviClient } from "@ravi-os/sdk/client";
+import { createHttpTransport } from "@ravi-os/sdk/transport/http";
+```
 
-## Request Shape
+## Examples
 
-Every command call maps to:
+### Read Runtime State
+
+```ts
+const ravi = createRaviClient();
+
+const agents = await ravi.agents.list({ limit: "50" });
+const sessions = await ravi.sessions.list({ live: true, limit: "25" });
+const recentTasks = await ravi.tasks.list({
+  status: "running",
+  limit: "10",
+});
+```
+
+### Send A Prompt To A Session
+
+```ts
+const result = await ravi.sessions.send("main", "What changed in the repo?", {
+  wait: true,
+});
+
+console.log(result);
+```
+
+`wait: true` maps to the CLI's `--wait`. Without it, the command is
+fire-and-forget.
+
+### Stream Session Events
+
+```ts
+import { createStreamClient } from "@ravi-os/sdk/streaming";
+
+const stream = createStreamClient({
+  baseUrl: "http://127.0.0.1:7777",
+  contextKey: process.env.RAVI_CONTEXT_KEY!,
+});
+
+for await (const event of stream.session("main", { timeout: 60 })) {
+  console.log(event.event, event.data);
+}
+```
+
+### Stream System Events
+
+```ts
+for await (const event of stream.events({
+  subject: "ravi.session.>",
+  noClaude: true,
+  noHeartbeat: true,
+})) {
+  console.log(event.data.topic, event.data.type);
+}
+```
+
+Available stream helpers:
+
+- `stream.events(...)` -> `GET /api/v1/_stream/events`
+- `stream.tasks(...)` -> `GET /api/v1/_stream/tasks`
+- `stream.session(name, ...)` -> `GET /api/v1/_stream/sessions/<name>`
+- `stream.audit(...)` -> `GET /api/v1/_stream/audit`
+
+Streams always require a valid context key and the matching scope, such as
+`view:system:events`, `view:system:tasks`, `access:session:<name>`, or
+`view:system:audit`.
+
+### Work With Contacts And CRM
+
+```ts
+const contacts = await ravi.contacts.list({ limit: "20" });
+const crmCards = await ravi.crm.contacts({ limit: "20" });
+const nextActions = await ravi.crm.next({ owner: "agent:main", limit: "10" });
+
+await ravi.crm.contact.set("contact_123", "lifecycle", "active", {
+  source: "dashboard",
+});
+```
+
+### Create And Version Artifacts
+
+```ts
+const artifact = await ravi.artifacts.create({
+  title: "Weekly summary",
+  output: "# Summary\n\nDone.",
+  mime: "text/markdown",
+  session: "main",
+  tags: "summary,weekly",
+});
+
+await ravi.artifacts.snapshot("art_123", {
+  label: "v1",
+  message: "First published summary",
+});
+```
+
+Binary artifact commands return the raw `Response` on success:
+
+```ts
+const response = await ravi.artifacts.blob("art_123");
+const bytes = await response.arrayBuffer();
+```
+
+### Use A Custom Transport In Tests
+
+The generated client only depends on the `Transport` interface. You can mock it
+without starting a daemon:
+
+```ts
+import { RaviClient, type Transport } from "@ravi-os/sdk";
+
+const calls: unknown[] = [];
+
+const mockTransport: Transport = {
+  async call(input) {
+    calls.push(input);
+    return { ok: true };
+  },
+};
+
+const ravi = new RaviClient(mockTransport);
+await ravi.sessions.send("main", "hello");
+```
+
+## Method Naming
+
+Generated method names mirror the CLI:
+
+- `ravi daemon init-admin-key` -> `ravi.daemon.initAdminKey()`
+- `ravi sessions send main "hello" --wait` -> `ravi.sessions.send("main", "hello", { wait: true })`
+- `ravi crm contact set <contact> lifecycle active` -> `ravi.crm.contact.set(contact, "lifecycle", "active")`
+- `ravi sdk client check` -> `ravi.sdk.client.check()`
+
+Positional args become positional method parameters. CLI options become the final
+`options` object. Most string-like CLI flags stay typed as strings because the
+registry mirrors the CLI parser; boolean flags are booleans.
+
+## Wire Contract
+
+Every command call becomes:
 
 ```text
 POST /api/v1/<group-segments>/<command>
 ```
 
-The JSON body is flat. Positional arguments and options are merged at the top
+The request body is flat JSON. Positional args and options are merged at the top
 level:
 
 ```json
@@ -104,50 +278,17 @@ level:
 }
 ```
 
-Do not wrap inputs as `{ "args": ..., "options": ... }`.
+Do not wrap input as `{ "args": ..., "options": ... }`.
 
-## Streaming
+The HTTP transport adds:
 
-Use `createStreamClient` or `RaviStreamClient` for server-sent event streams:
-
-```ts
-import { createStreamClient } from "@ravi-os/sdk/streaming";
-
-const stream = createStreamClient({
-  baseUrl: "http://127.0.0.1:7777",
-  contextKey: process.env.RAVI_CONTEXT_KEY!,
-});
-
-for await (const event of stream.events({ subject: "ravi.session.>", noClaude: true })) {
-  console.log(event.event, event.data);
-}
-```
-
-Available streams:
-
-- `stream.events(...)` -> `GET /api/v1/_stream/events`
-- `stream.tasks(...)` -> `GET /api/v1/_stream/tasks`
-- `stream.session(name, ...)` -> `GET /api/v1/_stream/sessions/<name>`
-- `stream.audit(...)` -> `GET /api/v1/_stream/audit`
-
-Streaming routes always require a valid context key. They also check scoped
-permissions such as `view:system:events`, `view:system:tasks`,
-`access:session:<name>`, or `view:system:audit`.
-
-## Binary Responses
-
-Commands marked with `@Returns.binary()` return a raw `Response` for successful
-2xx calls. Error responses are still parsed and mapped to `RaviError`
-subclasses.
-
-```ts
-const response = await client.artifacts.blob("art_123");
-const bytes = await response.arrayBuffer();
-```
+- `Authorization: Bearer <rctx_key>`
+- `x-ravi-sdk-version`
+- `x-ravi-registry-hash`
 
 ## Errors
 
-Every transport throws the same typed error hierarchy:
+All transports throw the same error hierarchy:
 
 - `RaviAuthError` - 401, missing/invalid/expired/revoked context key
 - `RaviPermissionError` - 403, scope denied
@@ -155,13 +296,11 @@ Every transport throws the same typed error hierarchy:
 - `RaviInternalError` - 5xx from the gateway or command handler
 - `RaviTransportError` - network failure, timeout, or unexpected transport error
 
-All inherit from `RaviError`:
-
 ```ts
 import { RaviError, RaviValidationError } from "@ravi-os/sdk/errors";
 
 try {
-  await client.artifacts.show("missing");
+  await ravi.artifacts.show("missing");
 } catch (error) {
   if (error instanceof RaviValidationError) {
     console.error(error.issues);
@@ -171,7 +310,7 @@ try {
 }
 ```
 
-## Codegen and Drift
+## Codegen And Drift
 
 Generated files are committed as the canonical package surface:
 
@@ -190,16 +329,24 @@ bun run sdk:check
 OpenAPI and Swift SDK snapshots are generated from the same registry:
 
 ```bash
-bun src/cli/index.ts sdk openapi emit --out docs/openapi.json
+bun run docs:openapi
 bun src/cli/index.ts sdk swift generate
 ```
 
-The source of truth is the `RegistrySnapshot` from
-`src/cli/registry-snapshot.ts`, not the OpenAPI file.
+The source of truth is `src/cli/registry-snapshot.ts`, not the OpenAPI file.
 
 ## Published Exports
 
-Published consumers can import:
+```ts
+import { RaviClient } from "@ravi-os/sdk";
+import { RaviClient as DeepClient } from "@ravi-os/sdk/client";
+import { createHttpTransport } from "@ravi-os/sdk/transport/http";
+import { createStreamClient } from "@ravi-os/sdk/streaming";
+import { RaviError } from "@ravi-os/sdk/errors";
+import type { SessionsListReturn } from "@ravi-os/sdk/types";
+```
+
+Published exports:
 
 - `@ravi-os/sdk`
 - `@ravi-os/sdk/client`
@@ -209,5 +356,5 @@ Published consumers can import:
 - `@ravi-os/sdk/types`
 - `@ravi-os/sdk/schemas`
 
-`src/transport/in-process.ts` is monorepo-internal and is not exported by the
-published package.
+`packages/ravi-os-sdk/src/transport/in-process.ts` is monorepo-internal and is
+not exported by the published package.
