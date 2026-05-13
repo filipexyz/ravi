@@ -26,7 +26,8 @@ function writeFileSafe(target: string, body: string): string {
 }
 
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
-const DEFAULT_SDK_VERSION = "0.1.0";
+const DEFAULT_TYPESCRIPT_SDK_VERSION = "0.2.1";
+const DEFAULT_SWIFT_SDK_VERSION = "0.1.0";
 const GENERATED_FILES = ["client.ts", "schemas.ts", "types.ts", "version.ts"] as const;
 const DEFAULT_SWIFT_OUT_DIR = "packages/ravi-os-swift-sdk/Sources/RaviSDK";
 const GENERATED_SWIFT_FILES = [
@@ -193,7 +194,7 @@ export class SdkClientCommands {
     asJson?: boolean,
   ) {
     try {
-      const sources = generatedSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sources = generatedSources(version?.trim() || DEFAULT_TYPESCRIPT_SDK_VERSION);
       const sourceMap = generatedSourceMap(sources);
       const written: { file: GeneratedFileName; path: string; bytes: number }[] = [];
       for (const file of GENERATED_FILES) {
@@ -232,7 +233,7 @@ export class SdkClientCommands {
     asJson?: boolean,
   ) {
     try {
-      const sources = generatedSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sources = generatedSources(version?.trim() || DEFAULT_TYPESCRIPT_SDK_VERSION);
       const sourceMap = generatedSourceMap(sources);
       const drift: { file: GeneratedFileName; reason: string; path: string }[] = [];
       const dir = resolve(out);
@@ -301,7 +302,7 @@ export class SdkSwiftCommands {
     asJson?: boolean,
   ) {
     try {
-      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SWIFT_SDK_VERSION);
       const sourceMap = generatedSwiftSourceMap(sources);
       const written: { file: GeneratedSwiftFileName; path: string; bytes: number }[] = [];
       for (const file of GENERATED_SWIFT_FILES) {
@@ -340,7 +341,7 @@ export class SdkSwiftCommands {
     asJson?: boolean,
   ) {
     try {
-      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SDK_VERSION);
+      const sources = generatedSwiftSources(version?.trim() || DEFAULT_SWIFT_SDK_VERSION);
       const sourceMap = generatedSwiftSourceMap(sources);
       const drift: { file: GeneratedSwiftFileName; reason: string; path: string }[] = [];
       const dir = resolve(out);
