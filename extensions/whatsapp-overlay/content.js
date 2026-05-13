@@ -41,6 +41,7 @@ const V3_PLACEHOLDER_POLL_INTERVAL_MS = 5000;
 const TASKS_POLL_INTERVAL_MS = 5000;
 const INSIGHTS_POLL_INTERVAL_MS = 10000;
 const ARTIFACTS_POLL_INTERVAL_MS = 10000;
+const CRM_POLL_INTERVAL_MS = 10000;
 const TASKS_EVENTS_LIMIT = 20;
 const TASK_SESSION_CREATION_WINDOW_MS = 30 * 60 * 1000;
 const WORKSPACE_NAV_ID = "ravi-wa-workspace-launcher";
@@ -48,6 +49,7 @@ const V3_PLACEHOLDER_LAYER_ID = "ravi-wa-v3-placeholder-layer";
 const TASK_SELECTED_ID_STORAGE = "ravi-wa-overlay-task";
 const WORKSPACE_NAV_ITEMS = [
   { id: "ravi", label: "Ravi", glyph: "R" },
+  { id: "crm", label: "CRM", glyph: "C" },
   { id: "artifacts", label: "Artifacts", glyph: "A" },
   { id: "tasks", label: "Tasks", glyph: "T" },
 ];
@@ -97,6 +99,7 @@ let latestOmniPanel = null;
 let latestV3Placeholders = null;
 let latestInsightsSnapshot = null;
 let latestArtifactsSnapshot = null;
+let latestCrmSnapshot = null;
 let v3CommandNotice = null;
 const messageMetaCache = new Map();
 const taskSelectionCache = new Map();
@@ -118,6 +121,8 @@ let insightsFilter = "";
 let artifactsFilter = "";
 let artifactsLifecycleFilter = "all";
 let artifactsKindFilter = "all";
+let crmFilter = "";
+let crmLifecycleFilter = "all";
 let taskSearchFilter = "";
 let taskStatusFilter = "all";
 let taskAgentFilter = "all";
@@ -159,6 +164,7 @@ let v3PlaceholderInFlight = false;
 let tasksInFlight = false;
 let insightsInFlight = false;
 let artifactsInFlight = false;
+let crmInFlight = false;
 let taskDispatchInFlightTaskId = null;
 let v3PlaceholderRenderScheduled = false;
 let v3CommandNoticeTimer = null;
@@ -238,6 +244,7 @@ function boot() {
   intervalIds.push(setInterval(refreshTasks, TASKS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshInsights, INSIGHTS_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(refreshArtifacts, ARTIFACTS_POLL_INTERVAL_MS));
+  intervalIds.push(setInterval(refreshCrm, CRM_POLL_INTERVAL_MS));
   intervalIds.push(setInterval(pollDomCommands, DOM_COMMAND_POLL_INTERVAL_MS));
   window.addEventListener("resize", syncMessagePopoverPosition);
   window.addEventListener("resize", scheduleV3PlaceholderRender);
@@ -297,6 +304,8 @@ function getWorkspaceScrollSelectors(workspace = activeWorkspace) {
   switch (workspace) {
     case "tasks":
       return [".ravi-wa-task-board-wrap", ".ravi-wa-task-column__list"];
+    case "crm":
+      return [".ravi-wa-crm-page", ".ravi-wa-crm-list", ".ravi-wa-crm-board"];
     case "insights":
       return [".ravi-wa-insights-page"];
     case "artifacts":
@@ -489,7 +498,7 @@ function buildTasksRequestPayload(taskId = selectedTaskId) {
 
 async function refreshTasks(force = false) {
   if (pollingStopped || tasksInFlight) return;
-  if (!force && activeWorkspace === "omni") return;
+  if (!force && activeWorkspace !== "tasks" && activeWorkspace !== "ravi") return;
 
   tasksInFlight = true;
   try {
@@ -585,6 +594,37 @@ async function refreshArtifacts(force = false) {
   }
 }
 
+async function refreshCrm(force = false) {
+  if (pollingStopped || crmInFlight) return;
+  if (!force && activeWorkspace !== "crm") return;
+
+  crmInFlight = true;
+  try {
+    const next = await chrome.runtime.sendMessage({
+      type: "ravi:get-crm",
+      payload: {
+        limit: 120,
+      },
+    });
+    if (next?.ok) {
+      latestCrmSnapshot = next;
+      if (activeWorkspace === "crm") bridgeError = null;
+      if (
+        activeWorkspace === "crm" &&
+        shouldRenderSnapshot("workspace:crm", next, force)
+      ) {
+        requestRender();
+      }
+    } else if (activeWorkspace === "crm") {
+      setBridgeErrorFromResponse(next, "não consegui carregar CRM");
+    }
+  } catch (error) {
+    if (activeWorkspace === "crm") handleRuntimeError(error);
+  } finally {
+    crmInFlight = false;
+  }
+}
+
 function setBridgeErrorFromResponse(response, fallbackMessage) {
   const status =
     typeof response?.status === "number" && response.status > 0 ? response.status : null;
@@ -623,6 +663,7 @@ function refreshAll() {
   refreshSessionWorkspace(true);
   refreshTasks(true);
   refreshArtifacts(true);
+  refreshCrm(true);
   refreshChatListOverlay();
   refreshMessageChips();
   refreshV3Placeholders();
@@ -3056,6 +3097,7 @@ function syncLayoutChrome() {
   host.setAttribute("data-ravi-workspace", activeWorkspace);
   const fullWorkspace =
     activeWorkspace === "omni" ||
+    activeWorkspace === "crm" ||
     activeWorkspace === "tasks" ||
     activeWorkspace === "insights";
   mainPane.classList.toggle(MAIN_PANE_HIDDEN_CLASS, fullWorkspace);
@@ -3249,6 +3291,14 @@ function render(snapshot = latestSnapshot, context = detectChatContext()) {
       latestInsightsSnapshot,
     );
     renderInsightsWorkspace(body);
+    return;
+  }
+
+  if (activeWorkspace === "crm") {
+    hideSessionWorkspaceMain();
+    panelTitle.textContent = "CRM";
+    panelSubtitle.textContent = buildCrmWorkspaceSubtitle();
+    renderCrmWorkspace(body);
     return;
   }
 
@@ -10284,6 +10334,465 @@ async function focusArtifactSessionByKey(sessionKey) {
   openSessionWorkspace(target);
 }
 
+function buildCrmWorkspaceSubtitle() {
+  const stats = latestCrmSnapshot?.stats || {};
+  return `${Number(stats.totalContacts || 0)} contatos · ${Number(stats.nextActions || 0)} próximos passos · ${Number(stats.openOpportunities || 0)} oportunidades`;
+}
+
+function renderCrmWorkspace(body) {
+  const preservedScrollState = captureWorkspaceScrollState("crm");
+  const snapshot = latestCrmSnapshot;
+  const stats = snapshot?.stats || {};
+  const contacts = getCrmContacts();
+  const actions = getCrmActions();
+  const opportunities = getCrmOpportunities();
+  const lifecycleContacts =
+    crmLifecycleFilter && crmLifecycleFilter !== "all"
+      ? contacts.filter((contact) => (contact?.lifecycle || "unknown") === crmLifecycleFilter)
+      : contacts;
+  const filteredContacts = filterCrmRecords(lifecycleContacts, crmFilter, [
+    "contactId",
+    "displayName",
+    "kind",
+    "lifecycle",
+    "relationshipHealth",
+    "priority",
+    "nextActionSummary",
+    "primaryAccountId",
+    "primaryOpportunityId",
+  ]);
+  const filteredActions = filterCrmRecords(actions, crmFilter, [
+    "taskId",
+    "title",
+    "contactName",
+    "accountName",
+    "opportunityTitle",
+    "priority",
+    "dueAt",
+  ]);
+  const filteredOpportunities = filterCrmRecords(opportunities, crmFilter, [
+    "opportunityId",
+    "title",
+    "status",
+    "priority",
+    "stageKey",
+    "stageName",
+    "accountName",
+    "primaryContactName",
+  ]);
+  const lifecycleChips = buildCrmLifecycleOptions(contacts, stats?.contactsByLifecycle)
+    .map((option) => {
+      const isActive = (crmLifecycleFilter || "all") === option.id;
+      return `
+        <button
+          type="button"
+          class="ravi-wa-meta-chip ravi-wa-crm-chip${isActive ? " ravi-wa-crm-chip--active" : ""}"
+          data-ravi-crm-lifecycle="${escapeAttribute(option.id)}"
+        >${escapeHtml(option.label)}</button>
+      `;
+    })
+    .join("");
+  const warningMarkup =
+    Array.isArray(snapshot?.warnings) && snapshot.warnings.length
+      ? `
+        <section class="ravi-wa-crm-notice ravi-wa-notice ravi-wa-notice--warning">
+          <p>${escapeHtml(shorten(snapshot.warnings[0]?.message || "CRM parcialmente indisponível", 180))}</p>
+        </section>
+      `
+      : "";
+
+  body.innerHTML = `
+    <div class="ravi-wa-crm-page">
+      <header class="ravi-wa-crm-hero">
+        <div class="ravi-wa-crm-hero__copy">
+          <span class="ravi-wa-crm-eyebrow">crm nativo</span>
+          <h2>Relacionamentos</h2>
+          <p>${escapeHtml(formatCrmFreshness(snapshot?.generatedAt))}</p>
+        </div>
+        <div class="ravi-wa-crm-metrics">
+          ${renderCrmMetric("contacts", stats?.totalContacts ?? contacts.length, "contatos", `${filteredContacts.length} visíveis`)}
+          ${renderCrmMetric("actions", stats?.nextActions ?? actions.length, "próximos", `${filteredActions.length} visíveis`)}
+          ${renderCrmMetric("opportunities", stats?.openOpportunities ?? opportunities.length, "oportunidades", `${filteredOpportunities.length} visíveis`)}
+          ${renderCrmMetric("attention", stats?.attention ?? 0, "atenção", `${stats?.overdueActions ?? 0} vencidos`)}
+        </div>
+      </header>
+      <section class="ravi-wa-crm-toolbar">
+        <label class="ravi-wa-sidebar-search ravi-wa-crm-search" for="ravi-wa-crm-search">
+          <span class="ravi-wa-visually-hidden">buscar no CRM</span>
+          <input
+            id="ravi-wa-crm-search"
+            type="text"
+            placeholder="buscar contato, conta, oportunidade..."
+            value="${escapeAttribute(crmFilter)}"
+          />
+        </label>
+        <div class="ravi-wa-chip-row ravi-wa-crm-chip-row">
+          ${lifecycleChips}
+        </div>
+      </section>
+      ${warningMarkup}
+      ${
+        sidebarNotice
+          ? `
+        <section class="ravi-wa-crm-notice ravi-wa-notice ravi-wa-notice--${escapeAttribute(sidebarNotice.kind || "info")}">
+          <p>${escapeHtml(sidebarNotice.message || "")}</p>
+        </section>
+      `
+          : ""
+      }
+      <main class="ravi-wa-crm-grid">
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--contacts">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">contacts</span>
+              <h3>Contatos</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredContacts.length))}</span>
+          </div>
+          <div class="ravi-wa-crm-list">
+            ${
+              filteredContacts.length
+                ? filteredContacts.map((contact) => renderCrmContactRow(contact)).join("")
+                : `
+                  <div class="ravi-wa-crm-empty">
+                    <strong>sem contatos</strong>
+                    <span>nenhum card CRM bate com os filtros atuais.</span>
+                  </div>
+                `
+            }
+          </div>
+        </section>
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--actions">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">next</span>
+              <h3>Próximos passos</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredActions.length))}</span>
+          </div>
+          <div class="ravi-wa-crm-list">
+            ${
+              filteredActions.length
+                ? filteredActions.map((action) => renderCrmActionRow(action)).join("")
+                : `
+                  <div class="ravi-wa-crm-empty">
+                    <strong>sem próximos passos</strong>
+                    <span>o CRM não retornou follow-ups abertos para estes filtros.</span>
+                  </div>
+                `
+            }
+          </div>
+        </section>
+        <section class="ravi-wa-crm-panel ravi-wa-crm-panel--opportunities">
+          <div class="ravi-wa-crm-panel__head">
+            <div>
+              <span class="ravi-wa-crm-eyebrow">pipeline</span>
+              <h3>Oportunidades</h3>
+            </div>
+            <span class="ravi-wa-crm-count">${escapeHtml(String(filteredOpportunities.length))}</span>
+          </div>
+          ${renderCrmOpportunityBoard(filteredOpportunities)}
+        </section>
+      </main>
+    </div>
+  `;
+
+  bindCrmWorkspaceInteractions(body);
+  restoreWorkspaceScrollState(preservedScrollState);
+}
+
+function getCrmContacts() {
+  return Array.isArray(latestCrmSnapshot?.contacts) ? latestCrmSnapshot.contacts : [];
+}
+
+function getCrmActions() {
+  return Array.isArray(latestCrmSnapshot?.actions) ? latestCrmSnapshot.actions : [];
+}
+
+function getCrmOpportunities() {
+  return Array.isArray(latestCrmSnapshot?.opportunities)
+    ? latestCrmSnapshot.opportunities
+    : [];
+}
+
+function buildCrmLifecycleOptions(contacts, byLifecycle = {}) {
+  const keys = new Set(["all", "lead", "qualified", "active", "dormant", "lost", "unknown"]);
+  Object.keys(byLifecycle || {}).forEach((key) => keys.add(key));
+  contacts.forEach((contact) => keys.add(contact?.lifecycle || "unknown"));
+  return Array.from(keys).map((key) => {
+    const count =
+      key === "all"
+        ? contacts.length
+        : Number(byLifecycle?.[key]) ||
+          contacts.filter((contact) => (contact?.lifecycle || "unknown") === key).length;
+    return {
+      id: key,
+      label: key === "all" ? `all ${count}` : `${labelizeCrmToken(key)} ${count}`,
+    };
+  });
+}
+
+function filterCrmRecords(items, filter, fields) {
+  const query = (filter || "").trim().toLowerCase();
+  if (!query) return items;
+  return items.filter((item) =>
+    fields.some((field) => {
+      const value = item?.[field];
+      return value !== undefined && value !== null && String(value).toLowerCase().includes(query);
+    }),
+  );
+}
+
+function renderCrmMetric(kind, value, label, note) {
+  return `
+    <div class="ravi-wa-crm-metric ravi-wa-crm-metric--${escapeAttribute(kind)}">
+      <strong>${escapeHtml(String(value ?? 0))}</strong>
+      <span>${escapeHtml(label)}</span>
+      <small>${escapeHtml(note || "")}</small>
+    </div>
+  `;
+}
+
+function renderCrmContactRow(contact) {
+  const id = contact?.contactId || "";
+  const name = contact?.displayName || id || "contato";
+  const lifecycle = contact?.lifecycle || "unknown";
+  const health = contact?.relationshipHealth || "unknown";
+  const priority = contact?.priority || "normal";
+  const owner = formatCrmOwner(contact?.ownerType, contact?.ownerId);
+  const next = contact?.nextActionSummary || "sem próximo passo";
+  const updated = formatCrmRelative(contact?.updatedAt || contact?.lastMeaningfulInteractionAt);
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-contact"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="contact"
+      title="${escapeAttribute(name)}"
+    >
+      <span class="ravi-wa-crm-avatar" aria-hidden="true">${escapeHtml(crmInitials(name))}</span>
+      <span class="ravi-wa-crm-contact__main">
+        <strong>${escapeHtml(shorten(name, 72))}</strong>
+        <small>${escapeHtml(shorten(next, 104))}</small>
+      </span>
+      <span class="ravi-wa-crm-contact__meta">
+        <span class="ravi-wa-crm-pill ravi-wa-crm-pill--${escapeAttribute(crmTokenClass(lifecycle))}">${escapeHtml(labelizeCrmToken(lifecycle))}</span>
+        <span class="ravi-wa-crm-soft">${escapeHtml(labelizeCrmToken(health))}</span>
+        <span class="ravi-wa-crm-soft">${escapeHtml(owner || priority || updated || "-")}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderCrmActionRow(action) {
+  const id = action?.taskId || "";
+  const title = action?.title || id || "próximo passo";
+  const priority = action?.priority || "normal";
+  const due = formatCrmDue(action?.dueAt);
+  const overdue = isCrmPastDate(action?.dueAt);
+  const target = [action?.contactName, action?.accountName, action?.opportunityTitle]
+    .filter(Boolean)
+    .join(" · ");
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-action${overdue ? " ravi-wa-crm-action--overdue" : ""}"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="crm task"
+      title="${escapeAttribute(title)}"
+    >
+      <span class="ravi-wa-crm-action__top">
+        <strong>${escapeHtml(shorten(title, 96))}</strong>
+        <span class="ravi-wa-crm-pill ravi-wa-crm-pill--priority-${escapeAttribute(crmTokenClass(priority))}">${escapeHtml(labelizeCrmToken(priority))}</span>
+      </span>
+      <span class="ravi-wa-crm-action__meta">
+        <span>${escapeHtml(target || "sem alvo")}</span>
+        <span>${escapeHtml(due)}</span>
+      </span>
+    </button>
+  `;
+}
+
+function renderCrmOpportunityBoard(opportunities) {
+  if (!opportunities.length) {
+    return `
+      <div class="ravi-wa-crm-empty">
+        <strong>sem oportunidades</strong>
+        <span>nenhum card de pipeline bate com os filtros atuais.</span>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ravi-wa-crm-board">
+      ${groupCrmOpportunitiesByStage(opportunities)
+        .map(
+          (stage) => `
+          <div class="ravi-wa-crm-stage">
+            <div class="ravi-wa-crm-stage__head">
+              <strong>${escapeHtml(stage.label)}</strong>
+              <span>${escapeHtml(String(stage.items.length))}</span>
+            </div>
+            <div class="ravi-wa-crm-stage__list">
+              ${stage.items.map((opportunity) => renderCrmOpportunityCard(opportunity)).join("")}
+            </div>
+          </div>
+        `,
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderCrmOpportunityCard(opportunity) {
+  const id = opportunity?.opportunityId || "";
+  const title = opportunity?.title || id || "oportunidade";
+  const priority = opportunity?.priority || "normal";
+  const value = formatCrmCurrency(opportunity?.valueCents, opportunity?.currency);
+  const account = opportunity?.accountName || "sem conta";
+  const contact = opportunity?.primaryContactName || "";
+
+  return `
+    <button
+      type="button"
+      class="ravi-wa-crm-opportunity"
+      data-ravi-crm-copy-value="${escapeAttribute(id)}"
+      data-ravi-crm-copy-label="opportunity"
+      title="${escapeAttribute(title)}"
+    >
+      <strong>${escapeHtml(shorten(title, 88))}</strong>
+      <span>${escapeHtml(shorten([account, contact].filter(Boolean).join(" · "), 96))}</span>
+      <small>
+        <span>${escapeHtml(value || labelizeCrmToken(priority))}</span>
+        <span>${escapeHtml(labelizeCrmToken(priority))}</span>
+      </small>
+    </button>
+  `;
+}
+
+function bindCrmWorkspaceInteractions(body) {
+  const searchInput = body.querySelector("#ravi-wa-crm-search");
+  searchInput?.addEventListener("input", (event) => {
+    const nextValue = event.target.value || "";
+    crmFilter = nextValue;
+    renderCrmWorkspace(body);
+    requestAnimationFrame(() => {
+      const nextInput = document.getElementById("ravi-wa-crm-search");
+      if (!(nextInput instanceof HTMLInputElement)) return;
+      nextInput.focus();
+      nextInput.setSelectionRange(nextValue.length, nextValue.length);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-crm-lifecycle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      crmLifecycleFilter = button.getAttribute("data-ravi-crm-lifecycle") || "all";
+      renderCrmWorkspace(body);
+    });
+  });
+
+  body.querySelectorAll("[data-ravi-crm-copy-value]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const value = button.getAttribute("data-ravi-crm-copy-value");
+      const label = button.getAttribute("data-ravi-crm-copy-label") || "crm";
+      if (!value) return;
+      await copyOverlayValue(value, label);
+    });
+  });
+}
+
+function groupCrmOpportunitiesByStage(opportunities) {
+  const groups = new Map();
+  opportunities.forEach((opportunity) => {
+    const key = opportunity?.stageKey || opportunity?.status || "unknown";
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        label: opportunity?.stageName || labelizeCrmToken(key),
+        order: Number.isFinite(Number(opportunity?.stageOrder)) ? Number(opportunity.stageOrder) : 999,
+        items: [],
+      });
+    }
+    groups.get(key).items.push(opportunity);
+  });
+  return Array.from(groups.values()).sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+}
+
+function crmInitials(name) {
+  const parts = String(name || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!parts.length) return "?";
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function crmTokenClass(value) {
+  return String(value || "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .slice(0, 40);
+}
+
+function labelizeCrmToken(value) {
+  return String(value || "unknown").replace(/[_-]+/g, " ");
+}
+
+function formatCrmOwner(ownerType, ownerId) {
+  if (!ownerType || !ownerId) return "";
+  return `${ownerType}:${ownerId}`;
+}
+
+function formatCrmFreshness(value) {
+  const relative = formatCrmRelative(value);
+  return relative ? `atualizado há ${relative}` : "CRM";
+}
+
+function formatCrmRelative(value) {
+  const time =
+    typeof value === "number" && Number.isFinite(value) ? value : Date.parse(value || "");
+  return Number.isFinite(time) ? formatElapsedCompact(time) : "";
+}
+
+function isCrmPastDate(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) && time < Date.now();
+}
+
+function formatCrmDue(value) {
+  const time = Date.parse(value || "");
+  if (!Number.isFinite(time)) return "sem data";
+  const date = new Date(time);
+  const today = new Date();
+  const sameDay =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+  const formatter = sameDay
+    ? new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" })
+    : new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "2-digit" });
+  return `${isCrmPastDate(value) ? "venceu" : "vence"} ${formatter.format(date)}`;
+}
+
+function formatCrmCurrency(valueCents, currency = "BRL") {
+  const numeric = Number(valueCents);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency || "BRL",
+      maximumFractionDigits: 0,
+    }).format(numeric / 100);
+  } catch {
+    return `${currency || "BRL"} ${Math.round(numeric / 100)}`;
+  }
+}
+
 function renderArtifactsWorkspace(body) {
   const preservedScrollState = captureWorkspaceScrollState("artifacts");
   const snapshot = latestArtifactsSnapshot;
@@ -13452,7 +13961,7 @@ function loadPinnedSessionKey() {
 function loadActiveWorkspace() {
   try {
     const stored = window.localStorage.getItem(ACTIVE_WORKSPACE_KEY_STORAGE);
-    return stored === "tasks" || stored === "artifacts"
+    return stored === "tasks" || stored === "artifacts" || stored === "crm"
       ? stored
       : "ravi";
   } catch {
@@ -13550,7 +14059,9 @@ function persistV3PlaceholdersEnabled(value) {
 
 function setActiveWorkspace(nextWorkspace) {
   activeWorkspace =
-    nextWorkspace === "tasks" || nextWorkspace === "artifacts"
+    nextWorkspace === "tasks" ||
+    nextWorkspace === "artifacts" ||
+    nextWorkspace === "crm"
       ? nextWorkspace
       : "ravi";
   if (activeWorkspace !== "tasks") {
@@ -13560,7 +14071,9 @@ function setActiveWorkspace(nextWorkspace) {
   persistActiveWorkspace(activeWorkspace);
   syncWorkspaceLauncher();
   render();
-  if (activeWorkspace === "artifacts") {
+  if (activeWorkspace === "crm") {
+    refreshCrm(true);
+  } else if (activeWorkspace === "artifacts") {
     refreshArtifacts(true);
   } else if (activeWorkspace === "tasks") {
     refreshTasks(true);

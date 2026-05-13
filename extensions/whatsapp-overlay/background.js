@@ -2,6 +2,7 @@ import { getClient, callBinary, NoActiveServerError, InvalidContextKeyError } fr
 import { getViewState, setViewState, upsertBinding, findBinding } from "./lib/storage.js";
 import { buildOverlayV3PlaceholderSnapshot } from "./lib/dom-model.js";
 import {
+  buildCrmSnapshot,
   buildSnapshot,
   buildTasksSnapshot,
   buildOmniPanelSnapshot,
@@ -13,6 +14,7 @@ const HANDLERS = {
   "ravi:get-snapshot": fetchSnapshot,
   "ravi:get-session-workspace": fetchSessionWorkspace,
   "ravi:get-tasks": fetchTasks,
+  "ravi:get-crm": fetchCrm,
   "ravi:get-insights": fetchInsights,
   "ravi:get-artifacts": fetchArtifacts,
   "ravi:get-artifact-blob": fetchArtifactBlob,
@@ -239,6 +241,11 @@ async function postAction(payload = {}) {
 async function fetchTasks(payload = {}) {
   const { client } = await getClient();
   return await buildTasksSnapshot(client, payload);
+}
+
+async function fetchCrm(payload = {}) {
+  const { client } = await getClient();
+  return await buildCrmSnapshot(client, payload);
 }
 
 async function publishViewState(payload = {}) {

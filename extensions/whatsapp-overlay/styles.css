@@ -14,6 +14,10 @@
   > :not(header[data-tab="2"]):not(#ravi-wa-overlay-root):not(
     #wds-toast-container
   ),
+.ravi-wa-layout-host[data-ravi-workspace="crm"]
+  > :not(header[data-tab="2"]):not(#ravi-wa-overlay-root):not(
+    #wds-toast-container
+  ),
 .ravi-wa-layout-host[data-ravi-workspace="insights"]
   > :not(header[data-tab="2"]):not(#ravi-wa-overlay-root):not(
     #wds-toast-container
@@ -49,6 +53,7 @@
 }
 
 #ravi-wa-overlay-root[data-workspace="omni"],
+#ravi-wa-overlay-root[data-workspace="crm"],
 #ravi-wa-overlay-root[data-workspace="insights"],
 #ravi-wa-overlay-root[data-workspace="tasks"] {
   width: auto;
@@ -472,6 +477,7 @@
 }
 
 #ravi-wa-overlay-root[data-workspace="omni"] #ravi-wa-overlay-drawer,
+#ravi-wa-overlay-root[data-workspace="crm"] #ravi-wa-overlay-drawer,
 #ravi-wa-overlay-root[data-workspace="insights"] #ravi-wa-overlay-drawer,
 #ravi-wa-overlay-root[data-workspace="tasks"] #ravi-wa-overlay-drawer {
   display: flex;
@@ -559,6 +565,7 @@
 }
 
 #ravi-wa-overlay-root[data-workspace="omni"] #ravi-wa-overlay-body,
+#ravi-wa-overlay-root[data-workspace="crm"] #ravi-wa-overlay-body,
 #ravi-wa-overlay-root[data-workspace="insights"] #ravi-wa-overlay-body,
 #ravi-wa-overlay-root[data-workspace="artifacts"] #ravi-wa-overlay-body,
 #ravi-wa-overlay-root[data-workspace="tasks"] #ravi-wa-overlay-body {
@@ -890,6 +897,648 @@
 
 .ravi-wa-insight-link--copy {
   color: #d3dde1;
+}
+
+.ravi-wa-crm-page {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #0b141a;
+  color: #e9edef;
+}
+
+.ravi-wa-crm-hero {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 14px;
+  align-items: stretch;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(11, 20, 26, 0.96);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ravi-wa-crm-hero__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+
+.ravi-wa-crm-eyebrow {
+  color: #25d366;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.ravi-wa-crm-hero h2,
+.ravi-wa-crm-panel h3 {
+  margin: 0;
+  color: #f7f8fa;
+  letter-spacing: 0;
+}
+
+.ravi-wa-crm-hero h2 {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.ravi-wa-crm-hero p {
+  margin: 0;
+  color: #aebac1;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ravi-wa-crm-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ravi-wa-crm-metric {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background: rgba(32, 44, 51, 0.52);
+}
+
+.ravi-wa-crm-metric--working,
+.ravi-wa-crm-metric--artifacts {
+  border-color: rgba(37, 211, 102, 0.18);
+}
+
+.ravi-wa-crm-metric--ready {
+  border-color: rgba(14, 165, 233, 0.2);
+}
+
+.ravi-wa-crm-metric--blocked {
+  border-color: rgba(248, 113, 113, 0.2);
+}
+
+.ravi-wa-crm-metric strong {
+  color: #f7f8fa;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.ravi-wa-crm-metric span {
+  color: #aebac1;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  text-transform: lowercase;
+}
+
+.ravi-wa-crm-metric small {
+  min-width: 0;
+  overflow: hidden;
+  color: #8696a0;
+  font-size: 9px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-notice {
+  margin: 10px 16px 0;
+}
+
+.ravi-wa-crm-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.86fr) minmax(420px, 1.14fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px 16px 18px;
+}
+
+.ravi-wa-crm-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 8px;
+  background: rgba(17, 27, 33, 0.82);
+  overflow: hidden;
+}
+
+.ravi-wa-crm-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(32, 44, 51, 0.48);
+}
+
+.ravi-wa-crm-panel__head > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-crm-panel h3 {
+  font-size: 15px;
+  line-height: 1.1;
+}
+
+.ravi-wa-crm-link {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(37, 211, 102, 0.2);
+  border-radius: 999px;
+  background: rgba(37, 211, 102, 0.08);
+  color: #d8fdd2;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.ravi-wa-crm-link:hover {
+  background: rgba(37, 211, 102, 0.16);
+  color: #fff;
+}
+
+.ravi-wa-crm-list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.ravi-wa-crm-task {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr) 92px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 8px;
+  background: rgba(11, 20, 26, 0.56);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ravi-wa-crm-task:hover {
+  border-color: rgba(37, 211, 102, 0.24);
+  background: rgba(32, 44, 51, 0.56);
+}
+
+.ravi-wa-crm-task__status {
+  justify-self: start;
+  width: 64px;
+  padding: 5px 6px;
+  font-size: 9px;
+}
+
+.ravi-wa-crm-task__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-crm-task__main strong {
+  overflow: hidden;
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-task__main small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #aebac1;
+  font-size: 10px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.ravi-wa-crm-task__meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  color: #8696a0;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.ravi-wa-crm-task__meta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-artifact-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.ravi-wa-crm-artifact-strip span {
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 999px;
+  background: rgba(11, 20, 26, 0.54);
+  color: #aebac1;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.ravi-wa-crm-artifact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 2px;
+  padding: 8px;
+  overflow: auto;
+}
+
+.ravi-wa-crm-artifact-grid .ravi-wa-artifact-tile {
+  min-height: 118px;
+}
+
+.ravi-wa-crm-empty {
+  display: flex;
+  min-height: 140px;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px;
+  color: #8696a0;
+  text-align: center;
+}
+
+.ravi-wa-crm-empty strong {
+  color: #f7f8fa;
+  font-size: 13px;
+}
+
+.ravi-wa-crm-empty span {
+  max-width: 260px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ravi-wa-crm-toolbar {
+  position: sticky;
+  top: 76px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(11, 20, 26, 0.94);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ravi-wa-crm-search {
+  width: min(340px, 38vw);
+  min-width: 220px;
+}
+
+.ravi-wa-crm-chip-row {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.ravi-wa-crm-chip {
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-chip--active {
+  border-color: rgba(37, 211, 102, 0.32);
+  background: rgba(37, 211, 102, 0.14);
+  color: #d8fdd2;
+}
+
+.ravi-wa-crm-metric--contacts,
+.ravi-wa-crm-metric--opportunities {
+  border-color: rgba(37, 211, 102, 0.18);
+}
+
+.ravi-wa-crm-metric--actions {
+  border-color: rgba(14, 165, 233, 0.2);
+}
+
+.ravi-wa-crm-metric--attention {
+  border-color: rgba(248, 113, 113, 0.22);
+}
+
+.ravi-wa-crm-grid {
+  grid-template-columns: minmax(260px, 0.9fr) minmax(280px, 1fr) minmax(360px, 1.2fr);
+}
+
+.ravi-wa-crm-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 999px;
+  background: rgba(11, 20, 26, 0.54);
+  color: #aebac1;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.ravi-wa-crm-contact,
+.ravi-wa-crm-action,
+.ravi-wa-crm-opportunity {
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 8px;
+  background: rgba(11, 20, 26, 0.56);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ravi-wa-crm-contact:hover,
+.ravi-wa-crm-action:hover,
+.ravi-wa-crm-opportunity:hover {
+  border-color: rgba(37, 211, 102, 0.24);
+  background: rgba(32, 44, 51, 0.56);
+}
+
+.ravi-wa-crm-contact {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) minmax(92px, auto);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px;
+}
+
+.ravi-wa-crm-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(37, 211, 102, 0.12);
+  color: #d8fdd2;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.ravi-wa-crm-contact__main,
+.ravi-wa-crm-contact__meta,
+.ravi-wa-crm-action__top,
+.ravi-wa-crm-action__meta {
+  min-width: 0;
+}
+
+.ravi-wa-crm-contact__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ravi-wa-crm-contact__main strong,
+.ravi-wa-crm-action strong,
+.ravi-wa-crm-opportunity strong {
+  overflow: hidden;
+  color: #f7f8fa;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-contact__main small,
+.ravi-wa-crm-action__meta,
+.ravi-wa-crm-opportunity span,
+.ravi-wa-crm-opportunity small {
+  color: #aebac1;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.ravi-wa-crm-contact__main small,
+.ravi-wa-crm-action__meta span,
+.ravi-wa-crm-opportunity span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-contact__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.ravi-wa-crm-pill,
+.ravi-wa-crm-soft {
+  display: inline-flex;
+  max-width: 104px;
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-pill {
+  border: 1px solid rgba(37, 211, 102, 0.18);
+  background: rgba(37, 211, 102, 0.08);
+  color: #d8fdd2;
+}
+
+.ravi-wa-crm-soft {
+  max-width: 112px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #8696a0;
+}
+
+.ravi-wa-crm-pill--priority-urgent,
+.ravi-wa-crm-action--overdue .ravi-wa-crm-pill {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.1);
+  color: #fecaca;
+}
+
+.ravi-wa-crm-pill--priority-high {
+  border-color: rgba(251, 191, 36, 0.24);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
+}
+
+.ravi-wa-crm-action {
+  display: flex;
+  width: 100%;
+  min-height: 58px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+}
+
+.ravi-wa-crm-action__top,
+.ravi-wa-crm-action__meta,
+.ravi-wa-crm-opportunity small {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ravi-wa-crm-action__top strong,
+.ravi-wa-crm-action__meta span,
+.ravi-wa-crm-opportunity small span {
+  min-width: 0;
+}
+
+.ravi-wa-crm-action__meta span:first-child {
+  flex: 1 1 auto;
+}
+
+.ravi-wa-crm-action__meta span:last-child {
+  flex: 0 0 auto;
+}
+
+.ravi-wa-crm-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 8px;
+  overflow: auto;
+}
+
+.ravi-wa-crm-stage {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 8px;
+  background: rgba(11, 20, 26, 0.42);
+}
+
+.ravi-wa-crm-stage__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.ravi-wa-crm-stage__head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7f8fa;
+  font-size: 11px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ravi-wa-crm-stage__head span {
+  color: #8696a0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ravi-wa-crm-stage__list {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px;
+  overflow-y: auto;
+}
+
+.ravi-wa-crm-opportunity {
+  display: flex;
+  width: 100%;
+  min-height: 74px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+}
+
+.ravi-wa-crm-opportunity span {
+  display: block;
+  min-width: 0;
+}
+
+@media (max-width: 1180px) {
+  .ravi-wa-crm-hero,
+  .ravi-wa-crm-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ravi-wa-crm-toolbar {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ravi-wa-crm-search {
+    width: 100%;
+  }
+
+  .ravi-wa-crm-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .ravi-wa-artifacts-page {

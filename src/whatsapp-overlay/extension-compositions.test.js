@@ -41,10 +41,11 @@ function installChromeStorageMock() {
 
 const chromeStorage = installChromeStorageMock();
 
-const { buildSnapshot, buildTasksSnapshot, resolveChatList } = await import(
+const { buildCrmSnapshot, buildSnapshot, buildTasksSnapshot, resolveChatList } = await import(
   "../../extensions/whatsapp-overlay/lib/compositions.js"
 );
 const { setBindings } = await import("../../extensions/whatsapp-overlay/lib/storage.js");
+const { RaviClient: ExtensionRaviClient } = await import("../../extensions/whatsapp-overlay/lib/sdk/client.js");
 
 describe("whatsapp overlay extension compositions", () => {
   beforeEach(() => {
@@ -186,5 +187,116 @@ describe("whatsapp overlay extension compositions", () => {
       done: 1,
       failed: 1,
     });
+  });
+
+  it("builds the CRM workspace from native CRM commands", async () => {
+    const calls = [];
+    const client = {
+      crm: {
+        contacts: async (options) => {
+          calls.push(["contacts", options]);
+          return {
+            total: 2,
+            contacts: [
+              {
+                contactId: "contact_1",
+                displayName: "Luis Filipe",
+                lifecycle: "active",
+                relationshipHealth: "healthy",
+                priority: "high",
+                nextActionSummary: "Enviar proposta",
+              },
+              {
+                contactId: "contact_2",
+                displayName: "Acme",
+                lifecycle: "lead",
+                relationshipHealth: "at_risk",
+                priority: "normal",
+              },
+            ],
+          };
+        },
+        next: async (options) => {
+          calls.push(["next", options]);
+          return {
+            total: 1,
+            actions: [
+              {
+                taskId: "crm_task_1",
+                title: "Enviar proposta",
+                priority: "urgent",
+                dueAt: "2026-05-10T10:00:00.000Z",
+                contactName: "Luis Filipe",
+              },
+            ],
+          };
+        },
+        board: async () => {
+          calls.push(["board"]);
+          return {
+            total: 1,
+            opportunities: [
+              {
+                opportunityId: "crm_opp_1",
+                title: "Piloto CRM",
+                stageKey: "qualified",
+                stageName: "Qualified",
+                valueCents: 250000,
+                currency: "BRL",
+              },
+            ],
+          };
+        },
+      },
+    };
+
+    const snapshot = await buildCrmSnapshot(client, { limit: "50", owner: "agent:main" });
+
+    expect(calls).toEqual([
+      ["contacts", { limit: "50", owner: "agent:main" }],
+      ["next", { limit: "50", owner: "agent:main" }],
+      ["board"],
+    ]);
+    expect(snapshot).toMatchObject({
+      ok: true,
+      query: { limit: "50", owner: "agent:main" },
+      totals: { contacts: 2, actions: 1, opportunities: 1 },
+      stats: {
+        totalContacts: 2,
+        nextActions: 1,
+        openOpportunities: 1,
+        contactsByLifecycle: { active: 1, lead: 1 },
+        actionsByPriority: { urgent: 1 },
+        opportunitiesByStage: { qualified: 1 },
+      },
+    });
+    expect(snapshot.contacts[0].contactId).toBe("contact_1");
+    expect(snapshot.actions[0].taskId).toBe("crm_task_1");
+    expect(snapshot.opportunities[0].opportunityId).toBe("crm_opp_1");
+  });
+
+  it("keeps the vendored extension SDK aligned with the CRM namespace", async () => {
+    const calls = [];
+    const client = new ExtensionRaviClient({
+      call: async (input) => {
+        calls.push(input);
+        if (input.command === "contacts") return { total: 0, contacts: [] };
+        if (input.command === "next") return { total: 0, actions: [] };
+        if (input.command === "board") return { total: 0, opportunities: [] };
+        throw new Error(`unexpected command: ${input.command}`);
+      },
+    });
+
+    expect(typeof client.crm.contacts).toBe("function");
+    expect(typeof client.crm.next).toBe("function");
+    expect(typeof client.crm.board).toBe("function");
+
+    await buildCrmSnapshot(client, { limit: "10" });
+
+    expect(calls).toEqual([
+      { groupSegments: ["crm"], command: "contacts", body: { limit: "10" } },
+      { groupSegments: ["crm"], command: "next", body: { limit: "10" } },
+      { groupSegments: ["crm"], command: "board", body: {} },
+    ]);
   });
 });

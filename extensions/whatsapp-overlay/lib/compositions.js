@@ -132,6 +132,67 @@ export async function buildTasksSnapshot(client, query) {
   };
 }
 
+export async function buildCrmSnapshot(client, query = {}) {
+  const warnings = [];
+  const limit = clean(query?.limit) ?? "120";
+  const owner = clean(query?.owner);
+  const contact = clean(query?.contact);
+  const account = clean(query?.account);
+  const opportunity = clean(query?.opportunity);
+
+  const contactsOptions = { limit };
+  if (owner) contactsOptions.owner = owner;
+
+  const nextOptions = { limit };
+  if (owner) nextOptions.owner = owner;
+  if (contact) nextOptions.contact = contact;
+  if (account) nextOptions.account = account;
+  if (opportunity) nextOptions.opportunity = opportunity;
+
+  const [contactsResult, actionsResult, boardResult] = await Promise.all([
+    safeCrmCall(warnings, "contacts", () => client.crm.contacts(contactsOptions), {
+      total: 0,
+      contacts: [],
+      items: [],
+    }),
+    safeCrmCall(warnings, "next", () => client.crm.next(nextOptions), {
+      total: 0,
+      actions: [],
+      items: [],
+    }),
+    safeCrmCall(warnings, "board", () => client.crm.board(), {
+      total: 0,
+      opportunities: [],
+    }),
+  ]);
+
+  const contacts = normalizeCrmList(contactsResult, "contacts");
+  const actions = normalizeCrmList(actionsResult, "actions");
+  const opportunities = normalizeCrmList(boardResult, "opportunities");
+
+  return {
+    ok: true,
+    generatedAt: Date.now(),
+    query: {
+      limit,
+      owner,
+      contact,
+      account,
+      opportunity,
+    },
+    contacts,
+    actions,
+    opportunities,
+    totals: {
+      contacts: normalizeCrmTotal(contactsResult, contacts),
+      actions: normalizeCrmTotal(actionsResult, actions),
+      opportunities: normalizeCrmTotal(boardResult, opportunities),
+    },
+    stats: computeCrmStats({ contacts, actions, opportunities, contactsResult, actionsResult, boardResult }),
+    warnings,
+  };
+}
+
 async function hydrateSelectedTask(client, item, dispatchSessions, actorSessionName) {
   let detail = null;
   try {
@@ -147,6 +208,78 @@ async function hydrateSelectedTask(client, item, dispatchSessions, actorSessionN
     taskDocument: detail?.taskDocument ?? null,
     dispatch: buildDispatchState(merged, actorSession ?? null, dispatchSessions),
   };
+}
+
+async function safeCrmCall(warnings, name, fn, fallback) {
+  try {
+    return await fn();
+  } catch (error) {
+    warnings.push({
+      code: `crm_${name}_unavailable`,
+      message: error?.message || String(error),
+    });
+    return fallback;
+  }
+}
+
+function normalizeCrmList(result, preferredKey) {
+  if (Array.isArray(result?.[preferredKey])) return result[preferredKey];
+  if (Array.isArray(result?.items)) return result.items;
+  if (Array.isArray(result)) return result;
+  return [];
+}
+
+function normalizeCrmTotal(result, list) {
+  const numeric = Number(result?.total);
+  return Number.isFinite(numeric) ? numeric : list.length;
+}
+
+function computeCrmStats({ contacts, actions, opportunities, contactsResult, actionsResult, boardResult }) {
+  const contactsByLifecycle = {};
+  const contactsByHealth = {};
+  const actionsByPriority = {};
+  const opportunitiesByStage = {};
+  let overdueActions = 0;
+  let attentionContacts = 0;
+
+  for (const contact of contacts) {
+    const lifecycle = clean(contact?.lifecycle) ?? "unknown";
+    const health = clean(contact?.relationshipHealth) ?? "unknown";
+    contactsByLifecycle[lifecycle] = (contactsByLifecycle[lifecycle] ?? 0) + 1;
+    contactsByHealth[health] = (contactsByHealth[health] ?? 0) + 1;
+    if (health === "at_risk" || health === "needs_attention" || health === "unknown") {
+      attentionContacts++;
+    }
+  }
+
+  for (const action of actions) {
+    const priority = clean(action?.priority) ?? "normal";
+    actionsByPriority[priority] = (actionsByPriority[priority] ?? 0) + 1;
+    if (isPastCrmDate(action?.dueAt)) overdueActions++;
+  }
+
+  for (const opportunity of opportunities) {
+    const stage = clean(opportunity?.stageKey) ?? clean(opportunity?.status) ?? "unknown";
+    opportunitiesByStage[stage] = (opportunitiesByStage[stage] ?? 0) + 1;
+  }
+
+  return {
+    totalContacts: normalizeCrmTotal(contactsResult, contacts),
+    nextActions: normalizeCrmTotal(actionsResult, actions),
+    openOpportunities: normalizeCrmTotal(boardResult, opportunities),
+    attention: attentionContacts + overdueActions + (actionsByPriority.urgent ?? 0),
+    overdueActions,
+    contactsByLifecycle,
+    contactsByHealth,
+    actionsByPriority,
+    opportunitiesByStage,
+  };
+}
+
+function isPastCrmDate(value) {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && time < Date.now();
 }
 
 function buildDispatchState(item, actorSession, dispatchSessions) {

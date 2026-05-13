@@ -66,11 +66,11 @@ export class RaviClient {
             });
         },
         /** List all agents */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["agents"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Reset agent session */
@@ -149,11 +149,11 @@ export class RaviClient {
             });
         },
         /** Create a generic Ravi artifact record */
-        create: async (kind, options) => {
+        create: async (options) => {
             return this.transport.call({
                 groupSegments: ["artifacts"],
                 command: "create",
-                body: { kind, ...(options ?? {}) },
+                body: { ...(options ?? {}) },
             });
         },
         /** Append an artifact lifecycle event */
@@ -180,12 +180,46 @@ export class RaviClient {
                 body: { ...(options ?? {}) },
             });
         },
+        /** Publish a local artifact package through a Console-compatible endpoint */
+        publish: async (target, options) => {
+            return this.transport.call({
+                groupSegments: ["artifacts"],
+                command: "publish",
+                body: { target, ...(options ?? {}) },
+            });
+        },
+        release: {
+            /** Activate an existing Pages release for a local artifact */
+            activate: async (id, options) => {
+                return this.transport.call({
+                    groupSegments: ["artifacts", "release"],
+                    command: "activate",
+                    body: { id, ...(options ?? {}) },
+                });
+            }
+        },
+        /** Restore current artifact content from an immutable version */
+        restore: async (id, options) => {
+            return this.transport.call({
+                groupSegments: ["artifacts"],
+                command: "restore",
+                body: { id, ...(options ?? {}) },
+            });
+        },
         /** Show artifact details, links and events */
         show: async (id) => {
             return this.transport.call({
                 groupSegments: ["artifacts"],
                 command: "show",
                 body: { id },
+            });
+        },
+        /** Create an immutable version snapshot for an artifact */
+        snapshot: async (id, options) => {
+            return this.transport.call({
+                groupSegments: ["artifacts"],
+                command: "snapshot",
+                body: { id, ...(options ?? {}) },
             });
         },
         /** Edit artifact metadata and high-level fields */
@@ -196,12 +230,20 @@ export class RaviClient {
                 body: { id, ...(options ?? {}) },
             });
         },
-        /** Watch artifact lifecycle until a terminal status */
-        watch: async (id, options) => {
+        /** Show one immutable artifact version */
+        version: async (id, options) => {
             return this.transport.call({
                 groupSegments: ["artifacts"],
-                command: "watch",
+                command: "version",
                 body: { id, ...(options ?? {}) },
+            });
+        },
+        /** List immutable versions for an artifact */
+        versions: async (id) => {
+            return this.transport.call({
+                groupSegments: ["artifacts"],
+                command: "versions",
+                body: { id },
             });
         }
     };
@@ -215,7 +257,49 @@ export class RaviClient {
             });
         }
     };
+    commands = {
+        /** List Ravi commands */
+        list: async (options) => {
+            return this.transport.call({
+                groupSegments: ["commands"],
+                command: "list",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Render a Ravi command into its composed prompt */
+        run: async (name, args, options) => {
+            return this.transport.call({
+                groupSegments: ["commands"],
+                command: "run",
+                body: { name, args, ...(options ?? {}) },
+            });
+        },
+        /** Show one Ravi command */
+        show: async (name, options) => {
+            return this.transport.call({
+                groupSegments: ["commands"],
+                command: "show",
+                body: { name, ...(options ?? {}) },
+            });
+        },
+        /** Validate Ravi command files */
+        validate: async (options) => {
+            return this.transport.call({
+                groupSegments: ["commands"],
+                command: "validate",
+                body: { ...(options ?? {}) },
+            });
+        }
+    };
     contacts = {
+        /** Show session activity attributed to a contact */
+        activity: async (contact, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "activity",
+                body: { contact, ...(options ?? {}) },
+            });
+        },
         /** Add/allow a contact */
         add: async (identity, name, options) => {
             return this.transport.call({
@@ -344,6 +428,48 @@ export class RaviClient {
                 body: { source, target },
             });
         },
+        /** Show messages attributed to a contact */
+        messages: async (contact, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "messages",
+                body: { contact, ...(options ?? {}) },
+            });
+        },
+        metadata: {
+            /** List current scoped metadata for a contact */
+            list: async (contact, options) => {
+                return this.transport.call({
+                    groupSegments: ["contacts", "metadata"],
+                    command: "list",
+                    body: { contact, ...(options ?? {}) },
+                });
+            },
+            /** Remove scoped metadata from a contact */
+            remove: async (contact, key, options) => {
+                return this.transport.call({
+                    groupSegments: ["contacts", "metadata"],
+                    command: "remove",
+                    body: { contact, key, ...(options ?? {}) },
+                });
+            },
+            /** Set scoped metadata for a contact */
+            set: async (contact, key, value, options) => {
+                return this.transport.call({
+                    groupSegments: ["contacts", "metadata"],
+                    command: "set",
+                    body: { contact, key, value, ...(options ?? {}) },
+                });
+            }
+        },
+        /** Append a note to a contact timeline */
+        note: async (contact, text, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "note",
+                body: { contact, text, ...(options ?? {}) },
+            });
+        },
         /** List pending contacts */
         pending: async (options) => {
             return this.transport.call({
@@ -352,12 +478,28 @@ export class RaviClient {
                 body: { ...(options ?? {}) },
             });
         },
+        /** Show a contact profile card */
+        profile: async (contact, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "profile",
+                body: { contact, ...(options ?? {}) },
+            });
+        },
         /** Remove a contact */
         remove: async (contact) => {
             return this.transport.call({
                 groupSegments: ["contacts"],
                 command: "remove",
                 body: { contact },
+            });
+        },
+        /** Show session summaries attributed to a contact */
+        sessions: async (contact, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "sessions",
+                body: { contact, ...(options ?? {}) },
             });
         },
         /** Set contact property */
@@ -374,6 +516,14 @@ export class RaviClient {
                 groupSegments: ["contacts"],
                 command: "tag",
                 body: { contact, tag },
+            });
+        },
+        /** Show contact timeline events */
+        timeline: async (contact, options) => {
+            return this.transport.call({
+                groupSegments: ["contacts"],
+                command: "timeline",
+                body: { contact, ...(options ?? {}) },
             });
         },
         /** Unlink a platform identity from its contact */
@@ -418,6 +568,14 @@ export class RaviClient {
                 body: { permission, objectType, objectId },
             });
         },
+        /** Dry-run or revoke stale agent-runtime contexts left by old turn-scoped issuance */
+        cleanupAgentRuntime: async (options) => {
+            return this.transport.call({
+                groupSegments: ["context"],
+                command: "cleanup-agent-runtime",
+                body: { ...(options ?? {}) },
+            });
+        },
         /** Evaluate a Codex PreToolUse Bash hook payload from stdin using the current Ravi context */
         codexBashHook: async () => {
             return this.transport.call({
@@ -436,11 +594,11 @@ export class RaviClient {
                 });
             },
             /** List entries in the local credentials store */
-            list: async () => {
+            list: async (options) => {
                 return this.transport.call({
                     groupSegments: ["context", "credentials"],
                     command: "list",
-                    body: {},
+                    body: { ...(options ?? {}) },
                 });
             },
             /** Remove a stored context-key from the credentials store */
@@ -500,6 +658,14 @@ export class RaviClient {
                 body: { contextId, ...(options ?? {}) },
             });
         },
+        /** Show the current context session visibility */
+        visibility: async () => {
+            return this.transport.call({
+                groupSegments: ["context"],
+                command: "visibility",
+                body: {},
+            });
+        },
         /** Resolve the current runtime context */
         whoami: async () => {
             return this.transport.call({
@@ -551,6 +717,202 @@ export class RaviClient {
             });
         }
     };
+    crm = {
+        account: {
+            /** Create a CRM account */
+            create: async (name, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "account"],
+                    command: "create",
+                    body: { name, ...(options ?? {}) },
+                });
+            },
+            /** Link a contact to an account */
+            linkContact: async (account, contact, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "account"],
+                    command: "link-contact",
+                    body: { account, contact, ...(options ?? {}) },
+                });
+            },
+            /** Show CRM account */
+            show: async (account) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "account"],
+                    command: "show",
+                    body: { account },
+                });
+            }
+        },
+        /** Show CRM account */
+        accountCommand: async (account) => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "account",
+                body: { account },
+            });
+        },
+        /** Show open opportunity board */
+        board: async () => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "board",
+                body: {},
+            });
+        },
+        contact: {
+            /** Set one CRM contact profile field */
+            set: async (contact, field, value, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "contact"],
+                    command: "set",
+                    body: { contact, field, value, ...(options ?? {}) },
+                });
+            },
+            /** Show CRM profile for one contact */
+            show: async (contact) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "contact"],
+                    command: "show",
+                    body: { contact },
+                });
+            }
+        },
+        /** Show CRM profile for one contact */
+        contactCommand: async (contact) => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "contact",
+                body: { contact },
+            });
+        },
+        /** List CRM contact cards */
+        contacts: async (options) => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "contacts",
+                body: { ...(options ?? {}) },
+            });
+        },
+        fact: {
+            /** Confirm a CRM fact */
+            confirm: async (fact) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "fact"],
+                    command: "confirm",
+                    body: { fact },
+                });
+            },
+            /** List CRM facts */
+            list: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "fact"],
+                    command: "list",
+                    body: { ...(options ?? {}) },
+                });
+            },
+            /** Propose or confirm a CRM fact */
+            propose: async (entityType, entity, key, value, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "fact"],
+                    command: "propose",
+                    body: { entityType, entity, key, value, ...(options ?? {}) },
+                });
+            },
+            /** Reject a CRM fact */
+            reject: async (fact) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "fact"],
+                    command: "reject",
+                    body: { fact },
+                });
+            }
+        },
+        /** List open CRM next actions */
+        next: async (options) => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "next",
+                body: { ...(options ?? {}) },
+            });
+        },
+        opportunity: {
+            /** List contacts linked to an opportunity */
+            contacts: async (opportunity) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "opportunity"],
+                    command: "contacts",
+                    body: { opportunity },
+                });
+            },
+            /** Create a CRM opportunity */
+            create: async (title, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "opportunity"],
+                    command: "create",
+                    body: { title, ...(options ?? {}) },
+                });
+            },
+            /** Link a contact to an opportunity */
+            linkContact: async (opportunity, contact, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "opportunity"],
+                    command: "link-contact",
+                    body: { opportunity, contact, ...(options ?? {}) },
+                });
+            },
+            /** Move an opportunity to another stage */
+            move: async (opportunity, stage, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "opportunity"],
+                    command: "move",
+                    body: { opportunity, stage, ...(options ?? {}) },
+                });
+            },
+            /** Show CRM opportunity */
+            show: async (opportunity) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "opportunity"],
+                    command: "show",
+                    body: { opportunity },
+                });
+            }
+        },
+        /** Show CRM opportunity */
+        opportunityCommand: async (opportunity) => {
+            return this.transport.call({
+                groupSegments: ["crm"],
+                command: "opportunity",
+                body: { opportunity },
+            });
+        },
+        task: {
+            /** Create a CRM relationship task */
+            create: async (title, options) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "task"],
+                    command: "create",
+                    body: { title, ...(options ?? {}) },
+                });
+            },
+            /** Complete a CRM task */
+            done: async (task) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "task"],
+                    command: "done",
+                    body: { task },
+                });
+            },
+            /** Show CRM task */
+            show: async (task) => {
+                return this.transport.call({
+                    groupSegments: ["crm", "task"],
+                    command: "show",
+                    body: { task },
+                });
+            }
+        }
+    };
     cron = {
         /** Add a new scheduled job */
         add: async (name, options) => {
@@ -577,11 +939,11 @@ export class RaviClient {
             });
         },
         /** List all scheduled jobs */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["cron"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Delete a job */
@@ -618,14 +980,6 @@ export class RaviClient {
         }
     };
     daemon = {
-        /** Run daemon in dev mode with auto-rebuild on file changes */
-        dev: async () => {
-            return this.transport.call({
-                groupSegments: ["daemon"],
-                command: "dev",
-                body: {},
-            });
-        },
         /** Edit environment file (~/.ravi/.env) */
         env: async () => {
             return this.transport.call({
@@ -664,14 +1018,6 @@ export class RaviClient {
                 groupSegments: ["daemon"],
                 command: "restart",
                 body: { ...(options ?? {}) },
-            });
-        },
-        /** Run daemon in foreground (used by PM2) */
-        run: async () => {
-            return this.transport.call({
-                groupSegments: ["daemon"],
-                command: "run",
-                body: {},
             });
         },
         /** Start the daemon via PM2 */
@@ -811,24 +1157,6 @@ export class RaviClient {
             });
         }
     };
-    events = {
-        /** Replay persisted JetStream events with filters */
-        replay: async (options) => {
-            return this.transport.call({
-                groupSegments: ["events"],
-                command: "replay",
-                body: { ...(options ?? {}) },
-            });
-        },
-        /** Stream all events in real-time (default command) */
-        stream: async (options) => {
-            return this.transport.call({
-                groupSegments: ["events"],
-                command: "stream",
-                body: { ...(options ?? {}) },
-            });
-        }
-    };
     heartbeat = {
         /** Disable heartbeat for an agent */
         disable: async (id) => {
@@ -905,11 +1233,11 @@ export class RaviClient {
             });
         },
         /** List configured hooks */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["hooks"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Delete a hook */
@@ -992,14 +1320,6 @@ export class RaviClient {
         }
     };
     instances = {
-        /** Connect an instance to omni (QR code for WhatsApp) */
-        connect: async (name, options) => {
-            return this.transport.call({
-                groupSegments: ["instances"],
-                command: "connect",
-                body: { name, ...(options ?? {}) },
-            });
-        },
         /** Create a new instance */
         create: async (name, options) => {
             return this.transport.call({
@@ -1057,11 +1377,11 @@ export class RaviClient {
             });
         },
         /** List all instances */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["instances"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         pending: {
@@ -1074,11 +1394,11 @@ export class RaviClient {
                 });
             },
             /** List pending contacts and chats for an instance */
-            list: async (name) => {
+            list: async (name, options) => {
                 return this.transport.call({
                     groupSegments: ["instances", "pending"],
                     command: "list",
-                    body: { name },
+                    body: { name, ...(options ?? {}) },
                 });
             },
             /** Reject and remove a pending contact or chat */
@@ -1116,11 +1436,11 @@ export class RaviClient {
                 });
             },
             /** List routes for an instance */
-            list: async (name) => {
+            list: async (name, options) => {
                 return this.transport.call({
                     groupSegments: ["instances", "routes"],
                     command: "list",
-                    body: { name },
+                    body: { name, ...(options ?? {}) },
                 });
             },
             /** Remove a route (soft-delete, recoverable) */
@@ -1196,6 +1516,140 @@ export class RaviClient {
                 groupSegments: ["media"],
                 command: "send",
                 body: { filePath, ...(options ?? {}) },
+            });
+        }
+    };
+    observers = {
+        /** List session observer bindings */
+        list: async (options) => {
+            return this.transport.call({
+                groupSegments: ["observers"],
+                command: "list",
+                body: { ...(options ?? {}) },
+            });
+        },
+        profiles: {
+            /** Create a Markdown observer profile scaffold */
+            init: async (profileId, options) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "profiles"],
+                    command: "init",
+                    body: { profileId, ...(options ?? {}) },
+                });
+            },
+            /** List observer profiles */
+            list: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "profiles"],
+                    command: "list",
+                    body: { ...(options ?? {}) },
+                });
+            },
+            /** Render an observer profile preview */
+            preview: async (profileId, options) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "profiles"],
+                    command: "preview",
+                    body: { profileId, ...(options ?? {}) },
+                });
+            },
+            /** Show one observer profile */
+            show: async (profileId) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "profiles"],
+                    command: "show",
+                    body: { profileId },
+                });
+            },
+            /** Validate observer profiles */
+            validate: async (profileId) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "profiles"],
+                    command: "validate",
+                    body: { profileId },
+                });
+            }
+        },
+        /** Apply observer rules to an existing source session */
+        refresh: async (session) => {
+            return this.transport.call({
+                groupSegments: ["observers"],
+                command: "refresh",
+                body: { session },
+            });
+        },
+        rules: {
+            /** Disable an observer rule */
+            disable: async (id) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "disable",
+                    body: { id },
+                });
+            },
+            /** Enable an observer rule */
+            enable: async (id) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "enable",
+                    body: { id },
+                });
+            },
+            /** Explain observer rule matching for a source session */
+            explain: async (session) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "explain",
+                    body: { session },
+                });
+            },
+            /** List observer rules */
+            list: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "list",
+                    body: { ...(options ?? {}) },
+                });
+            },
+            /** Delete an observer rule */
+            rm: async (id) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "rm",
+                    body: { id },
+                });
+            },
+            /** Create or overwrite an observer rule */
+            set: async (id, observerAgentId, options) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "set",
+                    body: { id, observerAgentId, ...(options ?? {}) },
+                });
+            },
+            /** Show one observer rule */
+            show: async (id) => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "show",
+                    body: { id },
+                });
+            },
+            /** Validate observer rules */
+            validate: async () => {
+                return this.transport.call({
+                    groupSegments: ["observers", "rules"],
+                    command: "validate",
+                    body: {},
+                });
+            }
+        },
+        /** Show one observer binding */
+        show: async (bindingId) => {
+            return this.transport.call({
+                groupSegments: ["observers"],
+                command: "show",
+                body: { bindingId },
             });
         }
     };
@@ -1439,11 +1893,11 @@ export class RaviClient {
                     });
                 },
                 /** List available call profiles */
-                list: async () => {
+                list: async (options) => {
                     return this.transport.call({
                         groupSegments: ["prox", "calls", "profiles"],
                         command: "list",
-                        body: {},
+                        body: { ...(options ?? {}) },
                     });
                 },
                 /** Show a call profile by ID */
@@ -1579,11 +2033,11 @@ export class RaviClient {
                     });
                 },
                 /** List voice agents */
-                list: async () => {
+                list: async (options) => {
                     return this.transport.call({
                         groupSegments: ["prox", "calls", "voice-agents"],
                         command: "list",
-                        body: {},
+                        body: { ...(options ?? {}) },
                     });
                 },
                 /** Show a voice agent by ID */
@@ -1633,11 +2087,11 @@ export class RaviClient {
             });
         },
         /** List routes across all instances or for one instance */
-        list: async (name) => {
+        list: async (name, options) => {
             return this.transport.call({
                 groupSegments: ["routes"],
                 command: "list",
-                body: { name },
+                body: { name, ...(options ?? {}) },
             });
         },
         /** Show route details */
@@ -1685,6 +2139,90 @@ export class RaviClient {
                     body: { ...(options ?? {}) },
                 });
             }
+        },
+        swift: {
+            /** Compare on-disk Ravi Swift SDK sources to a fresh emit; exit 1 on drift */
+            check: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["sdk", "swift"],
+                    command: "check",
+                    body: { ...(options ?? {}) },
+                });
+            },
+            /** Generate the Ravi Swift SDK source files from the live registry */
+            generate: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["sdk", "swift"],
+                    command: "generate",
+                    body: { ...(options ?? {}) },
+                });
+            }
+        }
+    };
+    self = {
+        /** Show the current chat binding and participants */
+        chat: async (options) => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "chat",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Show the full current self-context packet */
+        context: async (options) => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "context",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Explain how Ravi resolved the current self-context */
+        explain: async () => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "explain",
+                body: {},
+            });
+        },
+        /** Show current knowledge integration status for this context */
+        knowledge: async () => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "knowledge",
+                body: {},
+            });
+        },
+        /** Show capabilities inherited by the current context */
+        permissions: async () => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "permissions",
+                body: {},
+            });
+        },
+        /** Show bounded recent message metadata for the current chat */
+        recent: async (options) => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "recent",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Show route information that led to the current session */
+        route: async () => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "route",
+                body: {},
+            });
+        },
+        /** Show the current agent/session identity */
+        whoami: async () => {
+            return this.transport.call({
+                groupSegments: ["self"],
+                command: "whoami",
+                body: {},
+            });
         }
     };
     service = {
@@ -1730,14 +2268,6 @@ export class RaviClient {
                 body: { target, message, sender, ...(options ?? {}) },
             });
         },
-        /** Tail live runtime events for a session (defaults to current session when available) */
-        debug: async (nameOrKey, options) => {
-            return this.transport.call({
-                groupSegments: ["sessions"],
-                command: "debug",
-                body: { nameOrKey, ...(options ?? {}) },
-            });
-        },
         /** Delete a session permanently */
         delete: async (nameOrKey) => {
             return this.transport.call({
@@ -1760,6 +2290,14 @@ export class RaviClient {
                 groupSegments: ["sessions"],
                 command: "extend",
                 body: { nameOrKey, duration },
+            });
+        },
+        /** Inspect or mutate persisted session goal state */
+        goal: async (action, nameOrKey, objective, options) => {
+            return this.transport.call({
+                groupSegments: ["sessions"],
+                command: "goal",
+                body: { action, nameOrKey, objective, ...(options ?? {}) },
             });
         },
         /** Show unified session inspection details */
@@ -1791,6 +2329,14 @@ export class RaviClient {
             return this.transport.call({
                 groupSegments: ["sessions"],
                 command: "list",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Prune sessions inactive for a duration (dry-run by default) */
+        prune: async (options) => {
+            return this.transport.call({
+                groupSegments: ["sessions"],
+                command: "prune",
                 body: { ...(options ?? {}) },
             });
         },
@@ -1923,6 +2469,14 @@ export class RaviClient {
                 command: "trace",
                 body: { nameOrKey, ...(options ?? {}) },
             });
+        },
+        /** Show runtime session visibility state */
+        visibility: async (nameOrKey) => {
+            return this.transport.call({
+                groupSegments: ["sessions"],
+                command: "visibility",
+                body: { nameOrKey },
+            });
         }
     };
     settings = {
@@ -1956,6 +2510,64 @@ export class RaviClient {
                 groupSegments: ["settings"],
                 command: "set",
                 body: { key, value },
+            });
+        }
+    };
+    skillGates = {
+        /** Disable a skill gate rule */
+        disable: async (id) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "disable",
+                body: { id },
+            });
+        },
+        /** Enable a configured skill gate rule */
+        enable: async (id) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "enable",
+                body: { id },
+            });
+        },
+        /** List skill gate rules */
+        list: async (options) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "list",
+                body: { ...(options ?? {}) },
+            });
+        },
+        /** Delete a configured override and restore the default behavior */
+        reset: async (id) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "reset",
+                body: { id },
+            });
+        },
+        /** Remove a custom gate or disable a default gate */
+        rm: async (id) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "rm",
+                body: { id },
+            });
+        },
+        /** Create or overwrite a skill gate rule */
+        set: async (id, skill, options) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "set",
+                body: { id, skill, ...(options ?? {}) },
+            });
+        },
+        /** Show one skill gate rule */
+        show: async (id) => {
+            return this.transport.call({
+                groupSegments: ["skill-gates"],
+                command: "show",
+                body: { id },
             });
         }
     };
@@ -2037,11 +2649,11 @@ export class RaviClient {
             });
         },
         /** List stickers in the typed catalog */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["stickers"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Remove a sticker catalog entry */
@@ -2070,7 +2682,7 @@ export class RaviClient {
         }
     };
     tags = {
-        /** Attach a tag to an agent or session */
+        /** Attach a tag to a Ravi asset */
         attach: async (slug, options) => {
             return this.transport.call({
                 groupSegments: ["tags"],
@@ -2086,7 +2698,7 @@ export class RaviClient {
                 body: { slug, ...(options ?? {}) },
             });
         },
-        /** Detach a tag from an agent or session */
+        /** Detach a tag from a Ravi asset */
         detach: async (slug, options) => {
             return this.transport.call({
                 groupSegments: ["tags"],
@@ -2095,11 +2707,11 @@ export class RaviClient {
             });
         },
         /** List tag definitions */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["tags"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Search bindings by tag or asset */
@@ -2108,6 +2720,14 @@ export class RaviClient {
                 groupSegments: ["tags"],
                 command: "search",
                 body: { ...(options ?? {}) },
+            });
+        },
+        /** Set tag definition metadata */
+        set: async (slug, key, value) => {
+            return this.transport.call({
+                groupSegments: ["tags"],
+                command: "set",
+                body: { slug, key, value },
             });
         },
         /** Show one tag and its bindings */
@@ -2154,11 +2774,11 @@ export class RaviClient {
                 });
             },
             /** List configured task automations */
-            list: async () => {
+            list: async (options) => {
                 return this.transport.call({
                     groupSegments: ["tasks", "automations"],
                     command: "list",
-                    body: {},
+                    body: { ...(options ?? {}) },
                 });
             },
             /** Delete a task automation */
@@ -2212,11 +2832,11 @@ export class RaviClient {
                 });
             },
             /** List gating dependencies and dependents for a task */
-            ls: async (taskId) => {
+            ls: async (taskId, options) => {
                 return this.transport.call({
                     groupSegments: ["tasks", "deps"],
                     command: "ls",
-                    body: { taskId },
+                    body: { taskId, ...(options ?? {}) },
                 });
             },
             /** Remove one gating dependency from a task */
@@ -2270,11 +2890,11 @@ export class RaviClient {
                 });
             },
             /** List resolved task profiles from all catalog sources */
-            list: async () => {
+            list: async (options) => {
                 return this.transport.call({
                     groupSegments: ["tasks", "profiles"],
                     command: "list",
-                    body: {},
+                    body: { ...(options ?? {}) },
                 });
             },
             /** Render a profile preview with the resolved template context */
@@ -2325,57 +2945,15 @@ export class RaviClient {
                 command: "unarchive",
                 body: { taskId },
             });
-        },
-        /** Watch task events live */
-        watch: async (taskId) => {
-            return this.transport.call({
-                groupSegments: ["tasks"],
-                command: "watch",
-                body: { taskId },
-            });
-        }
-    };
-    tmux = {
-        /** Attach or switch to an agent/session inside tmux */
-        attach: async (agent, session) => {
-            return this.transport.call({
-                groupSegments: ["tmux"],
-                command: "attach",
-                body: { agent, session },
-            });
-        },
-        /** List Ravi-managed tmux sessions and windows */
-        list: async () => {
-            return this.transport.call({
-                groupSegments: ["tmux"],
-                command: "list",
-                body: {},
-            });
-        },
-        /** Ensure a tmux session/window exists for an agent or session */
-        open: async (agent, session) => {
-            return this.transport.call({
-                groupSegments: ["tmux"],
-                command: "open",
-                body: { agent, session },
-            });
-        },
-        /** Listen to NATS prompts and open tmux windows automatically */
-        watch: async (options) => {
-            return this.transport.call({
-                groupSegments: ["tmux"],
-                command: "watch",
-                body: { ...(options ?? {}) },
-            });
         }
     };
     tools = {
         /** List all available CLI tools */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["tools"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Export tools as JSON manifest */
@@ -2447,11 +3025,11 @@ export class RaviClient {
             });
         },
         /** List all event triggers */
-        list: async () => {
+        list: async (options) => {
             return this.transport.call({
                 groupSegments: ["triggers"],
                 command: "list",
-                body: {},
+                body: { ...(options ?? {}) },
             });
         },
         /** Delete a trigger */
@@ -2498,6 +3076,16 @@ export class RaviClient {
         }
     };
     whatsapp = {
+        chats: {
+            /** List chats with message activity in the last N days (or since a date) */
+            list: async (options) => {
+                return this.transport.call({
+                    groupSegments: ["whatsapp", "chats"],
+                    command: "list",
+                    body: { ...(options ?? {}) },
+                });
+            }
+        },
         dm: {
             /** Send read receipt (blue ticks) for a specific message */
             ack: async (contact, messageId, options) => {
@@ -2658,11 +3246,11 @@ export class RaviClient {
                 });
             },
             /** List workflow runs */
-            list: async () => {
+            list: async (options) => {
                 return this.transport.call({
                     groupSegments: ["workflows", "runs"],
                     command: "list",
-                    body: {},
+                    body: { ...(options ?? {}) },
                 });
             },
             /** Release a manual node transition or gate */
@@ -2724,11 +3312,11 @@ export class RaviClient {
                 });
             },
             /** List workflow specs */
-            list: async () => {
+            list: async (options) => {
                 return this.transport.call({
                     groupSegments: ["workflows", "specs"],
                     command: "list",
-                    body: {},
+                    body: { ...(options ?? {}) },
                 });
             },
             /** Show one workflow spec */
@@ -2742,4 +3330,3 @@ export class RaviClient {
         }
     };
 }
-//# sourceMappingURL=client.js.map
