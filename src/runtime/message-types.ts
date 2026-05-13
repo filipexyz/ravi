@@ -111,6 +111,11 @@ export interface PromptMessage {
   _runtimeModel?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
+  /**
+   * Internal restart envelope: start a fresh runtime only to drain messages that
+   * were already persisted and stashed by the previous runtime session.
+   */
+  _resumeStashedMessages?: boolean;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

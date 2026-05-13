@@ -62,4 +62,46 @@ describe("runtime delivery queue", () => {
     session.onTurnComplete?.();
     await generator.return(undefined);
   });
+
+  it("keeps the original launch prompt envelope on queued messages", () => {
+    const queuedMessage = createQueuedRuntimeUserMessage({
+      prompt: "continua",
+      deliveryBarrier: "after_response",
+      taskBarrierTaskId: "task-1",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:1",
+        sourceMessageId: "wamid-1",
+      },
+      context: {
+        channelId: "whatsapp",
+        channelName: "WhatsApp",
+        accountId: "main",
+        chatId: "group:1",
+        messageId: "wamid-1",
+        senderId: "user-1",
+        isGroup: true,
+        timestamp: 1,
+      },
+      _agentId: "e2-filipe",
+    });
+
+    expect(queuedMessage.launchPrompt).toMatchObject({
+      prompt: "continua",
+      deliveryBarrier: "after_response",
+      taskBarrierTaskId: "task-1",
+      source: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatId: "group:1",
+        sourceMessageId: "wamid-1",
+      },
+      context: {
+        messageId: "wamid-1",
+        senderId: "user-1",
+      },
+      _agentId: "e2-filipe",
+    });
+  });
 });

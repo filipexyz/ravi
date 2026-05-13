@@ -243,6 +243,7 @@ export interface RunRuntimeEventLoopOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
+  restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -262,6 +263,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     stashedMessages,
     safeEmit,
     drainPendingStarts,
+    restartStashedSession,
   } = options;
   const recordTraceEvent = (
     input: Omit<Parameters<typeof recordRuntimeTraceEvent>[0], "sessionKey" | "sessionName" | "agentId" | "runId">,
@@ -311,6 +313,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let responseText = "";
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
+  let restartStashedReason: string | undefined;
   const observationEvents: ObservationEvent[] = [];
   const debouncedObservationEvents: ObservationEvent[] = [];
   let debounceObservationTimer: ReturnType<typeof setTimeout> | undefined;
@@ -676,7 +679,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "status") {
         const status = event.status;
         const wasCompacting = streaming.compacting;
-        streaming.compacting = status === "compacting" ? true : status === "idle" ? false : streaming.compacting;
+        streaming.compacting = status === "compacting";
         const compactionChanged = streaming.compacting !== wasCompacting;
         if (status === "compacting" || compactionChanged) {
           log.info("Compaction status", {
@@ -1261,6 +1264,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Reset for next turn
         responseText = "";
         clearActiveToolState();
+        streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.turnActive = false;
@@ -1302,6 +1306,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.interrupted = true;
         responseText = "";
         clearActiveToolState();
+        streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.turnActive = false;
         clearTraceTurnState();
@@ -1366,6 +1371,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         responseText = "";
         clearActiveToolState();
+        streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.turnActive = false;
@@ -1373,20 +1379,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         if (suppressedRecoverable) {
+          const restartReason = internalAbortReason ?? "recoverable_interrupt_failure";
           markRuntimeLiveIdle(sessionName, "turn interrupted");
           log.info("Suppressing recoverable interrupted turn failure", {
             runId,
             sessionName,
-            internalAbortReason,
+            internalAbortReason: restartReason,
             error: event.error,
           });
           // End the session instead of `continue`: claude-code can wedge after
           // an interrupt-during-tool_use (`[ede_diagnostic] stop_reason=tool_use`).
           // Subsequent prompts to the wedged subprocess silently no-op while the
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
-          // on the next inbound message; preserve queued/current messages so the
-          // next session can drain them instead of losing the interrupted turn.
+          // immediately; preserve queued/current messages so the next session
+          // can drain them instead of losing the interrupted turn.
           stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
+          restartStashedReason = restartReason;
           signalTurnComplete();
           streaming.done = true;
           break;
@@ -1413,6 +1421,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
     streaming.done = true;
     streaming.starting = false;
+    streaming.compacting = false;
 
     // Unblock generator if it is waiting (between turns or waiting for turn complete)
     if (streaming.pushMessage) {
@@ -1430,6 +1439,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     if (streamingSessions.delete(sessionName)) {
+      if (restartStashedReason && restartStashedSession) {
+        await restartStashedSession({ sessionName, reason: restartStashedReason });
+      }
       drainPendingStarts();
     }
   }

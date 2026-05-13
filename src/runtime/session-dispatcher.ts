@@ -951,6 +951,8 @@ export class RuntimeSessionDispatcher {
         stashedMessages: this.stashedMessages,
         safeEmit: this.options.safeEmit,
         drainPendingStarts: () => this.drainPendingStarts(),
+        restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
+          this.restartStashedSession(stashedSessionName, reason),
       });
     } finally {
       this.startingSessions.delete(sessionName);
@@ -1130,6 +1132,38 @@ export class RuntimeSessionDispatcher {
       this.drainPendingStarts();
     }
     return released;
+  }
+
+  private async restartStashedSession(sessionName: string, reason: string): Promise<void> {
+    const stashed = this.stashedMessages.get(sessionName);
+    if (!stashed || stashed.length === 0) {
+      return;
+    }
+
+    const prompt = buildStashedRestartPrompt(stashed);
+    if (!prompt) {
+      return;
+    }
+
+    const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
+    recordRuntimeTraceEvent({
+      sessionKey: traceIdentity.sessionKey,
+      sessionName,
+      agentId: traceIdentity.agentId ?? prompt._agentId,
+      provider: prompt._runtimeProviderId,
+      eventType: "dispatch.restart_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source: prompt.source,
+      messageId: prompt.context?.messageId,
+      payloadJson: {
+        reason,
+        stashedQueueSize: stashed.length,
+        resumeStashedMessages: true,
+      },
+    });
+
+    await this.startStreamingSession(sessionName, prompt, { retainReleasedSlot: true });
   }
 
   drainPendingStarts(): void {
@@ -1337,6 +1371,46 @@ export function stashPromptForStartingSession(
   queued.push(createQueuedRuntimeUserMessage(prompt));
   stashedMessages.set(sessionName, queued);
   return queued;
+}
+
+function buildStashedRestartPrompt(messages: RuntimeUserMessage[]): RuntimeLaunchPrompt | null {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  const launchPrompts = messages
+    .map((message) => message.launchPrompt)
+    .filter((prompt): prompt is RuntimeLaunchPrompt => Boolean(prompt));
+  const newestLaunchPrompt = launchPrompts[launchPrompts.length - 1];
+  const first = messages[0];
+  if (!first) {
+    return null;
+  }
+
+  const deliveryBarrier = messages.reduce<DeliveryBarrier>(
+    (current, message) => chooseMoreUrgentBarrier(current, message.deliveryBarrier ?? "after_tool"),
+    first.deliveryBarrier ?? "after_tool",
+  );
+  const combinedPrompt = messages
+    .map((message) => message.message.content)
+    .join("\n\n")
+    .trim();
+
+  return {
+    ...(newestLaunchPrompt ?? {
+      prompt: combinedPrompt,
+      deliveryBarrier,
+      taskBarrierTaskId: first.taskBarrierTaskId,
+      commands: messages.flatMap((message) => message.commands ?? []),
+    }),
+    prompt: combinedPrompt || newestLaunchPrompt?.prompt || first.message.content,
+    deliveryBarrier,
+    commands:
+      launchPrompts.length > 0
+        ? messages.flatMap((message) => message.commands ?? message.launchPrompt?.commands ?? [])
+        : messages.flatMap((message) => message.commands ?? []),
+    _resumeStashedMessages: true,
+  };
 }
 
 function recordStreamingAbortTrace(

@@ -3,12 +3,12 @@ import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
-import type { RaviCommandPromptMetadata } from "./message-types.js";
+import type { RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimePromptMessage } from "./types.js";
 
 const log = logger.child("runtime:delivery-queue");
 
-export interface RuntimePromptDeliveryMessage {
+export interface RuntimePromptDeliveryMessage extends Partial<Omit<RuntimeLaunchPrompt, "prompt">> {
   prompt: string;
   deliveryBarrier?: DeliveryBarrier;
   taskBarrierTaskId?: string;
@@ -28,8 +28,19 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
     deliveryBarrier: getRuntimePromptDeliveryBarrier(prompt),
     taskBarrierTaskId: prompt.taskBarrierTaskId,
     commands: prompt.commands,
+    launchPrompt: cloneRuntimeLaunchPrompt(prompt),
     pendingId: Math.random().toString(36).slice(2, 10),
     queuedAt: Date.now(),
+  };
+}
+
+function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
+  return {
+    ...prompt,
+    source: prompt.source ? { ...prompt.source } : undefined,
+    context: prompt.context ? { ...prompt.context } : undefined,
+    _approvalSource: prompt._approvalSource ? { ...prompt._approvalSource } : undefined,
+    commands: prompt.commands ? prompt.commands.map((command) => ({ ...command })) : undefined,
   };
 }
 

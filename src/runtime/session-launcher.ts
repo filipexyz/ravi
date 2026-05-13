@@ -44,6 +44,7 @@ export interface StartRuntimeSessionOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
+  restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
@@ -77,8 +78,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     stashedMessages,
     safeEmit,
     drainPendingStarts,
+    restartStashedSession,
   } = options;
   const runId = createSessionTraceRunId();
+  const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
   const resolvedSession = resolveRuntimeSession({
     sessionName,
@@ -116,14 +119,16 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const approvalSource = prompt._approvalSource;
 
   updateRuntimeSessionMetadata(dbSessionKey, prompt);
-  saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined, {
-    agentId: agent.id,
-    channel: resolvedSource?.channel ?? prompt.context?.channelId,
-    accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
-    chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
-    sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
-    commands: prompt.commands,
-  });
+  if (!resumeStashedMessages) {
+    saveMessage(sessionName, "user", prompt.prompt, canResumeStoredSession ? storedProviderSessionId : undefined, {
+      agentId: agent.id,
+      channel: resolvedSource?.channel ?? prompt.context?.channelId,
+      accountId: resolvedSource?.accountId ?? prompt.context?.accountId,
+      chatId: resolvedSource?.chatId ?? prompt.context?.chatId,
+      sourceMessageId: resolvedSource?.sourceMessageId ?? prompt.context?.messageId,
+      commands: prompt.commands,
+    });
+  }
 
   const runtimeResolution = resolveRuntimeForPrompt({
     sessionName,
@@ -171,7 +176,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     abortController,
     pushMessage: null,
     pendingWake: false,
-    pendingMessages: [createQueuedRuntimeUserMessage(prompt)],
+    pendingMessages: resumeStashedMessages ? [] : [createQueuedRuntimeUserMessage(prompt)],
     currentSource: resolvedSource,
     currentModel: model,
     currentEffort: runtimeResolution.options.effort,
@@ -311,6 +316,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         stashedMessages,
         safeEmit,
         drainPendingStarts,
+        restartStashedSession,
       }),
     ).catch((err) => {
       const isAbort = err instanceof Error && /abort/i.test(err.message);
