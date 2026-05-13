@@ -39,6 +39,16 @@ Use a knowledge thread for semantic continuity.
 
 A thread MAY create or reuse curation sessions, but the thread state MUST live in Knowledge, not in the runtime session.
 
+## Boundary With Conversational Threads
+
+`knowledge_thread` is not the same concept as Ravi's lightweight `thread` domain.
+
+Use `threads` for operational "fio de assunto" continuity: notes, questions, chat/contact links, and `ravi sessions send --thread` handoff between agents.
+
+Use `knowledge_thread` only when the topic is being curated into canonical long-lived memory.
+
+Knowledge MAY ingest from lightweight threads later, but lightweight thread creation, handoff, listing, and continuation MUST NOT depend on Knowledge.
+
 ## Thread Identity
 
 Thread slugs SHOULD be stable, lowercase, and human readable.
