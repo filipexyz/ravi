@@ -65,6 +65,18 @@ Minimum validation:
 
 Deep validation against a live provider catalog or credentials MAY be implemented as explicit preflight, but MUST NOT be required for every config write unless the provider can do it cheaply and deterministically.
 
+## Credential Fallback
+
+Provider credential selection and fallback are governed by `runtime/providers/credential-fallback`.
+
+Provider adapters MUST expose enough structured, redacted failure data for the host to distinguish rate limits, quota exhaustion, billing failures, invalid credentials, permission failures, provider overload, network transients, context limits, invalid requests, and unknown failures.
+
+Provider adapters MUST NOT implement hidden credential rotation in provider-local code. Selection, cooldowns, health transitions, retry limits, replay safety, and operator-visible events belong in the generic runtime credential fallback layer.
+
+Provider adapters MAY own provider-specific secret/env/profile mapping, but MUST NOT leak raw credential values into logs, traces, provider raw summaries, shell tool env, or session params.
+
+Provider session ids and resume/fork state used with managed credentials MUST be credential-compatible. A provider adapter MUST NOT resume or fork native state across different account/profile credential boundaries unless it explicitly declares that the native provider session is account-independent.
+
 ## Canonical Events
 
 Providers MUST normalize native output into:
