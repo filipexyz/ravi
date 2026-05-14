@@ -50,7 +50,8 @@ function writeTaskProfile(
     variant?: TestProfileVariant;
     taskDocumentUsage?: "required" | "optional" | "none";
     templateMode?: "inline" | "path";
-    inputs?: Array<{ key: string; defaultValue?: string }>;
+    inputs?: Array<{ key: string; defaultValue?: string; required?: boolean }>;
+    artifacts?: Array<Record<string, unknown>>;
     runtimeDefaults?: {
       model?: string;
       effort?: "low" | "medium" | "high" | "xhigh";
@@ -120,6 +121,7 @@ function writeTaskProfile(
     defaultTags: [`task.profile.${profileId}`],
     inputs: (options.inputs ?? []).map((input) => ({
       key: input.key,
+      ...(input.required !== undefined ? { required: input.required } : {}),
       defaultValue: input.defaultValue,
     })),
     completion: {
@@ -129,8 +131,9 @@ function writeTaskProfile(
     progress: {
       requireMessage: true,
     },
-    artifacts:
-      variant === "brainstorm"
+    artifacts: options.artifacts
+      ? options.artifacts
+      : variant === "brainstorm"
         ? [
             {
               kind: "brainstorm-draft",
@@ -461,6 +464,50 @@ describe("task profile catalog", () => {
     expect(validation).toHaveLength(1);
     expect(validation[0]?.valid).toBeFalse();
     expect(validation[0]?.error).toContain('Unknown placeholder root "mystery"');
+  });
+
+  it("keeps declared optional inputs available as empty strings while enforcing required inputs", async () => {
+    const workspaceDir = makeTempDir("ravi-task-profiles-optional-inputs-");
+    await createIsolatedRaviState("ravi-task-profiles-optional-inputs-state-");
+    process.chdir(workspaceDir);
+
+    const profilesRoot = join(workspaceDir, ".ravi", "task-profiles");
+    writeTaskProfile(profilesRoot, "input-contract", {
+      templateMode: "path",
+      inputs: [{ key: "goal", required: true }, { key: "optional_path" }],
+      artifacts: [
+        {
+          kind: "task-doc",
+          label: "TASK.md",
+          pathTemplate: "{{task.taskDocPath}}",
+          primary: true,
+        },
+        {
+          kind: "deliverable",
+          label: "Optional deliverable",
+          pathTemplate: "{{input.optional_path}}",
+          showWhenStatuses: ["done"],
+        },
+      ],
+      templateTexts: {
+        create: "Goal {{input.goal}} optional={{input.optional_path}}",
+      },
+    });
+
+    expect(() => previewTaskProfile("input-contract", { title: "Missing required input" })).toThrow(
+      "Task profile input-contract requires input(s): goal.",
+    );
+
+    const preview = previewTaskProfile("input-contract", {
+      title: "Optional input preview",
+      input: { goal: "ship it" },
+    });
+
+    expect(preview.input).toEqual({
+      goal: "ship it",
+      optional_path: "",
+    });
+    expect(preview.rendered.create).toContain("Goal ship it optional=");
   });
 
   it("validates and snapshots profile runtime defaults on task creation", async () => {

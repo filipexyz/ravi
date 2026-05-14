@@ -1032,9 +1032,7 @@ function resolveProfileInputValues(
 ): TaskProfileInputValues {
   const resolved: TaskProfileInputValues = {};
   for (const definition of profile.inputs) {
-    if (definition.defaultValue !== undefined) {
-      resolved[definition.key] = definition.defaultValue;
-    }
+    resolved[definition.key] = definition.defaultValue ?? "";
   }
   for (const [key, value] of Object.entries(taskInput ?? {})) {
     resolved[key] = value;
