@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
@@ -31,12 +32,30 @@ export class PagesCommands {
   async list(
     @Arg("project", { description: "Console project id or slug" }) project: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum sites to return (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of sites to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runPagesCommand(asJson, async () => {
       const result = await listPageSites({ project, console: consoleUrl }, this.deps);
-      printPayload(result, asJson, () => printSiteList(result));
-      return result;
+      const page = paginateCliItems(result.sites, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "pages", "list", project],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: [consoleUrl ? "--console" : null, consoleUrl],
+      });
+      const payload = {
+        ...result,
+        total: page.total,
+        pagination,
+        sites: page.items,
+        items: page.items,
+      };
+      printPayload(payload, asJson, () => printSiteList(payload));
+      return payload;
     });
   }
 
@@ -151,15 +170,26 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function printSiteList(result: PageSiteListResult): void {
+function printSiteList(
+  result: PageSiteListResult & { pagination?: { limit: number; nextCommand: string | null; offset: number } },
+): void {
   if (result.sites.length === 0) {
     console.log(`No Pages sites found for project ${result.projectRef}.`);
     return;
   }
 
-  console.log(`Pages sites (${result.total})`);
+  const pagination = result.pagination;
+  console.log(
+    `Pages sites (${result.sites.length} returned of ${result.total}${
+      pagination ? `, limit ${pagination.limit}, offset ${pagination.offset}` : ""
+    })`,
+  );
   for (const site of result.sites) {
     console.log(`  - ${siteLabel(site)}`);
+  }
+  if (pagination?.nextCommand) {
+    console.log("\nNext page:");
+    console.log(`  ${pagination.nextCommand}`);
   }
 }
 

@@ -20,7 +20,7 @@ describe("pages CLI commands", () => {
     });
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.list("proj", undefined, true));
+    const { output } = await captureConsole(() => command.list("proj", undefined, undefined, undefined, true));
     const payload = JSON.parse(output);
 
     expect(calls).toEqual([
@@ -35,6 +35,12 @@ describe("pages CLI commands", () => {
       success: true,
       projectRef: "proj",
       total: 1,
+      pagination: {
+        limit: 50,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      },
       sites: [{ slug: "demo", defaultHostname: "demo.ravi.page" }],
     });
   });

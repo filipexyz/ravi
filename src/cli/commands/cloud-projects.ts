@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, Group, Option } from "../decorators.js";
+import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
@@ -28,12 +29,30 @@ export class CloudProjectsCommands {
   @CliOnly()
   async list(
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--limit <n>", description: "Maximum projects to return (default: 50)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of projects to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runCloudProjectsCommand(asJson, async () => {
       const result = await listCloudProjects({ console: consoleUrl }, this.deps);
-      printPayload(result, asJson, () => printProjectList(result));
-      return result;
+      const page = paginateCliItems(result.projects, { limit, offset });
+      const pagination = buildCliOffsetPagination({
+        baseCommand: ["ravi", "cloud", "projects", "list"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: [consoleUrl ? "--console" : null, consoleUrl],
+      });
+      const payload = {
+        ...result,
+        total: page.total,
+        pagination,
+        projects: page.items,
+        items: page.items,
+      };
+      printPayload(payload, asJson, () => printProjectList(payload));
+      return payload;
     });
   }
 
@@ -104,15 +123,26 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function printProjectList(result: CloudProjectListResult): void {
+function printProjectList(
+  result: CloudProjectListResult & { pagination?: { limit: number; nextCommand: string | null; offset: number } },
+): void {
   if (result.projects.length === 0) {
     console.log("No Ravi Cloud projects found.");
     return;
   }
 
-  console.log(`Ravi Cloud projects (${result.total})`);
+  const pagination = result.pagination;
+  console.log(
+    `Ravi Cloud projects (${result.projects.length} returned of ${result.total}${
+      pagination ? `, limit ${pagination.limit}, offset ${pagination.offset}` : ""
+    })`,
+  );
   for (const project of result.projects) {
     console.log(`  - ${projectLabel(project)}`);
+  }
+  if (pagination?.nextCommand) {
+    console.log("\nNext page:");
+    console.log(`  ${pagination.nextCommand}`);
   }
 }
 

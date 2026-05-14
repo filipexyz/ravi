@@ -19,7 +19,7 @@ describe("cloud projects CLI commands", () => {
     });
     const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
-    const { output } = await captureConsole(() => command.list(undefined, true));
+    const { output } = await captureConsole(() => command.list(undefined, undefined, undefined, true));
     const payload = JSON.parse(output);
 
     expect(calls).toEqual([
@@ -33,6 +33,12 @@ describe("cloud projects CLI commands", () => {
     expect(payload).toMatchObject({
       success: true,
       total: 1,
+      pagination: {
+        limit: 50,
+        offset: 0,
+        returned: 1,
+        total: 1,
+      },
       projects: [{ slug: "nx-hv", name: "Namastex - Hapvida" }],
     });
   });
